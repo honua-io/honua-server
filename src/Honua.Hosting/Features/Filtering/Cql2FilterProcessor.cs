@@ -67,7 +67,8 @@ internal sealed class Cql2FilterProcessor(
         string? filterCrs,
         bool defaultFilterLangIsText,
         CancellationToken cancellationToken,
-        string? collectionId = null)
+        string? collectionId = null,
+        IReadOnlyList<MetadataV2Resource>? crossCollectionResources = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -127,6 +128,13 @@ internal sealed class Cql2FilterProcessor(
         // `id = '1'`, `datetime < TIMESTAMP(...)`, `properties.count > 0`) resolves to 200
         // instead of being rejected as an unknown field (honua-server STAC filter conformance).
         parsedExpression = RewriteStacCoreQueryables(parsedExpression, resource, collectionId);
+        if (crossCollectionResources is { Count: > 1 })
+        {
+            parsedExpression = ApplyCrossCollectionNullSemantics(
+                parsedExpression,
+                resource,
+                crossCollectionResources);
+        }
 
         if (hasFilterCrs)
         {
@@ -192,6 +200,128 @@ internal sealed class Cql2FilterProcessor(
             or null; // default objectid is integer-keyed
         var temporalFieldName = ResolveTemporalFieldName(resource);
         return RewriteNode(expression, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId);
+    }
+
+    /// <summary>
+    /// Replaces a property that is absent from the current collection, but declared by
+    /// another selected collection, with SQL <c>NULL</c>. The surrounding expression is
+    /// intentionally preserved so the provider evaluates AND/OR/NOT with SQL
+    /// three-valued logic. Properties absent from every selected collection remain
+    /// references and continue through the existing unknown-field error path.
+    /// </summary>
+    internal static FilterExpression ApplyCrossCollectionNullSemantics(
+        FilterExpression expression,
+        MetadataV2Resource resource,
+        IReadOnlyList<MetadataV2Resource> crossCollectionResources)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        ArgumentNullException.ThrowIfNull(resource);
+        ArgumentNullException.ThrowIfNull(crossCollectionResources);
+
+        var localSchema = FilterFieldSchema.From(resource);
+        return RewriteMissingNode(expression, localSchema, crossCollectionResources);
+    }
+
+    private static FilterExpression RewriteMissingNode(
+        FilterExpression expression,
+        FilterFieldSchema localSchema,
+        IReadOnlyList<MetadataV2Resource> crossCollectionResources)
+    {
+        switch (expression)
+        {
+            case PropertyReference property:
+                if (localSchema.TryGetFieldType(property.PropertyName, out _))
+                {
+                    return property;
+                }
+
+                return IsDeclaredByAnotherCollection(property.PropertyName, crossCollectionResources)
+                    ? new Literal(null, LiteralType.Null)
+                    : property;
+            case BinaryExpression binary:
+                return binary with
+                {
+                    Left = RewriteMissingNode(binary.Left, localSchema, crossCollectionResources),
+                    Right = RewriteMissingNode(binary.Right, localSchema, crossCollectionResources)
+                };
+            case UnaryExpression unary:
+                return unary with
+                {
+                    Operand = RewriteMissingNode(unary.Operand, localSchema, crossCollectionResources)
+                };
+            case SpatialPredicate spatial:
+                return spatial with
+                {
+                    Left = RewriteMissingNode(spatial.Left, localSchema, crossCollectionResources),
+                    Right = RewriteMissingNode(spatial.Right, localSchema, crossCollectionResources)
+                };
+            case SpatialDistancePredicate spatialDistance:
+                return spatialDistance with
+                {
+                    Left = RewriteMissingNode(spatialDistance.Left, localSchema, crossCollectionResources),
+                    Right = RewriteMissingNode(spatialDistance.Right, localSchema, crossCollectionResources),
+                    Distance = RewriteMissingNode(spatialDistance.Distance, localSchema, crossCollectionResources)
+                };
+            case TemporalPredicate temporal:
+                return temporal with
+                {
+                    Left = RewriteMissingNode(temporal.Left, localSchema, crossCollectionResources),
+                    Right = RewriteMissingNode(temporal.Right, localSchema, crossCollectionResources)
+                };
+            case ArrayPredicate array:
+                return array with
+                {
+                    Left = RewriteMissingNode(array.Left, localSchema, crossCollectionResources),
+                    Right = RewriteMissingNode(array.Right, localSchema, crossCollectionResources)
+                };
+            case FunctionCall functionCall:
+                return functionCall with
+                {
+                    Arguments = functionCall.Arguments
+                        .Select(argument => RewriteMissingNode(argument, localSchema, crossCollectionResources))
+                        .ToArray()
+                };
+            case ArrayLiteral arrayLiteral:
+                return arrayLiteral with
+                {
+                    Elements = arrayLiteral.Elements
+                        .Select(element => RewriteMissingNode(element, localSchema, crossCollectionResources))
+                        .ToArray()
+                };
+            case ValueList valueList:
+                return valueList with
+                {
+                    Values = valueList.Values
+                        .Select(value => RewriteMissingNode(value, localSchema, crossCollectionResources))
+                        .ToArray()
+                };
+            default:
+                return expression;
+        }
+    }
+
+    private static bool IsDeclaredByAnotherCollection(
+        string propertyName,
+        IReadOnlyList<MetadataV2Resource> crossCollectionResources)
+    {
+        foreach (var candidate in crossCollectionResources)
+        {
+            if (FilterFieldSchema.From(candidate).TryGetFieldType(propertyName, out _))
+            {
+                return true;
+            }
+
+            // A target without a temporal field retains the STAC `datetime` name
+            // after core-queryable rewriting. It is still catalog-valid when another
+            // selected collection resolves `datetime` to its own temporal field.
+            if (string.Equals(propertyName, "datetime", StringComparison.OrdinalIgnoreCase) &&
+                ResolveTemporalFieldName(candidate) is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string? ResolveTemporalFieldName(MetadataV2Resource resource)
