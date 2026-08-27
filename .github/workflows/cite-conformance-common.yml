@@ -72,6 +72,13 @@ on:
         required: false
         type: string
         default: ''
+      diagnostic-only:
+        description: >-
+          Treat conformance failures as diagnostic findings while still failing on
+          timeouts, missing results, runner errors, zero tests, or an all-skip run.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -137,18 +144,6 @@ jobs:
           provenance: false
           sbom: false
 
-      # Archive an SPDX SBOM for the CITE-tested image so conformance evidence
-      # bundles record the exact bill of materials behind each pass/fail.
-      - name: Generate SBOM (SPDX JSON) for honua-server:latest
-        uses: anchore/sbom-action@v0
-        with:
-          image: honua-server:latest
-          format: spdx-json
-          output-file: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
-          artifact-name: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
-          upload-artifact: true
-          upload-release-assets: false
-
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -183,6 +178,19 @@ jobs:
             echo "CITE tests finished with exit code: $cite_exit_code"
           fi
 
+      # Generate workflow-owned checkout artifacts only after the suite has
+      # verified source cleanliness and captured the tested image provenance.
+      # Otherwise source-build runners can mistake this SBOM for source input.
+      - name: Generate SBOM (SPDX JSON) for honua-server:latest
+        uses: anchore/sbom-action@v0
+        with:
+          image: honua-server:latest
+          format: spdx-json
+          output-file: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
+          artifact-name: sbom-honua-server-cite-${{ inputs.suite }}.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
+
       - name: Run suite validation command
         if: always() && inputs.validation-command != ''
         run: ${{ inputs.validation-command }}
@@ -198,6 +206,7 @@ jobs:
           SKIPPED_TESTS=0
           CANTTELL_TESTS=0
           SUCCESS_RATE=0
+          EXECUTED_TESTS=0
 
           extract_summary_count() {
             label="$1"
@@ -217,6 +226,7 @@ jobs:
             SKIPPED_TESTS=$(extract_summary_count "Skipped")
             CANTTELL_TESTS=$(extract_summary_count "CantTell")
             SUCCESS_RATE=$(extract_summary_count "Success Rate")
+            EXECUTED_TESTS=$(( ${PASSED_TESTS:-0} + ${FAILED_TESTS:-0} ))
             echo "results_available=true" >> $GITHUB_OUTPUT
           else
             echo "results_available=false" >> $GITHUB_OUTPUT
@@ -228,6 +238,7 @@ jobs:
           echo "skipped_tests=${SKIPPED_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "canttell_tests=${CANTTELL_TESTS:-0}" >> $GITHUB_OUTPUT
           echo "success_rate=${SUCCESS_RATE:-0}" >> $GITHUB_OUTPUT
+          echo "executed_tests=${EXECUTED_TESTS:-0}" >> $GITHUB_OUTPUT
 
       - name: Upload CITE test results
         uses: actions/upload-artifact@v7.0.1
@@ -240,15 +251,31 @@ jobs:
             ${{ inputs.extra-artifact-paths }}
           retention-days: 30
 
-      - name: Fail on conformance issues
+      - name: Report diagnostic conformance findings
+        if: |
+          always() &&
+          inputs.diagnostic-only == true &&
+          steps.parse-results.outputs.results_available == 'true' &&
+          steps.parse-results.outputs.executed_tests != '0' &&
+          (steps.parse-results.outputs.failed_tests != '0' ||
+           steps.parse-results.outputs.skipped_tests != '0' ||
+           steps.parse-results.outputs.canttell_tests != '0')
+        run: |
+          echo "::warning::${{ inputs.display-name }} diagnostic completed with ${{ steps.parse-results.outputs.failed_tests }} failed, ${{ steps.parse-results.outputs.skipped_tests }} skipped, and ${{ steps.parse-results.outputs.canttell_tests }} CantTell test(s)."
+          echo "The diagnostic remains non-gating until its promotion ticket is satisfied."
+
+      - name: Enforce CITE result policy
         if: |
           steps.run-suite.outputs.timed_out == 'true' ||
           steps.run-suite.outputs.exit_code != '0' ||
           steps.parse-results.outputs.results_available != 'true' ||
           steps.parse-results.outputs.total_tests == '0' ||
-          steps.parse-results.outputs.failed_tests != '0' ||
-          steps.parse-results.outputs.skipped_tests != '0' ||
-          steps.parse-results.outputs.canttell_tests != '0'
+          (inputs.diagnostic-only == true &&
+           steps.parse-results.outputs.executed_tests == '0') ||
+          (inputs.diagnostic-only != true &&
+           (steps.parse-results.outputs.failed_tests != '0' ||
+            steps.parse-results.outputs.skipped_tests != '0' ||
+            steps.parse-results.outputs.canttell_tests != '0'))
         run: |
           if [[ "${{ steps.parse-results.outputs.results_available }}" != "true" ]]; then
             echo "::error::${{ inputs.display-name }} CITE conformance results were not produced (no summary file); the runner did not finish"
@@ -264,6 +291,8 @@ jobs:
             echo "::error::${{ inputs.display-name }} CITE runner exited with status ${{ steps.run-suite.outputs.exit_code }}"
           elif [[ "${{ steps.parse-results.outputs.total_tests }}" == "0" ]]; then
             echo "::error::${{ inputs.display-name }} CITE produced a summary with zero executed tests"
+          elif [[ "${{ inputs.diagnostic-only }}" == "true" && "${{ steps.parse-results.outputs.executed_tests }}" == "0" ]]; then
+            echo "::error::${{ inputs.display-name }} CITE diagnostic produced an all-skip/CantTell run with no pass or fail verdicts"
           elif [[ "${{ steps.parse-results.outputs.failed_tests }}" != "0" ]]; then
             echo "::error::${{ inputs.display-name }} CITE reported ${{ steps.parse-results.outputs.failed_tests }} failed test(s)"
           elif [[ "${{ steps.parse-results.outputs.skipped_tests }}" != "0" ]]; then

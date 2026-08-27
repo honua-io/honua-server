@@ -49,6 +49,18 @@ internal static class OgcProcessesConversionHelpers
 
         var ogcStatus = ToOgcStatus(job.Status);
 
+        // Pending asynchronous jobs must expose an explicit monitor relation.
+        // Although it targets the same status resource as self, the relation is
+        // what OGC API Processes clients use to discover the polling workflow.
+        if (!IsTerminal(job.Status))
+        {
+            linksBuilder.Add(Link.Create(
+                jobUrl,
+                RelationTypes.Monitor,
+                MediaTypes.Json,
+                "Monitor job status"));
+        }
+
         // Per OGC API Processes Part 1 §7.11.1, succeeded jobs expose a results
         // resource. Only Succeeded resolves to a usable results document today —
         // Failed returns 500 and Cancelled returns 410, so those states keep the
