@@ -103,12 +103,11 @@ public static class PluginCustomEndpoints
         if (exposesHeadFallback)
         {
             // Keep the public endpoint's declared method metadata exact. A separate, excluded
-            // GET candidate lets the selector policy route rewritten HEAD without advertising or
-            // exposing GET on the plugin endpoint itself.
-            var fallbackBuilder = endpoints.MapMethods(
+            // method-agnostic candidate lets the selector policy route rewritten HEAD without
+            // advertising or exposing synthetic GET on any method-mismatch response.
+            var fallbackBuilder = endpoints.Map(
                     pattern,
-                    [HttpMethods.Get],
-                    (HttpContext context, CancellationToken ct) => HandleAsync(endpoint, context, ct))
+                    context => InvokeFallbackAsync(endpoint, context))
                 .WithDisplayName($"Internal HEAD fallback for plugin endpoint: {pattern}")
                 .ExcludeFromDescription()
                 .WithMetadata(new ExplicitHeadOnlyEndpointMetadata(routeMethods));
@@ -118,6 +117,12 @@ public static class PluginCustomEndpoints
                 fallbackBuilder.RequireAuthorization();
             }
         }
+    }
+
+    private static async Task InvokeFallbackAsync(ICustomEndpoint endpoint, HttpContext context)
+    {
+        var result = await HandleAsync(endpoint, context, context.RequestAborted).ConfigureAwait(false);
+        await result.ExecuteAsync(context).ConfigureAwait(false);
     }
 
     private static async Task<IResult> HandleAsync(
