@@ -156,7 +156,7 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
     }
 
-    private static readonly (string Path, string[] AllowedMethods)[] MutatingCompatibilityGetRoutes =
+    private static readonly (string Path, string[] AllowedMethods)[] MutatingGetRoutes =
     [
         (
             $"/rest/services/{WebAppFixture.TestServiceId}/GPServer/test-task/submitJob",
@@ -198,26 +198,29 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         (
             $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/exportTiles",
             ["GET", "POST"]
-        )
+        ),
+        ("/sharing/rest/oauth2/authorize", ["GET"]),
+        ("/sharing/rest/oauth2/callback", ["GET"])
     ];
 
     /// <summary>
     /// GeoServices keeps legacy GET aliases for several operations that mutate state or create
-    /// work. HEAD probes must never inherit those GET semantics and invoke their handlers.
+    /// work. Its OAuth GET flow also persists or consumes single-use state. HEAD probes must
+    /// never inherit those GET semantics and invoke their handlers.
     /// </summary>
     [IntegrationTest]
-    public async Task Head_MutatingCompatibilityGetRoutes_Return405MethodNotAllowed()
+    public async Task Head_MutatingGetRoutes_Return405MethodNotAllowed()
     {
         var client = _fixture.CreateClient();
 
-        foreach (var (path, allowedMethods) in MutatingCompatibilityGetRoutes)
+        foreach (var (path, allowedMethods) in MutatingGetRoutes)
         {
             using var request = new HttpRequestMessage(HttpMethod.Head, path);
             using var response = await client.SendAsync(request);
 
             response.StatusCode.Should().Be(
                 HttpStatusCode.MethodNotAllowed,
-                "HEAD must not invoke the mutating compatibility GET handler for {0}",
+                "HEAD must not invoke the mutating GET handler for {0}",
                 path);
             response.Content.Headers.Allow.Should().BeEquivalentTo(allowedMethods);
         }
