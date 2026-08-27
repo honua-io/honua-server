@@ -1,6 +1,6 @@
 {
   "schema": "honua.server-protocol-harness-assignments/v1",
-  "revision": "2026-08-21.1",
+  "revision": "2026-08-26.1",
   "tracking_issue": "https://github.com/honua-io/honua-server/issues/3388",
   "canonical_client": "Honua server public protocol integration harness",
   "client_lane": "server-protocol-harness",
@@ -121,6 +121,56 @@
       "scenario_facets": ["positive", "media-schema"]
     },
     {
+      "capability_key": "editing.featureserver-edits",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/applyEdits",
+      "test_ids": [
+        "FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
+        "FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
+      "capability_key": "editing.featureserver-edits",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits",
+      "test_ids": [
+        "FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
+        "FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
+      "capability_key": "editing.featureserver-edits",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures",
+      "test_ids": [
+        "FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
+        "FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
+      "capability_key": "editing.featureserver-edits",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures",
+      "test_ids": [
+        "FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
+        "FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
+      "capability_key": "editing.featureserver-edits",
+      "surface": "feature-server",
+      "operation": "POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures",
+      "test_ids": [
+        "FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
+        "FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
       "capability_key": "import.file",
       "surface": "control-plane-admin",
       "operation": "POST /api/v1/admin/import/upload",
@@ -154,6 +204,46 @@
       "operation": "GET /edr",
       "test_ids": ["EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"],
       "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.ogc-api-features",
+      "surface": "ogc-api-features",
+      "operation": "POST /ogc/features/collections/{collectionId}/items",
+      "test_ids": [
+        "OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
+        "OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
+      "capability_key": "serve.ogc-api-features",
+      "surface": "ogc-api-features",
+      "operation": "PUT /ogc/features/collections/{collectionId}/items/{featureId}",
+      "test_ids": [
+        "OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
+        "OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
+      "capability_key": "serve.ogc-api-features",
+      "surface": "ogc-api-features",
+      "operation": "PATCH /ogc/features/collections/{collectionId}/items/{featureId}",
+      "test_ids": [
+        "OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
+        "OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
+    },
+    {
+      "capability_key": "serve.ogc-api-features",
+      "surface": "ogc-api-features",
+      "operation": "DELETE /ogc/features/collections/{collectionId}/items/{featureId}",
+      "test_ids": [
+        "OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
+        "OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
     },
     {
       "capability_key": "serve.ogc-api-edr",
@@ -196,6 +286,16 @@
       "operation": "GET /sta/v1.1/Things",
       "test_ids": ["SensorThingsReadEndpointsTests.Things_ReturnsConformanceShapedCollection"],
       "scenario_facets": ["positive", "media-schema"]
+    },
+    {
+      "capability_key": "serve.wfs",
+      "surface": "wfs-2.0",
+      "operation": "POST /wfs",
+      "test_ids": [
+        "Wfs20MutationScenarioTests.Transaction_InsertUpdateReplaceDelete_RoundTripsEachState",
+        "Wfs20MutationScenarioTests.Transaction_InvalidInsertAndDelete_AreRejectedWithoutChangingStoredState"
+      ],
+      "scenario_facets": ["mutation"]
     },
     {
       "capability_key": "serve.sensorthings",

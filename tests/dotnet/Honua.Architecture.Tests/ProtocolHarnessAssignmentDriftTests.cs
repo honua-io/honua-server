@@ -23,10 +23,19 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         "analytics.spatial-join|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin",
         "analytics.sun-shadow|elevation-query-profile|POST /elevation/{datasetId}/sun-shadow",
         "analytics.viewshed|elevation-query-profile|POST /elevation/{datasetId}/viewshed",
+        "editing.featureserver-edits|feature-server|POST /rest/services/{serviceId}/FeatureServer/applyEdits",
+        "editing.featureserver-edits|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits",
+        "editing.featureserver-edits|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures",
+        "editing.featureserver-edits|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures",
+        "editing.featureserver-edits|feature-server|POST /rest/services/{serviceId}/FeatureServer/{layerId}/deleteFeatures",
         "import.file|control-plane-admin|POST /api/v1/admin/import/upload",
         "printing.pdf-output|printing-tools|POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute",
         "serve.geoservices-vectortileserver|vector-tile-server|GET /rest/services/{serviceId}/VectorTileServer",
         "serve.geoservices-vectortileserver|vector-tile-server|GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf",
+        "serve.ogc-api-features|ogc-api-features|POST /ogc/features/collections/{collectionId}/items",
+        "serve.ogc-api-features|ogc-api-features|PUT /ogc/features/collections/{collectionId}/items/{featureId}",
+        "serve.ogc-api-features|ogc-api-features|PATCH /ogc/features/collections/{collectionId}/items/{featureId}",
+        "serve.ogc-api-features|ogc-api-features|DELETE /ogc/features/collections/{collectionId}/items/{featureId}",
         "serve.ogc-api-edr|ogc-api-edr|GET /edr",
         "serve.ogc-api-edr|ogc-api-edr|GET /edr/conformance",
         "serve.ogc-api-edr|ogc-api-edr|GET /edr/collections",
@@ -35,6 +44,7 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         "serve.ogc-api-edr|ogc-api-edr|GET /edr/collections/{collectionId}/cube",
         "serve.sensorthings|sensorthings-1.1|GET /sta/v1.1/Things",
         "serve.sensorthings|sensorthings-1.1|POST /sta/v1.1/Observations",
+        "serve.wfs|wfs-2.0|POST /wfs",
         "styling.auto-suggest|control-plane-admin|POST /api/v1/admin/metadata/layers/{layerId}/suggest-style",
         "temporal.extent-discovery|feature-server|GET /rest/services/{serviceId}/FeatureServer/{layerId}/temporalExtent",
         "temporal.filtering|feature-server|GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?time={time}",
@@ -60,8 +70,8 @@ public sealed class ProtocolHarnessAssignmentDriftTests
         Assert.Equal("https://github.com/honua-io/honua-server/issues/3388", root.GetProperty("tracking_issue").GetString());
 
         var assignments = root.GetProperty("assignments").EnumerateArray().ToArray();
-        Assert.Equal(32, assignments.Length);
-        Assert.Equal(20, assignments.Select(row => row.GetProperty("capability_key").GetString()).Distinct().Count());
+        Assert.Equal(42, assignments.Length);
+        Assert.Equal(23, assignments.Select(row => row.GetProperty("capability_key").GetString()).Distinct().Count());
 
         using var featureCatalog = JsonDocument.Parse(File.ReadAllText(
             ArchitectureTestHelpers.CombinePath(repositoryRoot, "docs", "gis", "data", "feature-catalog.json")));
