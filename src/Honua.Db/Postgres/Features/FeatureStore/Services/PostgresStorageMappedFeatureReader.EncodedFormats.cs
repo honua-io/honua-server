@@ -107,21 +107,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
                 continue;
             }
 
-            sql.Append(CultureInfo.InvariantCulture, $", {BuildEncodedBinaryAttributeExpression(field)} AS {QuoteEncodedAttributeAlias(field.Name)}");
+            sql.Append(CultureInfo.InvariantCulture, $", {BuildEncodedBinaryAttributeExpression(field)} AS {QuoteAttributeFieldAlias(field.Name)}");
         }
-    }
-
-    // Encoded output column names are wire-format property names, not physical database
-    // identifiers. PostgreSQL permits arbitrary characters in a delimited identifier, so
-    // escape embedded quotes rather than applying the stricter storage-identifier policy.
-    private static string QuoteEncodedAttributeAlias(string propertyName)
-    {
-        if (string.IsNullOrWhiteSpace(propertyName))
-        {
-            throw new InvalidOperationException("Encoded attribute names cannot be empty.");
-        }
-
-        return $"\"{propertyName.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
     }
 
     // Source columns may live in an attributes JSONB blob (text accessor) or as physical

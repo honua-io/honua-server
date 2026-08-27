@@ -230,6 +230,67 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         expression.Should().Contain("'inspected', \"attributes\" ->> 'inspected'");
     }
 
+    [Fact]
+    public void BuildEncodedBinarySelect_WithPrefixedSchemaFieldAndJsonbColumn_AliasesInsteadOfThrowing()
+    {
+        // A STAC extension queryable such as `eo:cloud_cover` is a declared, filterable field
+        // whose name is not a bare SQL identifier. Admitting it to the projection (so it stops
+        // being silently dropped) made the FlatGeobuf/Geobuf builder alias it, and that alias
+        // site validated the name as a PostGIS identifier -- turning a missing field into an
+        // InvalidOperationException and an HTTP 500 (review finding on honua-server#3489).
+        var resource = CreatePrefixedFieldResource();
+        var reader = CreateReader(resource, attributesColumn: "attributes");
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildEncodedBinarySelect",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+
+        var build = () => method!.Invoke(reader, ["ST_AsFlatGeobuf", true, new FeatureQuery()]);
+
+        var sql = build.Should().NotThrow(
+            "the default all-fields projection must not 500 on a field the schema declares")
+            .Which!.ToString();
+
+        sql.Should().Contain(
+            "AS \"eo:cloud_cover\"",
+            "the alias is quoted, not identifier-validated, exactly as the native builder does");
+        sql.Should().Contain(
+            "\"attributes\" ->> 'eo:cloud_cover'",
+            "the value still comes from the JSONB accessor as an escaped key");
+    }
+
+    [Fact]
+    public void BuildEncodedBinarySelect_WithPrefixedSchemaFieldAndNoJsonbColumn_OmitsTheField()
+    {
+        // Without an attributes column each field must be a real column, so a name that cannot
+        // be a column stays out of the projection rather than emitting unresolvable SQL.
+        var resource = CreatePrefixedFieldResource();
+        var reader = CreateReader(resource);
+        var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildEncodedBinarySelect",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        method.Should().NotBeNull();
+
+        var sql = method!.Invoke(reader, ["ST_AsFlatGeobuf", true, new FeatureQuery()])!.ToString();
+
+        sql.Should().NotContain("eo:cloud_cover");
+        sql.Should().Contain("\"plain_field\"");
+    }
+
+    private static MetadataV2Resource CreatePrefixedFieldResource()
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-stac", Name = "Stac" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "plain_field", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "eo:cloud_cover", Type = MetadataV2FieldType.Double },
+            ],
+        };
+
     private static MetadataV2Resource CreateResource()
         => new()
         {
@@ -246,7 +307,8 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     private static PostgresStorageMappedFeatureReader CreateReader(
         MetadataV2Resource resource,
         IRowLevelSecurityFilterSource? rlsSource = null,
-        IFieldMaskSource? fieldMaskSource = null)
+        IFieldMaskSource? fieldMaskSource = null,
+        string? attributesColumn = null)
         => new(
             Substitute.For<IAdoNetDatabaseConnectionProvider>(),
             new DefaultObjectPoolProvider().Create(
@@ -255,7 +317,8 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             new FeatureStorageMapping(
                 TableName: "secure_features",
                 PrimaryKeyColumn: "objectid",
-                GeometryColumn: "geom"),
+                GeometryColumn: "geom",
+                AttributesColumn: attributesColumn),
             connection: null,
             connectionEncryptionService: null,
             rlsFilterSource: rlsSource,
