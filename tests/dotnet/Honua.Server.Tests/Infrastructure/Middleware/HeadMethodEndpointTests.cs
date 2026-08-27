@@ -103,6 +103,13 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         => await AssertHeadMatchesGetAsync("/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities");
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Protocol(TestProtocols.Wps202)]
+    [Endpoint("GET /wps")]
+    public async Task Head_WpsGetCapabilities_MatchesGetStatusWithEmptyBodyAndContentLength()
+        => await AssertHeadMatchesGetAsync("/wps?SERVICE=WPS&VERSION=2.0.0&REQUEST=GetCapabilities");
+
+    [IntegrationTest]
     [Operation(Operations.StacCatalog)]
     [Protocol(TestProtocols.Stac)]
     [Endpoint("GET /stac")]
@@ -199,6 +206,22 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         ),
         (
             $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/exportTiles",
+            ["GET", "POST"]
+        ),
+        (
+            "/wps?SERVICE=WPS&VERSION=2.0.0&REQUEST=Execute&IDENTIFIER=honua.cite.echo",
+            ["GET", "POST"]
+        ),
+        (
+            "/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=Transaction",
+            ["GET", "POST"]
+        ),
+        (
+            "/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=CreateStoredQuery",
+            ["GET", "POST"]
+        ),
+        (
+            "/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=DropStoredQuery&STOREDQUERY_ID=urn:example:test",
             ["GET", "POST"]
         ),
         ("/sharing/rest/oauth2/authorize", ["GET"]),
