@@ -19,8 +19,18 @@ test('the lane never runs from the pull request it reviews', () => {
   // letting a PR attest to itself and exfiltrate the credentials. Only
   // default-branch-executed events are permitted.
   assert.match(source, /^on:\n(?:.*\n)*?\s{2}workflow_run:/m);
+  assert.match(source, /^\s{2}schedule:/m);
+  assert.match(source, /^\s{2}workflow_dispatch:/m);
   assert.match(source, /^\s{2}issue_comment:/m);
   assert.doesNotMatch(source, /^\s{2}pull_request(_target)?:/m);
+});
+
+test('scheduled catch-up is bounded, exact-head, and uses the shared selector', () => {
+  assert.match(source, /cron: '17,47 \* \* \* \*'/);
+  assert.match(source, /Select and dispatch at most three review heads/);
+  assert.match(source, /enumerateCatchups/);
+  assert.match(source, /inputs: \{ pr: String\(target\.number\), head: target\.head \}/);
+  assert.match(source, /format\('head-\{0\}', inputs\.head\)/);
 });
 
 test('the lane never submits a pull-request review verdict', () => {
@@ -61,7 +71,9 @@ test('GITHUB_TOKEN stays read-only', () => {
   // workflow token needs no write scope. `id-token: write` is the OIDC
   // exchange and grants nothing against the repository.
   const lines = source.split('\n');
-  const start = lines.findIndex(line => /^\s{4}permissions:\s*$/.test(line));
+  const reviewJob = lines.findIndex(line => /^  review:\s*$/.test(line));
+  const start = lines.findIndex((line, index) =>
+    index > reviewJob && /^\s{4}permissions:\s*$/.test(line));
   assert.ok(start > 0, 'job permissions block must be declared explicitly');
   const scopes = [];
   for (const line of lines.slice(start + 1)) {
