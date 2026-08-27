@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Databricks.Queries.Filters;
@@ -117,8 +118,7 @@ internal sealed class DatabricksSqlFilterTranslator : SqlFilterExpressionVisitor
             return Dialect.QuoteIdentifier(geom);
         }
 
-        throw new ArgumentException(
-            $"Field '{property.PropertyName}' is not defined on layer '{context.ResourceName}'.");
+        throw UnknownFilterFieldException.ForProperty(property.PropertyName);
     }
 
     protected override string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
@@ -178,6 +178,11 @@ internal sealed class DatabricksSqlFilterTranslator : SqlFilterExpressionVisitor
                     if (field is null && IsGeometryAlias(property.PropertyName) && context.GeometryColumnName is { Length: > 0 } geom)
                     {
                         return Dialect.QuoteIdentifier(geom);
+                    }
+
+                    if (field is null)
+                    {
+                        throw UnknownFilterFieldException.ForProperty(property.PropertyName);
                     }
 
                     throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field.");

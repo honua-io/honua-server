@@ -9,6 +9,25 @@ using Microsoft.Net.Http.Headers;
 namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
+/// Marks an endpoint whose successful response remains open until the client disconnects.
+/// </summary>
+/// <remarks>
+/// Response metadata is not a reliable stream marker: some transports negotiate multiple
+/// representations on one route, and the MCP GET stream intentionally owns its response
+/// contract outside MVC/OpenAPI metadata. Applying this marker lets HEAD execute validation
+/// and capacity checks, then stop the handler as soon as it starts the streaming response.
+/// </remarks>
+public sealed class LongLivedStreamEndpointMetadata
+{
+    private LongLivedStreamEndpointMetadata()
+    {
+    }
+
+    /// <summary>The shared marker instance.</summary>
+    public static LongLivedStreamEndpointMetadata Instance { get; } = new();
+}
+
+/// <summary>
 /// Cross-cutting RFC 9110 §9.3.2 support: <c>HEAD</c> is answered wherever <c>GET</c> is,
 /// with the same status code and headers (including <c>Content-Length</c>) but no body.
 /// </summary>
@@ -140,12 +159,13 @@ internal static class HeadRequestSupport
         => context.Items.ContainsKey(SuppressSynthesizedContentLengthKey);
 
     /// <summary>
-    /// True when the endpoint declares that it produces <c>text/event-stream</c>.
+    /// True when the endpoint is explicitly marked as a long-lived stream or declares that it
+    /// produces <c>text/event-stream</c>.
     /// </summary>
     /// <remarks>
-    /// Read from the endpoint's own declared response metadata (the <c>Produces</c> call that
-    /// already documents it in OpenAPI) rather than from a separate marker attribute, so a
-    /// new SSE endpoint is bounded by construction instead of by remembering to annotate it.
+    /// The explicit marker covers negotiated routes and transports that do not participate in
+    /// MVC response metadata. The <c>Produces</c> fallback keeps ordinary SSE endpoints bounded
+    /// by construction from the metadata that already documents them in OpenAPI.
     /// </remarks>
     internal static bool IsLongLivedStreamEndpoint(Endpoint? endpoint)
     {
@@ -153,6 +173,11 @@ internal static class HeadRequestSupport
         if (metadata is null)
         {
             return false;
+        }
+
+        if (metadata.GetMetadata<LongLivedStreamEndpointMetadata>() is not null)
+        {
+            return true;
         }
 
         return metadata
@@ -331,8 +356,8 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
     }
 
     /// <summary>
-    /// Runs a long-lived streaming handler only as far as its first written byte, then cancels
-    /// it.
+    /// Runs a long-lived streaming handler only as far as its first response activity, then
+    /// cancels it.
     /// </summary>
     /// <remarks>
     /// A Server-Sent Events handler commits its status code and headers and writes a preamble,
@@ -344,8 +369,8 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
     /// sessions open for that whole time — a HEAD probe from a link checker or a CDN could
     /// exhaust them (review finding on honua-server#3489).
     ///
-    /// Bounding at the first write rather than skipping the handler outright is what keeps HEAD
-    /// honest: the status code and headers are the ones the handler really produced, so the
+    /// Bounding at the first start, flush, or write rather than skipping the handler outright is
+    /// what keeps HEAD honest: the status code and headers are the ones the handler really produced, so the
     /// early returns that precede the stream still answer as themselves — 404 for an unknown
     /// datastream, 503 when no session can be leased, 400 when the client did not negotiate
     /// SSE — instead of being flattened into a synthetic 200.
@@ -362,7 +387,7 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
 
         if (headBody is not null)
         {
-            headBody.FirstWriteCallback = () =>
+            headBody.FirstResponseActivityCallback = () =>
             {
                 try
                 {
@@ -390,7 +415,7 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
         {
             if (headBody is not null)
             {
-                headBody.FirstWriteCallback = null;
+                headBody.FirstResponseActivityCallback = null;
             }
 
             context.RequestAborted = clientToken;
@@ -436,14 +461,16 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
     public long BytesWritten => _stream.BytesWritten;
 
     /// <summary>
-    /// Invoked once, on the first byte the handler writes. A long-lived stream commits its
-    /// status and headers immediately and only then loops, so the first write is the point at
-    /// which a HEAD probe has learned everything the equivalent GET would tell it.
+    /// Invoked once, when the handler first starts, flushes, or writes the response. A long-lived
+    /// stream commits its status and headers immediately and only then loops, so that first
+    /// response activity is the point at which a HEAD probe has learned everything the
+    /// equivalent GET would tell it. Flush matters for transports such as MCP that expose the
+    /// open stream before the first notification exists.
     /// </summary>
-    internal Action? FirstWriteCallback
+    internal Action? FirstResponseActivityCallback
     {
-        get => _stream.FirstWriteCallback;
-        set => _stream.FirstWriteCallback = value;
+        get => _stream.FirstResponseActivityCallback;
+        set => _stream.FirstResponseActivityCallback = value;
     }
 
     public void DisableBuffering()
@@ -455,7 +482,11 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
     /// Deliberately does not start the real response: headers must stay mutable so the
     /// middleware can still set <c>Content-Length</c> after the endpoint completes.
     /// </summary>
-    public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        _stream.SignalResponseActivity();
+        return Task.CompletedTask;
+    }
 
     public Task CompleteAsync() => FinishAsync().AsTask();
 
@@ -507,30 +538,31 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
     private sealed class CountingNullStream : Stream
     {
         private long _bytesWritten;
-        private Action? _firstWriteCallback;
-        private bool _firstWriteSignalled;
+        private Action? _firstResponseActivityCallback;
+        private bool _firstResponseActivitySignalled;
 
         public long BytesWritten => _bytesWritten;
 
-        public Action? FirstWriteCallback
+        public Action? FirstResponseActivityCallback
         {
-            get => _firstWriteCallback;
-            set => _firstWriteCallback = value;
+            get => _firstResponseActivityCallback;
+            set => _firstResponseActivityCallback = value;
         }
 
         /// <summary>
-        /// Fires the first-write callback exactly once. Callbacks run inline on the writing
-        /// thread, so this stays allocation-free and never re-enters after the first byte.
+        /// Fires the first-response-activity callback exactly once. Callbacks run inline on the
+        /// response thread, so this stays allocation-free and never re-enters after the stream
+        /// has committed its response contract.
         /// </summary>
-        private void SignalFirstWrite()
+        internal void SignalResponseActivity()
         {
-            if (_firstWriteSignalled)
+            if (_firstResponseActivitySignalled)
             {
                 return;
             }
 
-            _firstWriteSignalled = true;
-            _firstWriteCallback?.Invoke();
+            _firstResponseActivitySignalled = true;
+            _firstResponseActivityCallback?.Invoke();
         }
 
         public override bool CanRead => false;
@@ -550,15 +582,19 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
         public void AddUntransferredBytes(long count)
         {
             _bytesWritten += count;
-            SignalFirstWrite();
+            SignalResponseActivity();
         }
 
         public override void Flush()
         {
-            // No transport to flush to.
+            SignalResponseActivity();
         }
 
-        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public override Task FlushAsync(CancellationToken cancellationToken)
+        {
+            SignalResponseActivity();
+            return Task.CompletedTask;
+        }
 
         public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
@@ -569,32 +605,32 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
         public override void Write(byte[] buffer, int offset, int count)
         {
             _bytesWritten += count;
-            SignalFirstWrite();
+            SignalResponseActivity();
         }
 
         public override void Write(ReadOnlySpan<byte> buffer)
         {
             _bytesWritten += buffer.Length;
-            SignalFirstWrite();
+            SignalResponseActivity();
         }
 
         public override void WriteByte(byte value)
         {
             _bytesWritten++;
-            SignalFirstWrite();
+            SignalResponseActivity();
         }
 
         public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
         {
             _bytesWritten += count;
-            SignalFirstWrite();
+            SignalResponseActivity();
             return Task.CompletedTask;
         }
 
         public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
             _bytesWritten += buffer.Length;
-            SignalFirstWrite();
+            SignalResponseActivity();
             return ValueTask.CompletedTask;
         }
     }
