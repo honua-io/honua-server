@@ -311,7 +311,7 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
                             return GetGeometryColumnExpression(context);
                         }
 
-                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                        throw UnknownFilterFieldException.ForProperty(property.PropertyName);
                     }
 
                     if (!field.Value.IsGeometry)
@@ -844,7 +844,7 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
                     var field = context.TryGetField(property.PropertyName);
                     if (field is null && !IsGeometryAlias(property.PropertyName))
                     {
-                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                        throw UnknownFilterFieldException.ForProperty(property.PropertyName);
                     }
 
                     if (field is not null && !field.Value.IsGeometry)
