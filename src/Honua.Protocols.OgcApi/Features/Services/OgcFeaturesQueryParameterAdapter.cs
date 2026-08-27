@@ -308,10 +308,12 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
     /// Syntactic pre-check for a <c>properties</c>/<c>sortby</c> token. This is a
     /// cheap shape guard only — every accepted token is still resolved against the
     /// resource's declared schema fields by the caller, which is what actually
-    /// authorizes it. ':' is admitted because prefixed extension property names
-    /// (for example the STAC EO extension's <c>eo:cloud_cover</c>) are legitimate
-    /// declared fields, and rejecting the colon here made a field the service
-    /// advertises impossible to select or sort on (honua-server#3392).
+    /// authorizes it. Colons, dots and hyphens are admitted after the first
+    /// character because prefixed extension property names (for example the STAC
+    /// EO extension's <c>eo:cloud_cover</c>) and other JSON attribute keys using
+    /// those separators are legitimate declared fields. This intentionally matches
+    /// the downstream order-by and JSONB-key guards; quotes, whitespace, path
+    /// separators and control characters remain rejected (honua-server#3392).
     /// </summary>
     private static bool IsSimpleFieldName(string value)
     {
@@ -320,7 +322,17 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
             return false;
         }
 
-        return value.All(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == ':');
+        for (var i = 0; i < value.Length; i++)
+        {
+            var ch = value[i];
+            if (!char.IsLetterOrDigit(ch) && ch != '_' &&
+                (i == 0 || ch is not (':' or '.' or '-')))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool HasEmptyCommaSeparatedToken(string value)
