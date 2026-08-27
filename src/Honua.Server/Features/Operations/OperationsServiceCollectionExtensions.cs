@@ -44,6 +44,17 @@ internal static class OperationsServiceCollectionExtensions
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
+        foreach (var definition in AdminApiOperationCatalog.Definitions)
+        {
+            services.AddScoped<IOperationExecutor>(sp => new AdminApiOperationExecutor(
+                definition,
+                sp.GetRequiredService<IHttpClientFactory>(),
+                sp.GetRequiredService<IHttpContextAccessor>(),
+                sp.GetRequiredService<TimeProvider>()));
+        }
+
+        services.AddHttpClient(AdminApiOperationExecutor.HttpClientName);
+        services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
         // Policy seam. Bind the configurable guardrail policy from "Operations:Policy".
         // When it is enabled, the configurable decision point enforces the rule set; otherwise
