@@ -146,6 +146,13 @@
       "edition": "Pro"
     },
     {
+      "capability": "format.geoarrow",
+      "reasonCode": "content-negotiation",
+      "reason": "GeoArrow is selected with f=arrow on the shared FeatureServer query route and is proven by the formatter/query conformance tests; it has no separate route.",
+      "category": "Format",
+      "edition": "Community"
+    },
+    {
       "capability": "identity.claims-mapping",
       "reasonCode": "config-flag",
       "reason": "Claims-to-role mapping is an OIDC configuration setting under identity.oidc admin routes, not a distinct route.",
@@ -214,6 +221,27 @@
       "reason": "Smart style defaults apply automatically when a layer publishes; not a distinct route of their own.",
       "category": "Styling",
       "edition": "Community"
+    },
+    {
+      "capability": "provider.databricks",
+      "reasonCode": "provider-runtime-gate",
+      "reason": "Experimental Databricks is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
+      "category": "DataProviders",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "provider.redshift",
+      "reasonCode": "provider-runtime-gate",
+      "reason": "Experimental Redshift is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
+      "category": "DataProviders",
+      "edition": "Enterprise"
+    },
+    {
+      "capability": "provider.snowflake",
+      "reasonCode": "provider-runtime-gate",
+      "reason": "Experimental Snowflake is selected behind shared FeatureServer/OGC routes only when both provider gates and configuration are enabled; the provider has no distinct route and remains off by default for 2026.1.",
+      "category": "DataProviders",
+      "edition": "Enterprise"
     },
     {
       "capability": "temporal.animation-api",

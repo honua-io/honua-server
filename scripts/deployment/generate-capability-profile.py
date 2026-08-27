@@ -21,6 +21,8 @@ CATALOG = ROOT / "docs/gis/data/capability-keys.v1.json"
 SCHEMA_VERSION = "1.0.0"
 CAPABILITY_PATTERN = re.compile(r"^[a-z0-9]+(?:[.-][a-z0-9]+)*$")
 EDITION_RANK = {"Community": 0, "Pro": 1, "Enterprise": 2}
+# Mirrors CapabilityKeyCatalog.ExperimentalStatus.
+EXPERIMENTAL_STATUS = "experimental"
 PRICE_BANDS = (
     (3, "Starter", {"Pro": 6000, "Enterprise": 15000}),
     (10, "Team", {"Pro": 15000, "Enterprise": 24000}),
@@ -58,6 +60,17 @@ def parse_capabilities(values: list[str], catalog: dict[str, dict]) -> list[str]
     unknown = sorted(set(requested) - catalog.keys())
     if unknown:
         raise ProfileError(f"unknown capability key(s): {', '.join(unknown)}")
+    # Descriptive keys are edition-qualified but no route resolves to them. Accepting one would
+    # emit a profile that serves nothing (every request 404s at UseDeploymentCapabilityProfile)
+    # while still deriving requiredEdition -- and therefore a price band -- from its edition.
+    descriptive = sorted(
+        key for key in set(requested)
+        if catalog[key].get("status") == EXPERIMENTAL_STATUS
+    )
+    if descriptive:
+        raise ProfileError(
+            f"descriptive-only capability key(s) cannot be deployed: {', '.join(descriptive)}"
+        )
     return sorted(set(requested))
 
 

@@ -72,10 +72,21 @@ public sealed class CapabilityKeyCatalogTests
     }
 
     [Fact]
-    public void All_IsUnionOfCommunityKeysAndFeatureCatalog()
+    public void All_IsUnionOfCommunityDescriptiveAndFeatureCatalogKeys()
     {
         CapabilityKeyCatalog.All.Should().HaveCount(
-            CapabilityKeyCatalog.CommunityKeys.Count + FeatureCatalog.All.Count);
+            CapabilityKeyCatalog.CommunityKeys.Count
+            + CapabilityKeyCatalog.DescriptiveKeys.Count
+            + FeatureCatalog.All.Count);
+    }
+
+    [Fact]
+    public void DescriptiveKeys_AreEditionQualifiedWithoutMutatingFeatureCatalog()
+    {
+        CapabilityKeyCatalog.DescriptiveKeys.Should().OnlyContain(
+            capability => capability.Edition == HonuaEdition.Enterprise);
+        CapabilityKeyCatalog.DescriptiveKeys.Select(capability => capability.Key).Should().Contain(
+            ["provider.redshift", "provider.snowflake", "provider.databricks"]);
     }
 
     [Fact]
@@ -111,6 +122,27 @@ public sealed class CapabilityKeyCatalogTests
             capability.Edition.Should().Be(feature.MinimumEdition);
             capability.Description.Should().Be(feature.Description);
         }
+    }
+
+    [Fact]
+    public void DeployableKeys_ExcludesDescriptiveKeysButKeepsEverythingElse()
+    {
+        var deployable = CapabilityKeyCatalog.DeployableKeys.Select(k => k.Key).ToHashSet(StringComparer.Ordinal);
+        var descriptive = CapabilityKeyCatalog.DescriptiveKeys.Select(k => k.Key).ToHashSet(StringComparer.Ordinal);
+
+        descriptive.Should().NotBeEmpty("the catalog must carry descriptive keys for this split to mean anything");
+        deployable.Should().NotIntersectWith(descriptive);
+        deployable.Should().BeEquivalentTo(
+            CapabilityKeyCatalog.All.Select(k => k.Key).Except(descriptive, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void DescriptiveKeys_AreAllMarkedExperimental()
+    {
+        // The status string is the contract shared with capability-keys.v1.json and the deployment
+        // profile generator; a descriptive key that loses it silently becomes deployable again.
+        CapabilityKeyCatalog.DescriptiveKeys.Should().OnlyContain(
+            k => k.Status == CapabilityKeyCatalog.ExperimentalStatus);
     }
 
     public static TheoryData<string> AllCommunityKeys()

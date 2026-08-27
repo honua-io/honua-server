@@ -74,6 +74,35 @@ class DeploymentCapabilityProfileTests(unittest.TestCase):
         self.assertEqual(profile["capacitySuggestion"]["annualPriceUsd"], 0)
         self.assertFalse(profile["capacitySuggestion"]["quoteRequired"])
 
+    def test_descriptive_keys_cannot_enter_a_deployment_profile(self):
+        catalog = dict(self.catalog)
+        catalog["provider.example"] = {
+            "key": "provider.example", "edition": "Enterprise",
+            "status": MODULE.EXPERIMENTAL_STATUS,
+        }
+
+        # No route resolves to a descriptive key, so a profile enabling one serves nothing while
+        # still deriving requiredEdition -- and therefore a price band -- from its edition.
+        with self.assertRaisesRegex(MODULE.ProfileError, "descriptive-only capability"):
+            MODULE.parse_capabilities(["provider.example"], catalog)
+        with self.assertRaisesRegex(MODULE.ProfileError, "descriptive-only capability"):
+            MODULE.parse_capabilities(["serve.wfs,provider.example"], catalog)
+
+        self.assertEqual(MODULE.parse_capabilities(["serve.wfs"], catalog), ["serve.wfs"])
+
+    def test_committed_catalog_descriptive_keys_are_rejected(self):
+        # Contract test against the shipped artifact: whatever CapabilityKeyCatalog marks
+        # descriptive must stay un-deployable, so the two cannot drift apart.
+        catalog = MODULE.load_catalog()
+        descriptive = sorted(
+            key for key, item in catalog.items()
+            if item.get("status") == MODULE.EXPERIMENTAL_STATUS
+        )
+        self.assertTrue(descriptive, "committed catalog carries no descriptive keys to exercise")
+        for key in descriptive:
+            with self.assertRaisesRegex(MODULE.ProfileError, "descriptive-only capability"):
+                MODULE.parse_capabilities([key], catalog)
+
 
 if __name__ == "__main__":
     unittest.main()

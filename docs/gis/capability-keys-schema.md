@@ -16,12 +16,12 @@ This repo already has an edition-gated entitlement vocabulary,
 which enumerates only the Pro/Enterprise keys `LicenseGate` enforces.
 `capability-keys.v1.json` is generated from a strictly broader C# type,
 [`CapabilityKeyCatalog`](../../src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs)
-(`CapabilityKeyCatalog.All = CapabilityKeyCatalog.CommunityKeys ++ FeatureCatalog.All`),
-which adds the Community-tier capabilities (serve/query surfaces per protocol
-family, file import, discovery, control-plane, …) that ship ungated and
-therefore have no entry in `FeatureCatalog`. Adding a Community capability key
-**never** touches `LicenseGate` or any entitlement-enforcement code path — it is
-a pure description-layer addition.
+(`CapabilityKeyCatalog.All = CapabilityKeyCatalog.CommunityKeys ++
+CapabilityKeyCatalog.DescriptiveKeys ++ FeatureCatalog.All`). Community keys
+describe capabilities that ship ungated. Descriptive keys capture minimum
+edition and release posture for runtime-gated surfaces, such as the
+off-by-default warehouse providers, without adding an entitlement-enforcement
+path. Adding either kind of key is a description-layer change only.
 
 Both lists share one naming rule: every key is dot-namespaced lowercase,
 `<category>.<name>` (e.g. `editing.feature-edits`, `serve.wms`,
@@ -32,17 +32,18 @@ Both lists share one naming rule: every key is dot-namespaced lowercase,
 
 ```json
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "generator": "src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs",
   "trackingIssue": "#2893",
   "description": "...",
   "capabilities": [
     {
-      "key": "serve.wms",
-      "displayName": "WMS 1.3",
-      "category": "Serve",
-      "edition": "Community",
-      "description": "Serve map images through WMS 1.3 (GetMap, GetFeatureInfo, GetCapabilities)."
+      "key": "provider.redshift",
+      "displayName": "Amazon Redshift Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "status": "experimental",
+      "description": "Experimental, off-by-default Amazon Redshift feature provider."
     }
   ],
   "crosswalks": {
@@ -60,9 +61,10 @@ Both lists share one naming rule: every key is dot-namespaced lowercase,
 |---|---|---|
 | `key` | string | Canonical, stable identifier. Never renamed once published; deprecate additively. |
 | `displayName` | string | Human-readable name for UI/sales-checklist rendering. |
-| `category` | string | Grouping label — one of `FeatureCatalog.Categories` (Alerts, Editing, …) or `CapabilityKeyCatalog.Categories` (Serve, Discovery, ControlPlane, Ops, Process, Collaboration, Demo, Enrichment). |
+| `category` | string | Grouping label — one of `FeatureCatalog.Categories` (Alerts, Editing, …) or `CapabilityKeyCatalog.Categories` (Serve, Discovery, ControlPlane, Ops, DataProviders, Format, Process, Collaboration, Demo, Enrichment). |
 | `edition` | string | `Community`, `Pro`, or `Enterprise` — the minimum `HonuaEdition` required. |
 | `description` | string | One- or two-sentence description of what the capability does. |
+| `status` | string or null | Optional explicit release posture. The warehouse-provider keys use `experimental`; the provider-neutral GeoArrow format key uses `live`. Absence preserves the existing maturity/evidence projection. |
 
 ### `crosswalks`
 
