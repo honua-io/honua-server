@@ -15,7 +15,7 @@ internal sealed partial class FeatureQueryBuilder
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex ValidFieldNameRegex();
 
-    [GeneratedRegex(@"^[a-zA-Z0-9_][a-zA-Z0-9_:.\-]{0,254}\z", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-zA-Z0-9_][a-zA-Z0-9_:.\-]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex ValidJsonAttributeKeyRegex();
 
     [GeneratedRegex(@"@p(\d+)", RegexOptions.CultureInvariant)]
