@@ -122,12 +122,22 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             context.Response.Headers["X-Handler-Seen"] = "GET";
             await context.Response.WriteAsync("get-handler-payload");
         });
-        _app.MapMethods("/split", ["GET", "HEAD"], context =>
+        _app.MapMethods("/split", ["HEAD"], context =>
         {
             context.Response.Headers["X-Handler-Seen"] = "HEAD";
             context.Response.ContentLength = DualEndpointContentLength;
             return Task.CompletedTask;
-        }).WithMetadata(ExplicitHeadOnlyEndpointMetadata.Instance);
+        });
+        _app.MapMethods("/split", ["GET"], context =>
+        {
+            context.Response.Headers["X-Handler-Seen"] = "HEAD";
+            context.Response.ContentLength = DualEndpointContentLength;
+            return Task.CompletedTask;
+        }).WithMetadata(new ExplicitHeadOnlyEndpointMetadata(["HEAD"]));
+
+        _app.MapMethods("/head-only", ["HEAD"], () => Results.StatusCode(StatusCodes.Status202Accepted));
+        _app.MapMethods("/head-only", ["GET"], () => Results.StatusCode(StatusCodes.Status202Accepted))
+            .WithMetadata(new ExplicitHeadOnlyEndpointMetadata(["HEAD"]));
 
         _app.MapPost("/post-only", () => Results.Ok(new { ok = true }));
         _app.MapGet("/no-content", () => Results.NoContent());
@@ -289,6 +299,15 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         getResponse.Headers.GetValues("X-Handler-Seen").Should().ContainSingle().Which.Should().Be("GET");
         (await getResponse.Content.ReadAsStringAsync()).Should().Be("get-handler-payload");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_GetOnHeadOnlyRoute_Returns405WithDeclaredAllowHeader()
+    {
+        using var getResponse = await SendAsync(HttpMethod.Get, "/head-only");
+
+        getResponse.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        getResponse.Content.Headers.Allow.Should().ContainSingle().Which.Should().Be("HEAD");
     }
 
     [UnitTest]
