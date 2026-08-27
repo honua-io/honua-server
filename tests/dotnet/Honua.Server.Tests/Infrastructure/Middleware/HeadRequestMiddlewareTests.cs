@@ -115,6 +115,20 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             await context.Response.WriteAsync("payload-streamed-for-get");
         });
 
+        // Enterprise custom endpoints may register independent GET and HEAD handlers for the
+        // same pattern. The pre-routing GET fallback must not hide the explicit HEAD endpoint.
+        _app.MapGet("/split", async context =>
+        {
+            context.Response.Headers["X-Handler-Seen"] = "GET";
+            await context.Response.WriteAsync("get-handler-payload");
+        });
+        _app.MapMethods("/split", ["GET", "HEAD"], context =>
+        {
+            context.Response.Headers["X-Handler-Seen"] = "HEAD";
+            context.Response.ContentLength = DualEndpointContentLength;
+            return Task.CompletedTask;
+        }).WithMetadata(ExplicitHeadOnlyEndpointMetadata.Instance);
+
         _app.MapPost("/post-only", () => Results.Ok(new { ok = true }));
         _app.MapGet("/no-content", () => Results.NoContent());
 
@@ -254,6 +268,27 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         getResponse.Headers.GetValues("X-Method-Seen").Should().ContainSingle().Which.Should().Be("GET");
         (await getResponse.Content.ReadAsStringAsync()).Should().Be("payload-streamed-for-get");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnSeparateExplicitHeadRoute_SelectsHeadHandler()
+    {
+        using var headResponse = await SendAsync(HttpMethod.Head, "/split");
+
+        headResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        headResponse.Headers.GetValues("X-Handler-Seen").Should().ContainSingle().Which.Should().Be("HEAD");
+        headResponse.Content.Headers.ContentLength.Should().Be(DualEndpointContentLength);
+        (await headResponse.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_GetOnSeparateExplicitHeadRoute_SelectsGetHandler()
+    {
+        using var getResponse = await SendAsync(HttpMethod.Get, "/split");
+
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        getResponse.Headers.GetValues("X-Handler-Seen").Should().ContainSingle().Which.Should().Be("GET");
+        (await getResponse.Content.ReadAsStringAsync()).Should().Be("get-handler-payload");
     }
 
     [UnitTest]
