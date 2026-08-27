@@ -1,10 +1,17 @@
 name: Lean Gate
 description: >
-  Shared LEAN gate: full-solution warnings-as-errors build + format check + the
-  Fast/architecture/MCP-governance unit smoke. Single source of truth for BOTH the per-PR
-  `PR Gate` job (.github/workflows/pr-gate.yml) and the `Merge Queue Gate` job
-  (.github/workflows/ci.yml). Keeping one definition is deliberate — two
-  hand-maintained copies of a gate is exactly the drift that produced #2865.
+  Shared LEAN gate: warnings-as-errors Release build + solution-wide format check
+  + the Fast/architecture/MCP-governance unit smoke. Single source of truth for
+  BOTH the per-PR `PR Gate` job (.github/workflows/pr-gate.yml) and the
+  `Merge Queue Gate` job (.github/workflows/ci.yml). Keeping one definition is
+  deliberate — two hand-maintained copies of a gate is exactly the drift that
+  produced #2865.
+
+  The two callers differ in exactly one input: `PR Gate` passes
+  `build-scope: affected`, `Merge Queue Gate` keeps `build-scope: full`. See the
+  "Compute gate build scope" step for why that split is safe and what backstops
+  it. Everything else — the format check, every test step, every timeout — is
+  identical for both, on purpose.
 
   Callers must run actions/checkout and ./.github/actions/setup-dotnet-ci first
   (and may reclaim runner disk); this action owns only the gate itself.
@@ -22,13 +29,25 @@ description: >
   the same single runner (NOT a `services:` block, NOT the provider matrix),
   measured at ~1.5 min warm / ~3-4 min cold. Fidelity was chosen over a
   Postgres-free variant that would validate a synthetic route set and risk
-  false-positive REDs on this required gate.
+  false-positive REDs on this required gate. The step does not move; the first
+  step of this action pre-pulls its image in the background so the cold case
+  stops costing the gate ~2.5 min of pure `docker pull`.
 
 inputs:
   trx-prefix:
     description: 'Prefix for emitted .trx file names so callers do not collide.'
     required: false
     default: 'lean-gate'
+  build-scope:
+    description: >
+      'full' (default) compiles Honua.sln. 'affected' compiles only a solution
+      filter holding the diff's reverse-dependency closure UNION the leaf test
+      projects the later --no-build steps execute, and silently falls back to
+      the full solution whenever a trustworthy diff base is unavailable or
+      shared build infrastructure changed. Requires the caller to check out with
+      fetch-depth >= 2. See scripts/ci/compute-lean-gate-build-scope.sh.
+    required: false
+    default: 'full'
   build-timeout-minutes:
     description: 'Cap for the warnings-as-errors build step.'
     required: false
@@ -43,22 +62,39 @@ inputs:
     default: '10'
   ai-governance-timeout-minutes:
     description: >
-      Cap for the focused MCP registry/taxonomy roster drift tests. The full
-      solution build already produced this test assembly, so the smoke adds no
-      restore or compilation work.
+      Cap for the focused MCP registry/taxonomy roster drift tests. The build
+      step already produced this test assembly (Honua.Ai.Tests is one of the
+      projects an affected-scope build is always seeded with), so the smoke adds
+      no restore or compilation work.
     required: false
     default: '2'
   governance-timeout-minutes:
     description: >
       Cap for the Server-project governance/drift tests
       (EndpointRegistryDriftTests + Category=Architecture siblings). Higher than
-      the others because this step brings up a Testcontainers PostgreSQL cold.
+      the others because this step brings up a Testcontainers PostgreSQL. The
+      first step of this action pre-pulls that image in the background, so the
+      cold case should now cost about what the warm one does — but the cap stays
+      generous, because a pre-pull that fails is a deliberate no-op.
     required: false
     default: '15'
 
 runs:
   using: composite
   steps:
+    # Started FIRST and left in the background: the Governance/Drift step at the
+    # bottom of this action boots a Testcontainers PostGIS, and on a runner whose
+    # Docker image cache does not already hold that tag the pull alone costs
+    # ~2.5 min of the gate's critical path (the step is ~1.5 min warm vs ~3-4 min
+    # cold). Pulling it concurrently with the fixtures/restore/build ahead of it
+    # makes the cold case look like the warm case. The step is deliberately NOT
+    # relocated: the drift test stays exactly where it is, this only removes its
+    # image-fetch stall. Best-effort throughout — a failed or unavailable pull
+    # just means Testcontainers pulls it itself, as it does today.
+    - name: Pre-pull Testcontainers PostGIS image (background)
+      shell: bash
+      run: scripts/ci/prepull-testcontainers-postgis.sh
+
     - name: Validate lean-gate command contract
       shell: bash
       run: python3 scripts/ci/fixtures/validate-lean-gate.py
@@ -88,28 +124,66 @@ runs:
       shell: bash
       run: scripts/ci/dotnet-restore-retry.sh Honua.sln
 
-    # Full-solution warnings-as-errors build. The "affected projects"
-    # optimization the heavy `build` job uses is NOT applied here: on a batched
-    # merge_group commit the diff base is the queue base rather than a single
-    # PR, and on a PR the whole point of this gate is that nothing else compiles
-    # the solution before merge. Build everything; it is one runner.
+    # Warnings-as-errors build scope. This used to be unconditionally
+    # full-solution for BOTH callers. The reasoning split when `PR Gate` became
+    # the dominant cost of landing anything (epic #3213):
     #
+    #   * merge_group / `Merge Queue Gate` keeps `full`. A batched commit's diff
+    #     base is the queue base rather than a single PR, so an affected-projects
+    #     computation there is not trustworthy — and the batch build is the
+    #     full-solution backstop that the per-PR narrowing below leans on.
+    #   * pull_request / `PR Gate` passes `affected`. The gate still compiles
+    #     everything the diff can reach plus every project its own --no-build
+    #     test steps need; it stops compiling the ~30 solution projects (mostly
+    #     sibling test assemblies) that no part of this gate consumes.
+    #
+    # MISS-RISK CONTRACT: if the affected closure is ever wrong, the change fails
+    # the merge train's full-solution build BEFORE it lands. It is fixed forward
+    # from the train, and never reaches trunk unverified.
+    - name: Compute gate build scope
+      id: build-scope
+      shell: bash
+      env:
+        BUILD_SCOPE: ${{ inputs.build-scope }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+      run: scripts/ci/compute-lean-gate-build-scope.sh
+
     # Composite-action steps do not support `timeout-minutes`, so each bounded
     # step wraps its command in coreutils `timeout` (exit 124 => step fails).
     - name: Build (warnings as errors)
       shell: bash
+      env:
+        GATE_BUILD_MODE: ${{ steps.build-scope.outputs.mode }}
+        GATE_BUILD_FILTER: ${{ steps.build-scope.outputs.filter }}
       run: |
-        timeout "${{ inputs.build-timeout-minutes }}m" \
-          dotnet build Honua.sln \
-            --no-restore \
-            --configuration Release \
-            /p:TreatWarningsAsErrors=true
+        if [[ "${GATE_BUILD_MODE}" == "affected" ]]; then
+          timeout "${{ inputs.build-timeout-minutes }}m" \
+            dotnet build "${GATE_BUILD_FILTER}" \
+              --no-restore \
+              --configuration Release \
+              /p:TreatWarningsAsErrors=true
+        else
+          timeout "${{ inputs.build-timeout-minutes }}m" \
+            dotnet build Honua.sln \
+              --no-restore \
+              --configuration Release \
+              /p:TreatWarningsAsErrors=true
+        fi
 
     - name: Format Check
       shell: bash
-      # Restore already completed above, and the full build consumed the same
-      # assets. Re-evaluating restore here adds network/project work without
-      # increasing format coverage.
+      # Restore already completed above and produced assets for every solution
+      # project, whatever the build scope was. Re-evaluating restore here adds
+      # network/project work without increasing format coverage.
+      #
+      # DELIBERATELY SOLUTION-WIDE, and measured: on the 2026-08-26 baseline this
+      # step is 5m51s of an 18m09s gate — co-dominant with the build's 6m30s, not
+      # a rounding error. It is not narrowed with the build because `dotnet
+      # format` takes ONE workspace (a project or a solution, never a list), and
+      # most of its cost is loading that workspace rather than analysing
+      # documents, so a `--include`-scoped run over the same solution would not
+      # obviously pay. Narrowing it is a separate, measured change (see #3213);
+      # do not assume it is free.
       run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
 
     - name: Create Test Results Directory
@@ -190,6 +264,10 @@ runs:
     # Testcontainers PostgreSQL — one ephemeral container on this same single
     # runner (no `services:` block, no matrix), ~1.5 min warm / ~3-4 min cold.
     # See the header note for why fidelity was chosen over a Postgres-free variant.
+    - name: Await Testcontainers PostGIS pre-pull
+      shell: bash
+      run: scripts/ci/prepull-testcontainers-postgis.sh --await
+
     - name: Run .NET Tests (Server Governance/Drift)
       shell: bash
       run: |
