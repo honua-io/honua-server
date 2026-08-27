@@ -5787,7 +5787,6 @@
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_WithTooLongClientId_GeneratesNewId",
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_WithoutClientId_GeneratesCorrelationId",
         "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_LivenessProbe_MatchesGetStatusWithEmptyBodyAndContentLength",
-        "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.NonGetMethods_OnGetOnlyRoute_StillReturn405MethodNotAllowed",
         "Honua.Server.Tests.Infrastructure.Middleware.SecurityHeadersMiddlewareTests.SecurityHeaders_ContentSecurityPolicy_HasStrictDirectives",
         "Honua.Server.Tests.Infrastructure.Middleware.SecurityHeadersMiddlewareTests.SecurityHeaders_HealthEndpoint_AppliesAllRequiredHeaders",
         "Honua.Server.Tests.Infrastructure.Middleware.SecurityHeadersMiddlewareTests.SecurityHeaders_MultipleRequests_ConsistentlyAppliesHeaders",
@@ -17318,8 +17317,7 @@
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_Dbscan_ReturnsFeatureCollection",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_InvalidCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_MissingEps_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_OmitAlgorithm_DefaultsToDbscan",
-        "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_PostOnlyRoute_Returns405MethodNotAllowed"
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_OmitAlgorithm_DefaultsToDbscan"
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",
