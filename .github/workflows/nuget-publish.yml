@@ -173,6 +173,11 @@ jobs:
           path: nupkgs
 
       - name: Setup .NET
+        # NOT routed through ./.github/actions/setup-dotnet-ci: this job has no
+        # actions/checkout, so a local composite action cannot resolve, and it only
+        # runs `dotnet nuget push` over downloaded artifacts — it restores nothing,
+        # so the composite's NuGet cache would be pure overhead. (`package-smoke`,
+        # which does restore, already uses the composite.)
         uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}

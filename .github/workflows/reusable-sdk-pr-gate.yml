@@ -72,6 +72,13 @@ jobs:
 
       - name: Setup .NET
         if: inputs.dotnet-version != ''
+        # NOT routed through ./.github/actions/setup-dotnet-ci: this is a cross-repo
+        # reusable workflow (honua-sdk-js / honua-sdk-dotnet / honua-sdk-python call
+        # it), and the checkout above is the CALLER's repo — a `./.github/actions/...`
+        # path would resolve there, where the composite does not exist, breaking every
+        # SDK PR gate. This workflow already wires its own caller-agnostic NuGet cache
+        # and GitHub Packages auth in the `Cache NuGet` / `Configure GitHub Packages`
+        # steps below, so nothing here is missing.
         uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: ${{ inputs.dotnet-version }}

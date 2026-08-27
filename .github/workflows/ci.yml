@@ -2100,6 +2100,23 @@ jobs:
         run: npm ci
         working-directory: tests/js
 
+      # Playwright downloads its Chromium bundle into ~/.cache/ms-playwright on every
+      # run; actions/setup-node's npm cache above covers the package tarballs only, not
+      # the browser. Key on the lockfile that pins @playwright/test for this job, so a
+      # Playwright version bump correctly misses the cache.
+      #
+      # The install step below deliberately still runs with --with-deps: the apt system
+      # dependencies it installs live outside this path and are not cached, so they must
+      # be resolved on a hit as well as a miss. On a hit, `playwright install` finds the
+      # expected browser revision already present and skips the download.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('tests/js/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
       - name: Install Playwright Browsers
         run: |
           # Ubuntu 24 runner images currently ship Microsoft apt feeds that can
@@ -2199,6 +2216,23 @@ jobs:
         run: npm ci
         working-directory: tests/js-browser
 
+      # Playwright downloads its Chromium bundle into ~/.cache/ms-playwright on every
+      # run; actions/setup-node's npm cache above covers the package tarballs only, not
+      # the browser. Key on the lockfile that pins @playwright/test for this job, so a
+      # Playwright version bump correctly misses the cache.
+      #
+      # The install step below deliberately still runs with --with-deps: the apt system
+      # dependencies it installs live outside this path and are not cached, so they must
+      # be resolved on a hit as well as a miss. On a hit, `playwright install` finds the
+      # expected browser revision already present and skips the download.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('tests/js-browser/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
       - name: Install Playwright Chromium
         run: |
           # Ubuntu 24 runner images currently ship Microsoft apt feeds that can
@@ -2295,6 +2329,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: tests/js-browser
+
+      # Playwright downloads its Chromium bundle into ~/.cache/ms-playwright on every
+      # run; actions/setup-node's npm cache above covers the package tarballs only, not
+      # the browser. Key on the lockfile that pins @playwright/test for this job, so a
+      # Playwright version bump correctly misses the cache.
+      #
+      # The install step below deliberately still runs with --with-deps: the apt system
+      # dependencies it installs live outside this path and are not cached, so they must
+      # be resolved on a hit as well as a miss. On a hit, `playwright install` finds the
+      # expected browser revision already present and skips the download.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('tests/js-browser/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
 
       - name: Install Playwright Chromium
         run: |
