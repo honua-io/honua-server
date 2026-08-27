@@ -110,10 +110,9 @@ internal static class OrderByParsing
     /// <para>
     /// This is a shape check, not the authorization: <see cref="ParseOrderByV2"/> resolves
     /// every accepted token against <c>resource.SchemaFields</c> and throws
-    /// <c>unknownFieldException</c> when the field is not declared, and the provider then
-    /// binds the resolved name as a query parameter
-    /// (<c>FeatureQueryBuilder.MapOrderByField</c> gates on
-    /// <c>IsValidJsonAttributeKey</c> and orders by a parameter-bound jsonb accessor).
+    /// <c>unknownFieldException</c> when the field is not declared. Providers then apply
+    /// this same <see cref="FeatureFieldNameSyntax"/> contract before either binding a JSON
+    /// key as a parameter or quoting a physical attribute name as one identifier.
     /// </para>
     /// <para>
     /// The class therefore admits the prefixed, dotted and hyphenated shapes real schemas
@@ -127,24 +126,5 @@ internal static class OrderByParsing
     /// </para>
     /// </remarks>
     private static bool IsValidFeatureServerFieldName(string fieldName)
-    {
-        if (string.IsNullOrWhiteSpace(fieldName))
-        {
-            return false;
-        }
-
-        for (var i = 0; i < fieldName.Length; i++)
-        {
-            var ch = fieldName[i];
-            var allowed = char.IsLetterOrDigit(ch)
-                || ch == '_'
-                || (i > 0 && (ch == ':' || ch == '.' || ch == '-'));
-            if (!allowed)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+        => FeatureFieldNameSyntax.IsValid(fieldName);
 }

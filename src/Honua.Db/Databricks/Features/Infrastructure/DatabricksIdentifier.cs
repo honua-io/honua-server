@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.Databricks.Features.Infrastructure;
 
@@ -40,6 +41,17 @@ internal static partial class DatabricksIdentifier
         if (string.IsNullOrWhiteSpace(fieldName) || !SimpleIdentifierRegex().IsMatch(fieldName))
         {
             throw new ArgumentException($"Invalid Databricks identifier: {fieldName}");
+        }
+    }
+
+    /// <summary>
+    /// Validates a declared attribute name that will be emitted as one quoted identifier.
+    /// </summary>
+    public static void ValidateAttributeName(string fieldName)
+    {
+        if (!FeatureFieldNameSyntax.IsValid(fieldName))
+        {
+            throw new ArgumentException($"Invalid Databricks attribute name: {fieldName}");
         }
     }
 }
