@@ -3,6 +3,8 @@
 
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -48,15 +50,18 @@ internal sealed class OperatorBearerAuthenticationHandler(
         }
 
         var token = header[BearerPrefix.Length..].Trim();
-        var claims = await _tokenService.TryValidateAsync(token).ConfigureAwait(false);
-        if (claims is null)
+        var validation = await _tokenService.TryValidateAsync(token).ConfigureAwait(false);
+        if (validation is null)
         {
             return AuthenticateResult.Fail("The operator bearer is invalid or expired.");
         }
 
         try
         {
-            var principal = AdminAuthClaimsProjector.CreatePrincipal(claims, Scheme.Name, "operator-bearer");
+            var principal = AdminAuthClaimsProjector.CreatePrincipal(
+                validation.Claims,
+                Scheme.Name,
+                "operator-bearer");
             if (principal.Identity is ClaimsIdentity identity)
             {
                 // Token transport claims are deliberately excluded from the admin-session
@@ -64,6 +69,10 @@ internal sealed class OperatorBearerAuthenticationHandler(
                 // concrete handler validated. Reintroduce that validator-owned value after
                 // projection; no token/session claim can choose it.
                 identity.AddClaim(new Claim("iss", _tokenService.ValidatedIssuer));
+                CanonicalSecurityActor.StampFrameworkClaim(
+                    identity,
+                    OperationAuthorityContext.MembershipIssuerClaimType,
+                    validation.MembershipIssuer);
             }
 
             return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));

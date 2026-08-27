@@ -28,12 +28,23 @@ internal static class SpatialReferenceHelpers
     private static readonly Regex _epsgUriPattern = new(
         @"^https?://www\.opengis\.net/def/crs/EPSG/0/(?<code>[1-9]\d*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-    private static readonly Regex _crs84UriPattern = new(
-        @"^https?://www\.opengis\.net/def/crs/OGC/1\.3/CRS84$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
-    private static readonly Regex _crs84UrnPattern = new(
-        @"^urn:ogc:def:crs:OGC:(?:1\.3:|:)?CRS84$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Canonical CRS84 spellings accepted by the shared request parser.
+    /// Protocol capability documents should advertise this list rather than maintaining
+    /// a second alias inventory that can drift from runtime parsing.
+    /// </summary>
+    public static IReadOnlyList<string> Crs84Identifiers { get; } = Array.AsReadOnly<string>(
+    [
+        "CRS84",
+        "CRS:84",
+        "OGC:CRS84",
+        Crs84Uri,
+        "https://www.opengis.net/def/crs/OGC/1.3/CRS84",
+        "urn:ogc:def:crs:OGC:1.3:CRS84",
+        "urn:ogc:def:crs:OGC::CRS84",
+        "urn:ogc:def:crs:OGC:CRS84"
+    ]);
 
     /// <summary>
     /// Parses a CRS string into an SRID integer.
@@ -145,13 +156,7 @@ internal static class SpatialReferenceHelpers
     }
 
     private static bool IsCrs84Identifier(string value)
-    {
-        return value.Equals("CRS84", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("CRS:84", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("OGC:CRS84", StringComparison.OrdinalIgnoreCase) ||
-               _crs84UriPattern.IsMatch(value) ||
-               _crs84UrnPattern.IsMatch(value);
-    }
+        => Crs84Identifiers.Contains(value, StringComparer.OrdinalIgnoreCase);
 
     private static CrsDefinition CreateEpsgDefinition(int srid)
     {

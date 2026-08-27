@@ -88,7 +88,10 @@ internal sealed class ApiKeyAuthenticationHandler(
         string? configuredPassword;
         try
         {
-            configuredPassword = await ResolveAdminPasswordAsync(Context.RequestAborted);
+            configuredPassword = await AdminPasswordResolver.ResolveAsync(
+                _authOptions,
+                _secretResolver,
+                Context.RequestAborted);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -409,28 +412,6 @@ internal sealed class ApiKeyAuthenticationHandler(
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
         return AuthenticateResult.Success(ticket);
-    }
-
-    private async Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)
-    {
-        var configuredPassword = _authOptions.AdminPassword;
-        if (string.IsNullOrWhiteSpace(configuredPassword))
-        {
-            return null;
-        }
-
-        var resolvedPassword = configuredPassword;
-        if (_secretResolver is not null)
-        {
-            var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken);
-            if (canResolve)
-            {
-                resolvedPassword = await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken);
-            }
-        }
-
-        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, _authOptions.EnvironmentName);
-        return resolvedPassword;
     }
 
     /// <summary>

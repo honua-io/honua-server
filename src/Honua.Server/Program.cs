@@ -548,6 +548,8 @@ if (connectedRedis != null)
         Honua.ControlPlane.RedisOperationProposalStore>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway,
         Honua.ControlPlane.OperationGateway>();
+    builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationAuthorityRevalidator,
+        Honua.ControlPlane.CurrentOperationAuthorityRevalidator>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.DeployOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
@@ -1506,6 +1508,7 @@ app.MapSamlEndpoints();
 
 // Configure Console metadata v2 content + RBAC endpoints (#1162)
 app.MapConsoleSessionEndpoints();
+app.MapConsoleAccessEndpoints();
 app.MapConsoleContentEndpoints();
 app.MapConsoleActionEndpoints();
 // Console Share access public-link + embed API (#1215)

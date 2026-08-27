@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
@@ -62,7 +63,33 @@ public sealed class OperationGatewayStateMachineTests
         // Assert: must NOT claim Executed (BH6-032) — nothing ran
         result.Outcome.Should().Be(OperationGatewayOutcome.NotSupported,
             "a kind with no registered executor must not be claimed as Executed");
+        result.OperationInstanceId.Should().StartWith("opinst-");
         result.ExecutionOperationId.Should().BeNull("no operation was performed");
+    }
+
+    [Fact]
+    public async Task RouteAsync_WhenBlocked_ReturnsStableOperationInstanceId()
+    {
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(
+                GuardrailTier.Blocked,
+                OperationClass.Deploy,
+                HonuaEdition.Community,
+                "test-policy"));
+        var sut = BuildGateway(
+            store: new InMemoryProposalStore(),
+            executor: new DeployExecutor(),
+            ladder: ladder);
+
+        var result = await sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "test-user",
+        });
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
+        result.OperationInstanceId.Should().StartWith("opinst-");
     }
 
     [Fact]
@@ -87,7 +114,32 @@ public sealed class OperationGatewayStateMachineTests
         var result = await sut.RouteAsync(request);
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Executed);
+        result.OperationInstanceId.Should().StartWith("opinst-");
         result.ExecutionOperationId.Should().Be(DeployExecutor.OperationId);
+    }
+
+    [Fact]
+    public async Task CreateApprovalProposal_WithoutAuthority_FailsBeforePersistence()
+    {
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(
+                GuardrailTier.RequiresApproval,
+                OperationClass.Deploy,
+                HonuaEdition.Enterprise,
+                "test-policy"));
+        var store = new InMemoryProposalStore();
+        var sut = BuildGateway(store, new DeployExecutor(), ladder);
+
+        var act = () => sut.CreateApprovalProposalAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "legacy-client",
+        });
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*captured proposer authority is required*");
+        store.Snapshot.Should().BeNull();
     }
 
     // ── BH6-033: ApplyApprovedProposalAsync with unregistered operation class ─
@@ -104,7 +156,7 @@ public sealed class OperationGatewayStateMachineTests
         var sut = BuildGateway(store: store, executor: new DeployExecutor());
 
         // Act
-        var result = await sut.ApplyApprovedProposalAsync("p-no-executor", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-no-executor", Approver("admin"));
 
         // Assert BH6-033: must transition to terminal Failed, not stay Submitted
         result.Should().NotBeNull();
@@ -126,11 +178,135 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store: store, executor: new DeployExecutor());
 
-        var result = await sut.ApplyApprovedProposalAsync("p-deploy", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-deploy", Approver("admin"));
 
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Submitted);
         result.ExecutionOperationId.Should().Be(DeployExecutor.OperationId);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_WhenCurrentAuthorityIsDenied_DoesNotClaimOrExecute()
+    {
+        var proposal = CreateProposal("p-revoked", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
+        var store = new InMemoryProposalStore(proposal);
+        var executor = Substitute.For<IOperationExecutor>();
+        executor.OperationClass.Returns(OperationClass.Deploy);
+        var revalidator = Substitute.For<IOperationAuthorityRevalidator>();
+        revalidator.RevalidateAsync(proposal, Arg.Any<CancellationToken>())
+            .Returns(OperationAuthorityRevalidationResult.Denied("grant revoked"));
+        var sut = BuildGateway(store, executor, authorityRevalidators: [revalidator]);
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-revoked", Approver("admin"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*current authority*grant revoked*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        await executor.DidNotReceiveWithAnyArgs().ExecuteAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_WhenPersistedScopeCeilingNoLongerPermitsOperation_FailsBeforeClaim()
+    {
+        var proposal = CreateProposal("p-stale-scope", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+        {
+            Authority = ValidAuthority() with
+            {
+                OAuthScopes = [OperatorScopeCatalog.Read],
+                ScopeCeiling = [OperatorScopeCatalog.Read],
+                ScopeGoverned = true,
+                ResourceType = OperatorResourceType.Deployment,
+                Operation = OperatorOperation.Publish,
+            },
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var sut = BuildGateway(store, new DeployExecutor());
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-stale-scope", Approver("admin"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*OAuth scope ceiling no longer permits*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_ScopeGovernedLegacyRecordWithoutBinding_FailsBeforeClaim()
+    {
+        var proposal = CreateProposal("p-missing-binding", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+        {
+            Authority = ValidAuthority() with
+            {
+                OAuthScopes = [OperatorScopeCatalog.Full],
+                ScopeCeiling = [OperatorScopeCatalog.Full],
+                ScopeGoverned = true,
+                ResourceType = null,
+                Operation = null,
+            },
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var sut = BuildGateway(store, new DeployExecutor());
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-missing-binding", Approver("admin"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*OAuth scope ceiling no longer permits*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ApplyApprovedProposal_PreMarkerRecordWithoutBinding_FailsBeforeClaim(
+        bool retainsRecognizedScope)
+    {
+        var scopes = retainsRecognizedScope
+            ? new[] { OperatorScopeCatalog.Full }
+            : Array.Empty<string>();
+        var proposal = CreateProposal("p-pre-marker-bearer", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+        {
+            Authority = ValidAuthority() with
+            {
+                Scheme = retainsRecognizedScope ? "Bearer" : "Federation",
+                OAuthScopes = scopes,
+                ScopeCeiling = scopes,
+                ScopeGoverned = null,
+                ResourceType = null,
+                Operation = null,
+            },
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var sut = BuildGateway(store, new DeployExecutor());
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-pre-marker-bearer", Approver("admin"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*OAuth scope ceiling no longer permits*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_PreMarkerRecordWithPermittedBinding_FailsBeforeClaim()
+    {
+        var proposal = CreateProposal("p-pre-marker-bound", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval) with
+        {
+            Authority = ValidAuthority() with
+            {
+                Scheme = "Federation",
+                OAuthScopes = [OperatorScopeCatalog.Publish],
+                ScopeCeiling = [OperatorScopeCatalog.Publish],
+                ScopeGoverned = null,
+                ResourceType = OperatorResourceType.Deployment,
+                Operation = OperatorOperation.Publish,
+            },
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var sut = BuildGateway(store, new DeployExecutor());
+
+        var act = () => sut.ApplyApprovedProposalAsync("p-pre-marker-bound", Approver("admin"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*OAuth scope ceiling no longer permits*");
+        store.Snapshot!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
     }
 
     [Fact]
@@ -142,7 +318,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store: store, executor: new ThrowingExecutor());
 
-        var result = await sut.ApplyApprovedProposalAsync("p-throws", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-throws", Approver("admin"));
 
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Failed);
@@ -160,8 +336,10 @@ public sealed class OperationGatewayStateMachineTests
         return new OperationProposal
         {
             ProposalId = proposalId,
+            OperationInstanceId = $"opinst-{proposalId}",
             Kind = kind,
             Status = status,
+            Authority = ValidAuthority(),
             Plan = new OperationProposalPlan { Summary = "test proposal" },
             Audit = new OperationAuditInfo { Reason = "test" },
             CreatedAt = now,
@@ -169,10 +347,27 @@ public sealed class OperationGatewayStateMachineTests
         };
     }
 
+    private static OperationAuthorityContext ValidAuthority() => new()
+    {
+        Issuer = "test-service",
+        Actor = "proposer",
+        Scheme = "Service",
+        EffectiveTenant = "tenant-1",
+        ScopeGoverned = false,
+    };
+
+    private static OperationApproverIdentity Approver(string actor) => new()
+    {
+        Actor = actor,
+        Issuer = "https://approver.example",
+        Scheme = "Bearer",
+    };
+
     private static OperationGateway BuildGateway(
         IOperationProposalStore store,
         IOperationExecutor? executor = null,
-        IGuardrailLadder? ladder = null)
+        IGuardrailLadder? ladder = null,
+        IEnumerable<IOperationAuthorityRevalidator>? authorityRevalidators = null)
     {
         var services = new ServiceCollection();
         services.AddScoped<IAuditLog>(_ => NullAuditLog.Instance);
@@ -190,7 +385,8 @@ public sealed class OperationGatewayStateMachineTests
             executors,
             scopeFactory,
             notifier,
-            NullLogger<OperationGateway>.Instance);
+            NullLogger<OperationGateway>.Instance,
+            authorityRevalidators);
     }
 
     /// <summary>
@@ -239,6 +435,17 @@ public sealed class OperationGatewayStateMachineTests
     {
         private OperationProposal? _proposal = initialProposal;
         private readonly Lock _lock = new();
+
+        public OperationProposal? Snapshot
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _proposal;
+                }
+            }
+        }
 
         public Task<OperationProposal?> GetAsync(string proposalId, CancellationToken cancellationToken = default)
         {

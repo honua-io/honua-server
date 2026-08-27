@@ -28,10 +28,10 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "entryCount": 368,
-      "provingTestCount": 1084,
+      "entryCount": 374,
+      "provingTestCount": 1108,
       "maturity": {
-        "implemented": 368
+        "implemented": 374
       },
       "noSurface": null,
       "cite": [],
@@ -1063,7 +1063,7 @@
       "category": "Import",
       "edition": "Community",
       "entryCount": 74,
-      "provingTestCount": 215,
+      "provingTestCount": 216,
       "maturity": {
         "implemented": 74
       },
@@ -1570,7 +1570,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 142,
-      "provingTestCount": 374,
+      "provingTestCount": 375,
       "maturity": {
         "implemented": 142
       },
@@ -1660,7 +1660,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 3,
-      "provingTestCount": 30,
+      "provingTestCount": 31,
       "maturity": {
         "implemented": 3
       },
@@ -2057,7 +2057,7 @@
       "category": "Serve",
       "edition": "Community",
       "entryCount": 2,
-      "provingTestCount": 110,
+      "provingTestCount": 113,
       "maturity": {
         "implemented": 2
       },

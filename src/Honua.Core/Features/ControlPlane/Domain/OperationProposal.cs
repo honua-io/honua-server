@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Core.Features.ControlPlane.Domain;
 
@@ -153,6 +154,12 @@ public sealed record OperationProposalAutonomyMetadata
 
     /// <summary>Gets bounded supporting evidence references.</summary>
     public IReadOnlyList<string> EvidenceRefs { get; init; } = Array.Empty<string>();
+
+    /// <summary>Gets the exact bounded source posture used by the finding decision.</summary>
+    public EvidencePostureEnvelope? EvidencePosture { get; init; }
+
+    /// <summary>Gets the source identifiers that must remain actionable during replay.</summary>
+    public IReadOnlyList<string> RequiredEvidenceSourceIds { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -163,6 +170,12 @@ public sealed record OperationProposalAutonomyMetadata
 /// </summary>
 public sealed record OperationProposal
 {
+    /// <summary>
+    /// Stable invocation identity. Distinct from the operation descriptor, proposal,
+    /// execution, resource, and audit identifiers.
+    /// </summary>
+    public string? OperationInstanceId { get; init; }
+
     /// <summary>
     /// Stable proposal identifier.
     /// </summary>
@@ -187,6 +200,15 @@ public sealed record OperationProposal
     /// Agent identifier when the proposal originated from an autonomous agent.
     /// </summary>
     public string? RequestedByAgent { get; init; }
+
+    /// <summary>
+    /// Authenticated proposer authority captured before approval. The approver never
+    /// replaces this snapshot during approved replay.
+    /// </summary>
+    public OperationAuthorityContext? Authority { get; init; }
+
+    /// <summary>Durable approval metadata, when the proposal has been resolved.</summary>
+    public OperationApprovalRecord? Approval { get; init; }
 
     /// <summary>
     /// Optimistic-concurrency version token incremented on every store write.

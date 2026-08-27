@@ -160,7 +160,7 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
             Vitals = new OpsHealthVitalsPoint
             {
                 OverallStatus = snapshot.OverallStatus,
-                GpQueueTotal = snapshot.Geoprocessing.TotalActive,
+                GpQueueTotal = snapshot.Geoprocessing.TotalActive ?? 0,
                 GpQueueBreakdown = gpBreakdown,
                 AlertPending = snapshot.AlertDispatch.PendingCount,
                 AlertDeadLettered = snapshot.AlertDispatch.DeadLetteredCount,

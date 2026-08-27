@@ -29,6 +29,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IProposalNotifier _notifier;
     private readonly ILogger<OperationGateway> _logger;
+    private readonly IReadOnlyList<IOperationAuthorityRevalidator> _authorityRevalidators;
 
     public OperationGateway(
         IGuardrailLadder ladder,
@@ -36,7 +37,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         IEnumerable<IOperationExecutor> executors,
         IServiceScopeFactory scopeFactory,
         IProposalNotifier notifier,
-        ILogger<OperationGateway> logger)
+        ILogger<OperationGateway> logger,
+        IEnumerable<IOperationAuthorityRevalidator>? authorityRevalidators = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         _ladder = ladder;
@@ -45,6 +47,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         _scopeFactory = scopeFactory;
         _notifier = notifier;
         _logger = logger;
+        _authorityRevalidators = authorityRevalidators?.ToArray() ?? [];
     }
 
     public async Task<OperationGatewayResult> RouteAsync(
@@ -52,6 +55,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = EnsureOperationInstance(request);
+        ValidateAuthority(request.Authority);
 
         // For an AdminConfigChange, the ops-action discriminator selects a per-action
         // guardrail tier. Prefer an explicit discriminator on the request; otherwise
@@ -71,6 +76,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         if (decision.Tier == GuardrailTier.RequiresApproval)
         {
+            RequireProposalAuthority(request.Authority);
             var autonomy = await EvaluateAutonomyAsync(
                     request,
                     decision,
@@ -89,6 +95,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             {
                 Outcome = OperationGatewayOutcome.Blocked,
                 Decision = decision,
+                OperationInstanceId = request.OperationInstanceId,
                 Message = $"Operation '{request.Kind}' is not permitted at the {decision.Edition} edition."
             },
             GuardrailTier.RequiresApproval => await CreateProposalAsync(request, decision, cancellationToken)
@@ -102,6 +109,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request = EnsureOperationInstance(request);
+        RequireProposalAuthority(request.Authority);
 
         // The approval requirement was already decided by an upstream domain gate
         // (e.g. the geoprocessing destructive-plan gate), so we do NOT re-run the
@@ -122,10 +131,31 @@ internal sealed partial class OperationGateway : IOperationGateway
         return await CreateProposalAsync(request, decision, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<OperationProposal?> ApplyApprovedProposalAsync(
+    public Task<OperationProposal?> ApplyApprovedProposalAsync(
         string proposalId,
         string approvedBy,
         CancellationToken cancellationToken = default)
+        => ApplyApprovedProposalCoreAsync(proposalId, approvedBy, approverIdentity: null, cancellationToken);
+
+    public Task<OperationProposal?> ApplyApprovedProposalAsync(
+        string proposalId,
+        OperationApproverIdentity approver,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(approver);
+        if (!approver.TryValidate(out var error))
+        {
+            throw new InvalidOperationException($"Operation approver identity is invalid: {error}");
+        }
+
+        return ApplyApprovedProposalCoreAsync(proposalId, approver.Actor, approver, cancellationToken);
+    }
+
+    private async Task<OperationProposal?> ApplyApprovedProposalCoreAsync(
+        string proposalId,
+        string approvedBy,
+        OperationApproverIdentity? approverIdentity,
+        CancellationToken cancellationToken)
     {
         var proposal = await _proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
         if (proposal == null)
@@ -140,11 +170,63 @@ internal sealed partial class OperationGateway : IOperationGateway
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
         }
 
+        if (string.IsNullOrWhiteSpace(approvedBy))
+        {
+            throw new InvalidOperationException("An identified approver is required.");
+        }
+
+        if (proposal.Authority is not null && approverIdentity is null)
+        {
+            throw new InvalidOperationException(
+                "Issuer-qualified approver identity is required for this proposal.");
+        }
+
+        var isSelfApproval = proposal.Authority is { } proposerAuthority
+            ? approverIdentity is not null
+                ? approverIdentity.Matches(proposerAuthority)
+                : string.Equals(proposerAuthority.Actor, approvedBy, StringComparison.Ordinal)
+            : string.Equals(proposal.RequestedBy, approvedBy, StringComparison.Ordinal);
+        if (isSelfApproval)
+        {
+            throw new InvalidOperationException("The proposer cannot approve its own operation.");
+        }
+
+        if (proposal.Authority is null)
+        {
+            // Compatibility is intentionally read/reject-only. Records written before proposer
+            // authority was introduced remain deserializable, but cannot be upgraded by guessing
+            // authority at approval time or executed under the approver's identity.
+            throw new InvalidOperationException(
+                $"Proposal '{proposalId}' is a legacy record without captured proposer authority " +
+                "and cannot be executed. Resubmit the operation to create a new proposal.");
+        }
+
+        ValidateAuthority(proposal.Authority);
+
+        foreach (var revalidator in _authorityRevalidators)
+        {
+            var current = await revalidator.RevalidateAsync(proposal, cancellationToken).ConfigureAwait(false);
+            if (!current.IsAllowed)
+            {
+                throw new InvalidOperationException(
+                    $"The proposer's current authority no longer permits this operation: {current.Reason ?? "denied"}");
+            }
+        }
+
         // Atomically claim the proposal before invoking the executor.
         // Transitions AwaitingApproval → Executing via a CAS write: only one concurrent
         // caller wins this write; all others re-read a non-AwaitingApproval status and
         // throw, preventing double-execution of non-idempotent operations (BH4-031).
-        proposal = await ClaimForExecutionAsync(proposal, cancellationToken).ConfigureAwait(false);
+        // Persist the approval evidence in the same CAS write that claims execution,
+        // before the actuator can mutate state.
+        var approvalDecidedAt = DateTimeOffset.UtcNow;
+        proposal = await ClaimForExecutionAsync(
+                proposal,
+                approvedBy,
+                approverIdentity,
+                approvalDecidedAt,
+                cancellationToken)
+            .ConfigureAwait(false);
 
         var request = RebuildRequest(proposal);
         string? executionOperationId = null;
@@ -198,7 +280,11 @@ internal sealed partial class OperationGateway : IOperationGateway
                 : proposal.Plan with { BlockingReasons = [.. proposal.Plan.BlockingReasons, failureMessage] }
         };
 
-        await PersistResolutionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await PersistResolutionAsync(
+                resolved,
+                OperationProposalStatus.Executing,
+                cancellationToken)
+            .ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Approved,
@@ -240,10 +326,21 @@ internal sealed partial class OperationGateway : IOperationGateway
             Status = OperationProposalStatus.Rejected,
             ResolvedBy = rejectedBy,
             ResolutionReason = reason,
+            Approval = new OperationApprovalRecord
+            {
+                Approver = rejectedBy,
+                Approved = false,
+                DecidedAt = now,
+                ProposerAuthorityRetained = false,
+            },
             ResolvedAt = now
         };
 
-        await PersistResolutionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await PersistResolutionAsync(
+                resolved,
+                OperationProposalStatus.AwaitingApproval,
+                cancellationToken)
+            .ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Rejected,
@@ -269,6 +366,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             {
                 Outcome = OperationGatewayOutcome.NotSupported,
                 Decision = decision,
+                OperationInstanceId = request.OperationInstanceId,
                 Message = $"No executor is registered for operation kind '{request.Kind}'; the operation was not performed."
             };
         }
@@ -281,6 +379,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             Outcome = OperationGatewayOutcome.Executed,
             Decision = decision,
+            OperationInstanceId = request.OperationInstanceId,
             ExecutionOperationId = executionOperationId,
             Message = "Executed directly."
         };
@@ -322,6 +421,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
         {
+            OperationInstanceId = request.OperationInstanceId,
             ProposalId = hasIdempotencyKey
                 ? DeriveProposalId(request.Kind, request.IdempotencyKey!)
                 : $"proposal-{Guid.NewGuid():N}",
@@ -329,6 +429,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             Status = OperationProposalStatus.AwaitingApproval,
             RequestedBy = request.RequestedBy,
             RequestedByAgent = request.RequestedByAgent,
+            Authority = request.Authority,
             Plan = plan,
             GuardrailDecision = decision,
             AutonomyMetadata = NormalizeAutonomyContext(request.AutonomyContext, actionDiscriminator: request.ActionDiscriminator),
@@ -375,6 +476,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             Outcome = OperationGatewayOutcome.ProposalCreated,
             Decision = decision,
+            OperationInstanceId = proposal.OperationInstanceId,
             ProposalId = proposal.ProposalId,
             Message = "Proposal created and awaiting approval."
         };
@@ -397,6 +499,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             Outcome = OperationGatewayOutcome.ProposalCreated,
             Decision = decision,
+            OperationInstanceId = existing.OperationInstanceId,
             ProposalId = existing.ProposalId,
             Message = $"Existing proposal returned for idempotency key '{idempotencyKey}'.",
         };
@@ -411,10 +514,15 @@ internal sealed partial class OperationGateway : IOperationGateway
         return $"proposal-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
     }
 
-    private async Task PersistResolutionAsync(OperationProposal proposal, CancellationToken cancellationToken)
+    private async Task PersistResolutionAsync(
+        OperationProposal proposal,
+        OperationProposalStatus expectedStatus,
+        CancellationToken cancellationToken)
     {
         // Refresh-and-retry on optimistic version conflict so concurrent
-        // notifications/reconcilers do not lose the resolution write.
+        // writes that preserve the expected lifecycle state do not lose the
+        // resolution write. A lifecycle transition is a conflicting decision
+        // and must never be overwritten by refreshing only the version token.
         for (var attempt = 0; attempt < 3; attempt++)
         {
             if (await _proposalStore.TrySetAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -428,18 +536,16 @@ internal sealed partial class OperationGateway : IOperationGateway
                 throw new InvalidOperationException($"Proposal '{proposal.ProposalId}' disappeared during resolution.");
             }
 
-            // Do not overwrite a terminal resolution. If an operator resolved the proposal
-            // concurrently (or a previous write landed between the CAS failure and this
-            // re-read), stop retrying rather than risk overwriting the recorded resolution.
-            if (IsTerminalStatus(latest.Status))
+            if (latest.Status != expectedStatus)
             {
                 throw new InvalidOperationException(
-                    $"Proposal '{proposal.ProposalId}' reached terminal status '{latest.Status}' " +
-                    "before the resolution write landed; aborting to avoid overwriting it.");
+                    $"Proposal '{proposal.ProposalId}' transitioned from '{expectedStatus}' to " +
+                    $"'{latest.Status}' before the resolution write landed; aborting to avoid " +
+                    "overwriting the concurrent decision.");
             }
 
-            // Only the version was bumped (e.g. a notification write); the status is still
-            // active so it is safe to retry with the refreshed version.
+            // Only the version was bumped while the lifecycle state stayed unchanged, so it
+            // is safe to retry the same transition with the refreshed version.
             proposal = proposal with { Version = latest.Version };
         }
 
@@ -449,18 +555,34 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     /// <summary>
     /// Atomically transitions a proposal from <see cref="OperationProposalStatus.AwaitingApproval"/>
-    /// to <see cref="OperationProposalStatus.Executing"/> via a CAS write.
+    /// to <see cref="OperationProposalStatus.Executing"/> and records the approval
+    /// principal, timestamp, and authority-retention evidence via one CAS write.
     /// Returns the updated proposal (with its incremented version token) on success.
     /// Throws when another caller already claimed or resolved the proposal, or when the
     /// claim cannot be won after retries due to persistent version conflicts.
     /// </summary>
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
+        string approvedBy,
+        OperationApproverIdentity? approverIdentity,
+        DateTimeOffset decidedAt,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            var claiming = proposal with { Status = OperationProposalStatus.Executing };
+            var claiming = proposal with
+            {
+                Status = OperationProposalStatus.Executing,
+                ResolvedBy = approvedBy,
+                Approval = new OperationApprovalRecord
+                {
+                    Approver = approvedBy,
+                    ApproverIdentity = approverIdentity,
+                    Approved = true,
+                    DecidedAt = decidedAt,
+                    ProposerAuthorityRetained = true,
+                },
+            };
             if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)
                     .ConfigureAwait(false))
             {
@@ -497,12 +619,6 @@ internal sealed partial class OperationGateway : IOperationGateway
             $"Failed to claim proposal '{proposal.ProposalId}' for execution after repeated version conflicts.");
     }
 
-    private static bool IsTerminalStatus(OperationProposalStatus status)
-        => status is OperationProposalStatus.Succeeded
-            or OperationProposalStatus.Failed
-            or OperationProposalStatus.Rejected
-            or OperationProposalStatus.RolledBack;
-
     // Best-effort read of the ops-action name from an AdminConfigChange execution
     // payload ({action, target, params}). Returns null for absent/blank/malformed
     // payloads; a malformed payload then resolves to the base tier and the real applier
@@ -535,9 +651,11 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     private static OperationGatewayRequest RebuildRequest(OperationProposal proposal) => new()
     {
+        OperationInstanceId = proposal.OperationInstanceId,
         Kind = proposal.Kind,
         RequestedBy = proposal.RequestedBy,
         RequestedByAgent = proposal.RequestedByAgent,
+        Authority = proposal.Authority,
         Reason = proposal.Audit.Reason,
         CorrelationId = proposal.Audit.CorrelationId,
         IdempotencyKey = proposal.Audit.IdempotencyKey,
@@ -554,8 +672,40 @@ internal sealed partial class OperationGateway : IOperationGateway
                 ActionMarkedAutoSafe = proposal.AutonomyMetadata.ActionMarkedAutoSafe,
                 BlastRadius = proposal.AutonomyMetadata.BlastRadius,
                 EvidenceRefs = proposal.AutonomyMetadata.EvidenceRefs,
+                EvidencePosture = proposal.AutonomyMetadata.EvidencePosture,
+                RequiredEvidenceSourceIds = proposal.AutonomyMetadata.RequiredEvidenceSourceIds,
             },
     };
+
+    private static OperationGatewayRequest EnsureOperationInstance(OperationGatewayRequest request)
+        => string.IsNullOrWhiteSpace(request.OperationInstanceId)
+            ? request with { OperationInstanceId = $"opinst-{Guid.NewGuid():N}" }
+            : request;
+
+    private static void ValidateAuthority(OperationAuthorityContext? authority)
+    {
+        if (authority is not null && !authority.TryValidate(out var error))
+        {
+            throw new InvalidOperationException($"Operation authority is invalid: {error}");
+        }
+
+        if (authority is not null && !authority.PermitsBoundOperation())
+        {
+            throw new InvalidOperationException(
+                "The proposer's OAuth scope ceiling no longer permits the canonical operation.");
+        }
+    }
+
+    private static void RequireProposalAuthority(OperationAuthorityContext? authority)
+    {
+        if (authority is null)
+        {
+            throw new InvalidOperationException(
+                "A captured proposer authority is required before an approval-gated operation can be persisted or executed.");
+        }
+
+        ValidateAuthority(authority);
+    }
 
     private async Task<OpsAutonomyRouteDecision> EvaluateAutonomyAsync(
         OperationGatewayRequest request,
@@ -853,6 +1003,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             Outcome = gatewayOutcome,
             Decision = decision,
+            OperationInstanceId = request.OperationInstanceId,
             ExecutionOperationId = operationId,
             Message = message,
         };
@@ -1092,6 +1243,12 @@ internal sealed partial class OperationGateway : IOperationGateway
             BlastRadius = Math.Max(1, context.BlastRadius),
             EvidenceRefs = context.EvidenceRefs
                 .Where(static value => IsBoundedIdentifier(value, 256))
+                .Take(16)
+                .ToArray(),
+            EvidencePosture = context.EvidencePosture,
+            RequiredEvidenceSourceIds = context.RequiredEvidenceSourceIds
+                .Where(EvidencePosture.IsKnownSourceId)
+                .Distinct(StringComparer.Ordinal)
                 .Take(16)
                 .ToArray(),
         };

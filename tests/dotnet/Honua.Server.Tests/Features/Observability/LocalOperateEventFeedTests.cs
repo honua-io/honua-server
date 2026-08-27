@@ -77,6 +77,174 @@ public sealed class LocalOperateEventFeedTests
         page.Items[0].Kind.Should().Be(OperateEventKind.Audit);
         page.Items[1].Kind.Should().Be(OperateEventKind.Alert);
         page.PartialResult.Should().BeFalse();
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_SingleSourceExceedsPageSize_ReportsHasMore()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items =
+            {
+                NewSummary(1, AlertSeverity.Warning, now),
+                NewSummary(2, AlertSeverity.Warning, now.AddMinutes(-1))
+            }
+        };
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, alertQuery);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Alert],
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("alert:1");
+        page.HasMore.Should().BeTrue();
+        page.Truncated.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_MultipleSourcesExceedMergedPageSize_ReportsHasMore()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items = { NewSummary(1, AlertSeverity.Warning, now.AddMinutes(-1)) }
+        };
+        var auditReader = new FakeAuditReader
+        {
+            Items =
+            {
+                new AuditEventRecord
+                {
+                    AuditId = 1,
+                    Timestamp = now,
+                    EventType = AuditEventType.AdminAction,
+                    Actor = "alice",
+                    ActorType = AuditActorType.UserId,
+                    ResourceType = "service",
+                    ResourceId = "svc",
+                    Action = "service.update",
+                    Outcome = AuditOutcome.Success,
+                    CorrelationId = "corr-1"
+                }
+            }
+        };
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            alertQuery,
+            auditReader);
+
+        var page = await feed.ListAsync(new OperateEventFilter { PageSize = 1 });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("audit:1");
+        page.HasMore.Should().BeTrue();
+        page.Truncated.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_AlertCursorCycle_MarksSourcePartialAndTruncated()
+    {
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            new CyclingAlertQuery());
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Alert],
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty();
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Alert);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_AlertLaterPageFailure_PreservesEarlierRowsAndMarksPartial()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            MaxPageSize = 1,
+            ThrowOnListCall = 2,
+            Items =
+            {
+                NewSummary(1, AlertSeverity.Warning, now),
+                NewSummary(2, AlertSeverity.Warning, now.AddMinutes(-1))
+            }
+        };
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, alertQuery);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Alert],
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("alert:1");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Alert);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_AuditLaterPageFailure_PreservesEarlierRowsAndMarksPartial()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var auditReader = new FakeAuditReader
+        {
+            MaxPageSize = 1,
+            ThrowOnListCall = 2,
+            Items =
+            {
+                NewAudit(1, now),
+                NewAudit(2, now.AddMinutes(-1))
+            }
+        };
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            auditReader: auditReader);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Audit],
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("audit:1");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Audit);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_EmptySuccessfulSource_RemainsInQueriedSources()
+    {
+        var alertQuery = new FakeAlertQuery
+        {
+            Items = { NewSummary(10, AlertSeverity.Warning, DateTimeOffset.UtcNow) }
+        };
+        var auditReader = new FakeAuditReader();
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            alertQuery,
+            auditReader);
+
+        var page = await feed.ListAsync(new OperateEventFilter { PageSize = 10 });
+
+        page.Items.Should().ContainSingle().Which.Kind.Should().Be(OperateEventKind.Alert);
+        page.QueriedSources.Should().BeEquivalentTo(
+            [OperateEventKind.Alert, OperateEventKind.Audit],
+            "a successful empty component still contributes to composite coverage");
+        page.SourceErrors.Should().BeNull();
     }
 
     [UnitTest]
@@ -567,6 +735,10 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().ContainSingle();
         page.Items[0].Kind.Should().Be(OperateEventKind.Alert);
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeFalse("the service filter excludes progress-derived jobs");
+        page.PartialResult.Should().BeFalse();
+        page.SourceErrors.Should().BeNull();
     }
 
     [UnitTest]
@@ -588,6 +760,103 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().HaveCount(1);
         page.Items[0].EventId.Should().Be("job:job-new");
+        page.HasMore.Should().BeTrue();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_EmptyLocalProgressSnapshotIsPartialAndTruncated()
+    {
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: new FakeProgressStore());
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty();
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job)
+            .WhoseValue.Should().Be("job source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_LocalEnumerationCanOmitReachableRecordWithoutClaimingHasMore()
+    {
+        var store = new FakeProgressStore();
+        store.AddOutOfBand("peer-or-evicted", NewJob("peer-or-evicted", DateTimeOffset.UtcNow));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: store);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty("the process-local enumeration omitted the reachable record");
+        page.HasMore.Should().BeFalse("unknown coverage does not prove another matching row");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_ClusterWideProgressEnumerationCanBeComplete()
+    {
+        var store = new FakeProgressStore
+        {
+            ProvidesClusterWideActiveOperationEnumeration = true
+        };
+        store.Add(NewJob("cluster-wide", DateTimeOffset.UtcNow));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: store);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("cluster-wide");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeFalse();
+        page.PartialResult.Should().BeFalse();
+        page.SourceErrors.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_ClusterWideEnumerationNullRaceIsPartialAndTruncated()
+    {
+        var store = new FakeProgressStore
+        {
+            ProvidesClusterWideActiveOperationEnumeration = true
+        };
+        store.AddMissingActiveId("expired-after-enumeration");
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: store);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty();
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
     }
 
     [UnitTest]
@@ -609,6 +878,9 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().HaveCount(1);
         page.Items[0].EventId.Should().Be("job:specific");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
         store.ActiveIdsCalls.Should().Be(0, "direct lookup must skip the unordered active-ids list");
     }
 
@@ -630,6 +902,8 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().ContainSingle();
         page.Items[0].EventId.Should().Be("job:job-failed");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
     }
 
     [UnitTest]
@@ -659,6 +933,10 @@ public sealed class LocalOperateEventFeedTests
         operationIds.Should().Contain("progress-only");
         page.Items.Should().ContainSingle(item => item.OperationId == "durable-job");
         page.Items.Single(item => item.OperationId == "durable-job").Title.Should().Be("Geoprocessing Running");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue("the process-local progress source may omit other jobs");
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
     }
 
     [UnitTest]
@@ -680,7 +958,37 @@ public sealed class LocalOperateEventFeedTests
 
         page.Items.Should().ContainSingle();
         page.Items[0].EventId.Should().Be("job:specific");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
         progressStore.ActiveIdsCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DirectDurableHitSkipsIncompleteProgressAndRemainsComplete()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(NewExecutionJob("durable-hit", now, ExecutionJobStatus.Running));
+        var progressStore = new FakeProgressStore();
+        progressStore.AddOutOfBand("durable-hit", NewJob("durable-hit", now.AddMinutes(-1)));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: progressStore,
+            jobStore: jobStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            OperationId = "durable-hit",
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("durable-hit");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeFalse();
+        page.PartialResult.Should().BeFalse();
+        page.SourceErrors.Should().BeNull();
+        progressStore.ProgressGetCalls.Should().Be(0);
     }
 
     [UnitTest]
@@ -740,6 +1048,386 @@ public sealed class LocalOperateEventFeedTests
     }
 
     [UnitTest]
+    public async Task ListAsync_JobSource_DurableScanBudgetExhaustionMarksPartialWithoutClaimingMoreMatches()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobs = new List<ExecutionJobRecord>(201)
+        {
+            NewExecutionJob(
+                "matching-head",
+                now,
+                ExecutionJobStatus.Running,
+                createdAt: now.AddMinutes(-2))
+        };
+        for (var index = 0; index < 199; index++)
+        {
+            jobs.Add(NewExecutionJob(
+                $"filtered-{index:D3}",
+                now.AddHours(-2),
+                ExecutionJobStatus.Running,
+                createdAt: now.AddHours(-3).AddSeconds(-index)));
+        }
+
+        jobs.Add(NewExecutionJob(
+            "matching-beyond-budget",
+            now.AddSeconds(-30),
+            ExecutionJobStatus.Running,
+            createdAt: now.AddHours(-4)));
+
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(jobs.ToArray());
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, jobStore: jobStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            From = now.AddMinutes(-1),
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("matching-head");
+        page.HasMore.Should().BeFalse("the unscanned cursor does not prove another matching row");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+        jobStore.SeenQueries.Should().HaveCount(4);
+        jobStore.SeenQueries[^1].Cursor.Should().Be("150");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DurableSortsFullBoundedScanByEventTimeBeforeTrimming()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(
+            NewExecutionJob(
+                "created-newest-updated-old",
+                now.AddHours(-1),
+                ExecutionJobStatus.Running,
+                createdAt: now.AddHours(-2)),
+            NewExecutionJob(
+                "created-middle-updated-old",
+                now.AddMinutes(-50),
+                ExecutionJobStatus.Running,
+                createdAt: now.AddHours(-3)),
+            NewExecutionJob(
+                "created-oldest-updated-newest",
+                now,
+                ExecutionJobStatus.Running,
+                createdAt: now.AddHours(-4)));
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, jobStore: jobStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("created-oldest-updated-newest");
+        page.HasMore.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ReleaseSource_SortsWholeSnapshotBeforeTrimming()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var releases = new ReleaseTimelineBuffer();
+        releases.Append(NewRelease("newest", now));
+        releases.Append(NewRelease("oldest", now.AddHours(-2)));
+        releases.Append(NewRelease("middle", now.AddHours(-1)));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            releaseTimeline: releases);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Release],
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("release:newest");
+        page.HasMore.Should().BeTrue();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue("the release timeline is per-instance");
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ReleaseSource_PerInstanceSnapshotIsPartialAndTruncated()
+    {
+        var releases = new ReleaseTimelineBuffer();
+        releases.Append(NewRelease("local-only", DateTimeOffset.UtcNow));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            releaseTimeline: releases);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Release],
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("release:local-only");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ReleaseSource_EmptyFreshBufferIsPartialAndTruncated()
+    {
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            releaseTimeline: new ReleaseTimelineBuffer());
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Release],
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty();
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ReleaseSource_EvictedFilteredHistoryIsPartialAndTruncated()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var releases = new ReleaseTimelineBuffer(capacity: 2);
+        releases.Append(NewRelease("evicted-match", now.AddHours(-3)));
+        releases.Append(NewRelease("retained-match", now.AddHours(-2)));
+        releases.Append(NewRelease("filtered-newer", now));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            releaseTimeline: releases);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Release],
+            To = now.AddHours(-1),
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.EventId.Should().Be("release:retained-match");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_MixedReleaseAndDurableSource_RemainsPartialAndTruncated()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items = { NewSummary(1, AlertSeverity.Warning, now) }
+        };
+        var releases = new ReleaseTimelineBuffer();
+        releases.Append(NewRelease("local", now.AddMinutes(-1)));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            alertQuery: alertQuery,
+            releaseTimeline: releases);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Alert, OperateEventKind.Release],
+            PageSize = 10
+        });
+
+        page.Items.Should().HaveCount(2);
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Release)
+            .WhoseValue.Should().Be("release source incomplete");
+    }
+
+    [UnitTest]
+    public async Task ListAsync_ExcludedReleaseSource_DoesNotDegradeCompleteSource()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var alertQuery = new FakeAlertQuery
+        {
+            Items = { NewSummary(1, AlertSeverity.Warning, now) }
+        };
+        var releases = new ReleaseTimelineBuffer();
+        releases.Append(NewRelease("excluded", now.AddMinutes(-1)));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            alertQuery: alertQuery,
+            releaseTimeline: releases);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Alert],
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.Kind.Should().Be(OperateEventKind.Alert);
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeFalse();
+        page.PartialResult.Should().BeFalse();
+        page.SourceErrors.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DurableFailurePreservesProgressFallback()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore { ThrowOnQueryCall = 1 };
+        var progressStore = new FakeProgressStore();
+        progressStore.Add(NewJob("progress-fallback", now));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: progressStore,
+            jobStore: jobStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("progress-fallback");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DurableLaterPageFailurePreservesEarlierRows()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore
+        {
+            MaxPageSize = 1,
+            ThrowOnQueryCall = 2
+        };
+        jobStore.Add(
+            NewExecutionJob("preserved", now, ExecutionJobStatus.Running),
+            NewExecutionJob("unavailable", now.AddMinutes(-1), ExecutionJobStatus.Running));
+        var feed = new LocalOperateEventFeed(NullLogger<LocalOperateEventFeed>.Instance, jobStore: jobStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 1
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("preserved");
+        page.HasMore.Should().BeFalse();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_PerIdProgressFailurePreservesSiblingAndMarksPartial()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var progressStore = new FakeProgressStore();
+        progressStore.Add(NewJob("unavailable", now));
+        progressStore.Add(NewJob("available", now.AddMinutes(-1)));
+        progressStore.ThrowOnGetIds.Add("unavailable");
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: progressStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("available");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_ProgressEnumerationFailurePreservesDurableRows()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore();
+        jobStore.Add(NewExecutionJob("durable-preserved", now, ExecutionJobStatus.Running));
+        var progressStore = new FakeProgressStore { ThrowOnActiveIds = true };
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: progressStore,
+            jobStore: jobStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("durable-preserved");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DirectProgressFailureMarksPartial()
+    {
+        var progressStore = new FakeProgressStore();
+        progressStore.ThrowOnGetIds.Add("direct-unavailable");
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: progressStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            OperationId = "direct-unavailable",
+            PageSize = 10
+        });
+
+        page.Items.Should().BeEmpty();
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
+    public async Task ListAsync_JobSource_DirectDurableFailureFallsBackToProgressAndMarksPartial()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var jobStore = new FakeExecutionJobStore { ThrowOnGet = true };
+        var progressStore = new FakeProgressStore();
+        progressStore.AddOutOfBand("direct-fallback", NewJob("direct-fallback", now));
+        var feed = new LocalOperateEventFeed(
+            NullLogger<LocalOperateEventFeed>.Instance,
+            progressStore: progressStore,
+            jobStore: jobStore);
+
+        var page = await feed.ListAsync(new OperateEventFilter
+        {
+            Kinds = [OperateEventKind.Job],
+            OperationId = "direct-fallback",
+            PageSize = 10
+        });
+
+        page.Items.Should().ContainSingle().Which.OperationId.Should().Be("direct-fallback");
+        page.Truncated.Should().BeTrue();
+        page.PartialResult.Should().BeTrue();
+        page.SourceErrors.Should().ContainKey(OperateEventKind.Job);
+    }
+
+    [UnitTest]
     public async Task ListAsync_JobSource_DurableSeverityFilterAppliesBeforeTrimming()
     {
         var now = DateTimeOffset.UtcNow;
@@ -776,6 +1464,21 @@ public sealed class LocalOperateEventFeedTests
             IncidentStatus = AlertIncidentStatus.Started,
             IncidentDurationMs = 0,
             LifecycleStatus = AlertLifecycleStatus.Open
+        };
+
+    private static AuditEventRecord NewAudit(long id, DateTimeOffset occurredAt)
+        => new()
+        {
+            AuditId = id,
+            Timestamp = occurredAt,
+            EventType = AuditEventType.AdminAction,
+            Actor = "alice",
+            ActorType = AuditActorType.UserId,
+            ResourceType = "service",
+            ResourceId = "svc",
+            Action = "service.update",
+            Outcome = AuditOutcome.Success,
+            CorrelationId = "corr-" + id.ToString(CultureInfo.InvariantCulture)
         };
 
     private static FakeProgress NewJob(
@@ -819,17 +1522,35 @@ public sealed class LocalOperateEventFeedTests
             }
         };
 
+    private static OperateEvent NewRelease(string id, DateTimeOffset occurredAt)
+        => new()
+        {
+            EventId = "release:" + id,
+            Kind = OperateEventKind.Release,
+            Severity = OperateEventSeverity.Notice,
+            OccurredAt = occurredAt,
+            Title = "Release " + id,
+            ReleaseId = id,
+            ResourceRef = "release/" + id
+        };
+
     private sealed class FakeAlertQuery : IAlertEventQuery
     {
         public List<AlertEventSummary> Items { get; } = new();
         public List<AlertEventFilter> SeenFilters { get; } = new();
         public int ListCalls { get; private set; }
         public int GetCalls { get; private set; }
+        public int? MaxPageSize { get; init; }
+        public int? ThrowOnListCall { get; init; }
 
         public Task<AlertEventPage> ListAsync(AlertEventFilter filter, CancellationToken cancellationToken = default)
         {
             ListCalls++;
             SeenFilters.Add(filter);
+            if (ListCalls == ThrowOnListCall)
+            {
+                return Task.FromException<AlertEventPage>(new InvalidOperationException("alert page unavailable"));
+            }
 
             var filtered = Items.AsEnumerable();
             if (filter.From is { } from)
@@ -872,7 +1593,7 @@ public sealed class LocalOperateEventFeedTests
                 .ThenByDescending(item => item.EventId)
                 .ToArray();
             var offset = ParseCursor(filter.Cursor);
-            var pageSize = Math.Max(1, filter.PageSize);
+            var pageSize = Math.Max(1, Math.Min(filter.PageSize, MaxPageSize ?? int.MaxValue));
             var page = ordered.Skip(offset).Take(pageSize).ToArray();
             var nextOffset = offset + page.Length;
             var nextCursor = nextOffset < ordered.Length
@@ -889,6 +1610,27 @@ public sealed class LocalOperateEventFeedTests
         }
     }
 
+    private sealed class CyclingAlertQuery : IAlertEventQuery
+    {
+        public Task<AlertEventPage> ListAsync(AlertEventFilter filter, CancellationToken cancellationToken = default)
+        {
+            var nextCursor = filter.Cursor switch
+            {
+                null => "cursor-a",
+                "cursor-a" => "cursor-b",
+                _ => "cursor-a"
+            };
+            return Task.FromResult(new AlertEventPage
+            {
+                Items = Array.Empty<AlertEventSummary>(),
+                NextCursor = nextCursor
+            });
+        }
+
+        public Task<AlertEventSummary?> GetAsync(long eventId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AlertEventSummary?>(null);
+    }
+
     private sealed class ThrowingAlertQuery : IAlertEventQuery
     {
         public Task<AlertEventPage> ListAsync(AlertEventFilter filter, CancellationToken cancellationToken = default)
@@ -902,10 +1644,16 @@ public sealed class LocalOperateEventFeedTests
     {
         public List<AuditEventRecord> Items { get; } = new();
         public List<AuditLogFilter> SeenFilters { get; } = new();
+        public int? MaxPageSize { get; init; }
+        public int? ThrowOnListCall { get; init; }
 
         public Task<AuditEventPage> ListAsync(AuditLogFilter filter, CancellationToken cancellationToken = default)
         {
             SeenFilters.Add(filter);
+            if (SeenFilters.Count == ThrowOnListCall)
+            {
+                return Task.FromException<AuditEventPage>(new InvalidOperationException("audit page unavailable"));
+            }
 
             var filtered = Items.AsEnumerable();
             if (filter.From is { } from)
@@ -953,7 +1701,7 @@ public sealed class LocalOperateEventFeedTests
                 .ThenByDescending(item => item.AuditId)
                 .ToArray();
             var offset = ParseCursor(filter.Cursor);
-            var pageSize = Math.Max(1, filter.PageSize);
+            var pageSize = Math.Max(1, Math.Min(filter.PageSize, MaxPageSize ?? int.MaxValue));
             var page = ordered.Skip(offset).Take(pageSize).ToArray();
             var nextOffset = offset + page.Length;
             var nextCursor = nextOffset < ordered.Length
@@ -972,6 +1720,10 @@ public sealed class LocalOperateEventFeedTests
         private readonly List<string> _activeIds = new();
         private readonly Dictionary<string, IOperationProgress> _records = new();
         public int ActiveIdsCalls { get; private set; }
+        public int ProgressGetCalls { get; private set; }
+        public HashSet<string> ThrowOnGetIds { get; } = new(StringComparer.Ordinal);
+        public bool ThrowOnActiveIds { get; init; }
+        public bool ProvidesClusterWideActiveOperationEnumeration { get; init; }
 
         public void Add(IOperationProgress progress)
         {
@@ -985,14 +1737,27 @@ public sealed class LocalOperateEventFeedTests
             _records[operationId] = progress;
         }
 
+        public void AddMissingActiveId(string operationId)
+            => _activeIds.Add(operationId);
+
         public Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default)
         {
             ActiveIdsCalls++;
+            if (ThrowOnActiveIds)
+            {
+                return Task.FromException<IReadOnlyList<string>>(new InvalidOperationException("progress enumeration unavailable"));
+            }
+
             return Task.FromResult<IReadOnlyList<string>>(_activeIds.ToList());
         }
 
         public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_records.GetValueOrDefault(operationId));
+        {
+            ProgressGetCalls++;
+            return ThrowOnGetIds.Contains(operationId)
+                ? Task.FromException<IOperationProgress?>(new InvalidOperationException("progress record unavailable"))
+                : Task.FromResult(_records.GetValueOrDefault(operationId));
+        }
 
         public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
             where TProgress : class, IOperationProgress
@@ -1021,6 +1786,9 @@ public sealed class LocalOperateEventFeedTests
     {
         private readonly Dictionary<string, ExecutionJobRecord> _records = new(StringComparer.Ordinal);
         public List<ExecutionJobQuery> SeenQueries { get; } = new();
+        public int? ThrowOnQueryCall { get; init; }
+        public int? MaxPageSize { get; init; }
+        public bool ThrowOnGet { get; init; }
 
         public void Add(params ExecutionJobRecord[] records)
         {
@@ -1051,7 +1819,9 @@ public sealed class LocalOperateEventFeedTests
         }
 
         public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult(_records.GetValueOrDefault(operationId));
+            => ThrowOnGet
+                ? Task.FromException<ExecutionJobRecord?>(new InvalidOperationException("durable job unavailable"))
+                : Task.FromResult(_records.GetValueOrDefault(operationId));
 
         public Task SetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
@@ -1068,6 +1838,10 @@ public sealed class LocalOperateEventFeedTests
         public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
         {
             SeenQueries.Add(query);
+            if (SeenQueries.Count == ThrowOnQueryCall)
+            {
+                return Task.FromException<ExecutionJobPage>(new InvalidOperationException("durable job page unavailable"));
+            }
 
             var items = _records.Values
                 .Where(job => query.Statuses.Count == 0 || query.Statuses.Contains(job.Status))
@@ -1086,7 +1860,7 @@ public sealed class LocalOperateEventFeedTests
                 .ThenByDescending(job => job.OperationId, StringComparer.Ordinal)
                 .ToArray();
             var offset = ParseCursor(query.Cursor);
-            var limit = Math.Max(1, query.Limit);
+            var limit = Math.Max(1, Math.Min(query.Limit, MaxPageSize ?? int.MaxValue));
             var page = items.Skip(offset).Take(limit).ToArray();
             var nextOffset = offset + page.Length;
             var nextCursor = nextOffset < items.Length

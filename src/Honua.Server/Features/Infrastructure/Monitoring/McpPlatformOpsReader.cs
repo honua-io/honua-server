@@ -9,9 +9,11 @@ using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin;
@@ -49,6 +51,7 @@ internal sealed class McpPlatformOpsReader(
         var skew = PlatformReleaseSkewProjector.Build(_controlPlaneOptions.CurrentValue);
         var response = new DeployPreflightPlatformRelease
         {
+            EvidencePosture = EvidencePostureProjection.ForPlatformRelease(DateTimeOffset.UtcNow),
             ReleaseVersion = skew.ReleaseVersion,
             ReleaseDeclared = skew.ReleaseDeclared,
             IsCoVersioned = skew.IsCoVersioned,
@@ -74,9 +77,18 @@ internal sealed class McpPlatformOpsReader(
             var operation = await _deployWorkflowService.GetAsync(operationId, cancellationToken).ConfigureAwait(false)
                 ?? throw new GeoprocessingNotFoundException($"Deploy operation '{operationId}' was not found.");
 
+            var generatedAt = DateTimeOffset.UtcNow;
+            var item = DeployControlEndpoints.MapOperationResponse(operation);
             var response = new DeployOperationListResponse
             {
-                Items = [DeployControlEndpoints.MapOperationResponse(operation)],
+                EvidencePosture = EvidencePostureProjection.ForDeployOperations(
+                    generatedAt,
+                    page: 1,
+                    pageSize: 1,
+                    returnedCount: 1,
+                    hasMore: false,
+                    [item.UpdatedAt]),
+                Items = [item],
                 Page = 1,
                 PageSize = 1,
                 TotalCount = 1,
@@ -95,9 +107,18 @@ internal sealed class McpPlatformOpsReader(
             .ListDeployOperationsAsync(status, kind, page, pageSize, cancellationToken)
             .ConfigureAwait(false);
 
+        var listGeneratedAt = DateTimeOffset.UtcNow;
+        var items = result.Items.Select(DeployControlEndpoints.MapOperationResponse).ToArray();
         var list = new DeployOperationListResponse
         {
-            Items = result.Items.Select(DeployControlEndpoints.MapOperationResponse).ToArray(),
+            EvidencePosture = EvidencePostureProjection.ForDeployOperations(
+                listGeneratedAt,
+                result.Page,
+                result.PageSize,
+                items.Length,
+                result.HasMore,
+                items.Select(item => item.UpdatedAt).ToArray()),
+            Items = items,
             Page = result.Page,
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
@@ -113,13 +134,9 @@ internal sealed class McpPlatformOpsReader(
     {
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
-        var catalog = _services.GetService<IOperationExecutorCatalog>();
         return new McpSupportedOperationKindsOutput
         {
-            SupportedKinds = catalog?.SupportedKinds
-                .Select(kind => kind.ToString())
-                .OrderBy(name => name, StringComparer.Ordinal)
-                .ToArray() ?? []
+            SupportedKinds = ResolveSupportedKinds() ?? []
         };
     }
 
@@ -149,6 +166,14 @@ internal sealed class McpPlatformOpsReader(
             throw new GeoprocessingValidationException("'targetId' is required.");
         }
 
+        var authorizationGate = _services.GetService<IGeoprocessingJobService>()
+            ?? throw new InvalidOperationException("The authorization service is unavailable.");
+        await authorizationGate.EnsureCallerAuthorizedAsync(
+            principal,
+            OperatorResourceType.Deployment,
+            OperatorOperation.Rollback,
+            cancellationToken).ConfigureAwait(false);
+
         var selection = await ResolveRollbackRevisionAsync(
                 targetId,
                 Clean(argument.ToRevision),
@@ -162,13 +187,24 @@ internal sealed class McpPlatformOpsReader(
             CurrentRevision = selection.CurrentRevision,
         }.Serialize();
 
-        var actor = principal.Identity?.Name;
-        var result = await gateway.RouteAsync(
+        var authority = OperationAuthorityContext.Capture(
+            principal,
+            _services.GetRequiredService<ITenantContext>(),
+            _services.GetRequiredService<IConfiguration>()
+                .GetValue("MultiTenancy:Enabled", true)) with
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Rollback,
+            ResourceId = targetId,
+        };
+        var actor = authority.Actor;
+        var result = await gateway.CreateApprovalProposalAsync(
                 new OperationGatewayRequest
                 {
                     Kind = OperationClass.Deploy,
                     RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
                     RequestedBy = actor,
+                    Authority = authority,
                     Reason = string.IsNullOrWhiteSpace(argument.Reason)
                         ? $"Propose rollback of deploy target '{targetId}' to prior revision '{selection.DesiredRevision}'."
                         : argument.Reason,
@@ -277,6 +313,7 @@ internal sealed class McpPlatformOpsReader(
     {
         var catalog = _services.GetService<IOperationExecutorCatalog>();
         return catalog?.SupportedKinds
+            .Where(McpProposableOperationKinds.Contains)
             .Select(kind => kind.ToString())
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();

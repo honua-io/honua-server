@@ -8,6 +8,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
@@ -63,10 +64,19 @@ internal static class ObservabilityAlertEndpoints
         }
 
         var page = await query.ListAsync(filter, cancellationToken).ConfigureAwait(false);
+        var generatedAt = DateTimeOffset.UtcNow;
+        var items = page.Items.Select(ObservabilityAlertEventResponseMapper.Map).ToArray();
         var response = new ObservabilityAlertEventPageResponse
         {
-            Items = page.Items.Select(ObservabilityAlertEventResponseMapper.Map).ToArray(),
-            NextCursor = page.NextCursor
+            Items = items,
+            NextCursor = page.NextCursor,
+            EvidencePosture = EvidencePostureProjection.ForAlertEvents(
+                generatedAt,
+                filter.From,
+                filter.To,
+                filter.PageSize,
+                items.Select(item => item.OccurredAt).ToArray(),
+                page.NextCursor is not null),
         };
 
         return Results.Json(response, ObservabilityJsonContext.Default.ObservabilityAlertEventPageResponse);

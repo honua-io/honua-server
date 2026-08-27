@@ -160,6 +160,7 @@ internal sealed class GeoprocessingJobDispatcher
         AnalysisPlan plan,
         string? idempotencyKey,
         string? requestedBy,
+        OperationAuthorityContext authority,
         IReadOnlyDictionary<string, string>? protocolMetadata,
         bool isCustomCode,
         string? approvalGatedProcessId,
@@ -188,6 +189,12 @@ internal sealed class GeoprocessingJobDispatcher
         {
             Kind = OperationClass.Geoprocess,
             RequestedBy = payload.RequestedBy,
+            Authority = authority with
+            {
+                ResourceType = OperatorResourceType.Process,
+                Operation = OperatorOperation.ExecuteMutatingProcess,
+                ResourceId = plan.PlanId,
+            },
             Reason = approvalGatedProcessId == null
                 ? "Destructive geoprocessing plan requires approval."
                 : $"Geoprocessing plan step '{approvalGatedProcessId}' requires approval.",

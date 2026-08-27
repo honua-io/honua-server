@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/supported_operation_kinds.result.schema.json",
   "title": "supported_operation_kinds result payload",
-  "description": "Read-only projection of operation classes backed by executors registered in the live operation gateway. An empty array truthfully represents a gateway with no routable executors. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "description": "Read-only projection of operation classes backed by live executors and safely representable by the validated generic MCP proposal contract. An empty array truthfully represents a gateway with no MCP-proposable executors. x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
   "additionalProperties": false,
@@ -12,7 +12,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"]
+        "enum": ["Deploy", "MetadataRelease"]
       },
       "uniqueItems": true
     }

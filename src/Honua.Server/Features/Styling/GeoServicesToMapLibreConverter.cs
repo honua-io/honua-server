@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using Honua.Core.Features.Styling.Domain;
@@ -251,7 +252,10 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var sourceId = StyleDefaults.GetSourceId(layer);
-        var stops = new List<UniqueValueMatchStop>();
+        // GeoServices values and vector-tile attributes are not guaranteed to use
+        // the same JSON scalar type. Normalize both sides to strings so an Esri
+        // numeric category still matches a string-encoded tile attribute.
+        var matchExpr = new List<object?> { "match", new object?[] { "to-string", new object?[] { "get", fieldName } } };
         Dictionary<string, object?>? outlinePaint = null;
         double? size = null;
         double? lineWidth = null;
@@ -282,13 +286,14 @@ internal static class GeoServicesToMapLibreConverter
                 continue;
             }
 
-            if (!TryConvertUniqueValueToken(valueElement, out var token))
+            if (!TryConvertValueTokenAsString(valueElement, out var value))
             {
                 continue;
             }
 
             anyValues = true;
-            stops.Add(new UniqueValueMatchStop(token, color.ToRgbaString()));
+            matchExpr.Add(value);
+            matchExpr.Add(color.ToRgbaString());
 
             if (fallbackColor == null)
             {
@@ -314,7 +319,7 @@ internal static class GeoServicesToMapLibreConverter
         }
 
         var fallbackStr = fallbackColor?.ToRgbaString() ?? "#2D69A5";
-        var matchExpr = BuildUniqueValueExpression(fieldName, stops, fallbackStr);
+        matchExpr.Add(fallbackStr);
 
         // Guard null/missing values: to-string(null) → "" would silently match
         // an empty-string category instead of falling through to the default.
@@ -659,7 +664,7 @@ internal static class GeoServicesToMapLibreConverter
     {
         style = new Dictionary<string, object?>();
 
-        var stops = new List<(UniqueValueToken Token, PictureMarkerPayload Payload)>();
+        var stops = new List<(string Value, PictureMarkerPayload Payload)>();
         var sawColorOnlyStop = false;
         foreach (var info in infos.EnumerateArray())
         {
@@ -697,12 +702,12 @@ internal static class GeoServicesToMapLibreConverter
                 return false;
             }
 
-            if (!TryConvertUniqueValueToken(valueElement, out var token))
+            if (!TryConvertValueTokenAsString(valueElement, out var value))
             {
                 continue;
             }
 
-            stops.Add((token, payload));
+            stops.Add((value, payload));
         }
 
         if (stops.Count == 0)
@@ -751,14 +756,15 @@ internal static class GeoServicesToMapLibreConverter
         RecordPictureMarkerPartialIfNeeded(allPayloads, unsupported);
 
         var images = new List<PictureMarkerImage>();
-        var matchStops = new List<UniqueValueMatchStop>(stops.Count);
+        var matchExpr = new List<object?> { "match", new object?[] { "to-string", new object?[] { "get", fieldName } } };
         var index = 0;
 
         foreach (var stop in stops)
         {
             var imageId = BuildPictureMarkerId(layer.Id, index++);
             images.Add(new PictureMarkerImage(imageId, stop.Payload));
-            matchStops.Add(new UniqueValueMatchStop(stop.Token, imageId));
+            matchExpr.Add(stop.Value);
+            matchExpr.Add(imageId);
         }
 
         var fallbackId = images[0].Id;
@@ -768,7 +774,7 @@ internal static class GeoServicesToMapLibreConverter
             images.Add(new PictureMarkerImage(fallbackId, defaultPayloadForImage));
         }
 
-        var matchExpr = BuildUniqueValueExpression(fieldName, matchStops, fallbackId);
+        matchExpr.Add(fallbackId);
 
         // Guard null/missing values — mirrors the color match guard above.
         var expression = new List<object?> { "case", StyleDefaults.BuildNonNullFieldGuard(fieldName), matchExpr, fallbackId };
@@ -1318,75 +1324,83 @@ internal static class GeoServicesToMapLibreConverter
         return StyleParsingHelpers.TryGetDouble(prop, out var value) ? value : null;
     }
 
-    private static List<object?> BuildUniqueValueExpression(
-        string fieldName,
-        IReadOnlyList<UniqueValueMatchStop> stops,
-        object fallback)
-    {
-        var numericStops = stops.Where(stop => stop.Token.IsNumeric).ToArray();
-        var textualStops = stops.Where(stop => !stop.Token.IsNumeric).ToArray();
-
-        if (numericStops.Length == 0)
-        {
-            return BuildUniqueValueMatchExpression(fieldName, textualStops, fallback, coerceToString: true);
-        }
-
-        if (textualStops.Length == 0)
-        {
-            return BuildUniqueValueMatchExpression(fieldName, numericStops, fallback, coerceToString: false);
-        }
-
-        var numericMatch = BuildUniqueValueMatchExpression(fieldName, numericStops, fallback, coerceToString: false);
-        var textualMatch = BuildUniqueValueMatchExpression(fieldName, textualStops, fallback, coerceToString: true);
-        return ["case", StyleDefaults.BuildNumericFieldGuard(fieldName), numericMatch, textualMatch];
-    }
-
-    private static List<object?> BuildUniqueValueMatchExpression(
-        string fieldName,
-        IReadOnlyList<UniqueValueMatchStop> stops,
-        object fallback,
-        bool coerceToString)
-    {
-        object input = coerceToString
-            ? new object?[] { "to-string", new object?[] { "get", fieldName } }
-            : new object?[] { "get", fieldName };
-        var expression = new List<object?> { "match", input };
-
-        foreach (var stop in stops)
-        {
-            expression.Add(stop.Token.Value);
-            expression.Add(stop.Output);
-        }
-
-        expression.Add(fallback);
-        return expression;
-    }
-
-    private static bool TryConvertUniqueValueToken(JsonElement element, out UniqueValueToken token)
+    /// <summary>
+    /// Converts a GeoServices value token to its string representation, matching
+    /// the output of MapLibre's <c>to-string</c> coercion so that <c>match</c>
+    /// stops agree with the coerced input type.
+    /// </summary>
+    private static bool TryConvertValueTokenAsString(JsonElement element, out string value)
     {
         switch (element.ValueKind)
         {
-            case JsonValueKind.Number when element.TryGetDouble(out var doubleValue) && double.IsFinite(doubleValue):
-                token = new UniqueValueToken(doubleValue, IsNumeric: true);
-                return true;
             case JsonValueKind.String:
-                token = new UniqueValueToken(element.GetString() ?? string.Empty, IsNumeric: false);
+                value = element.GetString() ?? string.Empty;
+                return true;
+            case JsonValueKind.Number when element.TryGetDouble(out var numericValue)
+                && double.IsFinite(numericValue):
+                value = FormatMapLibreNumber(numericValue);
                 return true;
             case JsonValueKind.True:
-                token = new UniqueValueToken("true", IsNumeric: false);
+                value = "true";
                 return true;
             case JsonValueKind.False:
-                token = new UniqueValueToken("false", IsNumeric: false);
+                value = "false";
                 return true;
             default:
-                token = default;
+                // Unique-value entries with unsupported scalar shapes or numbers that
+                // cannot be represented by MapLibre's finite Number domain are skipped,
+                // matching the converter's handling of other unparseable entries.
+                value = string.Empty;
                 return false;
         }
     }
 
-    private readonly record struct UniqueValueToken(object Value, bool IsNumeric);
+    private static string FormatMapLibreNumber(double value)
+    {
+        // MapLibre GL JS delegates to JavaScript's Number#toString semantics. Modern .NET
+        // emits the same shortest round-trip digits, but its exponent thresholds and spelling
+        // differ (for example 1E-07 instead of 1e-7), so normalize the representation.
+        if (value == 0d)
+        {
+            return "0";
+        }
 
-    private readonly record struct UniqueValueMatchStop(UniqueValueToken Token, object Output);
+        var roundTrip = value.ToString("R", CultureInfo.InvariantCulture);
+        var exponentSeparator = roundTrip.IndexOf('E', StringComparison.Ordinal);
+        if (exponentSeparator < 0)
+        {
+            return roundTrip;
+        }
+
+        var isNegative = roundTrip[0] == '-';
+        var mantissaStart = isNegative ? 1 : 0;
+        var digits = roundTrip[mantissaStart..exponentSeparator].Replace(".", string.Empty, StringComparison.Ordinal);
+        var exponent = int.Parse(roundTrip.AsSpan(exponentSeparator + 1), NumberStyles.Integer, CultureInfo.InvariantCulture);
+        var sign = isNegative ? "-" : string.Empty;
+
+        // ECMAScript uses fixed notation for decimal exponents -6 through 20.
+        if (exponent is >= -6 and < 21)
+        {
+            var decimalPosition = exponent + 1;
+            if (decimalPosition <= 0)
+            {
+                return string.Concat(sign, "0.", new string('0', -decimalPosition), digits);
+            }
+
+            if (decimalPosition >= digits.Length)
+            {
+                return string.Concat(sign, digits, new string('0', decimalPosition - digits.Length));
+            }
+
+            return string.Concat(sign, digits[..decimalPosition], ".", digits[decimalPosition..]);
+        }
+
+        var mantissa = digits.Length == 1 ? digits : string.Concat(digits[0], ".", digits[1..]);
+        var normalizedExponent = exponent >= 0
+            ? string.Concat("+", exponent.ToString(CultureInfo.InvariantCulture))
+            : exponent.ToString(CultureInfo.InvariantCulture);
+        return string.Concat(sign, mantissa, "e", normalizedExponent);
+    }
 }
 
 /// <summary>
