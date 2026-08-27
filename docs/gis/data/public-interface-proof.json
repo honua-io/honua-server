@@ -2407,7 +2407,10 @@
         "ImageServer::GetServiceInfo",
         "ImageServer::GetFields",
         "ImageServer::GetKeyProperties",
+        "ImageServer::GetKeyPropertiesX",
         "ImageServer::GetMetadata",
+        "ImageServer::GetMultidimensionalInfo",
+        "ImageServer::ExecuteAISRequest",
         "ImageServer::ExportImage",
         "ImageServer::GetImage"
       ],

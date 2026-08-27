@@ -14,15 +14,17 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices;
 
 /// <summary>
 /// Guard test: Honua is an independent, Esri-compatible server and must NOT advertise an
-/// ArcGIS Server / ArcGIS Portal version. Every GeoServices REST metadata response model must
+/// ArcGIS Server / ArcGIS Portal version. GeoServices REST service metadata response models must
 /// therefore serialize without a <c>currentVersion</c> or <c>fullVersion</c> field. These
 /// fields previously hardcoded <c>10.81</c> (and <c>10.91</c>/<c>11.1</c>), which falsely
 /// claimed to be a specific ArcGIS release.
 ///
 /// This test asserts on the actual source-generated JSON wire contract for every type registered
 /// in the GeoServices assembly's serialization contexts, so it FAILS the moment anyone re-adds a
-/// <c>currentVersion</c>/<c>fullVersion</c> property to any of these models. Do not weaken it;
-/// remove the offending property instead.
+/// <c>currentVersion</c>/<c>fullVersion</c> property to any of these models. The sole bounded
+/// exception is <c>/rest/info</c>: ArcGIS Pro 3.7's native ImageServer reader requires a
+/// <c>currentVersion</c> compatibility selector before it issues any image operation
+/// (honua-server#3375). <c>fullVersion</c> remains forbidden everywhere.
 /// </summary>
 public sealed class NoArcGisServerVersionTests
 {
@@ -92,6 +94,15 @@ public sealed class NoArcGisServerVersionTests
 
             foreach (var forbidden in ForbiddenWireNames)
             {
+                if (typeInfo.Type == typeof(RestInfoResponse)
+                    && string.Equals(forbidden, "currentVersion", StringComparison.OrdinalIgnoreCase))
+                {
+                    wireNames.Should().ContainSingle(
+                        wireName => string.Equals(wireName, forbidden, StringComparison.OrdinalIgnoreCase),
+                        "the licensed ArcGIS Pro ImageServer reader requires exactly one /rest/info compatibility selector");
+                    continue;
+                }
+
                 wireNames.Should().NotContain(
                     wireName => string.Equals(wireName, forbidden, StringComparison.OrdinalIgnoreCase),
                     $"{typeName} must not advertise an ArcGIS Server/Portal version (no '{forbidden}'); "

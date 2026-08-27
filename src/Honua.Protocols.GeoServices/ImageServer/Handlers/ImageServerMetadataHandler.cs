@@ -179,6 +179,7 @@ internal sealed class ImageServerMetadataHandler
                 // fields.find(...) during ImageryLayer.load) get a non-null fields
                 // array with the OID field they expect.
                 Fields = ImageServerCatalogQueryHandler.BuildCatalogFields(),
+                ObjectIdField = "OBJECTID",
                 Extent = BuildExtent(extent.Value),
                 // The native .NET ImageServiceRaster.LoadAsync reads fullExtent /
                 // initialExtent (not the legacy `extent`) and the storageInfo block;

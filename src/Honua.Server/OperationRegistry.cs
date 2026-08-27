@@ -180,7 +180,10 @@ public static class OperationRegistry
         new(ImageServer, "GetServiceInfo"),
         new(ImageServer, "GetFields"),
         new(ImageServer, "GetKeyProperties"),
+        new(ImageServer, "GetKeyPropertiesX"),
         new(ImageServer, "GetMetadata"),
+        new(ImageServer, "GetMultidimensionalInfo"),
+        new(ImageServer, "ExecuteAISRequest"),
         new(ImageServer, "ExportImage"),
         new(ImageServer, "GetImage"),
     ];

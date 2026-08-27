@@ -141,6 +141,8 @@ public class ImageServerMetadataHandlerTests
         var jsonResult = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which;
         jsonResult.Value!.Fields.Should().NotBeNullOrEmpty();
         jsonResult.Value.Fields.Should().Contain(f => f.Type == "esriFieldTypeOID");
+        jsonResult.Value.ObjectIdField.Should().Be("OBJECTID");
+        jsonResult.Value.SupportsStatistics.Should().BeTrue();
     }
 
     [UnitTest]
