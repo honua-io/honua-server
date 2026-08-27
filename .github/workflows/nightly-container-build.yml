@@ -346,7 +346,9 @@ jobs:
     needs: [build-lambda-aot, mirror-base-images]
     if: ${{ needs.build-lambda-aot.result == 'success' }}
     permissions:
+      attestations: write
       contents: read
+      id-token: write
       packages: write
     steps:
       - name: Set up Docker Buildx
@@ -378,6 +380,7 @@ jobs:
             type=sha,prefix=nightly-lambda-aot-
 
       - name: Create and push multi-arch manifests
+        id: manifest
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
@@ -387,6 +390,18 @@ jobs:
               "${tag}-amd64" \
               "${tag}-arm64"
           done
+          subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
+          subject_ref="${subject_name}:nightly-lambda-aot-${{ needs.mirror-base-images.outputs.build_date }}"
+          subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
+          echo "subject_name=$subject_name" >> "$GITHUB_OUTPUT"
+          echo "subject_digest=$subject_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Attest nightly Lambda AOT manifest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.manifest.outputs.subject_name }}
+          subject-digest: ${{ steps.manifest.outputs.subject_digest }}
+          push-to-registry: true
 
   verify-functions-aot:
     name: Build & Boundary-Verify Azure Functions AOT
@@ -530,7 +545,9 @@ jobs:
     needs: [build-aot, mirror-base-images]
     if: ${{ needs.build-aot.result == 'success' }}
     permissions:
+      attestations: write
       contents: read
+      id-token: write
       packages: write
     steps:
       - name: Set up Docker Buildx
@@ -563,6 +580,7 @@ jobs:
             type=raw,value=trunk
 
       - name: Create and push multi-arch manifests
+        id: manifest
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
@@ -585,6 +603,18 @@ jobs:
             docker buildx imagetools create -t "$tag" -t "$compatibility_tag" \
               "${tag}-amd64" "${tag}-arm64"
           done
+          subject_name="${REGISTRY_GHCR}/${IMAGE_NAME_GHCR}"
+          subject_ref="${subject_name}:nightly-${{ needs.mirror-base-images.outputs.build_date }}"
+          subject_digest="$(docker buildx imagetools inspect "$subject_ref" --format '{{.Manifest.Digest}}')"
+          echo "subject_name=$subject_name" >> "$GITHUB_OUTPUT"
+          echo "subject_digest=$subject_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Attest nightly AOT manifest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.manifest.outputs.subject_name }}
+          subject-digest: ${{ steps.manifest.outputs.subject_digest }}
+          push-to-registry: true
 
   manifest-jit:
     name: Publish JIT Manifests

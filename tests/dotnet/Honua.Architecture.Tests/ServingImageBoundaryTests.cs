@@ -61,6 +61,14 @@ public sealed class ServingImageBoundaryTests
             + "verifier; the Azure Functions job verifies a locally loaded image and promotes nothing");
         nightly.Should().Contain("nightly-aot-${tag_name#nightly-}",
             "dated and SHA AOT compatibility tags must retain their established infix naming");
+        nightly.Should().Contain("actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2", Exactly.Twice(),
+            "the canonical and Lambda multi-architecture manifests must both receive GitHub provenance");
+        nightly.Should().Contain("attestations: write", Exactly.Twice());
+        nightly.Should().Contain("id-token: write", Exactly.Twice());
+        nightly.Should().Contain("subject-digest: ${{ steps.manifest.outputs.subject_digest }}", Exactly.Twice(),
+            "attestations must bind the final pushed manifest digest rather than a mutable tag");
+        nightly.Should().Contain("push-to-registry: true", Exactly.Twice(),
+            "gh attestation verify oci://... requires the provenance to be available with the image");
     }
 
     [ArchitectureTest]
