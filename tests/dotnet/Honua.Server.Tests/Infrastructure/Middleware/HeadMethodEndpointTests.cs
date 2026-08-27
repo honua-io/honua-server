@@ -121,6 +121,7 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     /// method, so the genuine 405 is preserved.
     /// </summary>
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Head_PostOnlyRoute_Returns405MethodNotAllowed()
     {
         var client = _fixture.CreateClient();
@@ -144,6 +145,7 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     /// HEAD must therefore stop before the handler instead of inheriting its GET semantics.
     /// </summary>
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Head_CalculateRoute_Returns405MethodNotAllowed()
     {
         var client = _fixture.CreateClient();
@@ -209,6 +211,7 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     /// never inherit those GET semantics and invoke their handlers.
     /// </summary>
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Head_MutatingGetRoutes_Return405MethodNotAllowed()
     {
         var client = _fixture.CreateClient();
@@ -231,6 +234,7 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     /// must keep answering 405 for the mutating methods.
     /// </summary>
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task NonGetMethods_OnGetOnlyRoute_StillReturn405MethodNotAllowed()
     {
         var client = _fixture.CreateClient();
@@ -251,6 +255,7 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     /// An unknown path is still a 404 for HEAD — the rewrite must not turn a miss into a match.
     /// </summary>
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task Head_UnknownPath_Returns404NotFound()
     {
         var client = _fixture.CreateClient();
