@@ -995,7 +995,7 @@ jobs:
           fi
 
       - name: Format Check
-        run: dotnet format Honua.sln --verify-no-changes --verbosity diagnostic
+        run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
 
   dotnet-foundation-tests:
     name: .NET Foundation Tests
