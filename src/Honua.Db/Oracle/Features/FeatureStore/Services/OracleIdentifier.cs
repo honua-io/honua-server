@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
@@ -43,6 +44,20 @@ internal static partial class OracleIdentifier
     public static string Quote(string identifier)
     {
         EnsureValid(identifier, "identifier");
+        return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    /// <summary>
+    /// Double-quotes an attribute name accepted by the shared feature-field contract.
+    /// Structural identifiers remain restricted to <see cref="Quote"/>.
+    /// </summary>
+    public static string QuoteAttribute(string identifier)
+    {
+        if (!FeatureFieldNameSyntax.IsValid(identifier))
+        {
+            throw new ArgumentException($"Invalid Oracle attribute column '{identifier}'.");
+        }
+
         return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
     }
 
