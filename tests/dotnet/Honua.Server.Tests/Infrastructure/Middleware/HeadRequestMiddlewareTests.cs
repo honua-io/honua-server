@@ -8,6 +8,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Logging;
 
@@ -57,6 +58,11 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();
         builder.Services.AddHonuaHeadRequestSupport();
+        builder.Services.AddResponseCompression(options =>
+        {
+            options.EnableForHttps = true;
+            options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["text/event-stream"]);
+        });
 
         _app = builder.Build();
         _app.UseHonuaHeadRequestMethod();
@@ -77,8 +83,12 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             _upstreamMethodOnUnwind = context.Request.Method;
         });
 
-        // Registered last, exactly as Program.cs does, so it is the final middleware before the
-        // endpoint runs.
+        // Production installs response compression between method restoration and final HEAD
+        // semantics. It decorates IHttpResponseBodyFeature when the client negotiates an
+        // encoding, so the bounded-stream callback must not depend on a direct feature cast.
+        _app.UseResponseCompression();
+
+        // Registered last, exactly as Program.cs does, so it is the final middleware before the endpoint runs.
         _app.UseHonuaHeadRequestGetSemantics();
 
         // GET-only: the shape of nearly every Honua route before #3389.
@@ -342,6 +352,30 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         exited.Should().BeSameAs(
             _streamHandlerExited.Task,
             "a HEAD probe must release a marked stream even when it flushes headers before writing data");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnMarkedStreamThroughResponseCompression_CompletesAndReleasesHandler()
+    {
+        using var timeout = new CancellationTokenSource(StreamProbeTimeout);
+        using var request = new HttpRequestMessage(HttpMethod.Head, "/marked-flush-stream");
+        request.Headers.AcceptEncoding.ParseAdd("gzip");
+
+        using var response = await _client.SendAsync(request, timeout.Token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.ToString().Should().Be("text/event-stream");
+        response.Content.Headers.ContentEncoding.Should().Contain(
+            "gzip",
+            "the test must exercise the response-compression body-feature wrapper");
+        response.Content.Headers.ContentLength.Should().BeNull();
+
+        var exited = await Task.WhenAny(
+            _streamHandlerExited.Task,
+            Task.Delay(StreamProbeTimeout, timeout.Token));
+        exited.Should().BeSameAs(
+            _streamHandlerExited.Task,
+            "response compression must not hide the HEAD activity callback from a marked stream");
     }
 
     [UnitTest]
