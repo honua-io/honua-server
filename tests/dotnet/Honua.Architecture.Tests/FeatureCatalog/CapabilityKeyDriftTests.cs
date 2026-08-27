@@ -222,6 +222,7 @@ public sealed class CapabilityKeyDriftTests
             actual.Category.Should().Be(expected.Category, "capability '{0}' category drifted", expected.Key);
             actual.Edition.Should().Be(expected.Edition.ToString(), "capability '{0}' edition drifted", expected.Key);
             actual.Description.Should().Be(expected.Description, "capability '{0}' description drifted", expected.Key);
+            actual.Status.Should().Be(expected.Status, "capability '{0}' status drifted", expected.Key);
         }
     }
 
@@ -284,6 +285,9 @@ internal sealed class CapabilityKeyJson
 
     /// <summary>Description.</summary>
     public string Description { get; init; } = string.Empty;
+
+    /// <summary>Optional public release posture (for example live or experimental).</summary>
+    public string? Status { get; init; }
 }
 
 /// <summary>The four crosswalk sections.</summary>

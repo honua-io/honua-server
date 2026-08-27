@@ -10,28 +10,29 @@ namespace Honua.Core.Features.Licensing.Domain;
 /// <see cref="FeatureCatalog"/>: <see cref="FeatureCatalog"/> enumerates only the
 /// edition-gated (Pro/Enterprise) entitlement keys enforced by
 /// <c>LicenseGate</c>, while <see cref="CapabilityKeyCatalog"/> additionally
-/// enumerates the Community-tier capabilities that ship ungated — serve/query
-/// surfaces per protocol family, file import, discovery, and other surfaces a
-/// prospect's capability checklist needs to reference even though no license
-/// check exists for them.
+/// enumerates Community-tier capabilities that ship ungated and descriptive
+/// edition-qualified keys whose existing runtime gates are not owned by
+/// <see cref="FeatureCatalog"/>.
 /// </summary>
 /// <param name="Key">Unique capability identifier (dot-namespaced, lowercase).</param>
 /// <param name="DisplayName">Human-readable capability name.</param>
 /// <param name="Category">Capability category for grouping.</param>
 /// <param name="Edition">Minimum edition required to use this capability.</param>
 /// <param name="Description">Brief description of the capability.</param>
+/// <param name="Status">Optional release posture for keys whose live/experimental state is part of the public contract.</param>
 public sealed record CapabilityKeyDefinition(
     string Key,
     string DisplayName,
     string Category,
     HonuaEdition Edition,
-    string Description);
+    string Description,
+    string? Status = null);
 
 /// <summary>
 /// Canonical customer-facing capability vocabulary (#2893). Extends
-/// <see cref="FeatureCatalog"/> with the Community-tier capability keys that
-/// have no entitlement gate — this type is purely a description layer: it does
-/// not touch <c>LicenseGate</c> or any entitlement-enforcement code path.
+/// <see cref="FeatureCatalog"/> with Community-tier and descriptive
+/// edition-qualified capability keys. This type is purely a description layer:
+/// it does not touch <c>LicenseGate</c> or any entitlement-enforcement code path.
 /// <see cref="All"/> is the single list downstream consumers (the route→capability
 /// mapping, the crosswalk artifact, honua-evidence, honua-site, and the SDK
 /// coverage snapshots) must treat as authoritative; nothing else may fork it.
@@ -56,6 +57,12 @@ public static class CapabilityKeyCatalog
 
         /// <summary>Operational health, metrics, and observability surfaces.</summary>
         public const string Ops = "Ops";
+
+        /// <summary>Configured external data-provider implementations.</summary>
+        public const string DataProviders = "DataProviders";
+
+        /// <summary>Provider-neutral interchange and response formats.</summary>
+        public const string Format = "Format";
 
         /// <summary>Job/process execution surfaces (geoprocessing, OGC API Processes).</summary>
         public const string Process = "Process";
@@ -143,6 +150,10 @@ public static class CapabilityKeyCatalog
         new("ops.observability", "Observability", Categories.Ops,
             HonuaEdition.Community, "Metrics and monitoring surfaces for operational visibility."),
 
+        // Provider-neutral response formats
+        new("format.geoarrow", "GeoArrow Response Format", Categories.Format,
+            HonuaEdition.Community, "Return FeatureServer query results as Arrow IPC with GeoArrow extension metadata through the shared provider-neutral response formatter.", Status: "live"),
+
         // Process
         new("process.geoprocessing", "Geoprocessing Task Execution", Categories.Process,
             HonuaEdition.Community, "Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys."),
@@ -204,7 +215,23 @@ public static class CapabilityKeyCatalog
     ];
 
     /// <summary>
-    /// The full canonical capability vocabulary: <see cref="CommunityKeys"/> plus
+    /// Descriptive keys that are edition-qualified but intentionally do not enter
+    /// <see cref="FeatureCatalog"/> or change runtime entitlement enforcement. Warehouse
+    /// providers remain experimental and fail closed behind their existing feature gates.
+    /// </summary>
+    public static IReadOnlyList<CapabilityKeyDefinition> DescriptiveKeys { get; } =
+    [
+        new("provider.redshift", "Amazon Redshift Provider", Categories.DataProviders,
+            HonuaEdition.Enterprise, "Experimental, off-by-default Amazon Redshift feature provider; enabling the capability key alone does not enable the provider.", Status: "experimental"),
+        new("provider.snowflake", "Snowflake Provider", Categories.DataProviders,
+            HonuaEdition.Enterprise, "Experimental, off-by-default Snowflake feature provider; enabling the capability key alone does not enable the provider.", Status: "experimental"),
+        new("provider.databricks", "Databricks SQL Provider", Categories.DataProviders,
+            HonuaEdition.Enterprise, "Experimental, off-by-default Databricks SQL feature provider; enabling the capability key alone does not enable the provider.", Status: "experimental"),
+    ];
+
+    /// <summary>
+    /// The full canonical capability vocabulary: <see cref="CommunityKeys"/>,
+    /// descriptive edition-qualified keys, plus
     /// every existing edition-gated key from <see cref="FeatureCatalog.All"/>,
     /// projected into the shared <see cref="CapabilityKeyDefinition"/> shape.
     /// This is the list every downstream consumer (route→capability mapping,
@@ -213,11 +240,13 @@ public static class CapabilityKeyCatalog
     public static IReadOnlyList<CapabilityKeyDefinition> All { get; } =
     [
         .. CommunityKeys,
+        .. DescriptiveKeys,
         .. FeatureCatalog.All.Select(static feature => new CapabilityKeyDefinition(
             feature.Key,
             feature.DisplayName,
             feature.Category,
             feature.MinimumEdition,
-            feature.Description)),
+            feature.Description,
+            Status: null)),
     ];
 }

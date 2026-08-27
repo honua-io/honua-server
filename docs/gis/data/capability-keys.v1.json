@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "generator": "src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs",
   "trackingIssue": "#2893",
   "description": "Canonical customer-facing capability key vocabulary (Community + Pro + Enterprise) and its crosswalks to the evidence vocabularies that don't otherwise join: honua-esri-assess's verdict registry, client-interop certification envelopes (client_lane x protocol), the geoservices REST parity index, and geobench benchmark scenarios. Hard Esri lock-ins (Utility Network, Parcel Fabric, Linear Referencing) are intentionally absent from esriAssess below -- see capability-no-go-allowlist.v1.json.",
@@ -299,6 +299,14 @@
       "description": "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange."
     },
     {
+      "key": "format.geoarrow",
+      "displayName": "GeoArrow Response Format",
+      "category": "Format",
+      "edition": "Community",
+      "description": "Return FeatureServer query results as Arrow IPC with GeoArrow extension metadata through the shared provider-neutral response formatter.",
+      "status": "live"
+    },
+    {
       "key": "geocoding.batch",
       "displayName": "Batch Geocoding",
       "category": "Geocoding",
@@ -451,6 +459,30 @@
       "category": "Process",
       "edition": "Community",
       "description": "Submit and poll jobs through OGC API - Processes."
+    },
+    {
+      "key": "provider.databricks",
+      "displayName": "Databricks SQL Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "description": "Experimental, off-by-default Databricks SQL feature provider; enabling the capability key alone does not enable the provider.",
+      "status": "experimental"
+    },
+    {
+      "key": "provider.redshift",
+      "displayName": "Amazon Redshift Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "description": "Experimental, off-by-default Amazon Redshift feature provider; enabling the capability key alone does not enable the provider.",
+      "status": "experimental"
+    },
+    {
+      "key": "provider.snowflake",
+      "displayName": "Snowflake Provider",
+      "category": "DataProviders",
+      "edition": "Enterprise",
+      "description": "Experimental, off-by-default Snowflake feature provider; enabling the capability key alone does not enable the provider.",
+      "status": "experimental"
     },
     {
       "key": "raster.cloud-cog-serving",
