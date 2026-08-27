@@ -39,6 +39,7 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
             BuildAdminServerStatusDescriptor(),
             .. _legacyActuators.Select(actuator => BuildLegacyDescriptor(actuator.OperationClass)),
             .. AdminOperateOperationCatalog.Descriptors
+            .. AdminApiOperationCatalog.Descriptors
         ]);
 
     private static OperationDescriptor BuildLegacyDescriptor(
