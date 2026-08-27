@@ -16,9 +16,11 @@ Each certification run produces one JSON file per client lane per protocol. The 
   "server_version": "<honua-server version/commit>",
   "server_commit": "<full tested honua-server commit SHA>",
   "fixture_revision": "sha256:<digest of the executed seed fixture>",
-  "client_lane": "<js|js-cesium|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi|arcgis-stub>",
+  "server_config_revision": "sha256:<digest of the executed server configuration>",
+  "client_lane": "<js|js-cesium|desktop-arcgis|desktop-qgis|cli|bi-powerbi|bi-excel|ci-desktop|ci-bi|arcgis-stub|py-geopandas|py-owslib|duckdb|r-sf|py-pystac>",
   "client_version": "<client tool version>",
-  "protocol": "<featureserver|mapserver|ogc-features|ogc-maps|ogc-tiles|odata|mvt|wfs|wms|wmts|admin-api>",
+  "protocol": "<featureserver|mapserver|ogc-features|ogc-maps|ogc-tiles|odata|mvt|wfs|wms|wmts|stac|portal|admin-api>",
+  "protocol_version": "<protocol version the client negotiated, e.g. 2.0.0 for WFS>",
   "environment": "<local|ci|staging>",
   "results": [
     {
@@ -53,9 +55,11 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `server_version` | string | Yes | Honua Server version or commit SHA |
 | `server_commit` | string | Required for certifying client lanes | Full 40-character commit SHA of the tested Honua Server source |
 | `fixture_revision` | string | Required for certifying client lanes | SHA-256 digest of the exact seed fixture executed by the client lane |
-| `client_lane` | string | Yes | One of: `js`, `js-cesium`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi`, `arcgis-stub`. The Cesium browser sub-lane uses `js-cesium` (rather than the umbrella `js`) so it is independently identifiable in the docker/client-compat baseline-diff; the ArcGIS Pro REST stub uses `arcgis-stub` to keep its evidence distinct from a future licensed `desktop-arcgis` runner. |
-| `client_version` | string | Yes | Version of the client tool under test |
-| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `admin-api`. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
+| `server_config_revision` | string | Required for certifying client lanes | SHA-256 digest of the exact server configuration the lane ran against. Together with `fixture_revision` these are the `requiredReceiptFields` in `docs/gis/data/client-certification-matrix.v1.json`; the canonical contract for both is [`CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md`](CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md) ([#3393](https://github.com/honua-io/honua-server/issues/3393)). |
+| `client_lane` | string | Yes | One of: `js`, `js-cesium`, `desktop-arcgis`, `desktop-qgis`, `cli`, `bi-powerbi`, `bi-excel`, `ci-desktop`, `ci-bi`, `arcgis-stub`, `py-geopandas`, `py-owslib`, `duckdb`, `r-sf`, `py-pystac`. The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-server/issues/3392)) each name the client library rather than its host language runtime, so a second Python client cannot silently reuse another's lane identity. The Cesium browser sub-lane uses `js-cesium` (rather than the umbrella `js`) so it is independently identifiable in the docker/client-compat baseline-diff; the ArcGIS Pro REST stub uses `arcgis-stub` to keep its evidence distinct from a future licensed `desktop-arcgis` runner. |
+| `client_version` | string | Yes | Version of the client tool under test. Lanes that exercise more than one library pin all of them in one string, semicolon-separated (e.g. `geopandas=1.0.1;pyogrio=0.10.0;GDAL=3.9.3`). |
+| `protocol_version` | string | No | The protocol version the client actually negotiated (e.g. `2.0.0` for WFS, `1.3.0` for WMS, `1.0` for OGC API Features). Emitted by the PyQGIS lane and by every canonical analyst lane; lets a receipt distinguish a WFS 1.1.0 pass from a WFS 2.0 pass. |
+| `protocol` | string | Yes | One of: `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `stac`, `portal`, `admin-api`. `portal` is emitted by the ArcGIS Portal/Sharing facade lane and `stac` by the pystac-client lane. The `ogc-maps` and `ogc-tiles` values are emitted by the Cesium imagery lane (and by future OGC API Maps / Tiles producers) and align with the protocol abbreviations in [`CROSS_CLIENT_CERTIFICATION_MATRIX.md`](CROSS_CLIENT_CERTIFICATION_MATRIX.md#protocol-abbreviations). |
 | `environment` | string | Yes | One of: `local`, `ci`, `staging` |
 | `results` | array | Yes | Array of common-core CERT-\* test case result objects |
 | `results[].test_case_id` | string | Yes | CERT-\* ID from the matrix |
@@ -73,7 +77,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `summary.not_applicable` | number | Yes | Count of `not-applicable` results |
 | `cite_results` | string \| null | No | Path to CITE testng-results XML, if applicable. Null when no CITE run was performed. |
 | `extensions` | array | No | Array of lane-specific extension result objects (see below) |
-| `extensions[].test_case_id` | string | Yes | Lane-extension ID from the matrix (e.g., `JS-EXT-01`, `DSK-EXT-01`, `CLI-EXT-01`, `BI-EXT-01`) — not restricted to the CERT-\* prefix |
+| `extensions[].test_case_id` | string | Yes | Lane-extension ID from the matrix (e.g., `JS-EXT-01`, `DSK-EXT-01`, `CLI-EXT-01`, `BI-EXT-01`, `NB-GPD-CRS-01`) — not restricted to the CERT-\* prefix. The `NB-` namespace is reserved for the canonical notebook/analyst lanes, sub-namespaced per client (`NB-GPD-`, `NB-OWS-`, `NB-DDB-`, `NB-RSF-`, `NB-STAC-`). Every extension ID must still be declared in `docs/gis/data/client-certification-matrix.v1.json` and documented in the prose matrix — `DocumentationMatrixDriftTests` joins evidence, JSON, and prose in both directions. |
 | `extensions[].status` | string | Yes | One of: `pass`, `fail`, `skip`, `not-applicable` |
 | `extensions[].duration_ms` | number \| null | No | Execution time in milliseconds |
 | `extensions[].measured_count` | number \| null | No | Observed item count for count-based extension evidence (e.g., BI-EXT-02). Null when not applicable. |

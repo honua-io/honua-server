@@ -88,6 +88,13 @@ services:
       # token. Production keeps the RequireHttps=true default. The read surface
       # (info/portals-self/search/content-items) is anonymous and needs no token.
       Authentication__PortalToken__RequireHttps: "false"
+      # Certification lanes are deliberately request-heavy: stac-api-validator alone walks
+      # every conformance class and exceeded the default 1000-request window, so the pystac
+      # lane recorded 429s as spec failures (honua-server#3392). Rate limiting is an edge
+      # concern (ADR-0004) and is not part of what a client lane certifies, so it is off for
+      # this fixture. docker/client-compat/compose.yml is deliberately excluded from
+      # `serverConfigRevision`, so this does not churn the frozen fixture digests.
+      RateLimiting__Enabled: "false"
       ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__Redis: redis:6379
@@ -214,6 +221,151 @@ services:
       - compat
     volumes:
       - ./output/arcgis-stub:/output
+
+  # ---------------------------------------------------------------------
+  # Canonical analyst-client lanes (#3392, parent #3389).
+  #
+  # Each of these is a real client library exercised against the same
+  # compose `honua` service the browser and desktop lanes use, so the
+  # certification denominator covers the notebook/analyst access paths
+  # customers actually script against — not just GIS desktops and browsers.
+  # Every lane writes `{run_id}-{client_lane}-{protocol}.cert.json` into its
+  # own ./output/<lane> directory; refresh-baselines.sh strips the run_id
+  # prefix when it promotes an envelope to tests/baselines/client-compat.
+  # ---------------------------------------------------------------------
+
+  geopandas:
+    profiles: ["matrix", "geopandas"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/geopandas/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+      HONUA_GEOPANDAS_SERVICE_ID: test_service
+      HONUA_GEOPANDAS_COLLECTION_ID: "0"
+      # Binds the receipt to the exact source revision under test. Compose has no
+      # view of git, so CI exports HONUA_SERVER_COMMIT (github.sha); a bare local
+      # run leaves it empty and the envelope records "unknown" rather than lying.
+      HONUA_GEOPANDAS_SERVER_COMMIT: "${HONUA_SERVER_COMMIT:-}"
+      # Control-plane key for the CERT-AUTH-02 case and the server-version
+      # probe on the evidence receipt; matches HONUA_ADMIN_PASSWORD above.
+      HONUA_ADMIN_API_KEY: ClientCompatAdmin123!
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:ro
+      - ./output/geopandas:/output
+
+  owslib:
+    profiles: ["matrix", "owslib"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/owslib/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+      HONUA_OWSLIB_SERVICE_ID: test_service
+      HONUA_OWSLIB_COLLECTION_ID: "0"
+      # WMS/WMTS have no raster fixture on test_service; the browser_compat
+      # service (layers 2000-2002) is the same raster fixture the cesium lane
+      # consumes, so the two lanes certify the same rendered surface.
+      HONUA_OWSLIB_RASTER_SERVICE_ID: browser_compat
+      HONUA_OWSLIB_RASTER_LAYER_ID: "2000"
+      # Binds the receipt to the exact source revision under test. Compose has no
+      # view of git, so CI exports HONUA_SERVER_COMMIT (github.sha); a bare local
+      # run leaves it empty and the envelope records "unknown" rather than lying.
+      HONUA_OWSLIB_SERVER_COMMIT: "${HONUA_SERVER_COMMIT:-}"
+      # Control-plane key for the CERT-AUTH-02 case and the server-version
+      # probe on the evidence receipt; matches HONUA_ADMIN_PASSWORD above.
+      HONUA_ADMIN_API_KEY: ClientCompatAdmin123!
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:ro
+      - ./output/owslib:/output
+
+  duckdb:
+    profiles: ["matrix", "duckdb"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/duckdb/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+      HONUA_DUCKDB_SERVICE_ID: test_service
+      HONUA_DUCKDB_COLLECTION_ID: "0"
+      # Binds the receipt to the exact source revision under test. Compose has no
+      # view of git, so CI exports HONUA_SERVER_COMMIT (github.sha); a bare local
+      # run leaves it empty and the envelope records "unknown" rather than lying.
+      HONUA_DUCKDB_SERVER_COMMIT: "${HONUA_SERVER_COMMIT:-}"
+      # Control-plane key for the CERT-AUTH-02 case and the server-version
+      # probe on the evidence receipt; matches HONUA_ADMIN_PASSWORD above.
+      HONUA_ADMIN_API_KEY: ClientCompatAdmin123!
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:ro
+      - ./output/duckdb:/output
+
+  r-sf:
+    profiles: ["matrix", "r-sf"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/r-sf/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+      HONUA_R_SF_SERVICE_ID: test_service
+      HONUA_R_SF_COLLECTION_ID: "0"
+      # Binds the receipt to the exact source revision under test. Compose has no
+      # view of git, so CI exports HONUA_SERVER_COMMIT (github.sha); a bare local
+      # run leaves it empty and the envelope records "unknown" rather than lying.
+      HONUA_R_SF_SERVER_COMMIT: "${HONUA_SERVER_COMMIT:-}"
+      # Control-plane key for the CERT-AUTH-02 case and the server-version
+      # probe on the evidence receipt; matches HONUA_ADMIN_PASSWORD above.
+      HONUA_ADMIN_API_KEY: ClientCompatAdmin123!
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:ro
+      - ./output/r-sf:/output
+
+  pystac:
+    profiles: ["matrix", "pystac"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/pystac/Dockerfile
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+      # The STAC suite predates the lane and reads its own env prefix; keep
+      # both so the promoted lane and the standalone suite agree.
+      HONUA_STAC_COMPAT_BASE_URL: http://honua:5000
+      HONUA_STAC_COMPAT_SERVICE_ID: test_service
+      HONUA_STAC_COMPAT_COLLECTION_ID: "0"
+      # Binds the receipt to the exact source revision under test. Compose has no
+      # view of git, so CI exports HONUA_SERVER_COMMIT (github.sha); a bare local
+      # run leaves it empty and the envelope records "unknown" rather than lying.
+      HONUA_PYSTAC_SERVER_COMMIT: "${HONUA_SERVER_COMMIT:-}"
+      # Control-plane key for the CERT-AUTH-02 case and the server-version
+      # probe on the evidence receipt; matches HONUA_ADMIN_PASSWORD above.
+      HONUA_ADMIN_API_KEY: ClientCompatAdmin123!
+    depends_on:
+      honua:
+        condition: service_healthy
+    networks:
+      - compat
+    volumes:
+      - ../../tests:/workspace/tests:ro
+      - ./output/pystac:/output
 
 networks:
   compat:

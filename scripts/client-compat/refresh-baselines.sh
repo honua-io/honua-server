@@ -15,7 +15,7 @@ OUTPUT_DIR="${ROOT_DIR}/docker/client-compat/output"
 BASELINE_DIR="${ROOT_DIR}/tests/baselines/client-compat"
 
 # Mirror the lane matrix in .github/workflows/client-interop-nightly.yml.
-DEFAULT_LANES=(gdal pyqgis openlayers cesium arcgis-stub)
+DEFAULT_LANES=(gdal pyqgis openlayers cesium arcgis-stub geopandas owslib duckdb r-sf pystac)
 ALLOWED_LANES=("${DEFAULT_LANES[@]}")
 
 if (( $# == 0 )); then

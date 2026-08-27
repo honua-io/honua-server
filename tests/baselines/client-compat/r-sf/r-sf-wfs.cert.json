@@ -1,0 +1,638 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260823T211929Z",
+  "run_date": "2026-08-23T21:19:36.727260+00:00",
+  "server_version": "1.0.0",
+  "server_commit": "unknown",
+  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+  "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+  "client_lane": "r-sf",
+  "client_version": "sf=1.1.2;ows4R=0.5;GDAL=3.8.4",
+  "protocol": "wfs",
+  "protocol_version": "2.0.0",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 88,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "sf::st_read() opened WFS layer 'honua:test_layer' and returned 10 row(s) (fixture seeds 10 features, 9 with geometry).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Transport scheme observed via httr/curl: 'http'. The client-compat compose network is plain HTTP by design, so no TLS handshake is available here; TLS is exercised in the release tier against the HTTPS candidate deployment.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "pass",
+      "duration_ms": 38,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Anonymous httr GET /api/v1/admin/services returned 401 (expected 401/403). Control-plane probe uses httr because both feature protocols are anonymous in the client-compat fixture.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "pass",
+      "duration_ms": 26,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "httr GET /api/v1/admin/services with header X-API-Key: <admin key> returned 200 (expected 2xx). Honua's control plane authenticates with an API key header, not HTTP Basic and not a bearer login flow.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 29,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "ows4R WFSClient$getCapabilities()$getFeatureTypes() listed 5 feature type(s)/collection(s); certification target resolved to 'honua:test_layer'.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "ows4R feature-type metadata for 'honua:test_layer' from the WFS 2.0.0 capabilities: title=Test Layer, boundingBox=present.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": 73,
+      "measured_count": 12,
+      "measured_delta": null,
+      "notes": "ows4R WFSFeatureType$getDescription(pretty = TRUE) (WFS DescribeFeatureType) exposed 12/12 canonical attribute fields.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "pass",
+      "duration_ms": 80,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "sf::st_geometry_type() over 9 non-empty geometries reported: POINT. DescribeFeatureType declared: Point.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": 110,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "Attribute filter \"status = 'active'\" applied via sf::st_read(query=) OGR SQL; the GDAL WFS driver translates it into the protocol filter parameter (OAPIF queryable / CQL2, WFS 2.0 fes:Filter) where the server advertises it. Returned 5 row(s); expected 5.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "pass",
+      "duration_ms": 148,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Spatial filter applied through the protocol bbox parameter (WFS bbox=37.705,-122.495,37.735,-122.455,urn:ogc:def:crs:EPSG::4326) and read with sf::st_read(): 3 row(s); expected 3. Corroborated by sf::st_read(wkt_filter=) over the WFS DSN (GDAL SetSpatialFilter): 3 non-empty geometry/geometries.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "pass",
+      "duration_ms": 83,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "First page via sf::st_read(query='... LIMIT 3') returned 3 row(s); expected 3.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "pass",
+      "duration_ms": 90,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Second page via sf::st_read(query='... LIMIT 3 OFFSET 3') returned 3 row(s) with id set {4,5,6}; first page was {1,2,3}; overlap 0.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": 2,
+      "measured_count": null,
+      "measured_delta": 0,
+      "notes": "Anchor 'alpha' returned (-122.4900000000, 37.7100000000) against reference (-122.4900, 37.7100); max absolute coordinate deviation 0.000e+00 decimal degrees, threshold 1e-06.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": 30,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "sf::st_crs() reported input=WGS 84, epsg=4326. OGC:CRS84 is accepted as the lon/lat presentation of EPSG:4326 that both protocols default to.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": 21,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "sf::st_read(layer='does-not-exist-9999') on the WFS DSN raised: \"Opening layer failed.\"; the corresponding wire request returned 400 (<?xml version=\"1.0\" encoding=\"UTF-8\"?> <ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows/1.1\" version=\"2.0.0\" l...).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "pass",
+      "duration_ms": 34,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Malformed filter \"status ==\" via sf::st_read(query=\"SELECT * FROM \"honua:test_layer\" WHERE status ==\") was rejected by the GDAL OGR SQL parser: \"Query execution failed, cannot open layer.  | GDAL Error 1: SQL Expression Parsing Error: syntax error, unexpected '='. Occurred around : * FROM \"honua:test_layer\" WHERE status ==                     ...\". The same malformed filter sent as the protocol filter parameter returned 400 (httr transport-shape check): <?xml version=\"1.0\" encoding=\"UTF-8\"?> <ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows/1.1\" version=\"2.0.0\" language=\"en\">   <ows...",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "R sf/ows4R is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "R sf/ows4R is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "R sf/ows4R is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "R sf/ows4R is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "R sf/ows4R is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "R sf/ows4R is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "R sf/ows4R is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "R sf/ows4R is a data-access client with no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 8
+  },
+  "cite_results": null,
+  "extensions": [
+    {
+      "test_case_id": "NB-RSF-TYP-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "Numeric/boolean typing through WFS: count=integer, ratio=numeric, active=logical. All seeded values round-trip with the declared types.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-TYP-02",
+      "status": "pass",
+      "duration_ms": 1,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Temporal typing through WFS: created_at as character, event_date as character, event_time as character. Instants are compared in UTC, so a lost timezone is a failure, not a class difference. All seeded temporal values round-trip.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-TYP-03",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "JSON array columns through WFS/GML: tags as character, numbers as character; values tags=[red|blue] numbers=[0|1|2]. GML 3.2 has no array type, so stringification is expected here; the assertion is that no element is lost or garbled.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-TYP-04",
+      "status": "pass",
+      "duration_ms": 22,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "uuid column materialised as character with value '00000000-0000-0000-0000-000000000001' (expected '00000000-0000-0000-0000-000000000001').",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-NUL-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "Nullable `description`: 4 of 10 rows are NA (fixture seeds 4 NULLs); 'alpha' is NA and 'beta' is 'description_1'. A server that emitted \"\" or the string \"null\" would fail this.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-NUL-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "Null-geometry handling: 10 row(s) returned with 1 empty geometry/geometries (fixture seeds 10 features, 9 with geometry); the null-geometry row 'lambda' is present. Dropping it or failing the read would be a server bug.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-GEO-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "st_bbox() of the returned features (-122.49000 37.71000 -122.37000 37.79000) against the WFS declared extent (-122.50000 37.70000 -122.35000 37.84000): the data extent must lie inside the advertised extent, otherwise clients that zoom to the declared extent hide features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-GEO-02",
+      "status": "pass",
+      "duration_ms": 2,
+      "measured_count": null,
+      "measured_delta": 0,
+      "notes": "WKB (st_as_binary) and WKT (st_as_text) round-trip of 9 server geometries: max coordinate deviation 0.000e+00 (WKB 0.000e+00, WKT 0.000e+00), threshold 1e-06.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-GEO-03",
+      "status": "pass",
+      "duration_ms": 14,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "sf::st_is_valid() over 9 server geometries: 9 valid, 0 invalid, 0 indeterminate.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-CRS-01",
+      "status": "pass",
+      "duration_ms": 39,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "WFS advertises CRS list {4326, 3857} for the certification layer; both the storage CRS (EPSG:4326) and the Web Mercator alternative (EPSG:3857) must be offered or R users cannot request a projected read.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-CRS-02",
+      "status": "pass",
+      "duration_ms": 55,
+      "measured_count": null,
+      "measured_delta": 5.58793544769287e-09,
+      "notes": "Server-side reprojection to EPSG:3857 (urn:ogc:def:crs:EPSG::3857) returned (-13635524.4273, 4538539.1534); PROJ 9.4.0 via sf::st_transform() computes (-13635524.4273, 4538539.1534); max deviation 0.0000 m, threshold 0.01 m.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-CRS-03",
+      "status": "pass",
+      "duration_ms": 115,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Axis order with srsName=urn:ogc:def:crs:EPSG::4326: raw GML gml:pos is '37.71 -122.49' (spec requires lat lon for the urn form) and sf/GDAL recovered (-122.4900, 37.7100) as lon/lat. Either half being wrong swaps every coordinate for R users.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-CRS-04",
+      "status": "pass",
+      "duration_ms": 46,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "bbox axis-order contract for WFS: the specified order (the feature type's default CRS, lat,lon for urn EPSG::4326) selected 3 feature(s) (expected 3), and the reversed order returned HTTP 400 with 0 feature(s) — a server that accepted both orders would be guessing, and a client cannot tell which guess it got.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-PAG-01",
+      "status": "pass",
+      "duration_ms": 107,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "Full paginated walk in pages of 3 over 5 request(s) collected 10 unique feature name(s) with 0 duplicate(s); the fixture seeds 10. A drifting page window would show up as a duplicate or a missing id.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-PAG-02",
+      "status": "pass",
+      "duration_ms": 13,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Oversized page request (limit/COUNT=100000) returned HTTP 400 with n/a row(s). The server must clamp to its configured maximum or reject with a 4xx; a 5xx or an unbounded read is the bug this case looks for.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-PAG-03",
+      "status": "pass",
+      "duration_ms": 24,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "Paging counters on a 2-feature page (httr transport-shape check): numberMatched=10 (expected 10), numberReturned=2, actual features=2. numberMatched must be the unpaged total, not the page size.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-PAG-04",
+      "status": "pass",
+      "duration_ms": 22,
+      "measured_count": 0,
+      "measured_delta": null,
+      "notes": "Offset/startIndex past the end returned HTTP 200 with 0 feature(s) and numberMatched=10 (expected 200, 0 features, 10 matched). Wrapping around or erroring here breaks every client that walks to the end.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-PAG-05",
+      "status": "pass",
+      "duration_ms": 24,
+      "measured_count": 0,
+      "measured_delta": null,
+      "notes": "Zero-size page request (limit/COUNT=0) returned HTTP 200 with 0 feature(s): a structured 4xx or an empty 200 are both defensible; a 5xx or a full result set is not. Body: {\"type\":\"FeatureCollection\",\"features\":[],\"numberMatched\":10,\"numberReturned\":0,\"timeStamp\":\"2026-08-23T21:19:34.248465+...",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-FMT-01",
+      "status": "pass",
+      "duration_ms": 36,
+      "measured_count": 10,
+      "measured_delta": 0,
+      "notes": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate deviation 0.000e+00. (JSON array columns are flattened to text first: OGR refuses list columns.)",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-FMT-02",
+      "status": "pass",
+      "duration_ms": 19,
+      "measured_count": 10,
+      "measured_delta": 0,
+      "notes": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate deviation 0.000e+00. (JSON array columns are flattened to text first: OGR refuses list columns.)",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-FMT-03",
+      "status": "pass",
+      "duration_ms": 95,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Advertised output formats all serve the complete feature set: application/geo+json -> HTTP 200, 4059 byte(s), anchor present, last feature present; text/csv -> HTTP 200, 2516 byte(s), anchor present, last feature present; GML3.2 -> HTTP 200, 9907 byte(s), anchor present, last feature present.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-ERR-01",
+      "status": "pass",
+      "duration_ms": 45,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "WFS error shape: unknown typeName returned 400 with an ows:ExceptionReport (exceptionCode present); an unsupported REQUEST returned 501. WFS 2.0 reports operation errors as a 4xx ExceptionReport, not a 404 body or a 500.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-ERR-02",
+      "status": "pass",
+      "duration_ms": 19,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Malformed CRS 'urn:ogc:def:crs:BOGUS::9999' returned HTTP 400 with a structured error body (problem+json / ExceptionReport). A 500 or a silent fallback to the storage CRS would both be server bugs: the client would believe it received the CRS it asked for.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-ERR-03",
+      "status": "pass",
+      "duration_ms": 20,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Unsupported output format returned HTTP 400 (expected a 4xx). Body: <?xml version=\"1.0\" encoding=\"UTF-8\"?> <ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows/1.1\" version=\"2.0.0\" language=\"en\">   <ows...",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-ERR-04",
+      "status": "pass",
+      "duration_ms": 35,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Truncated protocol filter (\"status = 'active' AND\") returned HTTP 400 (expected a 4xx structured error, never a 500 and never a silent full result set). Body: <?xml version=\"1.0\" encoding=\"UTF-8\"?> <ows:ExceptionReport xmlns:ows=\"http://www.opengis.net/ows/1.1\" version=\"2.0.0\" language=\"en\">   <ows...",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-AUT-01",
+      "status": "pass",
+      "duration_ms": 9,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "401 challenge shape on /api/v1/admin/services: WWW-Authenticate: ApiKey realm=\"Honua Admin\", header=\"X-API-Key\". The challenge must name the scheme and the header so a client can discover how to authenticate.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-AUT-02",
+      "status": "pass",
+      "duration_ms": 11,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "A wrong X-API-Key value returned HTTP 401 on /api/v1/admin/services; it must be 401 (bad credential), not 403 (authenticated but forbidden) and never 500.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-AUT-03",
+      "status": "pass",
+      "duration_ms": 184,
+      "measured_count": 7,
+      "measured_delta": null,
+      "notes": "GDAL_HTTP_HEADERS carried 'X-API-Key: <admin key>' through sf::st_layers() on the WFS DSN: 7 layer(s) listed and the certification target 'honua:test_layer' is present. Proves the credential path works through the sf/GDAL stack, not just httr.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-XPR-01",
+      "status": "pass",
+      "duration_ms": 52,
+      "measured_count": null,
+      "measured_delta": 0,
+      "notes": "Cross-protocol extent agreement: OGC API Features collection extent [-122.50000 37.70000 -122.35000 37.84000] vs WFS ows:WGS84BoundingBox [-122.50000 37.70000 -122.35000 37.84000]; max deviation 0.000e+00. Disagreement means a client that zooms by metadata sees a different map depending on the protocol.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-XPR-02",
+      "status": "pass",
+      "duration_ms": 87,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "Cross-protocol count agreement: OGC API Features numberMatched=10, WFS resultType=hits numberMatched=10, fixture total=10.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-XPR-03",
+      "status": "pass",
+      "duration_ms": 66,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "Cross-protocol CRS agreement: OGC API Features offers {3857, 4326}, WFS offers {3857, 4326}. A CRS available on one protocol but not the other is a metadata bug, not a capability difference.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-XPR-04",
+      "status": "pass",
+      "duration_ms": 75,
+      "measured_count": 13,
+      "measured_delta": null,
+      "notes": "Cross-protocol attribute agreement: 13 field(s) in OGC API Features items vs 13 in WFS DescribeFeatureType. WFS-only: {}. OAPIF-only: {}. The same layer must expose the same attributes on both protocols.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "ows4R parsed ows:ServiceIdentification: title='Honua WFS 2.0', serviceType='WFS', serviceTypeVersion={2.0.0}.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-02",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "ows4R parsed ows:OperationsMetadata with 9 operation(s): {GetCapabilities, DescribeFeatureType, GetFeature, GetPropertyValue, Transaction, ListStoredQueries, DescribeStoredQueries, CreateStoredQuery, DropStoredQuery}.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-03",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "ows4R parsed 5 feature type(s) from the WFS 2.0.0 capabilities: {honua:test_layer, honua:browser_points, honua:browser_lines, honua:browser_polygons, honua:portal_public_points}; the certification target 'honua:test_layer' is present. ows4R resolves the service namespace by prefix, so a capabilities document that binds wfs/2.0 only as the default namespace parses as zero feature types.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-04",
+      "status": "pass",
+      "duration_ms": 32,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "ows4R per-feature-type metadata: DefaultCRS parsed to epsg:4326 (expected EPSG:4326) and ows:WGS84BoundingBox parsed. R users rely on both to set up a map before any feature is fetched.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-05",
+      "status": "pass",
+      "duration_ms": 73,
+      "measured_count": 15,
+      "measured_delta": null,
+      "notes": "ows4R DescribeFeatureType returned 15 element(s); 12 of 12 canonical attribute fields present.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-06",
+      "status": "pass",
+      "duration_ms": 79,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "ows4R WFSFeatureType$getFeatures() returned a sf/data.frame with 10 row(s); expected 10. This is the ows4R read path (GetFeature via the capabilities-derived URL), not the GDAL WFS driver.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-07",
+      "status": "pass",
+      "duration_ms": 410,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "ows4R getFeatures(count=3) then getFeatures(count=3, startIndex=3) returned 3 and 3 row(s) with overlap 0: {alpha,beta,gamma} then {delta,epsilon,zeta}.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-08",
+      "status": "pass",
+      "duration_ms": 63,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "RESULTTYPE=hits (httr transport-shape check) returned HTTP 200 with numberMatched=10, numberReturned=0 and 0 wfs:member element(s). A hits request must count without serialising features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-09",
+      "status": "pass",
+      "duration_ms": 61,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "PROPERTYNAME=name,status returned HTTP 200 with properties {name, status}; expected exactly {name, status}. Property subsetting that silently returns everything wastes the bandwidth the client asked to save.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-10",
+      "status": "pass",
+      "duration_ms": 519,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "OGC Filter Encoding 2.0 fes:PropertyIsEqualTo(status='active') returned HTTP 200 with 5 feature(s) (expected 5) and status values {active}.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-11",
+      "status": "pass",
+      "duration_ms": 143,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "SORTBY=name A produced {alpha,beta,delta,epsilon,eta,gamma,iota,lambda,theta,zeta} (sorted) and SORTBY=name D produced {zeta,theta,lambda,iota,gamma,eta,epsilon,delta,beta,alpha} (sorted). Both directions must be honoured, otherwise stable client-side paging is impossible.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-RSF-OWS-12",
+      "status": "pass",
+      "duration_ms": 280,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "ows4R against the advertised legacy WFS versions: 1.1.0 -> 5 feature type(s), target present; 1.0.0 -> 5 feature type(s), target present. The server advertises 1.1.0 and 1.0.0 compatibility endpoints, so an R client pinned to either must still discover the layer.",
+      "evidence_ref": ""
+    }
+  ]
+}

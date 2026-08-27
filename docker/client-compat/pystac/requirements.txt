@@ -1,0 +1,47 @@
+# Pinned dependency set for the pystac-client client-compat lane
+# (docker/client-compat/pystac). Exact pins so a lane rebuild cannot silently
+# change what the certification envelope was produced against — the envelope's
+# `client_version` records pystac/pystac-client, and a floating pin there would
+# make baseline diffs unattributable.
+#
+# Kept separate from tests/python/requirements.txt on purpose: this lane targets
+# the compose `honua` service and must never pull the heavy local-server test
+# stack (geopandas, pyproj, scipy) it does not import.
+
+# --- the clients under certification -------------------------------------
+# `orjson` extra is required by stac-api-validator's pystac dependency.
+pystac[orjson]==1.15.2
+pystac-client==0.9.0
+
+# External STAC API conformance validator, recorded as NB-STAC-VALID-01.
+stac-api-validator==0.6.8
+
+# --- transport -----------------------------------------------------------
+# httpx backs the control-plane auth probe and the error-surface cases where
+# pystac-client exposes no observable surface; requests is pystac-client's own
+# transport and is pinned so the lane's HTTP behaviour is reproducible.
+httpx==0.28.1
+requests==2.32.5
+
+# --- schema validation ---------------------------------------------------
+jsonschema==4.26.0
+
+# --- geometry ------------------------------------------------------------
+shapely==2.1.2
+
+# --- test runner ---------------------------------------------------------
+# pytest is held on the 8.x line: tests/python/stac_client/conftest.py uses the
+# `hookwrapper=True` hook form and `item.fspath`, which pytest 9 removes.
+pytest==8.4.2
+# tests/python/pytest.ini sets `asyncio_mode` and `timeout`; without these
+# plugins pytest warns about unknown ini options on every run.
+pytest-asyncio==1.4.0
+pytest-timeout==2.4.0
+
+# --- conftest import chain ----------------------------------------------
+# tests/python/conftest.py and tests/python/stac_client/conftest.py import
+# shared.postgis / shared.server at module scope for the local-server developer
+# path. The container never starts a database (HONUA_BASE_URL short-circuits
+# that branch), but the imports still have to resolve for collection to succeed.
+psycopg[binary]==3.2.10
+testcontainers[postgres]==4.15.0

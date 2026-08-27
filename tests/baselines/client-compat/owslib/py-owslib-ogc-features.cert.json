@@ -1,0 +1,413 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260823T211850Z",
+  "run_date": "2026-08-23T21:18:50.647145+00:00",
+  "server_version": "1.0.0",
+  "server_commit": "unknown",
+  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+  "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+  "client_lane": "py-owslib",
+  "client_version": "0.36.0",
+  "protocol": "ogc-features",
+  "protocol_version": "1.0",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 0,
+      "measured_count": 7,
+      "measured_delta": null,
+      "notes": "owslib.ogcapi.features.Features constructed against the landing page and returned 7 live links including self/conformance/data.",
+      "evidence_ref": "http://honua:5000/ogc/features/"
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Transport verified as plain http on the compose client-compat network, which terminates no TLS. TLS handshake behaviour is exercised in the release tier, where the same lane runs against the HTTPS candidate.",
+      "evidence_ref": "http://honua:5000"
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Anonymous GET /api/v1/admin/services -> 401 with WWW-Authenticate: ApiKey realm=\"Honua Admin\", header=\"X-API-Key\". Probed with owslib.util.http_get (the transport owslib.ogcapi uses); OWSLib has no client surface for Honua's admin control plane.",
+      "evidence_ref": "/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-AUTH-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Accepted scheme: x-api-key (X-API-Key header carrying HONUA_ADMIN_PASSWORD) -> 200. Scheme ladder tried: x-api-key=200. owslib.util.Authentication covers HTTP Basic/cert only, so the API key travels as a header on OWSLib's own http_get.",
+      "evidence_ref": "/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 8,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "Features.collections() listed 5 collections: ['2000', '2001', '2002', '3000', '0'].",
+      "evidence_ref": "http://honua:5000/ogc/features/collections"
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": 19,
+      "measured_count": 13,
+      "measured_delta": null,
+      "notes": "Features.collection('0') -> title='Test Layer', itemType='feature', storageCrs='http://www.opengis.net/def/crs/EPSG/0/4326'.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0"
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": 5,
+      "measured_count": 13,
+      "measured_delta": null,
+      "notes": "Features.collection_queryables() advertised 13 properties covering all 10 seeded scalar attributes.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/queryables"
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "pass",
+      "duration_ms": 22,
+      "measured_count": 9,
+      "measured_delta": null,
+      "notes": "All 9 geometry-bearing features report GeoJSON type Point, matching the seeded Point layer; the null-geometry row is preserved as null. Queryables declare geometry property ['shape'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": 12,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "CQL2-text \"status = 'active'\" matched 5 of 10 features, and every returned feature carries the filtered value.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "pass",
+      "duration_ms": 13,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "bbox=[-122.495, 37.705, -122.455, 37.735] selected 3 features (['alpha', 'beta', 'gamma']); every returned coordinate lies inside the window.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-01",
+      "status": "pass",
+      "duration_ms": 12,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "limit=3 returned exactly 3 features while numberMatched stayed at the full 10.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-PAGE-02",
+      "status": "pass",
+      "duration_ms": 25,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "offset=3 returned a disjoint page: ['alpha', 'beta', 'gamma'] then ['delta', 'epsilon', 'zeta'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": 17,
+      "measured_count": null,
+      "measured_delta": 0.0,
+      "notes": "Anchor feature 'alpha' returned (-122.49, 37.71) against seeded (-122.49, 37.71); max ordinate deviation 0.0 degrees, threshold 1e-06.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-02",
+      "status": "pass",
+      "duration_ms": 18,
+      "measured_count": null,
+      "measured_delta": 0.0,
+      "notes": "crs=http://www.opengis.net/def/crs/EPSG/0/4326 was echoed verbatim in Content-Crs and the payload switched to the CRS's declared latitude/longitude axis order (37.71, -122.49); the CRS84 default returns longitude first.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": 6,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib raised RuntimeError carrying the server's RFC 7807 problem+json body for collection 'does-not-exist-9999': {\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u0027does-not-exist-9999\\u0027 not found.\",\"instance\":\"/ogc/features/collections/does-not-exist-9999/it",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "pass",
+      "duration_ms": 5,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Malformed CQL2 'status ==' produced a structured 400 problem+json naming the parse failure rather than a 500 or an empty result: {\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\"Invalid CQL filter: Failed to parse CQL2 expression. (Parameter \\u0027cql2Text\\u0027)\",\"instance\":\"/ogc/features/",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LIN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-FIL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-LBL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SPR-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 24,
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 8
+  },
+  "cite_results": null,
+  "extensions": [
+    {
+      "test_case_id": "NB-OWS-OAF-AUTH-03",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "A syntactically valid but incorrect X-API-Key returns 401, not 403 or 500.",
+      "evidence_ref": "/api/v1/admin/services"
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-COLL-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "collection.extent.spatial.bbox=[-122.5, 37.7, -122.35, 37.84] encloses the seeded feature envelope [-122.49, 37.71, -122.37, 37.79] and is declared in CRS84; temporal interval ['2024-01-01T12:00:00Z', '2024-01-10T12:00:00Z'] matches the seeded created_at range.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-COLL-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "Features.feature_collections() -> ['2000', '2001', '2002', '3000', '0']; every collection declares itemType=feature.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-LAND-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 7,
+      "measured_delta": null,
+      "notes": "Landing page carries typed self/conformance/data/service-desc links plus an alternate representation, which is what OWSLib navigates from.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-LAND-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 15,
+      "measured_delta": null,
+      "notes": "Features.api() resolved the service-desc link to an OpenAPI 3.0.3 document describing 15 paths, including the landing page, collections, single collection and collection items resources.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-CONF-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 26,
+      "measured_delta": null,
+      "notes": "/conformance declares 26 classes including Features 1.0 core/geojson/oas30.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-CONF-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Declared conformance classes were exercised rather than trusted: ['crs', 'queryables', 'cql2-text'] all behaved as advertised.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-SCHM-03",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 13,
+      "measured_delta": null,
+      "notes": "All 12 seeded attributes round-trip with their JSON types preserved (bool/int/double/array), not stringified.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-QRYB-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 13,
+      "measured_delta": null,
+      "notes": "Queryables is a 2020-12 JSON Schema with $id, every property typed, and the non-queryable JSON array columns correctly excluded.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-QFLT-03",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "CQL2-text `count > 7` compares numerically (3 rows: theta/iota/lambda); a lexical comparison would also return rows 8 and 9 or drop 10.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-DATE-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "A closed RFC 3339 interval on the seeded created_at column selects exactly the three features inside it (alpha/beta/gamma).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-SORT-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "OWSLib's (property, direction) sortby tuple maps to the server's `-name` convention; desc is the exact reverse of asc over all 10 features.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-PAGE-03",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 10,
+      "measured_delta": null,
+      "notes": "A limit=3 walk over the collection yielded 10 distinct feature ids, exactly matching numberMatched=10: no gaps, no repeats, stable ordering.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-LINK-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 7,
+      "measured_delta": null,
+      "notes": "Paged responses advertise self+next and no prev on page 1; a response that already covers numberMatched advertises no next link.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-LINK-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "Followed the advertised next href verbatim (http://honua:5000/ogc/features/collections/0/items?limit=3&offset=3&f=geojson); it returned a disjoint GeoJSON page, so OWSLib-style link walking works without URL reconstruction.",
+      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items?limit=3&offset=3&f=geojson"
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-ITEM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "/items/1 returned the identical Feature the collection listing carried, with self and collection link relations.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-CRS-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": 3.725290298461914e-09,
+      "notes": "CRS84 -> lon/lat, EPSG:4326 -> lat/lon (axis order honoured, not just echoed), EPSG:3857 -> (-13635524.42726808, 4538539.15341347) which is within 3.725290298461914e-09 m of the spherical-Mercator projection of the seeded anchor.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-CRS-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "All 3 CRSs advertised on the collection were accepted by /items and echoed back in Content-Crs: ['http://www.opengis.net/def/crs/EPSG/0/3857', 'http://www.opengis.net/def/crs/EPSG/0/4326', 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-OAF-ERR-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "All 5 deliberate client errors (unknown collection, unknown item, bad CRS, negative offset, short bbox) returned RFC 7807 problem+json with matching status, title, detail and instance.",
+      "evidence_ref": ""
+    }
+  ]
+}

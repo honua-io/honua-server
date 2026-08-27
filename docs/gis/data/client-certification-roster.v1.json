@@ -1,0 +1,3486 @@
+{
+  "schemaVersion": "1.0.0",
+  "rosterSource": {
+    "historicalArtifactUrl": "https://claude.ai/code/artifact/0122304a-cbf1-46a0-bc33-61826665bc94",
+    "historicalArtifactTitle": "Honua Client Certification Roster",
+    "authority": "repository",
+    "authorityStatement": "This file is the authoritative client-certification roster for honua-server. The Claude artifact named above is the historical source that seeded it and is explicitly non-authoritative: it must not be cited as the roster, and any divergence resolves in favour of this file together with docs/gis/data/client-certification-matrix.v1.json.",
+    "declaredEntryCount": 41,
+    "artifactEnumeratedEntryCount": 42,
+    "repositoryOnlyEntryCount": 2,
+    "reconciledEntryCount": 44,
+    "countBasis": "Distinct client identities. declaredEntryCount is the artifact's own headline tally (11 certified live + 4 built-unrun + 22 proposed + 4 out of scope). reconciledEntryCount is the number of entries in this file. Every difference is itemised in reconciliationNotes, and the note deltas must sum to reconciledEntryCount minus declaredEntryCount.",
+    "trackingIssue": "https://github.com/honua-io/honua-server/issues/3395",
+    "parentIssue": "https://github.com/honua-io/honua-server/issues/3389"
+  },
+  "generatedFrom": {
+    "generator": "honua-server#3395 classification pass",
+    "inputs": [
+      "https://claude.ai/code/artifact/0122304a-cbf1-46a0-bc33-61826665bc94 (historical, non-authoritative)",
+      "docs/gis/data/client-certification-matrix.v1.json",
+      "docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md",
+      "docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md",
+      "tests/baselines/client-compat/**/*.cert.json"
+    ],
+    "prosePair": "docs/gis/CLIENT_CERTIFICATION_ROSTER.md",
+    "driftTests": "tests/dotnet/Honua.Architecture.Tests/ClientCertificationRosterTests.cs"
+  },
+  "reconciliationNotes": [
+    {
+      "id": "excluded-bullet-names-two-clients",
+      "delta": 1,
+      "affectedEntryIds": [
+        "golden-surfer",
+        "avenza-maps"
+      ],
+      "note": "The artifact's Excluded section has four bullets, but the third bullet, 'Golden Surfer, Avenza Maps', names two distinct clients. Splitting it raises the artifact's 41 headline entries to 42 distinct client identities."
+    },
+    {
+      "id": "headline-status-split-differs-from-tier-tables",
+      "delta": 0,
+      "affectedEntryIds": [
+        "desktop-arcgis",
+        "esri-dotnet"
+      ],
+      "note": "The headline tally claims 4 'Built, unrun' and 22 'Proposed'. The tier tables mark only 2 rows 'Built, unrun' (desktop-arcgis, esri-dotnet) and enumerate 24 unbuilt rows (16 Tier 1 'Proposed' plus 8 Tier 2 'On demand'). The two differences offset exactly, so the 41 total is unchanged. The per-row tier tables are authoritative; the artifact gives no basis for identifying which two additional rows the headline counted as built."
+    },
+    {
+      "id": "certified-live-headline-counts-partial-rows",
+      "delta": 0,
+      "affectedEntryIds": [
+        "esri-js-maps-sdk",
+        "py-pystac"
+      ],
+      "note": "The headline '11 certified live' equals the 9 rows the tier tables label Live, Live nightly, or 1117/1117, plus the 2 rows labelled 'Partial'. This roster does not treat 'Partial' as activated at the source artifact's revision: esri-js-maps-sdk was active but awaiting-federation, and py-pystac was planned and awaiting-evidence. esri-js-maps-sdk still declares requiredTier `none`; py-pystac was promoted to `active` with requiredTier `nightly` in #3392, which committed its envelope. The 41 total is unchanged."
+    },
+    {
+      "id": "registry-lane-absent-from-artifact",
+      "delta": 1,
+      "affectedEntryIds": [
+        "arcgis-stub"
+      ],
+      "note": "client-certification-matrix.v1.json registers an active `arcgis-stub` lane with committed evidence for featureserver, mapserver, and portal. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro."
+    },
+    {
+      "id": "registry-sublane-absent-from-artifact",
+      "delta": 1,
+      "affectedEntryIds": [
+        "js-esri-leaflet"
+      ],
+      "note": "CROSS_CLIENT_CERTIFICATION_MATRIX.md registers an Esri Leaflet browser sub-lane with its own EL-EXT-01..04 extension IDs, and tests/js-browser/esri-leaflet implements it, but the artifact has no row for it. Including it makes the gap visible: no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat."
+    }
+  ],
+  "vocabulary": {
+    "status": [
+      "active",
+      "planned",
+      "excluded"
+    ],
+    "tier": [
+      0,
+      1,
+      2,
+      "excluded"
+    ],
+    "targetRelease": [
+      "2026.1",
+      "2026.2",
+      "later"
+    ],
+    "activationState": [
+      "activated",
+      "awaiting-evidence",
+      "awaiting-runtime",
+      "awaiting-license",
+      "awaiting-federation",
+      "not-activated"
+    ],
+    "requiredTier": [
+      "pr",
+      "nightly",
+      "release",
+      "none"
+    ],
+    "runtime": [
+      "linux-container",
+      "browser-playwright",
+      "windows-license",
+      "windows-desktop",
+      "linux-license",
+      "not-provisioned"
+    ],
+    "laneBindingRole": [
+      "lane",
+      "sub-lane",
+      "planned-lane",
+      "exclusion",
+      "external-producer",
+      "unregistered"
+    ],
+    "operationFamilies": [
+      "CERT-CONN",
+      "CERT-AUTH",
+      "CERT-DISC",
+      "CERT-SCHM",
+      "CERT-QFLT",
+      "CERT-PAGE",
+      "CERT-GEOM",
+      "CERT-ERRH",
+      "CERT-RNDR",
+      "CERT-PRTL"
+    ],
+    "scenarioFacets": [
+      "positive",
+      "invalid-credential",
+      "insufficient-role",
+      "cross-tenant",
+      "pagination-limit",
+      "metadata",
+      "media-schema"
+    ],
+    "protocolSurfaces": {
+      "fromMatrixAbbreviationTable": [
+        "featureserver",
+        "mapserver",
+        "ogc-features",
+        "ogc-maps",
+        "ogc-tiles",
+        "odata",
+        "mvt",
+        "wfs",
+        "wms",
+        "wmts",
+        "admin-api",
+        "portal"
+      ],
+      "extended": [
+        {
+          "id": "stac",
+          "reason": "STAC API surface; used by the py-pystac plannedLanes row in client-certification-matrix.v1.json."
+        },
+        {
+          "id": "imageserver",
+          "reason": "Esri ImageServer; used by the desktop-arcgis plannedLanes row."
+        },
+        {
+          "id": "geometryserver",
+          "reason": "Esri GeometryServer; used by the desktop-arcgis plannedLanes row."
+        },
+        {
+          "id": "version-management-server",
+          "reason": "Esri VersionManagementServer; used by the desktop-arcgis plannedLanes row."
+        },
+        {
+          "id": "featureserver-sync",
+          "reason": "Esri FeatureServer offline-sync surface exercised by ArcGIS Field Maps."
+        },
+        {
+          "id": "wcs",
+          "reason": "WCS 2.0; certified by the OGC CITE suites, which have no client-compat abbreviation row."
+        },
+        {
+          "id": "gml",
+          "reason": "GML 3.2; certified by the OGC CITE suites."
+        },
+        {
+          "id": "kml",
+          "reason": "KML 2.2; certified by the OGC CITE suites and consumed by Google Earth Pro and ArcGIS Earth."
+        },
+        {
+          "id": "gpkg",
+          "reason": "GeoPackage 1.2; certified by the OGC CITE suites and consumed by QField."
+        },
+        {
+          "id": "geojson",
+          "reason": "Plain GeoJSON endpoint consumption by viewer-only clients (Leaflet, deck.gl, Qlik Sense)."
+        },
+        {
+          "id": "geoparquet",
+          "reason": "GeoParquet analytic surface consumed by Apache Sedona."
+        },
+        {
+          "id": "esri-integration",
+          "reason": "Power BI's packaged ArcGIS visual integration, which is neither raw FeatureServer nor OData."
+        }
+      ]
+    },
+    "fixtureProjectionKind": [
+      "canonical-client-fixture",
+      "governed-exception",
+      "not-yet-assigned",
+      "not-applicable"
+    ]
+  },
+  "denominatorRules": {
+    "eligible": "status == 'active' AND activationState == 'activated'",
+    "releaseBlocking": "status == 'active' AND activationState == 'activated' AND requiredTier == 'release'",
+    "nightlyRequired": "status == 'active' AND activationState == 'activated' AND requiredTier == 'nightly'",
+    "invariant": "Every row that is not both active and activated declares requiredTier 'none' and is therefore structurally incapable of passing or blocking any gate. `intendedTierOnActivation` records the tier such a row would take once activated; it is planning metadata and is never read by a gate."
+  },
+  "capabilityApplicabilityBinding": {
+    "authority": "https://github.com/honua-io/honua-server/issues/3387",
+    "authorityArtifact": "docs/gis/data/capability-matrix.v1.json",
+    "statement": "#3387 remains the single capability-applicability authority. This roster classifies client identities only: which clients exist, their status, activation state, tier, runtime, licensing, and evidence producer. It deliberately declares no capability-level denominator. #3387 joins to this file by `id` whenever a capability decision names a canonical external client, so client identity has exactly one home and the capability denominator has exactly one home.",
+    "joinKey": "id",
+    "mustNotDo": [
+      "Derive a capability coverage percentage from this file.",
+      "Treat operationApplicability as a capability-level applicability decision. It is the CERT-* client-operation vocabulary from CROSS_CLIENT_CERTIFICATION_MATRIX.md, not the capability matrix."
+    ]
+  },
+  "projection": {
+    "statement": "honua-release and honua-evidence consume this file. They do not maintain a second copy of the roster and they do not read the historical artifact.",
+    "consumers": [
+      {
+        "repository": "honua-io/honua-release",
+        "issue": "https://github.com/honua-io/honua-release/issues/157",
+        "consumes": "honua-server:docs/gis/data/client-certification-roster.v1.json",
+        "schemaVersion": "1.0.0",
+        "purpose": "Client half of the release denominator.",
+        "denominatorFields": [
+          "id",
+          "displayName",
+          "status",
+          "activationState",
+          "requiredTier",
+          "targetRelease",
+          "protocolSurfaces",
+          "operationApplicability",
+          "evidenceProducer"
+        ],
+        "denominatorRule": "status == 'active' AND activationState == 'activated' AND requiredTier == 'release'",
+        "mustNotCount": [
+          "Any row with status != 'active'.",
+          "Any row with activationState != 'activated'.",
+          "Any row with requiredTier == 'none'."
+        ],
+        "gapCellRule": "A row required by the frozen 2026.1 profile (honua-release#158) that is not both active and activated must render as a blocking gap cell, never as an omission."
+      },
+      {
+        "repository": "honua-io/honua-evidence",
+        "issue": "https://github.com/honua-io/honua-evidence/issues/30",
+        "consumes": "honua-server:docs/gis/data/client-certification-roster.v1.json",
+        "schemaVersion": "1.0.0",
+        "purpose": "Producer-identity allowlist and receipt validation.",
+        "denominatorFields": [
+          "id",
+          "evidenceProducer",
+          "clientVersionPolicy",
+          "fixtureProjection",
+          "runtime",
+          "licensing",
+          "requiredTier"
+        ],
+        "denominatorRule": "Accept a client receipt only when its client_lane joins a row whose status == 'active'; verify the producer against evidenceProducer and the client pin against clientVersionPolicy.",
+        "mustNotCount": [
+          "A receipt whose client_lane resolves to a planned or excluded row.",
+          "A receipt from a producer other than the row's declared evidenceProducer.",
+          "A receipt for a fixtureProjection.kind of 'governed-exception' relabelled as canonical-fixture."
+        ]
+      }
+    ]
+  },
+  "entries": [
+    {
+      "id": "desktop-qgis",
+      "displayName": "QGIS Desktop LTR (PyQGIS)",
+      "family": "desktop-gis",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Live nightly",
+      "clientVersionPolicy": "QGIS LTR pinned by the pyqgis lane container image tag; the runtime version is captured into every envelope (currently 3.44.13-Solothurn).",
+      "protocolSurfaces": [
+        "ogc-features",
+        "wfs"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "tests/seed/client-compat-v1.sql"
+        ],
+        "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
+      },
+      "evidenceProducer": ".github/workflows/pyqgis-client-compat-nightly.yml (docker/client-compat/pyqgis)",
+      "laneBinding": {
+        "matrixLaneId": "desktop-qgis",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": null
+    },
+    {
+      "id": "desktop-arcgis",
+      "displayName": "ArcGIS Pro (arcpy + honua_gp shim parity)",
+      "family": "esri-desktop",
+      "tier": 0,
+      "status": "planned",
+      "targetRelease": "2026.2",
+      "activationState": "awaiting-runtime",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Built, unrun",
+      "clientVersionPolicy": "Licensed ArcGIS Pro build recorded per run from the self-hosted Windows runner; evidence is entitlement-bound and content-addressed.",
+      "protocolSurfaces": [
+        "featureserver",
+        "mapserver",
+        "imageserver",
+        "geometryserver",
+        "version-management-server",
+        "portal",
+        "ogc-features",
+        "wfs",
+        "wms",
+        "wmts"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR",
+          "CERT-PRTL"
+        ],
+        "notApplicable": []
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "release",
+      "licensing": {
+        "model": "entitlement-bound",
+        "requiresSeat": true,
+        "notes": "Licensed evidence must be entitlement-bound and content-addressed at release."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "honua-esri-compat licensed fixtures"
+        ],
+        "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": "desktop-arcgis",
+        "role": "planned-lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/75",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Lane code exists and records honest skips because no Windows ArcGIS Pro runner is provisioned. The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane, so activation targets 2026.2 via workstream A of #3389."
+    },
+    {
+      "id": "js",
+      "displayName": "OpenLayers",
+      "family": "web-js",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Live nightly",
+      "clientVersionPolicy": "npm lockfile-resolved `ol` version in docker/client-compat/openlayers (currently 10.8.0); refreshed by `npm ci`.",
+      "protocolSurfaces": [
+        "ogc-features",
+        "ogc-maps",
+        "mvt",
+        "wfs",
+        "wms",
+        "wmts"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "tests/seed/client-compat-v1.sql",
+          "tests/seed/browser-compat.yaml"
+        ],
+        "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
+      },
+      "evidenceProducer": "docker/client-compat/openlayers",
+      "laneBinding": {
+        "matrixLaneId": "js",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "OpenLayers owns the `js` matrix lane id. MapLibre GL JS and Esri Leaflet are distinct client identities that emit under the same lane id, which is why they appear as separate roster rows bound to `js` as sub-lanes."
+    },
+    {
+      "id": "js-maplibre",
+      "displayName": "MapLibre GL JS",
+      "family": "web-js",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Live nightly",
+      "clientVersionPolicy": "npm lockfile-resolved `maplibre-gl` version in tests/js-browser (currently 5.22.0).",
+      "protocolSurfaces": [
+        "mvt",
+        "ogc-maps",
+        "ogc-tiles"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "tests/seed/client-compat-v1.sql",
+          "tests/seed/browser-compat.yaml"
+        ],
+        "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
+      },
+      "evidenceProducer": "tests/js-browser/maplibre (playwright.maplibre.config.ts); envelopes land under client_lane `js`, protocol `mvt`",
+      "laneBinding": {
+        "matrixLaneId": "js",
+        "role": "sub-lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Named in the bounded 2026.1 roster (#3434) for the advertised map/tile/style paths. Has a committed non-placeholder envelope at tests/baselines/client-compat/openlayers/js-mvt.cert.json."
+    },
+    {
+      "id": "js-cesium",
+      "displayName": "CesiumJS",
+      "family": "web-js",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Live nightly",
+      "clientVersionPolicy": "npm lockfile-resolved `cesium` version in tests/js-browser (currently 1.140.0).",
+      "protocolSurfaces": [
+        "wms",
+        "wmts",
+        "ogc-tiles",
+        "ogc-maps"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "tests/seed/client-compat-v1.sql",
+          "tests/seed/browser-compat.yaml"
+        ],
+        "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
+      },
+      "evidenceProducer": "docker/client-compat/cesium (tests/js-browser/cesium)",
+      "laneBinding": {
+        "matrixLaneId": "js-cesium",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Cesium imagery providers consume server-rendered raster output; the matrix Cesium sub-lane footnote governs the not-applicable set."
+    },
+    {
+      "id": "esri-js-maps-sdk",
+      "displayName": "ArcGIS Maps SDK for JavaScript",
+      "family": "esri-web",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.2",
+      "activationState": "awaiting-federation",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Partial",
+      "clientVersionPolicy": "CDN/npm-pinned ArcGIS Maps SDK for JavaScript version recorded by the honua-esri-compat sdk_matrix/jsapi run.",
+      "protocolSurfaces": [
+        "featureserver",
+        "mapserver",
+        "portal"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR",
+          "CERT-PRTL"
+        ],
+        "notApplicable": []
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "release",
+      "licensing": {
+        "model": "proprietary-no-cost",
+        "requiresSeat": false,
+        "notes": "Vendor-licensed but installable without a paid seat or activation."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "honua-esri-compat licensed fixtures"
+        ],
+        "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
+      },
+      "evidenceProducer": "honua-esri-compat (sdk_matrix/jsapi)",
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "external-producer"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/74",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "This is the client customers port from, but its evidence is produced in honua-esri-compat and is not yet federated into this registry, so it declares requiredTier `none` and can neither pass nor block a honua-server gate."
+    },
+    {
+      "id": "cli",
+      "displayName": "GDAL / OGR (ogr2ogr)",
+      "family": "libraries-cli",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Live nightly",
+      "clientVersionPolicy": "GDAL version pinned by the lane container image tag; the full build string is recorded in every envelope (currently GDAL 3.14.0dev-480c02a).",
+      "protocolSurfaces": [
+        "ogc-features",
+        "wfs",
+        "admin-api"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-ERRH"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-GEOM",
+            "reason": "Declared not-applicable for the `cli` lane in client-certification-matrix.v1.json; coordinate tolerance is proven by the feature-client lanes."
+          },
+          {
+            "family": "CERT-RNDR",
+            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "tests/seed/client-compat-v1.sql"
+        ],
+        "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
+      },
+      "evidenceProducer": "docker/client-compat/gdal",
+      "laneBinding": {
+        "matrixLaneId": "cli",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "The universal adapter, and the `cli` lane id also carries the CLI/SDK admin-API extensions CLI-EXT-01/02."
+    },
+    {
+      "id": "esri-arcgis-python",
+      "displayName": "ArcGIS API for Python",
+      "family": "esri-libraries",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.2",
+      "activationState": "awaiting-federation",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Live",
+      "clientVersionPolicy": "pip/conda pin of `arcgis` in the honua-esri-compat arcgis_python lane image.",
+      "protocolSurfaces": [
+        "featureserver",
+        "portal"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR",
+          "CERT-PRTL"
+        ],
+        "notApplicable": []
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "proprietary-no-cost",
+        "requiresSeat": false,
+        "notes": "Vendor-licensed but installable without a paid seat or activation."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "honua-esri-compat licensed fixtures"
+        ],
+        "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
+      },
+      "evidenceProducer": "honua-esri-compat (arcgis_python)",
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "external-producer"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/74",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "The license-free Esri lane. Live upstream, but not yet joined to this registry's expected pairs, so it declares requiredTier `none`."
+    },
+    {
+      "id": "esri-dotnet",
+      "displayName": "ArcGIS Maps SDK for .NET",
+      "family": "esri-libraries",
+      "tier": 0,
+      "status": "planned",
+      "targetRelease": "2026.2",
+      "activationState": "awaiting-runtime",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Built, unrun",
+      "clientVersionPolicy": "NuGet-pinned Esri.ArcGISRuntime version plus the licensed runtime deployment key recorded per run.",
+      "protocolSurfaces": [
+        "featureserver",
+        "mapserver"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "release",
+      "licensing": {
+        "model": "entitlement-bound",
+        "requiresSeat": true,
+        "notes": "Licensed evidence must be entitlement-bound and content-addressed at release."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "honua-esri-compat licensed fixtures"
+        ],
+        "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/75",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "The second of the two rows the tier tables mark 'Built, unrun'. Unblocked by the same Windows host that unblocks desktop-arcgis and the BI lanes, but it has no plannedLanes row in client-certification-matrix.v1.json yet."
+    },
+    {
+      "id": "honua-sdks",
+      "displayName": "Honua SDKs (JavaScript, Python, .NET)",
+      "family": "honua-sdk",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Live nightly",
+      "clientVersionPolicy": "Published SDK package versions pinned per language in sdk-server-compatibility.yml; the resolved version is recorded per run.",
+      "protocolSurfaces": [
+        "featureserver",
+        "mapserver",
+        "ogc-features",
+        "ogc-maps",
+        "ogc-tiles",
+        "odata",
+        "mvt",
+        "wfs",
+        "wms",
+        "wmts",
+        "admin-api",
+        "stac"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-RNDR",
+            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "SDK-owned fixtures"
+        ],
+        "note": "SDK fixtures must project onto the #3393 canonical fixture before federation."
+      },
+      "evidenceProducer": ".github/workflows/sdk-server-compatibility.yml",
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "external-producer"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Official-SDK parity assignments are owned by #3387. This row records the client identity only, never a second capability denominator."
+    },
+    {
+      "id": "ogc-cite",
+      "displayName": "OGC CITE / TEAM Engine (13 suites)",
+      "family": "conformance",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "1117 / 1117",
+      "clientVersionPolicy": "TEAM Engine and per-suite ETS versions pinned by the container image tags in .github/workflows/cite-*.yml.",
+      "protocolSurfaces": [
+        "wfs",
+        "wms",
+        "wmts",
+        "wcs",
+        "gml",
+        "kml",
+        "gpkg",
+        "ogc-tiles"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "No OGC conformance suite exercises the Esri Portal/Sharing facade."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "release",
+      "intendedTierOnActivation": "release",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "governed-exception",
+        "status": "governed-exception",
+        "exceptionLaneFamily": "ogc-cite",
+        "inputs": [
+          "OGC CITE specification-mandated seed and setup procedures"
+        ],
+        "note": "Registered in client-certification-matrix.v1.json fixturePolicy.exceptions. CITE shares candidate identity, image digest, auth policy, and capability mapping with release certification but is never relabelled as having used the canonical client fixture."
+      },
+      "evidenceProducer": ".github/workflows/cite-*.yml (aggregated by cite-evidence-report.yml)",
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "external-producer"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "The compliance receipt, currently 1117/1117. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture."
+    },
+    {
+      "id": "arcgis-stub",
+      "displayName": "ArcGIS REST + Portal facade stub client",
+      "family": "esri-harness",
+      "tier": 0,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "repository-registry",
+      "sourceStatus": "not-in-artifact",
+      "clientVersionPolicy": "Stub contract version `stub-1.0`, versioned with the honua-server repository; it is a harness, not a shipped client.",
+      "protocolSurfaces": [
+        "featureserver",
+        "mapserver",
+        "portal"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR",
+          "CERT-PRTL"
+        ],
+        "notApplicable": []
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "tests/seed/client-compat-v1.sql",
+          "tests/seed/portal-compat.yaml"
+        ],
+        "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
+      },
+      "evidenceProducer": "docker/client-compat/arcgis-stub",
+      "laneBinding": {
+        "matrixLaneId": "arcgis-stub",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "A registered `lanes` entry in client-certification-matrix.v1.json with no row in the source artifact, which folded it into the ArcGIS Pro harness column. It substantiates the license-free Esri REST common core and the CERT-PRTL-* Portal facade slice. Being a stub, it never certifies a real Esri client."
+    },
+    {
+      "id": "py-geopandas",
+      "displayName": "GeoPandas (via pyogrio / Fiona)",
+      "family": "notebooks-datascience",
+      "tier": 1,
+      "status": "active",
+      "targetRelease": "2026.2",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "pip pin of `geopandas` and `pyogrio` in the lane requirements file, resolved into a lockfile by #3392.",
+      "protocolSurfaces": [
+        "ogc-features",
+        "wfs"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-RNDR",
+            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3392); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": "docker/client-compat/geopandas + tests/python/geopandas_client",
+      "laneBinding": {
+        "matrixLaneId": "py-geopandas",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3392",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Promoted from `plannedLanes` to `lanes` in #3392. Not named in the bounded 2026.1 roster (#3434); it activates with workstream B of #3389."
+    },
+    {
+      "id": "py-owslib",
+      "displayName": "OWSLib",
+      "family": "notebooks-datascience",
+      "tier": 1,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "pip pin of `OWSLib` in the lane requirements file, resolved into a lockfile by #3392.",
+      "protocolSurfaces": [
+        "ogc-features",
+        "wfs",
+        "wms",
+        "wmts"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-RNDR",
+            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3392); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": "docker/client-compat/owslib + tests/python/owslib_client",
+      "laneBinding": {
+        "matrixLaneId": "py-owslib",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3392",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Named in the bounded 2026.1 roster (#3434), but only for the WMS/WFS/WMTS/OGC operations that remain `supported` in the frozen maturity profile. #3386 and #3392 must not create duplicate OWSLib producers."
+    },
+    {
+      "id": "duckdb",
+      "displayName": "DuckDB Spatial",
+      "family": "notebooks-datascience",
+      "tier": 1,
+      "status": "active",
+      "targetRelease": "2026.2",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "DuckDB binary version plus the `spatial` extension version pinned in the lane Dockerfile.",
+      "protocolSurfaces": [
+        "ogc-features"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-RNDR",
+            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3392); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": "docker/client-compat/duckdb + tests/python/duckdb_client",
+      "laneBinding": {
+        "matrixLaneId": "duckdb",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3392",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Consumes OGC API Features through `ST_Read`; roughly one Dockerfile of marginal cost and now the analyst default."
+    },
+    {
+      "id": "r-sf",
+      "displayName": "R sf + ows4R",
+      "family": "notebooks-datascience",
+      "tier": 1,
+      "status": "active",
+      "targetRelease": "2026.2",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "`rocker/geospatial` image tag, which pins a CRAN snapshot date for `sf` and `ows4R`.",
+      "protocolSurfaces": [
+        "ogc-features",
+        "wfs"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-RNDR",
+            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3392); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": "docker/client-compat/r-sf + tests/r/certification",
+      "laneBinding": {
+        "matrixLaneId": "r-sf",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3392",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "The government and academic baseline. `docker/client-compat/r-sf` and `tests/r/certification` were filled in by #3392; the lane emits committed envelopes for OGC API Features and WFS."
+    },
+    {
+      "id": "jupyter-papermill",
+      "displayName": "Jupyter end-to-end notebook (papermill)",
+      "family": "notebooks-datascience",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "pip pin of `papermill` plus the notebook kernel image tag; defined when the lane is scoped.",
+      "protocolSurfaces": [
+        "ogc-features",
+        "mvt"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "No implementation issue exists yet; parked on the parent epic so the gap is visible rather than hidden."
+    },
+    {
+      "id": "py-pystac",
+      "displayName": "pystac-client",
+      "family": "notebooks-datascience",
+      "tier": 1,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Partial",
+      "clientVersionPolicy": "pip pin of `pystac-client` in the Python lane requirements file, refreshed with the lane lockfile.",
+      "protocolSurfaces": [
+        "stac"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-ERRH"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-GEOM",
+            "reason": "STAC items expose GeoJSON bbox/geometry metadata in EPSG:4326 only; there is no requested-CRS projection to assert a coordinate tolerance against."
+          },
+          {
+            "family": "CERT-RNDR",
+            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3392); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": "docker/client-compat/pystac + tests/python/stac_client",
+      "laneBinding": {
+        "matrixLaneId": "py-pystac",
+        "role": "lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3392",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Promoted to `active` in #3392: the pystac-client lane now commits a certification envelope (`tests/baselines/client-compat/pystac/py-pystac-stac.cert.json`). Counts toward the nightly denominator only while STAC remains `supported` in the frozen maturity profile (#3434)."
+    },
+    {
+      "id": "apache-sedona",
+      "displayName": "Apache Sedona (Databricks / Spark)",
+      "family": "notebooks-datascience",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "Sedona and Spark versions pinned by the lane image tag; defined when the lane is scoped.",
+      "protocolSurfaces": [
+        "ogc-features",
+        "geoparquet"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-RNDR",
+            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Databricks and Spark scale. No implementation issue exists yet; parked on the parent epic."
+    },
+    {
+      "id": "bi-powerbi",
+      "displayName": "Power BI (Desktop + Service)",
+      "family": "bi-office",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "2026.2",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "Licensed Power BI Desktop build number recorded per run from the Windows host; the Service tenant is recorded separately.",
+      "protocolSurfaces": [
+        "odata",
+        "wms",
+        "esri-integration"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-GEOM",
+            "reason": "OData-only surface returns no geometry-capable protocol payload (matrix BI footnote)."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "release",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3390); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": "bi-powerbi",
+        "role": "planned-lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3390",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Harness plan is XMLA/DAX headless assertions plus visual baselines. The matrix plannedLanes row lists `odata` only; this roster also records the WMS and Esri-integration surfaces the client actually speaks."
+    },
+    {
+      "id": "bi-excel",
+      "displayName": "Microsoft Excel (Power Query + ArcGIS for Excel)",
+      "family": "bi-office",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "2026.2",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "Licensed Office build number recorded per run from the Windows host; the ArcGIS for Excel add-in version is recorded alongside it.",
+      "protocolSurfaces": [
+        "odata",
+        "featureserver"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "release",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3390); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": "bi-excel",
+        "role": "planned-lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3390",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Harness plan is COM automation via pywin32. The matrix plannedLanes row lists `odata` only; the ArcGIS for Excel add-in also consumes FeatureServer, which is why CERT-GEOM is applicable here but not on the OData-only Power BI row."
+    },
+    {
+      "id": "bi-tableau",
+      "displayName": "Tableau (Desktop + Server)",
+      "family": "bi-office",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "2026.2",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "Licensed Tableau Desktop build recorded per run; the Hyper API and Document API package versions are pinned alongside it.",
+      "protocolSurfaces": [
+        "odata",
+        "ogc-features",
+        "wms"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "release",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3390); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": "bi-tableau",
+        "role": "planned-lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3390",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Harness plan is Hyper API plus Document API headless assertions, with the UI proven by screenshot baseline."
+    },
+    {
+      "id": "grafana",
+      "displayName": "Grafana (geomap panel)",
+      "family": "observability-bi",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "Grafana image tag plus the provisioned-dashboard revision; defined when the lane is scoped.",
+      "protocolSurfaces": [
+        "ogc-features",
+        "mvt"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "No implementation issue exists yet; parked on the parent epic."
+    },
+    {
+      "id": "fme",
+      "displayName": "Safe Software FME",
+      "family": "enterprise-etl",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "Licensed FME Form/Flow build recorded per run. A Linux engine exists, so the constraint is the license, not the runtime.",
+      "protocolSurfaces": [
+        "wfs",
+        "ogc-features",
+        "featureserver"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-RNDR",
+            "reason": "Headless data client with no map canvas or table surface; rendering fidelity is not observable."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "linux-license",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Large in Esri migrations. Harness plan is `fme` CLI workspace runs; the Linux engine means no Windows host is required. No implementation issue exists yet."
+    },
+    {
+      "id": "geoserver-cascade",
+      "displayName": "GeoServer cascade (Honua as upstream)",
+      "family": "server-to-server",
+      "tier": 1,
+      "status": "active",
+      "targetRelease": "2026.1",
+      "activationState": "activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Live nightly",
+      "clientVersionPolicy": "GeoServer version pinned by the cross-server-consume-nightly compose image tag.",
+      "protocolSurfaces": [
+        "wms",
+        "wfs"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "nightly",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3393); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": ".github/workflows/cross-server-consume-nightly.yml",
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "external-producer"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3391",
+      "needsOwningIssue": false,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "A live nightly server-to-server producer that is not registered in the client-compat lanes array and emits no .cert.json envelope. Federating it into this registry is workflow-hygiene work (#3391)."
+    },
+    {
+      "id": "mapserver-pygeoapi-cascade",
+      "displayName": "MapServer / pygeoapi cascade",
+      "family": "server-to-server",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "MapServer and pygeoapi image tags pinned in the extended cross-server-consume compose file.",
+      "protocolSurfaces": [
+        "wms",
+        "wfs",
+        "ogc-features"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Extends the existing cross-server-consume harness. No implementation issue exists yet."
+    },
+    {
+      "id": "leaflet",
+      "displayName": "Leaflet",
+      "family": "web-js",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "npm lockfile-resolved `leaflet` version once the lane extends tests/js-browser.",
+      "protocolSurfaces": [
+        "wms",
+        "wmts",
+        "geojson"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Still the most-deployed map library. Distinct from the already-registered Esri Leaflet sub-lane: plain Leaflet consumes WMS/WMTS/GeoJSON, not the Esri REST surface."
+    },
+    {
+      "id": "deckgl",
+      "displayName": "deck.gl",
+      "family": "web-js",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "npm lockfile-resolved `deck.gl` version once the lane extends tests/js-browser.",
+      "protocolSurfaces": [
+        "mvt",
+        "geojson"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "No implementation issue exists yet; parked on the parent epic."
+    },
+    {
+      "id": "js-esri-leaflet",
+      "displayName": "Esri Leaflet",
+      "family": "esri-web",
+      "tier": 1,
+      "status": "active",
+      "targetRelease": "2026.2",
+      "activationState": "awaiting-evidence",
+      "rosterOrigin": "repository-registry",
+      "sourceStatus": "not-in-artifact",
+      "clientVersionPolicy": "Lockfile-resolved `esri-leaflet` version installed by `npm ci` in tests/js-browser (currently 3.0.19); the reporter falls back to the semver range only when node_modules is absent.",
+      "protocolSurfaces": [
+        "featureserver",
+        "mapserver"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "canonical-client-fixture",
+        "status": "migration-required",
+        "inputs": [
+          "tests/seed/client-compat-v1.sql",
+          "tests/seed/browser-compat.yaml"
+        ],
+        "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
+      },
+      "evidenceProducer": "tests/js-browser/esri-leaflet (evidence emitted per run to tests/js-browser/evidence/, not committed under tests/baselines)",
+      "laneBinding": {
+        "matrixLaneId": "js",
+        "role": "sub-lane"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3391",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Registered as a sub-lane in CROSS_CLIENT_CERTIFICATION_MATRIX.md with its own EL-EXT-01..04 extension IDs and implemented in tests/js-browser/esri-leaflet, but no lanes-array row declares EL-EXT-* applicability and no envelope is committed under tests/baselines/client-compat. It has no row in the source artifact. It cannot be `activated` until real committed evidence lands, so it declares requiredTier `none`."
+    },
+    {
+      "id": "arcgis-field-maps",
+      "displayName": "ArcGIS Field Maps",
+      "family": "esri-mobile",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "Field Maps app build recorded per run; the REST-level sync probes pin the protocol revision rather than the app binary.",
+      "protocolSurfaces": [
+        "featureserver",
+        "featureserver-sync",
+        "portal"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR",
+          "CERT-PRTL"
+        ],
+        "notApplicable": []
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "insufficient-role",
+        "cross-tenant",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "release",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Offline sync is the hard part. Field Maps binds through the Portal facade (epic #1240), so the arcgis-stub CERT-PRTL-* slice partially de-risks it; the sync protocol itself is unproven. No implementation issue exists yet."
+    },
+    {
+      "id": "qfield-mergin",
+      "displayName": "QField / Mergin Maps",
+      "family": "mobile-field",
+      "tier": 1,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Proposed",
+      "clientVersionPolicy": "QField and Mergin client versions pinned by the shared PyQGIS lane image tag.",
+      "protocolSurfaces": [
+        "ogc-features",
+        "wfs",
+        "gpkg"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "nightly",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "linux-container",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Shares the PyQGIS harness, so its marginal cost is low once the desktop-qgis lane is stable. No implementation issue exists yet."
+    },
+    {
+      "id": "arcmap-10x",
+      "displayName": "ArcMap 10.x",
+      "family": "esri-desktop",
+      "tier": 2,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "On demand",
+      "clientVersionPolicy": "Licensed desktop build recorded per run; the seat is provisioned only on customer demand.",
+      "protocolSurfaces": [
+        "featureserver",
+        "wfs",
+        "wms"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR",
+          "CERT-PRTL"
+        ],
+        "notApplicable": []
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "End-of-life but still deployed; the customers most motivated to migrate are the ones still on it. Unblocked by the same Windows host as desktop-arcgis. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
+    },
+    {
+      "id": "mapinfo-pro",
+      "displayName": "MapInfo Pro",
+      "family": "desktop-gis",
+      "tier": 2,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "On demand",
+      "clientVersionPolicy": "Licensed desktop build recorded per run; the seat is provisioned only on customer demand.",
+      "protocolSurfaces": [
+        "wfs",
+        "wms"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Entrenched in utilities and telco. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
+    },
+    {
+      "id": "autocad-map-3d",
+      "displayName": "AutoCAD Map 3D / Civil 3D",
+      "family": "aec-cad",
+      "tier": 2,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "On demand",
+      "clientVersionPolicy": "Licensed desktop build recorded per run; the seat is provisioned only on customer demand.",
+      "protocolSurfaces": [
+        "wms",
+        "wfs"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "The AEC side of every municipal deal. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
+    },
+    {
+      "id": "bentley-microstation",
+      "displayName": "Bentley MicroStation / OpenCities",
+      "family": "aec-cad",
+      "tier": 2,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "On demand",
+      "clientVersionPolicy": "Licensed desktop build recorded per run; the seat is provisioned only on customer demand.",
+      "protocolSurfaces": [
+        "wms",
+        "wfs"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Infrastructure owners: rail and utilities. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
+    },
+    {
+      "id": "global-mapper",
+      "displayName": "Global Mapper",
+      "family": "desktop-gis",
+      "tier": 2,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "On demand",
+      "clientVersionPolicy": "Licensed desktop build recorded per run; the seat is provisioned only on customer demand.",
+      "protocolSurfaces": [
+        "wms",
+        "wmts",
+        "wfs"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "windows-license",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "GDAL-adjacent, so it likely passes for free once the cli/GDAL lane does. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
+    },
+    {
+      "id": "qlik-sense-geoanalytics",
+      "displayName": "Qlik Sense GeoAnalytics",
+      "family": "bi-office",
+      "tier": 2,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "On demand",
+      "clientVersionPolicy": "Licensed desktop build recorded per run; the seat is provisioned only on customer demand.",
+      "protocolSurfaces": [
+        "wms",
+        "geojson"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "proprietary-seat",
+        "requiresSeat": true,
+        "notes": "Requires a purchased seat, an activation, and a human sign-in on the runner host."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "BI competitor to Power BI in EU enterprises. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
+    },
+    {
+      "id": "google-earth-pro",
+      "displayName": "Google Earth Pro",
+      "family": "desktop-gis",
+      "tier": 2,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "On demand",
+      "clientVersionPolicy": "Licensed desktop build recorded per run; the seat is provisioned only on customer demand.",
+      "protocolSurfaces": [
+        "kml",
+        "wms"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client consumes pre-rendered tiles or server-rendered imagery, not queryable feature endpoints."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "proprietary-no-cost",
+        "requiresSeat": false,
+        "notes": "Vendor-licensed but installable without a paid seat or activation."
+      },
+      "runtime": "windows-desktop",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "KML 2.2 is already CITE-certified by the ogc-cite row, so the client itself adds little. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
+    },
+    {
+      "id": "terriajs",
+      "displayName": "TerriaJS",
+      "family": "web-js",
+      "tier": 2,
+      "status": "planned",
+      "targetRelease": "later",
+      "activationState": "awaiting-license",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "On demand",
+      "clientVersionPolicy": "Licensed desktop build recorded per run; the seat is provisioned only on customer demand.",
+      "protocolSurfaces": [
+        "wms",
+        "wmts",
+        "ogc-features"
+      ],
+      "operationApplicability": {
+        "applicable": [
+          "CERT-CONN",
+          "CERT-AUTH",
+          "CERT-DISC",
+          "CERT-SCHM",
+          "CERT-QFLT",
+          "CERT-PAGE",
+          "CERT-GEOM",
+          "CERT-ERRH",
+          "CERT-RNDR"
+        ],
+        "notApplicable": [
+          {
+            "family": "CERT-PRTL",
+            "reason": "The ArcGIS Portal/Sharing facade is an Esri-client binding; this client addresses service URLs directly."
+          }
+        ]
+      },
+      "scenarioFacets": [
+        "positive",
+        "invalid-credential",
+        "pagination-limit",
+        "metadata",
+        "media-schema"
+      ],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "open-source",
+        "requiresSeat": false,
+        "notes": "Installs unattended in a container or npm lockfile; no entitlement required."
+      },
+      "runtime": "browser-playwright",
+      "fixtureProjection": {
+        "kind": "not-yet-assigned",
+        "status": "not-yet-assigned",
+        "inputs": [],
+        "note": "Fixture projection is assigned when the lane is implemented (#3389); the canonical fixture contract is #3393."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": null,
+        "role": "unregistered"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
+      "needsOwningIssue": true,
+      "exclusionRationale": null,
+      "coveredAlternative": null,
+      "notes": "Backbone of AU/NZ government data portals. Tier 2 is opportunistic: certified on customer demand, and never a release blocker."
+    },
+    {
+      "id": "mapbox-gl-js-v2-plus",
+      "displayName": "Mapbox GL JS v2+",
+      "family": "web-js",
+      "tier": "excluded",
+      "status": "excluded",
+      "targetRelease": null,
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Excluded",
+      "clientVersionPolicy": "Not pinned; the client is deliberately out of scope and is never installed in a lane.",
+      "protocolSurfaces": [
+        "mvt",
+        "ogc-tiles"
+      ],
+      "operationApplicability": {
+        "applicable": [],
+        "notApplicable": [
+          {
+            "family": "CERT-CONN",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          },
+          {
+            "family": "CERT-AUTH",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          },
+          {
+            "family": "CERT-DISC",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          },
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          },
+          {
+            "family": "CERT-ERRH",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          },
+          {
+            "family": "CERT-RNDR",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "Client is a governed exclusion: Proprietary license and mandatory telemetry make it unsuitable as a CI lane."
+          }
+        ]
+      },
+      "scenarioFacets": [],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "not-evaluated",
+        "requiresSeat": false,
+        "notes": "Licensing is not evaluated for governed exclusions."
+      },
+      "runtime": "not-provisioned",
+      "fixtureProjection": {
+        "kind": "not-applicable",
+        "status": "excluded",
+        "inputs": [],
+        "note": "Excluded clients consume no fixture."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": "mapbox-gl-js-v2-plus",
+        "role": "exclusion"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3395",
+      "needsOwningIssue": false,
+      "exclusionRationale": "Proprietary license and mandatory telemetry make it unsuitable as a CI lane.",
+      "coveredAlternative": "js-maplibre covers the same protocol surface (MVT, styles, OGC tiles) under an open license.",
+      "notes": null
+    },
+    {
+      "id": "arcgis-earth",
+      "displayName": "ArcGIS Earth",
+      "family": "esri-desktop",
+      "tier": "excluded",
+      "status": "excluded",
+      "targetRelease": null,
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Excluded",
+      "clientVersionPolicy": "Not pinned; the client is deliberately out of scope and is never installed in a lane.",
+      "protocolSurfaces": [
+        "kml",
+        "mapserver",
+        "wms"
+      ],
+      "operationApplicability": {
+        "applicable": [],
+        "notApplicable": [
+          {
+            "family": "CERT-CONN",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          },
+          {
+            "family": "CERT-AUTH",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          },
+          {
+            "family": "CERT-DISC",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          },
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          },
+          {
+            "family": "CERT-ERRH",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          },
+          {
+            "family": "CERT-RNDR",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "Client is a governed exclusion: No distinct server surface beyond the governed MapServer and KML lanes."
+          }
+        ]
+      },
+      "scenarioFacets": [],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "not-evaluated",
+        "requiresSeat": false,
+        "notes": "Licensing is not evaluated for governed exclusions."
+      },
+      "runtime": "not-provisioned",
+      "fixtureProjection": {
+        "kind": "not-applicable",
+        "status": "excluded",
+        "inputs": [],
+        "note": "Excluded clients consume no fixture."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": "arcgis-earth",
+        "role": "exclusion"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3395",
+      "needsOwningIssue": false,
+      "exclusionRationale": "No distinct server surface beyond the governed MapServer and KML lanes.",
+      "coveredAlternative": "arcgis-stub (mapserver) and ogc-cite (KML 2.2) already prove everything it consumes.",
+      "notes": null
+    },
+    {
+      "id": "golden-surfer",
+      "displayName": "Golden Software Surfer",
+      "family": "file-import",
+      "tier": "excluded",
+      "status": "excluded",
+      "targetRelease": null,
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Excluded",
+      "clientVersionPolicy": "Not pinned; the client is deliberately out of scope and is never installed in a lane.",
+      "protocolSurfaces": [],
+      "operationApplicability": {
+        "applicable": [],
+        "notApplicable": [
+          {
+            "family": "CERT-CONN",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-AUTH",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-DISC",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-ERRH",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-RNDR",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          }
+        ]
+      },
+      "scenarioFacets": [],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "not-evaluated",
+        "requiresSeat": false,
+        "notes": "Licensing is not evaluated for governed exclusions."
+      },
+      "runtime": "not-provisioned",
+      "fixtureProjection": {
+        "kind": "not-applicable",
+        "status": "excluded",
+        "inputs": [],
+        "note": "Excluded clients consume no fixture."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": "golden-surfer",
+        "role": "exclusion"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3395",
+      "needsOwningIssue": false,
+      "exclusionRationale": "File-import workflow rather than a server protocol client.",
+      "coveredAlternative": "Server-side format I/O tests; no client lane can add signal.",
+      "notes": "Named jointly with Avenza Maps in a single artifact bullet; split here into two distinct identities."
+    },
+    {
+      "id": "avenza-maps",
+      "displayName": "Avenza Maps",
+      "family": "file-import",
+      "tier": "excluded",
+      "status": "excluded",
+      "targetRelease": null,
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Excluded",
+      "clientVersionPolicy": "Not pinned; the client is deliberately out of scope and is never installed in a lane.",
+      "protocolSurfaces": [],
+      "operationApplicability": {
+        "applicable": [],
+        "notApplicable": [
+          {
+            "family": "CERT-CONN",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-AUTH",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-DISC",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-ERRH",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-RNDR",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "Client is a governed exclusion: File-import workflow rather than a server protocol client."
+          }
+        ]
+      },
+      "scenarioFacets": [],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "not-evaluated",
+        "requiresSeat": false,
+        "notes": "Licensing is not evaluated for governed exclusions."
+      },
+      "runtime": "not-provisioned",
+      "fixtureProjection": {
+        "kind": "not-applicable",
+        "status": "excluded",
+        "inputs": [],
+        "note": "Excluded clients consume no fixture."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": "avenza-maps",
+        "role": "exclusion"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3395",
+      "needsOwningIssue": false,
+      "exclusionRationale": "File-import workflow rather than a server protocol client.",
+      "coveredAlternative": "Server-side format I/O tests; no client lane can add signal.",
+      "notes": "Named jointly with Golden Surfer in a single artifact bullet; split here into two distinct identities."
+    },
+    {
+      "id": "looker-studio",
+      "displayName": "Looker Studio",
+      "family": "bi-office",
+      "tier": "excluded",
+      "status": "excluded",
+      "targetRelease": null,
+      "activationState": "not-activated",
+      "rosterOrigin": "artifact",
+      "sourceStatus": "Excluded",
+      "clientVersionPolicy": "Not pinned; the client is deliberately out of scope and is never installed in a lane.",
+      "protocolSurfaces": [],
+      "operationApplicability": {
+        "applicable": [],
+        "notApplicable": [
+          {
+            "family": "CERT-CONN",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          },
+          {
+            "family": "CERT-AUTH",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          },
+          {
+            "family": "CERT-DISC",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          },
+          {
+            "family": "CERT-SCHM",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          },
+          {
+            "family": "CERT-QFLT",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          },
+          {
+            "family": "CERT-PAGE",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          },
+          {
+            "family": "CERT-GEOM",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          },
+          {
+            "family": "CERT-ERRH",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          },
+          {
+            "family": "CERT-RNDR",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          },
+          {
+            "family": "CERT-PRTL",
+            "reason": "Client is a governed exclusion: No geospatial server connector; it only reaches Honua through a warehouse."
+          }
+        ]
+      },
+      "scenarioFacets": [],
+      "requiredTier": "none",
+      "intendedTierOnActivation": "none",
+      "licensing": {
+        "model": "not-evaluated",
+        "requiresSeat": false,
+        "notes": "Licensing is not evaluated for governed exclusions."
+      },
+      "runtime": "not-provisioned",
+      "fixtureProjection": {
+        "kind": "not-applicable",
+        "status": "excluded",
+        "inputs": [],
+        "note": "Excluded clients consume no fixture."
+      },
+      "evidenceProducer": null,
+      "laneBinding": {
+        "matrixLaneId": "looker-studio",
+        "role": "exclusion"
+      },
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3395",
+      "needsOwningIssue": false,
+      "exclusionRationale": "No geospatial server connector; it only reaches Honua through a warehouse.",
+      "coveredAlternative": "The warehouse nightly already covers the only reachable path.",
+      "notes": null
+    }
+  ]
+}
