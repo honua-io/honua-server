@@ -19,7 +19,10 @@ PROJECT_BY_CLASS = {
     "FeatureServerTemporalExtentEndpointTests": "Honua.Protocols.GeoServices.Tests",
     "FeatureServerTemporalTests": "Honua.Protocols.GeoServices.Tests",
     "FeatureServerQueryDateBinsTests": "Honua.Protocols.GeoServices.Tests",
+    "FeatureServerMutationScenarioTests": "Honua.Protocols.GeoServices.Tests",
     "EdrEndpointsTests": "Honua.Protocols.OgcApi.Tests",
+    "OgcFeaturesMutationScenarioTests": "Honua.Protocols.OgcApi.Tests",
+    "Wfs20MutationScenarioTests": "Honua.Protocols.OgcClassic.Tests",
     "SensorThingsReadEndpointsTests": "Honua.Protocols.SensorThings.Tests",
     "SensorThingsIngestEndpointsTests": "Honua.Protocols.SensorThings.Tests",
 }
