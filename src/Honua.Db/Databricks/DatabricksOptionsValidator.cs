@@ -91,7 +91,7 @@ internal static class DatabricksOptionsValidator
 
             foreach (var attribute in layer.Attributes)
             {
-                DatabricksIdentifier.ValidateIdentifier(attribute);
+                DatabricksIdentifier.ValidateAttributeName(attribute);
             }
 
             if (!Enum.TryParse<GeometryType>(layer.GeometryType, ignoreCase: true, out _))

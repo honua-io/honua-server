@@ -176,8 +176,7 @@ internal static partial class RedshiftFeatureQueryBuilder
 
         foreach (var column in columns)
         {
-            RedshiftIdentifier.EnsureValid(column, "attribute column");
-            sb.Append(", ").Append(RedshiftIdentifier.Quote(column));
+            sb.Append(", ").Append(RedshiftIdentifier.QuoteAttribute(column));
         }
     }
 
@@ -309,9 +308,8 @@ internal static partial class RedshiftFeatureQueryBuilder
         var clauses = new List<string>(query.OrderBy.Value.Length);
         foreach (var orderBy in query.OrderBy.Value)
         {
-            RedshiftIdentifier.EnsureValid(orderBy.Field, "order-by column");
             var direction = orderBy.Ascending ? "ASC" : "DESC";
-            clauses.Add($"{RedshiftIdentifier.Quote(orderBy.Field)} {direction}");
+            clauses.Add($"{RedshiftIdentifier.QuoteAttribute(orderBy.Field)} {direction}");
         }
 
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));

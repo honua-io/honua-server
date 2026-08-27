@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.MySql.Features.Infrastructure;
 
@@ -11,7 +12,11 @@ namespace Honua.Db.MySql.Features.Infrastructure;
 /// </summary>
 internal static partial class MySqlIdentifier
 {
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    // `\z`, not `$`: .NET's `$` also matches immediately before a trailing newline, so
+    // `"field\n"` would satisfy `...$` and reach SQL as an identifier with an embedded
+    // newline. Found while fixing the same anchoring flaw in the Postgres field-name
+    // validators (honua-server#3389).
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex SimpleIdentifierRegex();
 
     /// <summary>Quotes an identifier with MySQL backticks.</summary>
@@ -36,6 +41,17 @@ internal static partial class MySqlIdentifier
         if (string.IsNullOrWhiteSpace(fieldName) || !SimpleIdentifierRegex().IsMatch(fieldName))
         {
             throw new ArgumentException($"Invalid field name: {fieldName}");
+        }
+    }
+
+    /// <summary>
+    /// Validates a declared attribute name that will be emitted as one quoted identifier.
+    /// </summary>
+    public static void ValidateAttributeName(string fieldName)
+    {
+        if (!FeatureFieldNameSyntax.IsValid(fieldName))
+        {
+            throw new ArgumentException($"Invalid attribute name: {fieldName}");
         }
     }
 }

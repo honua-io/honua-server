@@ -107,6 +107,17 @@ public class MySqlLayerMappingRegistryTests
         Assert.Throws<ArgumentException>(() => MySqlIdentifier.ValidateFieldName(name));
     }
 
+    [Theory]
+    [InlineData("eo:cloud_cover")]
+    [InlineData("owner.name")]
+    [InlineData("cloud-cover")]
+    public void ValidateAttributeName_AcceptsExtendedDeclaredFieldNames(string name)
+    {
+        var ex = Record.Exception(() => MySqlIdentifier.ValidateAttributeName(name));
+
+        Assert.Null(ex);
+    }
+
     [Fact]
     public void Constructor_NullMappings_Throws()
     {

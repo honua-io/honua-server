@@ -177,7 +177,7 @@ internal static class ServiceCollectionExtensions
             MySqlIdentifier.ValidateFieldName(layer.GeometryColumn);
             foreach (var attr in layer.Attributes)
             {
-                MySqlIdentifier.ValidateFieldName(attr);
+                MySqlIdentifier.ValidateAttributeName(attr);
             }
 
             // GeometryType is pre-validated by MySqlOptionsValidator; Parse (not TryParse)

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
@@ -84,7 +85,7 @@ public class DatabricksFeatureQueryBuilderTests
     {
         // Unknown fields are a client validation error (ArgumentException -> HTTP 400),
         // distinct from capability rejections (NotSupportedException).
-        Assert.Throws<ArgumentException>(
+        Assert.Throws<UnknownFilterFieldException>(
             () => Builder.BuildSelect(Mapping(), new FeatureQuery { Where = "not_a_column = 1" }));
     }
 
@@ -128,6 +129,30 @@ public class DatabricksFeatureQueryBuilderTests
         Assert.Contains("ORDER BY `name` ASC, `owner` DESC", statement.Sql, StringComparison.Ordinal);
         Assert.Contains("LIMIT 50", statement.Sql, StringComparison.Ordinal);
         Assert.Contains("OFFSET 100", statement.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("eo:cloud_cover")]
+    [InlineData("owner.name")]
+    [InlineData("cloud-cover")]
+    public void BuildSelect_WithExtendedOrderByField_QuotesSingleIdentifier(string field)
+    {
+        var query = new FeatureQuery { OrderBy = [OrderByClause.Asc(field)] };
+
+        var statement = Builder.BuildSelect(Mapping(field), query);
+
+        Assert.Contains($"ORDER BY `{field}` ASC", statement.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("name;DROP")]
+    [InlineData("owner name")]
+    [InlineData("name/name")]
+    public void BuildSelect_WithUnsafeOrderByField_Throws(string field)
+    {
+        var query = new FeatureQuery { OrderBy = [OrderByClause.Asc(field)] };
+
+        Assert.Throws<ArgumentException>(() => Builder.BuildSelect(Mapping(field), query));
     }
 
     [Fact]

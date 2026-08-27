@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Db.MySql.Queries.Filters;
@@ -85,6 +86,33 @@ public class MySqlSqlFilterTranslatorTests
         var result = _translator.Translate(filter, _resource);
 
         Assert.Equal("`name` IS NULL", result.Sql);
+    }
+
+    [Fact]
+    public void Translate_IsNullUnaryForUnknownField_ThrowsTypedException()
+    {
+        var filter = new UnaryExpression(
+            UnaryOperator.IsNull,
+            new PropertyReference("collection_specific_field"));
+
+        var exception = Assert.Throws<UnknownFilterFieldException>(
+            () => _translator.Translate(filter, _resource));
+
+        Assert.Equal("collection_specific_field", exception.PropertyName);
+    }
+
+    [Fact]
+    public void Translate_SpatialUnknownField_ThrowsTypedException()
+    {
+        var filter = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("collection_specific_field"),
+            new PropertyReference("geometry"));
+
+        var exception = Assert.Throws<UnknownFilterFieldException>(
+            () => _translator.Translate(filter, _resource));
+
+        Assert.Equal("collection_specific_field", exception.PropertyName);
     }
 
     [Fact]
@@ -259,14 +287,17 @@ public class MySqlSqlFilterTranslatorTests
     }
 
     [Fact]
-    public void Translate_PropertyReferenceUnknownField_ThrowsArgument()
+    public void Translate_PropertyReferenceUnknownField_ThrowsTypedException()
     {
         var filter = new BinaryExpression(
             new PropertyReference("ghost_field"),
             BinaryOperator.Equal,
             new Literal("x", LiteralType.Text));
 
-        Assert.Throws<ArgumentException>(() => _translator.Translate(filter, _resource));
+        var exception = Assert.Throws<UnknownFilterFieldException>(
+            () => _translator.Translate(filter, _resource));
+
+        Assert.Equal("ghost_field", exception.PropertyName);
     }
 
     [Fact]
