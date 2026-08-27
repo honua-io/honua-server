@@ -225,7 +225,7 @@ train_recovery_has_label() { tr ',' '\n' <<<"$1" | grep -Fxq "$2"; }
 
 train_recovery_write_state() {
   local branch="$1" trunk_base="$2" included="$3" phase="$4" run_id="$5" last="$6" \
-        records="${7:-}" batch_sha="${8:-}" body heads='[]'
+        records="${7:-}" batch_sha="${8:-}" body heads='[]' rc=0
   if [[ -n "${records}" ]]; then
     heads="$(jq -Rn '[inputs | split("\t") | {number:(.[0]|tonumber),head:.[1]}]' <<<"${records}")"
   fi
@@ -236,7 +236,9 @@ train_recovery_write_state() {
   body="$(mktemp)"
   train_state_render "${branch}" "${trunk_base}" "${included}" "${phase}" "${run_id}" 0 0 "${last}" \
     "${heads}" "${batch_sha}" >"${body}"
-  train_state_write "${body}"; rm -f "${body}"
+  train_state_write "${body}" "${TRAIN_STATE_PRIOR_FILE:-}" || rc=$?
+  rm -f "${body}"
+  return "${rc}"
 }
 
 train_recovery_continuation_exists() {

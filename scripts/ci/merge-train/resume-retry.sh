@@ -81,7 +81,7 @@ _train_resume_persist_request_phase() {
   body="$(mktemp)"
   printf 'Machine-managed state for the optimistic batch merge train. Do not edit by hand.\n\n```json\n%s\n```\n' \
     "${updated}" >"${body}"
-  train_state_write "${body}" || { rm -f "${body}"; return 1; }
+  train_state_write "${body}" "${TRAIN_STATE_PRIOR_FILE:?state prior snapshot is required}" || { rm -f "${body}"; return 1; }
   rm -f "${body}"
 }
 

@@ -71,6 +71,7 @@ train_require git jq gh || { train_err "missing prerequisites"; exit 2; }
 # Scratch files for the run.
 TRAIN_WORK="$(mktemp -d)"
 trap 'rm -rf "${TRAIN_WORK}"' EXIT
+export TRAIN_STATE_PRIOR_FILE="${TRAIN_WORK}/state-prior.md"
 export TRAIN_INCLUDED_FILE="${TRAIN_WORK}/included.tsv"
 export TRAIN_SKIPPED_FILE="${TRAIN_WORK}/skipped.tsv"
 export TRAIN_RUN_ID_FILE="${TRAIN_WORK}/run_id"
@@ -557,7 +558,7 @@ train_recover_terminal_batch() {
     train_decision "TERMINAL RECOVERY #${pr}: ${reason}"
   done
 
-  train_state_write "${body}" || { rm -f "${body}"; return 2; }
+  train_state_write "${body}" "${TRAIN_STATE_PRIOR_FILE}" || { rm -f "${body}"; return 2; }
   rm -f "${body}"
   train_notice "completed terminal ${phase} cleanup for batch members ${included}"
 }
@@ -623,7 +624,7 @@ train_reset_active_batch() {
       || { rm -f "${body}"; return 2; }
     train_decision "STATE RESET #${pr}: released by an operator-requested merge-train state reset"
   done
-  train_state_write "${body}" || { rm -f "${body}"; return 2; }
+  train_state_write "${body}" "${TRAIN_STATE_PRIOR_FILE}" || { rm -f "${body}"; return 2; }
   rm -f "${body}"
   train_notice "operator state reset cleared the active batch (phase=${phase:-none}, members=${included:-none}, salvaged=${salvaged})"
 }
@@ -1287,7 +1288,7 @@ _write_state() {
   train_state_render "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8:-null}" \
     "${heads}" "${batch_sha}" "${timeout_reruns:-0}" "${TRAIN_RERUN_KIND:-}" \
     "${TRAIN_RERUN_BASE_ATTEMPT:-null}" "${timeout_reruns_total:-0}" >"${body}"
-  train_state_write "${body}"
+  train_state_write "${body}" "${TRAIN_STATE_PRIOR_FILE}"
 }
 
 # Persist two-phase rerun state around the Actions side effect. `rejected` is a

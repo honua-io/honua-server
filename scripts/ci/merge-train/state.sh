@@ -158,14 +158,90 @@ train_state_issue_number() {
   printf '%s\n' "${rows}" | sed '/^$/d'
 }
 
-# train_state_write <body-file>: create-or-update the state issue. Side-effecting.
+# train_state_hash <body-file>: hash normalized issue-body bytes. Command
+# substitution (including `gh --jq`) drops trailing newlines, so normalize both
+# local and remote bodies the same way before comparing them.
+train_state_hash() {
+  local body
+  body="$(<"$1")"
+  printf '%s' "${body}" | sha256sum | awk '{print $1}'
+}
+
+# train_state_write <body-file> <expected-prior-file>: create-or-update the
+# state issue. Existing issues are updated only while the live body still
+# matches the exact body this controller observed. GitHub does not provide a
+# conditional issue PATCH, so the post-write read is part of the safety
+# contract: any interleaving writer is detected and the controller fails
+# closed. A bounded retry tolerates a transient stale read but NEVER adopts a
+# conflicting body as a new expected prior.
 train_state_write() {
-  local body_file="$1"
-  local num lookup_rc=0
+  local body_file="$1" expected_file="${2:-${TRAIN_STATE_PRIOR_FILE:-}}"
+  local num lookup_rc=0 attempt live_file intended_hash expected_hash observed_hash verify_hash
+  local max_attempts="${TRAIN_STATE_CAS_ATTEMPTS:-3}"
+  [[ "${max_attempts}" =~ ^[1-9][0-9]*$ ]] || {
+    train_err "invalid TRAIN_STATE_CAS_ATTEMPTS=${max_attempts}; refusing state write"
+    return 2
+  }
   num="$(train_state_issue_number)" || lookup_rc=$?
   [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
   if [[ -n "${num}" ]]; then
-    train_side_effect gh issue edit "${num}" --body-file "${body_file}"
+    if [[ "${TRAIN_APPLY:-0}" != "1" ]]; then
+      train_side_effect gh issue edit "${num}" --body-file "${body_file}"
+      return $?
+    fi
+    [[ -n "${expected_file}" && -f "${expected_file}" ]] || {
+      train_err "refusing state issue #${num} write without an expected-prior body"
+      return 2
+    }
+    intended_hash="$(train_state_hash "${body_file}")" || return 2
+    expected_hash="$(train_state_hash "${expected_file}")" || return 2
+    live_file="$(mktemp)"
+    for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+      local live_body
+      live_body="$(train_state_body "${num}")" || {
+        rm -f "${live_file}"
+        train_err "state CAS could not read issue #${num} (attempt ${attempt}/${max_attempts})"
+        return 2
+      }
+      printf '%s' "${live_body}" >"${live_file}"
+      observed_hash="$(train_state_hash "${live_file}")" || { rm -f "${live_file}"; return 2; }
+      if [[ "${observed_hash}" == "${intended_hash}" ]]; then
+        printf '%s' "$(<"${body_file}")" >"${expected_file}"
+        rm -f "${live_file}"
+        train_log "state issue #${num} already contains intended body (${intended_hash}); no edit needed"
+        return 0
+      fi
+      if [[ "${observed_hash}" != "${expected_hash}" ]]; then
+        train_warn "state CAS conflict on issue #${num}: expected=${expected_hash} observed=${observed_hash} attempt=${attempt}/${max_attempts}"
+        if (( attempt < max_attempts )); then
+          sleep "${TRAIN_STATE_CAS_RETRY_SECONDS:-1}"
+          continue
+        fi
+        rm -f "${live_file}"
+        train_err "state CAS refused issue #${num} write after ${max_attempts} attempts: expected=${expected_hash} observed=${observed_hash}"
+        return 3
+      fi
+      train_side_effect gh issue edit "${num}" --body-file "${body_file}" || { rm -f "${live_file}"; return 2; }
+      live_body="$(train_state_body "${num}")" || {
+        rm -f "${live_file}"
+        train_err "state CAS could not verify issue #${num} after write"
+        return 2
+      }
+      printf '%s' "${live_body}" >"${live_file}"
+      verify_hash="$(train_state_hash "${live_file}")" || { rm -f "${live_file}"; return 2; }
+      if [[ "${verify_hash}" == "${intended_hash}" ]]; then
+        printf '%s' "$(<"${body_file}")" >"${expected_file}"
+        rm -f "${live_file}"
+        return 0
+      fi
+      train_warn "state CAS post-write conflict on issue #${num}: expected=${intended_hash} observed=${verify_hash} attempt=${attempt}/${max_attempts}"
+      if (( attempt < max_attempts )); then
+        sleep "${TRAIN_STATE_CAS_RETRY_SECONDS:-1}"
+      fi
+    done
+    rm -f "${live_file}"
+    train_err "state CAS verification refused issue #${num} after ${max_attempts} attempts: expected=${intended_hash} observed=${verify_hash}"
+    return 3
   else
     if [[ "${TRAIN_APPLY:-0}" == "1" ]]; then
       train_err "live state creation is disabled; configure the pre-provisioned TRAIN_STATE_ISSUE_NUMBER"
@@ -218,6 +294,9 @@ train_state_salvage() {
   [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
   [[ -z "${num}" ]] && return 1
   body="$(train_state_body "${num}")" || return 2
+  if [[ -n "${TRAIN_STATE_PRIOR_FILE:-}" ]]; then
+    printf '%s' "${body}" >"${TRAIN_STATE_PRIOR_FILE}"
+  fi
   # The land-intent check must survive NEWLINES, not just spaces. A damaged
   # block can put the value on its own line ("phase":\n"land"); a line-oriented
   # grep misses that, the parse below then fails on the accompanying syntax
@@ -262,9 +341,15 @@ train_state_read() {
   local num body json lookup_rc=0 body_rc=0
   num="$(train_state_issue_number)" || lookup_rc=$?
   [[ "${lookup_rc}" == "0" ]] || return "${lookup_rc}"
-  [[ -z "${num}" ]] && return 0
+  if [[ -z "${num}" ]]; then
+    [[ -n "${TRAIN_STATE_PRIOR_FILE:-}" ]] && : >"${TRAIN_STATE_PRIOR_FILE}"
+    return 0
+  fi
   body="$(train_state_body "${num}")" || body_rc=$?
   [[ "${body_rc}" == "0" ]] || return 2
+  if [[ -n "${TRAIN_STATE_PRIOR_FILE:-}" ]]; then
+    printf '%s' "${body}" >"${TRAIN_STATE_PRIOR_FILE}"
+  fi
   # An existing issue must contain exactly one parseable machine-state block.
   # Fence markers may have trailing whitespace, but no other suffix.
   # Empty output is reserved for a confirmed absent issue.
@@ -479,5 +564,5 @@ train_aggregate_update() {
     printf '\n```json\n%s\n```\n' "${state_json}"
     printf '\n```json aggregate\n%s\n```\n' "${agg}"
   } >"${body}"
-  train_state_write "${body}"
+  train_state_write "${body}" "${TRAIN_STATE_PRIOR_FILE:?state prior snapshot is required}"
 }
