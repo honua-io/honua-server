@@ -156,6 +156,61 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
     }
 
+    private static readonly (string Path, string[] AllowedMethods)[] MutatingCompatibilityGetRoutes =
+    [
+        (
+            $"/rest/services/{WebAppFixture.TestServiceId}/GPServer/test-task/submitJob",
+            ["GET", "POST"]
+        ),
+        (
+            $"/rest/services/{WebAppFixture.TestServiceId}/GPServer/test-task/execute",
+            ["GET", "POST"]
+        ),
+        (
+            $"/rest/services/{WebAppFixture.TestServiceId}/GPServer/test-task/jobs/test-job/cancel",
+            ["GET", "POST"]
+        ),
+        (
+            "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/execute",
+            ["GET", "POST"]
+        ),
+        (
+            "/rest/services/Utilities/PrintingTools/GPServer/Export%20Web%20Map%20Task/submitJob",
+            ["GET", "POST"]
+        ),
+        ("/sharing/rest/generateToken", ["GET", "POST"]),
+        (
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/cleanupAssets",
+            ["GET"]
+        ),
+        (
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/uploadAssets",
+            ["GET"]
+        )
+    ];
+
+    /// <summary>
+    /// GeoServices keeps legacy GET aliases for several operations that mutate state or create
+    /// work. HEAD probes must never inherit those GET semantics and invoke their handlers.
+    /// </summary>
+    [IntegrationTest]
+    public async Task Head_MutatingCompatibilityGetRoutes_Return405MethodNotAllowed()
+    {
+        var client = _fixture.CreateClient();
+
+        foreach (var (path, allowedMethods) in MutatingCompatibilityGetRoutes)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, path);
+            using var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(
+                HttpStatusCode.MethodNotAllowed,
+                "HEAD must not invoke the mutating compatibility GET handler for {0}",
+                path);
+            response.Content.Headers.Allow.Should().BeEquivalentTo(allowedMethods);
+        }
+    }
+
     /// <summary>
     /// Only HEAD changes: <c>HealthEndpoints.NonGetMethods</c> -&gt; <c>HandleGetMethodNotAllowed</c>
     /// must keep answering 405 for the mutating methods.
