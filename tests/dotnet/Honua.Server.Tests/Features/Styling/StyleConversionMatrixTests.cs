@@ -803,11 +803,11 @@ public class StyleConversionMatrixTests
     }
 
     [Fact]
-    public void GeoServicesToMapLibre_NumericUniqueValues_PreservesNumericStops()
+    public void GeoServicesToMapLibre_AllNumericUniqueValues_MatchStringEncodedTileAttributes()
     {
-        // Numeric labels must remain numeric. Stringifying them in .NET can produce
-        // a different token than MapLibre's runtime to-string conversion (for example,
-        // 1E-07 versus 1e-7), causing a valid category to silently miss.
+        // GeoServices can describe numeric categories while vector-tile producers
+        // encode the same attributes as strings. Both the input and stops must use
+        // the string-normalized contract for those features to receive a color.
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
         {
@@ -836,16 +836,19 @@ public class StyleConversionMatrixTests
         var matchExpr = outerItems[2];
         var items = matchExpr.EnumerateArray().ToArray();
 
-        // Numeric labels use the native field value, without lossy string coercion.
+        // A tile feature with zone_code="2" is normalized identically to the
+        // numeric GeoServices stop and therefore resolves to its green color.
         Assert.Equal("match", items[0].GetString());
-        Assert.Equal("get", items[1].EnumerateArray().First().GetString());
+        Assert.Equal("to-string", items[1].EnumerateArray().First().GetString());
 
-        Assert.Equal(JsonValueKind.Number, items[2].ValueKind);
-        Assert.Equal(1e-7, items[2].GetDouble());
-        Assert.Equal(JsonValueKind.Number, items[4].ValueKind);
-        Assert.Equal(2, items[4].GetInt32());
-        Assert.Equal(JsonValueKind.Number, items[6].ValueKind);
-        Assert.Equal(3, items[6].GetInt32());
+        // 1e-7 must be stringified the way MapLibre's to-string does ("1e-7"), not the
+        // way .NET's "G"/"R" formats do ("1E-07"); otherwise the stop can never match
+        // and the feature silently falls through to the default color.
+        Assert.Equal("1e-7", items[2].GetString());
+        Assert.Equal("rgba(255,0,0,1)", items[3].GetString());
+        Assert.Equal("2", items[4].GetString());
+        Assert.Equal("rgba(0,255,0,1)", items[5].GetString());
+        Assert.Equal("3", items[6].GetString());
 
         // Round-trip back to GeoServices preserves the field
         var geoServicesJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer);
@@ -853,11 +856,6 @@ public class StyleConversionMatrixTests
         var renderer = gsDoc.RootElement.GetProperty("renderer");
         Assert.Equal("uniqueValue", renderer.GetProperty("type").GetString());
         Assert.Equal("zone_code", renderer.GetProperty("field1").GetString());
-        var roundTripValues = renderer.GetProperty("uniqueValueInfos").EnumerateArray()
-            .Select(info => info.GetProperty("value"))
-            .ToArray();
-        Assert.Equal(JsonValueKind.Number, roundTripValues[0].ValueKind);
-        Assert.Equal(1e-7, roundTripValues[0].GetDouble());
     }
 
     [Fact]
@@ -897,7 +895,7 @@ public class StyleConversionMatrixTests
     }
 
     [Fact]
-    public void GeoServicesToMapLibre_MixedUniqueValues_UsesTypedBranchesAndRoundTrips()
+    public void GeoServicesToMapLibre_MixedUniqueValues_UsesOneStringNormalizedMatch()
     {
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
@@ -920,13 +918,10 @@ public class StyleConversionMatrixTests
 
         var circleLayer = FindLayer(mapLibreDoc.RootElement, "circle");
         var outerCase = circleLayer.GetProperty("paint").GetProperty("circle-color").EnumerateArray().ToArray();
-        var typedCase = outerCase[2].EnumerateArray().ToArray();
-        Assert.Equal("case", typedCase[0].GetString());
-        Assert.Equal("match", typedCase[2][0].GetString());
-        Assert.Equal("get", typedCase[2][1][0].GetString());
-        Assert.Equal(JsonValueKind.Number, typedCase[2][2].ValueKind);
-        Assert.Equal("match", typedCase[3][0].GetString());
-        Assert.Equal("to-string", typedCase[3][1][0].GetString());
+        var match = outerCase[2].EnumerateArray().ToArray();
+        Assert.Equal("match", match[0].GetString());
+        Assert.Equal("to-string", match[1][0].GetString());
+        Assert.All(new[] { match[2], match[4], match[6] }, value => Assert.Equal(JsonValueKind.String, value.ValueKind));
 
         var geoServicesJson = MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer);
         using var roundTripDocument = JsonDocument.Parse(geoServicesJson);
@@ -938,15 +933,15 @@ public class StyleConversionMatrixTests
             values,
             value =>
             {
-                Assert.Equal(JsonValueKind.Number, value.ValueKind);
-                Assert.Equal(1e-7, value.GetDouble());
+                Assert.Equal(JsonValueKind.String, value.ValueKind);
+                Assert.Equal("1e-7", value.GetString());
             },
             value => Assert.Equal("active", value.GetString()),
             value => Assert.Equal("true", value.GetString()));
     }
 
     [Fact]
-    public void GeoServicesToMapLibre_PictureMarkerNumericUniqueValues_PreservesNumericStops()
+    public void GeoServicesToMapLibre_PictureMarkerNumericUniqueValues_UsesStringNormalizedStops()
     {
         var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
         const string drawingInfoJson = """
@@ -976,14 +971,62 @@ public class StyleConversionMatrixTests
         var items = outerItems[2].EnumerateArray().ToArray();
 
         Assert.Equal("match", items[0].GetString());
-        Assert.Equal("get", items[1].EnumerateArray().First().GetString());
+        Assert.Equal("to-string", items[1].EnumerateArray().First().GetString());
 
-        Assert.Equal(JsonValueKind.Number, items[2].ValueKind);
-        Assert.Equal(1e-7, items[2].GetDouble());
-        Assert.Equal(JsonValueKind.Number, items[4].ValueKind);
-        Assert.Equal(2, items[4].GetInt32());
-        Assert.Equal(JsonValueKind.Number, items[6].ValueKind);
-        Assert.Equal(3, items[6].GetInt32());
+        // Same ECMAScript coercion contract as the color path: a mis-formatted stop
+        // here resolves to the wrong icon rather than the wrong color.
+        Assert.Equal("1e-7", items[2].GetString());
+        Assert.Equal("2", items[4].GetString());
+        Assert.Equal("3", items[6].GetString());
+    }
+
+    [Theory]
+    // Exponent casing/padding: .NET's "G"/"R" produce 1E-07, ECMAScript produces 1e-7.
+    [InlineData("1e-7", "1e-7")]
+    [InlineData("1.5e-8", "1.5e-8")]
+    [InlineData("-1e-7", "-1e-7")]
+    // Threshold where ECMAScript switches back to plain decimal but .NET does not.
+    [InlineData("1e-6", "0.000001")]
+    [InlineData("1e-5", "0.00001")]
+    [InlineData("0.0001", "0.0001")]
+    // Threshold where ECMAScript stays decimal up to 1e21 but .NET goes exponential.
+    [InlineData("1e20", "100000000000000000000")]
+    [InlineData("1e21", "1e+21")]
+    [InlineData("1.2345e22", "1.2345e+22")]
+    // Ordinary values must be unaffected.
+    [InlineData("2", "2")]
+    [InlineData("0", "0")]
+    [InlineData("-0.0", "0")]
+    [InlineData("123.456", "123.456")]
+    public void GeoServicesToMapLibre_NumericUniqueValueStop_UsesEcmaScriptNumberFormatting(
+        string jsonValue,
+        string expectedStop)
+    {
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
+        var drawingInfoJson = $$"""
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "zone_code",
+            "uniqueValueInfos": [
+              { "value": {{jsonValue}}, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [255, 0, 0, 255], "size": 8 } }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var mapLibreJson = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+        using var mapLibreDoc = JsonDocument.Parse(mapLibreJson);
+
+        var circleLayer = FindLayer(mapLibreDoc.RootElement, "circle");
+        var outerItems = circleLayer.GetProperty("paint").GetProperty("circle-color").EnumerateArray().ToArray();
+        var items = outerItems[2].EnumerateArray().ToArray();
+
+        Assert.Equal("match", items[0].GetString());
+        Assert.Equal("to-string", items[1].EnumerateArray().First().GetString());
+        Assert.Equal(JsonValueKind.String, items[2].ValueKind);
+        Assert.Equal(expectedStop, items[2].GetString());
     }
 
     [Fact]
