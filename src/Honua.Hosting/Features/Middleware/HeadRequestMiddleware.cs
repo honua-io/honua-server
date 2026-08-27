@@ -260,9 +260,12 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
         context.Items[HeadRequestSupport.RewrittenFromHeadKey] = true;
         context.Request.Method = HttpMethods.Get;
 
+        var originalResponseFeature = context.Features.GetRequiredFeature<IHttpResponseFeature>();
+        var logicalResponseFeature = new HeadResponseFeature(originalResponseFeature);
         var originalBodyFeature = context.Features.GetRequiredFeature<IHttpResponseBodyFeature>();
-        using var discardingBodyFeature = new HeadResponseBodyFeature();
+        using var discardingBodyFeature = new HeadResponseBodyFeature(logicalResponseFeature.MarkStarted);
         context.Items[HeadRequestSupport.ResponseBodyFeatureKey] = discardingBodyFeature;
+        context.Features.Set<IHttpResponseFeature>(logicalResponseFeature);
         context.Features.Set<IHttpResponseBodyFeature>(discardingBodyFeature);
 
         try
@@ -277,6 +280,7 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
             context.Request.Method = HttpMethods.Head;
 
             var bytesWritten = await discardingBodyFeature.FinishAsync().ConfigureAwait(false);
+            context.Features.Set<IHttpResponseFeature>(originalResponseFeature);
             context.Features.Set<IHttpResponseBodyFeature>(originalBodyFeature);
             context.Items.Remove(HeadRequestSupport.ResponseBodyFeatureKey);
             if (!context.Response.HasStarted &&
@@ -347,17 +351,37 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
     {
         var rewrittenFromHead = HeadRequestSupport.WasRewrittenFromHead(httpContext);
         var hasExplicitHeadCandidate = false;
-        HashSet<string>? declaredMethods = null;
+        HashSet<string>? allowedMethods = null;
         var hasOrdinaryGetCandidate = false;
 
         for (var i = 0; i < candidates.Count; i++)
         {
+            var endpoint = candidates[i].Endpoint;
+            var metadata = endpoint.Metadata.GetMetadata<ExplicitHeadOnlyEndpointMetadata>();
+            if (metadata is not null)
+            {
+                allowedMethods ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var method in metadata.DeclaredMethods)
+                {
+                    allowedMethods.Add(method);
+                }
+            }
+            else if (endpoint.Metadata.GetMetadata<HttpMethodMetadata>() is { } httpMethodMetadata)
+            {
+                // Method matching invalidates POST/PUT/etc. candidates before this policy runs,
+                // but they still belong in the RFC 9110 Allow header for the matched route.
+                allowedMethods ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var method in httpMethodMetadata.HttpMethods)
+                {
+                    allowedMethods.Add(method);
+                }
+            }
+
             if (!candidates.IsValidCandidate(i))
             {
                 continue;
             }
 
-            var metadata = candidates[i].Endpoint.Metadata.GetMetadata<ExplicitHeadOnlyEndpointMetadata>();
             if (metadata is null)
             {
                 hasOrdinaryGetCandidate = true;
@@ -365,11 +389,6 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
             }
 
             hasExplicitHeadCandidate = true;
-            declaredMethods ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var method in metadata.DeclaredMethods)
-            {
-                declaredMethods.Add(method);
-            }
         }
 
         for (var i = 0; i < candidates.Count; i++)
@@ -394,7 +413,7 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
             hasExplicitHeadCandidate &&
             !hasOrdinaryGetCandidate)
         {
-            httpContext.SetEndpoint(CreateMethodNotAllowedEndpoint(declaredMethods));
+            httpContext.SetEndpoint(CreateMethodNotAllowedEndpoint(allowedMethods));
             httpContext.Request.RouteValues = null!;
         }
 
@@ -417,6 +436,49 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
             EndpointMetadataCollection.Empty,
             "405 HTTP Method Not Supported (explicit HEAD plugin route)");
     }
+}
+
+/// <summary>
+/// Preserves the transport response feature while exposing logical response-start state to
+/// handlers that write into the suppressed HEAD body.
+/// </summary>
+internal sealed class HeadResponseFeature(IHttpResponseFeature inner) : IHttpResponseFeature
+{
+    private bool _logicallyStarted;
+
+    public int StatusCode
+    {
+        get => inner.StatusCode;
+        set => inner.StatusCode = value;
+    }
+
+    public string? ReasonPhrase
+    {
+        get => inner.ReasonPhrase;
+        set => inner.ReasonPhrase = value;
+    }
+
+    public IHeaderDictionary Headers
+    {
+        get => inner.Headers;
+        set => inner.Headers = value;
+    }
+
+#pragma warning disable CS0618 // Required to delegate the legacy IHttpResponseFeature contract.
+    public Stream Body
+    {
+        get => inner.Body;
+        set => inner.Body = value;
+    }
+#pragma warning restore CS0618
+
+    public bool HasStarted => _logicallyStarted || inner.HasStarted;
+
+    public void OnStarting(Func<object, Task> callback, object state) => inner.OnStarting(callback, state);
+
+    public void OnCompleted(Func<object, Task> callback, object state) => inner.OnCompleted(callback, state);
+
+    internal void MarkStarted() => _logicallyStarted = true;
 }
 
 /// <summary>
@@ -587,9 +649,15 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
 /// </summary>
 internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDisposable
 {
-    private readonly CountingNullStream _stream = new();
+    private readonly CountingNullStream _stream;
     private PipeWriter? _writer;
     private bool _finished;
+
+    internal HeadResponseBodyFeature(Action responseStarted)
+    {
+        ArgumentNullException.ThrowIfNull(responseStarted);
+        _stream = new CountingNullStream(responseStarted);
+    }
 
     public Stream Stream => _stream;
 
@@ -626,7 +694,11 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
         return Task.CompletedTask;
     }
 
-    public Task CompleteAsync() => FinishAsync().AsTask();
+    public Task CompleteAsync()
+    {
+        _stream.SignalResponseActivity();
+        return FinishAsync().AsTask();
+    }
 
     /// <summary>
     /// Counts what the file transfer would have sent without reading a single byte of it.
@@ -675,9 +747,15 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
 
     private sealed class CountingNullStream : Stream
     {
+        private readonly Action _responseStarted;
         private long _bytesWritten;
         private Action? _firstResponseActivityCallback;
         private bool _firstResponseActivitySignalled;
+
+        internal CountingNullStream(Action responseStarted)
+        {
+            _responseStarted = responseStarted;
+        }
 
         public long BytesWritten => _bytesWritten;
 
@@ -700,6 +778,7 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
             }
 
             _firstResponseActivitySignalled = true;
+            _responseStarted();
             _firstResponseActivityCallback?.Invoke();
         }
 

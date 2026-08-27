@@ -1927,6 +1927,22 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_GetPropertyValue_GeometryWithCrs84_RelabelsGeometrySrsName()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer" +
+            "&VALUEREFERENCE=geometry&SRSNAME=urn:ogc:def:crs:OGC:1.3:CRS84&COUNT=1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("srsName=\"urn:ogc:def:crs:OGC:1.3:CRS84\"");
+        content.Should().NotContain("srsName=\"urn:ogc:def:crs:EPSG::4326\"");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]

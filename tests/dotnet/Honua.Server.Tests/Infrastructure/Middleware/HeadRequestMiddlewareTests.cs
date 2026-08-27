@@ -44,6 +44,7 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
     /// cross-test synchronisation.
     /// </summary>
     private string? _upstreamMethodOnUnwind;
+    private bool? _midstreamHandlerObservedResponseStarted;
 
     /// <summary>
     /// Completed by the streaming route when its loop unwinds, so a test can prove the handler
@@ -218,6 +219,24 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             await context.Response.WriteAsync("{\"value\":true}");
         });
 
+        _app.MapGet("/midstream-catch", async context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status202Accepted;
+            try
+            {
+                await context.Response.WriteAsync("partial");
+                throw new InvalidOperationException("simulated provider failure after streaming began");
+            }
+            catch (InvalidOperationException)
+            {
+                _midstreamHandlerObservedResponseStarted = context.Response.HasStarted;
+                if (!context.Response.HasStarted)
+                {
+                    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                }
+            }
+        });
+
         await _app.StartAsync();
         _client = _app.GetTestClient();
     }
@@ -356,6 +375,17 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         response.Headers.TransferEncodingChunked.Should().BeTrue();
         response.Content.Headers.ContentLength.Should().BeNull(
             "chunked framing and Content-Length cannot be advertised on the same response");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadAfterFirstWrite_ExposesLogicalResponseStartToHandler()
+    {
+        using var response = await SendAsync(HttpMethod.Head, "/midstream-catch");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted,
+            "a caught mid-stream failure cannot replace an already-started GET response");
+        _midstreamHandlerObservedResponseStarted.Should().BeTrue();
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
     }
 
     [UnitTest]
