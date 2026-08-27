@@ -45,13 +45,31 @@ public static class PluginCustomEndpoints
         var customEndpoints = endpoints.ServiceProvider.GetServices<ICustomEndpoint>().ToArray();
         foreach (var endpoint in customEndpoints)
         {
-            MapOne(endpoints, endpoint);
+            var routeMethods = string.IsNullOrWhiteSpace(endpoint.Pattern)
+                ? Array.Empty<string>()
+                : customEndpoints
+                    .Where(candidate =>
+                        !string.IsNullOrWhiteSpace(candidate.Pattern) &&
+                        string.Equals(
+                            candidate.Pattern.TrimStart('/'),
+                            endpoint.Pattern.TrimStart('/'),
+                            StringComparison.OrdinalIgnoreCase))
+                    .SelectMany(candidate => candidate.Methods is { Count: > 0 }
+                        ? candidate.Methods
+                        : Array.Empty<string>())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+            MapOne(endpoints, endpoint, routeMethods);
         }
 
         return endpoints;
     }
 
-    private static void MapOne(IEndpointRouteBuilder endpoints, ICustomEndpoint endpoint)
+    private static void MapOne(
+        IEndpointRouteBuilder endpoints,
+        ICustomEndpoint endpoint,
+        IReadOnlyList<string> routeMethods)
     {
         var declaredMethods = endpoint.Methods is { Count: > 0 }
             ? endpoint.Methods.ToArray()
@@ -93,7 +111,7 @@ public static class PluginCustomEndpoints
                     (HttpContext context, CancellationToken ct) => HandleAsync(endpoint, context, ct))
                 .WithDisplayName($"Internal HEAD fallback for plugin endpoint: {pattern}")
                 .ExcludeFromDescription()
-                .WithMetadata(new ExplicitHeadOnlyEndpointMetadata(declaredMethods));
+                .WithMetadata(new ExplicitHeadOnlyEndpointMetadata(routeMethods));
 
             if (endpoint.RequiresAuthorization)
             {
