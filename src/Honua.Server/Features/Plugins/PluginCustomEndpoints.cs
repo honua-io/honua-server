@@ -61,9 +61,6 @@ public static class PluginCustomEndpoints
         var exposesHeadFallback =
             declaredMethods.Any(HttpMethods.IsHead) &&
             !declaredMethods.Any(HttpMethods.IsGet);
-        var routingMethods = exposesHeadFallback
-            ? [.. declaredMethods, HttpMethods.Get]
-            : declaredMethods;
 
         if (string.IsNullOrWhiteSpace(endpoint.Pattern))
         {
@@ -75,22 +72,33 @@ public static class PluginCustomEndpoints
 
         // Capture the singleton endpoint instance so the handler delegate is static-rooted and
         // AOT-safe (no per-request service resolution of the plugin type, no reflection).
-        var builder = endpoints.MapMethods(pattern, routingMethods, (HttpContext context, CancellationToken ct)
+        var builder = endpoints.MapMethods(pattern, declaredMethods, (HttpContext context, CancellationToken ct)
             => HandleAsync(endpoint, context, ct))
             .WithTags("Plugins")
             .WithDisplayName($"Plugin endpoint: {pattern}");
 
-        if (exposesHeadFallback)
-        {
-            // The shared HEAD middleware rewrites before routing. This hidden GET candidate lets
-            // the selector policy choose the plugin's explicit HEAD handler without exposing that
-            // handler to genuine GET requests or eclipsing a separate GET endpoint.
-            builder.WithMetadata(ExplicitHeadOnlyEndpointMetadata.Instance);
-        }
-
         if (endpoint.RequiresAuthorization)
         {
             builder.RequireAuthorization();
+        }
+
+        if (exposesHeadFallback)
+        {
+            // Keep the public endpoint's declared method metadata exact. A separate, excluded
+            // GET candidate lets the selector policy route rewritten HEAD without advertising or
+            // exposing GET on the plugin endpoint itself.
+            var fallbackBuilder = endpoints.MapMethods(
+                    pattern,
+                    [HttpMethods.Get],
+                    (HttpContext context, CancellationToken ct) => HandleAsync(endpoint, context, ct))
+                .WithDisplayName($"Internal HEAD fallback for plugin endpoint: {pattern}")
+                .ExcludeFromDescription()
+                .WithMetadata(new ExplicitHeadOnlyEndpointMetadata(declaredMethods));
+
+            if (endpoint.RequiresAuthorization)
+            {
+                fallbackBuilder.RequireAuthorization();
+            }
         }
     }
 
