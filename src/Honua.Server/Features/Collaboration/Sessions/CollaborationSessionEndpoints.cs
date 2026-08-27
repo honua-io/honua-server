@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -42,6 +43,7 @@ internal static class CollaborationSessionEndpoints
         group.MapGet("/stream", CollaborationSessionStreamEndpoint.HandleStream)
             .WithDisplayName("Stream Saved Map Collaboration Session")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
+            .WithMetadata(WebSocketEndpointMetadata.Instance)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status403Forbidden);

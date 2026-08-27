@@ -48,6 +48,7 @@ internal static partial class FeatureStreamEndpoints
             .WithDisplayName("Stream Feature Changes")
             .WithMetadata(new HttpMethodMetadata([HttpMethods.Get]))
             .WithMetadata(LongLivedStreamEndpointMetadata.Instance)
+            .WithMetadata(WebSocketEndpointMetadata.Instance)
             .WithDescription("Opens a WebSocket or SSE stream of real-time feature-change events. " +
                              "WebSocket: send Upgrade header. SSE: send Accept: text/event-stream. " +
                              "Query params: cursor (resume from cursor), clientLabel, serviceId, " +
