@@ -201,6 +201,7 @@ jobs:
             core.info(`Reviewing PR #${number} at ${head}.`);
 
       - name: Stage the pull request as read-only data
+        id: diff
         if: steps.target.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -258,6 +259,21 @@ jobs:
             echo "::error::Staged diff is ${diff_lines} lines, over the ${MAX_DIFF_LINES}-line reviewable ceiling; refusing to stage a diff that cannot be judged in full."
             exit 1
           fi
+          # Keep 40 as the floor for ordinary reviews. The 1,501-8,000-line
+          # middle tier gives the reported 2-4k-line diffs that exhausted 40
+          # turns another 50% without paying that cost on small changes.
+          # Above 8,000 lines, cap at 80 turns: large diffs need more traversal,
+          # but action cost scales with turns and an unbounded budget is unsafe.
+          if [ "${diff_lines}" -le 1500 ]; then
+            max_turns=40
+          elif [ "${diff_lines}" -le 8000 ]; then
+            max_turns=60
+          else
+            max_turns=80
+          fi
+          echo "diff_lines=${diff_lines}" >> "${GITHUB_OUTPUT}"
+          echo "max_turns=${max_turns}" >> "${GITHUB_OUTPUT}"
+          echo "Reviewer budget: ${max_turns} turns for ${diff_lines} diff lines."
           # Derive the path list from the staged diff rather than `--json files`,
           # which the API also caps (at 100 per page). The reviewer must never be
           # handed a file list that disagrees with the diff it is judging.
@@ -315,7 +331,7 @@ jobs:
           # documents for `--json-schema`; a path would silently yield no
           # `structured_output` and disable the verification step's cross-check.
           claude_args: >-
-            --model claude-opus-5 --max-turns 40
+            --model claude-opus-5 --max-turns ${{ steps.diff.outputs.max_turns }}
             --json-schema '{"type":"object","additionalProperties":false,"required":["verdict","findings"],"properties":{"verdict":{"type":"string","enum":["clean","findings"]},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["path","line","summary"],"properties":{"path":{"type":"string"},"line":{"type":"integer"},"summary":{"type":"string"}}}}}}'
             --allowedTools "Read,Grep,Glob,Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
           prompt: |
@@ -375,6 +391,47 @@ jobs:
             (each with `path`, `line` and `summary`). The next step re-derives
             what was actually published from GitHub and fails the job if it
             disagrees with this verdict.
+
+      - name: Detect an exhausted reviewer turn budget
+        id: exhausted
+        if: failure() && steps.claude.outcome == 'failure'
+        env:
+          DIFF_LINES: ${{ steps.diff.outputs.diff_lines }}
+          MAX_TURNS: ${{ steps.diff.outputs.max_turns }}
+        run: |
+          set -euo pipefail
+          out=/home/runner/work/_temp/claude-execution-output.json
+          echo "max_turns=false" >> "${GITHUB_OUTPUT}"
+          if [ ! -f "${out}" ] || ! jq -e \
+            '[.[] | select(.type == "result")] | last | .subtype == "error_max_turns"' \
+            "${out}" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          echo "max_turns=true" >> "${GITHUB_OUTPUT}"
+          printf '%s\n' \
+            "review exhausted its turn budget at ${MAX_TURNS} turns for an ${DIFF_LINES}-line diff; Codex attestation or a human @claude review re-request can satisfy Review Gate" \
+            > review-input/exhausted-body.md
+
+      - name: Publish reviewer turn-budget fallback
+        if: steps.claude.outcome == 'failure' && steps.exhausted.outputs.max_turns == 'true'
+        uses: anthropics/claude-code-action@c81e3bc69d1b18badbb63ba39581218f02421678 # v1.0.201
+        with:
+          # Use the same App identity and append-only write surface as the main
+          # review. GITHUB_TOKEN remains read-only, and no candidate text is
+          # included in this trusted fallback prompt.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          classify_inline_comments: 'false'
+          allowed_bots: 'dependabot[bot]'
+          claude_args: >-
+            --model claude-opus-5 --max-turns 3
+            --allowedTools "Bash(gh pr comment:*)"
+          prompt: |
+            Post the pre-computed turn-budget fallback for PR
+            #${{ steps.target.outputs.pr }}. Run exactly:
+              gh pr comment ${{ steps.target.outputs.pr }} --body-file review-input/exhausted-body.md
+            Do not edit the file and do not post any other text.
 
       - name: Explain a reviewer failure honestly
         if: failure() && steps.target.outputs.skip == 'false'
