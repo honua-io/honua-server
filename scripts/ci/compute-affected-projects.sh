@@ -34,6 +34,17 @@ head_ref="${HEAD_REF:-HEAD}"
 # Shared infrastructure that invalidates the affected-projects assumption.
 # Edits to any of these force a full-graph build because the dependency
 # graph or the build itself could be silently affected by them.
+#
+# src/Honua.Analyzers/ is on this list for a reason the reverse-dependency walk
+# below cannot see: it is the repo's only Roslyn component, and EVERY project
+# consumes it through Directory.Build.props as
+#   <ProjectReference ... OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+# The walk builds its consumer map by grepping <ProjectReference> out of .csproj
+# files only, so an analyzer edit maps to Honua.Analyzers.csproj and finds ZERO
+# consumers — while in reality it changes the diagnostics every project in the
+# repo compiles under. Without this entry a warnings-as-errors build scoped to
+# the affected closure would silently skip most projects a new rule could fire
+# in. Analyzer edits are rare, so force-fulling them costs effectively nothing.
 default_force_full='Directory.Packages.props
 Directory.Build.props
 Directory.Build.targets
@@ -41,7 +52,8 @@ Honua.sln
 global.json
 NuGet.config
 .github/
-scripts/ci/'
+scripts/ci/
+src/Honua.Analyzers/'
 force_full_paths="${FORCE_FULL_BUILD_PATHS:-${default_force_full}}"
 
 # Diff the working tree against base. Tolerate the case where the base ref
@@ -87,7 +99,12 @@ while IFS= read -r file; do
   done
 done <<< "${changed_files}"
 
-if [[ ${#affected[@]} -eq 0 ]]; then
+# `${#affected[@]}` on an EMPTY associative array is an unbound-variable error
+# under `set -u` (still true in bash 5.2, the hosted-runner shell), so a
+# docs-only diff crashed here with "affected: unbound variable" instead of
+# reporting "nothing to build" — the exact case where scoping the build pays
+# most. `${affected[*]:-}` is the expansion that tolerates the empty array.
+if [[ -z "${affected[*]:-}" ]]; then
   # Diff touched only files outside any csproj (docs / images / non-managed code).
   exit 0
 fi
