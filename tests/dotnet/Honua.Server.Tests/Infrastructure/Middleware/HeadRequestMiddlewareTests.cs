@@ -48,6 +48,7 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
     private bool? _midstreamHandlerObservedResponseStarted;
     private bool _webSocketHandlerInvoked;
     private bool _sideEffectingGetHandlerInvoked;
+    private bool _conditionalGetHandlerInvoked;
 
     /// <summary>
     /// Completed by the streaming route when its loop unwinds, so a test can prove the handler
@@ -156,6 +157,16 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             return Results.Ok();
         }).WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]));
         _app.MapPost("/side-effecting-get", () => Results.Ok());
+        _app.MapGet("/conditional-get", () =>
+        {
+            _conditionalGetHandlerInvoked = true;
+            return Results.Text("safe query");
+        }).WithMetadata(new HeadRequestRejectedEndpointMetadata(
+            [HttpMethods.Get, HttpMethods.Post],
+            context => string.Equals(
+                context.Request.Query["request"],
+                "mutate",
+                StringComparison.OrdinalIgnoreCase)));
         _app.MapGet("/no-content", () => Results.NoContent());
 
         // A long-lived Server-Sent Events route: commits headers, writes a preamble, then loops
@@ -403,6 +414,27 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
         _sideEffectingGetHandlerInvoked.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadMatchingConditionalRejection_Returns405WithoutExecutingHandler()
+    {
+        using var response = await SendAsync(HttpMethod.Head, "/conditional-get?request=Mutate");
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.Content.Headers.Allow.Should().BeEquivalentTo(["GET", "POST"]);
+        _conditionalGetHandlerInvoked.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadNotMatchingConditionalRejection_RetainsGetSemantics()
+    {
+        using var response = await SendAsync(HttpMethod.Head, "/conditional-get?request=query");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentLength.Should().Be("safe query"u8.Length);
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+        _conditionalGetHandlerInvoked.Should().BeTrue();
     }
 
     [UnitTest]
