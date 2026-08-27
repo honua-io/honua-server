@@ -525,7 +525,20 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
             return;
         }
 
+        if (IsWebSocketUpgradeAttempt(context.Request))
+        {
+            // Routing needed GET to select the WebSocket-only endpoint, but negotiation must
+            // evaluate the method the client actually sent. A valid WebSocket handshake is GET;
+            // preserving HEAD here makes the endpoint reject the upgrade instead of opening a
+            // long-lived socket whose frames bypass the suppressed response-body feature.
+            await _next(context).ConfigureAwait(false);
+            return;
+        }
+
         context.Request.Method = HttpMethods.Get;
+        var hadRangeHeader = context.Request.Headers.ContainsKey(HeaderNames.Range);
+        var originalRangeHeader = context.Request.Headers[HeaderNames.Range];
+        context.Request.Headers.Remove(HeaderNames.Range);
 
         try
         {
@@ -540,12 +553,26 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
         }
         finally
         {
+            if (hadRangeHeader)
+            {
+                context.Request.Headers[HeaderNames.Range] = originalRangeHeader;
+            }
+
             // Put HEAD back on the way out so the upstream middleware that reports on the
             // completed request (Serilog request logging, performance monitoring, auditing)
             // records the method the client actually sent.
             context.Request.Method = HttpMethods.Head;
         }
     }
+
+    private static bool IsWebSocketUpgradeAttempt(HttpRequest request)
+        => HeaderContainsToken(request.Headers[HeaderNames.Connection], "upgrade") &&
+           HeaderContainsToken(request.Headers[HeaderNames.Upgrade], "websocket");
+
+    private static bool HeaderContainsToken(IEnumerable<string?> values, string expected)
+        => values.Any(value => value is not null && value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Contains(expected, StringComparer.OrdinalIgnoreCase));
 
     /// <summary>
     /// Runs a long-lived streaming handler only as far as its first response activity, then
