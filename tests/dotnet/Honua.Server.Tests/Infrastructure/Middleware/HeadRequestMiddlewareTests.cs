@@ -209,6 +209,15 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             await context.Response.WriteAsync("ranged-payload");
         });
 
+        // Streaming query handlers explicitly select chunked framing. Their HEAD equivalent
+        // must not gain a counted Content-Length alongside Transfer-Encoding.
+        _app.MapGet("/chunked", async context =>
+        {
+            context.Response.ContentType = "application/json";
+            context.Response.Headers.TransferEncoding = "chunked";
+            await context.Response.WriteAsync("{\"value\":true}");
+        });
+
         await _app.StartAsync();
         _client = _app.GetTestClient();
     }
@@ -336,6 +345,17 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
         response.Content.Headers.ContentLength.Should().BeNull(
             "a 204 carries no body, so it must not gain a Content-Length the GET would not have sent");
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnChunkedRoute_DoesNotSynthesizeContentLength()
+    {
+        using var response = await SendAsync(HttpMethod.Head, "/chunked");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TransferEncodingChunked.Should().BeTrue();
+        response.Content.Headers.ContentLength.Should().BeNull(
+            "chunked framing and Content-Length cannot be advertised on the same response");
     }
 
     [UnitTest]

@@ -144,8 +144,6 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
     /// must keep answering 405 for the mutating methods.
     /// </summary>
     [IntegrationTest]
-    [Operation(Operations.LivenessCheck)]
-    [Endpoint("GET /healthz/live")]
     public async Task NonGetMethods_OnGetOnlyRoute_StillReturn405MethodNotAllowed()
     {
         var client = _fixture.CreateClient();

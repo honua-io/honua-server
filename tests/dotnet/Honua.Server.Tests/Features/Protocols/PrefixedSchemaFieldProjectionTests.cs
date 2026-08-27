@@ -147,7 +147,7 @@ public sealed class PrefixedSchemaFieldProjectionTests : IAsyncLifetime
 
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
-    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task QueryFeatures_WithPrefixedSchemaFieldInOutFields_IncludesFieldInAttributes()
     {
         var response = await _fixture.Client.GetAsync(
