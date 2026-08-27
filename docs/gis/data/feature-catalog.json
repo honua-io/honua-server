@@ -17282,7 +17282,8 @@
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_Dbscan_ReturnsFeatureCollection",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_InvalidCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_MissingEps_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_OmitAlgorithm_DefaultsToDbscan"
+        "Honua.Server.Tests.Features.SpatialAnalytics.SpatialAnalyticsOgcTests.OgcClusters_OmitAlgorithm_DefaultsToDbscan",
+        "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_PostOnlyRoute_Returns405MethodNotAllowed"
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",
