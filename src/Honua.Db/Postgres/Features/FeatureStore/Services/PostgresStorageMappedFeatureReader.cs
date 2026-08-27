@@ -1459,17 +1459,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     ///
     /// The alias is safe to emit with doubling-only quoting, exactly as the native
     /// <c>FeatureQueryBuilder</c> path does: the JSONB branch admits a name only through
-    /// <c>IsValidJsonAttributeKey</c>, whose pattern
-    /// (<c>^[a-zA-Z0-9_][a-zA-Z0-9_:.\-]{0,254}$</c>) contains no quote, whitespace, backslash
-    /// or control character, so nothing can terminate the quoted alias. The guard is re-asserted
-    /// here rather than assumed, so this stays correct if the caller's filter ever widens.
+    /// <c>IsValidEncodedColumnAlias</c>, which contains no quote, whitespace, backslash
+    /// or control character and enforces PostgreSQL's 63-byte identifier boundary.
+    /// The guard is re-asserted here rather than assumed, so this stays correct if the
+    /// caller's field filter ever widens.
     /// </remarks>
     private static string QuoteAttributeFieldAlias(string fieldName)
     {
         var sanitized = fieldName.Trim();
-        if (!IsSafeIdentifier(sanitized) && !FeatureQueryBuilder.IsValidJsonAttributeKey(sanitized))
+        if (!FeatureQueryBuilder.IsValidEncodedColumnAlias(sanitized))
         {
-            throw new InvalidOperationException($"Invalid PostGIS projection alias '{fieldName}'.");
+            // FeatureServerQueryExecutor maps provider ArgumentException failures to
+            // its client-safe invalid-query response instead of leaking a provider 500.
+            throw new ArgumentException($"Invalid PostGIS encoded projection alias '{fieldName}'.");
         }
 
         return $"\"{sanitized.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";

@@ -2,12 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class FeatureQueryBuilder
 {
+    private const int PostgreSqlMaxIdentifierBytes = 63;
+
     // `\z`, not `$`: in .NET `$` also matches immediately before a trailing newline, so
     // `"field\n"` satisfied `...$` and slipped past this guard. These names reach SQL as
     // quoted identifiers and result aliases, where an embedded newline is exactly the
@@ -59,15 +62,12 @@ internal sealed partial class FeatureQueryBuilder
     /// (honua-server#3392).
     /// </para>
     /// <para>
-    /// <b>Ordering matters.</b> Every caller of this predicate binds the name as a
-    /// query parameter (<c>jsonb_build_object($n::text, attributes -&gt; $n::text)</c>
-    /// and <c>DatabaseSchema.BuildJsonPathParameter</c>), and that binding was put in
-    /// place <i>before</i> this predicate was relaxed — so correctness never depends
-    /// on the character class here. The remaining allow-list is defense in depth
-    /// only: it keeps quotes, semicolons, whitespace, parentheses and control
-    /// characters out of names that reach the query builder at all, while admitting
-    /// the prefixed/hyphenated/dotted shapes real schemas use. Callers that emit the
-    /// name as an identifier stay on <see cref="IsValidFieldName"/>.
+    /// Parameter-bound JSON access does not inherit PostgreSQL's identifier-length
+    /// limit. The remaining allow-list is defense in depth only: it keeps quotes,
+    /// semicolons, whitespace, parentheses and control characters out of names that
+    /// reach the query builder while admitting real prefixed/hyphenated/dotted shapes.
+    /// Callers that reuse a key as an encoded-row alias must additionally use
+    /// <see cref="IsValidEncodedColumnAlias"/>.
     /// </para>
     /// </remarks>
     internal static bool IsValidJsonAttributeKey(string fieldName)
@@ -79,6 +79,19 @@ internal sealed partial class FeatureQueryBuilder
 
         return ValidJsonAttributeKeyRegex().IsMatch(fieldName);
     }
+
+    /// <summary>
+    /// Validates a declared JSON key that will also be emitted as an encoded-row
+    /// column alias for PostgreSQL's FlatGeobuf/Geobuf encoders.
+    /// </summary>
+    /// <remarks>
+    /// PostgreSQL truncates identifiers after 63 bytes. Rejecting aliases beyond that
+    /// boundary prevents encoded fields from acquiring a different name or colliding.
+    /// Ordinary parameter-bound JSON keys deliberately do not inherit this limit.
+    /// </remarks>
+    internal static bool IsValidEncodedColumnAlias(string fieldName)
+        => IsValidJsonAttributeKey(fieldName)
+            && Encoding.UTF8.GetByteCount(fieldName) <= PostgreSqlMaxIdentifierBytes;
 
     internal static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
     {
