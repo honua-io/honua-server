@@ -30,6 +30,19 @@ public sealed class LongLivedStreamEndpointMetadata
 }
 
 /// <summary>
+/// Marks an endpoint that can negotiate a WebSocket upgrade from a GET request.
+/// </summary>
+public sealed class WebSocketEndpointMetadata
+{
+    private WebSocketEndpointMetadata()
+    {
+    }
+
+    /// <summary>The shared marker instance.</summary>
+    public static WebSocketEndpointMetadata Instance { get; } = new();
+}
+
+/// <summary>
 /// Marks a hidden GET routing candidate for an endpoint that originally accepted HEAD but not
 /// GET, so the shared pre-routing HEAD fallback can still select the declared HEAD handler.
 /// </summary>
@@ -525,7 +538,8 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
             return;
         }
 
-        if (IsWebSocketUpgradeAttempt(context.Request))
+        if (endpoint?.Metadata.GetMetadata<WebSocketEndpointMetadata>() is not null &&
+            IsWebSocketUpgradeAttempt(context.Request))
         {
             // Routing needed GET to select the WebSocket-only endpoint, but negotiation must
             // evaluate the method the client actually sent. A valid WebSocket handshake is GET;
