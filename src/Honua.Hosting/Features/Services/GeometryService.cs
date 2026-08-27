@@ -122,6 +122,10 @@ internal sealed class GeometryService : IGeometryService
 
     /// <inheritdoc />
     public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null)
+        => ConvertGeoJsonToWkb(geoJson, srid, allowContainers: false);
+
+    /// <inheritdoc />
+    public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid, bool allowContainers)
     {
         if (string.IsNullOrWhiteSpace(geoJson))
         {
@@ -132,12 +136,18 @@ internal sealed class GeometryService : IGeometryService
 
         try
         {
-            var geometry = NewGeoJsonReader().Read<Geometry>(geoJson);
-            ValidateInputGeometryComplexity(geometry);
+            var geometry = ReadGeoJsonGeometry(geoJson, srid, allowContainers);
             if (geometry == null)
             {
                 return null;
             }
+
+            if (geometry.IsEmpty)
+            {
+                throw new JsonException("GeoJSON geometry cannot be empty.");
+            }
+
+            ValidateInputGeometryComplexity(geometry);
 
             if (srid.HasValue && srid.Value > 0)
             {
@@ -157,6 +167,62 @@ internal sealed class GeometryService : IGeometryService
         {
             throw new ArgumentException("Invalid GeoJSON format.", ex);
         }
+    }
+
+    private static Geometry? ReadGeoJsonGeometry(string geoJson, int? srid, bool allowContainers)
+    {
+        using var document = JsonDocument.Parse(geoJson);
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("type", out var typeElement)
+            || typeElement.ValueKind != JsonValueKind.String)
+        {
+            throw new JsonException("GeoJSON must declare a string type.");
+        }
+
+        var reader = NewGeoJsonReader();
+        return typeElement.GetString() switch
+        {
+            "Feature" when allowContainers => ReadFeatureGeometry(root, reader),
+            "FeatureCollection" when allowContainers => ReadFeatureCollectionGeometry(root, reader, srid),
+            "Feature" or "FeatureCollection" => throw new JsonException(
+                "GeoJSON containers are not valid for this geometry-only field."),
+            _ => reader.Read<Geometry>(root.GetRawText())
+        };
+    }
+
+    private static Geometry ReadFeatureGeometry(JsonElement feature, GeoJsonReader reader)
+    {
+        if (feature.ValueKind != JsonValueKind.Object
+            || !feature.TryGetProperty("type", out var type)
+            || type.ValueKind != JsonValueKind.String
+            || !string.Equals(type.GetString(), "Feature", StringComparison.Ordinal)
+            || !feature.TryGetProperty("geometry", out var geometry)
+            || geometry.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            throw new JsonException("GeoJSON Feature must contain a geometry.");
+        }
+
+        return reader.Read<Geometry>(geometry.GetRawText())
+            ?? throw new JsonException("GeoJSON Feature geometry is invalid.");
+    }
+
+    private static GeometryCollection ReadFeatureCollectionGeometry(
+        JsonElement collection,
+        GeoJsonReader reader,
+        int? srid)
+    {
+        if (!collection.TryGetProperty("features", out var features)
+            || features.ValueKind != JsonValueKind.Array)
+        {
+            throw new JsonException("GeoJSON FeatureCollection must contain a features array.");
+        }
+
+        var geometries = features.EnumerateArray()
+            .Select(feature => ReadFeatureGeometry(feature, reader))
+            .ToArray();
+        var factory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: srid ?? 0);
+        return factory.CreateGeometryCollection(geometries);
     }
 
     /// <inheritdoc />

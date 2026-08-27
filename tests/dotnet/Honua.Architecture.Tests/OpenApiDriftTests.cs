@@ -193,8 +193,15 @@ public sealed class OpenApiDriftTests
         var ioSchemaProps = ioSchema.GetProperty("properties");
         ioSchemaProps.TryGetProperty("type", out _).Should()
             .BeTrue("ProcessIoSchema must document the 'type' field emitted by process descriptions");
+        ioSchemaProps.TryGetProperty("format", out _).Should()
+            .BeTrue("ProcessIoSchema must document binary output format hints emitted by process descriptions");
         ioSchemaProps.TryGetProperty("contentMediaType", out _).Should()
             .BeTrue("ProcessIoSchema must document the 'contentMediaType' field emitted by process descriptions");
+        var oneOf = ioSchemaProps.GetProperty("oneOf");
+        oneOf.GetProperty("type").GetString().Should().Be("array");
+        oneOf.GetProperty("items").GetProperty("$ref").GetString().Should()
+            .Be("#/components/schemas/ProcessIoSchema",
+                "ProcessIoSchema.oneOf recursively emits alternative WKB-string and GeoJSON-object schemas");
 
         // InputDescription and OutputDescription must reference ProcessIoSchema.
         foreach (var schemaName in new[] { "InputDescription", "OutputDescription" })
@@ -249,21 +256,59 @@ public sealed class OpenApiDriftTests
 
         var prefer = execute.GetProperty("parameters").EnumerateArray()
             .Single(parameter => parameter.GetProperty("name").GetString() == "Prefer");
-        prefer.GetProperty("description").GetString().Should().Contain("respond-sync");
+        var preferDescription = prefer.GetProperty("description").GetString();
+        preferDescription.Should().Contain("respond-async");
+        preferDescription.Should().Contain("When omitted");
+        preferDescription.Should().Contain("sync-execute");
+        preferDescription.Should().NotContain("respond-sync");
+
+        var responseMode = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty("Execute")
+            .GetProperty("properties")
+            .GetProperty("response");
+        responseMode.GetProperty("enum").EnumerateArray().Select(value => value.GetString())
+            .Should().BeEquivalentTo(["document", "raw"],
+                "the execute schema must advertise every response mode accepted by the runtime");
+        responseMode.GetProperty("description").GetString().Should().Contain("synchronous single-value",
+            "raw mode is limited to the synchronous single-output execution path");
 
         var responses = execute.GetProperty("responses");
-        foreach (var status in new[] { "200", "201", "408", "409", "500" })
+        foreach (var status in new[] { "200", "201", "408", "409", "410", "413", "499", "500" })
         {
             responses.TryGetProperty(status, out _).Should().BeTrue(
                 "the execution operation must document runtime outcome {0}", status);
         }
 
-        responses.GetProperty("200")
+        responses.GetProperty("409").GetProperty("description").GetString().Should().NotContain("cancel",
+            "409 is reserved for conflicts rather than terminal job dismissal");
+        responses.GetProperty("410").GetProperty("description").GetString().Should().Contain("dismiss",
+            "synchronous cancellation uses the registered job-dismissed response");
+
+        var success = responses.GetProperty("200");
+        success.TryGetProperty("headers", out _).Should().BeFalse(
+            "synchronous-by-omission execution does not apply a Prefer token");
+        var jsonAlternatives = success
             .GetProperty("content")
             .GetProperty("application/json")
             .GetProperty("schema")
-            .GetProperty("$ref")
-            .GetString().Should().Be("#/components/schemas/Results");
+            .GetProperty("anyOf")
+            .EnumerateArray()
+            .Select(alternative => alternative.GetProperty("$ref").GetString())
+            .ToArray();
+        jsonAlternatives.Should().BeEquivalentTo(
+            ["#/components/schemas/Results", "#/components/schemas/RawJsonValue"],
+            "application/json can carry either a document-mode results map or an arbitrary raw JSON value");
+        document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("RawJsonValue").TryGetProperty("type", out _).Should().BeFalse(
+                "raw JSON can be an object, array, string, number, boolean, or null");
+        success.GetProperty("content")
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .Should().BeEquivalentTo(
+                ["application/json", "application/geo+json"],
+                "only JSON scalar and GeoJSON feature outputs are reachable from current sync-capable processes");
     }
 
     [ArchitectureTest]
