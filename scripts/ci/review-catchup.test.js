@@ -89,3 +89,22 @@ test('the scheduler identity is allowed to start dispatched reviews', () => {
   assert.ok(allowed[1].split(',').map(s => s.trim()).includes('github-actions[bot]'),
     'the scheduled catch-up dispatch identity must be allowed to start a review');
 });
+
+test('the catch-up pass is reachable without the schedule event', () => {
+  // #3554 landed with `if: github.event_name == 'schedule'` as the catch-up's ONLY
+  // trigger. claude-review.yml has never had a schedule-event run in this repository
+  // and merge-train's own cron fires at roughly a third of its nominal rate, so the
+  // remediation lane for stale attestation was itself unreachable. A bare dispatch
+  // (no `pr`) must run the same pass.
+  const workflow = fs.readFileSync(
+    path.join(__dirname, '..', '..', '.github', 'workflows', 'claude-review.yml'), 'utf8');
+
+  const catchUp = workflow.slice(workflow.indexOf('  catch-up:'), workflow.indexOf('  review:'));
+  assert.match(catchUp, /github\.event_name == 'schedule'/);
+  assert.match(catchUp, /workflow_dispatch' && inputs\.pr == ''/,
+    'a bare workflow_dispatch must reach the catch-up job');
+
+  const review = workflow.slice(workflow.indexOf('  review:'));
+  assert.match(review, /workflow_dispatch' && inputs\.pr != ''/,
+    'the review job must take a dispatch only when a PR is named, or a bare catch-up dispatch would also start a review with no target');
+});

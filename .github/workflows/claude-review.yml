@@ -49,12 +49,17 @@ on:
   workflow_dispatch:
     inputs:
       pr:
-        description: Pull request selected by the scheduled catch-up pass
-        required: true
+        description: >-
+          Pull request to review. Leave EMPTY to run the catch-up selection pass
+          itself, which is otherwise reachable only via `schedule` -- an event
+          GitHub drops under load (honua-server#3561).
+        required: false
+        default: ''
         type: string
       head:
-        description: Exact pull request head selected by the catch-up pass
-        required: true
+        description: Exact pull request head to review. Required when `pr` is set.
+        required: false
+        default: ''
         type: string
 
 permissions: {}
@@ -70,6 +75,8 @@ concurrency:
   group: >-
     claude-review-${{ github.event_name == 'schedule'
       && 'scheduled-catch-up'
+      || (github.event_name == 'workflow_dispatch' && inputs.pr == '')
+      && 'scheduled-catch-up'
       || github.event_name == 'workflow_dispatch'
       && format('head-{0}', inputs.head)
       || github.event_name == 'workflow_run'
@@ -80,7 +87,13 @@ concurrency:
 jobs:
   catch-up:
     name: Select bounded unattested green heads
-    if: github.event_name == 'schedule'
+    # A bare dispatch (no `pr`) runs the same pass the cron runs. Every exclusion
+    # and bound lives in scripts/ci/review-catchup.js and is untouched by the
+    # trigger, so this cannot become a way around the guards -- it only makes the
+    # pass reachable when the schedule does not fire.
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.pr == '')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -135,7 +148,7 @@ jobs:
         contains(github.event.comment.body, '@claude review') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'),
           github.event.comment.author_association))
-      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'workflow_dispatch' && inputs.pr != '')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
