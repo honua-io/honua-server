@@ -3,6 +3,7 @@
 
 using System;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
@@ -337,6 +338,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(404);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/calculate", HandleCalculate)
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .WithDisplayName("Calculate")
             .WithName("Calculate")
             .WithSummary("Calculate field values for features")
