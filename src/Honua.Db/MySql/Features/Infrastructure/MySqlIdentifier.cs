@@ -11,7 +11,11 @@ namespace Honua.Db.MySql.Features.Infrastructure;
 /// </summary>
 internal static partial class MySqlIdentifier
 {
-    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    // `\z`, not `$`: .NET's `$` also matches immediately before a trailing newline, so
+    // `"field\n"` would satisfy `...$` and reach SQL as an identifier with an embedded
+    // newline. Found while fixing the same anchoring flaw in the Postgres field-name
+    // validators (honua-server#3389).
+    [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex SimpleIdentifierRegex();
 
     /// <summary>Quotes an identifier with MySQL backticks.</summary>
