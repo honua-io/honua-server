@@ -103,7 +103,10 @@ services:
     networks:
       - compat
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://localhost:5000/healthz/ready"]
+      # GNU wget --spider probes with HEAD, but Honua's health routes intentionally
+      # accept GET only. Use a discarded GET so this remains portable across the
+      # Debian runtime image introduced on 2026-08-21 and BusyBox-based images.
+      test: ["CMD", "wget", "--quiet", "--output-document=/dev/null", "http://localhost:5000/healthz/ready"]
       interval: 10s
       timeout: 5s
       retries: 30
