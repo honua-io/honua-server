@@ -12538,6 +12538,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_MissingPropertyIsNull_MatchesItem",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_OrBranchCanMatchWhenOtherPropertyIsMissing",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_PreservesAndOrNotNullTruthTable",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_WithIds_NotUnknownDoesNotMatch",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_WithIds_TypedUnknownPreservesKleeneLogic",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_IncludeMode_PropertyOnlyInclude_RequiredFieldsAlwaysPresent",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_NoFilters_ReturnsItems",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_RecordsSharedTelemetryForSearchWork",

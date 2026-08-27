@@ -27,7 +27,7 @@ public static class InMemoryFilterEvaluator
     /// </summary>
     public static bool Evaluate(FilterExpression expression, IReadOnlyDictionary<string, JsonElement> properties)
     {
-        return EvaluateBool(expression, properties, depth: 0);
+        return EvaluateTruth(expression, properties, depth: 0) == TruthValue.True;
     }
 
     /// <summary>
@@ -42,33 +42,44 @@ public static class InMemoryFilterEvaluator
         return TryValidateBooleanExpression(expression, out error);
     }
 
-    private static bool EvaluateBool(FilterExpression expr, IReadOnlyDictionary<string, JsonElement> props, int depth)
+    private static TruthValue EvaluateTruth(
+        FilterExpression expr,
+        IReadOnlyDictionary<string, JsonElement> props,
+        int depth)
     {
         if (depth > MaxStreamingDepth)
         {
-            return false; // Fail closed for expressions that exceed streaming limits.
+            return TruthValue.False; // Fail closed for expressions that exceed streaming limits.
         }
 
         return expr switch
         {
             BinaryExpression bin => EvaluateBinary(bin, props, depth),
             UnaryExpression un => EvaluateUnary(un, props, depth),
-            Literal lit => lit.Type == LiteralType.Boolean && lit.Value is true,
-            _ => false
+            Literal { Type: LiteralType.Boolean, Value: true } => TruthValue.True,
+            Literal { Type: LiteralType.Boolean } => TruthValue.False,
+            Literal { Type: LiteralType.Null } => TruthValue.Unknown,
+            _ => TruthValue.False
         };
     }
 
-    private static bool EvaluateBinary(BinaryExpression bin, IReadOnlyDictionary<string, JsonElement> props, int depth)
+    private static TruthValue EvaluateBinary(
+        BinaryExpression bin,
+        IReadOnlyDictionary<string, JsonElement> props,
+        int depth)
     {
-        // Short-circuit logical operators.
         if (bin.Operator == BinaryOperator.And)
         {
-            return EvaluateBool(bin.Left, props, depth + 1) && EvaluateBool(bin.Right, props, depth + 1);
+            return And(
+                EvaluateTruth(bin.Left, props, depth + 1),
+                EvaluateTruth(bin.Right, props, depth + 1));
         }
 
         if (bin.Operator == BinaryOperator.Or)
         {
-            return EvaluateBool(bin.Left, props, depth + 1) || EvaluateBool(bin.Right, props, depth + 1);
+            return Or(
+                EvaluateTruth(bin.Left, props, depth + 1),
+                EvaluateTruth(bin.Right, props, depth + 1));
         }
 
         // IN / NOT IN: left is property, right is ValueList.
@@ -87,10 +98,10 @@ public static class InMemoryFilterEvaluator
         // null tests use the IS NULL / IS NOT NULL unary operators (see EvaluateUnary).
         if (left is null || right is null)
         {
-            return false;
+            return TruthValue.Unknown;
         }
 
-        return bin.Operator switch
+        var result = bin.Operator switch
         {
             BinaryOperator.Equal => CompareValues(left, right) == 0,
             BinaryOperator.NotEqual => CompareValues(left, right) != 0,
@@ -102,37 +113,103 @@ public static class InMemoryFilterEvaluator
             BinaryOperator.NotLike => !EvaluateLike(left, right),
             _ => false
         };
+        return result ? TruthValue.True : TruthValue.False;
     }
 
-    private static bool EvaluateUnary(UnaryExpression un, IReadOnlyDictionary<string, JsonElement> props, int depth)
+    private static TruthValue EvaluateUnary(
+        UnaryExpression un,
+        IReadOnlyDictionary<string, JsonElement> props,
+        int depth)
     {
         return un.Operator switch
         {
-            UnaryOperator.Not => !EvaluateBool(un.Operand, props, depth + 1),
-            UnaryOperator.IsNull => ResolveValue(un.Operand, props) is null,
-            UnaryOperator.IsNotNull => ResolveValue(un.Operand, props) is not null,
-            _ => false
+            UnaryOperator.Not => Not(EvaluateTruth(un.Operand, props, depth + 1)),
+            UnaryOperator.IsNull => ResolveValue(un.Operand, props) is null
+                ? TruthValue.True
+                : TruthValue.False,
+            UnaryOperator.IsNotNull => ResolveValue(un.Operand, props) is not null
+                ? TruthValue.True
+                : TruthValue.False,
+            _ => TruthValue.False
         };
     }
 
-    private static bool EvaluateIn(BinaryExpression bin, IReadOnlyDictionary<string, JsonElement> props, int depth)
+    private static TruthValue EvaluateIn(
+        BinaryExpression bin,
+        IReadOnlyDictionary<string, JsonElement> props,
+        int depth)
     {
         var left = ResolveValue(bin.Left, props);
         if (left is null)
         {
-            return false;
+            return TruthValue.Unknown;
         }
 
         if (bin.Right is not ValueList valueList)
         {
-            return false;
+            return TruthValue.False;
         }
 
-        var isMember = valueList.Values
-            .Select(item => ResolveValue(item, props))
-            .Any(itemValue => itemValue is not null && CompareValues(left, itemValue) == 0);
+        var hasNull = false;
+        foreach (var item in valueList.Values)
+        {
+            var itemValue = ResolveValue(item, props);
+            if (itemValue is null)
+            {
+                hasNull = true;
+                continue;
+            }
 
-        return isMember ? bin.Operator == BinaryOperator.In : bin.Operator == BinaryOperator.NotIn;
+            if (CompareValues(left, itemValue) == 0)
+            {
+                return bin.Operator == BinaryOperator.In ? TruthValue.True : TruthValue.False;
+            }
+        }
+
+        if (hasNull)
+        {
+            return TruthValue.Unknown;
+        }
+
+        return bin.Operator == BinaryOperator.In ? TruthValue.False : TruthValue.True;
+    }
+
+    private static TruthValue Not(TruthValue value) => value switch
+    {
+        TruthValue.True => TruthValue.False,
+        TruthValue.False => TruthValue.True,
+        _ => TruthValue.Unknown
+    };
+
+    private static TruthValue And(TruthValue left, TruthValue right)
+    {
+        if (left == TruthValue.False || right == TruthValue.False)
+        {
+            return TruthValue.False;
+        }
+
+        return left == TruthValue.True && right == TruthValue.True
+            ? TruthValue.True
+            : TruthValue.Unknown;
+    }
+
+    private static TruthValue Or(TruthValue left, TruthValue right)
+    {
+        if (left == TruthValue.True || right == TruthValue.True)
+        {
+            return TruthValue.True;
+        }
+
+        return left == TruthValue.False && right == TruthValue.False
+            ? TruthValue.False
+            : TruthValue.Unknown;
+    }
+
+    private enum TruthValue
+    {
+        False,
+        True,
+        Unknown
     }
 
     private static object? ResolveValue(FilterExpression expr, IReadOnlyDictionary<string, JsonElement> props)
@@ -369,7 +446,7 @@ public static class InMemoryFilterEvaluator
                 return TryValidateBinaryExpression(binary, out error);
             case UnaryExpression unary:
                 return TryValidateUnaryExpression(unary, out error);
-            case Literal literal when literal.Type == LiteralType.Boolean:
+            case Literal literal when literal.Type is LiteralType.Boolean or LiteralType.Null:
                 error = null;
                 return true;
             default:
