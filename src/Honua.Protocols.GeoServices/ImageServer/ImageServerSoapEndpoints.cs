@@ -176,6 +176,12 @@ internal static class ImageServerSoapEndpoints
                     operationNamespace,
                     "GetMetadataResponse",
                     new XElement("Result", BuildMetadata(serviceId))),
+                // Deliberately keep the published SOAP result well-formed and nil until the
+                // canonical seed contains a registered, scanned multidimensional coverage.
+                // The REST multidimensionalInfo model is not itself an ArcGIS SOAP contract;
+                // its XML element shape must be captured and A/B verified with licensed Pro
+                // against genuine coverage metadata before replacing this compatibility-safe
+                // response. Track the missing fixture and licensed validation in #3558.
                 "GetMultidimensionalInfo" => CreateSoapResponse(
                     soapNamespace,
                     operationNamespace,
