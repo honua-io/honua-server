@@ -164,6 +164,22 @@ public sealed class PluginCustomEndpointsTests
     }
 
     [IntegrationTest]
+    public async Task CustomEndpoint_HeadOnlyRoute_UnsupportedMethodsDoNotAdvertiseSyntheticGet()
+    {
+        using var server = CreateServer(HonuaEdition.Enterprise);
+        using var client = server.CreateClient();
+
+        foreach (var method in new[] { HttpMethod.Put, HttpMethod.Patch, HttpMethod.Delete })
+        {
+            using var request = new HttpRequestMessage(method, "/plugins/head-only");
+            using var response = await client.SendAsync(request);
+
+            response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+            response.Content.Headers.Allow.Should().BeEquivalentTo("HEAD", "POST");
+        }
+    }
+
+    [IntegrationTest]
     public void CustomEndpoint_HeadOnlyRoute_PublicMetadataRemainsHeadOnly()
     {
         using var server = CreateServer(HonuaEdition.Enterprise);
@@ -182,7 +198,8 @@ public sealed class PluginCustomEndpointsTests
         var fallbackEndpoint = endpoints.Should().ContainSingle(endpoint =>
                 endpoint.Metadata.GetMetadata<IExcludeFromDescriptionMetadata>() != null)
             .Which;
-        fallbackEndpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods.Should().Equal("GET");
+        fallbackEndpoint.Metadata.GetMetadata<HttpMethodMetadata>().Should().BeNull(
+            "the selector policy owns this hidden candidate for every request method");
     }
 
     [Plugin("split-get", "1.0.0", Capabilities = PluginCapability.CustomEndpoints)]
