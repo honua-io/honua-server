@@ -815,7 +815,7 @@ public class StyleConversionMatrixTests
             "type": "uniqueValue",
             "field1": "zone_code",
             "uniqueValueInfos": [
-              { "value": 1, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [255, 0, 0, 255], "size": 8 } },
+              { "value": 1e-7, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [255, 0, 0, 255], "size": 8 } },
               { "value": 2, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [0, 255, 0, 255], "size": 8 } },
               { "value": 3, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [0, 0, 255, 255], "size": 8 } }
             ]
@@ -841,7 +841,11 @@ public class StyleConversionMatrixTests
         Assert.Equal("match", items[0].GetString());
         Assert.Equal("to-string", items[1].EnumerateArray().First().GetString());
 
-        Assert.Equal("1", items[2].GetString());
+        // 1e-7 must be stringified the way MapLibre's to-string does ("1e-7"), not the
+        // way .NET's "G"/"R" formats do ("1E-07"); otherwise the stop can never match
+        // and the feature silently falls through to the default color.
+        Assert.Equal("1e-7", items[2].GetString());
+        Assert.Equal("rgba(255,0,0,1)", items[3].GetString());
         Assert.Equal("2", items[4].GetString());
         Assert.Equal("rgba(0,255,0,1)", items[5].GetString());
         Assert.Equal("3", items[6].GetString());
@@ -930,7 +934,7 @@ public class StyleConversionMatrixTests
             value =>
             {
                 Assert.Equal(JsonValueKind.String, value.ValueKind);
-                Assert.Equal("1E-07", value.GetString());
+                Assert.Equal("1e-7", value.GetString());
             },
             value => Assert.Equal("active", value.GetString()),
             value => Assert.Equal("true", value.GetString()));
@@ -946,7 +950,7 @@ public class StyleConversionMatrixTests
             "type": "uniqueValue",
             "field1": "priority",
             "uniqueValueInfos": [
-              { "value": 1, "symbol": { "type": "esriPMS", "url": "https://example.com/low.png", "width": 16, "height": 16 } },
+              { "value": 1e-7, "symbol": { "type": "esriPMS", "url": "https://example.com/low.png", "width": 16, "height": 16 } },
               { "value": 2, "symbol": { "type": "esriPMS", "url": "https://example.com/med.png", "width": 16, "height": 16 } },
               { "value": 3, "symbol": { "type": "esriPMS", "url": "https://example.com/high.png", "width": 16, "height": 16 } }
             ]
@@ -969,9 +973,60 @@ public class StyleConversionMatrixTests
         Assert.Equal("match", items[0].GetString());
         Assert.Equal("to-string", items[1].EnumerateArray().First().GetString());
 
-        Assert.Equal("1", items[2].GetString());
+        // Same ECMAScript coercion contract as the color path: a mis-formatted stop
+        // here resolves to the wrong icon rather than the wrong color.
+        Assert.Equal("1e-7", items[2].GetString());
         Assert.Equal("2", items[4].GetString());
         Assert.Equal("3", items[6].GetString());
+    }
+
+    [Theory]
+    // Exponent casing/padding: .NET's "G"/"R" produce 1E-07, ECMAScript produces 1e-7.
+    [InlineData("1e-7", "1e-7")]
+    [InlineData("1.5e-8", "1.5e-8")]
+    [InlineData("-1e-7", "-1e-7")]
+    // Threshold where ECMAScript switches back to plain decimal but .NET does not.
+    [InlineData("1e-6", "0.000001")]
+    [InlineData("1e-5", "0.00001")]
+    [InlineData("0.0001", "0.0001")]
+    // Threshold where ECMAScript stays decimal up to 1e21 but .NET goes exponential.
+    [InlineData("1e20", "100000000000000000000")]
+    [InlineData("1e21", "1e+21")]
+    [InlineData("1.2345e22", "1.2345e+22")]
+    // Ordinary values must be unaffected.
+    [InlineData("2", "2")]
+    [InlineData("0", "0")]
+    [InlineData("-0.0", "0")]
+    [InlineData("123.456", "123.456")]
+    public void GeoServicesToMapLibre_NumericUniqueValueStop_UsesEcmaScriptNumberFormatting(
+        string jsonValue,
+        string expectedStop)
+    {
+        var layer = new StyleLayerDescriptor(1, "points", MetadataV2GeometryType.Point);
+        var drawingInfoJson = $$"""
+        {
+          "renderer": {
+            "type": "uniqueValue",
+            "field1": "zone_code",
+            "uniqueValueInfos": [
+              { "value": {{jsonValue}}, "symbol": { "type": "esriSMS", "style": "esriSMSCircle", "color": [255, 0, 0, 255], "size": 8 } }
+            ]
+          }
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(drawingInfoJson);
+        var mapLibreJson = GeoServicesToMapLibreConverter.Convert(doc.RootElement, layer);
+        using var mapLibreDoc = JsonDocument.Parse(mapLibreJson);
+
+        var circleLayer = FindLayer(mapLibreDoc.RootElement, "circle");
+        var outerItems = circleLayer.GetProperty("paint").GetProperty("circle-color").EnumerateArray().ToArray();
+        var items = outerItems[2].EnumerateArray().ToArray();
+
+        Assert.Equal("match", items[0].GetString());
+        Assert.Equal("to-string", items[1].EnumerateArray().First().GetString());
+        Assert.Equal(JsonValueKind.String, items[2].ValueKind);
+        Assert.Equal(expectedStop, items[2].GetString());
     }
 
     [Fact]
