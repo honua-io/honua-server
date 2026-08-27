@@ -186,6 +186,18 @@ public sealed class HeadMethodEndpointTests : IAsyncLifetime
         (
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/uploadAssets",
             ["GET"]
+        ),
+        (
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/exportTiles",
+            ["GET", "POST"]
+        ),
+        (
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportTiles",
+            ["GET", "POST"]
+        ),
+        (
+            $"/rest/services/{WebAppFixture.TestServiceId}/ImageServer/exportTiles",
+            ["GET", "POST"]
         )
     ];
 

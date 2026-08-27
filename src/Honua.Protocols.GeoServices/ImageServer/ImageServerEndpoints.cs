@@ -16,6 +16,7 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
@@ -482,6 +483,7 @@ internal static class ImageServerEndpoints
             .WithName("ImageServerExportTilesGet")
             .WithSummary("Export image tiles")
             .WithDescription("Exports bounded WebMercatorQuad image tiles as a ZIP archive written through configured cloud file storage")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .Produces<ImageServerExportTilesResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404)
@@ -1080,6 +1082,7 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Export Image Service Tiles by Service (GET)")
             .WithName("ImageServerExportTilesGetByService")
             .WithSummary("Export image tiles")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .Produces<ImageServerExportTilesResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404)
