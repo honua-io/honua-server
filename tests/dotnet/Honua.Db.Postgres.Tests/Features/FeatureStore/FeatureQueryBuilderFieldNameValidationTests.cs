@@ -84,6 +84,15 @@ public sealed class FeatureQueryBuilderFieldNameValidationTests
     }
 
     [Fact]
+    public void IsValidEncodedColumnAlias_EnforcesPostgresIdentifierByteLimit()
+    {
+        FeatureQueryBuilder.IsValidEncodedColumnAlias(new string('a', 63)).Should().BeTrue();
+        FeatureQueryBuilder.IsValidEncodedColumnAlias(new string('a', 64)).Should().BeFalse();
+
+        FeatureQueryBuilder.IsValidJsonAttributeKey(new string('a', 64)).Should().BeTrue();
+    }
+
+    [Fact]
     public void IsValidJsonAttributeKey_IsStrictlyWiderThanIsValidFieldName()
     {
         // Anything the identifier validator accepts must remain acceptable as a jsonb
