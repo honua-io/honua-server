@@ -32,6 +32,8 @@ public sealed class PrefixedSchemaFieldProjectionTests : IAsyncLifetime
     private const string CollectionId = "0";
     private const string PrefixedFieldName = "eo:cloud_cover";
     private const string EncodedPrefixedFieldName = "eo%3Acloud_cover";
+    private const string DottedFieldName = "vendor.quality";
+    private const string HyphenatedFieldName = "vendor-quality";
     private const double PrefixedFieldValue = 42;
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
@@ -49,6 +51,22 @@ public sealed class PrefixedSchemaFieldProjectionTests : IAsyncLifetime
                 Nullable = true,
                 Description = "Cloud cover percentage",
             });
+        _fixture.UpdateV2ResourceSchemaField(
+            WebAppFixture.TestLayerId,
+            new MetadataV2Field
+            {
+                Name = DottedFieldName,
+                Type = MetadataV2FieldType.String,
+                Nullable = true,
+            });
+        _fixture.UpdateV2ResourceSchemaField(
+            WebAppFixture.TestLayerId,
+            new MetadataV2Field
+            {
+                Name = HyphenatedFieldName,
+                Type = MetadataV2FieldType.String,
+                Nullable = true,
+            });
 
         // Give every seeded row of the layer a value for the prefixed field so an
         // omission in the payload is unambiguously a projection defect and not
@@ -58,7 +76,10 @@ public sealed class PrefixedSchemaFieldProjectionTests : IAsyncLifetime
                 CultureInfo.InvariantCulture,
                 $"""
                  UPDATE features
-                 SET attributes = attributes || jsonb_build_object('{PrefixedFieldName}', {PrefixedFieldValue}::double precision)
+                 SET attributes = attributes || jsonb_build_object(
+                     '{PrefixedFieldName}', {PrefixedFieldValue}::double precision,
+                     '{DottedFieldName}', 'dotted',
+                     '{HyphenatedFieldName}', 'hyphenated')
                  WHERE layer_id = {WebAppFixture.TestLayerId};
                  """),
             _fixture.CurrentSchema);
@@ -157,6 +178,30 @@ public sealed class PrefixedSchemaFieldProjectionTests : IAsyncLifetime
             $"/ogc/features/collections/{CollectionId}/items?limit=1&sortby=-{EncodedPrefixedFieldName}");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task GetItems_WithDottedAndHyphenatedSchemaFields_AcceptsProjectionAndSort()
+    {
+        foreach (var (fieldName, expectedValue) in new[]
+                 {
+                     (DottedFieldName, "dotted"),
+                     (HyphenatedFieldName, "hyphenated"),
+                 })
+        {
+            var encodedFieldName = Uri.EscapeDataString(fieldName);
+            var projectionResponse = await _fixture.Client.GetAsync(
+                $"/ogc/features/collections/{CollectionId}/items?limit=1&properties={encodedFieldName}");
+
+            projectionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var properties = await ReadFirstFeaturePropertiesAsync(projectionResponse);
+            properties.GetProperty(fieldName).GetString().Should().Be(expectedValue);
+
+            var sortResponse = await _fixture.Client.GetAsync(
+                $"/ogc/features/collections/{CollectionId}/items?limit=1&sortby={encodedFieldName}");
+            sortResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
     }
 
     [IntegrationTest]
