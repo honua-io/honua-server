@@ -37,6 +37,7 @@
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
   - [Publish layers](guides/publish/publish-layers.md)
   - [Publish rasters](guides/publish/publish-rasters.md)
+  - [Imagery and raster: shipped state](guides/imagery-and-raster.md)
   - [Publish terrain & elevation](guides/publish/publish-terrain-and-elevation.md)
   - [Publish 3D scenes](guides/publish/publish-3d-scenes.md)
   - [Publish tiles](guides/publish/publish-tiles.md)
