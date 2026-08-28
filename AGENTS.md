@@ -149,6 +149,12 @@ Issue work is claimed with a **lease, not a lock**:
   `claimed: <your-lane> <UTC timestamp> — <what you were dispatched with>`.
   Fleet dispatch tooling does this automatically for packet work
   (honua-flow `tools/claim-issue.sh`); do it by hand otherwise.
+- **Stamping is write-then-verify.** Two lanes can pass the pre-check on the
+  same unclaimed issue simultaneously, so after your comment lands, re-read
+  the thread once: if a `claimed:` comment newer than yours has appeared, the
+  race went to that lane — stand down and pick different work. A race that
+  slips past the re-read costs duplicated work at worst, never a deadlock:
+  the newest claim wins, and the PR is the proof of who delivered.
 - **A claim expires by rule, not by release.** With no open PR referencing the
   issue after **3 hours**, the claim is stale: the fleet monitor flags it as
   `ORPHANED-CLAIM`, and anyone may take over by stamping a new claim. The
@@ -160,9 +166,21 @@ Issue work is claimed with a **lease, not a lock**:
   ticket goes stale the moment the PR merges. Cross-repo closing keywords are
   silently inert on GitHub — never rely on them; close the foreign issue by
   hand and cite the delivering PR.
-- An open PR carrying `Closes #N` / `Refs #N` supersedes the label as the
-  claim; when the PR merges or closes, the issue is unclaimed again unless the
-  PR closed it.
+- **Any open PR referencing the issue supersedes the label as the claim** —
+  by reference, not by footer form. A PR that says `Fixes #N` or mentions the
+  number in prose still holds the lease (the fleet monitor checks for any
+  open PR referencing the issue), even though its footer should have been
+  `Closes #N` / `Refs #N` per the discipline above. When the PR merges or
+  closes, the issue is unclaimed again unless the PR closed it.
+- **A PR extends the lease; it does not make it permanent.** If the lane
+  behind an open PR goes silent — no pushes, comments, or review responses
+  for the same **3 hours**, and the PR is not simply waiting on review or the
+  merge train — the PR is abandoned and the claim is stale with it. Anyone
+  may take over: comment the takeover on the PR, then either adopt its branch
+  or close it with a `Refs #N (superseded by takeover)` footer, and stamp a
+  new claim on the issue. The fleet monitor does not flag this case (it only
+  flags claims with no open PR), so PR-backed takeover is a judgment call —
+  but the wait stays bounded either way.
 - **Finishing is proven by the PR, never by a comment.** Do not stamp "done" —
   a completion claim without a PR is exactly the reports-success-while-doing-
   nothing failure this repo keeps finding. The open PR is the completion signal;
@@ -182,7 +200,7 @@ Issue work is claimed with a **lease, not a lock**:
 
 The sections below are therefore a **human contract, not a gate**. Fill them because the next person reading the PR needs them, and because `Closes #N` is the only thing that actually closes an issue:
 
-- Fill **every** required section of `.github/pull_request_template.md`: an issue link (`Fixes`/`Closes`/`Resolves`/`Related to #N`), a non-empty **Summary**, **Changes Made** as `-` bullet points, **Breaking Changes** (or `None`), at least one `[x]` in the **Gate Impact** and **Testing** sections, and a conventional-commit **title** (`type(scope): description`, e.g. `feat: ...`).
+- Fill **every** required section of `.github/pull_request_template.md`: an issue link with a disposition (`Closes #N` or `Refs #N (<what remains>)`), a non-empty **Summary**, **Changes Made** as `-` bullet points, **Breaking Changes** (or `None`), at least one `[x]` in the **Gate Impact** and **Testing** sections, and a conventional-commit **title** (`type(scope): description`, e.g. `feat: ...`).
 - **Use `Closes #N` for the issue this PR fully resolves — not `Related to #N`.** GitHub only auto-closes an issue when the linking keyword is `Closes`/`Fixes`/`Resolves` **with a bare `#N`** (e.g. `Closes #1756`). It does NOT auto-close on `Related to #N`, nor on the cross-repo form `Closes honua-io/honua-server#N` from a same-repo PR — use the bare `#N`. Convention:
   - If this PR **completely** implements an issue's acceptance criteria → `Closes #N` (so merging closes it).
   - If it only lands **one slice** of a larger issue (deferred parts, `501`-stubbed work) → `Related to #N` and leave the issue open.
@@ -284,7 +302,7 @@ The MVP intentionally defers enterprise/operational features to reduce complexit
 
 ### Creating a PR — fill the template (or CI is skipped)
 
-When opening a PR, follow the **Pull Request Policy** section above. The **Validate PR Template Compliance** check is **advisory only — it does not block the merge** (it posts suggestions and warns, but always succeeds). Real validation (build, format, tests) gates the PR on its own. Still, prefer a well-formed description: don't hand-roll a freeform `gh pr create --body "..."`; copy the template, fill the sections — conventional-commit title (`type(scope): description`), issue link (`Fixes #N`), non-empty Summary, `-` bullet Changes Made, Breaking Changes (or `None`), Gate Impact/Testing boxes — and pass it with `--body-file`:
+When opening a PR, follow the **Pull Request Policy** section above. The **Validate PR Template Compliance** check is **advisory only — it does not block the merge** (it posts suggestions and warns, but always succeeds). Real validation (build, format, tests) gates the PR on its own. Still, prefer a well-formed description: don't hand-roll a freeform `gh pr create --body "..."`; copy the template, fill the sections — conventional-commit title (`type(scope): description`), issue link (`Closes #N` or `Refs #N (<what remains>)`), non-empty Summary, `-` bullet Changes Made, Breaking Changes (or `None`), Gate Impact/Testing boxes — and pass it with `--body-file`:
 
 ```bash
 cp .github/pull_request_template.md /tmp/pr-body.md   # then fill every section in /tmp/pr-body.md
