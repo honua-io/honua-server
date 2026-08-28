@@ -35,6 +35,9 @@ jobs:
       - name: Suite registry is valid JSON
         run: jq -e '.integration and .sdk and .repositoryLanes' release/bundle-suites.json
 
+      - name: Release-bundle ref-policy regression check
+        run: python3 scripts/release/validate-release-bundle-ref-policy.py
+
       - name: Manifest generator smoke
         run: ./scripts/release/smoke-build-release-manifest.sh
 
