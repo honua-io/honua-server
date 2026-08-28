@@ -122,6 +122,25 @@ def heading_anchors(path):
     return anchors
 
 
+def markdown_outside_fences(text):
+    """Return Markdown with fenced code blocks removed from link scanning."""
+    lines = []
+    in_fence = False
+    fence_marker = None
+    for line in text.splitlines(keepends=True):
+        fence = FENCE_RE.match(line)
+        if fence:
+            marker = fence.group(1)[0]
+            if not in_fence:
+                in_fence, fence_marker = True, marker
+            elif marker == fence_marker:
+                in_fence, fence_marker = False, None
+            continue
+        if not in_fence:
+            lines.append(line)
+    return "".join(lines)
+
+
 def iter_md_files(roots):
     for root in roots:
         if os.path.isfile(root):
@@ -257,7 +276,7 @@ def check_relative_links(docs_root, repo_root, allowlist_entries):
         base_dir = os.path.dirname(md)
         with open(md, "r", encoding="utf-8") as fh:
             text = fh.read()
-        for raw in LINK_RE.findall(text):
+        for raw in LINK_RE.findall(markdown_outside_fences(text)):
             target = raw.strip()
             # Drop an optional link title:  [t](path "title")
             if not target.startswith("#") and " " in target:
@@ -287,7 +306,7 @@ def check_relative_links(docs_root, repo_root, allowlist_entries):
             if fragment and resolved.endswith(".md"):
                 if resolved not in anchor_cache:
                     anchor_cache[resolved] = heading_anchors(resolved)
-                if fragment.lower() not in anchor_cache[resolved]:
+                if fragment not in anchor_cache[resolved]:
                     detail = (f"{source} -> {target} (anchor '#{fragment}' not a "
                               f"heading in {rel(resolved, repo_root)})")
                     if key in allowlist_entries:
@@ -357,14 +376,14 @@ def check_manifest(manifest, repo_root, docs_root, redirects):
         if fragment:
             if resolved not in anchor_cache:
                 anchor_cache[resolved] = heading_anchors(resolved)
-            if fragment.lower() not in anchor_cache[resolved]:
+            if fragment not in anchor_cache[resolved]:
                 message = (f"{url} -> anchor '#{fragment}' is not a heading in "
                            f"{rel(resolved, repo_root)}")
                 (warnings if pending_pr else errors).append(message + pending)
                 continue
 
         if pending_pr:
-            notes.append(
+            errors.append(
                 f"{url} now resolves; PR #{pending_pr} appears to have landed, "
                 f"so drop its 'pendingPr' marker to enforce the reference.")
 

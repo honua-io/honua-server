@@ -152,6 +152,26 @@ def test_missing_anchor_fails(stack) -> None:
     assert_that("not a heading" in err, err)
 
 
+def test_links_inside_fences_are_ignored(stack) -> None:
+    root = new_tree(stack)
+    write(
+        root,
+        "docs/index.md",
+        "```md\n[example](guides/deploy/missing.md#not-real)\n```\n\n"
+        "~~~markdown\n[other](also-missing.md)\n~~~\n",
+    )
+    code, _, err = run(root)
+    assert_that(code == 0, f"fenced Markdown examples must not be scanned as links: {err}")
+
+
+def test_relative_link_fragments_are_case_sensitive(stack) -> None:
+    root = new_tree(stack)
+    write(root, "docs/index.md", "See [watch](guides/deploy/monitoring.md#What-To-Watch).\n")
+    code, _, err = run(root)
+    assert_that(code == 1, "fragment matching must preserve case")
+    assert_that("anchor '#What-To-Watch'" in err, err)
+
+
 def test_external_and_scheme_links_are_skipped(stack) -> None:
     root = new_tree(stack)
     write(
@@ -211,6 +231,13 @@ def test_manifest_moved_heading_fails(stack) -> None:
     assert_that("is not a heading" in err, err)
 
 
+def test_manifest_fragment_is_case_sensitive(stack) -> None:
+    root = new_tree(stack, manifest=manifest({"url": "https://docs.honua.io/guides/deploy/monitoring#What-To-Watch"}))
+    code, _, err = run(root, "--skip-links")
+    assert_that(code == 1, "manifest fragment matching must preserve case")
+    assert_that("anchor '#What-To-Watch'" in err, err)
+
+
 def test_manifest_missing_page_fails(stack) -> None:
     root = new_tree(stack, manifest=manifest({"url": "https://docs.honua.io/operations/runbook#emergency-procedures"}))
     code, _, err = run(root, "--skip-links")
@@ -233,19 +260,19 @@ def test_manifest_redirect_only_url_warns(stack) -> None:
     assert_that("guides/deploy/monitoring.md" in err, "the warning must name the redirect target")
 
 
-def test_pending_pr_entry_warns_then_notes(stack) -> None:
+def test_pending_pr_entry_warns_then_fails_when_stale(stack) -> None:
     url = "https://docs.honua.io/guides/deploy/monitoring#redis-is-optional-postgis-is-not"
     root = new_tree(stack, manifest=manifest({"url": url, "pendingPr": 3583}))
     code, _, err = run(root, "--skip-links")
     assert_that(code == 0, f"a pendingPr heading must warn while its branch is open: {err}")
     assert_that("open PR #3583" in err, err)
 
-    # Once the branch lands the heading appears; the gate then says so, so the
-    # marker gets removed and the reference starts being enforced.
+    # Once the branch lands the heading appears; the stale marker becomes an
+    # error so it must be removed before the gate passes.
     write(root, "docs/guides/deploy/monitoring.md", "# Monitor\n\n## What to watch\n\n## Redis is optional; PostGIS is not\n")
     code, out, err = run(root, "--skip-links")
-    assert_that(code == 0, f"expected pass once the heading exists: {err}")
-    assert_that("appears to have landed" in out, out)
+    assert_that(code == 1, "a resolved pendingPr marker must fail until removed")
+    assert_that("appears to have landed" in err, err)
 
 
 def test_unregistered_url_in_source_fails(stack) -> None:

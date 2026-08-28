@@ -20,7 +20,7 @@ name: Docs Link Gate
 # touches no documentation. It is also not a step in `ci.yml` — that workflow has
 # no `pull_request` trigger (schedule / merge_group / workflow_dispatch only), so
 # a step there would never grade a pull request. `scripts/ci/**` is deliberately
-# NOT a trigger beyond this checker's own two files: a shared-infrastructure edit
+# NOT a trigger beyond this checker's own files and data manifests: a shared-infrastructure edit
 # already escalates `pre-pr-check.sh` to a full run, and widening the trigger to
 # the whole directory would fire this lane on every CI script change for nothing.
 on:
@@ -28,8 +28,14 @@ on:
     branches: [trunk]
     paths:
       - 'docs/**'
+      - 'src/**'
+      - 'docker/**'
+      - 'observability/**'
+      - 'eng/**'
       - 'scripts/ci/check-doc-links.py'
       - 'scripts/ci/check-doc-links.test.py'
+      - 'scripts/ci/code-referenced-anchors.v1.json'
+      - 'scripts/ci/doc-link-rot-allowlist.v1.json'
       - '.github/workflows/docs-link-gate.yml'
   workflow_dispatch:
 
