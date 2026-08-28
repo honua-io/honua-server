@@ -18,6 +18,40 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class AdminOperationApprovalBridgeTests
 {
     [UnitTest]
+    public void ServicePublishMapper_MapsTypedReplayContractWithoutLegacyAlias()
+    {
+        var mapper = new ServicePublishApprovalRequestMapper();
+
+        var mapped = mapper.Map(
+            ServicePublishOperation.BuildDescriptor(),
+            new OperationRequest
+            {
+                OperationId = ServicePublishOperation.OperationId,
+                ConnectionId = "connection-1",
+                ServiceName = "roads",
+                Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    ["schema"] = "public",
+                    ["table"] = "roads",
+                    ["layerName"] = "Roads",
+                },
+            },
+            Context(),
+            Decision());
+
+        mapped.Kind.Should().Be(OperationClass.ServicePublish);
+        mapped.Kind.Should().NotBe(OperationClass.AdminConfigChange);
+        mapped.Kind.Should().NotBe(OperationClass.Deploy);
+        mapped.Kind.Should().NotBe(OperationClass.MetadataRelease);
+        mapped.Kind.Should().NotBe(OperationClass.Geoprocess);
+        mapped.OperationInstanceId.Should().Be("opinst-123");
+        mapped.CorrelationId.Should().Be("corr-123");
+        mapped.Plan.Should().NotBeNull();
+        mapped.Plan!.ExecutionPayload.Should().Be(mapped.ExecutionPayload);
+        mapped.ExecutionPayload.Should().Contain("\"layerName\":\"Roads\"");
+    }
+
+    [UnitTest]
     public async Task CreateProposalAsync_MissingGateway_ReturnsNonDurableFailure()
     {
         var bridge = CreateBridge(new ServiceCollection().BuildServiceProvider());

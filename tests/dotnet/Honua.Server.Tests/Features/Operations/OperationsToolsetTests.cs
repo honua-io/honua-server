@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -14,6 +15,8 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -27,6 +30,69 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class OperationsToolsetTests
 {
     private const string TestConnectionId = "11111111-1111-1111-1111-111111111111";
+
+    [UnitTest]
+    public void AddOperationsToolset_RegistersServicePublishApprovalMapperAndReplayActuator()
+    {
+        var services = new ServiceCollection();
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build());
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+            descriptor.ImplementationType == typeof(ServicePublishApprovalRequestMapper));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(ServicePublishApprovalExecutor));
+    }
+
+    [UnitTest]
+    public async Task ServicePublishApprovalReplay_InvokesTypedPublishActuator()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        publishing
+            .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishedLayerSummary
+            {
+                LayerId = 7,
+                LayerName = "Roads",
+                Schema = "public",
+                Table = "roads",
+                GeometryType = "LineString",
+                Srid = 4326,
+                ServiceName = "roads",
+            });
+        var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
+        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(
+            new MetadataV2GraphSnapshot(new MetadataV2Graph { Revision = 42 }, "\"etag\"", DateTimeOffset.UtcNow));
+        var typedExecutor = BuildExecutor(publishing, graphProvider);
+        var services = new ServiceCollection()
+            .AddScoped(_ => typedExecutor)
+            .BuildServiceProvider();
+        var replay = new ServicePublishApprovalExecutor(services.GetRequiredService<IServiceScopeFactory>());
+        var gatewayRequest = new ServicePublishApprovalRequestMapper().Map(
+            ServicePublishOperation.BuildDescriptor(),
+            BuildRequest(),
+            new OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-123",
+                CorrelationId = "corr-123",
+                PrincipalId = "publisher-1",
+            },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval, Reason = "approval required" });
+
+        var operationInstanceId = await replay.ExecuteAsync(
+            gatewayRequest,
+            gatewayRequest.ExecutionPayload,
+            CancellationToken.None);
+
+        operationInstanceId.Should().Be("opinst-123");
+        await publishing.Received(1).PublishLayerAsync(
+            Arg.Any<string>(),
+            Arg.Is<LayerPublishRequest>(request =>
+                request.Schema == "public" && request.Table == "parcels" && request.LayerName == "Parcels"),
+            Arg.Any<CancellationToken>());
+    }
 
     [UnitTest]
     public async Task Catalog_Lists_ServicePublish_Descriptor_With_ExecutionKind_ApprovalModel_And_Policy()
