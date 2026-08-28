@@ -134,9 +134,11 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         using (var writer = new Utf8JsonWriter(buffer))
         {
             writer.WriteStartObject();
-            foreach (var parameter in descriptor.InputSchema.Where(parameter => !routeNames.Contains(parameter.Name) && !excluded.Contains(parameter.Name)))
+            foreach (var parameter in descriptor.InputSchema
+                         .Where(parameter => !routeNames.Contains(parameter.Name) && !excluded.Contains(parameter.Name))
+                         .Where(parameter => request.Parameters.ContainsKey(parameter.Name)))
             {
-                if (!request.Parameters.TryGetValue(parameter.Name, out var value)) continue;
+                var value = request.Parameters[parameter.Name];
                 var name = request.DryRun && parameter.Name == "srid" ? "targetSrid" : parameter.Name;
                 writer.WritePropertyName(name);
                 WriteValue(writer, value, parameter.Schema.Type);
