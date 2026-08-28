@@ -64,6 +64,12 @@ public sealed record OperationPolicyContext
     /// </summary>
     public string? CorrelationId { get; init; }
 
+    /// <summary>Trusted tenant identity captured at invocation time.</summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>Trusted routed database schema captured at invocation time.</summary>
+    public string? SchemaName { get; init; }
+
     /// <summary>
     /// Trusted authorization outcome established before the operation policy decision.
     /// </summary>

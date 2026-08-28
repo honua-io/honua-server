@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
@@ -29,6 +30,7 @@ public sealed class AdminOperationApprovalBridgeTests
                 OperationId = ServicePublishOperation.OperationId,
                 ConnectionId = "connection-1",
                 ServiceName = "roads",
+                DryRun = true,
                 Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
                     ["schema"] = "public",
@@ -36,7 +38,7 @@ public sealed class AdminOperationApprovalBridgeTests
                     ["layerName"] = "Roads",
                 },
             },
-            Context(),
+            Context() with { TenantId = "tenant-a", SchemaName = "tenant_a" },
             Decision());
 
         mapped.Kind.Should().Be(OperationClass.ServicePublish);
@@ -49,6 +51,9 @@ public sealed class AdminOperationApprovalBridgeTests
         mapped.Plan.Should().NotBeNull();
         mapped.Plan!.ExecutionPayload.Should().Be(mapped.ExecutionPayload);
         mapped.ExecutionPayload.Should().Contain("\"layerName\":\"Roads\"");
+        mapped.ExecutionPayload.Should().Contain("\"dryRun\":true");
+        mapped.ExecutionPayload.Should().Contain("\"tenantId\":\"tenant-a\"");
+        mapped.ExecutionPayload.Should().Contain("\"schemaName\":\"tenant_a\"");
     }
 
     [UnitTest]
@@ -85,6 +90,7 @@ public sealed class AdminOperationApprovalBridgeTests
             });
         var services = new ServiceCollection()
             .AddSingleton(gateway)
+            .AddSingleton(AllowApprovalGuardrail())
             .BuildServiceProvider();
         var bridge = CreateBridge(services);
 
@@ -116,6 +122,7 @@ public sealed class AdminOperationApprovalBridgeTests
             });
         var services = new ServiceCollection()
             .AddSingleton(gateway)
+            .AddSingleton(AllowApprovalGuardrail())
             .BuildServiceProvider();
         var bridge = CreateBridge(services);
 
@@ -132,6 +139,31 @@ public sealed class AdminOperationApprovalBridgeTests
         captured!.OperationInstanceId.Should().Be("opinst-123");
         captured.CorrelationId.Should().Be("corr-123");
         captured.OperationInstanceId.Should().NotBe(result.ProposalId);
+    }
+
+    [UnitTest]
+    public async Task CreateProposalAsync_BlockedControlPlaneClass_FailsBeforePersistence()
+    {
+        var gateway = Substitute.For<IOperationGateway>();
+        var guardrail = Substitute.For<IGuardrailLadder>();
+        guardrail.Resolve(OperationClass.AdminConfigChange)
+            .Returns(new GuardrailDecision(
+                GuardrailTier.Blocked,
+                OperationClass.AdminConfigChange,
+                HonuaEdition.Pro,
+                "operator-blocked"));
+        var services = new ServiceCollection()
+            .AddSingleton(gateway)
+            .AddSingleton(guardrail)
+            .BuildServiceProvider();
+
+        var result = await CreateBridge(services).CreateProposalAsync(
+            Descriptor(), Request(), Context(), Decision());
+
+        result.IsDurable.Should().BeFalse();
+        result.Reason.Should().Contain("guardrail blocks");
+        await gateway.DidNotReceiveWithAnyArgs()
+            .CreateApprovalProposalAsync(default!, default);
     }
 
     private static AdminOperationApprovalBridge CreateBridge(IServiceProvider services)
@@ -175,6 +207,18 @@ public sealed class AdminOperationApprovalBridgeTests
 
     private static GuardrailDecision GatewayDecision()
         => new(GuardrailTier.RequiresApproval, OperationClass.AdminConfigChange, HonuaEdition.Pro, "test");
+
+    private static IGuardrailLadder AllowApprovalGuardrail()
+    {
+        var guardrail = Substitute.For<IGuardrailLadder>();
+        guardrail.Resolve(Arg.Any<OperationClass>()).Returns(call =>
+            new GuardrailDecision(
+                GuardrailTier.RequiresApproval,
+                call.Arg<OperationClass>(),
+                HonuaEdition.Pro,
+                "test"));
+        return guardrail;
+    }
 
     private sealed class TestMapper : IOperationApprovalRequestMapper
     {

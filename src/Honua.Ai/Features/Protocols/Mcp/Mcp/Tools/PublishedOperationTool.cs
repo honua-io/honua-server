@@ -5,6 +5,8 @@ using System.Buffers;
 using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
@@ -160,7 +162,9 @@ internal sealed class PublishedOperationTool : IMcpTool
         // roles/tier — always misses and takes a fresh policy round-trip.
         var context = new OperationPolicyContext
         {
-            PrincipalId = principal.Identity?.Name,
+            PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
+            TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+            SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
             AuthorizationOutcome = "authorized",
             Tier = ResolveTier(httpContext),
             Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
@@ -187,15 +191,8 @@ internal sealed class PublishedOperationTool : IMcpTool
         var invoker = httpContext.RequestServices.GetService<IOperationInvoker>();
         if (invoker is null)
         {
-            return McpToolHelpers.SuccessResult(
-                new McpOperationToolOutput
-                {
-                    Status = OperationHandleStatus.Failed.ToString(),
-                    OperationId = _descriptor.OperationId,
-                    Deterministic = IsDeterministic,
-                    Message = "The operations toolset is unavailable (no IOperationInvoker is registered in this composition).",
-                },
-                McpJsonContext.Default.McpOperationToolOutput);
+            return McpToolHelpers.ErrorResult(
+                new InvalidOperationException("The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."));
         }
 
         var request = new OperationRequest

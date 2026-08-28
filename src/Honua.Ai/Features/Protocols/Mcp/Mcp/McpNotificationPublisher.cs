@@ -15,7 +15,7 @@ namespace Honua.Ai.Protocols.Mcp;
 /// runtime and calls <see cref="PublishProgress"/>; the publish path calls the
 /// broadcast methods when the catalog mutates.
 /// </summary>
-internal interface IMcpNotificationPublisher
+public interface IMcpNotificationPublisher
 {
     /// <summary>
     /// Pushes a <c>notifications/progress</c> frame to a single session. The

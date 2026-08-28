@@ -5,10 +5,13 @@ using System.Security.Claims;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Operations;
 
@@ -178,7 +181,9 @@ internal static class OperationsEndpoints
             // tenant-tier resolver lands (deferred — see PR notes).
             var policyContext = new OperationPolicyContext
             {
-                PrincipalId = context.User.Identity?.Name,
+                PrincipalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId,
+                TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
+                SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
                 AuthorizationOutcome = "authorized",
                 Roles = context.User.FindAll(ClaimTypes.Role)
                     .Select(claim => claim.Value)

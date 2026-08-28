@@ -4,6 +4,8 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
 
 namespace Honua.Server.Features.Operations;
 
@@ -55,6 +57,12 @@ internal sealed partial class AdminOperationApprovalBridge(
                 OperationInstanceId = context.OperationInstanceId,
                 CorrelationId = context.CorrelationId,
             };
+            var guardrails = services.GetService<IGuardrailLadder>();
+            if (guardrails is null || guardrails.Resolve(gatewayRequest.Kind).Tier == GuardrailTier.Blocked)
+            {
+                return Failure("The control-plane guardrail blocks this operation; approval cannot grant authority.");
+            }
+
             var result = await gateway
                 .CreateApprovalProposalAsync(gatewayRequest, cancellationToken)
                 .ConfigureAwait(false);

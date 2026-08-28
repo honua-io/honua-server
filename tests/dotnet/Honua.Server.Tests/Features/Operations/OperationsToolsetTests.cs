@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -66,8 +67,10 @@ public sealed class OperationsToolsetTests
         graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(
             new MetadataV2GraphSnapshot(new MetadataV2Graph { Revision = 42 }, "\"etag\"", DateTimeOffset.UtcNow));
         var typedExecutor = BuildExecutor(publishing, graphProvider);
+        var notifications = Substitute.For<IMcpNotificationPublisher>();
         var services = new ServiceCollection()
             .AddScoped(_ => typedExecutor)
+            .AddSingleton(notifications)
             .BuildServiceProvider();
         var replay = new ServicePublishApprovalExecutor(services.GetRequiredService<IServiceScopeFactory>());
         var gatewayRequest = new ServicePublishApprovalRequestMapper().Map(
@@ -92,6 +95,53 @@ public sealed class OperationsToolsetTests
             Arg.Is<LayerPublishRequest>(request =>
                 request.Schema == "public" && request.Table == "parcels" && request.LayerName == "Parcels"),
             Arg.Any<CancellationToken>());
+        notifications.Received(1).BroadcastResourcesListChanged();
+        notifications.Received(1).BroadcastToolsListChanged();
+    }
+
+    [UnitTest]
+    public async Task ServicePublishApprovalReplay_DryRunValidatesWithoutActuationOrNotification()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        publishing.ValidateTableForPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<TablePublishValidationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new TablePublishValidationResult
+            {
+                IsValid = true,
+                Status = "valid",
+                Schema = "public",
+                Table = "parcels",
+                ServiceName = "default",
+            });
+        var notifications = Substitute.For<IMcpNotificationPublisher>();
+        var services = new ServiceCollection()
+            .AddScoped(_ => BuildExecutor(publishing, Substitute.For<IMetadataV2GraphProvider>()))
+            .AddSingleton(notifications)
+            .BuildServiceProvider();
+        var replay = new ServicePublishApprovalExecutor(services.GetRequiredService<IServiceScopeFactory>());
+        var gatewayRequest = new ServicePublishApprovalRequestMapper().Map(
+            ServicePublishOperation.BuildDescriptor(),
+            BuildRequest() with { DryRun = true },
+            new OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-dry-run",
+                CorrelationId = "corr-dry-run",
+                PrincipalId = "publisher-1",
+            },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+        var operationInstanceId = await replay.ExecuteAsync(
+            gatewayRequest, gatewayRequest.ExecutionPayload, CancellationToken.None);
+
+        operationInstanceId.Should().Be("opinst-dry-run");
+        await publishing.Received(1).ValidateTableForPublishAsync(
+            Arg.Any<string>(), Arg.Any<TablePublishValidationRequest>(), Arg.Any<CancellationToken>());
+        await publishing.DidNotReceiveWithAnyArgs()
+            .PublishLayerAsync(default!, default!, default);
+        notifications.DidNotReceiveWithAnyArgs().BroadcastResourcesListChanged();
+        notifications.DidNotReceiveWithAnyArgs().BroadcastToolsListChanged();
     }
 
     [UnitTest]
