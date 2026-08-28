@@ -5,7 +5,7 @@
 # deliberate re-certification, not an incidental upgrade.
 duckdb==1.5.5
 httpx==0.28.1
-pytest==8.4.2
+pytest==9.0.3
 
 # DuckDB converts TIMESTAMP WITH TIME ZONE values to Python via pytz. Without
 # it, `SELECT created_at FROM ST_Read(...)` raises
