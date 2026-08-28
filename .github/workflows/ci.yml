@@ -577,6 +577,7 @@ jobs:
             | map(select(.name as $n | $sel | index($n)))
             | map({
                 shard_name,
+                dispatch_rank,
                 artifact_suffix,
                 log_name,
                 timeout_minutes,
@@ -588,6 +589,7 @@ jobs:
                 csproj: (.csproj // ""),
                 advisory: (.advisory // false)
               })
+            | sort_by(-.dispatch_rank)
           ' .github/ci-shards.json)
           if [ "$(printf '%s' "${matrix_include}" | jq 'length')" = "0" ]; then
             echo "::error::matrix_include is empty — targeted-shards selected no shards"
