@@ -57,6 +57,8 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         using var message = new HttpRequestMessage(method, uri);
         if (current.Request.Headers.Authorization is { Count: > 0 } authorization)
             message.Headers.Authorization = AuthenticationHeaderValue.Parse(authorization.ToString());
+        CopyHeader(current, message, "X-API-Key");
+        CopyHeader(current, message, "X-Honua-Tenant");
 
         if (method != HttpMethod.Get)
         {
@@ -66,21 +68,49 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
             }
             else
             {
-                var routeNames = RouteNames(path);
-                var body = request.Parameters.Where(pair => !routeNames.Contains(pair.Key))
-                    .ToDictionary(static pair => pair.Key, static pair => ParseValue(pair.Value), StringComparer.Ordinal);
-                message.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                var routeNames = RouteNames(dryRun ? _definition.DryRunPath! : _definition.Path);
+                message.Content = new StringContent(
+                    SerializeBody(request.Parameters.Where(pair => !routeNames.Contains(pair.Key) && pair.Value is not null)),
+                    Encoding.UTF8,
+                    "application/json");
             }
         }
 
         using var response = await _httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);
         var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        var operationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
+        var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
+        var now = _clock.GetUtcNow();
+        if (!response.IsSuccessStatusCode)
+        {
+            return new OperationHandle
+            {
+                OperationInstanceId = operationInstanceId,
+                OperationId = OperationId,
+                CorrelationId = correlationId,
+                Status = OperationHandleStatus.Failed,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Reason = $"Admin API returned HTTP {(int)response.StatusCode} ({response.StatusCode}).",
+                Result = new OperationResultSummary
+                {
+                    Summary = $"{_definition.Title} failed.",
+                    Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["response"] = payload
+                    }
+                }
+            };
+        }
         return new OperationHandle
         {
+            OperationInstanceId = operationInstanceId,
             OperationId = OperationId,
-            HandleId = $"op-{_clock.GetUtcNow().ToUnixTimeMilliseconds():x}-{Guid.NewGuid():N}"[..32],
+            CorrelationId = correlationId,
             Status = OperationHandleStatus.Completed,
+            CreatedAt = now,
+            UpdatedAt = now,
             Result = new OperationResultSummary
             {
                 Summary = $"{_definition.Title} completed.",
@@ -89,8 +119,30 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         };
     }
 
-    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default) =>
-        Task.FromResult(new OperationStatus { OperationId = OperationId, HandleId = handle.HandleId, Status = handle.Status, Result = handle.Result });
+    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(handle);
+        return Task.FromResult(new OperationStatus
+        {
+            OperationInstanceId = handle.OperationInstanceId,
+            OperationId = OperationId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            ProposalId = handle.ProposalId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyDecision = handle.PolicyDecision,
+            Status = handle.Status,
+            Result = handle.Result,
+            JobId = handle.JobId,
+            ApprovalLane = handle.ApprovalLane,
+            MetadataRevision = handle.MetadataRevision,
+            Reason = handle.Reason,
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
+        });
+    }
 
     private static string BindPath(OperationRequest request, string path)
     {
@@ -113,10 +165,35 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         .Where(static segment => segment.StartsWith('{') && segment.EndsWith('}'))
         .Select(static segment => segment[1..^1]).ToHashSet(StringComparer.Ordinal);
 
-    private static object? ParseValue(string? value)
+    private static void CopyHeader(HttpContext current, HttpRequestMessage message, string name)
     {
-        if (value is null) return null;
-        try { return JsonSerializer.Deserialize<JsonElement>(value); }
-        catch (JsonException) { return value; }
+        if (current.Request.Headers.TryGetValue(name, out var values) && values.Count > 0)
+        {
+            message.Headers.TryAddWithoutValidation(name, values.ToArray());
+        }
+    }
+
+    private static string SerializeBody(IEnumerable<KeyValuePair<string, string?>> parameters)
+    {
+        var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (var pair in parameters)
+            {
+                writer.WritePropertyName(pair.Key);
+                try
+                {
+                    using var value = JsonDocument.Parse(pair.Value!);
+                    value.RootElement.WriteTo(writer);
+                }
+                catch (JsonException)
+                {
+                    writer.WriteStringValue(pair.Value);
+                }
+            }
+            writer.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 }

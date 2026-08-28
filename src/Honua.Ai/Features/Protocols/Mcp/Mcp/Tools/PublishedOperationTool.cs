@@ -58,7 +58,7 @@ internal sealed class PublishedOperationTool : IMcpTool
         _catalogVersion = catalogVersion ?? string.Empty;
         _logger = logger;
         Name = ProjectName(descriptor.OperationId);
-        _inputSchema = BuildInputSchema(descriptor.InputSchema);
+        _inputSchema = BuildInputSchema(descriptor.InputSchema, descriptor.Policy.SupportsDryRun);
     }
 
     public string Name { get; }
@@ -337,7 +337,10 @@ internal sealed class PublishedOperationTool : IMcpTool
         var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (var parameter in _descriptor.InputSchema)
         {
-            parameters[parameter.Name] = ReadString(arguments, parameter.Name);
+            if (arguments is { ValueKind: JsonValueKind.Object } args && args.TryGetProperty(parameter.Name, out _))
+            {
+                parameters[parameter.Name] = ReadString(arguments, parameter.Name);
+            }
         }
 
         return parameters;
@@ -380,7 +383,7 @@ internal sealed class PublishedOperationTool : IMcpTool
     }
 
     // Builds JSON Schema from the descriptor's AOT-safe constrained schema model.
-    private static JsonElement BuildInputSchema(IReadOnlyList<OperationParameterDescriptor> parameters)
+    private static JsonElement BuildInputSchema(IReadOnlyList<OperationParameterDescriptor> parameters, bool supportsDryRun)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -398,6 +401,13 @@ internal sealed class PublishedOperationTool : IMcpTool
                     writer.WriteString("description", parameter.Title);
                 }
 
+                writer.WriteEndObject();
+            }
+            if (supportsDryRun)
+            {
+                writer.WriteStartObject("dryRun");
+                writer.WriteString("type", "boolean");
+                writer.WriteString("description", "Execute the operation as a dry run without committing side effects.");
                 writer.WriteEndObject();
             }
 
@@ -451,6 +461,12 @@ internal sealed class PublishedOperationTool : IMcpTool
                 writer.WriteEndObject();
             }
             writer.WriteEndObject();
+        }
+        if (schema.RequiredProperties.Count > 0)
+        {
+            writer.WriteStartArray("required");
+            foreach (var property in schema.RequiredProperties) writer.WriteStringValue(property);
+            writer.WriteEndArray();
         }
     }
 }

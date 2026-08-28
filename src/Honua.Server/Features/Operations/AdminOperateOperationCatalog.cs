@@ -91,12 +91,11 @@ internal static class AdminOperateOperationCatalog
         var inputs = new List<OperationParameterDescriptor>();
         if (operation.TryGetProperty("parameters", out var parameters))
         {
-            foreach (var parameter in parameters.EnumerateArray())
+            foreach (var parameter in parameters.EnumerateArray().Select(parameter => Resolve(root, parameter)))
             {
-                var resolved = Resolve(root, parameter);
-                var name = resolved.GetProperty("name").GetString()!;
-                inputs.Add(Parameter(name, resolved.TryGetProperty("description", out var d) ? d.GetString()! : name,
-                    resolved.TryGetProperty("required", out var required) && required.GetBoolean(), ConvertSchema(root, resolved.GetProperty("schema"))));
+                var name = parameter.GetProperty("name").GetString()!;
+                inputs.Add(Parameter(name, parameter.TryGetProperty("description", out var d) ? d.GetString()! : name,
+                    parameter.TryGetProperty("required", out var required) && required.GetBoolean(), ConvertSchema(root, parameter.GetProperty("schema"))));
             }
         }
 
@@ -107,7 +106,7 @@ internal static class AdminOperateOperationCatalog
                 ? required.EnumerateArray().Select(static value => value.GetString()!).ToHashSet(StringComparer.Ordinal) : [];
             if (resolved.TryGetProperty("properties", out var properties))
             {
-                foreach (var property in properties.EnumerateObject())
+                foreach (var property in properties.EnumerateObject().Where(property => !inputs.Any(input => input.Name == property.Name)))
                     inputs.Add(Parameter(property.Name, Description(property.Value, property.Name), requiredNames.Contains(property.Name), ConvertSchema(root, property.Value)));
             }
             else
@@ -126,17 +125,20 @@ internal static class AdminOperateOperationCatalog
 
     internal static JsonElement FindOperation(JsonElement root, string operationId)
     {
-        foreach (var path in root.GetProperty("paths").EnumerateObject())
-            foreach (var method in path.Value.EnumerateObject())
-                if (method.Value.ValueKind == JsonValueKind.Object && method.Value.TryGetProperty("operationId", out var id) && id.GetString() == operationId)
-                    return method.Value;
+        foreach (var method in root.GetProperty("paths").EnumerateObject()
+                     .SelectMany(static path => path.Value.EnumerateObject())
+                     .Where(static method => method.Value.ValueKind == JsonValueKind.Object))
+            if (method.Value.TryGetProperty("operationId", out var id) && id.GetString() == operationId)
+                return method.Value;
         throw new InvalidOperationException($"Admin OpenAPI operation '{operationId}' was not found.");
     }
 
     private static IReadOnlyList<OperationParameterDescriptor> BuildOutputSchema(JsonElement root, JsonElement operation)
     {
-        foreach (var response in operation.GetProperty("responses").EnumerateObject().OrderBy(static item => item.Name, StringComparer.Ordinal))
-            if (response.Name[0] == '2' && TryGetContentSchema(response.Value, "content", out var schema))
+        foreach (var response in operation.GetProperty("responses").EnumerateObject()
+                     .Where(static response => response.Name[0] == '2')
+                     .OrderBy(static item => item.Name, StringComparer.Ordinal))
+            if (TryGetContentSchema(response.Value, "content", out var schema))
                 return [Parameter("response", "Admin API response", true, ConvertSchema(root, schema))];
         return [];
     }
@@ -147,8 +149,11 @@ internal static class AdminOperateOperationCatalog
         if (!owner.TryGetProperty(property, out var container)) return false;
         var content = property == "content" ? container : container.TryGetProperty("content", out var nested) ? nested : default;
         if (content.ValueKind != JsonValueKind.Object) return false;
-        foreach (var mediaType in content.EnumerateObject())
-            if (mediaType.Value.TryGetProperty("schema", out schema)) return true;
+        foreach (var mediaType in content.EnumerateObject().Where(static mediaType => mediaType.Value.TryGetProperty("schema", out _)))
+        {
+            schema = mediaType.Value.GetProperty("schema");
+            return true;
+        }
         return false;
     }
 
@@ -172,7 +177,10 @@ internal static class AdminOperateOperationCatalog
             Items = resolved.TryGetProperty("items", out var items) ? ConvertSchema(root, items) : null,
             Properties = resolved.TryGetProperty("properties", out var properties)
                 ? properties.EnumerateObject().ToDictionary(static property => property.Name, property => ConvertSchema(root, property.Value), StringComparer.Ordinal)
-                : new Dictionary<string, WorkflowSchemaDefinition>()
+                : new Dictionary<string, WorkflowSchemaDefinition>(),
+            RequiredProperties = resolved.TryGetProperty("required", out var required)
+                ? required.EnumerateArray().Select(static value => value.GetString()!).ToArray()
+                : []
         };
     }
 }

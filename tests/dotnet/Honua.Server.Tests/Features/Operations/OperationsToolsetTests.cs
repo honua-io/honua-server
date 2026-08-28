@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
@@ -27,6 +29,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -307,6 +310,68 @@ public sealed class OperationsToolsetTests
             .Select(static executor => executor.OperationId).ToHashSet(StringComparer.Ordinal);
 
         executorIds.Should().Contain(AdminOperateOperationCatalog.Definitions.Select(static definition => definition.OperationId));
+    }
+
+    [UnitTest]
+    public void LaneD_PublishedSchemas_PreserveNestedRequiredMembers_AndAdvertiseDryRun()
+    {
+        var descriptor = AdminOperateOperationCatalog.Descriptors.Should().ContainSingle(
+            item => item.OperationId == "admin.metadata.prevalidate").Subject;
+        var tool = new PublishedOperationTool(descriptor, "test", NullLogger.Instance);
+
+        var schema = tool.Describe().InputSchema;
+        schema.GetProperty("properties").GetProperty("dryRun").GetProperty("type").GetString()
+            .Should().Be("boolean");
+        schema.GetProperty("properties").GetProperty("dataScripts").GetProperty("items")
+            .GetProperty("required").EnumerateArray().Select(static item => item.GetString())
+            .Should().Contain("scriptId");
+    }
+
+    [UnitTest]
+    public async Task LaneD_Executor_WritesAotSafeBody_WithoutRouteOrAbsentOptionalParameters()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.OK, "{\"ok\":true}");
+        var executor = BuildAdminExecutor("admin.metadata.coordinated-releases.rollback", handler);
+        var request = new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["operationId"] = "operation-1",
+                ["reason"] = null,
+                ["force"] = "true"
+            }
+        };
+
+        var handle = await executor.SubmitAsync(request, new OperationPolicyContext(), CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handler.RequestUri!.AbsolutePath.Should().EndWith("/operations/operation-1/rollback");
+        handler.Headers!.GetValues("X-API-Key").Should().Equal("secret");
+        handler.Headers.GetValues("X-Honua-Tenant").Should().Equal("tenant-a");
+        using var body = JsonDocument.Parse(handler.Body!);
+        body.RootElement.EnumerateObject().Select(static property => property.Name)
+            .Should().BeEquivalentTo("force");
+        body.RootElement.GetProperty("force").GetBoolean().Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task LaneD_Executor_MapsExpectedAdminFailureToStructuredHandle()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.BadRequest, "{\"detail\":\"invalid scope\"}");
+        var executor = BuildAdminExecutor("admin.cache.invalidate", handler);
+        var request = new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["scope"] = "invalid" }
+        };
+
+        var handle = await executor.SubmitAsync(request, new OperationPolicyContext(), CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Reason.Should().Contain("HTTP 400");
+        handle.Result!.Details.Should().Contain("statusCode", "400")
+            .And.Contain("response", "{\"detail\":\"invalid scope\"}");
     }
 
     [UnitTest]
@@ -767,6 +832,22 @@ public sealed class OperationsToolsetTests
             notifications);
     }
 
+    private static AdminOperateOperationExecutor BuildAdminExecutor(string operationId, HttpMessageHandler handler)
+    {
+        var definition = AdminOperateOperationCatalog.Definitions.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(new HttpClient(handler));
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("localhost");
+        context.Request.Headers["X-API-Key"] = "secret";
+        context.Request.Headers["X-Honua-Tenant"] = "tenant-a";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(context);
+        return new AdminOperateOperationExecutor(definition, factory, accessor, TimeProvider.System);
+    }
+
     private static OperationDispatcher BuildDispatcher(
         IOperationExecutor executor,
         IOperationPolicyDecisionPoint policy,
@@ -983,6 +1064,30 @@ public sealed class OperationsToolsetTests
             }
 
             return Task.FromResult<string?>($"audit-test-{Guid.NewGuid():N}");
+        }
+    }
+
+    private sealed class CapturingHandler(HttpStatusCode statusCode, string responseBody) : HttpMessageHandler
+    {
+        public Uri? RequestUri { get; private set; }
+
+        public string? Body { get; private set; }
+
+        public HttpRequestHeaders? Headers { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestUri = request.RequestUri;
+            Headers = request.Headers;
+            Body = request.Content is null
+                ? null
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(responseBody, System.Text.Encoding.UTF8, "application/json")
+            };
         }
     }
 }
