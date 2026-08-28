@@ -912,6 +912,7 @@ jobs:
       - name: Validate merge-train recovery and landing fixtures
         run: |
           scripts/ci/merge-train/fixtures/validate-merge-train.sh
+          scripts/ci/merge-train/fixtures/validate-review-admission.sh
           scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
           scripts/ci/merge-train/fixtures/validate-leg-timeout-flake.sh
           scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh

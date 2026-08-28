@@ -378,14 +378,15 @@ train_refresh_review_gate() {
     TRAIN_REVIEW_CATCHUP_NEEDED=1
   fi
 
-  # Feed ourselves: when admission is blocked only on a missing review, the
-  # train dispatches the bounded catch-up pass (#3562) instead of waiting for a
+  # Feed ourselves when admission has no review evidence: the train dispatches
+  # the bounded catch-up pass (#3562) instead of waiting for a
   # schedule GitHub does not reliably fire (claude-review.yml has never had a
   # schedule-event run; merge-train's own cron fires at ~a third of nominal).
   # The pass carries its own per-head dedup and selection caps. One dispatch per
-  # controller run; failure is non-fatal -- the courtesy window simply expires.
+  # controller run; failure is non-fatal because review trails the merge.
   if [[ -n "${TRAIN_REVIEW_CATCHUP_NEEDED:-}" \
-        && -z "${TRAIN_REVIEW_CATCHUP_DISPATCHED:-}" && "${TRAIN_APPLY:-0}" == "1" ]]; then
+        && -z "${TRAIN_REVIEW_CATCHUP_DISPATCHED:-}" && "${TRAIN_APPLY:-0}" == "1" \
+        && "${TRAIN_REVIEW_CATCHUP_DISPATCH_DISABLED:-0}" != "1" ]]; then
     TRAIN_REVIEW_CATCHUP_DISPATCHED=1
     # >/dev/null is LOAD-BEARING: `gh workflow run` prints the run URL on
     # STDOUT, and this dispatch executes inside the selection path whose stdout
@@ -560,7 +561,12 @@ train_select() {
 # Exact same predicate as selection, bounded to one result for self-chaining.
 train_has_selectable_pr() {
   local count
-  count="$(MAX_BATCH=1 train_select | jq -s 'length')" || return 1
+  # This is a readiness probe, not a selection controller. It runs in a command
+  # substitution (and, in the workflow, a later step), so dispatch markers set
+  # here cannot deduplicate against the selection that precedes it. Suppress
+  # catch-up dispatches explicitly while preserving the exact admission
+  # predicate and all read-only checks.
+  count="$(TRAIN_REVIEW_CATCHUP_DISPATCH_DISABLED=1 MAX_BATCH=1 train_select | jq -s 'length')" || return 1
   [[ "${count}" -gt 0 ]]
 }
 
