@@ -194,7 +194,7 @@ The 2026.1 install topology is deliberate and applies to every deployment shape:
 | Queued imports | Development/Test fall back to an in-process queue (non-durable). Outside those environments the import routes refuse with `503`. |
 | Multi-replica coordination | Not available. Cross-replica cache invalidation, feature-change event durability, and shared streaming fan-out all degrade to node-local behaviour, so run **one** server instance. |
 
-Nothing in that list fails silently: every affected surface refuses with a typed error instead of accepting work it cannot finish.
+Every surface in that list refuses with a typed error instead of accepting work it cannot finish, with one known exception: publishing a workflow package to a `Schedule` target reports success while silently skipping definition persistence and run creation, because the stores it needs are absent. Treat workflow authoring as unavailable on a no-Redis install rather than relying on that response.
 
 ### The typed refusal
 
