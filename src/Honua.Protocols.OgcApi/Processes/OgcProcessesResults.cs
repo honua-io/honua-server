@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Geoprocessing;
 using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Processes.Models;
 using Honua.ServiceDefaults;
@@ -42,11 +44,37 @@ internal static class OgcProcessesResults
             $"Job '{jobId}' does not exist.",
             "http://www.opengis.net/def/exceptions/ogcapi-processes-1/1.0/no-such-job");
 
-    public static IResult StoreUnavailable()
-        => Error(
-            StatusCodes.Status503ServiceUnavailable,
-            "Service unavailable",
-            "Job operations require Redis-backed durable storage.");
+    /// <summary>
+    /// The canonical typed refusal for a job operation attempted on a server whose durable job
+    /// store was never composed (honua-release#202). Redis is optional for a local install, so
+    /// this path must be machine-readable rather than a bare 503: the payload names the missing
+    /// dependency, the capability id it disables, and the remediation. It is emitted up front —
+    /// a job is never accepted and then left un-drainable.
+    /// </summary>
+    /// <param name="exception">
+    /// The originating store-unavailable exception, when the caller has one. Adapters that reuse
+    /// the exception for a different missing dependency carry no receipt, so the generic
+    /// durable-job-store receipt is used only when the exception omits one.
+    /// </param>
+    public static IResult StoreUnavailable(GeoprocessingStoreUnavailableException? exception = null)
+        => Results.Json(
+            new OgcProcessError
+            {
+                Type = CapabilityUnavailableCodes.ProblemType,
+                Title = CapabilityUnavailableCodes.Title,
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Detail = exception?.HasDependencyReceipt == true
+                    ? exception.Message
+                    : CapabilityUnavailableCodes.DurableJobStoreDetail,
+                Code = CapabilityUnavailableCodes.ErrorCode,
+                Capability = exception?.CapabilityId ?? CapabilityUnavailableCodes.DurableJobsCapability,
+                MissingDependency = exception?.MissingDependency ?? CapabilityUnavailableCodes.RedisDependency,
+                Remediation = exception?.Remediation ?? CapabilityUnavailableCodes.RedisRemediation,
+                RemediationRef = exception?.RemediationRef ?? CapabilityUnavailableCodes.RedisRemediationRef,
+            },
+            OgcProcessesJsonContext.Default.OgcProcessError,
+            MediaTypes.Json,
+            StatusCodes.Status503ServiceUnavailable);
 
     public static IResult Dismissed(
         ExecutionJobRecord job,

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 
 namespace Honua.Geoprocessing;
 
@@ -176,16 +177,47 @@ internal sealed class GeoprocessingValidationException : Exception
 internal sealed class GeoprocessingStoreUnavailableException : Exception
 {
     public GeoprocessingStoreUnavailableException()
-        : base("Job operations require Redis-backed durable storage. " +
-               "Ensure a valid Redis connection is configured.")
-    { }
+        : base(CapabilityUnavailableCodes.DurableJobStoreDetail)
+    {
+        MissingDependency = CapabilityUnavailableCodes.RedisDependency;
+        CapabilityId = CapabilityUnavailableCodes.DurableJobsCapability;
+        Remediation = CapabilityUnavailableCodes.RedisRemediation;
+        RemediationRef = CapabilityUnavailableCodes.RedisRemediationRef;
+    }
 
     /// <summary>
     /// Creates the exception with a custom message for adapters that surface
     /// other unavailable upstream dependencies (e.g. geocoding providers)
-    /// through the same retryable <c>unavailable</c> error channel.
+    /// through the same retryable <c>unavailable</c> error channel. Such callers
+    /// carry no dependency identifier, so the structured members stay null and
+    /// adapters fall back to the plain message.
     /// </summary>
     public GeoprocessingStoreUnavailableException(string message) : base(message) { }
+
+    /// <summary>
+    /// Identifier of the infrastructure dependency that was not composed (for example
+    /// <c>redis</c>), or <see langword="null"/> when the refusal names no single dependency.
+    /// </summary>
+    public string? MissingDependency { get; }
+
+    /// <summary>
+    /// The capability-manifest capability id this refusal disables (for example
+    /// <c>jobs.runner</c>), so a client can join the refusal to
+    /// <c>GET /api/v1/capabilities/manifest</c>.
+    /// </summary>
+    public string? CapabilityId { get; }
+
+    /// <summary>Operator-facing remediation sentence, when one is known.</summary>
+    public string? Remediation { get; }
+
+    /// <summary>Documentation reference for the remediation, when one is known.</summary>
+    public string? RemediationRef { get; }
+
+    /// <summary>
+    /// Whether this instance carries the structured capability-unavailable receipt
+    /// (dependency + capability + remediation) rather than only a message.
+    /// </summary>
+    public bool HasDependencyReceipt => MissingDependency is not null;
 }
 
 /// <summary>

@@ -153,6 +153,9 @@ internal static class McpErrorMapper
             }
         },
 
+        // honua-release#202: when the refusal names a dependency the install never composed
+        // (Redis is optional; PostGIS is not), carry the machine-readable receipt and mark it
+        // NOT retryable — retrying cannot help until an operator changes the deployment.
         GeoprocessingStoreUnavailableException storeEx => new McpJsonRpcError
         {
             Code = JsonRpcServerError,
@@ -160,7 +163,11 @@ internal static class McpErrorMapper
             Data = new McpErrorData
             {
                 Code = Codes.Unavailable,
-                Retryable = true
+                Retryable = !storeEx.HasDependencyReceipt,
+                MissingDependency = storeEx.MissingDependency,
+                Capability = storeEx.CapabilityId,
+                Remediation = storeEx.Remediation,
+                RemediationRef = storeEx.RemediationRef
             }
         },
 

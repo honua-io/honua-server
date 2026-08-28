@@ -9,6 +9,8 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using FluentAssertions;
@@ -454,6 +456,87 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         {
             await legacyFixture.DisposeAsync();
             await derivedFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithoutDurableJobStore_ReportsJobsRunnerDependencyUnavailable()
+    {
+        // honua-release#202: Redis is optional for a local install. A compute backend is always
+        // registered, so `supported` alone over-claims — without the Redis-backed durable job
+        // store nothing can be submitted. The manifest must say so with a machine-readable
+        // reason code rather than advertising jobs.runner as available while every submission
+        // is refused. The WebAppFixture runs without Redis, so no IExecutionJobStore exists.
+        using var response = await _adminClient.GetAsync("/api/v1/capabilities/manifest");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var root = document.RootElement;
+
+        var jobsRunner = GetCapability(root, "jobs.runner");
+        jobsRunner.GetProperty("supported").GetBoolean().Should().BeTrue(
+            "the capability is implemented and a compute backend is registered");
+        jobsRunner.GetProperty("available").GetBoolean().Should().BeFalse(
+            "no durable job store is composed, so every submission is refused");
+        jobsRunner.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+        jobsRunner.GetProperty("messageKey").GetString()
+            .Should().Be($"capabilities.jobs.runner.{CapabilityUnavailableCodes.ErrorCode}");
+
+        root.GetProperty("limits").GetProperty("job").GetProperty("durableJobStoreAvailable")
+            .GetBoolean().Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithoutDurableJobStore_ReportsDependencyReasonEvenForAnonymousCaller()
+    {
+        // A missing infrastructure dependency is a property of the deployment, not of who is
+        // asking. An anonymous probe of a Redis-less install must not read `insufficient-policy`
+        // (which would suggest the capability returns once you authenticate).
+        using var response = await _anonymousClient.GetAsync("/api/v1/capabilities/manifest");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+
+        var jobsRunner = GetCapability(document.RootElement, "jobs.runner");
+        jobsRunner.GetProperty("available").GetBoolean().Should().BeFalse();
+        jobsRunner.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithDurableJobStore_ReportsJobsRunnerAvailable()
+    {
+        // Positive control: the degraded reading is caused by the absent store, not pinned on.
+        // Re-adding a durable job store (what configuring Redis does in production) restores the
+        // available claim, so the manifest tracks the deployment instead of a fixed answer.
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(static services =>
+                services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore()));
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var root = document.RootElement;
+
+            var jobsRunner = GetCapability(root, "jobs.runner");
+            jobsRunner.GetProperty("available").GetBoolean().Should().BeTrue();
+            jobsRunner.TryGetProperty("reasonCode", out var reasonCode).Should().BeFalse(
+                "an available capability carries no reason code");
+            _ = reasonCode;
+
+            root.GetProperty("limits").GetProperty("job").GetProperty("durableJobStoreAvailable")
+                .GetBoolean().Should().BeTrue();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
         }
     }
 

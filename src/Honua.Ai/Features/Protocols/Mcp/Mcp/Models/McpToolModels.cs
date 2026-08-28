@@ -918,6 +918,30 @@ internal sealed class McpToolErrorOutput
     [JsonPropertyName("retryable")]
     public bool? Retryable { get; set; }
 
+    /// <summary>
+    /// Identifier of the infrastructure dependency the install never composed (for example
+    /// <c>redis</c>) when this is a capability-unavailable refusal (honua-release#202). Present
+    /// only on that refusal; an agent can branch on it to stop retrying and report what an
+    /// operator must change.
+    /// </summary>
+    [JsonPropertyName("missingDependency")]
+    public string? MissingDependency { get; set; }
+
+    /// <summary>
+    /// Capability-manifest id the missing dependency disables (for example <c>jobs.runner</c>),
+    /// joinable to <c>GET /api/v1/capabilities/manifest</c>.
+    /// </summary>
+    [JsonPropertyName("capability")]
+    public string? Capability { get; set; }
+
+    /// <summary>Operator-facing remediation sentence for a capability-unavailable refusal.</summary>
+    [JsonPropertyName("remediation")]
+    public string? Remediation { get; set; }
+
+    /// <summary>Documentation reference for <see cref="Remediation"/>.</summary>
+    [JsonPropertyName("remediationRef")]
+    public string? RemediationRef { get; set; }
+
     [JsonPropertyName("violations")]
     public IReadOnlyList<McpValidationViolation>? Violations { get; set; }
 

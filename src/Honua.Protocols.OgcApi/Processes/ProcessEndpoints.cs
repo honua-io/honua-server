@@ -574,10 +574,10 @@ internal static class ProcessEndpoints
                 "Invalid analysis plan",
                 validationEx.Message);
         }
-        catch (GeoprocessingStoreUnavailableException)
+        catch (GeoprocessingStoreUnavailableException storeEx)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
-            return OgcProcessesResults.StoreUnavailable();
+            return OgcProcessesResults.StoreUnavailable(storeEx);
         }
         catch (GeoprocessingAdmissionException admissionEx)
         {

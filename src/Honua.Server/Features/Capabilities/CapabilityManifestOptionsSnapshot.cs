@@ -4,6 +4,7 @@
 using Honua.Core.Configuration;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.ControlPlane;
 using Honua.Import.FileImport;
 using Honua.Infrastructure.Authentication;
@@ -40,7 +41,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<CapabilityFlagOptions> capabilityFlagOptions,
         IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions,
         DeploymentCapabilityProfile deploymentProfile,
-        DeploymentIdentity deploymentIdentity)
+        DeploymentIdentity deploymentIdentity,
+        IExecutionJobStore? executionJobStore = null)
     {
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
@@ -69,6 +71,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         Rbac = rbacOptions.Value;
         ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
+        DurableJobStoreAvailable = executionJobStore is not null;
         DeploymentIdentity = deploymentIdentity;
         DeploymentProfile = new CapabilityManifestDeploymentProfile
         {
@@ -112,6 +115,22 @@ internal sealed class CapabilityManifestOptionsSnapshot
     /// <c>Capabilities:ManifestFromRegistry</c> switch is turned on.
     /// </summary>
     public bool ManifestFromRegistry { get; }
+
+    /// <summary>
+    /// Whether the durable (Redis-backed) execution job store was composed at startup
+    /// (honua-release#202). Redis is optional for a local install; when it is absent
+    /// <c>IExecutionJobStore</c> is never registered, no worker loop is hosted, and every
+    /// durable job/workflow operation is refused. The manifest must say so rather than
+    /// advertising <c>jobs.runner</c> as available.
+    /// </summary>
+    /// <remarks>
+    /// Registration is decided once at composition time (see
+    /// <c>GeoprocessingServiceCollectionExtensions.AddGeoprocessing</c>), so capturing it on
+    /// this snapshot is exact for the process lifetime rather than a cached approximation.
+    /// A later Redis <em>outage</em> is a different, transient condition reported by the Redis
+    /// health check, not by this flag.
+    /// </remarks>
+    public bool DurableJobStoreAvailable { get; }
 
     /// <summary>The immutable deployment-profile selection reported by the manifest.</summary>
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }

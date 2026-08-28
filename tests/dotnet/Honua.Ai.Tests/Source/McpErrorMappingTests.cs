@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.TestKit.Attributes;
@@ -106,13 +107,59 @@ public sealed class McpErrorMappingTests
     }
 
     [UnitTest]
-    public void StoreUnavailableException_MapsToUnavailableWithRetryableFlag()
+    public void StoreUnavailableException_WithDependencyReceipt_MapsToUnavailableWithMissingDependency()
     {
+        // honua-release#202: Redis is optional for a local install, so an absent durable job
+        // store is a deployment fact, not a blip. The envelope must name the missing dependency,
+        // the capability it disables, and the remediation — and must NOT be marked retryable,
+        // because retrying cannot help until an operator changes the install.
         var error = McpErrorMapper.Map(new GeoprocessingStoreUnavailableException());
 
         error.Code.Should().Be(JsonRpcServerError);
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+        error.Data.Retryable.Should().BeFalse();
+        error.Data.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        error.Data.Capability.Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
+        error.Data.Remediation.Should().Be(CapabilityUnavailableCodes.RedisRemediation);
+        error.Data.RemediationRef.Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+    }
+
+    [UnitTest]
+    public void StoreUnavailableException_ToolResultEnvelope_CarriesCapabilityUnavailableReceipt()
+    {
+        // MCP tools report failures as an isError result with a structured envelope rather than
+        // a JSON-RPC error, so the receipt has to survive that projection too — otherwise the
+        // agent-facing surface is the one place that loses it (honua-release#202).
+        var result = Honua.Ai.Protocols.Mcp.Tools.McpToolHelpers.ErrorResult(
+            new GeoprocessingStoreUnavailableException());
+
+        result.IsError.Should().BeTrue();
+        var structured = result.StructuredContent!.Value;
+        structured.GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.Unavailable);
+        structured.GetProperty("retryable").GetBoolean().Should().BeFalse();
+        structured.GetProperty("missingDependency").GetString()
+            .Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        structured.GetProperty("capability").GetString()
+            .Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
+        structured.GetProperty("remediationRef").GetString()
+            .Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+        structured.GetProperty("error").GetProperty("kind").GetString()
+            .Should().Be("PreconditionFailed", "nothing executed, so this is not an execution failure");
+    }
+
+    [UnitTest]
+    public void StoreUnavailableException_WithoutDependencyReceipt_StaysRetryableAndCarriesNoDependency()
+    {
+        // Other adapters reuse this exception as a generic "upstream unavailable" channel
+        // (geocoding providers, style catalog). Those carry no install-level receipt, so they
+        // keep the retryable semantics and advertise no missing dependency.
+        var error = McpErrorMapper.Map(
+            new GeoprocessingStoreUnavailableException("The geocoding provider is unavailable."));
+
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
         error.Data.Retryable.Should().BeTrue();
+        error.Data.MissingDependency.Should().BeNull();
+        error.Data.Capability.Should().BeNull();
     }
 
     [UnitTest]

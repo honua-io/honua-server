@@ -283,6 +283,15 @@ internal sealed record CapabilityManifestJobLimits
     public required bool SupportsCancellation { get; init; }
 
     public required bool SupportsProgressPolling { get; init; }
+
+    /// <summary>
+    /// Whether the durable (Redis-backed) job store was composed at startup
+    /// (honua-release#202). A compute backend is always registered, so the backend count alone
+    /// does not tell a client whether a job can be submitted: when this is <c>false</c> the
+    /// install has no Redis, no worker loop is running, and every submission is refused with a
+    /// <c>dependency-unavailable</c> capability-unavailable receipt.
+    /// </summary>
+    public required bool DurableJobStoreAvailable { get; init; }
 }
 
 internal sealed record CapabilityManifestUploadLimits

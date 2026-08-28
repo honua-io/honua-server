@@ -1,0 +1,39 @@
+# Redis-optional local install variant.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.no-redis.yml up -d
+#
+# Composes the root quickstart stack WITHOUT Redis: the running services are
+# `postgres` (PostGIS) and `honua` only, and `ConnectionStrings__Redis` is
+# removed from the server environment so no durable job/workflow substrate is
+# wired at boot.
+#
+# Install topology for 2026.1 (see docs/guides/deploy/docker-compose.md ->
+# "Redis is optional; PostGIS is not"):
+#   * PostGIS is MANDATORY. The server connects to `DefaultConnection` on boot
+#     and runs migrations; there is no alternative metadata store.
+#   * Redis is OPTIONAL. Without it the multi-layer cache falls back to the
+#     in-memory provider and every read path still serves correctly, but the
+#     durable job/workflow substrate is not composed, so geoprocessing job
+#     submission is refused with a typed capability-unavailable error instead of
+#     being queued and silently never run.
+#
+# To re-add Redis later, drop the `-f docker-compose.no-redis.yml` argument and
+# `docker compose up -d` again. PostGIS-backed metadata state is untouched by
+# the change; only the Redis-backed job/cache surface returns.
+services:
+  # Remove the Redis service entirely from the composed stack.
+  redis: !reset null
+
+  honua:
+    # The root compose gates startup on a healthy `redis`; without the service
+    # that condition can never be satisfied, so reduce the gate to PostGIS.
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+    environment:
+      # Unset rather than blank: an empty connection string is still a
+      # configured key, and the bootstrap path keys off presence.
+      ConnectionStrings__Redis: !reset null
+
+volumes:
+  redis_data: !reset null

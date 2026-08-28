@@ -114,7 +114,7 @@ printf '%s {\n  reverse_proxy 127.0.0.1:8080\n}\n' "$HONUA_HOST" | sudo tee /etc
 docker compose up -d
 ```
 
-For headless deployments, keep Redis unless every durable control-plane feature is intentionally disabled. To add Console in production, use a published Console image tag that is compatible with the server ops-health contract and add this service:
+For headless deployments, keep Redis unless every durable control-plane feature is intentionally disabled — see [Redis is optional; PostGIS is not](#redis-is-optional-postgis-is-not) for exactly what you give up. To add Console in production, use a published Console image tag that is compatible with the server ops-health contract and add this service:
 
 ```yaml
   console:
@@ -176,12 +176,81 @@ workflow-dispatch input once a compatible Console image tag is published. The
 smoke starts Redis, Honua, and Console, creates a Redis-backed operation proposal
 through the platform-release converge API, and verifies the Operate routes.
 
+## Redis is optional; PostGIS is not
+
+The 2026.1 install topology is deliberate and applies to every deployment shape:
+
+- **PostGIS is mandatory.** The server connects to `ConnectionStrings__DefaultConnection` on boot and runs its migrations there. All catalog, service/layer, style, and metadata state lives in PostGIS. There is no alternative metadata store, and the server will not start without one.
+- **Redis is optional.** A single-node install with no `ConnectionStrings__Redis` starts cleanly, reports `Ready` on `/healthz/ready`, and serves the whole read path — connections, imports, service/layer publication, styles, tiles, and rendering.
+
+### What you lose without Redis
+
+| Subsystem | Without Redis |
+|---|---|
+| Multi-layer cache | Falls back to the in-memory provider. Reads still serve correctly; the cache is process-local and not shared across replicas. |
+| Durable geoprocessing jobs (GPServer, OGC API Processes, WPS, MCP, gRPC) | **Unavailable.** No durable job store is composed and no worker loop runs, so submission is refused up front. |
+| Workflows / orchestration | **Unavailable.** The orchestration engine is not registered; workflow definitions and runs are not persisted. |
+| Operation proposals and the Console approval flow | **Unavailable.** Proposal state has no PostGIS path — it is Redis-only. |
+| Queued imports | Development/Test fall back to an in-process queue (non-durable). Outside those environments the import routes refuse with `503`. |
+| Multi-replica coordination | Not available. Cross-replica cache invalidation, feature-change event durability, and shared streaming fan-out all degrade to node-local behaviour, so run **one** server instance. |
+
+Nothing in that list fails silently: every affected surface refuses with a typed error instead of accepting work it cannot finish.
+
+### The typed refusal
+
+Refusals on a Redis-less install carry a machine-readable *capability-unavailable receipt* so an agent or script can branch on it without parsing prose. On the problem+json surfaces (OGC API Processes, admin API) it looks like this:
+
+```json
+{
+  "type": "https://honua.io/problems/capability-unavailable",
+  "title": "Capability unavailable",
+  "status": 503,
+  "detail": "Durable geoprocessing jobs and workflows require a Redis-backed job store. This server was started without a Redis connection, so the request is refused up front instead of being queued and never run.",
+  "code": "dependency-unavailable",
+  "capability": "jobs.runner",
+  "missingDependency": "redis",
+  "remediation": "Set ConnectionStrings__Redis to a reachable Redis instance and restart the server. ...",
+  "remediationRef": "https://docs.honua.io/guides/deploy/docker-compose#redis-is-optional-postgis-is-not"
+}
+```
+
+The same receipt is projected onto the other envelopes: GeoServices returns its usual `{"error":{"code":503,…}}` body with `code:`, `missingDependency:`, `capability:`, `remediation:`, and `remediationRef:` entries in `error.details[]`, and MCP returns `isError: true` with `code: "unavailable"`, `retryable: false`, and the same four fields in `structuredContent`.
+
+`retryable` is `false` and `capability` is omitted where no manifest capability covers the refused surface — today that is the proposal/approval control plane, which otherwise carries the identical receipt.
+
+The capabilities manifest agrees with the refusal rather than over-claiming. `GET /api/v1/capabilities/manifest` reports:
+
+```json
+{ "id": "jobs.runner", "category": "jobs", "supported": true, "available": false,
+  "reasonCode": "dependency-unavailable", "messageKey": "capabilities.jobs.runner.dependency-unavailable" }
+```
+
+and `limits.job.durableJobStoreAvailable` is `false`. The manifest is computed per request and served `no-store`, so no stale "available" claim survives.
+
+### Running the no-Redis variant
+
+The repository ships an override that composes the root quickstart stack as PostGIS + Honua Server only, with `ConnectionStrings__Redis` unset:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.no-redis.yml up -d
+```
+
+### Adding Redis later
+
+Drop the override and start again:
+
+```bash
+docker compose up -d
+```
+
+Redis holds only job, workflow, proposal, and cache state, none of which is durable across an install that never had it — so nothing is lost by adding it. PostGIS-backed metadata state is untouched by the change, and durable jobs and workflows become available on the next boot.
+
 ## Troubleshoot
 
 - **Admin calls return 401** — `HONUA_ADMIN_PASSWORD` was not passed into the container; check your production compose file and secret source.
 - **Startup fails with "Master key must be at least 32 characters"** — lengthen `Security__ConnectionEncryption__MasterKey`.
 - **Browser requests blocked by CORS** — the permissive dev CORS policy is force-disabled inside containers; set `Cors__AllowedOrigins__0` to your app's exact origin.
-- **`503` on OGC Processes, import job routes, or proposal flows** — those need Redis; check the `redis` container health and `ConnectionStrings__Redis`.
+- **`503` on OGC Processes, import job routes, or proposal flows** — those need Redis; check the `redis` container health and `ConnectionStrings__Redis`. A `503` whose body carries `"code": "dependency-unavailable"` means the server was started with no Redis at all — see [Redis is optional; PostGIS is not](#redis-is-optional-postgis-is-not).
 - **Console shows a missing server binding** — set `HONUA_SERVER_BASE_URL` to the server origin reachable from the Console container and pass `HONUA_ADMIN_API_KEY`.
 - **Container restarts in a loop** — check `docker compose logs honua` for migration failures; the server applies database migrations at startup.
 
