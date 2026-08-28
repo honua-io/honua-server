@@ -16,6 +16,8 @@ namespace Honua.Core.Features.Operations.Services;
 /// </summary>
 public sealed class OperationDispatcher : IOperationInvoker
 {
+    private static readonly TimeSpan PostActuationPersistenceTimeout = TimeSpan.FromSeconds(10);
+
     private readonly IOperationCatalog _catalog;
     private readonly Dictionary<string, IOperationExecutor> _executors;
     private readonly IOperationPolicyDecisionPoint _policy;
@@ -332,6 +334,7 @@ public sealed class OperationDispatcher : IOperationInvoker
             PolicyDecision = PolicyDecisionKind.Allow,
         };
         string? terminalAuditId;
+        using var terminalAuditTimeout = new CancellationTokenSource(PostActuationPersistenceTimeout);
         try
         {
             terminalAuditId = await WriteAuditAsync(
@@ -339,12 +342,16 @@ public sealed class OperationDispatcher : IOperationInvoker
                     invocationContext,
                     "operation.completed",
                     completed.Status == OperationHandleStatus.Completed ? AuditOutcome.Success : AuditOutcome.Failure,
-                    cancellationToken)
+                    terminalAuditTimeout.Token)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            throw;
+            terminalAuditId = null;
+            completed = completed with
+            {
+                Reason = "Actuation returned, but terminal audit evidence timed out.",
+            };
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -364,13 +371,19 @@ public sealed class OperationDispatcher : IOperationInvoker
             };
         }
 
+        using var terminalPersistenceTimeout = new CancellationTokenSource(PostActuationPersistenceTimeout);
         try
         {
-            return await PersistAsync(completed, cancellationToken).ConfigureAwait(false);
+            return await PersistAsync(completed, terminalPersistenceTimeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            throw;
+            return completed with
+            {
+                Status = OperationHandleStatus.Indeterminate,
+                UpdatedAt = _clock.GetUtcNow(),
+                Reason = "Actuation returned, but terminal envelope persistence timed out.",
+            };
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

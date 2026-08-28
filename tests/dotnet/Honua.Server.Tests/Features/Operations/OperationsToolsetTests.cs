@@ -3,6 +3,8 @@
 
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -279,6 +281,32 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task SubmitAsync_RequestCanceledAfterActuation_PersistsTerminalEnvelope()
+    {
+        using var requestCancellation = new CancellationTokenSource();
+        var store = new VolatileOperationInstanceStore();
+        var audit = new CancellationCheckingAuditLog();
+        var executor = new CancelingAfterActuationExecutor(requestCancellation);
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            instanceStore: store,
+            auditLog: audit);
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext(),
+            requestCancellation.Token);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        (await store.GetAsync(handle.OperationInstanceId)).Should().BeEquivalentTo(handle);
+        audit.CanceledWriteCount.Should().Be(0,
+            "terminal evidence must use a bounded token independent of the disconnected request");
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_With_Deny_Policy_ShortCircuits_Executor_And_Returns_Denied_Handle()
     {
         var publishing = Substitute.For<ILayerPublishingService>();
@@ -540,6 +568,56 @@ public sealed class OperationsToolsetTests
             Descriptor = descriptor;
             Context = context;
             return Task.FromResult(decision);
+        }
+    }
+
+    private sealed class CancelingAfterActuationExecutor(CancellationTokenSource requestCancellation)
+        : IOperationExecutor
+    {
+        public string OperationId => "service.publish";
+
+        public Task<OperationValidation> ValidateAsync(
+            OperationRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            requestCancellation.Cancel();
+            var now = DateTimeOffset.UtcNow;
+            return Task.FromResult(new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId!,
+                OperationId = OperationId,
+                CorrelationId = context.CorrelationId!,
+                Status = OperationHandleStatus.Completed,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        public Task<OperationStatus> GetStatusAsync(
+            OperationHandle handle,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class CancellationCheckingAuditLog : IAuditLog
+    {
+        public int CanceledWriteCount { get; private set; }
+
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                CanceledWriteCount++;
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            return Task.FromResult<string?>($"audit-test-{Guid.NewGuid():N}");
         }
     }
 }
