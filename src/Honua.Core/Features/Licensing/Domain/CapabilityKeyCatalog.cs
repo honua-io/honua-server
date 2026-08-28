@@ -66,6 +66,9 @@ public static class CapabilityKeyCatalog
         /// <summary>Operational health, metrics, and observability surfaces.</summary>
         public const string Ops = "Ops";
 
+        /// <summary>Deployment planning and convergence capabilities.</summary>
+        public const string Deploy = "Deploy";
+
         /// <summary>Configured external data-provider implementations.</summary>
         public const string DataProviders = "DataProviders";
 
@@ -157,6 +160,14 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Liveness/readiness health-check endpoints."),
         new("ops.observability", "Observability", Categories.Ops,
             HonuaEdition.Community, "Metrics and monitoring surfaces for operational visibility."),
+        new("ops.findings", "Operational Findings", Categories.Ops,
+            HonuaEdition.Community, "Read deterministic operational findings and propose reviewed remediation actions."),
+        new("ops.autonomy", "Operational Autonomy", Categories.Ops,
+            HonuaEdition.Community, "Evaluate configured auto-safe operational policies through the durable operation gateway."),
+
+        // Deploy
+        new("deploy.rollback", "Automatic Deployment Rollback", Categories.Deploy,
+            HonuaEdition.Community, "Automatically revert a deployment through at least one configured deploy target backend."),
 
         // Provider-neutral response formats
         new("format.geoarrow", "GeoArrow Response Format", Categories.Format,

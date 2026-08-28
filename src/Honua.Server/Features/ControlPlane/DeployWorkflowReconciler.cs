@@ -304,6 +304,20 @@ internal sealed partial class DeployWorkflowReconciler(
             return current;
         }
 
+        var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        if (!capabilities.SupportsRollback)
+        {
+            var manualAt = DateTimeOffset.UtcNow;
+            return current with
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                UpdatedAt = manualAt,
+                CompletedAt = manualAt,
+                CurrentPhase = $"Automatic rollback is unsupported by backend '{backend.BackendName}' and requires manual intervention. {rollbackReason}",
+                ErrorMessage = $"Automatic rollback is unsupported by backend '{backend.BackendName}': {rollbackReason}"
+            };
+        }
+
         var rollbackObservation = await backend.RollbackAsync(current, cancellationToken).ConfigureAwait(false);
         var updatedAt = DateTimeOffset.UtcNow;
 

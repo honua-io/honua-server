@@ -160,6 +160,24 @@ for the route-time guardrail contract.
 
 Use "rollback" precisely. There are two families.
 
+The public capability keys make the distinction machine-readable:
+`ops.findings` is available when the findings endpoint is enabled,
+`ops.autonomy` is available only with the durable control-plane store, and
+`deploy.rollback` is available only when at least one configured target backend
+advertises a real rollback implementation. The `deploy.rollback` manifest entry
+lists the supporting target IDs in its `evidence` field.
+
+| Backend family | `rollbackSupported` | What a rollback request means |
+|---|---:|---|
+| Kubernetes GitOps, AWS ECS GitOps, Azure Container Apps GitOps | `false` | Hand-off only. Honua cannot revert or observe the workload; the operation becomes `ManualInterventionRequired`. Revert the pinned revision in the GitOps repository and verify convergence out of band. |
+| Kubernetes Argo Rollouts | `true` | Honua aborts/reverts the rollout and observes the stable revision. |
+| AWS ECS direct (ALB) | `true` | Honua restores stable traffic and observes convergence. |
+| AWS Lambda alias | `true` | Honua restores the previously recorded alias version and observes it. |
+| Azure Container Apps revision | `true` | Honua restores traffic to the previous recorded revision and observes it. |
+| Azure Functions slot | `true` | Honua swaps back to the previously recorded slot state and observes it. |
+| YARP rolling replace | `true` | Honua restores the prior local revision and observes the replacement. |
+| Missing/unregistered backend or no prior revision | unavailable | No automatic rollback is claimed; plans and findings direct the operator to manual recovery. |
+
 Platform version rollback moves compute back to a known revision. During a
 deploy-API-managed rollout, `POST /api/v1/admin/deploy/operations/{operationId}/rollback`
 asks the backend to repoint traffic or aliases when the operation has the

@@ -264,6 +264,13 @@
       "description": "Track recovery time and recovery point objectives and report recovery readiness, last successful backup, and restorable point."
     },
     {
+      "key": "deploy.rollback",
+      "displayName": "Automatic Deployment Rollback",
+      "category": "Deploy",
+      "edition": "Community",
+      "description": "Automatically revert a deployment through at least one configured deploy target backend."
+    },
+    {
       "key": "editing.branch-versioning",
       "displayName": "Branch Versioning",
       "category": "Editing",
@@ -417,6 +424,20 @@
       "category": "Ops",
       "edition": "Community",
       "description": "Liveness/readiness health-check endpoints."
+    },
+    {
+      "key": "ops.autonomy",
+      "displayName": "Operational Autonomy",
+      "category": "Ops",
+      "edition": "Community",
+      "description": "Evaluate configured auto-safe operational policies through the durable operation gateway."
+    },
+    {
+      "key": "ops.findings",
+      "displayName": "Operational Findings",
+      "category": "Ops",
+      "edition": "Community",
+      "description": "Read deterministic operational findings and propose reviewed remediation actions."
     },
     {
       "key": "ops.observability",

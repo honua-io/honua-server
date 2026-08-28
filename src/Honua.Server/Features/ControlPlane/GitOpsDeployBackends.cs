@@ -919,7 +919,9 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
     public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(new DeployBackendCapabilities
         {
-            SupportsRollback = true,
+            // This adapter only hands desired state to an external GitOps controller. It cannot
+            // perform or observe a revert, so rollback is an operator action.
+            SupportsRollback = false,
             SupportsCancellation = false,
             SupportsTrafficShifting = TargetKind is DeployTargetKind.AwsEcs or DeployTargetKind.AzureContainerApps or DeployTargetKind.AwsLambda or DeployTargetKind.AzureFunctions,
             RequiresOutOfBandMigrations = TargetKind is DeployTargetKind.AwsLambda or DeployTargetKind.AzureFunctions,
@@ -958,6 +960,7 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
 
         return new DeployPlan
         {
+            RollbackSupported = capabilities.SupportsRollback,
             IsReadyToSubmit = blockingReasons.Count == 0 && !spec.RequiresApproval,
             RequiresApproval = spec.RequiresApproval,
             RequiresOutOfBandMigrations = spec.RequiresOutOfBandMigrations,

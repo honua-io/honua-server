@@ -87,6 +87,7 @@ internal sealed partial class DeployWorkflowService
         var plan = backend == null
             ? new DeployPlan
             {
+                RollbackSupported = false,
                 IsReadyToSubmit = false,
                 RequiresApproval = requiresApproval,
                 RequiresOutOfBandMigrations = spec.RequiresOutOfBandMigrations,
@@ -97,6 +98,8 @@ internal sealed partial class DeployWorkflowService
                 Warnings = Array.Empty<string>()
             }
             : await backend.PlanAsync(spec, cancellationToken).ConfigureAwait(false);
+
+        plan = plan with { RollbackSupported = capabilities?.SupportsRollback == true };
 
         // If the backend returned its own plan, override RequiresApproval with the bridged value
         // and recompute IsReadyToSubmit — backends derive it from spec.RequiresApproval which

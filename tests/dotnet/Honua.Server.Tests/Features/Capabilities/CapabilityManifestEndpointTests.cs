@@ -240,6 +240,14 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         animation.GetProperty("entitlementKey").GetString().Should().Be("temporal.animation-api");
         animation.GetProperty("minimumEdition").GetString().Should().Be("Pro");
         GetCapability(root, "publication.metadata-release").GetProperty("available").GetBoolean().Should().BeTrue();
+        GetCapability(root, "ops.findings").GetProperty("available").GetBoolean().Should().BeTrue();
+        var autonomy = GetCapability(root, "ops.autonomy");
+        autonomy.GetProperty("available").GetBoolean().Should().BeFalse(
+            "the no-Redis test host has no durable workflow operation store");
+        autonomy.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
+        var rollback = GetCapability(root, "deploy.rollback");
+        rollback.GetProperty("available").GetBoolean().Should().BeFalse();
+        rollback.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
         root.GetProperty("limits").GetProperty("upload").GetProperty("maxUploadSizeBytes").GetInt64()
             .Should().Be(123456);
         root.GetProperty("limits").GetProperty("streaming").GetProperty("maxConcurrentSessions").GetInt32()
@@ -254,6 +262,46 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         analysis.GetProperty("minDensityCellSizeMeters").GetDouble().Should().Be(12.5);
         analysis.GetProperty("maxDensityCellSizeMeters").GetDouble().Should().Be(34567.5);
         analysis.GetProperty("maxDWithinDistanceMeters").GetDouble().Should().Be(45678.5);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithRollbackCapableAwsLambdaTarget_AdvertisesTargetEvidence()
+    {
+        var fixture = CreateManifestFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+                {
+                    configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ControlPlane:DeployTargets:0:TargetId"] = "aws-lambda-test",
+                        ["ControlPlane:DeployTargets:0:TargetKind"] = "AwsLambda",
+                        ["ControlPlane:DeployTargets:0:Backend"] = "honua-gitops-aws-lambda",
+                        ["ControlPlane:DeployTargets:0:Environment"] = "test",
+                        ["ControlPlane:DeployTargets:0:TargetName"] = "test-lambda",
+                    });
+                });
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var rollback = GetCapability(document.RootElement, "deploy.rollback");
+            rollback.GetProperty("available").GetBoolean().Should().BeTrue();
+            rollback.GetProperty("evidence").EnumerateArray()
+                .Select(item => item.GetString())
+                .Should().Equal("aws-lambda-test");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

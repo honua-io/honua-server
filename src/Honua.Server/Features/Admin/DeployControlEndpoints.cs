@@ -11,6 +11,7 @@ using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Mvc;
@@ -72,6 +73,7 @@ internal static class DeployControlEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapPost("/operations/{operationId}/rollback", HandleRollbackDeployOperation)
+            .WithCapabilityGate("deploy.rollback")
             .WithDisplayName("Rollback Deploy Operation")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<DeployOperationResponse>()
@@ -818,6 +820,7 @@ internal static class DeployControlEndpoints
         => new()
         {
             Target = MapTargetResponse(result.Spec),
+            RollbackSupported = result.Plan.RollbackSupported,
             ReadyToSubmit = result.Plan.IsReadyToSubmit,
             RequiresApproval = result.Plan.RequiresApproval,
             RequiresOutOfBandMigrations = result.Plan.RequiresOutOfBandMigrations,
