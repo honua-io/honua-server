@@ -51,6 +51,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     private readonly IOpsDatabasePressureSignal? _databasePressureSignal;
     private readonly IRuntimeTunableAdmissionGate? _admissionGate;
     private readonly IOpsHealthRollupStore? _rollupStore;
+    private readonly Func<DateTimeOffset, EvidencePosture> _evidencePosture;
 
     public OpsFindingsService(
         IOptionsMonitor<OpsFindingsOptions> options,
@@ -62,7 +63,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         IOperationGateway? gateway = null,
         IWorkflowOperationStore? workflowStore = null,
         IExecutionJobStore? jobStore = null,
-        OpsFindingsExtendedSignals? extendedSignals = null)
+        OpsFindingsExtendedSignals? extendedSignals = null,
+        Func<DateTimeOffset, EvidencePosture>? evidencePosture = null)
     {
         _options = options;
         _controlPlaneOptions = controlPlaneOptions;
@@ -76,6 +78,9 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         _databasePressureSignal = extendedSignals?.DatabasePressureSignal;
         _admissionGate = extendedSignals?.AdmissionGate;
         _rollupStore = extendedSignals?.RollupStore;
+        _evidencePosture = evidencePosture ?? (evaluatedAt => EvidencePostureFactory.Build(evaluatedAt,
+            EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.Findings,
+                EvidencePostureVocabulary.BackendKinds.Composite, "ops-findings-engine", evaluatedAt, TimeSpan.FromMinutes(2))));
     }
 
     public async Task<IReadOnlyList<OpsFinding>> EvaluateAsync(CancellationToken cancellationToken = default)
@@ -122,6 +127,24 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.NoRecommendedAction, FindingId = findingId };
         }
 
+        // Evidence integrity precedes both the deterministic auto-safe policy and gateway lookup.
+        // Re-evaluation therefore makes zero gateway/actuator calls for any incomplete source.
+        var evaluatedAt = DateTimeOffset.UtcNow;
+        var posture = _evidencePosture(evaluatedAt);
+        var requiredSources = posture.Sources
+            .Where(source => string.Equals(source.SourceId, EvidencePostureVocabulary.SourceIds.Findings, StringComparison.Ordinal))
+            .ToArray();
+        if (requiredSources.Length == 0 || requiredSources.Any(source => !EvidencePostureFactory.IsActionable(
+                EvidencePostureFactory.Validate(source, evaluatedAt))))
+        {
+            return new OpsFindingProposalResult
+            {
+                Status = OpsFindingProposalStatus.Blocked,
+                FindingId = findingId,
+                Message = "evidencePostureNotActionable",
+            };
+        }
+
         // Degraded mode: the operation gateway is only wired when the durable control-plane graph is
         // registered (which requires Redis — see Program.cs). Without it the server still evaluates
         // and serves findings, but their recommended fixes cannot be routed for approval. Report a
@@ -155,7 +178,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
                 ActionDiscriminator = action.ActionDiscriminator,
                 ActionMarkedAutoSafe = action.AutoSafe,
                 BlastRadius = Math.Max(1, action.BlastRadius),
-                EvidenceRefs = finding.EvidenceRefs,
+                EvidenceRefs = finding.EvidenceRefs.Concat(requiredSources.Select(source =>
+                    $"evidence:{source.SourceId}:{source.ObservedAt:O}:{source.Completeness}")).ToArray(),
             },
         };
 

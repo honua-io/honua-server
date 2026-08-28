@@ -784,6 +784,60 @@ public sealed class OpsFindingsServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("outage")]
+    [InlineData("neverSucceeded")]
+    [InlineData("stale")]
+    [InlineData("missingObservation")]
+    [InlineData("malformedObservation")]
+    [InlineData("futureObservation")]
+    [InlineData("partial")]
+    [InlineData("replicaCoverage")]
+    [InlineData("truncated")]
+    [InlineData("wrongBackend")]
+    [InlineData("notConfigured")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_IncompleteEvidenceMatrix_BlocksWithZeroGatewayCalls(string scenario)
+    {
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
+            .Returns([BuildDeployOperation("op-evidence", WorkflowOperationStatus.ManualInterventionRequired, "rev-1", "rev-2")]);
+        var gateway = Substitute.For<IOperationGateway>();
+        var service = CreateService(
+            workflowStore: workflowStore,
+            gateway: gateway,
+            evidencePosture: now => BuildEvidenceScenario(scenario, now));
+        var finding = (await service.EvaluateAsync()).Single(item => item.Rule == OpsFindingsService.RuleDeployManualIntervention);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.Blocked, result.Status);
+        Assert.Equal("evidencePostureNotActionable", result.Message);
+        await gateway.DidNotReceive().RouteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_CompleteFreshEvidence_PreservesFlowAndPersistsBoundedSnapshotReference()
+    {
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
+            .Returns([BuildDeployOperation("op-complete", WorkflowOperationStatus.ManualInterventionRequired, "rev-1", "rev-2")]);
+        var gateway = CreateProposalGateway(OperationClass.Deploy, "proposal-complete");
+        var service = CreateService(workflowStore: workflowStore, gateway: gateway);
+        var finding = (await service.EvaluateAsync()).Single(item => item.Rule == OpsFindingsService.RuleDeployManualIntervention);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.ProposalCreated, result.Status);
+        await gateway.Received(1).RouteAsync(
+            Arg.Is<OperationGatewayRequest>(request => request.AutonomyContext != null &&
+                request.AutonomyContext.EvidenceRefs.Any(reference =>
+                    reference.StartsWith("evidence:honua_ops_findings:", StringComparison.Ordinal) &&
+                    reference.EndsWith(":complete", StringComparison.Ordinal))),
+            Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Propose_AlertDeadLetterFinding_RoutesRedriveActionThroughGateway()
@@ -1090,7 +1144,8 @@ public sealed class OpsFindingsServiceTests
         IExecutionJobStore? jobStore = null,
         IOpsDatabasePressureSignal? databasePressureSignal = null,
         IRuntimeTunableAdmissionGate? admissionGate = null,
-        IOpsHealthRollupStore? rollupStore = null)
+        IOpsHealthRollupStore? rollupStore = null,
+        Func<DateTimeOffset, EvidencePosture>? evidencePosture = null)
         => new(
             new StaticOptionsMonitor<OpsFindingsOptions>(options ?? new OpsFindingsOptions()),
             new StaticOptionsMonitor<ControlPlaneOptions>(controlPlaneOptions ?? new ControlPlaneOptions()),
@@ -1104,7 +1159,64 @@ public sealed class OpsFindingsServiceTests
                 DatabasePressureSignal = databasePressureSignal,
                 AdmissionGate = admissionGate,
                 RollupStore = rollupStore,
-            });
+            },
+            evidencePosture: evidencePosture);
+
+    private static EvidencePosture BuildEvidenceScenario(string scenario, DateTimeOffset now)
+    {
+        var source = EvidencePostureFactory.Complete(
+            EvidencePostureVocabulary.SourceIds.Findings,
+            EvidencePostureVocabulary.BackendKinds.Composite,
+            "ops-findings-engine",
+            now,
+            TimeSpan.FromMinutes(2));
+
+        source = scenario switch
+        {
+            "outage" => Copy(source, completeness: EvidencePostureVocabulary.Completeness.Unavailable,
+                reasons: [EvidencePostureVocabulary.ReasonCodes.SourceUnavailable]),
+            "neverSucceeded" => Copy(source, clearLastSuccessfulAt: true,
+                reasons: [EvidencePostureVocabulary.ReasonCodes.NeverSucceeded]),
+            "stale" => Copy(source, observedAt: now.AddMinutes(-10), lastSuccessfulAt: now.AddMinutes(-10), validUntil: now.AddMinutes(-8)),
+            "missingObservation" => Copy(source, clearObservedAt: true),
+            "malformedObservation" => Copy(source, observedAt: now, lastSuccessfulAt: now.AddMinutes(-5)),
+            "futureObservation" => Copy(source, observedAt: now.AddHours(1), lastSuccessfulAt: now.AddHours(1)),
+            "partial" => Copy(source, completeness: EvidencePostureVocabulary.Completeness.Partial,
+                reasons: [EvidencePostureVocabulary.ReasonCodes.PartialResult]),
+            "replicaCoverage" => Copy(source, coverage: new EvidenceSourceCoverage { ObservedReplicaCount = 1, ExpectedReplicaCount = 2 }),
+            "truncated" => Copy(source, coverage: new EvidenceSourceCoverage { HasMore = true, Truncated = true }),
+            "wrongBackend" => Copy(source, backendKind: EvidencePostureVocabulary.BackendKinds.Unverified, backendId: null),
+            "notConfigured" => Copy(source, completeness: EvidencePostureVocabulary.Completeness.NotConfigured,
+                reasons: [EvidencePostureVocabulary.ReasonCodes.NotConfigured]),
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+        };
+        return EvidencePostureFactory.Build(now, source);
+    }
+
+    private static EvidenceSourceEnvelope Copy(
+        EvidenceSourceEnvelope source,
+        string? completeness = null,
+        string? backendKind = null,
+        string? backendId = "ops-findings-engine",
+        DateTimeOffset? observedAt = default,
+        DateTimeOffset? lastSuccessfulAt = default,
+        DateTimeOffset? validUntil = default,
+        IReadOnlyList<string>? reasons = null,
+        EvidenceSourceCoverage? coverage = null,
+        bool clearObservedAt = false,
+        bool clearLastSuccessfulAt = false) => new()
+    {
+        SourceId = source.SourceId,
+        BackendKind = backendKind ?? source.BackendKind,
+        BackendId = backendId,
+        ObservedAt = clearObservedAt ? null : observedAt == default ? source.ObservedAt : observedAt,
+        LastSuccessfulAt = clearLastSuccessfulAt ? null : lastSuccessfulAt == default ? source.LastSuccessfulAt : lastSuccessfulAt,
+        Completeness = completeness ?? source.Completeness,
+        ReasonCodes = reasons ?? source.ReasonCodes,
+        Coverage = coverage ?? source.Coverage,
+        MaximumAgeSeconds = source.MaximumAgeSeconds,
+        ValidUntil = validUntil == default ? source.ValidUntil : validUntil,
+    };
 
     private static DeployPreflightSnapshot BuildDeploySnapshot(
         bool hasPendingContractScripts = false,

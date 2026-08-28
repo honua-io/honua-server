@@ -8,6 +8,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
@@ -66,7 +67,10 @@ internal static class ObservabilityAlertEndpoints
         var response = new ObservabilityAlertEventPageResponse
         {
             Items = page.Items.Select(ObservabilityAlertEventResponseMapper.Map).ToArray(),
-            NextCursor = page.NextCursor
+            NextCursor = page.NextCursor,
+            EvidencePosture = McpOpsObservabilityReader.BuildEventPosture(
+                EvidencePostureVocabulary.SourceIds.AlertEvents, "alert-event-store", filter.From, filter.To,
+                page.Items.Select(item => item.OccurredAt), page.NextCursor is not null, partial: false),
         };
 
         return Results.Json(response, ObservabilityJsonContext.Default.ObservabilityAlertEventPageResponse);

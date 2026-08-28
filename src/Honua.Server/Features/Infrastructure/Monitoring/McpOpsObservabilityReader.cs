@@ -84,9 +84,12 @@ internal sealed class McpOpsObservabilityReader(
                 StringComparison.OrdinalIgnoreCase));
         }
 
+        var generatedAt = DateTimeOffset.UtcNow;
         var response = new OpsFindingsListResponse
         {
-            GeneratedAt = DateTimeOffset.UtcNow,
+            GeneratedAt = generatedAt,
+            EvidencePosture = EvidencePostureFactory.Build(generatedAt,
+                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.Findings, EvidencePostureVocabulary.BackendKinds.Composite, "ops-findings-engine", generatedAt, TimeSpan.FromMinutes(2))),
             Findings = filtered.Select(OpsFindingResponseMapper.Map).ToArray(),
         };
 
@@ -127,7 +130,8 @@ internal sealed class McpOpsObservabilityReader(
         var response = new ObservabilityAlertEventPageResponse
         {
             Items = items,
-            NextCursor = page.NextCursor
+            NextCursor = page.NextCursor,
+            EvidencePosture = BuildEventPosture(EvidencePostureVocabulary.SourceIds.AlertEvents, "alert-event-store", argument.From, argument.To, items.Select(item => item.OccurredAt), page.NextCursor is not null, partial: false),
         };
 
         return Serialize(response, ObservabilityJsonContext.Default.ObservabilityAlertEventPageResponse);
@@ -159,7 +163,8 @@ internal sealed class McpOpsObservabilityReader(
             PartialResult = page.PartialResult,
             SourceErrors = page.SourceErrors?.ToDictionary(
                 pair => pair.Key.ToString().ToLowerInvariant(),
-                pair => pair.Value)
+                pair => pair.Value),
+            EvidencePosture = BuildEventPosture(EvidencePostureVocabulary.SourceIds.OperateEvents, "operate-event-feed", argument.From, argument.To, page.Items.Select(item => item.OccurredAt), hasMore: false, page.PartialResult),
         };
 
         return Serialize(response, ObservabilityJsonContext.Default.OperateEventPageResponse);
@@ -280,6 +285,37 @@ internal sealed class McpOpsObservabilityReader(
 
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    internal static EvidencePosture BuildEventPosture(
+        string sourceId, string backendId, DateTimeOffset? requestedFrom, DateTimeOffset? requestedTo,
+        IEnumerable<DateTimeOffset> observations, bool hasMore, bool partial)
+    {
+        var generatedAt = DateTimeOffset.UtcNow;
+        var values = observations.OrderBy(value => value).ToArray();
+        var observedAt = values.LastOrDefault(generatedAt);
+        var source = EvidencePostureFactory.Complete(sourceId, EvidencePostureVocabulary.BackendKinds.DurableStore,
+            backendId, observedAt, TimeSpan.FromMinutes(5), new EvidenceSourceCoverage
+            {
+                RequestedFrom = requestedFrom,
+                RequestedTo = requestedTo,
+                ReturnedFrom = values.Length == 0 ? null : values[0],
+                ReturnedTo = values.Length == 0 ? null : values[^1],
+                HasMore = hasMore,
+                Truncated = hasMore,
+            });
+        if (partial)
+        {
+            source = new EvidenceSourceEnvelope
+            {
+                SourceId = source.SourceId, BackendKind = source.BackendKind, BackendId = source.BackendId,
+                ObservedAt = source.ObservedAt, LastSuccessfulAt = source.LastSuccessfulAt,
+                Completeness = EvidencePostureVocabulary.Completeness.Partial,
+                ReasonCodes = [EvidencePostureVocabulary.ReasonCodes.PartialResult], Coverage = source.Coverage,
+                MaximumAgeSeconds = source.MaximumAgeSeconds, ValidUntil = source.ValidUntil,
+            };
+        }
+        return EvidencePostureFactory.Build(generatedAt, source);
+    }
 
     private static JsonElement Serialize<T>(T value, JsonTypeInfo<T> typeInfo)
     {

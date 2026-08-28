@@ -180,8 +180,12 @@ internal static class DeployControlEndpoints
 
         var skew = PlatformReleaseProjection.BuildSkewSnapshot(release, servingEntries, executionEntries);
 
+        var observedAt = DateTimeOffset.UtcNow;
         return new DeployPreflightPlatformRelease
         {
+            EvidencePosture = EvidencePostureFactory.Build(observedAt,
+                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus,
+                    EvidencePostureVocabulary.BackendKinds.ConfigProjection, "control-plane-options", observedAt, TimeSpan.FromMinutes(5))),
             ReleaseVersion = skew.ReleaseVersion,
             ReleaseDeclared = skew.ReleaseDeclared,
             IsCoVersioned = skew.IsCoVersioned,
@@ -375,7 +379,8 @@ internal static class DeployControlEndpoints
                 Page = result.Page,
                 PageSize = result.PageSize,
                 TotalCount = result.TotalCount,
-                HasMore = result.HasMore
+                HasMore = result.HasMore,
+                EvidencePosture = BuildDeployOperationsPosture(result.Items.Select(item => item.UpdatedAt), result.Page, result.PageSize, result.HasMore),
             };
 
             return Results.Json(response, DeployControlJsonContext.Default.DeployOperationListResponse);
@@ -387,6 +392,23 @@ internal static class DeployControlEndpoints
                 detail: DeployControlUnavailableMessage,
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
+    }
+
+    internal static EvidencePosture BuildDeployOperationsPosture(
+        IEnumerable<DateTimeOffset> observations, int page, int pageSize, bool hasMore)
+    {
+        var generatedAt = DateTimeOffset.UtcNow;
+        var values = observations.ToArray();
+        var observedAt = values.Length == 0 ? generatedAt : values.Max();
+        return EvidencePostureFactory.Build(generatedAt,
+            EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.DeployOperations,
+                EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-operation-store", observedAt,
+                TimeSpan.FromMinutes(5), new EvidenceSourceCoverage
+                {
+                    Page = page, PageSize = pageSize, HasMore = hasMore, Truncated = hasMore,
+                    ReturnedFrom = values.Length == 0 ? null : values.Min(),
+                    ReturnedTo = values.Length == 0 ? null : observedAt,
+                }));
     }
 
     private static async Task<IResult> HandleGetDeployOperation(

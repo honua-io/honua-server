@@ -130,9 +130,12 @@ internal static class OpsObservabilityEndpoints
         HttpContext context)
     {
         var findings = await service.EvaluateAsync(context.RequestAborted).ConfigureAwait(false);
+        var generatedAt = DateTimeOffset.UtcNow;
         var response = new OpsFindingsListResponse
         {
-            GeneratedAt = DateTimeOffset.UtcNow,
+            GeneratedAt = generatedAt,
+            EvidencePosture = EvidencePostureFactory.Build(generatedAt,
+                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.Findings, EvidencePostureVocabulary.BackendKinds.Composite, "ops-findings-engine", generatedAt, TimeSpan.FromMinutes(2))),
             Findings = findings.Select(OpsFindingResponseMapper.Map).ToList(),
         };
 

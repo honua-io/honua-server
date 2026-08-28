@@ -71,27 +71,48 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         var healthMetrics = _metricsCollector.GetHealthMetrics();
         var servingLatency = await BuildServingLatencyViewAsync(cancellationToken).ConfigureAwait(false);
 
+        var generatedAt = _timeProvider.GetUtcNow();
+        var alertDispatch = BuildAlertDispatchView();
+        var database = new OpsDatabaseView
+        {
+            ConnectionPoolUtilization = healthMetrics.HasDatabaseConnectionPoolUtilization
+                ? healthMetrics.DatabaseConnectionPoolUtilization
+                : null,
+            HasConnectionPoolData = healthMetrics.HasDatabaseConnectionPoolUtilization,
+            ActiveConnections = healthMetrics.ActiveConnections,
+            ConnectionAcquisitionTimeouts = healthMetrics.ConnectionAcquisitionTimeouts,
+            ConnectionAcquisitionFailures = healthMetrics.ConnectionAcquisitionFailures,
+            CacheHitRatio = healthMetrics.CacheHitRatio,
+            ErrorRate = healthMetrics.ErrorRate,
+        };
+
+        var sectionSources = new[]
+        {
+            EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.OpsHealthChecks, EvidencePostureVocabulary.BackendKinds.InProcess, "aspnet-health-checks", generatedAt, TimeSpan.FromMinutes(2)),
+            EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.ServingLatency, EvidencePostureVocabulary.BackendKinds.InProcess, "honua-telemetry", generatedAt, TimeSpan.FromMinutes(2), new EvidenceSourceCoverage { ObservedReplicaCount = servingLatency.ClusterReplicaCount ?? 1 }),
+            gpQueue.Available
+                ? EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.GpQueue, EvidencePostureVocabulary.BackendKinds.DurableStore, "execution-job-store", generatedAt, TimeSpan.FromMinutes(2))
+                : new EvidenceSourceEnvelope { SourceId = EvidencePostureVocabulary.SourceIds.GpQueue, BackendKind = EvidencePostureVocabulary.BackendKinds.DurableStore, BackendId = "execution-job-store", Completeness = EvidencePostureVocabulary.Completeness.NotConfigured, ReasonCodes = [EvidencePostureVocabulary.ReasonCodes.NotConfigured] },
+            alertDispatch.DispatcherEnabled
+                ? EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.AlertDispatch, EvidencePostureVocabulary.BackendKinds.DurableStore, "alert-dispatch-store", alertDispatch.LastPollAt ?? generatedAt, TimeSpan.FromMinutes(2))
+                : new EvidenceSourceEnvelope { SourceId = EvidencePostureVocabulary.SourceIds.AlertDispatch, BackendKind = EvidencePostureVocabulary.BackendKinds.DurableStore, BackendId = "alert-dispatch-store", Completeness = EvidencePostureVocabulary.Completeness.NotConfigured, ReasonCodes = [EvidencePostureVocabulary.ReasonCodes.NotConfigured] },
+            EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.DeployRelease, EvidencePostureVocabulary.BackendKinds.ConfigProjection, "control-plane-options", generatedAt, TimeSpan.FromMinutes(5)),
+            database.HasConnectionPoolData
+                ? EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.DatabaseCache, EvidencePostureVocabulary.BackendKinds.InProcess, "production-metrics", generatedAt, TimeSpan.FromMinutes(2))
+                : new EvidenceSourceEnvelope { SourceId = EvidencePostureVocabulary.SourceIds.DatabaseCache, BackendKind = EvidencePostureVocabulary.BackendKinds.InProcess, BackendId = "production-metrics", Completeness = EvidencePostureVocabulary.Completeness.Unavailable, ReasonCodes = [EvidencePostureVocabulary.ReasonCodes.SourceUnavailable] },
+        };
+
         return new OpsHealthSnapshotResponse
         {
-            GeneratedAt = DateTimeOffset.UtcNow,
+            EvidencePosture = EvidencePostureFactory.Build(generatedAt, sectionSources),
+            GeneratedAt = generatedAt,
             OverallStatus = healthReport.Status.ToString(),
             Health = BuildHealthView(healthReport),
             ServingLatency = servingLatency,
             Geoprocessing = gpQueue,
-            AlertDispatch = BuildAlertDispatchView(),
+            AlertDispatch = alertDispatch,
             Deploy = BuildDeployView(deploySnapshot),
-            Database = new OpsDatabaseView
-            {
-                ConnectionPoolUtilization = healthMetrics.HasDatabaseConnectionPoolUtilization
-                    ? healthMetrics.DatabaseConnectionPoolUtilization
-                    : null,
-                HasConnectionPoolData = healthMetrics.HasDatabaseConnectionPoolUtilization,
-                ActiveConnections = healthMetrics.ActiveConnections,
-                ConnectionAcquisitionTimeouts = healthMetrics.ConnectionAcquisitionTimeouts,
-                ConnectionAcquisitionFailures = healthMetrics.ConnectionAcquisitionFailures,
-                CacheHitRatio = healthMetrics.CacheHitRatio,
-                ErrorRate = healthMetrics.ErrorRate,
-            },
+            Database = database,
         };
     }
 
