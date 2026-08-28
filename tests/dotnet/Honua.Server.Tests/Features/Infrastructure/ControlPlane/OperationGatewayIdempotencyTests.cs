@@ -86,7 +86,7 @@ public sealed class OperationGatewayIdempotencyTests
         var ladder = Substitute.For<IGuardrailLadder>();
         ladder.Resolve(OperationClass.Deploy).Returns(
             new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
-        var sut = BuildGateway(store, ladder, new CancelingAuditLog());
+        var sut = BuildGateway(store, ladder, new CancelingOnceAuditLog());
 
         var route = () => sut.RouteAsync(new OperationGatewayRequest
         {
@@ -99,6 +99,16 @@ public sealed class OperationGatewayIdempotencyTests
         store.Single.Status.Should().Be(OperationProposalStatus.Failed);
         store.Single.ResolutionReason.Should().Be("Durable audit acceptance failed.");
         store.ActiveCount.Should().Be(0, "a canceled request must not orphan a Planned proposal");
+
+        var retry = await sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "agent",
+            IdempotencyKey = "cancel-during-audit"
+        });
+        retry.Outcome.Should().Be(OperationGatewayOutcome.Failed,
+            "a terminal failed proposal must never be returned as actionable approval work");
+        retry.ProposalId.Should().BeNull();
     }
 
     private static OperationGateway BuildGateway(
@@ -130,10 +140,19 @@ public sealed class OperationGatewayIdempotencyTests
             Task.FromResult<string?>("audit-test");
     }
 
-    private sealed class CancelingAuditLog : IAuditLog
+    private sealed class CancelingOnceAuditLog : IAuditLog
     {
-        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) =>
-            Task.FromException<string?>(new OperationCanceledException(cancellationToken));
+        private int _calls;
+
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+            {
+                return Task.FromException<string?>(new OperationCanceledException(cancellationToken));
+            }
+
+            return Task.FromResult<string?>("audit-retry");
+        }
     }
 
     private sealed class MultiProposalStore : IOperationProposalStore
