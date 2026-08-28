@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.TestKit;
@@ -281,12 +282,20 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
-            {
-                SubmittedPlan = callInfo.ArgAt<AnalysisPlan>(0);
-                SubmissionCount++;
-                return Task.FromResult(job);
-            });
+            .Returns(callInfo => RecordSubmission(callInfo.ArgAt<AnalysisPlan>(0)));
+
+        // The processes adapter submits through SubmitProtocolJobAsync, a default
+        // interface member whose default body forwards to SubmitJobAsync. NSubstitute
+        // intercepts default members rather than running that body, so the substitute
+        // returns null unless the adapter-scoped overload is stubbed too (#3584).
+        jobService.SubmitProtocolJobAsync(
+                Arg.Any<AnalysisPlan>(),
+                Arg.Any<string?>(),
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IProcessCatalog>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo => RecordSubmission(callInfo.ArgAt<AnalysisPlan>(0)));
 
         var terminalService = Substitute.For<IGeoprocessingJobTerminalService>();
         terminalService.WaitForResultAsync(
@@ -303,6 +312,13 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
             services.RemoveAll<IGeoprocessingJobTerminalService>();
             services.AddSingleton(terminalService);
         });
+
+        Task<ExecutionJobRecord> RecordSubmission(AnalysisPlan plan)
+        {
+            SubmittedPlan = plan;
+            SubmissionCount++;
+            return Task.FromResult(job);
+        }
     }
 
     public Task InitializeAsync() => App.InitializeAsync();
