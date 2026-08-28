@@ -199,6 +199,7 @@
     {
       "name": "Core Endpoints",
       "shard_name": "Core Endpoints",
+      "dispatch_rank": 26.3,
       "artifact_suffix": "core-endpoints",
       "log_name": "server-tests-core-endpoints",
       "_comment": "ADR-0037 finer-sharding: carved from Core. Isolates the FeatureServerEndpointTests classes (the ~114-test FeatureServerEndpointTests plus the related StreamingFeatureServerEndpointTests) — the dominant driver of the old ~46m Core monolith. Bare substring selector mirrors the Core catch-all's bare !~FeatureServerEndpointTests exclusion so the two stay a clean partition (a qualified selector would orphan StreamingFeatureServerEndpointTests).",
@@ -219,6 +220,7 @@
     {
       "name": "Core Attachments and Records",
       "shard_name": "Core Attachments and Records",
+      "dispatch_rank": 17.2,
       "artifact_suffix": "core-attachments-records",
       "log_name": "server-tests-core-attachments-records",
       "_comment": "ADR-0037 finer-sharding: carved from Core. Selects the attachment, related-records, OGC features and limits endpoint classes (all unique root-namespace class names). Complementary with the Core catch-all.",
@@ -243,6 +245,7 @@
     {
       "name": "Core",
       "shard_name": "Core",
+      "dispatch_rank": 21.0,
       "artifact_suffix": "core",
       "log_name": "server-tests-core",
       "_comment": "ADR-0037 finer-sharding CATCH-ALL: Honua.Server.Tests root classes NOT in an excluded namespace and NOT carved into Core Endpoints / Core Attachments and Records. The trailing FullyQualifiedName!~ class exclusions mirror those siblings' selectors, so the three shards partition the old Core monolith with no gaps; any new root-level test class falls here by default. Remains the default_shards_when_no_match target.",
@@ -284,6 +287,7 @@
     {
       "name": "Admin & Infrastructure",
       "shard_name": "Admin & Infrastructure",
+      "dispatch_rank": 19.6,
       "artifact_suffix": "admin-infra",
       "log_name": "server-tests-admin-infra",
       "timeout_minutes": 42,
@@ -303,6 +307,7 @@
     {
       "name": "Workflow Packages",
       "shard_name": "Workflow Packages",
+      "dispatch_rank": 7.8,
       "artifact_suffix": "workflow-packages",
       "log_name": "server-tests-workflow-packages",
       "timeout_minutes": 30,
@@ -320,6 +325,7 @@
     {
       "name": "Cloud & Contract",
       "shard_name": "Cloud & Contract",
+      "dispatch_rank": 8.2,
       "artifact_suffix": "cloud-contract",
       "log_name": "server-tests-cloud-contract",
       "timeout_minutes": 30,
@@ -337,6 +343,7 @@
     {
       "name": "Raster & Scene Analysis",
       "shard_name": "Raster & Scene Analysis",
+      "dispatch_rank": 13.3,
       "artifact_suffix": "raster-scene",
       "log_name": "server-tests-raster-scene",
       "timeout_minutes": 30,
@@ -353,6 +360,7 @@
     {
       "name": "Raster Serving",
       "shard_name": "Raster Serving",
+      "dispatch_rank": 8.8,
       "artifact_suffix": "raster-serving",
       "log_name": "server-tests-raster-serving",
       "_comment": "#3271: raster SERVING protocol adapters (COG tiles, Zarr/datacube tiles, multidimensional coverages) had no owning shard. Cog was claimed by `Cloud & Contract` (a cloud-provider/contract bucket it has nothing to do with) and Zarr + Coverages fell through to the `Server Features Misc` catch-all, so a raster-serving regression surfaced in an unrelated bucket or a 60-minute catch-all. Those clauses/paths were removed from both shards when this one was added, so the three raster-serving namespaces are claimed here and only here. Budget: 7 endpoint/resolver classes; sized like the sibling `Raster & Scene Analysis` and `Cloud & Contract` raster buckets (20m inner cap, 30m outer) which is well above the ~4x headroom the shard_budget_policy target_utilization asks for.",
@@ -378,6 +386,7 @@
       "name": "Migration",
       "_comment": "Carries the toolbox-translation proving tests (#2145) alongside the import/migration suites: CapabilityImpactGraph_ShouldBeComplete rejects any [Endpoint] proving test that no shard filter claims, so Honua.Server.Tests.Import.ToolboxTranslation must stay in this selector. The budget below is the #3054 policy re-base, which already accounts for that load.",
       "shard_name": "Migration",
+      "dispatch_rank": 27.1,
       "artifact_suffix": "migration",
       "log_name": "server-tests-migration",
       "timeout_minutes": 39,
@@ -426,6 +435,7 @@
     {
       "name": "FileImport",
       "shard_name": "FileImport",
+      "dispatch_rank": 17.6,
       "artifact_suffix": "fileimport",
       "log_name": "server-tests-fileimport",
       "timeout_minutes": 30,
@@ -464,6 +474,7 @@
     {
       "name": "RasterImport",
       "shard_name": "RasterImport",
+      "dispatch_rank": 9.8,
       "artifact_suffix": "rasterimport",
       "log_name": "server-tests-rasterimport",
       "timeout_minutes": 28,
@@ -481,6 +492,7 @@
     {
       "name": "Performance",
       "shard_name": "Performance",
+      "dispatch_rank": 7.7,
       "artifact_suffix": "performance",
       "log_name": "server-tests-performance",
       "timeout_minutes": 25,
@@ -496,6 +508,7 @@
     {
       "name": "Comprehensive",
       "shard_name": "Comprehensive",
+      "dispatch_rank": 8.9,
       "artifact_suffix": "comprehensive",
       "log_name": "server-tests-comprehensive",
       "timeout_minutes": 25,
@@ -511,6 +524,7 @@
     {
       "name": "FeatureServer Query",
       "shard_name": "FeatureServer Query",
+      "dispatch_rank": 7.5,
       "artifact_suffix": "featureserver-query",
       "log_name": "server-tests-featureserver-query",
       "timeout_minutes": 32,
@@ -539,6 +553,7 @@
     {
       "name": "FeatureServer Tiles and Replica",
       "shard_name": "FeatureServer Tiles and Replica",
+      "dispatch_rank": 14.3,
       "artifact_suffix": "featureserver-tiles-replica",
       "log_name": "server-tests-featureserver-tiles-replica",
       "timeout_minutes": 32,
@@ -565,6 +580,7 @@
     {
       "name": "FeatureServer Maintenance and Temporal",
       "shard_name": "FeatureServer Maintenance and Temporal",
+      "dispatch_rank": 11.3,
       "artifact_suffix": "featureserver-maintenance-temporal",
       "log_name": "server-tests-featureserver-maintenance-temporal",
       "timeout_minutes": 32,
@@ -589,6 +605,7 @@
     {
       "name": "FeatureServer Endpoints",
       "shard_name": "FeatureServer Endpoints",
+      "dispatch_rank": 13.3,
       "artifact_suffix": "featureserver-endpoints",
       "log_name": "server-tests-featureserver-endpoints",
       "timeout_minutes": 36,
@@ -622,6 +639,7 @@
     {
       "name": "FeatureServer Services",
       "shard_name": "FeatureServer Services",
+      "dispatch_rank": 5.6,
       "artifact_suffix": "featureserver-services",
       "log_name": "server-tests-featureserver-services",
       "timeout_minutes": 30,
@@ -643,6 +661,7 @@
     {
       "name": "FeatureServer Replication",
       "shard_name": "FeatureServer Replication",
+      "dispatch_rank": 6.4,
       "artifact_suffix": "featureserver-replication",
       "log_name": "server-tests-featureserver-replication",
       "timeout_minutes": 30,
@@ -665,6 +684,7 @@
     {
       "name": "OGC API Features",
       "shard_name": "OGC API Features",
+      "dispatch_rank": 18.1,
       "artifact_suffix": "ogc-api-features",
       "log_name": "server-tests-ogc-api-features",
       "timeout_minutes": 32,
@@ -685,6 +705,7 @@
     {
       "name": "OGC API Features Transactions",
       "shard_name": "OGC API Features Transactions",
+      "dispatch_rank": 8.5,
       "artifact_suffix": "ogc-api-features-transactions",
       "log_name": "server-tests-ogc-api-features-transactions",
       "timeout_minutes": 32,
@@ -705,6 +726,7 @@
     {
       "name": "WFS",
       "shard_name": "WFS",
+      "dispatch_rank": 21.2,
       "artifact_suffix": "wfs",
       "log_name": "server-tests-wfs",
       "timeout_minutes": 35,
@@ -730,6 +752,7 @@
     {
       "name": "WFS Endpoints",
       "shard_name": "WFS Endpoints",
+      "dispatch_rank": 15.5,
       "artifact_suffix": "wfs-endpoints",
       "log_name": "server-tests-wfs-endpoints",
       "timeout_minutes": 32,
@@ -749,6 +772,7 @@
     {
       "name": "STAC and API Governance",
       "shard_name": "STAC and API Governance",
+      "dispatch_rank": 11.0,
       "artifact_suffix": "stac-api-governance",
       "log_name": "server-tests-stac-api-governance",
       "timeout_minutes": 30,
@@ -768,6 +792,7 @@
     {
       "name": "OData Core",
       "shard_name": "OData Core",
+      "dispatch_rank": 26.6,
       "artifact_suffix": "odata-core",
       "log_name": "server-tests-odata-core",
       "timeout_minutes": 39,
@@ -797,6 +822,7 @@
     {
       "name": "OData Query and Spatial",
       "shard_name": "OData Query and Spatial",
+      "dispatch_rank": 35.6,
       "artifact_suffix": "odata-query-spatial",
       "log_name": "server-tests-odata-query-spatial",
       "timeout_minutes": 54,
@@ -824,6 +850,7 @@
     {
       "name": "OData Mutations and Batch",
       "shard_name": "OData Mutations and Batch",
+      "dispatch_rank": 11.7,
       "artifact_suffix": "odata-mutations-batch",
       "log_name": "server-tests-odata-mutations-batch",
       "timeout_minutes": 30,
@@ -851,6 +878,7 @@
     {
       "name": "OData Client Certification",
       "shard_name": "OData Client Certification",
+      "dispatch_rank": 10.2,
       "artifact_suffix": "odata-client-certification",
       "log_name": "server-tests-odata-client-certification",
       "timeout_minutes": 35,
@@ -873,6 +901,7 @@
     {
       "name": "OGC API Maps and Tiles",
       "shard_name": "OGC API Maps and Tiles",
+      "dispatch_rank": 17.1,
       "artifact_suffix": "ogc-api-maps-tiles",
       "log_name": "server-tests-ogc-api-maps-tiles",
       "timeout_minutes": 32,
@@ -894,6 +923,7 @@
     {
       "name": "OGC API Tiles Coverages and Processes",
       "shard_name": "OGC API Tiles Coverages and Processes",
+      "dispatch_rank": 23.2,
       "artifact_suffix": "ogc-api-tiles-coverages-processes",
       "log_name": "server-tests-ogc-api-tiles-coverages-processes",
       "timeout_minutes": 32,
@@ -920,6 +950,7 @@
     {
       "name": "OGC Classic Maps",
       "shard_name": "OGC Classic Maps",
+      "dispatch_rank": 16.6,
       "artifact_suffix": "ogc-classic-maps",
       "log_name": "server-tests-ogc-classic-maps",
       "timeout_minutes": 30,
@@ -941,6 +972,7 @@
     {
       "name": "OGC Classic WMTS",
       "shard_name": "OGC Classic WMTS",
+      "dispatch_rank": 13.7,
       "artifact_suffix": "ogc-classic-wmts",
       "log_name": "server-tests-ogc-classic-wmts",
       "timeout_minutes": 30,
@@ -960,6 +992,7 @@
     {
       "name": "GeoServices MapServer",
       "shard_name": "GeoServices MapServer",
+      "dispatch_rank": 21.0,
       "artifact_suffix": "geoservices-mapserver",
       "log_name": "server-tests-geoservices-mapserver",
       "timeout_minutes": 39,
@@ -978,6 +1011,7 @@
     {
       "name": "GeoServices ImageServer",
       "shard_name": "GeoServices ImageServer",
+      "dispatch_rank": 26.9,
       "artifact_suffix": "geoservices-imageserver",
       "log_name": "server-tests-geoservices-imageserver",
       "timeout_minutes": 45,
@@ -1005,6 +1039,7 @@
     {
       "name": "GeoServices GPServer and NAServer",
       "shard_name": "GeoServices GPServer and NAServer",
+      "dispatch_rank": 12.8,
       "artifact_suffix": "geoservices-gpserver-naserver",
       "log_name": "server-tests-geoservices-gpserver-naserver",
       "timeout_minutes": 32,
@@ -1028,6 +1063,7 @@
     {
       "name": "GeoServices Geometry VectorTile and Versioning",
       "shard_name": "GeoServices Geometry VectorTile and Versioning",
+      "dispatch_rank": 13.2,
       "artifact_suffix": "geoservices-geometry-vectortile-versioning",
       "log_name": "server-tests-geoservices-geometry-vectortile-versioning",
       "timeout_minutes": 34,
@@ -1053,6 +1089,7 @@
     {
       "name": "Geometry Tiles and Terrain",
       "shard_name": "Geometry Tiles and Terrain",
+      "dispatch_rank": 8.6,
       "artifact_suffix": "geometry-tiles-terrain",
       "log_name": "server-tests-geometry-tiles-terrain",
       "timeout_minutes": 30,
@@ -1075,6 +1112,7 @@
     {
       "name": "Infrastructure and Control Plane",
       "shard_name": "Infrastructure and Control Plane",
+      "dispatch_rank": 6.0,
       "artifact_suffix": "infrastructure-control-plane",
       "log_name": "server-tests-infrastructure-control-plane",
       "timeout_minutes": 40,
@@ -1099,6 +1137,7 @@
     {
       "name": "Security and Authorization",
       "shard_name": "Security and Authorization",
+      "dispatch_rank": 18.7,
       "artifact_suffix": "security-authorization",
       "log_name": "server-tests-security-authorization",
       "timeout_minutes": 40,
@@ -1121,6 +1160,7 @@
     {
       "name": "Caching File Storage and Styling",
       "shard_name": "Caching File Storage and Styling",
+      "dispatch_rank": 14.4,
       "artifact_suffix": "caching-file-storage-styling",
       "log_name": "server-tests-caching-file-storage-styling",
       "timeout_minutes": 40,
@@ -1148,6 +1188,7 @@
     {
       "name": "Operator Eval Harness",
       "shard_name": "Operator Eval Harness",
+      "dispatch_rank": 17.4,
       "artifact_suffix": "operator-eval",
       "log_name": "server-tests-operator-eval",
       "timeout_minutes": 30,
@@ -1182,6 +1223,7 @@
       "name": "GP Devkit CLI",
       "_comment": "GP Devkit (#2123/#2176) honua-gp dev tool. Its offline unit tests live in their OWN assembly (Honua.Geoprocessing.Cli.Tests) rather than the Honua.Server.Tests monolith, so the shard targets that csproj via `csproj`. Filters on the assembly's root namespace so every CLI test class is auto-covered. Paths claim the CLI src tree and its test tree so a publish/runner change targets this shard instead of tripping the unmapped-source run_all net for src/Honua.Geoprocessing.Cli/.",
       "shard_name": "GP Devkit CLI",
+      "dispatch_rank": 3.6,
       "artifact_suffix": "gp-devkit-cli",
       "log_name": "server-tests-gp-devkit-cli",
       "timeout_minutes": 20,
@@ -1199,6 +1241,7 @@
     {
       "name": "MCP",
       "shard_name": "MCP",
+      "dispatch_rank": 19.9,
       "artifact_suffix": "mcp",
       "log_name": "server-tests-mcp",
       "timeout_minutes": 25,
@@ -1221,6 +1264,7 @@
     {
       "name": "Scene",
       "shard_name": "Scene",
+      "dispatch_rank": 24.6,
       "artifact_suffix": "scene",
       "log_name": "server-tests-scene",
       "timeout_minutes": 40,
@@ -1239,6 +1283,7 @@
     {
       "name": "SensorThings",
       "shard_name": "SensorThings",
+      "dispatch_rank": 8.3,
       "artifact_suffix": "sensorthings",
       "log_name": "server-tests-sensorthings",
       "timeout_minutes": 25,
@@ -1258,6 +1303,7 @@
     {
       "name": "STAC Protocol",
       "shard_name": "STAC Protocol",
+      "dispatch_rank": 16.6,
       "artifact_suffix": "stac-protocol",
       "log_name": "server-tests-stac-protocol",
       "timeout_minutes": 25,
@@ -1276,6 +1322,7 @@
     {
       "name": "Geocoding",
       "shard_name": "Geocoding",
+      "dispatch_rank": 15.2,
       "artifact_suffix": "geocoding",
       "log_name": "server-tests-geocoding",
       "timeout_minutes": 25,
@@ -1295,6 +1342,7 @@
     {
       "name": "Server Features Admin Operations",
       "shard_name": "Server Features Admin Operations",
+      "dispatch_rank": 33.2,
       "artifact_suffix": "server-features-admin-operations",
       "log_name": "server-tests-server-features-admin-operations",
       "timeout_minutes": 45,
@@ -1326,6 +1374,7 @@
     {
       "name": "Server Features Admin Tiles and Scenes",
       "shard_name": "Server Features Admin Tiles and Scenes",
+      "dispatch_rank": 8.9,
       "artifact_suffix": "server-features-admin-tiles-scenes",
       "log_name": "server-tests-server-features-admin-tiles-scenes",
       "timeout_minutes": 45,
@@ -1355,6 +1404,7 @@
     {
       "name": "Server Features Admin Layer Management",
       "shard_name": "Server Features Admin Layer Management",
+      "dispatch_rank": 15.3,
       "artifact_suffix": "server-features-admin-layer-management",
       "log_name": "server-tests-server-features-admin-layer-management",
       "timeout_minutes": 45,
@@ -1384,6 +1434,7 @@
     {
       "name": "Server Features Admin Authentication",
       "shard_name": "Server Features Admin Authentication",
+      "dispatch_rank": 12.3,
       "artifact_suffix": "server-features-admin-authentication",
       "log_name": "server-tests-server-features-admin-authentication",
       "timeout_minutes": 32,
@@ -1413,6 +1464,7 @@
     {
       "name": "Server Features Admin Credentials",
       "shard_name": "Server Features Admin Credentials",
+      "dispatch_rank": 10.0,
       "artifact_suffix": "server-features-admin-credentials",
       "log_name": "server-tests-server-features-admin-credentials",
       "timeout_minutes": 32,
@@ -1438,6 +1490,7 @@
     {
       "name": "Server Features Admin Authorization",
       "shard_name": "Server Features Admin Authorization",
+      "dispatch_rank": 16.2,
       "artifact_suffix": "server-features-admin-authorization",
       "log_name": "server-tests-server-features-admin-authorization",
       "timeout_minutes": 32,
@@ -1471,6 +1524,7 @@
     {
       "name": "Server Features Admin Release Control",
       "shard_name": "Server Features Admin Release Control",
+      "dispatch_rank": 12.4,
       "artifact_suffix": "server-features-admin-release-control",
       "log_name": "server-tests-server-features-admin-release-control",
       "timeout_minutes": 32,
@@ -1500,6 +1554,7 @@
     {
       "name": "Server Features Admin Platform and Connections",
       "shard_name": "Server Features Admin Platform and Connections",
+      "dispatch_rank": 13.6,
       "artifact_suffix": "server-features-admin-platform-connections",
       "log_name": "server-tests-server-features-admin-platform-connections",
       "timeout_minutes": 32,
@@ -1527,6 +1582,7 @@
     {
       "name": "Server Features Admin Governance and Sharing",
       "shard_name": "Server Features Admin Governance and Sharing",
+      "dispatch_rank": 11.7,
       "artifact_suffix": "server-features-admin-governance-sharing",
       "log_name": "server-tests-server-features-admin-governance-sharing",
       "timeout_minutes": 32,
@@ -1557,6 +1613,7 @@
     {
       "name": "Server Features Console and Alerts",
       "shard_name": "Server Features Console and Alerts",
+      "dispatch_rank": 14.6,
       "artifact_suffix": "server-features-console-alerts",
       "log_name": "server-tests-server-features-console-alerts",
       "timeout_minutes": 32,
@@ -1583,6 +1640,7 @@
     {
       "name": "Server Features Admin Network and Jobs",
       "shard_name": "Server Features Admin Network and Jobs",
+      "dispatch_rank": 9.3,
       "artifact_suffix": "server-features-admin-network-jobs",
       "log_name": "server-tests-server-features-admin-network-jobs",
       "timeout_minutes": 32,
@@ -1615,6 +1673,7 @@
     {
       "name": "Server Features Admin Catalog and Configuration",
       "shard_name": "Server Features Admin Catalog and Configuration",
+      "dispatch_rank": 13.3,
       "artifact_suffix": "server-features-admin-catalog-configuration",
       "log_name": "server-tests-server-features-admin-catalog-configuration",
       "timeout_minutes": 32,
@@ -1657,6 +1716,7 @@
     {
       "name": "Server Features Admin Integrations and Automation",
       "shard_name": "Server Features Admin Integrations and Automation",
+      "dispatch_rank": 8.8,
       "artifact_suffix": "server-features-admin-integrations-automation",
       "log_name": "server-tests-server-features-admin-integrations-automation",
       "timeout_minutes": 32,
@@ -1705,6 +1765,7 @@
     {
       "name": "Server Features Streaming Snapshot and Conformance",
       "shard_name": "Server Features Streaming Snapshot and Conformance",
+      "dispatch_rank": 15.2,
       "artifact_suffix": "server-features-streaming-snapshot-conformance",
       "log_name": "server-tests-server-features-streaming-snapshot-conformance",
       "timeout_minutes": 40,
@@ -1727,6 +1788,7 @@
     {
       "name": "Server Features Data Enrichment and Sharing",
       "shard_name": "Server Features Data Enrichment and Sharing",
+      "dispatch_rank": 31.7,
       "artifact_suffix": "server-features-data-enrichment-sharing",
       "log_name": "server-tests-server-features-data-enrichment-sharing",
       "timeout_minutes": 48,
@@ -1767,6 +1829,7 @@
     {
       "name": "Server Features Studio and Feature Store",
       "shard_name": "Server Features Studio and Feature Store",
+      "dispatch_rank": 11.7,
       "artifact_suffix": "server-features-studio-feature-store",
       "log_name": "server-tests-server-features-studio-feature-store",
       "timeout_minutes": 32,
@@ -1797,6 +1860,7 @@
     {
       "name": "Server Features Analytics Export and Reporting",
       "shard_name": "Server Features Analytics Export and Reporting",
+      "dispatch_rank": 16.1,
       "artifact_suffix": "server-features-analytics-export-reporting",
       "log_name": "server-tests-server-features-analytics-export-reporting",
       "timeout_minutes": 32,
@@ -1826,6 +1890,7 @@
     {
       "name": "Server Features Collaboration Mobile and Identity",
       "shard_name": "Server Features Collaboration Mobile and Identity",
+      "dispatch_rank": 16.3,
       "artifact_suffix": "server-features-collaboration-mobile-identity",
       "log_name": "server-tests-server-features-collaboration-mobile-identity",
       "timeout_minutes": 32,
@@ -1852,6 +1917,7 @@
     {
       "name": "Server Features Spec Printing and Static Maps",
       "shard_name": "Server Features Spec Printing and Static Maps",
+      "dispatch_rank": 17.5,
       "artifact_suffix": "server-features-spec-printing-staticmap",
       "log_name": "server-tests-server-features-spec-printing-staticmap",
       "timeout_minutes": 60,
@@ -1916,6 +1982,7 @@
     {
       "name": "Server Features Misc",
       "shard_name": "Server Features Misc",
+      "dispatch_rank": 24.5,
       "artifact_suffix": "server-features-misc",
       "log_name": "server-tests-server-features-misc",
       "timeout_minutes": 60,
