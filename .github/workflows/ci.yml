@@ -1139,9 +1139,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Needed for scripts/ci/run-foundation-family.sh, which supplies the
+      # expected trx count the parity check below asserts against.
+      - uses: actions/checkout@v7.0.1
+
       # continue-on-error: a family that died before its upload step leaves no
       # artifact to download, and that must surface as the family's own failure
       # in the result check below rather than as a confusing download error.
+      # It does NOT mean a download failure is tolerated — the parity check in
+      # the next step fails the job whenever the families all succeeded but the
+      # merged set is short, so an artifact-service error cannot land a green
+      # `.NET Foundation Tests` on top of missing results.
       - name: Download family test results
         uses: actions/download-artifact@v8
         continue-on-error: true
@@ -1150,20 +1158,33 @@ jobs:
           path: tests/TestResults
           merge-multiple: true
 
-      - name: Summarize merged foundation results
+      - name: Verify merged foundation results
         run: |
           trx_count=$(find tests/TestResults -name '*.trx' 2>/dev/null | wc -l)
           cobertura_count=$(find tests/TestResults -name 'coverage.cobertura.xml' 2>/dev/null | wc -l)
-          echo "Merged ${trx_count} trx file(s) and ${cobertura_count} cobertura report(s)."
+          expected_trx=$(scripts/ci/run-foundation-family.sh expected-trx-count)
+          family_result='${{ needs.dotnet-foundation-family-tests.result }}'
+
           {
             echo "### .NET Foundation Tests"
             echo
-            echo "| family | result |"
-            echo "| --- | --- |"
-            echo "| all families | ${{ needs.dotnet-foundation-family-tests.result }} |"
-            echo
-            echo "Merged ${trx_count} trx file(s), ${cobertura_count} cobertura report(s)."
+            echo "| families | trx merged | trx expected | cobertura reports |"
+            echo "| --- | ---: | ---: | ---: |"
+            echo "| ${family_result} | ${trx_count} | ${expected_trx} | ${cobertura_count} |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Merged ${trx_count}/${expected_trx} trx file(s) and ${cobertura_count} cobertura report(s)."
+
+          # One trx per claimed test project. If every family passed, the merged
+          # set must be complete: anything less means a family's results never
+          # reached this job (artifact upload/download failure, or a project that
+          # silently produced no results), and republishing a short
+          # `foundation-test-results` as if it were whole is exactly the kind of
+          # green-over-missing-evidence this lane must not do.
+          if [[ "${family_result}" == "success" && "${trx_count}" -lt "${expected_trx}" ]]; then
+            echo "::error::All foundation families passed but only ${trx_count} of ${expected_trx} trx files reached the fan-in job — results are missing, not merged."
+            exit 1
+          fi
 
       # Republish under the pre-split artifact names so anything pointing at
       # `foundation-test-results` / `foundation-coverage` keeps working, and so

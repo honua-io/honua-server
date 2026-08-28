@@ -107,10 +107,20 @@ foundation_projects() {
   foundation_family_specs "$1" | cut -d'|' -f1
 }
 
+# Projects the FAMILY-WIDE build may contain. Advisory projects are deliberately
+# excluded: the pre-split workflow wrapped the advisory suite's build AND test in
+# one `continue-on-error: true` step (#2949), so a compile break there was
+# non-gating. Folding it into the shared build would have quietly promoted it to
+# a gate — and taken the rest of the family down with it. It is built inside
+# foundation_run instead, where the advisory flag still applies.
+foundation_build_projects() {
+  foundation_family_specs "$1" | awk -F'|' '$5 !~ /advisory/ { print $1 }'
+}
+
 foundation_build() {
   local family="$1"
   local slnf projects
-  mapfile -t projects < <(foundation_projects "${family}")
+  mapfile -t projects < <(foundation_build_projects "${family}")
   # `dotnet build` takes ONE project (MSB1008), so build the family through a
   # generated solution FILTER: MSBuild then walks the family's shared closure
   # once and parallelises across the independent projects, instead of N
@@ -162,6 +172,20 @@ foundation_run() {
       for kv in "${kvs[@]}"; do envprefix+=("${kv}"); done
     fi
 
+    # Advisory projects are not in the family build (see foundation_build_projects),
+    # so build them here where a failure is swallowed exactly as the pre-split
+    # `continue-on-error` step swallowed it.
+    if [[ ",${flags}," == *,advisory,* ]]; then
+      local build_rc=0
+      echo "::group::dotnet build ${csproj} (advisory)"
+      dotnet build "${csproj}" --no-restore --configuration "${CONFIGURATION}" || build_rc=$?
+      echo "::endgroup::"
+      if ((build_rc != 0)); then
+        echo "::warning::${csproj} failed to BUILD (advisory, non-gating — see #2949); skipping its tests"
+        continue
+      fi
+    fi
+
     echo "::group::dotnet test ${csproj}${filter:+ --filter ${filter}}"
     rc=0
     if ((${#envprefix[@]})); then
@@ -186,14 +210,18 @@ foundation_run() {
 main() {
   local cmd="${1:-}"
   case "${cmd}" in
-    families)   foundation_families ;;
-    projects)   foundation_projects "${2:?family required}" ;;
+    families)       foundation_families ;;
+    projects)       foundation_projects "${2:?family required}" ;;
+    build-projects) foundation_build_projects "${2:?family required}" ;;
+    # Number of trx files a complete run of every family must produce — one per
+    # claimed project. The fan-in job asserts the merged artifact set matches.
+    expected-trx-count) local f n=0; for f in $(foundation_families); do n=$((n + $(foundation_projects "${f}" | grep -c .))); done; printf '%s\n' "${n}" ;;
     list)       foundation_family_specs "${2:?family required}" ;;
     list-all)   local f; for f in $(foundation_families); do foundation_projects "${f}"; done ;;
     build)      foundation_build "${2:?family required}" ;;
     run)        foundation_run "${2:?family required}" ;;
     *)
-      echo "usage: $0 {families|projects <family>|list <family>|list-all|build <family>|run <family>}" >&2
+      echo "usage: $0 {families|projects <family>|build-projects <family>|expected-trx-count|list <family>|list-all|build <family>|run <family>}" >&2
       return 2
       ;;
   esac
