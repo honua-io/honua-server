@@ -1001,26 +1001,48 @@ jobs:
         # in format coverage. Identical to the lean gate's own format line.
         run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
 
-  dotnet-foundation-tests:
-    name: .NET Foundation Tests
+  # Foundation test FAMILIES (#3567). This lane used to be a single serial job
+  # whose per-family steps ran back to back: on the 2026-08-27 batch run
+  # 33097133234 it spanned 39m19s (Core 18m23s of which ~18m was Coverlet
+  # instrumentation of the 39-assembly closure for an 8-second test run, Core
+  # Security 2m52s, Server Fast 2m08s, Protocol Fast 2m29s, everything else
+  # under 1m30s each) and the merge train waited on all of it. The families are
+  # now four concurrent runners; scripts/ci/run-foundation-family.sh owns the
+  # family -> project/filter mapping so the "same tests run after the split"
+  # invariant lives in one file. `dotnet-foundation-tests` below fans them back
+  # in, keeping the `.NET Foundation Tests` check name that `test-all`, the
+  # merge-train real-gate regex (scripts/ci/merge-train/select.sh) and the
+  # coverage artifacts already depend on. A matrix (rather than four hand-rolled
+  # jobs) is deliberate: adding a family cannot leave a job un-required, because
+  # `test-all` needs the single matrix job id.
+  dotnet-foundation-family-tests:
+    name: .NET Foundation Tests (${{ matrix.family_name }})
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
-    runs-on: ubuntu-latest
-    # This job restores and builds its own affected project closure. Run it in
-    # parallel with Build & Format Check; CI Gate still requires both results.
+    # Each family restores and builds its own closure. Run in parallel with
+    # Build & Format Check; CI Gate still requires every result via `test-all`.
     needs: changes
-    # Bumped 35→70→100 to absorb Coverlet XPlat-collector instrumentation
-    # overhead across the per-project test steps (Core 30m, Server Fast 20m,
-    # Architecture 10m, Security 3m), then the #2943 revival of the 8
-    # protocol-split projects' Fast tier plus the previously-orphaned
-    # DuckDB/Plugins/ArcGisRest/Oracle/Postgres.Security/MySql
-    # projects (an additional ~60m of step-level budget; see the "Run .NET
-    # Tests (...)" steps below for the per-group rationale), then the #58
-    # follow-up wiring the SQL/warehouse provider UNIT suites
-    # (SqlServer/Snowflake/Redshift/Databricks, integration classes excluded;
-    # +15m step budget, ~a few min real). Step-level timeouts still bound each
-    # individual run; this just keeps the orchestrator from cancelling the job
-    # before the steps get to fail naturally (#1144).
-    timeout-minutes: 110
+    runs-on: ubuntu-latest
+    # Per-family budget. The pre-split job carried a single 110-minute
+    # orchestrator timeout covering every step; these are the same
+    # step budgets regrouped, with headroom over the measured family time
+    # (Core ~13m, Server ~13m, Protocols ~10m, Providers ~8m projected).
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: core
+            family_name: Core
+            timeout_minutes: 45
+          - family: server
+            family_name: Server
+            timeout_minutes: 40
+          - family: protocols
+            family_name: Protocols
+            timeout_minutes: 30
+          - family: providers
+            family_name: Providers
+            timeout_minutes: 30
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -1039,8 +1061,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      # Reclaim runner disk before the full-solution build + coverage run; the
-      # modular topology pushed some runners over the free-disk limit. Best-effort.
+      # Reclaim runner disk before the build + coverage run; the modular
+      # topology pushed some runners over the free-disk limit. Best-effort.
       - name: Free disk space
         run: |
           sudo rm -rf /usr/local/lib/android || true
@@ -1060,385 +1082,107 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
-      - name: Compute affected projects
-        id: affected
-        # ADR-0043 PR #2 — scope the foundation-tests rebuild to projects
-        # affected by this PR + their reverse dependencies. Falls through to
-        # a full-solution build whenever shared infra changed
-        # (Directory.Packages.props, Honua.sln, .github/, scripts/ci/) or the
-        # base ref is unavailable on a shallow checkout. The script emits
-        # either the token "ALL" (full build) or a sorted list of csproj
-        # paths to stdout.
-        env:
-          BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
-          HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
-        run: |
-          affected="$(scripts/ci/compute-affected-projects.sh)"
-          if [[ -z "${affected}" || "${affected}" == "ALL" ]]; then
-            mode="full"
-            projects=""
-          else
-            mode="affected"
-            # Newline-delimited list → space-delimited for `dotnet build` args.
-            projects="$(printf '%s' "${affected}" | tr '\n' ' ')"
-          fi
-          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
-          {
-            echo "projects<<EOF"
-            printf '%s' "${projects}"
-            echo
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "::notice::Foundation-tests build mode: ${mode}${projects:+ (${projects})}"
+      # The pre-split job computed an affected-project closure (ADR-0043 PR #2)
+      # and built THAT, then ran `dotnet test --no-build` against projects that
+      # closure did not necessarily contain — correct only because the fallback
+      # was a full-solution build. Each family now builds exactly the projects
+      # it is about to test, in ONE MSBuild invocation so the shared closure is
+      # walked once and parallelised. That is both smaller than the
+      # full-solution build for the Protocols/Providers families and immune to
+      # the diff shape, which is what makes `--no-build` safe below.
+      - name: Build foundation family binaries
+        timeout-minutes: 25
+        run: scripts/ci/run-foundation-family.sh build ${{ matrix.family }}
 
-      - name: Build foundation test binaries
-        timeout-minutes: 20
-        run: |
-          if [[ "${{ steps.affected.outputs.mode }}" == "affected" ]]; then
-            # shellcheck disable=SC2086
-            dotnet build ${{ steps.affected.outputs.projects }} \
-              --no-restore \
-              --configuration Release
-          else
-            dotnet build Honua.sln \
-              --no-restore \
-              --configuration Release
-          fi
+      - name: Run foundation family tests
+        timeout-minutes: 45
+        run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}
 
-      - name: Run .NET Tests (Core)
-        # Honua.Postgres.Tests is covered by the postgres-compat job which
-        # runs it against the full Postgres version matrix (16/17/18). Running
-        # it here as well was duplicating ~2 min of test time per PR on the
-        # baseline 16-3.4 image. Keep core + loadtests here; defer Postgres
-        # coverage entirely to postgres-compat.
-        # Coverlet XPlat collector emits cobertura.xml per project under
-        # ./coverage; see coverlet.runsettings for exclusions / formats.
-        # Timeout bumped 20→30 to absorb XPlat-collector instrumentation
-        # overhead on the larger Honua.Core assembly (#1144).
-        timeout-minutes: 30
-        run: |
-          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=core-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
-            --collect:"XPlat Code Coverage" \
-            --settings coverlet.runsettings
-
-          # Per ADR-0037 PR CI executes the LoadTests project's Fast tier only —
-          # the actual NBomber scenarios are exercised by the nightly load-soak
-          # workflow. Any future scenario-runner test marked `[Trait("Tier", "Slow")]`
-          # is skipped here.
-          dotnet test tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --filter "Tier!=Slow" \
-            --logger "trx;LogFileName=load-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      - name: Run .NET Tests (Core Security)
-        timeout-minutes: 3
-        run: |
-          dotnet test tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=core-security-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      - name: Run .NET Tests (Control-plane Lambda)
-        # Thin event-deserialization + forwarder unit tests for the cloud
-        # control-plane reconcile Lambda host (Honua.ControlPlane.Lambda). No
-        # service dependencies; runs in seconds.
-        timeout-minutes: 3
-        run: |
-          dotnet test tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=control-plane-lambda-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      - name: Run .NET Tests (Server Fast Tier)
-        # Per ADR-0037 the Fast tier runs across every test project on every
-        # PR, including Honua.Server.Tests. Filtering by Tier=Fast keeps this
-        # step under a few minutes — the [UnitTest] tests in Server.Tests use
-        # NSubstitute / NullLogger / in-memory caches and do not require the
-        # PostgreSQL service. Decoupled from the targeted-shards matrix so a
-        # PR with no matching shard still runs the fast server unit tests.
-        # Coverage collection on this step would add ~20m of Coverlet teardown
-        # overhead on Honua.Server.dll (size + density). Server.Tests coverage
-        # is collected by the sharded server-tests jobs which DO use the
-        # collector. Keeping this step coverage-free preserves the "fast smoke"
-        # intent (#1144).
-        timeout-minutes: 15
-        run: |
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --filter "Tier=Fast" \
-            --logger "trx;LogFileName=server-fast-tier.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      - name: Run .NET Tests (Protocol Fast Tier)
-        # #2943: the 8 protocol-split test projects created by the ADR-0042
-        # modularization (Honua.Protocols.{GeoServices,OgcApi,OgcClassic,
-        # OData,Scene,SensorThings,Stac}.Tests) plus Honua.Ai.Tests were never
-        # extended into this foundation lane. scripts/ci/run-server-test-shard.sh
-        # unconditionally appends `&Tier!=Fast` to every server-tests shard
-        # filter (see that script and the server-tests job comment above) on
-        # the assumption that Fast tests "run only once in
-        # dotnet-foundation-tests" — but that was only ever true for
-        # Honua.Server.Tests, leaving ~1,237 [UnitTest] cases dark (worst:
-        # Honua.Ai.Tests 483/558 never ran). Build + run each project's own
-        # Tier=Fast filter here, mirroring the Server Fast Tier step above.
-        # Restore/build is self-contained per project (rather than relying on
-        # the affected-projects computation used for "Build foundation test
-        # binaries") so this step's correctness never depends on the PR diff
-        # touching these projects. Verified locally before wiring in
-        # (Honua.Protocols.OData.Tests --filter Tier=Fast passed).
-        timeout-minutes: 20
-        run: |
-          set -euo pipefail
-          projects=(
-            Honua.Protocols.GeoServices
-            Honua.Protocols.OgcApi
-            Honua.Protocols.OgcClassic
-            Honua.Protocols.OData
-            Honua.Protocols.Scene
-            Honua.Protocols.SensorThings
-            Honua.Protocols.Stac
-            Honua.Ai
-          )
-          for project in "${projects[@]}"; do
-            csproj="tests/dotnet/${project}.Tests/${project}.Tests.csproj"
-            echo "::group::${project}.Tests (Tier=Fast)"
-            dotnet build "${csproj}" --no-restore --configuration Release
-            dotnet test "${csproj}" \
-              --no-build \
-              --configuration Release \
-              --filter "Tier=Fast" \
-              --logger "trx;LogFileName=${project}-fast-tier.trx" \
-              --logger "console;verbosity=minimal" \
-              --results-directory ./tests/TestResults
-            echo "::endgroup::"
-          done
-
-      - name: Run .NET Tests (Orphaned Unit Projects)
-        # #2943: these five projects compiled only as part of the full-solution
-        # build (Honua.sln) and were never invoked by any CI workflow, so
-        # their tests never ran anywhere. All are self-contained, fast, and
-        # need no external services:
-        #   - Honua.DuckDB.Tests: in-process DuckDB, no network/services.
-        #   - Honua.Plugins.Tests / Honua.ArcGisRest.Tests: pure unit tests.
-        #   - Honua.Oracle.Tests: unit-only today (no live Oracle instance is
-        #     wired up; see the sibling warehouse-nightly.yml lane for the
-        #     creds-gated story).
-        # Honua.Worker.Gdal.Tests used to be in this list; #3271 moved it to
-        # the dedicated `worker-gdal-tests` job below, which installs the GDAL
-        # CLI first. On this lean agent GdalCliFactAttribute set Skip on every
-        # real-GDAL case, so `gdaldem`/`ogr2ogr` coverage was green-by-absence.
-        # Verified locally before wiring in (DuckDB 95/95, Honua.Plugins.Tests
-        # 75/75, Honua.Oracle.Tests 55/55, Honua.ArcGisRest.Tests 93/93 passed
-        # — the latter's one observed "Collection was modified" flake from a
-        # process-global ActivityListener racing a plain List<T> was fixed
-        # alongside this PR, see ArcGisRestPaginationTests.cs).
-        # Honua.Postgres.Security.Tests is deliberately NOT in this list — see
-        # the separate advisory step below.
-        timeout-minutes: 20
-        run: |
-          set -euo pipefail
-          projects=(
-            tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj
-            tests/dotnet/Honua.Plugins.Tests/Honua.Plugins.Tests.csproj
-            tests/dotnet/Honua.ArcGisRest.Tests/Honua.ArcGisRest.Tests.csproj
-            tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj
-          )
-          for csproj in "${projects[@]}"; do
-            project="$(basename "${csproj}" .Tests.csproj)"
-            echo "::group::${project}.Tests"
-            dotnet build "${csproj}" --no-restore --configuration Release
-            dotnet test "${csproj}" \
-              --no-build \
-              --configuration Release \
-              --logger "trx;LogFileName=${project}-tests.trx" \
-              --logger "console;verbosity=minimal" \
-              --results-directory ./tests/TestResults
-            echo "::endgroup::"
-          done
-
-      - name: Run .NET Tests (Postgres Security, advisory)
-        # #2943: Honua.Postgres.Security.Tests was never invoked by any CI
-        # workflow and, when run for the first time while preparing this PR,
-        # 3 of its 7 tests FAILED against current `Honua.Postgres` behavior
-        # (real product/test divergence, not test bugs):
-        #   - SecureConnectionResolverSslModeTests.ResolveConnectionStringAsync_
-        #     SecretReferenceHostOrPortMismatch_ThrowsInvalidOperation expects a
-        #     host/port tamper check for secret-reference connections, but
-        #     SecureConnectionResolver.cs explicitly skips that check when
-        #     connection.SecretRef is set (see the comment at the `if
-        #     (string.IsNullOrWhiteSpace(connection.SecretRef))` guard).
-        #   - SecureConnectionDataSourceCacheTests.GetOrCreate_WithConfiguredDefaultSchema_
-        #     EmbedsSearchPathInOptions expects the secure-connection data
-        #     source cache to embed the configured `Database:Schema` into
-        #     `Options=search_path=...` the same way the default NpgsqlDataSource
-        #     does, but SecureConnectionDataSourceCache does not currently do so
-        #     — a potential multi-tenant schema-isolation gap for background/
-        #     service callers using named secure connections.
-        # Fixing product behavior is out of scope for a CI-wiring PR (#2943 is
-        # about execution, not product fixes), so this step is advisory
-        # (continue-on-error) rather than gating, keeping the failing tests
-        # VISIBLE on every PR instead of silently absent. Tracked as #2949 —
-        # promote this step to blocking once that issue is resolved.
-        timeout-minutes: 10
-        continue-on-error: true
-        run: |
-          dotnet build tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj --no-restore --configuration Release
-          dotnet test tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj \
-            --no-build \
-            --configuration Release \
-            --logger "trx;LogFileName=postgres-security-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      - name: Run .NET Tests (MySql Testcontainers)
-        # #2943: Honua.MySql.Tests (177 tests) exercises the read/query-only
-        # MySQL/MariaDB provider against a self-managed Testcontainers
-        # mysql:8.0.36 image — no external credentials required, gated only by
-        # HONUA_TEST_MYSQL=1 (RequiredEnvironmentFact) so a stray full-project
-        # test run never spins up Docker by accident. It was never referenced
-        # by any workflow; wire it in here so the provider gets PR coverage.
-        # Verified locally before wiring in (177/177 passed) after fixing one
-        # test-fixture bug this revival surfaced: Query_WithBboxIntersectsFilter_
-        # ReturnsSubset built its bbox WKB via a raw `ST_AsWKB(ST_GeomFromText(...,
-        # 'axis-order=long-lat'))` call that put the axis-order option on the
-        # WKT parse but not the outer ST_AsWKB serialization, so MySQL emitted
-        # SRS-native (lat-long) WKB bytes that disagreed with the canonical X/Y
-        # contract MySqlSpatialSql.GeomFromWkb expects for real filter
-        # geometries (see MySqlFeatureStoreIntegrationTests.cs) — not a product
-        # bug in Honua.MySql.
-        timeout-minutes: 15
-        env:
-          HONUA_TEST_MYSQL: '1'
-        run: |
-          dotnet build tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj --no-restore --configuration Release
-          dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj \
-            --no-build \
-            --configuration Release \
-            --logger "trx;LogFileName=mysql-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      - name: Run .NET Tests (SQL/Warehouse Provider Units)
-        # #58 (make-gates-real follow-up to #2943): the four SQL/warehouse
-        # provider test projects — Honua.SqlServer.Tests,
-        # Honua.Snowflake.Tests, Honua.Redshift.Tests, Honua.Databricks.Tests —
-        # were referenced ONLY by the creds-gated nightly warehouse-nightly.yml
-        # lane, so their large CREDENTIAL-FREE unit suites (SQL dialect / query
-        # builder / provider resolution / options-validation / statement-flow;
-        # Databricks even stubs its HTTP transport) never gated a PR. This left
-        # them in the exact "referenced but not run on PRs" bucket #2943 fixed
-        # for the DuckDB/MySql/Oracle provider units. Wire the unit subset in
-        # here, excluding each project's live-warehouse integration class
-        # (`FullyQualifiedName!~IntegrationTests` covers
-        # SqlServerFeatureStoreIntegrationTests / SnowflakeFeatureStoreIntegrationTests
-        # / RedshiftFeatureDataAccessIntegrationTests / DatabricksLiveIntegrationTests)
-        # so nothing here needs live credentials or Docker — Redshift's
-        # integration lane in particular spins up a Testcontainers image and is
-        # excluded by name, and no HONUA_TEST_* / *_CONNECTION env is set, so the
-        # RequiredEnvironmentFact / Category-gated cases stay in the nightly lane.
-        # Restore/build is self-contained per project (mirrors the "Orphaned
-        # Unit Projects" step) so correctness never depends on the PR diff
-        # touching these projects. Verified locally before wiring in
-        # (SqlServer 47/47, Snowflake 49/49, Redshift 49/49, Databricks 55/55
-        # passed; all sub-second, no services).
-        timeout-minutes: 15
-        run: |
-          set -euo pipefail
-          projects=(
-            tests/dotnet/Honua.Db.SqlServer.Tests/Honua.SqlServer.Tests.csproj
-            tests/dotnet/Honua.Snowflake.Tests/Honua.Snowflake.Tests.csproj
-            tests/dotnet/Honua.Db.Redshift.Tests/Honua.Redshift.Tests.csproj
-            tests/dotnet/Honua.Db.Databricks.Tests/Honua.Databricks.Tests.csproj
-          )
-          for csproj in "${projects[@]}"; do
-            project="$(basename "${csproj}" .Tests.csproj)"
-            echo "::group::${project}.Tests (units — integration excluded)"
-            dotnet build "${csproj}" --no-restore --configuration Release
-            dotnet test "${csproj}" \
-              --no-build \
-              --configuration Release \
-              --filter "FullyQualifiedName!~IntegrationTests" \
-              --logger "trx;LogFileName=${project}-unit-tests.trx" \
-              --logger "console;verbosity=minimal" \
-              --results-directory ./tests/TestResults
-            echo "::endgroup::"
-          done
-
-      - name: Run .NET Tests (Architecture)
-        timeout-minutes: 10
-        run: |
-          dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=architecture-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      - name: Run .NET Tests (GP Devkit golden harness)
-        # GP Devkit P6 (#2127): the golden-file GP test SDK self-tests. They are
-        # fast, offline unit tests (managed/stub executors, no Redis/job-store) in
-        # their own standalone assembly, so they run here in the foundation job
-        # rather than the Server.Tests-scoped server-test shard matrix.
-        timeout-minutes: 5
-        run: |
-          dotnet test tests/dotnet/Honua.Geoprocessing.Testing.Tests/Honua.Geoprocessing.Testing.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=gp-golden-harness-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      - name: Run .NET Tests (GP Devkit scaffolder)
-        # GP Devkit P4 (#2125): `honua gp new` scaffolder self-tests. Fast, offline
-        # unit tests (pure string-transform template/injector rendering + collision
-        # detection against the registered set) in their own standalone assembly, so
-        # they run here in the foundation job alongside the golden-harness self-tests.
-        timeout-minutes: 5
-        run: |
-          dotnet test tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj \
-            --no-build \
-            --no-restore \
-            --configuration Release \
-            --logger "trx;LogFileName=gp-scaffolder-tests.trx" \
-            --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
-
-      - name: Upload foundation test results
+      - name: Upload foundation family test results
         uses: actions/upload-artifact@v7.0.1
         if: always()
         timeout-minutes: 3
         with:
-          name: foundation-test-results
+          name: foundation-test-results-${{ matrix.family }}
           path: tests/TestResults/
+          if-no-files-found: warn
           retention-days: 7
 
       # Coverlet's XPlat collector drops `coverage.cobertura.xml` into a per-run
-      # GUID subdirectory under TestResults. Surface those files as their own
-      # artifact so downstream coverage tooling (CodeCov, ReportGenerator, etc.)
-      # can pull them without unpacking the full test-results bundle.
-      - name: Upload foundation coverage (cobertura)
+      # GUID subdirectory under TestResults. Only the Core family collects
+      # coverage (as before the split), but the artifact is uploaded per family
+      # so the fan-in job below can merge whatever exists without special-casing.
+      - name: Upload foundation family coverage (cobertura)
         uses: actions/upload-artifact@v7.0.1
         if: always()
         timeout-minutes: 3
+        with:
+          name: foundation-coverage-${{ matrix.family }}
+          path: tests/TestResults/**/coverage.cobertura.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Fan-in for the family matrix above. Deliberately keeps the job id
+  # `dotnet-foundation-tests` and the check name `.NET Foundation Tests`:
+  #   - `test-all` (and therefore `CI Gate`) already requires this id;
+  #   - scripts/ci/merge-train/select.sh classifies `.NET Foundation Tests` as a
+  #     REAL gate (never laundered into a flake) via TRAIN_REAL_GATE_JOB_REGEX,
+  #     which matches the family jobs too since their names carry the prefix;
+  #   - the merged `foundation-test-results` / `foundation-coverage` artifact
+  #     names and the `foundation` Codecov flag are unchanged for consumers.
+  # `test-all` needs BOTH this job and the matrix job, so a bug in this
+  # aggregation cannot silently un-gate a family.
+  dotnet-foundation-tests:
+    name: .NET Foundation Tests
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    needs: [changes, dotnet-foundation-family-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # continue-on-error: a family that died before its upload step leaves no
+      # artifact to download, and that must surface as the family's own failure
+      # in the result check below rather than as a confusing download error.
+      - name: Download family test results
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: foundation-test-results-*
+          path: tests/TestResults
+          merge-multiple: true
+
+      - name: Summarize merged foundation results
+        run: |
+          trx_count=$(find tests/TestResults -name '*.trx' 2>/dev/null | wc -l)
+          cobertura_count=$(find tests/TestResults -name 'coverage.cobertura.xml' 2>/dev/null | wc -l)
+          echo "Merged ${trx_count} trx file(s) and ${cobertura_count} cobertura report(s)."
+          {
+            echo "### .NET Foundation Tests"
+            echo
+            echo "| family | result |"
+            echo "| --- | --- |"
+            echo "| all families | ${{ needs.dotnet-foundation-family-tests.result }} |"
+            echo
+            echo "Merged ${trx_count} trx file(s), ${cobertura_count} cobertura report(s)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Republish under the pre-split artifact names so anything pointing at
+      # `foundation-test-results` / `foundation-coverage` keeps working, and so
+      # coverage is aggregated across families in one place rather than being
+      # scattered by the split.
+      - name: Upload foundation test results
+        uses: actions/upload-artifact@v7.0.1
+        if: always()
+        timeout-minutes: 5
+        with:
+          name: foundation-test-results
+          path: tests/TestResults/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload foundation coverage (cobertura)
+        uses: actions/upload-artifact@v7.0.1
+        if: always()
+        timeout-minutes: 5
         with:
           name: foundation-coverage
           path: tests/TestResults/**/coverage.cobertura.xml
@@ -1446,8 +1190,8 @@ jobs:
           retention-days: 7
 
       # CodeCov upload — only runs when a token is configured in repo secrets.
-      # Without a token the artifact above is still produced so coverage can be
-      # inspected manually from the workflow run.
+      # Unchanged from the pre-split job except that the files it uploads are
+      # now the merged set from every family.
       - name: Upload coverage to Codecov
         if: ${{ always() && env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v7
@@ -1459,6 +1203,15 @@ jobs:
           flags: foundation
           name: foundation-tests
           fail_ci_if_error: false
+
+      - name: Check foundation family results
+        run: |
+          result='${{ needs.dotnet-foundation-family-tests.result }}'
+          if [[ "${result}" != "success" ]]; then
+            echo "::error::.NET Foundation Tests families concluded '${result}'."
+            exit 1
+          fi
+          echo "All .NET Foundation Tests families passed."
 
   server-tests:
     name: Server Tests (${{ matrix.shard_name }})
@@ -2022,6 +1775,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs:
+      # Both the family matrix and its fan-in: a bug in the fan-in job's result
+      # check cannot then leave a foundation family un-gated (#3567).
+      - dotnet-foundation-family-tests
       - dotnet-foundation-tests
       - server-tests
       - worker-gdal-tests
