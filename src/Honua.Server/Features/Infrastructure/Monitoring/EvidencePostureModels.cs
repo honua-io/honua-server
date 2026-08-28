@@ -139,6 +139,14 @@ public static class EvidencePostureVocabulary
         public const string DeployRelease = "honua_ops_health.deploy_release";
         public const string DatabaseCache = "honua_ops_health.database_cache";
         public const string Findings = "honua_ops_findings";
+        public const string FindingsAlertDispatch = "honua_ops_findings.alert_dispatch";
+        public const string FindingsControlPlane = "honua_ops_findings.control_plane";
+        public const string FindingsDeployPreflight = "honua_ops_findings.deploy_preflight";
+        public const string FindingsGpQueue = "honua_ops_findings.gp_queue";
+        public const string FindingsWorkflowOperations = "honua_ops_findings.workflow_operations";
+        public const string FindingsServingLatencyRollup = "honua_ops_findings.serving_latency_rollup";
+        public const string FindingsDatabasePressure = "honua_ops_findings.database_pressure";
+        public const string FindingsBatchBackends = "honua_ops_findings.batch_backends";
         public const string AlertEvents = "honua_alert_events";
         public const string OperateEvents = "honua_operate_events";
         public const string PlatformReleaseStatus = "honua_platform_release_status";
@@ -149,6 +157,19 @@ public static class EvidencePostureVocabulary
 internal static class EvidencePostureFactory
 {
     private static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Reason codes that describe incomplete coverage of an otherwise successful collection. A source
+    /// carrying only these reasons still returned valid observations, so it degrades to
+    /// <c>partial</c> rather than <c>unavailable</c>. Any other reason code means the configured
+    /// backend produced no evidence that can be trusted at all.
+    /// </summary>
+    private static readonly HashSet<string> CoverageReasonCodes = new(StringComparer.Ordinal)
+    {
+        EvidencePostureVocabulary.ReasonCodes.PartialResult,
+        EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage,
+        EvidencePostureVocabulary.ReasonCodes.Truncated,
+    };
 
     public static EvidenceSourceEnvelope Complete(
         string sourceId,
@@ -169,16 +190,155 @@ internal static class EvidencePostureFactory
             ValidUntil = observedAt.ToUniversalTime().Add(maximumAge),
         };
 
+    /// <summary>
+    /// A configured backend that could not supply valid evidence. Missing timestamps stay missing;
+    /// they are never replaced with the response time.
+    /// </summary>
+    public static EvidenceSourceEnvelope Unavailable(
+        string sourceId,
+        string backendKind,
+        string backendId,
+        string reasonCode,
+        DateTimeOffset? observedAt = null,
+        DateTimeOffset? lastSuccessfulAt = null,
+        TimeSpan? maximumAge = null,
+        EvidenceSourceCoverage? coverage = null) => new()
+        {
+            SourceId = sourceId,
+            BackendKind = backendKind,
+            BackendId = backendId,
+            ObservedAt = observedAt?.ToUniversalTime(),
+            LastSuccessfulAt = lastSuccessfulAt?.ToUniversalTime(),
+            Completeness = EvidencePostureVocabulary.Completeness.Unavailable,
+            ReasonCodes = [reasonCode],
+            Coverage = coverage,
+            MaximumAgeSeconds = maximumAge is { } age ? (long)age.TotalSeconds : null,
+        };
+
+    /// <summary>A source that returned valid observations with known-incomplete coverage.</summary>
+    public static EvidenceSourceEnvelope Partial(
+        string sourceId,
+        string backendKind,
+        string backendId,
+        DateTimeOffset observedAt,
+        TimeSpan maximumAge,
+        string reasonCode,
+        EvidenceSourceCoverage? coverage = null) => new()
+        {
+            SourceId = sourceId,
+            BackendKind = backendKind,
+            BackendId = backendId,
+            ObservedAt = observedAt.ToUniversalTime(),
+            LastSuccessfulAt = observedAt.ToUniversalTime(),
+            Completeness = EvidencePostureVocabulary.Completeness.Partial,
+            ReasonCodes = [reasonCode],
+            Coverage = coverage,
+            MaximumAgeSeconds = (long)maximumAge.TotalSeconds,
+            ValidUntil = observedAt.ToUniversalTime().Add(maximumAge),
+        };
+
+    /// <summary>
+    /// A source with no configured backend at all. Distinct from <see cref="Unavailable"/>: nothing
+    /// was queried, so there is neither an observation nor a collection-health signal to report.
+    /// </summary>
+    public static EvidenceSourceEnvelope NotConfigured(string sourceId, string backendKind, string backendId) => new()
+    {
+        SourceId = sourceId,
+        BackendKind = backendKind,
+        BackendId = backendId,
+        Completeness = EvidencePostureVocabulary.Completeness.NotConfigured,
+        ReasonCodes = [EvidencePostureVocabulary.ReasonCodes.NotConfigured],
+    };
+
+    /// <summary>
+    /// Composes a top-level source over already-validated component sources. The aggregate never
+    /// claims more than its weakest component and publishes which component ids it actually covered.
+    /// </summary>
+    public static EvidenceSourceEnvelope Aggregate(
+        string sourceId,
+        string backendId,
+        TimeSpan maximumAge,
+        IReadOnlyList<EvidenceSourceEnvelope> components)
+    {
+        ArgumentNullException.ThrowIfNull(components);
+
+        var expected = components.Select(component => component.SourceId).OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        var included = components.Where(IsActionable).Select(component => component.SourceId)
+            .OrderBy(id => id, StringComparer.Ordinal).ToArray();
+        var coverage = new EvidenceSourceCoverage
+        {
+            IncludedComponentIds = included,
+            ExpectedComponentIds = expected,
+        };
+
+        // The aggregate is only as fresh as the oldest component it actually summarizes. Individual
+        // reason codes stay on the components that earned them; the aggregate reports coverage.
+        var componentObservations = components
+            .Where(IsActionable)
+            .Select(component => component.ObservedAt)
+            .OfType<DateTimeOffset>()
+            .ToArray();
+        if (componentObservations.Length == 0)
+        {
+            return Unavailable(
+                sourceId,
+                EvidencePostureVocabulary.BackendKinds.Composite,
+                backendId,
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
+                maximumAge: maximumAge,
+                coverage: coverage);
+        }
+
+        var aggregateObservedAt = componentObservations.Min().ToUniversalTime();
+        return new EvidenceSourceEnvelope
+        {
+            SourceId = sourceId,
+            BackendKind = EvidencePostureVocabulary.BackendKinds.Composite,
+            BackendId = backendId,
+            ObservedAt = aggregateObservedAt,
+            LastSuccessfulAt = aggregateObservedAt,
+            Completeness = included.Length == expected.Length
+                ? EvidencePostureVocabulary.Completeness.Complete
+                : EvidencePostureVocabulary.Completeness.Partial,
+            Coverage = coverage,
+            MaximumAgeSeconds = (long)maximumAge.TotalSeconds,
+            ValidUntil = aggregateObservedAt.Add(maximumAge),
+        };
+    }
+
     public static EvidencePosture Build(DateTimeOffset evaluatedAt, params EvidenceSourceEnvelope[] sources)
     {
+        ArgumentNullException.ThrowIfNull(sources);
+
         var normalized = sources.Select(source => Validate(source, evaluatedAt)).ToArray();
         return new EvidencePosture
         {
-            Status = normalized.All(IsActionable)
-                ? EvidencePostureVocabulary.Completeness.Complete
-                : EvidencePostureVocabulary.Completeness.Partial,
+            Status = SummarizeStatus(normalized),
             Sources = normalized,
         };
+    }
+
+    /// <summary>
+    /// Summarizes the required sources without hiding any of them: the top-level status is the
+    /// weakest individual state, so a client that only reads the summary still fails closed.
+    /// </summary>
+    private static string SummarizeStatus(EvidenceSourceEnvelope[] sources)
+    {
+        if (sources.Length == 0)
+        {
+            return EvidencePostureVocabulary.Completeness.Unavailable;
+        }
+
+        if (sources.All(IsActionable))
+        {
+            return EvidencePostureVocabulary.Completeness.Complete;
+        }
+
+        return sources.Any(source =>
+            source.Completeness == EvidencePostureVocabulary.Completeness.Unavailable ||
+            source.Completeness == EvidencePostureVocabulary.Completeness.NotConfigured)
+            ? EvidencePostureVocabulary.Completeness.Unavailable
+            : EvidencePostureVocabulary.Completeness.Partial;
     }
 
     public static bool IsActionable(EvidenceSourceEnvelope source) =>
@@ -204,6 +364,12 @@ internal static class EvidencePostureFactory
         if (source.LastSuccessfulAt is null)
         {
             reasons.Add(EvidencePostureVocabulary.ReasonCodes.NeverSucceeded);
+        }
+        else if (source.LastSuccessfulAt > evaluatedAt + ClockSkew)
+        {
+            // A collection that "last succeeded" in the future is malformed clock evidence and must
+            // fail closed exactly like a future observation.
+            reasons.Add(EvidencePostureVocabulary.ReasonCodes.FutureObservationTime);
         }
 
         if (source.ObservedAt is { } observed && source.LastSuccessfulAt is { } successful && observed > successful + ClockSkew)
@@ -237,6 +403,15 @@ internal static class EvidencePostureFactory
             {
                 reasons.Add(EvidencePostureVocabulary.ReasonCodes.Truncated);
             }
+
+            if (coverage.ExpectedComponentIds is { Count: > 0 } expectedComponents)
+            {
+                var includedComponents = coverage.IncludedComponentIds ?? [];
+                if (expectedComponents.Except(includedComponents, StringComparer.Ordinal).Any())
+                {
+                    reasons.Add(EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage);
+                }
+            }
         }
 
         return new EvidenceSourceEnvelope
@@ -246,11 +421,35 @@ internal static class EvidencePostureFactory
             BackendId = source.BackendId,
             ObservedAt = source.ObservedAt?.ToUniversalTime(),
             LastSuccessfulAt = source.LastSuccessfulAt?.ToUniversalTime(),
-            Completeness = reasons.Count == 0 ? source.Completeness : EvidencePostureVocabulary.Completeness.Unavailable,
+            Completeness = ResolveCompleteness(source.Completeness, reasons),
             ReasonCodes = reasons.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
             Coverage = source.Coverage,
             MaximumAgeSeconds = source.MaximumAgeSeconds,
             ValidUntil = source.ValidUntil?.ToUniversalTime(),
         };
+    }
+
+    /// <summary>
+    /// Resolves the published completeness from the declared value and the accumulated reasons.
+    /// A not-configured source stays not-configured (a client must be able to tell "nothing was
+    /// wired" from "the configured backend failed"); coverage-only reasons degrade to
+    /// <c>partial</c> so valid partial data is not misreported as a total source failure; anything
+    /// else is <c>unavailable</c>.
+    /// </summary>
+    private static string ResolveCompleteness(string declared, HashSet<string> reasons)
+    {
+        if (reasons.Count == 0)
+        {
+            return declared;
+        }
+
+        if (string.Equals(declared, EvidencePostureVocabulary.Completeness.NotConfigured, StringComparison.Ordinal))
+        {
+            return EvidencePostureVocabulary.Completeness.NotConfigured;
+        }
+
+        return reasons.All(CoverageReasonCodes.Contains)
+            ? EvidencePostureVocabulary.Completeness.Partial
+            : EvidencePostureVocabulary.Completeness.Unavailable;
     }
 }

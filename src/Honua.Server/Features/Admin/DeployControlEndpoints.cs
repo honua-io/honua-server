@@ -405,7 +405,10 @@ internal static class DeployControlEndpoints
                 EvidencePostureVocabulary.BackendKinds.DurableStore, "workflow-operation-store", observedAt,
                 TimeSpan.FromMinutes(5), new EvidenceSourceCoverage
                 {
-                    Page = page, PageSize = pageSize, HasMore = hasMore, Truncated = hasMore,
+                    Page = page,
+                    PageSize = pageSize,
+                    HasMore = hasMore,
+                    Truncated = hasMore,
                     ReturnedFrom = values.Length == 0 ? null : values.Min(),
                     ReturnedTo = values.Length == 0 ? null : observedAt,
                 }));

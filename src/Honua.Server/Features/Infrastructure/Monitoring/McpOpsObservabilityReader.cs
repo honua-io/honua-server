@@ -26,7 +26,7 @@ namespace Honua.Infrastructure.Monitoring;
 /// </summary>
 internal sealed class McpOpsObservabilityReader(
     IOpsHealthSnapshotService healthSnapshots,
-    IOpsFindingsService findings,
+    IOpsFindingsEvidenceSource findings,
     IOperateEventFeed operateEvents,
     IAuthorizationService authorization,
     IServiceProvider services) : IMcpOpsObservabilityReader
@@ -35,7 +35,7 @@ internal sealed class McpOpsObservabilityReader(
     private const int MaxPageSize = 200;
 
     private readonly IOpsHealthSnapshotService _healthSnapshots = healthSnapshots;
-    private readonly IOpsFindingsService _findings = findings;
+    private readonly IOpsFindingsEvidenceSource _findings = findings;
     private readonly IOperateEventFeed _operateEvents = operateEvents;
     private readonly IAuthorizationService _authorization = authorization;
     private readonly IServiceProvider _services = services;
@@ -59,8 +59,8 @@ internal sealed class McpOpsObservabilityReader(
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
         var severity = ParseOptionalEnum<OpsFindingSeverity>(argument.Severity, "severity");
-        var findings = await _findings.EvaluateAsync(cancellationToken).ConfigureAwait(false);
-        var filtered = findings.AsEnumerable();
+        var evaluation = await _findings.EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
+        var filtered = evaluation.Findings.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(argument.FindingId))
         {
@@ -84,13 +84,14 @@ internal sealed class McpOpsObservabilityReader(
                 StringComparison.OrdinalIgnoreCase));
         }
 
-        var generatedAt = DateTimeOffset.UtcNow;
         var response = new OpsFindingsListResponse
         {
-            GeneratedAt = generatedAt,
-            EvidencePosture = EvidencePostureFactory.Build(generatedAt,
-                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.Findings, EvidencePostureVocabulary.BackendKinds.Composite, "ops-findings-engine", generatedAt, TimeSpan.FromMinutes(2))),
-            Findings = filtered.Select(OpsFindingResponseMapper.Map).ToArray(),
+            // REST and MCP project the same evaluation and posture; neither adapter invents values.
+            GeneratedAt = evaluation.EvaluatedAt,
+            EvidencePosture = evaluation.Posture,
+            Findings = filtered
+                .Select(finding => OpsFindingResponseMapper.Map(finding, evaluation.Posture))
+                .ToArray(),
         };
 
         return Serialize(response, OpsObservabilityJsonContext.Default.OpsFindingsListResponse);
@@ -164,7 +165,7 @@ internal sealed class McpOpsObservabilityReader(
             SourceErrors = page.SourceErrors?.ToDictionary(
                 pair => pair.Key.ToString().ToLowerInvariant(),
                 pair => pair.Value),
-            EvidencePosture = BuildEventPosture(EvidencePostureVocabulary.SourceIds.OperateEvents, "operate-event-feed", argument.From, argument.To, page.Items.Select(item => item.OccurredAt), hasMore: false, page.PartialResult),
+            EvidencePosture = BuildEventPosture(EvidencePostureVocabulary.SourceIds.OperateEvents, "operate-event-feed", argument.From, argument.To, page.Items.Select(item => item.OccurredAt), page.Truncated, page.PartialResult),
         };
 
         return Serialize(response, ObservabilityJsonContext.Default.OperateEventPageResponse);
@@ -292,30 +293,42 @@ internal sealed class McpOpsObservabilityReader(
     {
         var generatedAt = DateTimeOffset.UtcNow;
         var values = observations.OrderBy(value => value).ToArray();
+
+        // A successful read of an empty window is observed at query time; a non-empty page is
+        // observed no later than its newest returned event.
         var observedAt = values.LastOrDefault(generatedAt);
-        var source = EvidencePostureFactory.Complete(sourceId, EvidencePostureVocabulary.BackendKinds.DurableStore,
-            backendId, observedAt, TimeSpan.FromMinutes(5), new EvidenceSourceCoverage
-            {
-                RequestedFrom = requestedFrom,
-                RequestedTo = requestedTo,
-                ReturnedFrom = values.Length == 0 ? null : values[0],
-                ReturnedTo = values.Length == 0 ? null : values[^1],
-                HasMore = hasMore,
-                Truncated = hasMore,
-            });
-        if (partial)
+        var coverage = new EvidenceSourceCoverage
         {
-            source = new EvidenceSourceEnvelope
-            {
-                SourceId = source.SourceId, BackendKind = source.BackendKind, BackendId = source.BackendId,
-                ObservedAt = source.ObservedAt, LastSuccessfulAt = source.LastSuccessfulAt,
-                Completeness = EvidencePostureVocabulary.Completeness.Partial,
-                ReasonCodes = [EvidencePostureVocabulary.ReasonCodes.PartialResult], Coverage = source.Coverage,
-                MaximumAgeSeconds = source.MaximumAgeSeconds, ValidUntil = source.ValidUntil,
-            };
-        }
+            RequestedFrom = requestedFrom,
+            RequestedTo = requestedTo,
+            ReturnedFrom = values.Length == 0 ? null : values[0],
+            ReturnedTo = values.Length == 0 ? null : values[^1],
+            HasMore = hasMore,
+            Truncated = hasMore,
+        };
+
+        var source = partial
+            ? EvidencePostureFactory.Partial(
+                sourceId,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                backendId,
+                observedAt,
+                EventWindowValidity,
+                EvidencePostureVocabulary.ReasonCodes.PartialResult,
+                coverage)
+            : EvidencePostureFactory.Complete(
+                sourceId,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                backendId,
+                observedAt,
+                EventWindowValidity,
+                coverage);
+
         return EvidencePostureFactory.Build(generatedAt, source);
     }
+
+    /// <summary>Server-owned maximum observation age for bounded event-window reads.</summary>
+    private static readonly TimeSpan EventWindowValidity = TimeSpan.FromMinutes(5);
 
     private static JsonElement Serialize<T>(T value, JsonTypeInfo<T> typeInfo)
     {
