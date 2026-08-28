@@ -53,8 +53,10 @@ permissions:
 #   * a land-family phase is taken over by `train_restore_post_land`
 #     (land.sh:91-140), which reconciles against trunk and reselects.
 # Either outcome loses the rescue and needs an operator to clear the escalation.
-# The state issue also has no compare-and-swap (a plain `gh issue edit`,
-# state.sh:168), so interleaved writers are last-writer-wins.
+# State-issue writes carry the exact prior body observed by this controller;
+# state.sh refuses a changed prior, verifies the persisted bytes, and retries
+# only against that same prior. An interleaving writer therefore fails this job
+# loudly instead of being silently treated as a successful recovery.
 #
 # Writing a `land` phase before the wait to fence the train out was considered
 # and REJECTED: `land` is durable land intent that `train_state_salvage` refuses
@@ -200,6 +202,8 @@ jobs:
           . scripts/ci/merge-train/land.sh
           . scripts/ci/merge-train/state.sh
           . scripts/ci/merge-train/recovery.sh
+          export TRAIN_STATE_PRIOR_FILE="$(mktemp)"
+          trap 'rm -f "${TRAIN_STATE_PRIOR_FILE}"' EXIT
           train_recover_green_batch_rerun \
             "${SOURCE_RUN_ID}" \
             "${SOURCE_HEAD_BRANCH}" \

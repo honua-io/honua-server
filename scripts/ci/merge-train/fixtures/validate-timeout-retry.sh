@@ -472,6 +472,78 @@ export TRAIN_APPLY=0
 rm -f "${state_body_file}"
 pass "state lookup/read/write authority fails closed"
 
+# Existing state writes are compare-and-swap operations over the exact prior
+# body. Conflicts retry only against that same prior, never rebase onto a
+# concurrent writer's state; identical intent is a zero-edit success.
+ORIGINAL_CAS_STATE_BODY="$(declare -f train_state_body)"
+ORIGINAL_CAS_SIDE_EFFECT="$(declare -f train_side_effect)"
+cas_expected="$(mktemp)"
+cas_intended="$(mktemp)"
+cas_live="$(mktemp)"
+cas_edits="$(mktemp)"
+printf 'prior-state' >"${cas_expected}"
+printf 'intended-state' >"${cas_intended}"
+printf 'concurrent-state' >"${cas_live}"
+: >"${cas_edits}"
+export TRAIN_APPLY=1 TRAIN_STATE_CAS_ATTEMPTS=2 TRAIN_STATE_CAS_RETRY_SECONDS=0
+export TRAIN_STATE_ISSUE_OVERRIDE=1
+train_state_body() { printf '%s' "$(<"${cas_live}")"; }
+train_side_effect() {
+  [[ "$*" == "gh issue edit 1 --body-file ${cas_intended}" ]] \
+    || fail "CAS attempted unexpected side effect: $*"
+  printf 'edit\n' >>"${cas_edits}"
+  cp "${cas_intended}" "${cas_live}"
+}
+
+rc=0; train_state_write "${cas_intended}" "${cas_expected}" || rc=$?
+[[ "${rc}" == "3" && ! -s "${cas_edits}" ]] \
+  || fail "stale-prior CAS write was not refused without an edit"
+pass "state CAS refuses a stale prior"
+
+cas_reads="$(mktemp)"
+printf '0' >"${cas_reads}"
+train_state_body() {
+  local count
+  count=$(( $(<"${cas_reads}") + 1 ))
+  printf '%s' "${count}" >"${cas_reads}"
+  if [[ "${count}" == "1" ]]; then
+    printf 'transient-concurrent-view'
+  else
+    printf '%s' "$(<"${cas_live}")"
+  fi
+}
+printf 'prior-state' >"${cas_live}"
+: >"${cas_edits}"
+train_state_write "${cas_intended}" "${cas_expected}" \
+  || fail "CAS did not converge when the second read matched the expected prior"
+[[ "$(<"${cas_reads}")" == "3" && "$(wc -l <"${cas_edits}" | tr -d ' ')" == "1" \
+   && "$(<"${cas_live}")" == "intended-state" ]] \
+  || fail "CAS second-read convergence did not perform one verified edit"
+pass "state CAS retry converges on the second read"
+
+: >"${cas_edits}"
+train_state_write "${cas_intended}" "${cas_expected}" \
+  || fail "idempotent CAS write failed"
+[[ ! -s "${cas_edits}" ]] || fail "idempotent CAS write made an edit API call"
+pass "state CAS idempotence makes no edit API call"
+
+printf 'prior-state' >"${cas_expected}"
+printf 'prior-state' >"${cas_live}"
+: >"${cas_edits}"
+train_state_body() { printf '%s' "$(<"${cas_live}")"; }
+train_state_write "${cas_intended}" "${cas_expected}" \
+  || fail "unchanged single-writer CAS path failed"
+[[ "$(wc -l <"${cas_edits}" | tr -d ' ')" == "1" \
+   && "$(<"${cas_expected}")" == "intended-state" ]] \
+  || fail "single-writer CAS path did not land and advance its prior"
+pass "state CAS unchanged single-writer path lands"
+
+eval "${ORIGINAL_CAS_STATE_BODY}"
+eval "${ORIGINAL_CAS_SIDE_EFFECT}"
+unset TRAIN_STATE_CAS_ATTEMPTS TRAIN_STATE_CAS_RETRY_SECONDS
+export TRAIN_APPLY=0
+rm -f "${cas_expected}" "${cas_intended}" "${cas_live}" "${cas_edits}" "${cas_reads}"
+
 # Production startup restoration: matching persisted intent waits on the old
 # run id, accepts only completed(new), and performs no dispatch/rerun side effect.
 : >"${record}"
@@ -734,7 +806,14 @@ pass "main-loop classifier behavior"
 # rerun.
 export TRAIN_SOURCE_ONLY=1 TRAIN_APPLY=1 TRAIN_RESUME_STARTUP_TEST_ONLY=0
 . "${TRAIN_DIR}/train.sh"
-train_side_effect() { printf '%s\n' "$*" >>"${record}"; }
+train_side_effect() {
+  printf '%s\n' "$*" >>"${record}"
+  if [[ "${1:-}" == gh && "${2:-}" == issue && "${3:-}" == edit \
+     && "${5:-}" == --body-file ]]; then
+    TRAIN_STATE_BODY_OVERRIDE="$(<"$6")"
+    export TRAIN_STATE_BODY_OVERRIDE
+  fi
+}
 train_smart_ci_shards() { printf '{"run_all":false,"shards":["OData Core"],"reason":"resume"}\n'; }
 
 # End-to-end startup must route discovered smart-CI through exact-run recovery
@@ -981,7 +1060,11 @@ export TRAIN_STATE_BODY_OVERRIDE=$'```json\n{"active_batch":{"branch":"train/bat
 reset_capture="$(mktemp)"
 train_side_effect() {
   printf '%s\n' "$*" >>"${record}"
-  [[ "$1 $2 $3 $5" == "gh issue edit --body-file" ]] && cp "$6" "${reset_capture}"
+  if [[ "$1 $2 $3 $5" == "gh issue edit --body-file" ]]; then
+    cp "$6" "${reset_capture}"
+    TRAIN_STATE_BODY_OVERRIDE="$(<"$6")"
+    export TRAIN_STATE_BODY_OVERRIDE
+  fi
   return 0
 }
 train_select() { fail "state reset continued into selection"; }
@@ -1166,6 +1249,11 @@ rm -f "${reset_capture}"
 train_side_effect() {
   [[ "${side_effect_fails}" == "1" ]] && return 42
   printf '%s\n' "$*" >>"${record}"
+  if [[ "${1:-}" == gh && "${2:-}" == issue && "${3:-}" == edit \
+     && "${5:-}" == --body-file ]]; then
+    TRAIN_STATE_BODY_OVERRIDE="$(<"$6")"
+    export TRAIN_STATE_BODY_OVERRIDE
+  fi
 }
 
 # Validate every value needed to render cleared state before mutating labels.
