@@ -4,6 +4,8 @@
 using System.Buffers;
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -183,6 +185,31 @@ internal sealed class PublishedOperationTool : IMcpTool
 
         var parameters = ReadParameters(arguments);
         var dryRun = ReadBool(arguments, "dryRun");
+
+        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        {
+            var gate = httpContext.RequestServices.GetRequiredService<OperatorApprovalGate>();
+            var approval = gate.CheckApproval(principal, new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Catalog,
+                Operation = OperatorOperation.Publish
+            });
+            if (approval.IsRequired)
+            {
+                return McpToolHelpers.SuccessResult(
+                    new McpOperationToolOutput
+                    {
+                        Status = OperationHandleStatus.RequiresApproval.ToString(),
+                        RequiresApproval = true,
+                        Deterministic = IsDeterministic,
+                        OperationId = _descriptor.OperationId,
+                        ApprovalLane = approval.PolicyRef,
+                        Message = $"This operation requires approval (policy: {approval.PolicyRef})."
+                    },
+                    McpJsonContext.Default.McpOperationToolOutput);
+            }
+        }
+
         var cacheKey = IsCacheable && !dryRun
             ? IPublishedOperationCache.BuildKey(_descriptor.OperationId, _catalogVersion, parameters, context)
             : null;
