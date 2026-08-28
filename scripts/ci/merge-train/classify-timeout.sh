@@ -201,22 +201,45 @@ train_request_failed_job_rerun() {
 
 # train_match_timeout_text <log-text>: 0 when the text shows the shard could not
 # finish executing its tests, and sets TRAIN_TIMEOUT_KIND for the caller:
-#   capacity  over its configured budget       (terminal, never rerun)
-#   killed    SIGKILLed test host, e.g. OOM    (terminal, not a timeout at all)
-#   hang      stalled shard or generic exit-124/timeout text (bounded rerun)
+#   capacity           over its configured budget    (terminal, never rerun)
+#   killed             SIGKILLed test host, e.g. OOM (terminal, not a timeout at all)
+#   leg-inner-timeout  a matrix leg's OWN inner `timeout` fired; the run-level
+#                      scan resolves it to leg-flake or leg-hang using the
+#                      sibling legs' conclusions (see the guard there)
+#   hang               stalled shard or generic exit-124/timeout text (bounded rerun)
 # The explicit HONUA_SHARD_* markers are checked BEFORE the generic timeout
 # regex: `killed` reports exit 137 and no timeout wording at all, so a
 # text-only test would classify it as an ordinary product failure and let it
-# reach the pre-existing filter and per-PR attribution (#3213).
+# reach the pre-existing filter and per-PR attribution (#3213). The matrix-leg
+# marker is likewise checked before the generic regex because its step also
+# reports exit 124.
 train_match_timeout_text() {
   local text="$1"
   TRAIN_TIMEOUT_KIND=""
   if train_log_is_capacity_exhaustion "${text}"; then TRAIN_TIMEOUT_KIND=capacity; return 0; fi
   if train_log_is_shard_killed "${text}"; then TRAIN_TIMEOUT_KIND=killed; return 0; fi
   if train_log_is_shard_hang "${text}"; then TRAIN_TIMEOUT_KIND=hang; return 0; fi
+  if train_log_is_matrix_leg_inner_timeout "${text}"; then TRAIN_TIMEOUT_KIND=leg-inner-timeout; return 0; fi
   train_log_is_timeout "${text}" || return 1
   TRAIN_TIMEOUT_KIND=hang
   return 0
+}
+
+# train_matrix_sibling_passed <snapshot-json> <job-name>: 0 iff a DIFFERENT job
+# of the same matrix family — same name up to the parenthesized matrix
+# argument, e.g. `Postgres Compatibility (postgis/postgis:17-3.5)` next to
+# `Postgres Compatibility (postgis/postgis:16-3.4)` — concluded success in the
+# SAME run snapshot. Unrelated successful jobs (`CI Gate`, another family's
+# legs) must never satisfy this.
+train_matrix_sibling_passed() {
+  local snapshot="$1" name="$2" family="${name% (*}"
+  [[ -n "${family}" && "${family}" != "${name}" ]] || return 1
+  jq -e --arg fam "${family} (" --arg self "${name}" '
+    [.jobs | arrays | .[]
+      | select((.name // "") != $self)
+      | select((.name // "") | startswith($fam))
+      | select((.conclusion // "") == "success")]
+    | length > 0' >/dev/null 2>&1 <<<"${snapshot}"
 }
 
 # train_timeout_kind_is_terminal <kind>: kinds that must never be rerun and are
@@ -285,7 +308,8 @@ train_read_failed_job_snapshot() {
 }
 
 # train_run_logs_match_timeout <run-id> [failing-job-names]
-# Sets TRAIN_TIMEOUT_KIND to capacity|killed|hang on a match (empty otherwise).
+# Sets TRAIN_TIMEOUT_KIND to capacity|killed|hang|leg-flake|leg-hang on a
+# match (empty otherwise).
 # Returns 2 when any selected failing job's log is unavailable. Missing failure
 # evidence must never fall through to per-PR attribution: without the log we
 # cannot distinguish product failure, timeout, capacity exhaustion, or runner
@@ -299,13 +323,21 @@ train_run_logs_match_timeout() {
     TRAIN_FAILURE_EVIDENCE_RUN_ID="${run_id}"
     TRAIN_FAILURE_EVIDENCE_RUN_ATTEMPT="fixture"
     TRAIN_FAILURE_EVIDENCE_READY=1
-    train_match_timeout_text "${TRAIN_RUN_LOG_TEXT}"
-    return $?
+    local text_rc=0
+    train_match_timeout_text "${TRAIN_RUN_LOG_TEXT}" || text_rc=$?
+    # Injected text carries no run snapshot, so the sibling-passed signal that
+    # alone may authorize the leg-flake classification is unavailable here;
+    # keep the generic bounded-hang classification instead.
+    if [[ "${TRAIN_TIMEOUT_KIND}" == "leg-inner-timeout" ]]; then
+      TRAIN_TIMEOUT_KIND=hang
+    fi
+    return "${text_rc}"
   fi
 
   local snapshot attempt status rows jid name conclusion text annotations
   local evidence_dir evidence_file match_kind terminal_kind=""
   local saw_job=0 saw_evidence=0 saw_timeout=0 logs_complete=1
+  local saw_leg_inner=0 saw_other_timeout=0 leg_siblings_passed=1
   snapshot="$(train_read_failed_job_snapshot "${run_id}" 2>/dev/null || echo "")"
   if ! train_has_content "${snapshot}" || ! jq -e . >/dev/null 2>&1 <<<"${snapshot}"; then
     return 2
@@ -345,6 +377,9 @@ train_run_logs_match_timeout() {
           "${jid}" "${name}" "${attempt}" "${conclusion}" >"${evidence_file}"
         saw_evidence=1
         saw_timeout=1
+        # A job the RUNNER cancelled/timed out never reached its own inner
+        # timeout, so it is generic timeout evidence, not leg evidence.
+        saw_other_timeout=1
         continue
         ;;
     esac
@@ -364,6 +399,11 @@ train_run_logs_match_timeout() {
           if [[ "${match_kind}" == "capacity" || -z "${terminal_kind}" ]]; then
             terminal_kind="${match_kind}"
           fi
+        elif [[ "${match_kind}" == "leg-inner-timeout" ]]; then
+          saw_leg_inner=1
+          train_matrix_sibling_passed "${snapshot}" "${name}" || leg_siblings_passed=0
+        else
+          saw_other_timeout=1
         fi
         saw_timeout=1
         continue
@@ -384,6 +424,11 @@ train_run_logs_match_timeout() {
           if [[ "${match_kind}" == "capacity" || -z "${terminal_kind}" ]]; then
             terminal_kind="${match_kind}"
           fi
+        elif [[ "${match_kind}" == "leg-inner-timeout" ]]; then
+          saw_leg_inner=1
+          train_matrix_sibling_passed "${snapshot}" "${name}" || leg_siblings_passed=0
+        else
+          saw_other_timeout=1
         fi
       fi
     else
@@ -413,6 +458,28 @@ train_run_logs_match_timeout() {
     return 0
   fi
   if [[ "${saw_timeout}" == "1" ]]; then
+    # Matrix-leg inner-timeout classification (run 33109819708, job
+    # 98649469683: the 16-3.4 postgres-compat leg hung 24.4 minutes while the
+    # 17-3.5 and 18-3.6 legs of the SAME step in the SAME run passed in ~34s).
+    #
+    # GUARD — LOAD-BEARING: a leg that hit its OWN inner `timeout` is
+    # classified a retryable infrastructure flake (leg-flake) ONLY when a
+    # sibling leg of the same matrix step passed in the same run. That
+    # contrast is the whole evidence base: identical code, identical step,
+    # only the runner/image environment differed. A real code-introduced
+    # deadlock hangs EVERY leg — or the ONLY leg of a single-leg matrix — so
+    # with no passing sibling the failure is classified leg-hang and treated
+    # as REAL (no retry, batch rejected). Any generic timeout evidence in the
+    # same failing set disables the leg rule and keeps the historical bounded
+    # hang classification.
+    if [[ "${saw_leg_inner}" == "1" && "${saw_other_timeout}" == "0" ]]; then
+      if [[ "${leg_siblings_passed}" == "1" ]]; then
+        TRAIN_TIMEOUT_KIND=leg-flake
+      else
+        TRAIN_TIMEOUT_KIND=leg-hang
+      fi
+      return 0
+    fi
     TRAIN_TIMEOUT_KIND=hang
     return 0
   fi
@@ -499,6 +566,11 @@ train_classify_capacity_guard() {
   case "${TRAIN_TIMEOUT_KIND}" in
     capacity) TRAIN_GUARD_KIND=capacity; return 7 ;;
     killed)   TRAIN_GUARD_KIND=shard-killed; return 7 ;;
+    # Both leg kinds are shard-terminal (the leg never finished executing its
+    # tests, so its failure may not be subtracted as pre-existing), but only
+    # leg-flake earns a retry; train_classify_timeout splits them.
+    leg-flake) TRAIN_GUARD_KIND=leg-flake; return 9 ;;
+    leg-hang)  TRAIN_GUARD_KIND=leg-hang; return 9 ;;
     *)        TRAIN_GUARD_KIND=shard-timeout; return 9 ;;
   esac
 }
@@ -558,13 +630,27 @@ train_classify_timeout() {
       return 7
       ;;
   esac
-  # guard_rc == 9: a stalled shard or generic exit-124. This is the one
-  # shard-terminal shape that still earns the historical bounded rerun.
+  # guard_rc == 9: a stalled shard, generic exit-124, or a matrix leg's own
+  # inner timeout. leg-hang is the guarded direction of the matrix-leg rule:
+  # the inner timeout fired but NO sibling leg of the same step passed in the
+  # same run, which is the shape of a code-introduced deadlock (every leg
+  # hangs, or the only leg does). It must reject the batch: no retry, and rc 2
+  # also keeps it out of known-flake merge-through exactly like a persistent
+  # timeout.
+  if [[ "${TRAIN_TIMEOUT_KIND}" == "leg-hang" ]]; then
+    train_warn "matrix-leg inner timeout with no passing sibling leg: every leg of the step hung (or the only leg did), so this is a real failure, not an infra flake; continuing to attribution"
+    return 2
+  fi
+  # The remaining shapes still earn the historical bounded rerun.
   if [[ "${retry_count}" -ge "${TRAIN_TIMEOUT_RERUN_CAP}" ]]; then
     train_warn "timeout/exit-124 failure persisted after ${TRAIN_TIMEOUT_RERUN_CAP} failed-job retry; treating as real"
     return 2
   fi
-  train_log "timeout/exit-124 signature matched; rerunning failed jobs once"
+  if [[ "${TRAIN_TIMEOUT_KIND}" == "leg-flake" ]]; then
+    train_log "matrix-leg inner timeout with a passing sibling leg in the same run: infrastructure flake; rerunning failed jobs once"
+  else
+    train_log "timeout/exit-124 signature matched; rerunning failed jobs once"
+  fi
   train_request_failed_job_rerun "${run_id}" timeout "$((retry_count + 1))" "${callback}"
 }
 
