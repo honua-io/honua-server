@@ -226,6 +226,7 @@ public interface IOperationGateway
     /// path. Used when the caller has already determined the operation must be gated
     /// and only needs it persisted for human resolution (ADR-0064, #2814).
     /// </summary>
+    /// <param name="operationInstanceId">Existing canonical invocation identity accepted before this call.</param>
     /// <param name="request">Neutral operation request carrying the execution payload.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
@@ -233,6 +234,7 @@ public interface IOperationGateway
     /// proposal identifier.
     /// </returns>
     Task<OperationGatewayResult> CreateApprovalProposalAsync(
+        string operationInstanceId,
         OperationGatewayRequest request,
         CancellationToken cancellationToken = default);
 

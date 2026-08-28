@@ -76,6 +76,9 @@ public sealed record OperationDescriptor : IOperationDescriptor
     public required OperationApprovalModel ApprovalModel { get; init; }
 
     /// <inheritdoc />
+    public bool IsCompatibilityOnly { get; init; }
+
+    /// <inheritdoc />
     public required OperationPolicyMetadata Policy { get; init; }
 
     /// <inheritdoc />

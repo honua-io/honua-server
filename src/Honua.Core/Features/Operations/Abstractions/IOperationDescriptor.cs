@@ -64,6 +64,12 @@ public interface IOperationDescriptor
     OperationApprovalModel ApprovalModel { get; }
 
     /// <summary>
+    /// Whether this descriptor exists only for internal compatibility routing and must never
+    /// be offered through public REST, MCP, CLI, or Studio discovery.
+    /// </summary>
+    bool IsCompatibilityOnly { get; }
+
+    /// <summary>
     /// Policy metadata the policy decision point reasons over.
     /// </summary>
     OperationPolicyMetadata Policy { get; }

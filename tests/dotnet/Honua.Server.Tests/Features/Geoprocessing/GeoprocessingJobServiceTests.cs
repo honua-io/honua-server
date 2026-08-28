@@ -19,6 +19,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Protocols.GeoServices.GPServer;
@@ -1446,7 +1448,10 @@ public sealed class GeoprocessingJobServiceTests
         var gateway = Substitute.For<IOperationGateway>();
         OperationGatewayRequest? captured = null;
         gateway
-            .CreateApprovalProposalAsync(Arg.Do<OperationGatewayRequest>(r => captured = r), Arg.Any<CancellationToken>())
+            .CreateApprovalProposalAsync(
+                Arg.Is<string>(id => id.StartsWith("opinst-", StringComparison.Ordinal)),
+                Arg.Do<OperationGatewayRequest>(r => captured = r),
+                Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult(new OperationGatewayResult
             {
                 Outcome = OperationGatewayOutcome.ProposalCreated,
@@ -1862,7 +1867,24 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     private GeoprocessingJobService CreateServiceWithGateway(IOperationGateway gateway)
-        => new(
+    {
+        var factory = Substitute.For<IOperationEnvelopeFactory>();
+        factory.CreateAcceptedAsync(
+                Arg.Any<string>(),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationHandle
+            {
+                OperationInstanceId = $"opinst-{Guid.NewGuid():N}",
+                OperationId = "control-plane.geoprocess",
+                CorrelationId = $"corr-{Guid.NewGuid():N}",
+                AuditId = $"audit-{Guid.NewGuid():N}",
+                Status = OperationHandleStatus.Accepted,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+
+        return new GeoprocessingJobService(
             _progressStore, [_cancellationNotifier],
             _authEvaluator, _approvalEvaluator,
             new BuiltInProcessCatalog(),
@@ -1870,7 +1892,9 @@ public sealed class GeoprocessingJobServiceTests
             DefaultExecutorOptions,
             _jobStore, _jobQueue,
             resultPackageStore: _resultPackageStore,
-            operationGateway: gateway);
+            operationGateway: gateway,
+            operationEnvelopeFactory: factory);
+    }
 
     [UnitTest]
     [Operation(Operations.Create)]

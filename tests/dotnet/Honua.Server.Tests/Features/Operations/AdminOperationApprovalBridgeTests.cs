@@ -54,6 +54,13 @@ public sealed class AdminOperationApprovalBridgeTests
         mapped.ExecutionPayload.Should().Contain("\"dryRun\":true");
         mapped.ExecutionPayload.Should().Contain("\"tenantId\":\"tenant-a\"");
         mapped.ExecutionPayload.Should().Contain("\"schemaName\":\"tenant_a\"");
+
+        var replay = mapper.MapReplay(mapped);
+        replay.OperationId.Should().Be(ServicePublishOperation.OperationId);
+        replay.ConnectionId.Should().Be("connection-1");
+        replay.Parameters["schema"].Should().Be("public");
+        replay.Parameters["table"].Should().Be("roads");
+        replay.Parameters["layerName"].Should().Be("Roads");
     }
 
     [UnitTest]
@@ -78,6 +85,7 @@ public sealed class AdminOperationApprovalBridgeTests
     {
         var gateway = Substitute.For<IOperationGateway>();
         gateway.CreateApprovalProposalAsync(
+                Arg.Any<string>(),
                 Arg.Any<OperationGatewayRequest>(),
                 Arg.Any<CancellationToken>())
             .Returns(new OperationGatewayResult
@@ -111,6 +119,7 @@ public sealed class AdminOperationApprovalBridgeTests
         OperationGatewayRequest? captured = null;
         var gateway = Substitute.For<IOperationGateway>();
         gateway.CreateApprovalProposalAsync(
+                Arg.Is<string>(value => value == "opinst-123"),
                 Arg.Do<OperationGatewayRequest>(request => captured = request),
                 Arg.Any<CancellationToken>())
             .Returns(new OperationGatewayResult
@@ -235,5 +244,8 @@ public sealed class AdminOperationApprovalBridgeTests
                 RequestedBy = context.PrincipalId,
                 ExecutionPayload = "{}",
             };
+
+        public OperationRequest MapReplay(OperationGatewayRequest request)
+            => Request();
     }
 }

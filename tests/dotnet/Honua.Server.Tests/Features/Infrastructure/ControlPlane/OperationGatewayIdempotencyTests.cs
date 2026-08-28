@@ -50,6 +50,7 @@ public sealed class OperationGatewayIdempotencyTests
         second.ProposalId.Should().Be(first.ProposalId, "the same idempotency key must fold onto the same proposal");
         store.Count.Should().Be(1, "re-proposing with the same idempotency key must not mint a duplicate proposal");
         store.ActiveCount.Should().Be(1);
+        store.Single.Plan.Summary.Should().Be("Deploy proposal");
     }
 
     [Fact]
@@ -111,6 +112,32 @@ public sealed class OperationGatewayIdempotencyTests
         retry.ProposalId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ApplyApprovedProposalAsync_ConsumesPersistedValidatedPlanWithoutReplanning()
+    {
+        var store = new MultiProposalStore();
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
+        var actuator = new PlanCapturingExecutor();
+        var sut = CanonicalOperationGatewayTestComposition.Build(store, ladder, [actuator]);
+
+        var routed = await sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "agent",
+            ExecutionPayload = "live-request-payload",
+        });
+        var persisted = store.Single;
+
+        await sut.ApplyApprovedProposalAsync(routed.ProposalId!, "approver");
+
+        persisted.Plan.Summary.Should().Be("validated deploy plan");
+        persisted.Plan.ExecutionPayload.Should().Be("validated-plan-payload");
+        actuator.PlanCalls.Should().Be(1, "approved replay must not revalidate against live state");
+        actuator.ExecutedPayload.Should().Be("validated-plan-payload");
+    }
+
     private static OperationGateway BuildGateway(
         IOperationProposalStore store,
         IGuardrailLadder ladder,
@@ -133,6 +160,40 @@ public sealed class OperationGatewayIdempotencyTests
             }
 
             return Task.FromResult<string?>("audit-retry");
+        }
+    }
+
+    private sealed class PlanCapturingExecutor
+        : Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor
+    {
+        public OperationClass OperationClass => OperationClass.Deploy;
+
+        public int PlanCalls { get; private set; }
+
+        public string? ExecutedPayload { get; private set; }
+
+        public Task<OperationProposalPlan?> PlanAsync(
+            OperationGatewayRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            PlanCalls++;
+            return Task.FromResult<OperationProposalPlan?>(new OperationProposalPlan
+            {
+                Summary = "validated deploy plan",
+                Diff = ["old -> new"],
+                RiskLevel = ProposalRiskLevel.High,
+                Warnings = ["review canary"],
+                ExecutionPayload = "validated-plan-payload",
+            });
+        }
+
+        public Task<string?> ExecuteAsync(
+            OperationGatewayRequest request,
+            string? executionPayload,
+            CancellationToken cancellationToken = default)
+        {
+            ExecutedPayload = executionPayload;
+            return Task.FromResult<string?>("deploy-job-1");
         }
     }
 

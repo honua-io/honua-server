@@ -21,8 +21,14 @@ internal sealed class LegacyGatewayOperationAdapter(LegacyExecutor actuator) : T
         CancellationToken cancellationToken = default)
     {
         var gatewayRequest = RequireGatewayRequest(request);
-        _ = gatewayRequest.Plan ?? await actuator.PlanAsync(gatewayRequest, cancellationToken).ConfigureAwait(false);
-        return new OperationValidation { IsValid = true, Status = "valid" };
+        var plan = gatewayRequest.Plan
+            ?? await actuator.PlanAsync(gatewayRequest, cancellationToken).ConfigureAwait(false);
+        return new OperationValidation
+        {
+            IsValid = true,
+            Status = "valid",
+            ApprovalPlan = plan,
+        };
     }
 
     public async Task<OperationHandle> SubmitAsync(
@@ -104,6 +110,7 @@ internal static class LegacyOperationIds
         OperationClass.AdminConfigChange => "control-plane.admin-config-change",
         OperationClass.MetadataRelease => "control-plane.metadata-release",
         OperationClass.Geoprocess => "control-plane.geoprocess",
+        OperationClass.ServicePublish => ServicePublishOperation.OperationId,
         _ => throw new ArgumentOutOfRangeException(nameof(operationClass), operationClass, null),
     };
 }

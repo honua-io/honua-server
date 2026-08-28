@@ -421,6 +421,8 @@ public sealed class OperationGatewayAutonomyTests
     private static OperationGatewayRequest Request()
         => new()
         {
+            OperationInstanceId = $"opinst-{FindingId}",
+            CorrelationId = $"corr-{FindingId}",
             Kind = OperationClass.AdminConfigChange,
             ActionDiscriminator = RedriveAction,
             RequestedByAgent = "ops-findings-autonomy",

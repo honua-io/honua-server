@@ -163,7 +163,12 @@ public sealed class OperationGatewayStateMachineTests
             Kind = kind,
             Status = status,
             Plan = new OperationProposalPlan { Summary = "test proposal" },
-            Audit = new OperationAuditInfo { Reason = "test" },
+            Audit = new OperationAuditInfo
+            {
+                OperationInstanceId = $"opinst-{proposalId}",
+                CorrelationId = $"corr-{proposalId}",
+                Reason = "test",
+            },
             CreatedAt = now,
             UpdatedAt = now,
         };
