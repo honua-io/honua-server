@@ -321,6 +321,10 @@ internal sealed class PublishResultTool : IMcpTool
             ProposalId = handle.ProposalId,
             CorrelationId = handle.CorrelationId,
             AuditId = handle.AuditId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyOutcome = handle.PolicyDecision?.ToString(),
             SourceJobId = sourceJobId,
             ArtifactId = artifactId,
             JobId = handle.JobId,
@@ -328,6 +332,9 @@ internal sealed class PublishResultTool : IMcpTool
             MetadataRevision = handle.MetadataRevision,
             Summary = handle.Result?.Summary,
             Message = handle.Reason,
+            Details = handle.Result?.Details ?? new Dictionary<string, string>(StringComparer.Ordinal),
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
         };
 
         if (handle.Result is { } result)
