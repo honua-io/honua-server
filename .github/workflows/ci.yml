@@ -3099,6 +3099,11 @@ jobs:
           # this full-solution compile is precisely the backstop that makes the
           # per-PR narrowing safe. Do not "align" the two callers.
           build-scope: full
+          # Same reasoning for the format check: this solution-wide run (and
+          # ci.yml's own Build & Format Check) is the backstop that catches
+          # any diagnostic the per-PR --include-scoped format missed in files
+          # outside a diff. Do not "align" this with PR Gate either.
+          format-scope: full
 
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
