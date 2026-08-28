@@ -7,9 +7,13 @@
 # ~34s. The batch was rejected for a pure infrastructure flake. ci.yml now caps
 # each leg with an inner `timeout` that emits HONUA_MATRIX_LEG_INNER_TIMEOUT,
 # and the classifier turns that marker into a retryable infra flake ONLY when a
-# sibling leg passed — the load-bearing guard: with no passing sibling (a
-# code-introduced deadlock hangs every leg, or the only leg), the failure stays
-# REAL and rejects the batch.
+# sibling leg passed — the load-bearing guard: when sibling legs ran and none
+# passed (a code-introduced deadlock hangs every leg), the failure stays REAL
+# and rejects the batch. A run with NO sibling leg at all (the single-leg
+# POSTGRES_BASELINE matrix on ordinary PRs and selective batches) carries no
+# sibling evidence in either direction and keeps the historical generic
+# bounded-hang classification. rc 137 (SIGKILL) before the budget elapses is
+# ambiguous (external OOM vs kill-after) and never carries the marker.
 set -euo pipefail
 
 TRAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -105,7 +109,12 @@ Postgres Compatibility (postgis/postgis:18-3.6)' || rc=$?
 [[ "${rc}" == "1" ]] || fail "all-legs-hung escaped the real-failure path (rc=${rc})"
 pass "all-legs-hung is REAL through the orchestration policy (no flake merge-through)"
 
-# --- Only leg of a single-leg matrix hung -> real failure --------------------
+# --- single-leg-run-downgrades-to-generic-bounded-hang -----------------------
+# Ordinary PRs and selective batches run POSTGRES_BASELINE, which contains
+# ONLY the PG16 leg. With no sibling of the family in the run at all, the
+# sibling contrast proves nothing in either direction, so the marker must
+# keep the historical generic bounded-hang classification (one retry, capped)
+# instead of being promoted straight to leg-hang REAL.
 FIXTURE_SNAPSHOT='{"attempt":1,"status":"completed","jobs":[
   {"databaseId":41,"name":"Postgres Compatibility (postgis/postgis:16-3.4)","conclusion":"failure"},
   {"databaseId":45,"name":"Test Suite Summary","conclusion":"success"}]}'
@@ -113,10 +122,18 @@ FIXTURE_ANNOTATIONS=([41]="$(leg_marker postgis/postgis:16-3.4)")
 : >"${record}"
 rc=0
 train_classify_timeout 33109819708 0 'Postgres Compatibility (postgis/postgis:16-3.4)' || rc=$?
-[[ "${rc}" == "2" ]] || fail "single-leg hang was not treated as real (rc=${rc})"
-[[ "${TRAIN_TIMEOUT_KIND}" == "leg-hang" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected leg-hang"
-[[ ! -s "${record}" ]] || fail "single-leg hang consumed a rerun"
-pass "the only leg hanging is a real failure, not a flake"
+[[ "${rc}" == "0" ]] || fail "single-leg run lost the generic bounded-hang retry (rc=${rc})"
+[[ "${TRAIN_TIMEOUT_KIND}" == "hang" ]] || fail "timeout kind was '${TRAIN_TIMEOUT_KIND}', expected hang"
+grep -Fqx 'gh run rerun 33109819708 --failed' "${record}" || fail "single-leg downgrade did not target failed jobs only"
+pass "single-leg run downgrades to the generic bounded-hang classification"
+
+# ...and that downgrade is still bounded: at the cap the same shape is real.
+: >"${record}"
+rc=0
+train_classify_timeout 33109819708 1 'Postgres Compatibility (postgis/postgis:16-3.4)' || rc=$?
+[[ "${rc}" == "2" ]] || fail "single-leg hang was retried past the rerun cap (rc=${rc})"
+[[ ! -s "${record}" ]] || fail "capped single-leg hang still consumed a rerun"
+pass "single-leg bounded hang stays capped at one retry"
 
 # --- Mixed evidence keeps the historical hang classification -----------------
 # A generic timeout in another failing job means the failure is not explained
@@ -144,6 +161,25 @@ train_classify_capacity_guard 33109819708 '' || rc=$?
   || fail "snapshot-less marker text was not downgraded to the generic hang (rc=${rc} kind=${TRAIN_TIMEOUT_KIND})"
 unset TRAIN_RUN_LOG_TEXT
 pass "without sibling evidence the marker downgrades to the generic bounded hang"
+
+# --- rc-137-not-marked-as-timeout --------------------------------------------
+# rc 137 is SIGKILL, which the OOM killer also produces — it is not proof the
+# inner timeout expired. ci.yml therefore emits the inner-timeout marker only
+# for rc 124 (or a post-deadline kill-after 137) and gives an early 137 this
+# distinct honest message; the classifier must read it as an ordinary failure
+# (attribution / pre-existing filter), never as timeout evidence.
+sigkill_annotation() {
+  printf "::error::dotnet test for image '%s' died from SIGKILL after 214s, before its 10m inner test budget elapsed. That signal came from outside the timeout wrapper (suspect the OOM killer), so this is runner resource loss, not evidence of an inner timeout.\nError: Process completed with exit code 137.\n" "$1"
+}
+train_log_is_matrix_leg_inner_timeout "$(sigkill_annotation postgis/postgis:16-3.4)" \
+  && fail "the rc-137 SIGKILL message matched the inner-timeout marker"
+train_log_is_timeout "$(sigkill_annotation postgis/postgis:16-3.4)" \
+  && fail "the rc-137 SIGKILL message matched the generic timeout regex"
+rc=0
+train_match_timeout_text "$(sigkill_annotation postgis/postgis:16-3.4)" || rc=$?
+[[ "${rc}" != "0" && -z "${TRAIN_TIMEOUT_KIND}" ]] \
+  || fail "rc-137 SIGKILL message classified as a timeout (rc=${rc} kind=${TRAIN_TIMEOUT_KIND})"
+pass "rc 137 (SIGKILL) is not marked or classified as an inner timeout"
 
 # The marker predicate is anchored: prose that merely names the token (like
 # this validator's own output) must not match.

@@ -242,6 +242,22 @@ train_matrix_sibling_passed() {
     | length > 0' >/dev/null 2>&1 <<<"${snapshot}"
 }
 
+# train_matrix_sibling_exists <snapshot-json> <job-name>: 0 iff a DIFFERENT job
+# of the same matrix family was present in the run snapshot at all, whatever it
+# concluded. Ordinary PRs and selective batches run the single-leg
+# POSTGRES_BASELINE matrix, where the leg-hang inference ("every sibling also
+# hung") has no evidence to stand on; this predicate lets the classifier tell
+# that shape apart from a full matrix whose siblings all genuinely hung.
+train_matrix_sibling_exists() {
+  local snapshot="$1" name="$2" family="${name% (*}"
+  [[ -n "${family}" && "${family}" != "${name}" ]] || return 1
+  jq -e --arg fam "${family} (" --arg self "${name}" '
+    [.jobs | arrays | .[]
+      | select((.name // "") != $self)
+      | select((.name // "") | startswith($fam))]
+    | length > 0' >/dev/null 2>&1 <<<"${snapshot}"
+}
+
 # train_timeout_kind_is_terminal <kind>: kinds that must never be rerun and are
 # never attributable to a batch member.
 train_timeout_kind_is_terminal() {
@@ -337,7 +353,7 @@ train_run_logs_match_timeout() {
   local snapshot attempt status rows jid name conclusion text annotations
   local evidence_dir evidence_file match_kind terminal_kind=""
   local saw_job=0 saw_evidence=0 saw_timeout=0 logs_complete=1
-  local saw_leg_inner=0 saw_other_timeout=0 leg_siblings_passed=1
+  local saw_leg_inner=0 saw_other_timeout=0 leg_siblings_passed=1 leg_sibling_missing=0
   snapshot="$(train_read_failed_job_snapshot "${run_id}" 2>/dev/null || echo "")"
   if ! train_has_content "${snapshot}" || ! jq -e . >/dev/null 2>&1 <<<"${snapshot}"; then
     return 2
@@ -402,6 +418,7 @@ train_run_logs_match_timeout() {
         elif [[ "${match_kind}" == "leg-inner-timeout" ]]; then
           saw_leg_inner=1
           train_matrix_sibling_passed "${snapshot}" "${name}" || leg_siblings_passed=0
+          train_matrix_sibling_exists "${snapshot}" "${name}" || leg_sibling_missing=1
         else
           saw_other_timeout=1
         fi
@@ -427,6 +444,7 @@ train_run_logs_match_timeout() {
         elif [[ "${match_kind}" == "leg-inner-timeout" ]]; then
           saw_leg_inner=1
           train_matrix_sibling_passed "${snapshot}" "${name}" || leg_siblings_passed=0
+          train_matrix_sibling_exists "${snapshot}" "${name}" || leg_sibling_missing=1
         else
           saw_other_timeout=1
         fi
@@ -467,18 +485,26 @@ train_run_logs_match_timeout() {
     # sibling leg of the same matrix step passed in the same run. That
     # contrast is the whole evidence base: identical code, identical step,
     # only the runner/image environment differed. A real code-introduced
-    # deadlock hangs EVERY leg — or the ONLY leg of a single-leg matrix — so
-    # with no passing sibling the failure is classified leg-hang and treated
-    # as REAL (no retry, batch rejected). Any generic timeout evidence in the
-    # same failing set disables the leg rule and keeps the historical bounded
-    # hang classification.
+    # deadlock hangs EVERY leg, so when sibling legs ran and NONE passed the
+    # failure is classified leg-hang and treated as REAL (no retry, batch
+    # rejected). When the run had NO sibling leg of the family at all — the
+    # common single-leg POSTGRES_BASELINE matrix on ordinary PRs and
+    # selective batches — the sibling contrast carries no evidence in EITHER
+    # direction, so the failure keeps the historical generic bounded-hang
+    # classification (retry-capped) instead of being promoted straight to
+    # REAL. Any generic timeout evidence in the same failing set likewise
+    # disables the leg rule and keeps the historical bounded hang
+    # classification.
     if [[ "${saw_leg_inner}" == "1" && "${saw_other_timeout}" == "0" ]]; then
       if [[ "${leg_siblings_passed}" == "1" ]]; then
         TRAIN_TIMEOUT_KIND=leg-flake
-      else
-        TRAIN_TIMEOUT_KIND=leg-hang
+        return 0
       fi
-      return 0
+      if [[ "${leg_sibling_missing}" == "0" ]]; then
+        TRAIN_TIMEOUT_KIND=leg-hang
+        return 0
+      fi
+      # fall through: single-leg run, no sibling evidence -> generic hang
     fi
     TRAIN_TIMEOUT_KIND=hang
     return 0
@@ -632,13 +658,15 @@ train_classify_timeout() {
   esac
   # guard_rc == 9: a stalled shard, generic exit-124, or a matrix leg's own
   # inner timeout. leg-hang is the guarded direction of the matrix-leg rule:
-  # the inner timeout fired but NO sibling leg of the same step passed in the
-  # same run, which is the shape of a code-introduced deadlock (every leg
-  # hangs, or the only leg does). It must reject the batch: no retry, and rc 2
-  # also keeps it out of known-flake merge-through exactly like a persistent
-  # timeout.
+  # the inner timeout fired, sibling legs of the same step RAN in the same
+  # run, and none of them passed — the shape of a code-introduced deadlock
+  # (every leg hangs). It must reject the batch: no retry, and rc 2 also
+  # keeps it out of known-flake merge-through exactly like a persistent
+  # timeout. A single-leg run never reaches here: with no sibling to compare
+  # against, the run-level scan already downgraded the marker to the generic
+  # bounded-hang classification.
   if [[ "${TRAIN_TIMEOUT_KIND}" == "leg-hang" ]]; then
-    train_warn "matrix-leg inner timeout with no passing sibling leg: every leg of the step hung (or the only leg did), so this is a real failure, not an infra flake; continuing to attribution"
+    train_warn "matrix-leg inner timeout with sibling legs that all hung too: this is a real failure, not an infra flake; continuing to attribution"
     return 2
   fi
   # The remaining shapes still earn the historical bounded rerun.

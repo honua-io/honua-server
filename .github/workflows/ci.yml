@@ -2662,10 +2662,27 @@ jobs:
             test_args+=(--collect:"XPlat Code Coverage" --settings coverlet.runsettings)
           fi
           rc=0
+          start="${SECONDS}"
           timeout --kill-after=30s "${TEST_TIMEOUT_MINUTES}m" "${test_args[@]}" || rc=$?
-          if [ "${rc}" -eq 124 ] || [ "${rc}" -eq 137 ]; then
+          elapsed=$(( SECONDS - start ))
+          # rc 124: `timeout` sent SIGTERM at the deadline — a proven inner
+          # timeout. rc 137 alone is NOT proof: GNU timeout reports 137 both
+          # when its own --kill-after SIGKILL fires (SIGTERM was ignored) and
+          # when the command is SIGKILLed from outside (e.g. the OOM killer)
+          # well before the deadline. Elapsed time disambiguates: the wrapper
+          # cannot deliver any KILL before the budget has elapsed, so a 137
+          # at/after the deadline is the kill-after path while an early 137 is
+          # an external SIGKILL and must not carry the inner-timeout marker —
+          # the merge-train classifier would otherwise route runner resource
+          # loss through the leg-flake/leg-hang rule (and, on the common
+          # single-leg baseline matrix, attribute it to a PR).
+          if [ "${rc}" -eq 124 ] || { [ "${rc}" -eq 137 ] && [ "${elapsed}" -ge $(( TEST_TIMEOUT_MINUTES * 60 )) ]; }; then
             echo "::error::HONUA_MATRIX_LEG_INNER_TIMEOUT image='${PG_IMAGE}' step='Run Postgres compatibility tests' exceeded its ${TEST_TIMEOUT_MINUTES}m inner test budget (healthy legs finish in under a minute); killed early instead of burning the job cap."
             exit 124
+          fi
+          if [ "${rc}" -eq 137 ]; then
+            echo "::error::dotnet test for image '${PG_IMAGE}' died from SIGKILL after ${elapsed}s, before its ${TEST_TIMEOUT_MINUTES}m inner test budget elapsed. That signal came from outside the timeout wrapper (suspect the OOM killer), so this is runner resource loss, not evidence of an inner timeout."
+            exit "${rc}"
           fi
           exit "${rc}"
 
