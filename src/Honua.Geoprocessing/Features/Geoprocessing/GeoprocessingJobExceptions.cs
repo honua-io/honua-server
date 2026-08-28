@@ -176,13 +176,35 @@ internal sealed class GeoprocessingValidationException : Exception
 /// </summary>
 internal sealed class GeoprocessingStoreUnavailableException : Exception
 {
-    public GeoprocessingStoreUnavailableException()
-        : base(CapabilityUnavailableCodes.DurableJobStoreDetail)
+    private GeoprocessingStoreUnavailableException(
+        string detail,
+        string errorCode,
+        string? missingDependency,
+        string? missingEntitlement,
+        string remediation,
+        string remediationRef)
+        : base(detail)
     {
-        MissingDependency = CapabilityUnavailableCodes.RedisDependency;
+        ErrorCode = errorCode;
+        MissingDependency = missingDependency;
+        MissingEntitlement = missingEntitlement;
         CapabilityId = CapabilityUnavailableCodes.DurableJobsCapability;
-        Remediation = CapabilityUnavailableCodes.RedisRemediation;
-        RemediationRef = CapabilityUnavailableCodes.RedisRemediationRef;
+        Remediation = remediation;
+        RemediationRef = remediationRef;
+    }
+
+    /// <summary>
+    /// The default refusal: no Redis connection string, so nothing Redis-backed was composed.
+    /// </summary>
+    public GeoprocessingStoreUnavailableException()
+        : this(
+            CapabilityUnavailableCodes.DurableJobStoreDetail,
+            CapabilityUnavailableCodes.ErrorCode,
+            CapabilityUnavailableCodes.RedisDependency,
+            missingEntitlement: null,
+            CapabilityUnavailableCodes.RedisRemediation,
+            CapabilityUnavailableCodes.RedisRemediationRef)
+    {
     }
 
     /// <summary>
@@ -195,10 +217,53 @@ internal sealed class GeoprocessingStoreUnavailableException : Exception
     public GeoprocessingStoreUnavailableException(string message) : base(message) { }
 
     /// <summary>
+    /// Builds the refusal whose receipt matches why the substrate is actually missing
+    /// (honua-release#202). Reporting "configure Redis" to a host that already runs Redis and
+    /// only lacks the entitlement is remediation that cannot work, so the cause is preserved.
+    /// </summary>
+    /// <param name="cause">The classified composition cause.</param>
+    /// <returns>An exception carrying the cause-specific receipt.</returns>
+    public static GeoprocessingStoreUnavailableException ForCause(DurableJobSubstrateCause cause)
+        => cause switch
+        {
+            DurableJobSubstrateCause.RedisNotEntitled => new GeoprocessingStoreUnavailableException(
+                CapabilityUnavailableCodes.UnentitledRedisDetail,
+                CapabilityUnavailableCodes.EntitlementErrorCode,
+                missingDependency: null,
+                CapabilityUnavailableCodes.RedisCacheEntitlement,
+                CapabilityUnavailableCodes.EntitlementRemediation,
+                CapabilityUnavailableCodes.EntitlementRemediationRef),
+
+            DurableJobSubstrateCause.RuntimeIncomplete => new GeoprocessingStoreUnavailableException(
+                CapabilityUnavailableCodes.RuntimeIncompleteDetail,
+                CapabilityUnavailableCodes.ErrorCode,
+                CapabilityUnavailableCodes.JobQueueDependency,
+                missingEntitlement: null,
+                CapabilityUnavailableCodes.RuntimeIncompleteRemediation,
+                CapabilityUnavailableCodes.RedisRemediationRef),
+
+            _ => new GeoprocessingStoreUnavailableException(),
+        };
+
+    /// <summary>
+    /// Machine-readable error code for this refusal: <c>dependency-unavailable</c> when a
+    /// dependency was never composed, <c>license-required</c> when the licence is what blocks it.
+    /// Null for the message-only reuse path.
+    /// </summary>
+    public string? ErrorCode { get; }
+
+    /// <summary>
     /// Identifier of the infrastructure dependency that was not composed (for example
-    /// <c>redis</c>), or <see langword="null"/> when the refusal names no single dependency.
+    /// <c>redis</c>), or <see langword="null"/> when the refusal names no missing dependency —
+    /// notably the entitlement case, where Redis is present and nothing is missing but a licence.
     /// </summary>
     public string? MissingDependency { get; }
+
+    /// <summary>
+    /// Identifier of the entitlement whose absence composed the capability out (for example
+    /// <c>caching.redis</c>), or <see langword="null"/> when licensing is not the cause.
+    /// </summary>
+    public string? MissingEntitlement { get; }
 
     /// <summary>
     /// The capability-manifest capability id this refusal disables (for example
@@ -217,7 +282,7 @@ internal sealed class GeoprocessingStoreUnavailableException : Exception
     /// Whether this instance carries the structured capability-unavailable receipt
     /// (dependency + capability + remediation) rather than only a message.
     /// </summary>
-    public bool HasDependencyReceipt => MissingDependency is not null;
+    public bool HasDependencyReceipt => ErrorCode is not null;
 }
 
 /// <summary>

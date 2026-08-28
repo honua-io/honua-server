@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -59,6 +60,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private readonly ILogger<GeoprocessingJobService> _logger;
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _executorOptions;
     private readonly RbacOptions _rbacOptions;
+    private readonly DurableJobSubstrateOptions _substrateOptions;
 
     /// <summary>
     /// Production constructor. Composes the durable stores and process catalog with the four
@@ -77,9 +79,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
         IExecutionJobStore? jobStore = null,
         IOptions<LimitsOptions>? limitsOptions = null,
-        IOptions<RbacOptions>? rbacOptions = null)
+        IOptions<RbacOptions>? rbacOptions = null,
+        IOptions<DurableJobSubstrateOptions>? substrateOptions = null)
     {
         _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
+        _substrateOptions = substrateOptions?.Value ?? new DurableJobSubstrateOptions();
         _progressStore = progressStore;
         _cancellationNotifiers = cancellationNotifiers.ToArray();
         _processCatalog = processCatalog;
@@ -1753,8 +1757,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         return false;
     }
 
+    /// <summary>
+    /// Returns the durable job store, or refuses with a receipt that names the actual composition
+    /// cause (honua-release#202) rather than always blaming an absent Redis. Gates on store
+    /// presence only: reading and cancelling an already-persisted job stays serviceable without a
+    /// queue, and the incomplete-substrate case is reported by the capability manifest, which
+    /// requires the full runnable substrate before advertising <c>jobs.runner</c>. The queue is
+    /// therefore reported as absent here — when the store is missing, the cause is decided by the
+    /// configuration facts on <see cref="DurableJobSubstrateOptions"/>, not by the queue.
+    /// </summary>
     private IExecutionJobStore RequireJobStore()
-        => _jobStore ?? throw new GeoprocessingStoreUnavailableException();
+        => _jobStore ?? throw GeoprocessingStoreUnavailableException.ForCause(
+            _substrateOptions.Classify(jobStorePresent: false, jobQueuePresent: false));
 
     internal static string CreateJobId(string? idempotencyKey)
     {

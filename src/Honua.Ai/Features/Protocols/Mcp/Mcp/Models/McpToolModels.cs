@@ -934,6 +934,14 @@ internal sealed class McpToolErrorOutput
     [JsonPropertyName("capability")]
     public string? Capability { get; set; }
 
+    /// <summary>
+    /// Identifier of the entitlement whose absence composed the capability out (for example
+    /// <c>caching.redis</c>). Present instead of <see cref="MissingDependency"/> when the
+    /// dependency is deployed but not licensed.
+    /// </summary>
+    [JsonPropertyName("missingEntitlement")]
+    public string? MissingEntitlement { get; set; }
+
     /// <summary>Operator-facing remediation sentence for a capability-unavailable refusal.</summary>
     [JsonPropertyName("remediation")]
     public string? Remediation { get; set; }

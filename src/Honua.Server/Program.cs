@@ -7,6 +7,7 @@ using System.Reflection;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -215,6 +216,16 @@ var redisOutputCacheConfigured = ObservabilityServiceCollectionExtensions.Should
     redisCacheEntitled,
     redisConnectionString);
 var redisCacheConnectionString = redisCacheEntitled ? redisConnectionString : null;
+
+// honua-release#202: record WHY the durable job substrate is or is not composed, so the typed
+// refusal and the capability manifest can give remediation that actually works. "Redis is
+// configured but unentitled" is a different fix from "Redis is absent", and telling an operator
+// running Redis to install Redis is the wrong-remediation bug this preserves the cause to avoid.
+builder.Services.Configure<DurableJobSubstrateOptions>(options =>
+{
+    options.RedisConfigured = !string.IsNullOrWhiteSpace(redisConnectionString);
+    options.RedisEntitled = redisCacheEntitled;
+});
 var redisInfrastructureConnectionString = RedisConnectionSelector.SelectInfrastructureConnectionString(
     redisConnectionString,
     redisCacheEntitled,

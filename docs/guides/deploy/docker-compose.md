@@ -188,7 +188,7 @@ The 2026.1 install topology is deliberate and applies to every deployment shape:
 | Subsystem | Without Redis |
 |---|---|
 | Multi-layer cache | Falls back to the in-memory provider. Reads still serve correctly; the cache is process-local and not shared across replicas. |
-| Durable geoprocessing jobs (GPServer, OGC API Processes, WPS, MCP, gRPC) | **Unavailable.** No durable job store is composed and no worker loop runs, so submission is refused up front. |
+| Durable geoprocessing jobs (GPServer, OGC API Processes, WPS, MCP, gRPC) | **Unavailable.** No durable job store or queue is composed and no worker loop runs, so submission is refused up front on every one of those surfaces. |
 | Workflows / orchestration | **Unavailable.** The orchestration engine is not registered; workflow definitions and runs are not persisted. |
 | Operation proposals and the Console approval flow | **Unavailable.** Proposal state has no PostGIS path — it is Redis-only. |
 | Queued imports | Development/Test fall back to an in-process queue (non-durable). Outside those environments the import routes refuse with `503`. |
@@ -214,9 +214,17 @@ Refusals on a Redis-less install carry a machine-readable *capability-unavailabl
 }
 ```
 
-The same receipt is projected onto the other envelopes: GeoServices returns its usual `{"error":{"code":503,…}}` body with `code:`, `missingDependency:`, `capability:`, `remediation:`, and `remediationRef:` entries in `error.details[]`, and MCP returns `isError: true` with `code: "unavailable"`, `retryable: false`, and the same four fields in `structuredContent`.
+The same receipt is projected onto every other job envelope:
 
-`retryable` is `false` and `capability` is omitted where no manifest capability covers the refused surface — today that is the proposal/approval control plane, which otherwise carries the identical receipt.
+| Surface | Where the receipt lands |
+|---|---|
+| OGC API Processes, admin API | RFC 7807 extension members, as above |
+| GeoServices (GPServer) | `error.details[]` entries as `code: …`, `missingDependency: …`, `capability: …`, `remediation: …`, `remediationRef: …` — the same `Key: value` convention the envelope already uses for `CorrelationId:`/`Timestamp:` |
+| MCP | `isError: true` with `code`, `retryable: false`, and the same fields in `structuredContent` |
+| WPS 2.0 | additional `ows:ExceptionText` lines carrying the same `key: value` pairs. The `exceptionCode` stays `ServerBusy` because OWS constrains that vocabulary and CITE checks it |
+| gRPC | `Unavailable` plus trailing metadata: `honua-error-code`, `honua-capability`, `honua-missing-dependency`, `honua-missing-entitlement`, `honua-remediation`, `honua-remediation-ref` |
+
+`retryable` is `false`, and `capability` is omitted where no manifest capability covers the refused surface — today that is the proposal/approval control plane, which otherwise carries the identical receipt.
 
 The capabilities manifest agrees with the refusal rather than over-claiming. `GET /api/v1/capabilities/manifest` reports:
 
@@ -225,7 +233,15 @@ The capabilities manifest agrees with the refusal rather than over-claiming. `GE
   "reasonCode": "dependency-unavailable", "messageKey": "capabilities.jobs.runner.dependency-unavailable" }
 ```
 
-and `limits.job.durableJobStoreAvailable` is `false`. The manifest is computed per request and served `no-store`, so no stale "available" claim survives.
+and `limits.job.durableJobRuntimeAvailable` is `false`. That flag requires the **complete** substrate — a durable job store *and* a runnable queue — because a store without a queue would let a submission be persisted and never drain. The manifest is computed per request and served `no-store`, so no stale "available" claim survives.
+
+### Redis is configured but not entitled
+
+Redis-backed services are gated on the Pro `caching.redis` entitlement as well as on the connection string. If Redis is running and `ConnectionStrings__Redis` is set but the active licence does not include `caching.redis`, `IConnectionMultiplexer` is never registered and the durable job substrate is composed out exactly as if Redis were absent.
+
+**This is the default for the repository quickstart**: the root `docker-compose.yml` leaves `HONUA_DEV_GRANT_EDITION` empty, so the stack starts Redis but runs as Community and durable jobs stay unavailable. Set `HONUA_DEV_GRANT_EDITION=Pro` (a development-only grant, honoured outside Production) or install a licence that includes `caching.redis`.
+
+Because "add Redis" is not the fix here, this case reports itself differently. The refusal carries `"code": "license-required"` with `"missingEntitlement": "caching.redis"` and **no** `missingDependency`, and the capabilities manifest reports `jobs.runner` with `"reasonCode": "license-required"` rather than `dependency-unavailable`.
 
 ### Running the no-Redis variant
 

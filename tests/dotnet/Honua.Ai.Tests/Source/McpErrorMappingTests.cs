@@ -148,6 +148,36 @@ public sealed class McpErrorMappingTests
     }
 
     [UnitTest]
+    public void StoreUnavailableException_UnentitledRedis_ReportsLicenseCodeAndEntitlementNotMissingRedis()
+    {
+        // honua-release#202 follow-up: Redis is deployed but the Pro `caching.redis` entitlement is
+        // absent. Telling the caller a Redis dependency is missing would send an operator to
+        // reinstall something already running, so the receipt names the entitlement instead.
+        var error = McpErrorMapper.Map(
+            GeoprocessingStoreUnavailableException.ForCause(DurableJobSubstrateCause.RedisNotEntitled));
+
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+        error.Data.Retryable.Should().BeFalse();
+        error.Data.MissingDependency.Should().BeNull("Redis is present; nothing is missing but a licence");
+        error.Data.MissingEntitlement.Should().Be(CapabilityUnavailableCodes.RedisCacheEntitlement);
+        error.Data.Capability.Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
+        error.Data.Remediation.Should().Be(CapabilityUnavailableCodes.EntitlementRemediation);
+        error.Data.Remediation.Should().NotContain("Set ConnectionStrings__Redis");
+    }
+
+    [UnitTest]
+    public void StoreUnavailableException_IncompleteSubstrate_NamesTheMissingQueue()
+    {
+        // Store without queue: submissions would persist and never drain, so the refusal names the
+        // queue rather than blaming an absent Redis.
+        var error = McpErrorMapper.Map(
+            GeoprocessingStoreUnavailableException.ForCause(DurableJobSubstrateCause.RuntimeIncomplete));
+
+        error.Data!.MissingDependency.Should().Be(CapabilityUnavailableCodes.JobQueueDependency);
+        error.Data.MissingEntitlement.Should().BeNull();
+    }
+
+    [UnitTest]
     public void StoreUnavailableException_WithoutDependencyReceipt_StaysRetryableAndCarriesNoDependency()
     {
         // Other adapters reuse this exception as a generic "upstream unavailable" channel

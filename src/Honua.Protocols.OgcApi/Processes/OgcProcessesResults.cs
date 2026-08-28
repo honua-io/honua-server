@@ -66,9 +66,12 @@ internal static class OgcProcessesResults
                 Detail = exception?.HasDependencyReceipt == true
                     ? exception.Message
                     : CapabilityUnavailableCodes.DurableJobStoreDetail,
-                Code = CapabilityUnavailableCodes.ErrorCode,
+                Code = exception?.ErrorCode ?? CapabilityUnavailableCodes.ErrorCode,
                 Capability = exception?.CapabilityId ?? CapabilityUnavailableCodes.DurableJobsCapability,
-                MissingDependency = exception?.MissingDependency ?? CapabilityUnavailableCodes.RedisDependency,
+                MissingDependency = exception?.HasDependencyReceipt == true
+                    ? exception.MissingDependency
+                    : CapabilityUnavailableCodes.RedisDependency,
+                MissingEntitlement = exception?.MissingEntitlement,
                 Remediation = exception?.Remediation ?? CapabilityUnavailableCodes.RedisRemediation,
                 RemediationRef = exception?.RemediationRef ?? CapabilityUnavailableCodes.RedisRemediationRef,
             },

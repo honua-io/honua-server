@@ -75,6 +75,13 @@ internal sealed record ProblemDetailsResponse
     public string? MissingDependency { get; init; }
 
     /// <summary>
+    /// Identifier of the entitlement whose absence composed the capability out (RFC 7807
+    /// extension member), for example <c>caching.redis</c>. Present instead of
+    /// <see cref="MissingDependency"/> when the dependency is deployed but not licensed.
+    /// </summary>
+    public string? MissingEntitlement { get; init; }
+
+    /// <summary>
     /// Operator-facing remediation sentence (RFC 7807 extension member) telling the caller what
     /// to change to make the capability available. Null/omitted when no remediation is known.
     /// </summary>

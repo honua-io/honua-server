@@ -9,6 +9,7 @@ using Honua.Core.Features.Capabilities;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -67,9 +68,10 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal()
     {
+        using var content = new StringContent("{}", Encoding.UTF8, "application/json");
         using var response = await _client.PostAsync(
             "/api/v1/admin/proposals/does-not-exist/approve",
-            new StringContent("{}", Encoding.UTF8, "application/json"));
+            content);
 
         await AssertCapabilityUnavailableAsync(response);
     }
@@ -78,11 +80,50 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
     public async Task RejectProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal()
     {
+        using var content = new StringContent("""{"reason":"no"}""", Encoding.UTF8, "application/json");
         using var response = await _client.PostAsync(
             "/api/v1/admin/proposals/does-not-exist/reject",
-            new StringContent("""{"reason":"no"}""", Encoding.UTF8, "application/json"));
+            content);
 
         await AssertCapabilityUnavailableAsync(response);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/proposals")]
+    public async Task ListProposals_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis()
+    {
+        // Redis IS deployed; only the Pro `caching.redis` entitlement is missing, so the control
+        // plane was composed out by licensing. "Configure Redis and restart" would be remediation
+        // that cannot work, so the receipt names the entitlement instead (honua-release#202).
+        var fixture = new WebAppFixture()
+            .ConfigureServices(static services =>
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = false;
+                }));
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/admin/proposals");
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.EntitlementErrorCode);
+            root.GetProperty("missingEntitlement").GetString()
+                .Should().Be(CapabilityUnavailableCodes.RedisCacheEntitlement);
+            root.TryGetProperty("missingDependency", out _).Should().BeFalse(
+                "Redis is present; nothing is missing but a licence");
+            root.GetProperty("remediation").GetString().Should().NotContain("Set ConnectionStrings__Redis");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     private static async Task AssertCapabilityUnavailableAsync(HttpResponseMessage response)

@@ -599,14 +599,18 @@ internal sealed class CapabilityManifestService(
             available = false;
             reasonCode = CapabilityReasonCodes.DisabledByConfiguration;
         }
-        // Checked ahead of the caller-scoped gates on purpose: a missing infrastructure
-        // dependency is a property of the deployment, not of who is asking, so an anonymous
-        // probe of a Redis-less install must read `dependency-unavailable` rather than
-        // `insufficient-policy` (honua-release#202).
-        else if (requiresDurableJobStore && !options.DurableJobStoreAvailable)
+        // Checked ahead of the caller-scoped gates on purpose: an uncomposed substrate is a
+        // property of the deployment, not of who is asking, so an anonymous probe of a Redis-less
+        // install must read `dependency-unavailable` rather than `insufficient-policy`. The reason
+        // code follows the actual cause: an unentitled-but-present Redis is a licence problem, and
+        // reporting it as a missing dependency would send the operator to a fix that cannot work
+        // (honua-release#202).
+        else if (requiresDurableJobStore && !options.DurableJobRuntimeAvailable)
         {
             available = false;
-            reasonCode = CapabilityReasonCodes.DependencyUnavailable;
+            reasonCode = options.DurableJobSubstrateCause == DurableJobSubstrateCause.RedisNotEntitled
+                ? CapabilityReasonCodes.LicenseRequired
+                : CapabilityReasonCodes.DependencyUnavailable;
         }
         else if (requiresEnvironment && !context.EnvironmentAvailable)
         {
@@ -773,7 +777,7 @@ internal sealed class CapabilityManifestService(
                 AvailableBackendCount = batchCapabilities.AvailableBackendCount,
                 SupportsCancellation = batchCapabilities.SupportsCancellation,
                 SupportsProgressPolling = batchCapabilities.SupportsProgressPolling,
-                DurableJobStoreAvailable = options.DurableJobStoreAvailable
+                DurableJobRuntimeAvailable = options.DurableJobRuntimeAvailable
             },
             Upload = new CapabilityManifestUploadLimits
             {

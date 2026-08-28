@@ -125,7 +125,10 @@ internal static class ProblemDetailsHelpers
     /// </summary>
     /// <param name="context">Current request context.</param>
     /// <param name="detail">Human-readable explanation of what is unavailable and why.</param>
-    /// <param name="missingDependency">Identifier of the dependency that was not composed.</param>
+    /// <param name="missingDependency">
+    /// Identifier of the dependency that was not composed, or <see langword="null"/> when the
+    /// dependency is deployed and only the licence blocks it.
+    /// </param>
     /// <param name="remediation">Operator-facing remediation sentence.</param>
     /// <param name="remediationRef">Documentation reference for the remediation.</param>
     /// <param name="capability">
@@ -134,14 +137,22 @@ internal static class ProblemDetailsHelpers
     /// covering the refused surface — a client that follows the id must not land on a claim that
     /// contradicts the refusal.
     /// </param>
+    /// <param name="errorCode">
+    /// Machine-readable code; defaults to <c>dependency-unavailable</c>. Pass
+    /// <c>license-required</c> when an entitlement, not a dependency, is what composed the
+    /// capability out.
+    /// </param>
+    /// <param name="missingEntitlement">Entitlement whose absence composed the capability out.</param>
     /// <returns>A <c>503</c> problem result carrying the capability-unavailable receipt.</returns>
     public static IResult CreateCapabilityUnavailableProblem(
         HttpContext context,
         string detail,
-        string missingDependency,
+        string? missingDependency,
         string remediation,
         string remediationRef,
-        string? capability = null)
+        string? capability = null,
+        string? errorCode = null,
+        string? missingEntitlement = null)
     {
         var problemDetails = CreateProblemDetails(
             CapabilityUnavailableCodes.ProblemType,
@@ -151,9 +162,10 @@ internal static class ProblemDetailsHelpers
             BuildInstance(context),
             context) with
         {
-            Code = CapabilityUnavailableCodes.ErrorCode,
+            Code = errorCode ?? CapabilityUnavailableCodes.ErrorCode,
             Capability = capability,
             MissingDependency = missingDependency,
+            MissingEntitlement = missingEntitlement,
             Remediation = remediation,
             RemediationRef = remediationRef,
         };

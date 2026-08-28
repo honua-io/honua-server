@@ -34,8 +34,27 @@ public static class CapabilityUnavailableCodes
     /// </summary>
     public const string ErrorCode = "dependency-unavailable";
 
+    /// <summary>
+    /// Machine-readable error code for a capability that is composed-out because the licence does
+    /// not entitle it, rather than because a dependency is missing. Matches the capability
+    /// manifest's existing <c>license-required</c> reason code so a client can join the two.
+    /// </summary>
+    public const string EntitlementErrorCode = "license-required";
+
     /// <summary>Identifier of the dependency backing the durable job/workflow substrate.</summary>
     public const string RedisDependency = "redis";
+
+    /// <summary>
+    /// Identifier of the runnable job queue. Reported when a durable job store is composed without
+    /// one, which would let a submission persist and never drain.
+    /// </summary>
+    public const string JobQueueDependency = "job-queue";
+
+    /// <summary>
+    /// The Pro entitlement that gates registration of <c>IConnectionMultiplexer</c> and therefore
+    /// the whole durable job substrate.
+    /// </summary>
+    public const string RedisCacheEntitlement = "caching.redis";
 
     /// <summary>The capability-manifest id the durable job substrate backs.</summary>
     public const string DurableJobsCapability = "jobs.runner";
@@ -50,6 +69,44 @@ public static class CapabilityUnavailableCodes
     public const string RedisRemediationRef =
         "https://docs.honua.io/guides/deploy/docker-compose#redis-is-optional-postgis-is-not";
 
+    /// <summary>
+    /// Remediation for a host where Redis IS configured but the Pro <c>caching.redis</c>
+    /// entitlement is absent, so the substrate was never composed. Deliberately does not tell the
+    /// operator to configure Redis — Redis is already there, and doing it again changes nothing.
+    /// </summary>
+    public const string EntitlementRemediation =
+        "Redis is configured but the Pro 'caching.redis' entitlement is not active, so the " +
+        "durable job substrate was not composed. Install a licence that includes " +
+        "'caching.redis'; outside Production you can instead set Licensing:DevGrantEdition=Pro " +
+        "(HONUA_DEV_GRANT_EDITION=Pro for the repository compose files). Restart the server " +
+        "after either change.";
+
+    /// <summary>Documentation anchor for the entitlement remediation.</summary>
+    public const string EntitlementRemediationRef =
+        "https://docs.honua.io/guides/deploy/docker-compose#redis-is-configured-but-not-entitled";
+
+    /// <summary>Detail sentence for a refusal caused by an unentitled (but present) Redis.</summary>
+    public const string UnentitledRedisDetail =
+        "Durable geoprocessing jobs and workflows require the Pro 'caching.redis' entitlement. " +
+        "Redis is configured on this server, but the active licence does not entitle it, so the " +
+        "durable job substrate was never composed and the request is refused up front instead of " +
+        "being queued and never run.";
+
+    /// <summary>
+    /// Remediation for a host whose durable job substrate is composed only in part — a job store
+    /// without a runnable queue, which would let a submission persist and never drain.
+    /// </summary>
+    public const string RuntimeIncompleteRemediation =
+        "A durable job store is registered without a runnable job queue, so submitted jobs could " +
+        "never drain. Register the full job orchestration substrate (AddJobOrchestration) or " +
+        "remove the partial registration.";
+
+    /// <summary>Detail sentence for a refusal caused by an incomplete job substrate.</summary>
+    public const string RuntimeIncompleteDetail =
+        "The durable job substrate is incomplete: a job store is registered without a runnable " +
+        "job queue, so a submitted job would be persisted and never drain. The request is refused " +
+        "rather than accepted into a queue that does not exist.";
+
     /// <summary>Short human-readable title shared by every capability-unavailable refusal.</summary>
     public const string Title = "Capability unavailable";
 
@@ -58,6 +115,19 @@ public static class CapabilityUnavailableCodes
         "Durable geoprocessing jobs and workflows require a Redis-backed job store. This server " +
         "was started without a Redis connection, so the request is refused up front instead of " +
         "being queued and never run.";
+
+    /// <summary>
+    /// Detail sentence for a control-plane refusal on a host where Redis is present but the Pro
+    /// <c>caching.redis</c> entitlement is not, so "configure Redis" would be the wrong fix.
+    /// </summary>
+    /// <remarks>
+    /// Like <see cref="DurableControlPlaneDetail"/>, refusals on this path carry no
+    /// <c>capability</c> member — see that constant's remarks.
+    /// </remarks>
+    public const string UnentitledControlPlaneDetail =
+        "The operation proposal and approval control plane requires the Pro 'caching.redis' " +
+        "entitlement. Redis is configured on this server, but the active licence does not entitle " +
+        "it, so the durable control plane was never composed.";
 
     /// <summary>Detail sentence for a refusal caused by the absent durable control plane.</summary>
     /// <remarks>

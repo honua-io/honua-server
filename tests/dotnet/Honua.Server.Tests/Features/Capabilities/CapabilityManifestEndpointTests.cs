@@ -483,7 +483,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         jobsRunner.GetProperty("messageKey").GetString()
             .Should().Be($"capabilities.jobs.runner.{CapabilityUnavailableCodes.ErrorCode}");
 
-        root.GetProperty("limits").GetProperty("job").GetProperty("durableJobStoreAvailable")
+        root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
             .GetBoolean().Should().BeFalse();
     }
 
@@ -506,14 +506,18 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_WithDurableJobStore_ReportsJobsRunnerAvailable()
+    public async Task GetManifest_WithCompleteDurableJobSubstrate_ReportsJobsRunnerAvailable()
     {
-        // Positive control: the degraded reading is caused by the absent store, not pinned on.
-        // Re-adding a durable job store (what configuring Redis does in production) restores the
-        // available claim, so the manifest tracks the deployment instead of a fixed answer.
+        // Positive control: the degraded reading is caused by the absent substrate, not pinned on.
+        // Re-adding BOTH halves (what configuring an entitled Redis does in production — the store
+        // and the queue are gated on the same IConnectionMultiplexer) restores the available claim,
+        // so the manifest tracks the deployment instead of a fixed answer.
         var fixture = CreateManifestFixture()
             .ConfigureServices(static services =>
-                services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore()));
+            {
+                services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore());
+                services.AddSingleton<IJobQueue>(new InMemoryJobQueue());
+            });
         await fixture.InitializeAsync();
 
         try
@@ -531,8 +535,82 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 "an available capability carries no reason code");
             _ = reasonCode;
 
-            root.GetProperty("limits").GetProperty("job").GetProperty("durableJobStoreAvailable")
+            root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
                 .GetBoolean().Should().BeTrue();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithJobStoreButNoQueue_StillReportsJobsRunnerUnavailable()
+    {
+        // A job store without a runnable queue is the fabricated-availability trap: submissions
+        // would be persisted, GeoprocessingJobDispatcher.MaybeEnqueueLocalAsync would silently skip
+        // enqueueing, and nothing would ever drain. Store presence alone must therefore never
+        // flip the manifest to available.
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(static services =>
+                services.AddSingleton<IExecutionJobStore>(new InMemoryExecutionJobStore()));
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var root = document.RootElement;
+
+            var jobsRunner = GetCapability(root, "jobs.runner");
+            jobsRunner.GetProperty("available").GetBoolean().Should().BeFalse(
+                "no queue is composed, so a submitted job could never drain");
+            jobsRunner.GetProperty("reasonCode").GetString()
+                .Should().Be(CapabilityUnavailableCodes.ErrorCode);
+            root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
+                .GetBoolean().Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithRedisConfiguredButUnentitled_ReportsLicenseRequiredNotMissingDependency()
+    {
+        // honua-release#202 follow-up: Redis IS deployed, but the Pro `caching.redis` entitlement
+        // is absent, so IConnectionMultiplexer — and the whole job substrate — was never
+        // registered. Reporting `dependency-unavailable` here would send an operator to add a
+        // Redis they are already running. The manifest must name the licence instead.
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(static services =>
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = false;
+                }));
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+
+            var jobsRunner = GetCapability(document.RootElement, "jobs.runner");
+            jobsRunner.GetProperty("available").GetBoolean().Should().BeFalse();
+            jobsRunner.GetProperty("reasonCode").GetString().Should().Be("license-required");
+            jobsRunner.GetProperty("reasonCode").GetString()
+                .Should().NotBe(CapabilityUnavailableCodes.ErrorCode,
+                    "an unentitled but present Redis is not a missing dependency");
         }
         finally
         {

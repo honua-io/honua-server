@@ -42,7 +42,9 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions,
         DeploymentCapabilityProfile deploymentProfile,
         DeploymentIdentity deploymentIdentity,
-        IExecutionJobStore? executionJobStore = null)
+        IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
+        IExecutionJobStore? executionJobStore = null,
+        IJobQueue? jobQueue = null)
     {
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
@@ -71,7 +73,10 @@ internal sealed class CapabilityManifestOptionsSnapshot
         Rbac = rbacOptions.Value;
         ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
-        DurableJobStoreAvailable = executionJobStore is not null;
+        DurableJobSubstrateCause = (durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions())
+            .Classify(executionJobStore is not null, jobQueue is not null);
+        DurableJobRuntimeAvailable =
+            DurableJobSubstrateCause == Core.Features.Capabilities.DurableJobSubstrateCause.Available;
         DeploymentIdentity = deploymentIdentity;
         DeploymentProfile = new CapabilityManifestDeploymentProfile
         {
@@ -117,20 +122,31 @@ internal sealed class CapabilityManifestOptionsSnapshot
     public bool ManifestFromRegistry { get; }
 
     /// <summary>
-    /// Whether the durable (Redis-backed) execution job store was composed at startup
-    /// (honua-release#202). Redis is optional for a local install; when it is absent
-    /// <c>IExecutionJobStore</c> is never registered, no worker loop is hosted, and every
-    /// durable job/workflow operation is refused. The manifest must say so rather than
-    /// advertising <c>jobs.runner</c> as available.
+    /// Whether the COMPLETE durable job substrate was composed at startup (honua-release#202):
+    /// both a durable <c>IExecutionJobStore</c> and a runnable <c>IJobQueue</c>.
     /// </summary>
     /// <remarks>
-    /// Registration is decided once at composition time (see
-    /// <c>GeoprocessingServiceCollectionExtensions.AddGeoprocessing</c>), so capturing it on
-    /// this snapshot is exact for the process lifetime rather than a cached approximation.
-    /// A later Redis <em>outage</em> is a different, transient condition reported by the Redis
-    /// health check, not by this flag.
+    /// <para>
+    /// Store presence alone is not enough to advertise <c>jobs.runner</c>. With a store but no
+    /// queue, <c>GeoprocessingJobDispatcher.MaybeEnqueueLocalAsync</c> silently skips enqueueing,
+    /// so a submission would be persisted and never drain — a fabricated availability claim of
+    /// exactly the kind this contract forbids. In production both are gated on the same
+    /// <c>IConnectionMultiplexer</c> and appear together; a partial composition is a
+    /// misconfiguration (or a test double) and must read as unavailable.
+    /// </para>
+    /// <para>
+    /// Registration is decided once at composition time, so capturing it here is exact for the
+    /// process lifetime rather than a cached approximation. A later Redis <em>outage</em> is a
+    /// different, transient condition reported by the Redis health check, not by this flag.
+    /// </para>
     /// </remarks>
-    public bool DurableJobStoreAvailable { get; }
+    public bool DurableJobRuntimeAvailable { get; }
+
+    /// <summary>
+    /// Why the durable job substrate is unavailable, so the manifest can report the applicable
+    /// reason code (a missing dependency and an unentitled licence need different remediation).
+    /// </summary>
+    public DurableJobSubstrateCause DurableJobSubstrateCause { get; }
 
     /// <summary>The immutable deployment-profile selection reported by the manifest.</summary>
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }

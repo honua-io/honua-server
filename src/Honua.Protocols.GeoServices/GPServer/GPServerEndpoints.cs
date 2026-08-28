@@ -2093,16 +2093,28 @@ internal static class GPServerEndpoints
     /// </summary>
     private static string[]? BuildCapabilityUnavailableDetails(
         GeoprocessingStoreUnavailableException exception)
-        => exception.HasDependencyReceipt
-            ? new[]
-            {
-                $"code: {CapabilityUnavailableCodes.ErrorCode}",
-                $"missingDependency: {exception.MissingDependency}",
-                $"capability: {exception.CapabilityId}",
-                $"remediation: {exception.Remediation}",
-                $"remediationRef: {exception.RemediationRef}",
-            }
-            : null;
+    {
+        if (!exception.HasDependencyReceipt)
+        {
+            return null;
+        }
+
+        var details = new List<string>(5) { $"code: {exception.ErrorCode}" };
+        if (exception.MissingDependency is not null)
+        {
+            details.Add($"missingDependency: {exception.MissingDependency}");
+        }
+
+        if (exception.MissingEntitlement is not null)
+        {
+            details.Add($"missingEntitlement: {exception.MissingEntitlement}");
+        }
+
+        details.Add($"capability: {exception.CapabilityId}");
+        details.Add($"remediation: {exception.Remediation}");
+        details.Add($"remediationRef: {exception.RemediationRef}");
+        return [.. details];
+    }
 
     /// <summary>
     /// Tags the current <see cref="Activity"/> as errored and returns the result unchanged.
