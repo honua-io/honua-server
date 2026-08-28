@@ -92,6 +92,10 @@ public sealed class DeployPreflightResponse
 /// </summary>
 public sealed class DeployPreflightPlatformRelease
 {
+    /// <summary>Configured projection backend and freshness evidence.</summary>
+    [JsonPropertyName("evidencePosture")]
+    public EvidencePosture? EvidencePosture { get; init; }
+
     /// <summary>
     /// Declared platform release version, or null when no release is configured.
     /// </summary>
@@ -647,6 +651,10 @@ public sealed class DeployOperationResponse
 /// </summary>
 public sealed class DeployOperationListResponse
 {
+    /// <summary>Durable workflow backend and page coverage evidence.</summary>
+    [JsonPropertyName("evidencePosture")]
+    public EvidencePosture? EvidencePosture { get; init; }
+
     /// <summary>
     /// Operations on this page, ordered newest-first by creation time.
     /// </summary>

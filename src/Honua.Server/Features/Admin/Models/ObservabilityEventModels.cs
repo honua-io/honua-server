@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Infrastructure.Monitoring;
+
 namespace Honua.Server.Features.Admin.Models;
 
 /// <summary>
@@ -89,6 +91,9 @@ internal sealed class OperateProviderLinkResponse
 /// </summary>
 internal sealed class OperateEventPageResponse
 {
+    /// <summary>Source freshness, backend and page/window coverage for this read.</summary>
+    public EvidencePosture? EvidencePosture { get; init; }
+
     /// <summary>Items returned in this page (newest first).</summary>
     public required IReadOnlyList<OperateEventResponse> Items { get; init; }
 

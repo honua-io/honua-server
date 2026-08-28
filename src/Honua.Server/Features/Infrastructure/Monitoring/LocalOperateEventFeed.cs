@@ -91,6 +91,15 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         Dictionary<OperateEventKind, string>? sourceErrors = null;
         var partial = false;
 
+        // Each upstream source is read with the same bounded page size, so a source that fills its
+        // bound may be hiding older matches even before the post-merge trim discards anything.
+        var sourceTruncated = false;
+        void Collect(IReadOnlyList<OperateEvent> items)
+        {
+            sourceTruncated |= items.Count >= pageSize;
+            collected.AddRange(items);
+        }
+
         var alertTask = Wanted(OperateEventKind.Alert) && _alertQuery is not null
             ? LoadAlertsAsync(filter, pageSize, cancellationToken)
             : Task.FromResult<IReadOnlyList<OperateEvent>>(Array.Empty<OperateEvent>());
@@ -109,7 +118,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         try
         {
-            collected.AddRange(await alertTask.ConfigureAwait(false));
+            Collect(await alertTask.ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -121,7 +130,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         try
         {
-            collected.AddRange(await auditTask.ConfigureAwait(false));
+            Collect(await auditTask.ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -133,7 +142,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         try
         {
-            collected.AddRange(await jobTask.ConfigureAwait(false));
+            Collect(await jobTask.ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -145,7 +154,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
 
         try
         {
-            collected.AddRange(await releaseTask.ConfigureAwait(false));
+            Collect(await releaseTask.ConfigureAwait(false));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -164,6 +173,7 @@ internal sealed class LocalOperateEventFeed : IOperateEventFeed
         {
             Items = trimmed,
             PartialResult = partial,
+            Truncated = sourceTruncated || collected.Count > pageSize,
             SourceErrors = sourceErrors
         };
     }

@@ -86,7 +86,11 @@ internal static class ObservabilityServiceCollectionExtensions
             AdmissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(),
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
         });
-        services.AddScoped<IOpsFindingsService, OpsFindingsService>();
+        // One scoped instance behind both seams: callers that only need findings keep the domain
+        // abstraction, while the read/proposal surfaces resolve the evidence-carrying view.
+        services.AddScoped<OpsFindingsService>();
+        services.AddScoped<IOpsFindingsService>(sp => sp.GetRequiredService<OpsFindingsService>());
+        services.AddScoped<IOpsFindingsEvidenceSource>(sp => sp.GetRequiredService<OpsFindingsService>());
         services.AddScoped<IOpsAutonomyEvaluator, OpsAutonomyEvaluator>();
         services.AddScoped<IMcpOpsObservabilityReader, McpOpsObservabilityReader>();
         services.AddScoped<IMcpPlatformOpsReader, McpPlatformOpsReader>();
