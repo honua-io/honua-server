@@ -115,30 +115,11 @@ public sealed class OperationGatewayIdempotencyTests
         IOperationProposalStore store,
         IGuardrailLadder ladder,
         IAuditLog? auditLog = null)
-    {
-        var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => auditLog ?? new DurableAuditLog());
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
-
-        return new OperationGateway(
-            ladder,
+        => CanonicalOperationGatewayTestComposition.Build(
             store,
-            [],
-            scopeFactory,
-            Substitute.For<IProposalNotifier>(),
-            NullLogger<OperationGateway>.Instance);
-    }
-
-    /// <summary>
-    /// In-memory proposal store keyed by proposal id, able to hold multiple
-    /// proposals (unlike the single-slot store) so a duplicate-proposal regression
-    /// is observable.
-    /// </summary>
-    private sealed class DurableAuditLog : IAuditLog
-    {
-        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) =>
-            Task.FromResult<string?>("audit-test");
-    }
+            ladder,
+            [CanonicalOperationGatewayTestComposition.PlanningOnly(OperationClass.Deploy)],
+            auditLog is null ? null : services => services.AddSingleton(auditLog));
 
     private sealed class CancelingOnceAuditLog : IAuditLog
     {

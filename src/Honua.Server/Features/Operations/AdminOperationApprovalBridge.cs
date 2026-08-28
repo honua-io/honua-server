@@ -32,7 +32,8 @@ internal sealed partial class AdminOperationApprovalBridge(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(decision);
 
-        if (!_requestMappers.TryGetValue(descriptor.OperationId, out var mapper))
+        _requestMappers.TryGetValue(descriptor.OperationId, out var mapper);
+        if (request.GatewayRequest is null && mapper is null)
         {
             return Failure(
                 $"Approval is required, but operation '{descriptor.OperationId}' has no durable replay mapper.");
@@ -52,7 +53,8 @@ internal sealed partial class AdminOperationApprovalBridge(
 
         try
         {
-            var gatewayRequest = mapper.Map(descriptor, request, context, decision) with
+            var gatewayRequest = (request.GatewayRequest
+                ?? mapper!.Map(descriptor, request, context, decision)) with
             {
                 OperationInstanceId = context.OperationInstanceId,
                 CorrelationId = context.CorrelationId,
@@ -115,7 +117,7 @@ internal sealed partial class AdminOperationApprovalBridge(
 
 /// <summary>
 /// Explicit compatibility mapper for a typed operation whose sealed request can be replayed by
-/// the current durable proposal runtime. Slice 2 replaces these adapters with the unified runtime.
+/// the durable proposal runtime. Remaining protocol-adapter conversion can remove these mappers.
 /// </summary>
 internal interface IOperationApprovalRequestMapper
 {

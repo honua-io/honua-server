@@ -4,7 +4,14 @@
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
+using Honua.Server.Features.Operations;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using IOperationProposalStore = Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore;
 
 namespace Honua.Architecture.Tests;
 
@@ -55,12 +62,172 @@ public sealed class OperationEnvelopeArchitectureTests
         Assert.Equal(OperationHandleStatus.Failed, handle.Status);
         Assert.Equal(0, executor.SubmitCount);
         Assert.Null(handle.ProposalId);
-        Assert.Null(handle.AuditId);
+        Assert.NotNull(handle.AuditId);
         Assert.NotEqual(handle.OperationId, handle.OperationInstanceId);
         Assert.Contains(
             "proposal or audit sink is unavailable",
             handle.Reason ?? string.Empty,
             StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public async Task Allow_PersistsPolicyEvidenceBeforeExactlyOneActuatorInvocation()
+    {
+        var descriptor = Descriptor();
+        var store = new RecordingStore();
+        var executor = new EvidenceCheckingExecutor(descriptor.OperationId, store);
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new DescriptorProvider(descriptor)], TimeProvider.System),
+            [executor],
+            new AllowPolicy(),
+            TimeProvider.System,
+            instanceStore: store,
+            auditLog: new DurableAuditLog());
+
+        var handle = await dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = descriptor.OperationId },
+            new OperationPolicyContext { AuthorizationOutcome = "allowed" });
+
+        Assert.Equal(OperationHandleStatus.Completed, handle.Status);
+        Assert.Equal(1, executor.SubmitCount);
+        Assert.True(executor.SawDurablePolicyEvidence);
+    }
+
+    [ArchitectureTest]
+    public async Task PolicyEvidenceInfrastructureFailure_ReturnsFailedEnvelopeWithoutActuation()
+    {
+        var descriptor = Descriptor();
+        var executor = new CountingExecutor(descriptor.OperationId);
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new DescriptorProvider(descriptor)], TimeProvider.System),
+            [executor],
+            new AllowPolicy(),
+            TimeProvider.System,
+            instanceStore: new FailingPolicyEvidenceStore(),
+            auditLog: new DurableAuditLog());
+
+        var handle = await dispatcher.SubmitAsync(
+            new OperationRequest { OperationId = descriptor.OperationId },
+            new OperationPolicyContext { AuthorizationOutcome = "allowed" });
+
+        Assert.Equal(OperationHandleStatus.Failed, handle.Status);
+        Assert.Equal(0, executor.SubmitCount);
+        Assert.NotNull(handle.AuditId);
+        Assert.Contains("policy evaluation or evidence persistence failed", handle.Reason, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public async Task ProductionStartup_WithoutDurableOperationStore_FailsClosed()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOperationInstanceStore, VolatileOperationInstanceStore>();
+        await using var provider = services.BuildServiceProvider();
+        var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+
+        Assert.Contains("durable IOperationInstanceStore", exception.Message, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public async Task ProductionStartup_WithoutDurableAuditSink_FailsClosed()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOperationInstanceStore>(new RecordingStore());
+        services.AddSingleton<IOperationProposalStore>(new StubProposalStore());
+        services.AddSingleton<IAuditLog>(NullAuditLog.Instance);
+        await using var provider = services.BuildServiceProvider();
+        var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+
+        Assert.Contains("durable IAuditLog", exception.Message, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public async Task ProductionStartup_WithoutDurableProposalStore_FailsClosed()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOperationInstanceStore>(new RecordingStore());
+        await using var provider = services.BuildServiceProvider();
+        var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+
+        Assert.Contains("durable IOperationProposalStore", exception.Message, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public async Task ProductionStartup_WithAllowAllPolicy_FailsClosed()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOperationInstanceStore>(new RecordingStore());
+        services.AddSingleton<IOperationProposalStore>(new StubProposalStore());
+        services.AddSingleton<IAuditLog>(new DurableAuditLog());
+        services.AddSingleton<IOperationPolicyDecisionPoint>(new AllowAllPolicyDecisionPoint());
+        await using var provider = services.BuildServiceProvider();
+        var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+
+        Assert.Contains("fail-closed policy decision point", exception.Message, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public async Task ProductionStartup_WithoutExactlyOneActuator_FailsClosed()
+    {
+        var descriptor = Descriptor();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOperationInstanceStore>(new RecordingStore());
+        services.AddSingleton<IOperationProposalStore>(new StubProposalStore());
+        services.AddSingleton<IAuditLog>(new DurableAuditLog());
+        services.AddSingleton<IOperationPolicyDecisionPoint>(new AllowPolicy());
+        services.AddSingleton<IOperationCatalog>(
+            new OperationCatalog([new DescriptorProvider(descriptor)], TimeProvider.System));
+        await using var provider = services.BuildServiceProvider();
+        var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+
+        Assert.Contains("exactly one actuator", exception.Message, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public void LegacyGatewayRoute_IsTypedTranslationWithoutLocalPolicyOrActuatorBranch()
+    {
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var source = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+            root, "src", "Honua.Server", "Features", "ControlPlane", "OperationGateway.cs"));
+        var routeStart = source.IndexOf("public async Task<OperationGatewayResult> RouteAsync", StringComparison.Ordinal);
+        var routeEnd = source.IndexOf("private async Task<OperationGatewayResult> RouteAutonomyCompatibilityAsync", routeStart, StringComparison.Ordinal);
+        var route = source[routeStart..routeEnd];
+
+        Assert.Contains("GetRequiredService<ICanonicalOperationInvoker>()", route, StringComparison.Ordinal);
+        Assert.DoesNotContain("_ladder.Resolve", route, StringComparison.Ordinal);
+        Assert.DoesNotContain("ExecuteAsync(", route, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateProposalAsync(", route, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public void LegacyGateway_CannotOwnAnExecutorRegistryOrInvokeAnActuator()
+    {
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var source = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+            root, "src", "Honua.Server", "Features", "ControlPlane", "OperationGateway.cs"));
+
+        Assert.DoesNotContain("_executors", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(".ExecuteAsync(", source, StringComparison.Ordinal);
+        Assert.Contains("GetRequiredService<ICanonicalOperationInvoker>()", source, StringComparison.Ordinal);
     }
 
     private static OperationDescriptor Descriptor() => new()
@@ -102,6 +269,153 @@ public sealed class OperationEnvelopeArchitectureTests
                 Kind = PolicyDecisionKind.RequireApproval,
                 ApprovalLane = "operator-gate",
             });
+    }
+
+    private sealed class AllowPolicy : IOperationPolicyDecisionPoint
+    {
+        public Task<PolicyDecision> EvaluateAsync(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(PolicyDecision.Allowed);
+    }
+
+    private sealed class RecordingStore : IOperationInstanceStore
+    {
+        private OperationHandle? _envelope;
+
+        public Task<bool> TryCreateAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
+        {
+            _envelope = envelope;
+            return Task.FromResult(true);
+        }
+
+        public Task SetAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
+        {
+            _envelope = envelope;
+            return Task.CompletedTask;
+        }
+
+        public Task<OperationHandle?> GetAsync(string operationInstanceId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_envelope);
+    }
+
+    private sealed class FailingPolicyEvidenceStore : IOperationInstanceStore
+    {
+        private OperationHandle? _envelope;
+        private int _setCount;
+
+        public Task<bool> TryCreateAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
+        {
+            _envelope = envelope;
+            return Task.FromResult(true);
+        }
+
+        public Task SetAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _setCount) == 2)
+            {
+                throw new InvalidOperationException("simulated durable store outage");
+            }
+
+            _envelope = envelope;
+            return Task.CompletedTask;
+        }
+
+        public Task<OperationHandle?> GetAsync(
+            string operationInstanceId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(_envelope);
+    }
+
+    private sealed class DurableAuditLog : IAuditLog
+    {
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>($"audit-{Guid.NewGuid():N}");
+    }
+
+    private sealed class StubProposalStore : IOperationProposalStore
+    {
+        public Task<bool> TryCreateAsync(
+            OperationProposal proposal,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<OperationProposal?> GetAsync(
+            string proposalId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<OperationProposal?>(null);
+
+        public Task<bool> TrySetAsync(
+            OperationProposal proposal,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<IReadOnlyList<OperationProposal>> ListActiveAsync(
+            OperationClass? kind = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<OperationProposal>>([]);
+
+        public Task<bool> TryAcquireLeaseAsync(
+            string operationId,
+            string ownerId,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task<bool> RenewLeaseAsync(
+            string operationId,
+            string ownerId,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
+
+        public Task ReleaseLeaseAsync(
+            string operationId,
+            string ownerId,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class EvidenceCheckingExecutor(string operationId, RecordingStore store) : IOperationExecutor
+    {
+        public string OperationId => operationId;
+        public int SubmitCount { get; private set; }
+        public bool SawDurablePolicyEvidence { get; private set; }
+
+        public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
+
+        public async Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            SubmitCount++;
+            var stored = await store.GetAsync(context.OperationInstanceId!, cancellationToken);
+            SawDurablePolicyEvidence = stored is
+            {
+                Status: OperationHandleStatus.Accepted,
+                PolicyDecision: PolicyDecisionKind.Allow,
+                AuditId: not null,
+            };
+            var now = DateTimeOffset.UtcNow;
+            return new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId!,
+                OperationId = operationId,
+                CorrelationId = context.CorrelationId!,
+                Status = OperationHandleStatus.Completed,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+        }
+
+        public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class CountingExecutor(string operationId) : IOperationExecutor

@@ -146,6 +146,11 @@ public enum OperationDeterminism
 public enum OperationHandleStatus
 {
     /// <summary>
+    /// The durable envelope exists, but policy evaluation or actuation has not completed.
+    /// </summary>
+    Accepted,
+
+    /// <summary>
     /// The operation completed synchronously and its result is available on the handle.
     /// </summary>
     Completed,
