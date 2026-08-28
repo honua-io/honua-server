@@ -384,6 +384,18 @@ train_log_is_shard_killed() {
   train_log_has_shard_marker HONUA_SHARD_KILLED "$1"
 }
 
+# train_log_is_matrix_leg_inner_timeout <log-text>: a matrix leg's OWN inner
+# `timeout` wrapper fired. ci.yml matrix legs that split an inner test budget
+# from their job cap (currently the postgres-compat legs) end a hung leg with:
+#   ::error::HONUA_MATRIX_LEG_INNER_TIMEOUT image='<tag>' ...
+# Anchored exactly like the HONUA_SHARD_* markers above and for the same
+# reason: prose that merely NAMES the token (the train's own warnings, this
+# repo's fixtures) must never match.
+train_log_is_matrix_leg_inner_timeout() {
+  grep -Eq "(^|[[:space:]])((##\[error\]|::error::)[[:space:]]*)?HONUA_MATRIX_LEG_INNER_TIMEOUT[[:space:]]+image=" \
+    <<<"$1"
+}
+
 # train_join_job_names <newline-separated-jobs>: a human-readable, comma-joined
 # job list for escalation comments, or a neutral phrase when none are known. An
 # escalation that cannot name what failed is not actionable.

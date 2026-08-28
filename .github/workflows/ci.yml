@@ -911,6 +911,7 @@ jobs:
         run: |
           scripts/ci/merge-train/fixtures/validate-merge-train.sh
           scripts/ci/merge-train/fixtures/validate-timeout-retry.sh
+          scripts/ci/merge-train/fixtures/validate-leg-timeout-flake.sh
           scripts/ci/merge-train/fixtures/validate-capacity-ordering.sh
           scripts/ci/merge-train/fixtures/validate-early-failure-observe.sh
 
@@ -2414,6 +2415,18 @@ jobs:
           HONUA_TEST_DB_URL: "Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua"
           HONUA_TEST_CONFIGURATION: Release
           COLLECT_COVERAGE: ${{ matrix.collect_coverage }}
+          PG_IMAGE: ${{ matrix.pg_image }}
+          # Inner test budget, split from the job-level timeout-minutes the
+          # same way .github/ci-shards.json splits test_timeout_minutes from
+          # timeout_minutes. Healthy legs finish in well under a minute
+          # (33-36s observed across runs), so 10 minutes is ~17x headroom
+          # while the 30-minute job cap stays reserved for checkout, restore,
+          # build and artifact upload. Run 33109819708 hung the 16-3.4 leg for
+          # 24.4 minutes until the job cap killed it — siblings passed in ~34s
+          # — and rejected a whole merge-train batch; the inner bound turns
+          # that hang into a fast failure that names the image and leaves a
+          # complete log.
+          TEST_TIMEOUT_MINUTES: "10"
         run: |
           test_args=(
             dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
@@ -2425,7 +2438,30 @@ jobs:
           if [ "${COLLECT_COVERAGE}" = "true" ]; then
             test_args+=(--collect:"XPlat Code Coverage" --settings coverlet.runsettings)
           fi
-          "${test_args[@]}"
+          rc=0
+          start="${SECONDS}"
+          timeout --kill-after=30s "${TEST_TIMEOUT_MINUTES}m" "${test_args[@]}" || rc=$?
+          elapsed=$(( SECONDS - start ))
+          # rc 124: `timeout` sent SIGTERM at the deadline — a proven inner
+          # timeout. rc 137 alone is NOT proof: GNU timeout reports 137 both
+          # when its own --kill-after SIGKILL fires (SIGTERM was ignored) and
+          # when the command is SIGKILLed from outside (e.g. the OOM killer)
+          # well before the deadline. Elapsed time disambiguates: the wrapper
+          # cannot deliver any KILL before the budget has elapsed, so a 137
+          # at/after the deadline is the kill-after path while an early 137 is
+          # an external SIGKILL and must not carry the inner-timeout marker —
+          # the merge-train classifier would otherwise route runner resource
+          # loss through the leg-flake/leg-hang rule (and, on the common
+          # single-leg baseline matrix, attribute it to a PR).
+          if [ "${rc}" -eq 124 ] || { [ "${rc}" -eq 137 ] && [ "${elapsed}" -ge $(( TEST_TIMEOUT_MINUTES * 60 )) ]; }; then
+            echo "::error::HONUA_MATRIX_LEG_INNER_TIMEOUT image='${PG_IMAGE}' step='Run Postgres compatibility tests' exceeded its ${TEST_TIMEOUT_MINUTES}m inner test budget (healthy legs finish in under a minute); killed early instead of burning the job cap."
+            exit 124
+          fi
+          if [ "${rc}" -eq 137 ]; then
+            echo "::error::dotnet test for image '${PG_IMAGE}' died from SIGKILL after ${elapsed}s, before its ${TEST_TIMEOUT_MINUTES}m inner test budget elapsed. That signal came from outside the timeout wrapper (suspect the OOM killer), so this is runner resource loss, not evidence of an inner timeout."
+            exit "${rc}"
+          fi
+          exit "${rc}"
 
       - name: Upload Postgres coverage (cobertura)
         uses: actions/upload-artifact@v7.0.1
