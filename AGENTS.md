@@ -154,6 +154,12 @@ Issue work is claimed with a **lease, not a lock**:
   `ORPHANED-CLAIM`, and anyone may take over by stamping a new claim. The
   newest `claimed:` comment wins; never delete older ones — the thread is the
   history of attempts.
+- **Footer discipline — every touched issue gets a disposition.** `Closes #N`
+  when the PR completes it; `Refs #N (<what remains>)` for a deliberate slice.
+  A bare `#N` is a bug: it reads like a disposition, closes nothing, and the
+  ticket goes stale the moment the PR merges. Cross-repo closing keywords are
+  silently inert on GitHub — never rely on them; close the foreign issue by
+  hand and cite the delivering PR.
 - An open PR carrying `Closes #N` / `Refs #N` supersedes the label as the
   claim; when the PR merges or closes, the issue is unclaimed again unless the
   PR closed it.
