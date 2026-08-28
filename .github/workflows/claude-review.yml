@@ -671,4 +671,4 @@ jobs:
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}
         run: |
           gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
-            -f train_apply=true -f max_batch=10 >/dev/null 2>&1 || true
+            -f train_apply=false -f max_batch=10 >/dev/null 2>&1 || true
