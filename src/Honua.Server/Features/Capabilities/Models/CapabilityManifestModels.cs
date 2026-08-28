@@ -155,6 +155,9 @@ internal sealed record CapabilityManifestCapability
     public string? MinimumEdition { get; init; }
 
     public string? MessageKey { get; init; }
+
+    /// <summary>Runtime evidence identifiers supporting this availability claim.</summary>
+    public string[]? Evidence { get; init; }
 }
 
 internal sealed record CapabilityManifestTransports

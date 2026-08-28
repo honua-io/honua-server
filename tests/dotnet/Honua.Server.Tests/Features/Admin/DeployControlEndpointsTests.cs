@@ -217,7 +217,8 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
         root.GetProperty("target").GetProperty("backend").GetString().Should().Be("honua-gitops-kubernetes");
         root.GetProperty("readyToSubmit").GetBoolean().Should().BeTrue();
         root.GetProperty("backendRegistered").GetBoolean().Should().BeTrue();
-        root.GetProperty("capabilities").GetProperty("supportsRollback").GetBoolean().Should().BeTrue();
+        root.GetProperty("capabilities").GetProperty("supportsRollback").GetBoolean().Should().BeFalse();
+        root.GetProperty("rollbackSupported").GetBoolean().Should().BeFalse();
     }
 
     [IntegrationTest]

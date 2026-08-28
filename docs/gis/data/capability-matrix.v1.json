@@ -29,10 +29,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 368,
-      "provingTestCount": 1084,
+      "entryCount": 360,
+      "provingTestCount": 1058,
       "maturity": {
-        "implemented": 368
+        "implemented": 360
       },
       "noSurface": null,
       "cite": [],
@@ -668,13 +668,31 @@
       "geobench": []
     },
     {
+      "key": "deploy.rollback",
+      "displayName": "Automatic Deployment Rollback",
+      "category": "Deploy",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 1,
+      "provingTestCount": 9,
+      "maturity": {
+        "implemented": 1
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "discovery.capability-manifest",
       "displayName": "Capability Manifest",
       "category": "Discovery",
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 19,
+      "provingTestCount": 20,
       "maturity": {
         "implemented": 2
       },
@@ -1179,6 +1197,42 @@
       "provingTestCount": 41,
       "maturity": {
         "implemented": 10
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ops.autonomy",
+      "displayName": "Operational Autonomy",
+      "category": "Ops",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 5,
+      "provingTestCount": 8,
+      "maturity": {
+        "implemented": 5
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
+      "key": "ops.findings",
+      "displayName": "Operational Findings",
+      "category": "Ops",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 2,
+      "provingTestCount": 9,
+      "maturity": {
+        "implemented": 2
       },
       "noSurface": null,
       "cite": [],

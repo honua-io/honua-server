@@ -44,6 +44,30 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
     }
 
     [Fact]
+    public async Task Reconcile_HealthProbeUnhealthy_WhenRollbackUnsupported_RequiresManualIntervention()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(
+            observeStatus: WorkflowOperationStatus.Succeeded,
+            supportsRollback: false);
+        var operation = CreateOperation();
+        await store.TryCreateAsync(operation);
+
+        var evaluator = CreateRealEvaluator(
+            new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 3 }));
+        var reconciler = CreateReconciler(store, backend, evaluator);
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        updated.Should().NotBeNull();
+        backend.RollbackCalls.Should().Be(0, "unsupported rollback must never be requested");
+        updated!.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        updated.Status.Should().NotBe(WorkflowOperationStatus.RollbackRequested);
+        updated.CurrentPhase.Should().Contain("unsupported");
+    }
+
+    [Fact]
     public async Task Reconcile_HealthProbeHealthy_DoesNotRollBack()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -221,7 +245,8 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
 
     private sealed class RecordingDeployBackend(
         WorkflowOperationStatus observeStatus,
-        bool promotionRecommended = false) : IDeployBackend
+        bool promotionRecommended = false,
+        bool supportsRollback = true) : IDeployBackend
     {
         public int RollbackCalls { get; private set; }
 
@@ -234,7 +259,7 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
         public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(new DeployBackendCapabilities
             {
-                SupportsRollback = true,
+                SupportsRollback = supportsRollback,
                 SupportsProgressPolling = true,
                 SupportsRevisionPinning = true
             });

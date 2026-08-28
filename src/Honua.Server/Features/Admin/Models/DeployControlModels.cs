@@ -497,6 +497,9 @@ public sealed class DeployPlanResponse
     [JsonPropertyName("target")]
     public required DeployPlanTargetResponse Target { get; init; }
 
+    [JsonPropertyName("rollbackSupported")]
+    public bool RollbackSupported { get; init; }
+
     [JsonPropertyName("readyToSubmit")]
     public bool ReadyToSubmit { get; init; }
 

@@ -4,6 +4,7 @@
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Observability.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
 using Microsoft.AspNetCore.Mvc;
@@ -46,23 +47,27 @@ internal static class OpsObservabilityEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         group.MapGet("/findings", HandleGetFindings)
+            .WithCapabilityGate("ops.findings")
             .WithDisplayName("Get Ops Findings")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<OpsFindingsListResponse>();
 
         group.MapPost("/findings/{findingId}/propose", HandleProposeFinding)
+            .WithCapabilityGate("ops.findings")
             .WithDisplayName("Propose Ops Finding Action")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<OpsFindingProposeResponse>()
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         group.MapGet("/autonomy/policies", (Delegate)HandleListAutonomyPolicies)
+            .WithCapabilityGate("ops.autonomy")
             .WithDisplayName("List Ops Autonomy Policies")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<OpsAutonomyPolicyListResponse>()
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/autonomy/policies/{rule}", HandleGetAutonomyPolicy)
+            .WithCapabilityGate("ops.autonomy")
             .WithDisplayName("Get Ops Autonomy Policy")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<OpsAutonomyPolicyResponse>()
@@ -71,6 +76,7 @@ internal static class OpsObservabilityEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPut("/autonomy/policies/{rule}", HandleSetAutonomyPolicy)
+            .WithCapabilityGate("ops.autonomy")
             .WithDisplayName("Set Ops Autonomy Policy")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
             .Produces<OpsAutonomyPolicyResponse>()
@@ -78,12 +84,14 @@ internal static class OpsObservabilityEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/autonomy/settings", (Delegate)HandleGetAutonomySettings)
+            .WithCapabilityGate("ops.autonomy")
             .WithDisplayName("Get Ops Autonomy Settings")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<OpsAutonomySettingsResponse>()
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPut("/autonomy/settings", HandleSetAutonomySettings)
+            .WithCapabilityGate("ops.autonomy")
             .WithDisplayName("Set Ops Autonomy Settings")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
             .Produces<OpsAutonomySettingsResponse>()

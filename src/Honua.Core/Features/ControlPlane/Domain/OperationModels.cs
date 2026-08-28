@@ -1169,6 +1169,11 @@ public sealed record ExecutionJobRecord
 public sealed record DeployPlan
 {
     /// <summary>
+    /// Whether the selected backend can perform and observe an automatic rollback.
+    /// </summary>
+    public bool RollbackSupported { get; init; }
+
+    /// <summary>
     /// Whether the deploy can be submitted immediately.
     /// </summary>
     public bool IsReadyToSubmit { get; init; }

@@ -9,6 +9,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -55,6 +56,8 @@ internal sealed class CapabilityManifestService(
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     IEnumerable<IBatchComputeBackend> batchBackends,
+    IEnumerable<IDeployBackend> deployBackends,
+    IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
     IWebHostEnvironment hostEnvironment,
     ICapabilityRegistry capabilityRegistry,
@@ -98,6 +101,7 @@ internal sealed class CapabilityManifestService(
             workspaceAvailable,
             request.WorkspaceId);
         var batchCapabilities = await ResolveBatchCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        var operationCapabilities = await ResolveOperationCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
 
         // #2335 (B3): the registry-derived composition resolves each descriptor through
         // the shared gate resolver (edition/experimental precedence). All descriptors
@@ -106,8 +110,8 @@ internal sealed class CapabilityManifestService(
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
         var capabilities = options.ManifestFromRegistry
-            ? BuildCapabilitiesFromRegistry(policyContext, gateContext)
-            : BuildCapabilities(policyContext);
+            ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
+            : BuildCapabilities(policyContext, operationCapabilities);
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
             : BuildPackages();
@@ -373,7 +377,9 @@ internal sealed class CapabilityManifestService(
             ["package.app"] = ("app-package", "app"),
         };
 
-    private CapabilityManifestCapability[] BuildCapabilities(CapabilityPolicyContext context)
+    private CapabilityManifestCapability[] BuildCapabilities(
+        CapabilityPolicyContext context,
+        OperationCapabilitySummary operationCapabilities)
     {
         var alertOptionsValue = options.Alerts;
         var mtlsOptions = options.ClientCertificate;
@@ -428,7 +434,15 @@ internal sealed class CapabilityManifestService(
             Capability("versioning.branch", "versioning", context, entitlementKey: FeatureCatalog.BranchVersioningKey),
             // Aggregated operate status (A12) — the server-authoritative operate/status surface. Ungated
             // GA; read-authorized (ops:read) at the HTTP layer. Kept last to mirror the registry order.
-            Capability("operate.status", "operate", context, requiresAuthentication: true)
+            Capability("operate.status", "operate", context, requiresAuthentication: true),
+            Capability("ops.findings", "operate", context, requiresAuthentication: true),
+            Capability("ops.autonomy", "operate", context,
+                configured: operationCapabilities.HasDurableOperationStore,
+                requiresAuthentication: true),
+            Capability("deploy.rollback", "deploy", context,
+                configured: operationCapabilities.RollbackTargetIds.Length > 0,
+                requiresAuthentication: true,
+                evidence: operationCapabilities.RollbackTargetIds)
         ];
     }
 
@@ -446,9 +460,10 @@ internal sealed class CapabilityManifestService(
     /// </summary>
     private CapabilityManifestCapability[] BuildCapabilitiesFromRegistry(
         CapabilityPolicyContext context,
-        CapabilityGateContext gateContext)
+        CapabilityGateContext gateContext,
+        OperationCapabilitySummary operationCapabilities)
     {
-        var specs = BuildManifestCapabilitySpecs();
+        var specs = BuildManifestCapabilitySpecs(operationCapabilities);
         var capabilities = new List<CapabilityManifestCapability>(specs.Count);
         foreach (var descriptor in capabilityRegistry.All)
         {
@@ -475,7 +490,8 @@ internal sealed class CapabilityManifestService(
                 policyCapability: spec.PolicyCapability,
                 requiresAuthentication: spec.RequiresAuthentication,
                 requiresEnvironment: spec.RequiresEnvironment,
-                requiresWorkspace: spec.RequiresWorkspace));
+                requiresWorkspace: spec.RequiresWorkspace,
+                evidence: spec.Evidence));
         }
 
         return capabilities.ToArray();
@@ -487,7 +503,8 @@ internal sealed class CapabilityManifestService(
     /// Mirrors the hand-curated arguments in <see cref="BuildCapabilities"/> exactly so the
     /// two composition paths stay wire-identical.
     /// </summary>
-    private Dictionary<string, ManifestCapabilitySpec> BuildManifestCapabilitySpecs()
+    private Dictionary<string, ManifestCapabilitySpec> BuildManifestCapabilitySpecs(
+        OperationCapabilitySummary operationCapabilities)
     {
         var syncSupported = IsFieldCollectionSyncSupported();
         var jobsSupported = options.ControlPlane.ExecutionWorkloads.Count > 0 || batchBackends.Any();
@@ -539,6 +556,18 @@ internal sealed class CapabilityManifestService(
             ["edit.features"] = new() { EntitlementKey = FeatureCatalog.FeatureServerEditsKey, PolicyCapability = "features.edit" },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
+            ["ops.findings"] = new() { RequiresAuthentication = true },
+            ["ops.autonomy"] = new()
+            {
+                Configured = operationCapabilities.HasDurableOperationStore,
+                RequiresAuthentication = true,
+            },
+            ["deploy.rollback"] = new()
+            {
+                Configured = operationCapabilities.RollbackTargetIds.Length > 0,
+                RequiresAuthentication = true,
+                Evidence = operationCapabilities.RollbackTargetIds,
+            },
         };
     }
 
@@ -578,7 +607,8 @@ internal sealed class CapabilityManifestService(
         string? policyCapability = null,
         bool requiresAuthentication = false,
         bool requiresEnvironment = false,
-        bool requiresWorkspace = false)
+        bool requiresWorkspace = false,
+        string[]? evidence = null)
     {
         var available = true;
         string? reasonCode = null;
@@ -648,7 +678,8 @@ internal sealed class CapabilityManifestService(
             MinimumEdition = minimumEdition,
             MessageKey = available
                 ? $"capabilities.{id}.available"
-                : $"capabilities.{id}.{reasonCode}"
+                : $"capabilities.{id}.{reasonCode}",
+            Evidence = evidence is { Length: > 0 } ? evidence : null
         };
     }
 
@@ -889,6 +920,45 @@ internal sealed class CapabilityManifestService(
         return new BatchCapabilitySummary(available, supportsCancellation, supportsProgressPolling);
     }
 
+    private async Task<OperationCapabilitySummary> ResolveOperationCapabilitiesAsync(
+        CancellationToken cancellationToken)
+    {
+        var backends = deployBackends.ToDictionary(
+            backend => (backend.BackendName, backend.TargetKind),
+            backend => backend,
+            EqualityComparer<(string Backend, DeployTargetKind TargetKind)>.Default);
+        var rollbackTargetIds = new List<string>();
+
+        foreach (var target in options.ControlPlane.DeployTargets)
+        {
+            if (!backends.TryGetValue((target.Backend, target.TargetKind), out var backend))
+            {
+                continue;
+            }
+
+            try
+            {
+                var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+                if (capabilities.SupportsRollback)
+                {
+                    rollbackTargetIds.Add(target.TargetId);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                CapabilityManifestLog.DeployCapabilityProbeFailed(logger, backend.BackendName, ex);
+            }
+        }
+
+        return new OperationCapabilitySummary(
+            workflowOperationStores.Any(),
+            [.. rollbackTargetIds.Order(StringComparer.Ordinal)]);
+    }
+
     private bool IsFieldCollectionSyncSupported()
         => fieldCollectionSyncStores.Any();
 
@@ -1058,6 +1128,8 @@ internal sealed class CapabilityManifestService(
         public bool RequiresEnvironment { get; init; }
 
         public bool RequiresWorkspace { get; init; }
+
+        public string[]? Evidence { get; init; }
     }
 
     private sealed record CapabilityPolicyContext(
@@ -1072,6 +1144,10 @@ internal sealed class CapabilityManifestService(
         int AvailableBackendCount,
         bool SupportsCancellation,
         bool SupportsProgressPolling);
+
+    private readonly record struct OperationCapabilitySummary(
+        bool HasDurableOperationStore,
+        string[] RollbackTargetIds);
 }
 
 internal static class CapabilityReasonCodes
@@ -1114,6 +1190,15 @@ internal static partial class CapabilityManifestLog
         Level = LogLevel.Warning,
         Message = "Capability manifest batch backend capability probe failed. Backend={Backend}")]
     public static partial void BatchCapabilityProbeFailed(
+        ILogger logger,
+        string backend,
+        Exception exception);
+
+    [LoggerMessage(
+        EventId = 8723,
+        Level = LogLevel.Warning,
+        Message = "Capability manifest deploy backend capability probe failed. Backend={Backend}")]
+    public static partial void DeployCapabilityProbeFailed(
         ILogger logger,
         string backend,
         Exception exception);
