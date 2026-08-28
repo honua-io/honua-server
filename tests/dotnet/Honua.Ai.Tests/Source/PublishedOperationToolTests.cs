@@ -196,7 +196,7 @@ public sealed class PublishedOperationToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
-    public async Task Invoke_PolicyRequiresApproval_SurfacesApprovalLane()
+    public async Task Invoke_PolicyRequiresApproval_WithoutDurableBridge_FailsClosed()
     {
         var invoker = Dispatcher(
             MutatingDescriptor(),
@@ -213,9 +213,43 @@ public sealed class PublishedOperationToolTests
         var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
-        body.GetProperty("status").GetString().Should().Be("RequiresApproval");
-        body.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+        body.GetProperty("status").GetString().Should().Be("Failed");
+        body.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
         body.GetProperty("approvalLane").GetString().Should().Be("operator-gate");
+        body.TryGetProperty("proposalId", out _).Should().BeFalse();
+        body.TryGetProperty("auditId", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_op_geo_export")]
+    public async Task Invoke_DurableApproval_ProjectsCanonicalJoinedIdentities()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var invoker = new CountingInvoker(_ => new OperationHandle
+        {
+            OperationInstanceId = "opinst-123",
+            OperationId = MutatingOpId,
+            ProposalId = "proposal-456",
+            CorrelationId = "corr-789",
+            AuditId = "audit-101",
+            Status = OperationHandleStatus.RequiresApproval,
+            CreatedAt = now,
+            UpdatedAt = now,
+            AuthorizationOutcome = "authorized",
+            PolicyDecision = PolicyDecisionKind.RequireApproval,
+            ApprovalLane = "operator-gate",
+        });
+        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+
+        var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
+
+        var body = result.StructuredContent!.Value;
+        body.GetProperty("operationInstanceId").GetString().Should().Be("opinst-123");
+        body.GetProperty("handleId").GetString().Should().Be("opinst-123");
+        body.GetProperty("proposalId").GetString().Should().Be("proposal-456");
+        body.GetProperty("correlationId").GetString().Should().Be("corr-789");
+        body.GetProperty("auditId").GetString().Should().Be("audit-101");
+        body.GetProperty("policyOutcome").GetString().Should().Be("RequireApproval");
     }
 
     [UnitTest]
@@ -575,7 +609,10 @@ public sealed class PublishedOperationToolTests
     private static OperationHandle CompletedHandle(string operationId) => new()
     {
         OperationId = operationId,
-        HandleId = "op-done",
+        OperationInstanceId = "op-done",
+        CorrelationId = "corr-done",
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
         Status = OperationHandleStatus.Completed,
         Result = new OperationResultSummary
         {
@@ -705,7 +742,10 @@ public sealed class PublishedOperationToolTests
             return Task.FromResult(new OperationHandle
             {
                 OperationId = operationId,
-                HandleId = "op-run",
+                OperationInstanceId = "op-run",
+                CorrelationId = "corr-run",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
                 Status = OperationHandleStatus.Completed,
             });
         }
@@ -714,7 +754,10 @@ public sealed class PublishedOperationToolTests
             => Task.FromResult(new OperationStatus
             {
                 OperationId = operationId,
-                HandleId = handle.HandleId,
+                OperationInstanceId = handle.OperationInstanceId,
+                CorrelationId = handle.CorrelationId,
+                CreatedAt = handle.CreatedAt,
+                UpdatedAt = handle.UpdatedAt,
                 Status = handle.Status,
             });
     }

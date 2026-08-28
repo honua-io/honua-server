@@ -993,10 +993,10 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
 
         public IReadOnlyCollection<AuditEvent> Events => _events.ToArray();
 
-        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             _events.Enqueue(auditEvent);
-            return Task.CompletedTask;
+            return Task.FromResult<string?>("audit-test");
         }
     }
 

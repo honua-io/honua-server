@@ -145,7 +145,7 @@ internal sealed class FieldExportService
     private static string JsonString(string? value)
         => value is null ? "null" : "\"" + JsonEncodedText.Encode(value) + "\"";
 
-    private Task RecordAuditAsync(
+    private Task<string?> RecordAuditAsync(
         HttpContext context,
         string action,
         Guid exportId,

@@ -1092,7 +1092,7 @@ internal sealed class FormSubmissionService
            ?? context.User.Identity?.Name
            ?? AuditEvent.AnonymousActor;
 
-    private Task RecordAuditAsync(
+    private Task<string?> RecordAuditAsync(
         HttpContext context,
         string action,
         string formId,

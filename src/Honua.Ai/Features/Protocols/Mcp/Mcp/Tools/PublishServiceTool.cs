@@ -89,7 +89,8 @@ internal sealed class PublishServiceTool : IMcpTool
         var request = BuildRequest(argument);
         var context = new OperationPolicyContext
         {
-            PrincipalId = principal.Identity?.Name
+            PrincipalId = principal.Identity?.Name,
+            AuthorizationOutcome = "authorized",
         };
 
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
@@ -148,7 +149,11 @@ internal sealed class PublishServiceTool : IMcpTool
             Status = handle.Status.ToString(),
             RequiresApproval = handle.Status == OperationHandleStatus.RequiresApproval,
             OperationId = handle.OperationId,
+            OperationInstanceId = handle.OperationInstanceId,
             HandleId = handle.HandleId,
+            ProposalId = handle.ProposalId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
             JobId = handle.JobId,
             ApprovalLane = handle.ApprovalLane,
             MetadataRevision = handle.MetadataRevision,
