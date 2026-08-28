@@ -135,9 +135,9 @@ internal static class AdminApiOperationCatalog
     {
         foreach (var method in root.GetProperty("paths").EnumerateObject()
                      .SelectMany(static path => path.Value.EnumerateObject())
-                     .Where(static method => method.Value.ValueKind == JsonValueKind.Object))
-            if (method.Value.TryGetProperty("operationId", out var id) && id.GetString() == operationId)
-                return method.Value;
+                     .Where(static method => method.Value.ValueKind == JsonValueKind.Object)
+                     .Where(method => method.Value.TryGetProperty("operationId", out var id) && id.GetString() == operationId))
+            return method.Value;
         throw new InvalidOperationException($"Admin OpenAPI operation '{operationId}' was not found.");
     }
 
@@ -145,9 +145,10 @@ internal static class AdminApiOperationCatalog
     {
         foreach (var response in operation.GetProperty("responses").EnumerateObject()
                      .OrderBy(static item => item.Name, StringComparer.Ordinal)
-                     .Where(static response => response.Name[0] == '2'))
-            if (TryGetContentSchema(response.Value, "content", out var schema))
-                return [new OperationParameterDescriptor { Name = "response", Title = "Admin API response", Required = true, Schema = ConvertSchema(root, schema) }];
+                     .Where(static response => response.Name[0] == '2')
+                     .Select(static response => TryGetContentSchema(response.Value, "content", out var schema) ? schema : (JsonElement?)null)
+                     .Where(static schema => schema.HasValue))
+            return [new OperationParameterDescriptor { Name = "response", Title = "Admin API response", Required = true, Schema = ConvertSchema(root, response.GetValueOrDefault()) }];
         return [];
     }
 
@@ -157,9 +158,13 @@ internal static class AdminApiOperationCatalog
         if (!owner.TryGetProperty(property, out var container)) return false;
         var content = property == "content" ? container : container.TryGetProperty("content", out var nested) ? nested : default;
         if (content.ValueKind != JsonValueKind.Object) return false;
-        foreach (var mediaType in content.EnumerateObject().Where(static mediaType => mediaType.Value.ValueKind == JsonValueKind.Object))
+        foreach (var candidate in content.EnumerateObject()
+                     .Where(static mediaType => mediaType.Value.ValueKind == JsonValueKind.Object)
+                     .Select(static mediaType => mediaType.Value.TryGetProperty("schema", out var value) ? value : (JsonElement?)null)
+                     .Where(static value => value.HasValue))
         {
-            if (mediaType.Value.TryGetProperty("schema", out schema)) return true;
+            schema = candidate.GetValueOrDefault();
+            return true;
         }
         return false;
     }
