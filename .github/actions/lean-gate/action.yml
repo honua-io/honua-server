@@ -7,11 +7,12 @@ description: >
   deliberate — two hand-maintained copies of a gate is exactly the drift that
   produced #2865.
 
-  The two callers differ in exactly one input: `PR Gate` passes
-  `build-scope: affected`, `Merge Queue Gate` keeps `build-scope: full`. See the
-  "Compute gate build scope" step for why that split is safe and what backstops
-  it. Everything else — the format check, every test step, every timeout — is
-  identical for both, on purpose.
+  The two callers differ in exactly two inputs: `PR Gate` passes
+  `build-scope: affected` and `format-scope: affected`, `Merge Queue Gate`
+  keeps both `full`. See the "Compute gate build scope" and "Compute gate
+  format scope" steps for why those splits are safe and what backstops them.
+  Everything else — every test step, every timeout — is identical for both,
+  on purpose.
 
   Callers must run actions/checkout and ./.github/actions/setup-dotnet-ci first
   (and may reclaim runner disk); this action owns only the gate itself.
@@ -46,6 +47,20 @@ inputs:
       the full solution whenever a trustworthy diff base is unavailable or
       shared build infrastructure changed. Requires the caller to check out with
       fetch-depth >= 2. See scripts/ci/compute-lean-gate-build-scope.sh.
+    required: false
+    default: 'full'
+  format-scope:
+    description: >
+      'full' (default) runs `dotnet format Honua.sln --verify-no-changes` over
+      every document in the solution. 'affected' passes the diff's surviving
+      formattable files to `--include` — same workspace, per-document analysis
+      restricted to the change — and falls back to the full run whenever the
+      diff base is untrustworthy, the SHARED build-scope force-full decision
+      fires (compute-affected-projects.sh reports ALL), the diff touches
+      format-sensitive configuration (.editorconfig/.globalconfig/.csproj/
+      .props/.targets/.sln/.ruleset), or the include list would exceed its
+      file bound. Requires the caller to check out with fetch-depth >= 2. See
+      scripts/ci/compute-lean-gate-format-scope.sh.
     required: false
     default: 'full'
   build-timeout-minutes:
@@ -170,21 +185,63 @@ runs:
               /p:TreatWarningsAsErrors=true
         fi
 
+    # Format scope. Like the build scope above, this narrows for `PR Gate`
+    # only; `Merge Queue Gate` and ci.yml's `Build & Format Check` stay
+    # solution-wide, and that full pass before landing is the backstop.
+    #
+    # An earlier revision of this file asserted that most of `dotnet format`'s
+    # cost is loading the workspace, so an `--include`-scoped run "would not
+    # obviously pay". That was measured and is WRONG on current trunk: run
+    # 33126837397 / job 98706893656 (--verbosity diagnostic) puts the full run
+    # at 5.39 min p50 — 29% of the 18.7 min gate — broken down as
+    #   workspace load                 7%
+    #   determining formattable files  3%
+    #   whitespace formatters          5%
+    #   Code Style analysis           35%
+    #   Analyzer Reference analysis   49%
+    # i.e. 84% of the cost is code-style + analyzer analysis over all 6586
+    # documents ("Formatted 0 of 6586 files"), which `--include` restricts to
+    # the diff. The workspace-load share an --include run still pays is ~10%.
+    #
+    # MISS-RISK CONTRACT (same shape as the build scope's): a format/analyzer
+    # diagnostic triggered in a file OUTSIDE the diff — a deleted type leaving
+    # an unnecessary using elsewhere, and nothing subtler, because config that
+    # changes analysis everywhere (.editorconfig, props, csproj, analyzers)
+    # forces the full run — is caught by the merge train's full-solution
+    # format BEFORE the change lands, and fixed forward from the train. It
+    # never reaches trunk unverified. The scope script also refuses to narrow
+    # past its include-file bound instead of truncating: a truncated include
+    # list would be a silent coverage hole.
+    - name: Compute gate format scope
+      id: format-scope
+      shell: bash
+      env:
+        FORMAT_SCOPE: ${{ inputs.format-scope }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+      run: scripts/ci/compute-lean-gate-format-scope.sh
+
     - name: Format Check
       shell: bash
       # Restore already completed above and produced assets for every solution
-      # project, whatever the build scope was. Re-evaluating restore here adds
-      # network/project work without increasing format coverage.
-      #
-      # DELIBERATELY SOLUTION-WIDE, and measured: on the 2026-08-26 baseline this
-      # step is 5m51s of an 18m09s gate — co-dominant with the build's 6m30s, not
-      # a rounding error. It is not narrowed with the build because `dotnet
-      # format` takes ONE workspace (a project or a solution, never a list), and
-      # most of its cost is loading that workspace rather than analysing
-      # documents, so a `--include`-scoped run over the same solution would not
-      # obviously pay. Narrowing it is a separate, measured change (see #3213);
-      # do not assume it is free.
-      run: dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
+      # project, whatever the build or format scope was. Re-evaluating restore
+      # here adds network/project work without increasing format coverage.
+      env:
+        GATE_FORMAT_MODE: ${{ steps.format-scope.outputs.mode }}
+        GATE_FORMAT_INCLUDE_FILE: ${{ steps.format-scope.outputs.include-file }}
+      run: |
+        if [[ "${GATE_FORMAT_MODE}" == "affected" ]]; then
+          if [[ ! -s "${GATE_FORMAT_INCLUDE_FILE}" ]]; then
+            echo "::error::format scope is 'affected' but the include list is missing or empty"
+            exit 1
+          fi
+          mapfile -t include_paths < "${GATE_FORMAT_INCLUDE_FILE}"
+          dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic \
+            --include "${include_paths[@]}"
+        elif [[ "${GATE_FORMAT_MODE}" == "skip" ]]; then
+          echo "::notice::Format check skipped: the diff has no surviving formattable files and no format-sensitive configuration. The merge train's full-solution format remains the backstop."
+        else
+          dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
+        fi
 
     - name: Create Test Results Directory
       shell: bash
