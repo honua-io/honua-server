@@ -21,7 +21,7 @@ stac-api-validator==0.6.8
 # pystac-client exposes no observable surface; requests is pystac-client's own
 # transport and is pinned so the lane's HTTP behaviour is reproducible.
 httpx==0.28.1
-requests==2.32.5
+requests==2.33.0
 
 # --- schema validation ---------------------------------------------------
 jsonschema==4.26.0
