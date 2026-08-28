@@ -138,6 +138,29 @@ When the user asks to create a ticket, issue, or GitHub issue:
 - Before filing, search the target repo for existing issues to avoid duplicates. If a close match exists, comment on it or ask whether to reuse it instead of filing a duplicate.
 - For SDK integration work, default ownership is SDK-side implementation in `honua-sdk-js`, `honua-sdk-dotnet`, or `honua-sdk-python`, with `honua-server` owning shared seed/bootstrap contracts and release-proof integration.
 
+## Work Claims (who is on what)
+
+Issue work is claimed with a **lease, not a lock**:
+
+- Before starting work on an issue, check for the `state/in-progress` label and
+  the newest `claimed: <lane> <timestamp>` comment. If a live claim exists,
+  pick different work.
+- When you start, stamp your own claim: add `state/in-progress` and comment
+  `claimed: <your-lane> <UTC timestamp> — <what you were dispatched with>`.
+  Fleet dispatch tooling does this automatically for packet work
+  (honua-flow `tools/claim-issue.sh`); do it by hand otherwise.
+- **A claim expires by rule, not by release.** With no open PR referencing the
+  issue after **3 hours**, the claim is stale: the fleet monitor flags it as
+  `ORPHANED-CLAIM`, and anyone may take over by stamping a new claim. The
+  newest `claimed:` comment wins; never delete older ones — the thread is the
+  history of attempts.
+- An open PR carrying `Closes #N` / `Refs #N` supersedes the label as the
+  claim; when the PR merges or closes, the issue is unclaimed again unless the
+  PR closed it.
+- Agents die without cleanup. That is expected, not exceptional — which is why
+  there is no unlock step to forget, and why squatting on a stale claim is
+  never an error. A dead lane costs the fleet a bounded wait, never a deadlock.
+
 ## Pull Request Policy
 
 **Nothing in CI reads your PR description.** The **Validate PR Template Compliance** job lives in `ci.yml`, and `ci.yml` has no `pull_request` trigger (schedule / merge_group / workflow_dispatch only — see its header). Its one real step is additionally gated on `if: github.event_name == 'pull_request'`, which can never be true there. So the job short-circuits to "skip" on the train and nightly runs, and never fires on a PR at all. Even when it did run it was advisory — it posted suggestions and warned, but always succeeded.
