@@ -59,7 +59,8 @@ internal static class CanonicalOperationGatewayTestComposition
             TimeProvider.System,
             bridge,
             instanceStore,
-            new TestAuditLog());
+            new TestAuditLog(),
+            approvalReplayVerifier: new OperationApprovalReplayVerifier(proposalStore));
         services.AddSingleton<IOperationInvoker>(invoker);
 
         var provider = services.BuildServiceProvider();
@@ -132,6 +133,12 @@ internal static class CanonicalOperationGatewayTestComposition
             OperationHandle envelope,
             CancellationToken cancellationToken = default)
             => _inner.SetAsync(envelope, cancellationToken);
+
+        public Task<bool> TrySetAsync(
+            OperationHandle envelope,
+            long expectedVersion,
+            CancellationToken cancellationToken = default)
+            => _inner.TrySetAsync(envelope, expectedVersion, cancellationToken);
 
         public async Task<OperationHandle?> GetAsync(
             string operationInstanceId,

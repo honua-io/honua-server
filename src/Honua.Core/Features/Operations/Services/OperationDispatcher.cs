@@ -24,7 +24,8 @@ public sealed class OperationDispatcher : IOperationInvoker
     private readonly IOperationApprovalBridge? _approvalBridge;
     private readonly IOperationInstanceStore _instanceStore;
     private readonly IAuditLog _auditLog;
-    private readonly IOperationEnvelopeFactory _envelopeFactory;
+    private readonly OperationEnvelopeFactory _envelopeFactory;
+    private readonly IOperationApprovalReplayVerifier? _approvalReplayVerifier;
     private readonly TimeProvider _clock;
 
     /// <summary>
@@ -37,7 +38,7 @@ public sealed class OperationDispatcher : IOperationInvoker
     /// <param name="approvalBridge">Optional durable approval persistence seam.</param>
     /// <param name="instanceStore">Operation-instance store. Omit only in explicit tests.</param>
     /// <param name="auditLog">Audit sink. Omit only in explicit tests.</param>
-    /// <param name="envelopeFactory">Canonical durable acceptance factory. Omit only in explicit tests.</param>
+    /// <param name="approvalReplayVerifier">Durable approved-replay authority verifier.</param>
     public OperationDispatcher(
         IOperationCatalog catalog,
         IEnumerable<IOperationExecutor> executors,
@@ -46,7 +47,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         IOperationApprovalBridge? approvalBridge = null,
         IOperationInstanceStore? instanceStore = null,
         IAuditLog? auditLog = null,
-        IOperationEnvelopeFactory? envelopeFactory = null)
+        IOperationApprovalReplayVerifier? approvalReplayVerifier = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -58,7 +59,8 @@ public sealed class OperationDispatcher : IOperationInvoker
         _approvalBridge = approvalBridge;
         _instanceStore = instanceStore ?? new VolatileOperationInstanceStore();
         _auditLog = auditLog ?? new VolatileOperationAuditLog();
-        _envelopeFactory = envelopeFactory ?? new OperationEnvelopeFactory(_instanceStore, _auditLog, clock);
+        _envelopeFactory = new OperationEnvelopeFactory(_instanceStore, _auditLog, clock);
+        _approvalReplayVerifier = approvalReplayVerifier;
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
@@ -88,9 +90,26 @@ public sealed class OperationDispatcher : IOperationInvoker
         string? acceptanceAuditId;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
-            if (string.IsNullOrWhiteSpace(context.OperationInstanceId))
+            if (string.IsNullOrWhiteSpace(context.OperationInstanceId) ||
+                string.IsNullOrWhiteSpace(context.ApprovedPlanHash) ||
+                _approvalReplayVerifier is null ||
+                !await _approvalReplayVerifier.VerifyAsync(
+                        context.ApprovedProposalId,
+                        context.OperationInstanceId,
+                        context.ApprovedPlanHash,
+                        cancellationToken)
+                    .ConfigureAwait(false))
             {
-                throw new InvalidOperationException("Approved replay requires the original canonical operation identity.");
+                return new OperationHandle
+                {
+                    OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
+                    OperationId = request.OperationId,
+                    CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+                    Status = OperationHandleStatus.Failed,
+                    CreatedAt = createdAt,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = "Approved replay proof did not match the durable proposal authority.",
+                };
             }
 
             var existing = await _instanceStore
@@ -119,7 +138,15 @@ public sealed class OperationDispatcher : IOperationInvoker
                 UpdatedAt = _clock.GetUtcNow(),
                 AuthorizationOutcome = invocationContext.AuthorizationOutcome,
             };
-            await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
+            if (!await _instanceStore.TrySetAsync(envelope, existing.Version, cancellationToken).ConfigureAwait(false))
+            {
+                return existing with
+                {
+                    Status = OperationHandleStatus.Failed,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = "Approved replay could not claim the original operation instance due to a concurrent transition.",
+                };
+            }
             invocationContext = context with
             {
                 OperationInstanceId = envelope.OperationInstanceId,
@@ -161,6 +188,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         }
         catch (OperationCanceledException)
         {
+            await PersistPreActuationCancellationAsync(envelope).ConfigureAwait(false);
             throw;
         }
         catch (OperationNotFoundException)
@@ -192,9 +220,11 @@ public sealed class OperationDispatcher : IOperationInvoker
         PolicyDecision decision;
         try
         {
-            decision = await _policy
-                .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
-                .ConfigureAwait(false);
+            decision = string.IsNullOrWhiteSpace(invocationContext.ApprovedProposalId)
+                ? await _policy
+                    .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
+                    .ConfigureAwait(false)
+                : PolicyDecision.Allowed;
             envelope = envelope with
             {
                 OperationId = descriptor.OperationId,
@@ -205,6 +235,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         }
         catch (OperationCanceledException)
         {
+            await PersistPreActuationCancellationAsync(envelope).ConfigureAwait(false);
             throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -238,13 +269,14 @@ public sealed class OperationDispatcher : IOperationInvoker
                         createdAt,
                         cancellationToken)
                     .ConfigureAwait(false);
-                return await PersistAsync(
-                        decided with { AuditId = decided.AuditId ?? acceptanceAuditId },
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                var projected = decided with { AuditId = decided.AuditId ?? acceptanceAuditId };
+                return projected.Status == OperationHandleStatus.RequiresApproval
+                    ? await PersistApprovalDecisionAsync(projected, cancellationToken).ConfigureAwait(false)
+                    : await PersistAsync(projected, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
+                await PersistPreActuationCancellationAsync(envelope).ConfigureAwait(false);
                 throw;
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -258,26 +290,56 @@ public sealed class OperationDispatcher : IOperationInvoker
         }
 
         OperationHandle executed;
-        try
-        {
-            executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            executed = envelope with
-            {
-                Status = OperationHandleStatus.Indeterminate,
-                UpdatedAt = _clock.GetUtcNow(),
-                Reason = "Actuation was canceled after it began; side effects may have committed.",
-            };
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        if (request.DryRun && !descriptor.Policy.SupportsDryRun)
         {
             return await PersistFailureAsync(
                     envelope,
-                    $"Operation actuation failed ({ex.GetType().Name}).",
+                    $"Operation '{descriptor.OperationId}' does not support dry-run execution.",
                     cancellationToken)
                 .ConfigureAwait(false);
+        }
+
+        if (request.DryRun)
+        {
+            executed = envelope with
+            {
+                Status = OperationHandleStatus.Completed,
+                UpdatedAt = _clock.GetUtcNow(),
+                Reason = "Dry run completed; no actuator was invoked.",
+                Result = new OperationResultSummary
+                {
+                    Summary = "Operation validation completed without actuation.",
+                    Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["dryRun"] = bool.TrueString,
+                        ["validationStatus"] = validation.Status,
+                    },
+                },
+            };
+        }
+        else
+        {
+            try
+            {
+                executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                executed = envelope with
+                {
+                    Status = OperationHandleStatus.Indeterminate,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = "Actuation was canceled after it began; side effects may have committed.",
+                };
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return await PersistFailureAsync(
+                        envelope,
+                        $"Operation actuation failed ({ex.GetType().Name}).",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         var completed = executed with
@@ -295,11 +357,19 @@ public sealed class OperationDispatcher : IOperationInvoker
         using var terminalAuditTimeout = new CancellationTokenSource(PostActuationPersistenceTimeout);
         try
         {
+            var auditAction = completed.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running
+                ? "operation.submitted"
+                : "operation.completed";
+            var auditOutcome = completed.Status is OperationHandleStatus.Completed
+                or OperationHandleStatus.Queued
+                or OperationHandleStatus.Running
+                    ? AuditOutcome.Success
+                    : AuditOutcome.Failure;
             terminalAuditId = await WriteAuditAsync(
                     completed,
                     invocationContext,
-                    "operation.completed",
-                    completed.Status == OperationHandleStatus.Completed ? AuditOutcome.Success : AuditOutcome.Failure,
+                    auditAction,
+                    auditOutcome,
                     terminalAuditTimeout.Token)
                 .ConfigureAwait(false);
         }
@@ -384,13 +454,84 @@ public sealed class OperationDispatcher : IOperationInvoker
         return failed;
     }
 
+    private async Task PersistPreActuationCancellationAsync(OperationHandle envelope)
+    {
+        var cancelled = envelope with
+        {
+            Status = OperationHandleStatus.Cancelled,
+            UpdatedAt = _clock.GetUtcNow(),
+            Reason = "Operation was canceled before actuation began; no side effect occurred.",
+        };
+        using var timeout = new CancellationTokenSource(PostActuationPersistenceTimeout);
+        try
+        {
+            var auditId = await WriteAuditAsync(
+                    cancelled,
+                    new OperationPolicyContext
+                    {
+                        OperationInstanceId = cancelled.OperationInstanceId,
+                        CorrelationId = cancelled.CorrelationId,
+                        AuthorizationOutcome = cancelled.AuthorizationOutcome,
+                    },
+                    "operation.cancelled",
+                    AuditOutcome.Failure,
+                    timeout.Token)
+                .ConfigureAwait(false);
+            await _instanceStore.SetAsync(
+                    cancelled with { AuditId = auditId ?? cancelled.AuditId },
+                    timeout.Token)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Cancellation must still propagate. The bounded compensation is best-effort when
+            // durable infrastructure itself is unavailable and cannot extend request lifetime.
+        }
+    }
+
     private async Task<OperationHandle> PersistAsync(
         OperationHandle envelope,
         CancellationToken cancellationToken)
     {
         await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
-        return envelope;
+        return await _instanceStore.GetAsync(envelope.OperationInstanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The persisted operation instance could not be reloaded.");
     }
+
+    private async Task<OperationHandle> PersistApprovalDecisionAsync(
+        OperationHandle approval,
+        CancellationToken cancellationToken)
+    {
+        var current = await _instanceStore.GetAsync(approval.OperationInstanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The accepted operation instance disappeared before approval persistence.");
+        if (IsTerminal(current.Status))
+        {
+            return current;
+        }
+
+        if (await _instanceStore.TrySetAsync(approval, current.Version, cancellationToken).ConfigureAwait(false))
+        {
+            return approval with { Version = current.Version + 1 };
+        }
+
+        var winner = await _instanceStore.GetAsync(approval.OperationInstanceId, cancellationToken).ConfigureAwait(false);
+        if (winner is not null && IsTerminal(winner.Status))
+        {
+            return winner;
+        }
+
+        throw new InvalidOperationException(
+            "The approval transition was refused because the operation instance version changed.");
+    }
+
+    private static bool IsTerminal(OperationHandleStatus status)
+        => status is OperationHandleStatus.Completed
+            or OperationHandleStatus.Denied
+            or OperationHandleStatus.DryRunRequired
+            or OperationHandleStatus.Rejected
+            or OperationHandleStatus.Cancelled
+            or OperationHandleStatus.Failed
+            or OperationHandleStatus.Indeterminate;
 
     private Task<string?> WriteAuditAsync(
         OperationHandle envelope,

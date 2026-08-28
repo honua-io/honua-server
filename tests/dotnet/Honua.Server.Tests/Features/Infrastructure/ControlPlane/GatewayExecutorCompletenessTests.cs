@@ -396,7 +396,8 @@ public sealed class GatewayExecutorCompletenessTests
                 .Where(proposal => proposal.Status is not (OperationProposalStatus.Succeeded
                     or OperationProposalStatus.Failed
                     or OperationProposalStatus.Rejected
-                    or OperationProposalStatus.RolledBack))
+                    or OperationProposalStatus.RolledBack
+                    or OperationProposalStatus.Cancelled))
                 .ToArray();
 
             return Task.FromResult<IReadOnlyList<OperationProposal>>(active);

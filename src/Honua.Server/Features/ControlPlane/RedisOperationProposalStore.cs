@@ -220,7 +220,8 @@ internal sealed partial class RedisOperationProposalStore(
         => status is OperationProposalStatus.Succeeded
             or OperationProposalStatus.Failed
             or OperationProposalStatus.Rejected
-            or OperationProposalStatus.RolledBack;
+            or OperationProposalStatus.RolledBack
+            or OperationProposalStatus.Cancelled;
 
     private static string GetProposalKey(string proposalId) => $"controlplane:proposal:{proposalId}";
 

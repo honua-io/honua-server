@@ -207,6 +207,7 @@ internal sealed class GeoprocessingJobDispatcher
                 {
                     PrincipalId = requestedBy,
                     AuthorizationOutcome = "approval-gate-authorized",
+                    IdempotencyKey = payload.IdempotencyKey,
                 },
                 cancellationToken)
             .ConfigureAwait(false);

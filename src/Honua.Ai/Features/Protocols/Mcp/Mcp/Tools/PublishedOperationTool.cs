@@ -184,7 +184,31 @@ internal sealed class PublishedOperationTool : IMcpTool
             var hit = cache?.TryGet(cacheKey);
             if (hit is not null)
             {
-                return McpToolHelpers.SuccessResult(hit, McpJsonContext.Default.McpOperationToolOutput);
+                var envelopeFactory = httpContext.RequestServices.GetService<IOperationEnvelopeFactory>();
+                if (envelopeFactory is null || string.IsNullOrWhiteSpace(hit.OperationInstanceId))
+                {
+                    return McpToolHelpers.SuccessResult(
+                        Failure("The cached result was not returned because the durable operation envelope runtime is unavailable."),
+                        McpJsonContext.Default.McpOperationToolOutput);
+                }
+
+                var envelope = await envelopeFactory.CompleteCacheHitAsync(
+                        _descriptor.OperationId,
+                        context,
+                        hit.OperationInstanceId,
+                        hit.AuditId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (envelope.Status != OperationHandleStatus.Completed)
+                {
+                    return McpToolHelpers.SuccessResult(
+                        Project(envelope, cacheKey),
+                        McpJsonContext.Default.McpOperationToolOutput);
+                }
+
+                return McpToolHelpers.SuccessResult(
+                    ProjectCacheHit(hit, envelope),
+                    McpJsonContext.Default.McpOperationToolOutput);
             }
         }
 
@@ -264,6 +288,37 @@ internal sealed class PublishedOperationTool : IMcpTool
         Details = handle.Result?.Details ?? new Dictionary<string, string>(StringComparer.Ordinal),
         ResourceIds = handle.ResourceIds,
         EvidenceRefs = handle.EvidenceRefs,
+    };
+
+    private static McpOperationToolOutput ProjectCacheHit(McpOperationToolOutput payload, OperationHandle envelope) => new()
+    {
+        Status = envelope.Status.ToString(),
+        RequiresApproval = false,
+        Deterministic = payload.Deterministic,
+        CacheHit = true,
+        CacheKey = payload.CacheKey,
+        OperationId = envelope.OperationId,
+        OperationInstanceId = envelope.OperationInstanceId,
+        HandleId = envelope.HandleId,
+        CorrelationId = envelope.CorrelationId,
+        AuditId = envelope.AuditId,
+        CreatedAt = envelope.CreatedAt,
+        UpdatedAt = envelope.UpdatedAt,
+        AuthorizationOutcome = envelope.AuthorizationOutcome,
+        PolicyOutcome = payload.PolicyOutcome,
+        Summary = payload.Summary,
+        Message = payload.Message,
+        Details = new Dictionary<string, string>(payload.Details, StringComparer.Ordinal),
+        ResourceIds = new Dictionary<string, string>(payload.ResourceIds, StringComparer.Ordinal),
+        EvidenceRefs = envelope.EvidenceRefs,
+    };
+
+    private McpOperationToolOutput Failure(string message) => new()
+    {
+        Status = OperationHandleStatus.Failed.ToString(),
+        OperationId = _descriptor.OperationId,
+        Deterministic = IsDeterministic,
+        Message = message,
     };
 
     private static string? ResolveTier(HttpContext httpContext)

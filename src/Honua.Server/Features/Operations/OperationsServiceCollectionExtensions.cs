@@ -28,8 +28,8 @@ internal static class OperationsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(environment);
 
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<OperationHandleStore>();
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
+        services.TryAddScoped<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
         if (environment.IsDevelopment() || environment.IsEnvironment("Test"))
@@ -42,6 +42,7 @@ internal static class OperationsServiceCollectionExtensions
                 new RedisOperationInstanceStore(sp.GetRequiredService<IConnectionMultiplexer>()));
             services.AddHostedService<OperationRuntimeStartupValidator>();
             services.AddHostedService<PlannedProposalReconciler>();
+            services.AddHostedService<QueuedOperationReconciler>();
         }
         services.TryAddSingleton<IOperationEnvelopeFactory>(sp =>
             new ScopedOperationEnvelopeFactory(
@@ -90,7 +91,7 @@ internal static class OperationsServiceCollectionExtensions
                 environment.IsDevelopment() || environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
-                sp.GetRequiredService<IOperationEnvelopeFactory>()));
+                sp.GetRequiredService<IOperationApprovalReplayVerifier>()));
 
         return services;
     }

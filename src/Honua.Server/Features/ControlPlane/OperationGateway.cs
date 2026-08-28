@@ -13,6 +13,9 @@ using Honua.Core.Features.Observability.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using ICanonicalOperationInvoker = Honua.Core.Features.Operations.Abstractions.IOperationInvoker;
 using IOperationApprovalRequestMapper = Honua.Core.Features.Operations.Abstractions.IOperationApprovalRequestMapper;
 using Microsoft.Extensions.DependencyInjection;
@@ -215,7 +218,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         var request = RebuildRequest(proposal);
         string? executionOperationId = null;
-        var status = OperationProposalStatus.Submitted;
+        var status = OperationProposalStatus.Failed;
         string? failureMessage = null;
 
         try
@@ -226,8 +229,23 @@ internal sealed partial class OperationGateway : IOperationGateway
             var mapper = scope.ServiceProvider
                 .GetServices<IOperationApprovalRequestMapper>()
                 .SingleOrDefault(candidate => string.Equals(candidate.OperationId, operationId, StringComparison.Ordinal));
-            var handle = await invoker.SubmitAsync(
-                    mapper?.MapReplay(request) ?? new OperationRequest
+            var replay = mapper?.MapReplay(request);
+            var tenantContext = scope.ServiceProvider.GetService<RequestTenantContext>();
+            var previousTenant = tenantContext?.TenantId;
+            var previousTenantSource = tenantContext?.Source ?? TenantContextSource.Anonymous;
+            var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
+            var previousSchema = schemaContext?.CurrentSchema;
+            tenantContext?.Set(replay?.TenantId, TenantContextSource.Claim);
+            if (schemaContext is not null)
+            {
+                schemaContext.CurrentSchema = replay?.SchemaName;
+            }
+
+            OperationHandle handle;
+            try
+            {
+                handle = await invoker.SubmitAsync(
+                    replay?.Request ?? new OperationRequest
                     {
                         OperationId = operationId,
                         GatewayRequest = request,
@@ -237,20 +255,47 @@ internal sealed partial class OperationGateway : IOperationGateway
                         OperationInstanceId = proposal.Audit.OperationInstanceId,
                         CorrelationId = proposal.Audit.CorrelationId,
                         PrincipalId = proposal.RequestedBy,
+                        TenantId = replay?.TenantId,
+                        SchemaName = replay?.SchemaName,
                         AuthorizationOutcome = "approved",
                         ApprovedProposalId = proposal.ProposalId,
+                        ApprovedPlanHash = proposal.SealedPlanHash,
                     },
                     cancellationToken)
-                .ConfigureAwait(false);
-            executionOperationId = handle.JobId;
-            if (handle.Status is OperationHandleStatus.Failed or OperationHandleStatus.Indeterminate)
+                    .ConfigureAwait(false);
+            }
+            finally
             {
-                status = OperationProposalStatus.Failed;
-                failureMessage = handle.Reason ?? "Canonical approved replay did not complete.";
+                if (schemaContext is not null)
+                {
+                    schemaContext.CurrentSchema = previousSchema;
+                }
+
+                tenantContext?.Set(previousTenant, previousTenantSource);
+            }
+            executionOperationId = handle.JobId;
+            status = handle.Status switch
+            {
+                OperationHandleStatus.Completed => OperationProposalStatus.Succeeded,
+                OperationHandleStatus.Queued or OperationHandleStatus.Running => OperationProposalStatus.Submitted,
+                _ => OperationProposalStatus.Failed,
+            };
+            if (status == OperationProposalStatus.Failed)
+            {
+                failureMessage = handle.Reason
+                    ?? $"Canonical approved replay returned unexpected status '{handle.Status}'.";
             }
         }
         catch (OperationCanceledException)
         {
+            await CompensateClaimedProposalAsync(
+                    proposal,
+                    approvedBy,
+                    OperationProposalStatus.Cancelled,
+                    "Approved replay was cancelled before actuation began; no side effect occurred.",
+                    "operation.cancelled",
+                    AuditOutcome.Failure)
+                .ConfigureAwait(false);
             throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -281,7 +326,12 @@ internal sealed partial class OperationGateway : IOperationGateway
                 OpsAutonomyProposalResolution.Approved,
                 cancellationToken)
             .ConfigureAwait(false);
-        await WriteAuditAsync(resolved, "operation.applied", approvedBy, AuditOutcome.Success, cancellationToken)
+        await WriteAuditAsync(
+                resolved,
+                status == OperationProposalStatus.Failed ? "operation.apply_failed" : "operation.applied",
+                approvedBy,
+                status == OperationProposalStatus.Failed ? AuditOutcome.Failure : AuditOutcome.Success,
+                cancellationToken)
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
         return resolved;
@@ -411,6 +461,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             RequestedBy = request.RequestedBy,
             RequestedByAgent = request.RequestedByAgent,
             Plan = plan,
+            SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
             GuardrailDecision = decision,
             AutonomyMetadata = NormalizeAutonomyContext(request.AutonomyContext, actionDiscriminator: request.ActionDiscriminator),
             Audit = new OperationAuditInfo
@@ -490,6 +541,12 @@ internal sealed partial class OperationGateway : IOperationGateway
             await TryFailPlannedProposalAsync(proposal.ProposalId, auditId, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            await TryFailPlannedProposalAsync(proposal.ProposalId, auditId, CancellationToken.None).ConfigureAwait(false);
+            Log.ProposalExecutionFailed(_logger, proposal.ProposalId, ex);
+            throw;
+        }
 
         await _notifier.NotifyPendingAsync(proposal, cancellationToken).ConfigureAwait(false);
         await RecordAutonomyProposalRaisedAsync(request, cancellationToken).ConfigureAwait(false);
@@ -523,7 +580,25 @@ internal sealed partial class OperationGateway : IOperationGateway
             ResolvedAt = DateTimeOffset.UtcNow,
             ResolutionReason = "Durable audit acceptance failed.",
         };
-        _ = await _proposalStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!await _proposalStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        try
+        {
+            await WriteAuditAsync(
+                    failed,
+                    "operation.proposal_failed",
+                    failed.RequestedBy ?? failed.RequestedByAgent ?? AuditEvent.AnonymousActor,
+                    AuditOutcome.Failure,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.ProposalExecutionFailed(_logger, proposalId, ex);
+        }
     }
 
     private async Task<OperationProposal?> FindActiveByIdempotencyKeyAsync(
@@ -662,7 +737,31 @@ internal sealed partial class OperationGateway : IOperationGateway
         => status is OperationProposalStatus.Succeeded
             or OperationProposalStatus.Failed
             or OperationProposalStatus.Rejected
-            or OperationProposalStatus.RolledBack;
+            or OperationProposalStatus.RolledBack
+            or OperationProposalStatus.Cancelled;
+
+    private async Task CompensateClaimedProposalAsync(
+        OperationProposal proposal,
+        string actor,
+        OperationProposalStatus status,
+        string reason,
+        string auditAction,
+        AuditOutcome auditOutcome)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var resolved = proposal with
+        {
+            Status = status,
+            ResolvedBy = actor,
+            ResolvedAt = now,
+            UpdatedAt = now,
+            ResolutionReason = reason,
+        };
+        await PersistResolutionAsync(resolved, CancellationToken.None).ConfigureAwait(false);
+        await WriteAuditAsync(resolved, auditAction, actor, auditOutcome, CancellationToken.None)
+            .ConfigureAwait(false);
+        await _notifier.NotifyResolvedAsync(resolved, CancellationToken.None).ConfigureAwait(false);
+    }
 
     // Best-effort read of the ops-action name from an AdminConfigChange execution
     // payload ({action, target, params}). Returns null for absent/blank/malformed

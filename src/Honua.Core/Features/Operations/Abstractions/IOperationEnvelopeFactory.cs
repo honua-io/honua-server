@@ -19,4 +19,15 @@ public interface IOperationEnvelopeFactory
         string operationId,
         OperationPolicyContext context,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Durably accepts and completes a fresh read-only invocation whose result payload came
+    /// from a prior invocation. The cached payload is evidence; its identities are never reused.
+    /// </summary>
+    Task<OperationHandle> CompleteCacheHitAsync(
+        string operationId,
+        OperationPolicyContext context,
+        string sourceOperationInstanceId,
+        string? sourceAuditId,
+        CancellationToken cancellationToken = default);
 }

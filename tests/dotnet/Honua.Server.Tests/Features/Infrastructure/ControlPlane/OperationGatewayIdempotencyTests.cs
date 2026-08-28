@@ -45,7 +45,7 @@ public sealed class OperationGatewayIdempotencyTests
         // Refresh-then-repropose: the caller re-issues the same request.
         var second = await sut.RouteAsync(request);
 
-        first.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
+        first.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, first.Message);
         second.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         second.ProposalId.Should().Be(first.ProposalId, "the same idempotency key must fold onto the same proposal");
         store.Count.Should().Be(1, "re-proposing with the same idempotency key must not mint a duplicate proposal");
@@ -113,6 +113,31 @@ public sealed class OperationGatewayIdempotencyTests
     }
 
     [Fact]
+    public async Task RouteAsync_AuditInfrastructureThrows_FinalizesAndAuditsPlannedProposalFailure()
+    {
+        var store = new MultiProposalStore();
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
+        var audit = new ThrowingOnceAuditLog();
+        var sut = BuildGateway(store, ladder, audit);
+
+        var result = await sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "agent",
+            IdempotencyKey = "fault-during-audit",
+        });
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
+        result.ProposalId.Should().BeNull();
+        store.Single.Status.Should().Be(OperationProposalStatus.Failed);
+        store.ActiveCount.Should().Be(0);
+        audit.Events.Should().Contain(item =>
+            item.Action == "operation.proposal_failed" && item.Outcome == AuditOutcome.Failure);
+    }
+
+    [Fact]
     public async Task ApplyApprovedProposalAsync_ConsumesPersistedValidatedPlanWithoutReplanning()
     {
         var store = new MultiProposalStore();
@@ -160,6 +185,24 @@ public sealed class OperationGatewayIdempotencyTests
             }
 
             return Task.FromResult<string?>("audit-retry");
+        }
+    }
+
+    private sealed class ThrowingOnceAuditLog : IAuditLog
+    {
+        private int _calls;
+
+        public List<AuditEvent> Events { get; } = [];
+
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+            {
+                return Task.FromException<string?>(new InvalidOperationException("audit unavailable"));
+            }
+
+            Events.Add(auditEvent);
+            return Task.FromResult<string?>("audit-failure");
         }
     }
 
@@ -286,6 +329,7 @@ public sealed class OperationGatewayIdempotencyTests
             => proposal.Status is not (OperationProposalStatus.Succeeded
                 or OperationProposalStatus.Failed
                 or OperationProposalStatus.Rejected
-                or OperationProposalStatus.RolledBack);
+                or OperationProposalStatus.RolledBack
+                or OperationProposalStatus.Cancelled);
     }
 }

@@ -32,4 +32,28 @@ internal sealed class ScopedOperationEnvelopeFactory(
             services.GetRequiredService<TimeProvider>());
         return await factory.CreateAcceptedAsync(operationId, context, cancellationToken).ConfigureAwait(false);
     }
+
+    public async Task<OperationHandle> CompleteCacheHitAsync(
+        string operationId,
+        OperationPolicyContext context,
+        string sourceOperationInstanceId,
+        string? sourceAuditId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var factory = new OperationEnvelopeFactory(
+            services.GetRequiredService<IOperationInstanceStore>(),
+            useVolatileAudit
+                ? new VolatileOperationAuditLog()
+                : services.GetRequiredService<IAuditLog>(),
+            services.GetRequiredService<TimeProvider>());
+        return await factory.CompleteCacheHitAsync(
+                operationId,
+                context,
+                sourceOperationInstanceId,
+                sourceAuditId,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

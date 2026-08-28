@@ -190,6 +190,12 @@ public enum OperationHandleStatus
     Rejected,
 
     /// <summary>
+    /// The invocation was canceled before actuation began. No side effect occurred and a
+    /// retry creates a new operation instance unless a domain idempotency key says otherwise.
+    /// </summary>
+    Cancelled,
+
+    /// <summary>
     /// The operation failed.
     /// </summary>
     Failed,

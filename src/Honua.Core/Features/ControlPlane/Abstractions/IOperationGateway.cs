@@ -301,4 +301,40 @@ public interface IOperationExecutor
         OperationGatewayRequest request,
         string? executionPayload,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the durable backend state for an asynchronous execution. The canonical leased
+    /// reconciler is the only authority that projects this state onto an operation envelope.
+    /// </summary>
+    Task<OperationBackendStatus?> GetBackendStatusAsync(
+        string executionOperationId,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<OperationBackendStatus?>(null);
+}
+
+/// <summary>Protocol-neutral backend status observed by the canonical operation reconciler.</summary>
+public sealed record OperationBackendStatus
+{
+    /// <summary>Observed backend lifecycle state.</summary>
+    public required OperationBackendState State { get; init; }
+
+    /// <summary>Optional bounded failure or cancellation reason.</summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>Lifecycle states a legacy asynchronous actuator may report.</summary>
+public enum OperationBackendState
+{
+    /// <summary>Accepted by the backend but not running.</summary>
+    Queued,
+    /// <summary>Actively running or reconciling.</summary>
+    Running,
+    /// <summary>Completed successfully.</summary>
+    Succeeded,
+    /// <summary>Reached a terminal failure.</summary>
+    Failed,
+    /// <summary>Was canceled by the backend.</summary>
+    Cancelled,
+    /// <summary>Requires manual resolution; automatic success/failure is unknown.</summary>
+    Indeterminate,
 }
