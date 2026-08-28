@@ -318,7 +318,7 @@ public sealed class OperationsToolsetTests
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
         handle.Status.Should().Be(OperationHandleStatus.Failed);
         handle.ProposalId.Should().BeNull();
-        handle.AuditId.Should().BeNull();
+        handle.AuditId.Should().StartWith("audit-dev-");
         handle.ApprovalLane.Should().Be("studio-publish-requests");
         handle.Reason.Should().Contain("durable proposal infrastructure is unavailable");
         handle.Result.Should().BeNull();
@@ -439,6 +439,19 @@ public sealed class OperationsToolsetTests
         ILayerPublishingService publishing,
         IMetadataV2GraphProvider? graphProvider = null)
     {
+        publishing
+            .ValidateTableForPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<TablePublishValidationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new TablePublishValidationResult
+            {
+                IsValid = true,
+                Status = "valid",
+                Schema = "public",
+                Table = "parcels",
+                ServiceName = "default",
+            });
         var resolver = Substitute.For<ISecureConnectionResolver>();
         resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns("Host=localhost;Database=test");

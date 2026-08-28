@@ -174,23 +174,11 @@ public sealed class OperationGatewayStateMachineTests
         IOperationExecutor? executor = null,
         IGuardrailLadder? ladder = null)
     {
-        var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => NullAuditLog.Instance);
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
-
         var resolvedLadder = ladder ?? Substitute.For<IGuardrailLadder>();
-        var notifier = Substitute.For<IProposalNotifier>();
         IEnumerable<IOperationExecutor> executors = executor != null
             ? [executor]
             : [];
-
-        return new OperationGateway(
-            resolvedLadder,
-            store,
-            executors,
-            scopeFactory,
-            notifier,
-            NullLogger<OperationGateway>.Instance);
+        return CanonicalOperationGatewayTestComposition.Build(store, resolvedLadder, executors);
     }
 
     /// <summary>

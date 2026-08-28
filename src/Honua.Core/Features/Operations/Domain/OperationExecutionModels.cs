@@ -43,6 +43,12 @@ public sealed record OperationRequest
     /// (only honoured when the descriptor's policy advertises <c>SupportsDryRun</c>).
     /// </summary>
     public bool DryRun { get; init; }
+
+    /// <summary>
+    /// Legacy control-plane request carried only by the compatibility gateway adapter.
+    /// The canonical runtime still owns identity, validation, policy, and actuation.
+    /// </summary>
+    public Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest? GatewayRequest { get; init; }
 }
 
 /// <summary>
@@ -53,6 +59,12 @@ public sealed record OperationRequest
 /// </summary>
 public sealed record OperationPolicyContext
 {
+    /// <summary>
+    /// Durable proposal identity when the canonical proposal runtime is replaying an approved
+    /// sealed request. Protocol adapters must never populate this field.
+    /// </summary>
+    public string? ApprovedProposalId { get; init; }
+
     /// <summary>
     /// Canonical invocation identity assigned by the operation runtime before policy evaluation.
     /// Protocol adapters must not derive this value from the descriptor id or a resource id.

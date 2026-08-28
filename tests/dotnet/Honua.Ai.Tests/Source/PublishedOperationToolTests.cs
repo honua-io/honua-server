@@ -252,7 +252,8 @@ public sealed class PublishedOperationToolTests
         body.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
         body.GetProperty("approvalLane").GetString().Should().Be("operator-gate");
         body.TryGetProperty("proposalId", out _).Should().BeFalse();
-        body.TryGetProperty("auditId", out _).Should().BeFalse();
+        body.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace(
+            "the failed approval envelope retains its durable acceptance evidence");
     }
 
     [UnitTest]

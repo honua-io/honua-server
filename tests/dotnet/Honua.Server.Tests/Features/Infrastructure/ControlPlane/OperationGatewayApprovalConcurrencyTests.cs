@@ -150,23 +150,11 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         IOperationProposalStore store,
         IOperationExecutor? executor = null)
     {
-        var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => NullAuditLog.Instance);
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
-
         var ladder = Substitute.For<IGuardrailLadder>();
-        var notifier = Substitute.For<IProposalNotifier>();
         IEnumerable<IOperationExecutor> executors = executor != null
             ? [executor]
             : [];
-
-        return new OperationGateway(
-            ladder,
-            store,
-            executors,
-            scopeFactory,
-            notifier,
-            NullLogger<OperationGateway>.Instance);
+        return CanonicalOperationGatewayTestComposition.Build(store, ladder, executors);
     }
 
     /// <summary>

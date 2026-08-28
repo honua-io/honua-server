@@ -7,6 +7,8 @@ using Honua.Core.Features.Operations.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using StackExchange.Redis;
 
 namespace Honua.Server.Features.Operations;
 
@@ -16,19 +18,30 @@ namespace Honua.Server.Features.Operations;
 /// </summary>
 internal static class OperationsServiceCollectionExtensions
 {
-    public static IServiceCollection AddOperationsToolset(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddOperationsToolset(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(environment);
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<OperationHandleStore>();
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
-                ServicePublishApprovalExecutor>());
+        if (environment.IsDevelopment() || environment.IsEnvironment("Test"))
+        {
+            services.TryAddSingleton<IOperationInstanceStore, VolatileOperationInstanceStore>();
+        }
+        else
+        {
+            services.TryAddSingleton<IOperationInstanceStore>(sp =>
+                new RedisOperationInstanceStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+            services.AddHostedService<OperationRuntimeStartupValidator>();
+        }
 
         // Grounding catalog: descriptor providers aggregated by the catalog.
         services.TryAddEnumerable(
@@ -44,24 +57,22 @@ internal static class OperationsServiceCollectionExtensions
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
+        if (services.Any(descriptor => descriptor.ServiceType ==
+                typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor)))
+        {
+            AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.Deploy);
+            AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange);
+            AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.MetadataRelease);
+            AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.Geoprocess);
+        }
 
-        // Policy seam. Bind the configurable guardrail policy from "Operations:Policy".
-        // When it is enabled, the configurable decision point enforces the rule set; otherwise
-        // the no-op pass-through default (Community tier) stays in place. TryAdd is used so an
-        // explicitly-registered stricter PDP (Pro/Enterprise) registered earlier still wins.
+        // One policy seam combines typed operation rules with the legacy guardrail ladder.
+        // TryAdd preserves an explicitly registered stricter PDP supplied by a host.
         services
             .AddOptions<OperationPolicyOptions>()
             .Bind(configuration.GetSection(OperationPolicyOptions.SectionName));
 
-        var policyOptions = configuration.GetSection(OperationPolicyOptions.SectionName).Get<OperationPolicyOptions>();
-        if (policyOptions?.Enabled == true)
-        {
-            services.TryAddSingleton<IOperationPolicyDecisionPoint, ConfigurableOperationPolicyDecisionPoint>();
-        }
-        else
-        {
-            services.TryAddSingleton<IOperationPolicyDecisionPoint, AllowAllPolicyDecisionPoint>();
-        }
+        services.TryAddSingleton<IOperationPolicyDecisionPoint, CanonicalOperationPolicyDecisionPoint>();
 
         // Dispatcher: resolves descriptor + executor, runs policy, executes on Allow.
         services.TryAddScoped<IOperationInvoker>(sp =>
@@ -70,8 +81,20 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetServices<IOperationExecutor>(),
                 sp.GetRequiredService<IOperationPolicyDecisionPoint>(),
                 sp.GetRequiredService<TimeProvider>(),
-                sp.GetService<IOperationApprovalBridge>()));
+                sp.GetService<IOperationApprovalBridge>(),
+                sp.GetRequiredService<IOperationInstanceStore>(),
+                environment.IsDevelopment() || environment.IsEnvironment("Test")
+                    ? new VolatileOperationAuditLog()
+                    : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>()));
 
         return services;
     }
+
+    private static void AddLegacyAdapter(
+        IServiceCollection services,
+        Honua.Core.Features.Guardrails.Domain.OperationClass operationClass)
+        => services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor>(sp =>
+            new LegacyGatewayOperationAdapter(
+                sp.GetServices<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>()
+                    .Single(actuator => actuator.OperationClass == operationClass))));
 }

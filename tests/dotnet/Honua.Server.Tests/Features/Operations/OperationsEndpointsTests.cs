@@ -82,6 +82,19 @@ public sealed class OperationsEndpointsTests
                 Srid = 4326,
                 ServiceName = "default"
             });
+        publishing
+            .ValidateTableForPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<TablePublishValidationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new TablePublishValidationResult
+            {
+                IsValid = true,
+                Status = "valid",
+                Schema = "public",
+                Table = "parcels",
+                ServiceName = "default",
+            });
 
         var resolver = Substitute.For<ISecureConnectionResolver>();
         resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -210,6 +223,19 @@ public sealed class OperationsEndpointsTests
                 GeometryType = "Polygon",
                 Srid = 4326,
                 ServiceName = "default"
+            });
+        publishing
+            .ValidateTableForPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<TablePublishValidationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new TablePublishValidationResult
+            {
+                IsValid = true,
+                Status = "valid",
+                Schema = "public",
+                Table = "parcels",
+                ServiceName = "default",
             });
 
         var resolver = Substitute.For<ISecureConnectionResolver>();

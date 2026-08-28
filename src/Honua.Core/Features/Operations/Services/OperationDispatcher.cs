@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 
@@ -11,7 +12,7 @@ namespace Honua.Core.Features.Operations.Services;
 /// operation id, runs the policy decision point, and only on
 /// <see cref="PolicyDecisionKind.Allow"/> calls the executor. For Deny / RequireApproval /
 /// DryRunFirst it returns a handle that reflects the decision WITHOUT touching the executor —
-/// proving the guardrail seam holds even with the pass-through default policy.
+/// proving the guardrail seam holds for every registered policy implementation.
 /// </summary>
 public sealed class OperationDispatcher : IOperationInvoker
 {
@@ -19,6 +20,8 @@ public sealed class OperationDispatcher : IOperationInvoker
     private readonly Dictionary<string, IOperationExecutor> _executors;
     private readonly IOperationPolicyDecisionPoint _policy;
     private readonly IOperationApprovalBridge? _approvalBridge;
+    private readonly IOperationInstanceStore _instanceStore;
+    private readonly IAuditLog _auditLog;
     private readonly TimeProvider _clock;
 
     /// <summary>
@@ -29,12 +32,16 @@ public sealed class OperationDispatcher : IOperationInvoker
     /// <param name="policy">Policy decision point consulted before execution.</param>
     /// <param name="clock">Time provider used for envelope timestamps.</param>
     /// <param name="approvalBridge">Optional durable approval persistence seam.</param>
+    /// <param name="instanceStore">Operation-instance store. Omit only in explicit tests.</param>
+    /// <param name="auditLog">Audit sink. Omit only in explicit tests.</param>
     public OperationDispatcher(
         IOperationCatalog catalog,
         IEnumerable<IOperationExecutor> executors,
         IOperationPolicyDecisionPoint policy,
         TimeProvider clock,
-        IOperationApprovalBridge? approvalBridge = null)
+        IOperationApprovalBridge? approvalBridge = null,
+        IOperationInstanceStore? instanceStore = null,
+        IAuditLog? auditLog = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -44,6 +51,8 @@ public sealed class OperationDispatcher : IOperationInvoker
         _policy = policy;
         _clock = clock;
         _approvalBridge = approvalBridge;
+        _instanceStore = instanceStore ?? new VolatileOperationInstanceStore();
+        _auditLog = auditLog ?? new VolatileOperationAuditLog();
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
@@ -67,7 +76,9 @@ public sealed class OperationDispatcher : IOperationInvoker
         ArgumentNullException.ThrowIfNull(context);
 
         var createdAt = _clock.GetUtcNow();
-        var operationInstanceId = $"opinst-{Guid.NewGuid():N}";
+        var operationInstanceId = string.IsNullOrWhiteSpace(context.OperationInstanceId)
+            ? $"opinst-{Guid.NewGuid():N}"
+            : context.OperationInstanceId;
         var correlationId = string.IsNullOrWhiteSpace(context.CorrelationId)
             ? $"corr-{Guid.NewGuid():N}"
             : context.CorrelationId;
@@ -77,39 +88,358 @@ public sealed class OperationDispatcher : IOperationInvoker
             CorrelationId = correlationId,
         };
 
-        var descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
-            ?? throw new OperationNotFoundException(request.OperationId);
-        var executor = ResolveExecutor(request.OperationId);
-
-        var decision = await _policy
-            .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
-            .ConfigureAwait(false);
-
-        // Guardrail seam: anything other than Allow short-circuits the executor.
-        if (decision.Kind != PolicyDecisionKind.Allow)
+        var envelope = new OperationHandle
         {
-            return await BuildDecisionHandleAsync(
-                    descriptor,
-                    request,
-                    invocationContext,
-                    decision,
-                    createdAt,
+            OperationInstanceId = operationInstanceId,
+            OperationId = request.OperationId,
+            CorrelationId = correlationId,
+            Status = OperationHandleStatus.Accepted,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+            AuthorizationOutcome = invocationContext.AuthorizationOutcome,
+        };
+
+        string? acceptanceAuditId;
+        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+        {
+            var existing = await _instanceStore.GetAsync(operationInstanceId, cancellationToken).ConfigureAwait(false);
+            if (existing is null || string.IsNullOrWhiteSpace(existing.AuditId))
+            {
+                return envelope with
+                {
+                    Status = OperationHandleStatus.Failed,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = "Approved replay could not resolve the original durable operation instance.",
+                };
+            }
+
+            acceptanceAuditId = existing.AuditId;
+            envelope = existing with
+            {
+                Status = OperationHandleStatus.Accepted,
+                UpdatedAt = _clock.GetUtcNow(),
+                AuthorizationOutcome = invocationContext.AuthorizationOutcome,
+            };
+            await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            bool accepted;
+            try
+            {
+                accepted = await _instanceStore.TryCreateAsync(envelope, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return envelope with
+                {
+                    Status = OperationHandleStatus.Failed,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = $"The canonical operation instance could not be durably accepted ({ex.GetType().Name}).",
+                };
+            }
+
+            if (!accepted)
+            {
+                return envelope with
+                {
+                    Status = OperationHandleStatus.Failed,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = "The canonical operation instance could not be durably accepted.",
+                };
+            }
+
+            try
+            {
+                acceptanceAuditId = await WriteAuditAsync(
+                        envelope,
+                        invocationContext,
+                        "operation.accepted",
+                        AuditOutcome.Success,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return await PersistFailureAsync(
+                        envelope,
+                        $"The operation was not accepted because durable audit persistence failed ({ex.GetType().Name}).",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            if (string.IsNullOrWhiteSpace(acceptanceAuditId))
+            {
+                return await PersistFailureAsync(
+                        envelope,
+                        "The operation was not accepted because durable audit persistence did not return an identity.",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            envelope = envelope with { AuditId = acceptanceAuditId, UpdatedAt = _clock.GetUtcNow() };
+            try
+            {
+                await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return envelope with
+                {
+                    Status = OperationHandleStatus.Failed,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = $"The durable audit identity could not be joined to the operation instance ({ex.GetType().Name}).",
+                };
+            }
+        }
+
+        OperationDescriptor descriptor;
+        IOperationExecutor executor;
+        OperationValidation validation;
+        try
+        {
+            descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
+                ?? throw new OperationNotFoundException(request.OperationId);
+            executor = ResolveExecutor(request.OperationId);
+            validation = await executor.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (OperationNotFoundException)
+        {
+            return await PersistFailureAsync(
+                    envelope,
+                    $"No executor is registered for operation '{request.OperationId}'.",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return await PersistFailureAsync(
+                    envelope,
+                    $"Operation validation failed ({ex.GetType().Name}).",
                     cancellationToken)
                 .ConfigureAwait(false);
         }
 
-        var executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
-        return executed with
+        if (!validation.IsValid)
+        {
+            return await PersistFailureAsync(
+                    envelope,
+                    string.Join(" ", validation.Messages),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        PolicyDecision decision;
+        try
+        {
+            decision = await _policy
+                .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
+                .ConfigureAwait(false);
+            envelope = envelope with
+            {
+                OperationId = descriptor.OperationId,
+                PolicyDecision = decision.Kind,
+                UpdatedAt = _clock.GetUtcNow(),
+            };
+            await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return await PersistFailureAsync(
+                    envelope,
+                    $"Operation policy evaluation or evidence persistence failed ({ex.GetType().Name}).",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (decision.Kind != PolicyDecisionKind.Allow)
+        {
+            try
+            {
+                var decided = await BuildDecisionHandleAsync(
+                        descriptor,
+                        request,
+                        invocationContext,
+                        decision,
+                        createdAt,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return await PersistAsync(
+                        decided with { AuditId = decided.AuditId ?? acceptanceAuditId },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                return await PersistFailureAsync(
+                        envelope,
+                        $"Operation decision routing failed ({ex.GetType().Name}).",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        OperationHandle executed;
+        try
+        {
+            executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return await PersistFailureAsync(
+                    envelope,
+                    $"Operation actuation failed ({ex.GetType().Name}).",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var completed = executed with
         {
             OperationInstanceId = operationInstanceId,
             OperationId = descriptor.OperationId,
             CorrelationId = correlationId,
+            AuditId = acceptanceAuditId,
             CreatedAt = createdAt,
             UpdatedAt = _clock.GetUtcNow(),
             AuthorizationOutcome = invocationContext.AuthorizationOutcome,
             PolicyDecision = PolicyDecisionKind.Allow,
         };
+        string? terminalAuditId;
+        try
+        {
+            terminalAuditId = await WriteAuditAsync(
+                    completed,
+                    invocationContext,
+                    "operation.completed",
+                    completed.Status == OperationHandleStatus.Completed ? AuditOutcome.Success : AuditOutcome.Failure,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            terminalAuditId = null;
+            completed = completed with
+            {
+                Reason = $"Actuation returned, but terminal audit evidence failed ({ex.GetType().Name}).",
+            };
+        }
+        if (string.IsNullOrWhiteSpace(terminalAuditId))
+        {
+            completed = completed with
+            {
+                Status = OperationHandleStatus.Indeterminate,
+                Reason = "Actuation returned, but terminal audit evidence could not be persisted.",
+                UpdatedAt = _clock.GetUtcNow(),
+            };
+        }
+
+        try
+        {
+            return await PersistAsync(completed, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return completed with
+            {
+                Status = OperationHandleStatus.Indeterminate,
+                UpdatedAt = _clock.GetUtcNow(),
+                Reason = $"Actuation returned, but the terminal envelope could not be persisted ({ex.GetType().Name}).",
+            };
+        }
     }
+
+    private async Task<OperationHandle> PersistFailureAsync(
+        OperationHandle envelope,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var failed = envelope with
+        {
+            Status = OperationHandleStatus.Failed,
+            UpdatedAt = _clock.GetUtcNow(),
+            Reason = reason,
+        };
+        try
+        {
+            await _instanceStore.SetAsync(failed, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return failed with
+            {
+                Reason = $"{reason} The failure envelope could not be durably persisted ({ex.GetType().Name}).",
+            };
+        }
+
+        return failed;
+    }
+
+    private async Task<OperationHandle> PersistAsync(
+        OperationHandle envelope,
+        CancellationToken cancellationToken)
+    {
+        await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
+        return envelope;
+    }
+
+    private Task<string?> WriteAuditAsync(
+        OperationHandle envelope,
+        OperationPolicyContext context,
+        string action,
+        AuditOutcome outcome,
+        CancellationToken cancellationToken)
+        => _auditLog.RecordAsync(new AuditEvent
+        {
+            Timestamp = _clock.GetUtcNow(),
+            EventType = AuditEventType.AdminAction,
+            Actor = context.PrincipalId ?? AuditEvent.AnonymousActor,
+            ActorType = context.PrincipalId is null ? AuditActorType.Anonymous : AuditActorType.UserId,
+            ResourceType = "operation_instance",
+            ResourceId = envelope.OperationInstanceId,
+            Action = action,
+            Outcome = outcome,
+            CorrelationId = envelope.CorrelationId,
+            Details = $"operationId={envelope.OperationId};status={envelope.Status}",
+        }, cancellationToken);
 
     private IOperationExecutor ResolveExecutor(string operationId)
         => _executors.TryGetValue(operationId, out var executor)
