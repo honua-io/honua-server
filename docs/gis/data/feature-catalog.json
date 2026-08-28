@@ -1146,6 +1146,8 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.FullAdminApiKey_PassesAdminEndpoint",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CanReadAdminSurface",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
+        "Honua.Server.Tests.Features.Admin.ScopedAdminKeyOidcEnforcementTests.ScopedApproveKey_WithOidcEnabled_IsDeniedGeneralAdminMutation",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -1160,7 +1162,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ExpiredApiKey_CannotAuthenticateAndReportsExpiredPermissions"
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ExpiredApiKey_CannotAuthenticateAndReportsExpiredPermissions",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -15531,9 +15534,11 @@
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AlreadyResolved_ReturnsConflict",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_HappyPath_ExecutesAndMarksSubmitted",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_BlockedTier_ReturnsBlocked",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_DirectExecuteTier_ExecutesImmediately",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_RequiresApprovalTier_PersistsProposalAndNotifies"
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_RequiresApprovalTier_PersistsProposalAndNotifies",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ReadOnlyScopedKey_ApproveNamesMissingGrant"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -15548,6 +15553,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.RejectProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithReason_MarksRejected",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithoutReason_ReturnsBadRequest"
       ],
