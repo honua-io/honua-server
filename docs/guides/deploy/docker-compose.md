@@ -245,21 +245,23 @@ Because "add Redis" is not the fix here, this case reports itself differently. T
 
 ### Running the no-Redis variant
 
-The repository ships an override that composes the root quickstart stack as PostGIS + Honua Server only, with `ConnectionStrings__Redis` unset:
+For the repository quickstart, the repository ships an override that composes the root stack as PostGIS + Honua Server only, with `ConnectionStrings__Redis` unset:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.no-redis.yml up -d
 ```
 
+The production flow on this page creates its Compose file directly in `/opt/honua`; it does not copy that repository override. To run that inline stack without Redis, remove `ConnectionStrings__Redis` from `honua.environment`, remove the `redis` entry from `honua.depends_on`, remove the entire `redis` service, and remove `redis_data` from the top-level `volumes` list before running `docker compose up -d`.
+
 ### Adding Redis later
 
-Drop the override and start again:
+For the repository quickstart, drop the override and start again with the Pro development grant (or install a licence that includes `caching.redis`):
 
 ```bash
-docker compose up -d
+HONUA_DEV_GRANT_EDITION=Pro docker compose up -d
 ```
 
-Redis holds only job, workflow, proposal, and cache state, none of which is durable across an install that never had it — so nothing is lost by adding it. PostGIS-backed metadata state is untouched by the change, and durable jobs and workflows become available on the next boot.
+For the inline production stack, restore the four Redis entries removed above and install a licence that includes `caching.redis` before restarting. Redis holds only job, workflow, proposal, and cache state, none of which is durable across an install that never had it — so nothing is lost by adding it. PostGIS-backed metadata state is untouched by the change, and durable jobs and workflows become available on the next boot.
 
 ## Troubleshoot
 

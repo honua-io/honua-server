@@ -386,21 +386,7 @@ internal static class WorkflowPackageEndpoints
         }
         catch (GeoprocessingStoreUnavailableException ex)
         {
-            return ex.HasDependencyReceipt
-                ? ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
-                    context,
-                    ex.Message,
-                    ex.MissingDependency,
-                    ex.Remediation!,
-                    ex.RemediationRef!,
-                    ex.CapabilityId,
-                    ex.ErrorCode,
-                    ex.MissingEntitlement)
-                : ProblemDetailsHelpers.CreateAdminProblem(
-                    context,
-                    StatusCodes.Status503ServiceUnavailable,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                    ex.Message);
+            return GeoprocessingProblemDetailsHelpers.StoreUnavailable(context, ex);
         }
         catch (GeoprocessingAdmissionException ex)
         {

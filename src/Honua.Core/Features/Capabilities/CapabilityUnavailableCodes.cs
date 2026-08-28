@@ -63,7 +63,8 @@ public static class CapabilityUnavailableCodes
     public const string RedisRemediation =
         "Set ConnectionStrings__Redis to a reachable Redis instance and restart the server. " +
         "With the repository compose files, drop the '-f docker-compose.no-redis.yml' override " +
-        "and run 'docker compose up -d' again; PostGIS-backed metadata state is preserved.";
+        "and run 'HONUA_DEV_GRANT_EDITION=Pro docker compose up -d' again (or install a licence " +
+        "that includes 'caching.redis'); PostGIS-backed metadata state is preserved.";
 
     /// <summary>Canonical documentation anchor for the Redis-optional install decision.</summary>
     public const string RedisRemediationRef =
