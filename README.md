@@ -147,11 +147,13 @@ Security__ConnectionEncryption__MasterKey="change-me-random-string-32-plus-chara
 **Common options:**
 
 ```bash
-ConnectionStrings__Redis="localhost:6379"   # shared caches; required for durable jobs/workflows
+ConnectionStrings__Redis="localhost:6379"   # optional; shared caches, and required for durable jobs/workflows
 HONUA_OBSERVABILITY=true                    # metrics endpoints (health probes are always on)
 HONUA_OPENTELEMETRY=true                    # distributed tracing
 Cors__AllowedOrigins__0="https://app.example.com"
 ```
+
+PostGIS is mandatory; Redis is optional. A single-node install with no `ConnectionStrings__Redis` starts, reports `Ready`, and serves the full read path with an in-memory cache — it just refuses durable jobs, workflows, and operation proposals with a typed `dependency-unavailable` error. See [Redis is optional; PostGIS is not](docs/guides/deploy/docker-compose.md#redis-is-optional-postgis-is-not).
 
 **Production tuning** — bounded database admission is the default production posture: keep `Limits__Connections__MaxConcurrentQueries` aligned with the pool size and size from the shared database budget across replicas (small 4-vCPU nodes profile best in the 4–6 active-query range; larger pools can overfeed PostGIS and worsen tail latency). Adaptive admission (`Limits__Connections__AdaptiveConcurrencyEnabled`) is an explicit tuning profile, not the default — monitor `/monitoring/metrics/connection-pool` and keep fixed-cap results as the baseline. Full guidance: [Scale and tune performance](docs/guides/deploy/scaling-and-performance.md) and [admission and pooling variables](docs/reference/configuration/environment-variables.md#admission-and-pooling).
 

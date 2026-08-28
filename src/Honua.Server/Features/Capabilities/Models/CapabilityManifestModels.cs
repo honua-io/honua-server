@@ -283,6 +283,16 @@ internal sealed record CapabilityManifestJobLimits
     public required bool SupportsCancellation { get; init; }
 
     public required bool SupportsProgressPolling { get; init; }
+
+    /// <summary>
+    /// Whether the complete durable (Redis-backed) job substrate — store <em>and</em> runnable
+    /// queue — was composed at startup (honua-release#202). A compute backend is always
+    /// registered, so the backend count alone does not tell a client whether a job can be
+    /// submitted <em>and drained</em>. When this is <c>false</c> every submission is refused with
+    /// a capability-unavailable receipt; the capability entry's <c>reasonCode</c> distinguishes a
+    /// missing dependency from an unentitled licence.
+    /// </summary>
+    public required bool DurableJobRuntimeAvailable { get; init; }
 }
 
 internal sealed record CapabilityManifestUploadLimits

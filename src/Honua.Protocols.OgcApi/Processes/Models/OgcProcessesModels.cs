@@ -383,6 +383,50 @@ public sealed record OgcProcessError
     /// </summary>
     [JsonPropertyName("instance")]
     public string? Instance { get; init; }
+
+    /// <summary>
+    /// Machine-readable error code (RFC 7807 extension member) for problem families that need a
+    /// stable code beyond <see cref="Type"/>/<see cref="Status"/>, for example
+    /// <c>dependency-unavailable</c>. Omitted when not set.
+    /// </summary>
+    [JsonPropertyName("code")]
+    public string? Code { get; init; }
+
+    /// <summary>
+    /// Capability-manifest id this refusal disables (RFC 7807 extension member), for example
+    /// <c>jobs.runner</c>, so a client can join the refusal to the capabilities manifest
+    /// (honua-release#202). Omitted when not set.
+    /// </summary>
+    [JsonPropertyName("capability")]
+    public string? Capability { get; init; }
+
+    /// <summary>
+    /// Identifier of the infrastructure dependency that was not composed (RFC 7807 extension
+    /// member), for example <c>redis</c>. Omitted when not set.
+    /// </summary>
+    [JsonPropertyName("missingDependency")]
+    public string? MissingDependency { get; init; }
+
+    /// <summary>
+    /// Identifier of the entitlement whose absence composed the capability out (RFC 7807
+    /// extension member), for example <c>caching.redis</c>. Present instead of
+    /// <c>missingDependency</c> when the dependency is deployed but not licensed.
+    /// </summary>
+    [JsonPropertyName("missingEntitlement")]
+    public string? MissingEntitlement { get; init; }
+
+    /// <summary>
+    /// Operator-facing remediation sentence (RFC 7807 extension member). Omitted when not set.
+    /// </summary>
+    [JsonPropertyName("remediation")]
+    public string? Remediation { get; init; }
+
+    /// <summary>
+    /// Documentation reference for <see cref="Remediation"/> (RFC 7807 extension member).
+    /// Omitted when not set.
+    /// </summary>
+    [JsonPropertyName("remediationRef")]
+    public string? RemediationRef { get; init; }
 }
 
 /// <summary>

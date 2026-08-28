@@ -4,6 +4,7 @@
 using Honua.Core.Configuration;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.ControlPlane;
 using Honua.Import.FileImport;
 using Honua.Infrastructure.Authentication;
@@ -40,7 +41,10 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<CapabilityFlagOptions> capabilityFlagOptions,
         IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions,
         DeploymentCapabilityProfile deploymentProfile,
-        DeploymentIdentity deploymentIdentity)
+        DeploymentIdentity deploymentIdentity,
+        IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
+        IExecutionJobStore? executionJobStore = null,
+        IJobQueue? jobQueue = null)
     {
         ArgumentNullException.ThrowIfNull(limitsOptions);
         ArgumentNullException.ThrowIfNull(streamOptions);
@@ -69,6 +73,10 @@ internal sealed class CapabilityManifestOptionsSnapshot
         Rbac = rbacOptions.Value;
         ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
+        DurableJobSubstrateCause = (durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions())
+            .Classify(executionJobStore is not null, jobQueue is not null);
+        DurableJobRuntimeAvailable =
+            DurableJobSubstrateCause == Core.Features.Capabilities.DurableJobSubstrateCause.Available;
         DeploymentIdentity = deploymentIdentity;
         DeploymentProfile = new CapabilityManifestDeploymentProfile
         {
@@ -112,6 +120,33 @@ internal sealed class CapabilityManifestOptionsSnapshot
     /// <c>Capabilities:ManifestFromRegistry</c> switch is turned on.
     /// </summary>
     public bool ManifestFromRegistry { get; }
+
+    /// <summary>
+    /// Whether the COMPLETE durable job substrate was composed at startup (honua-release#202):
+    /// both a durable <c>IExecutionJobStore</c> and a runnable <c>IJobQueue</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Store presence alone is not enough to advertise <c>jobs.runner</c>. With a store but no
+    /// queue, <c>GeoprocessingJobDispatcher.MaybeEnqueueLocalAsync</c> silently skips enqueueing,
+    /// so a submission would be persisted and never drain — a fabricated availability claim of
+    /// exactly the kind this contract forbids. In production both are gated on the same
+    /// <c>IConnectionMultiplexer</c> and appear together; a partial composition is a
+    /// misconfiguration (or a test double) and must read as unavailable.
+    /// </para>
+    /// <para>
+    /// Registration is decided once at composition time, so capturing it here is exact for the
+    /// process lifetime rather than a cached approximation. A later Redis <em>outage</em> is a
+    /// different, transient condition reported by the Redis health check, not by this flag.
+    /// </para>
+    /// </remarks>
+    public bool DurableJobRuntimeAvailable { get; }
+
+    /// <summary>
+    /// Why the durable job substrate is unavailable, so the manifest can report the applicable
+    /// reason code (a missing dependency and an unentitled licence need different remediation).
+    /// </summary>
+    public DurableJobSubstrateCause DurableJobSubstrateCause { get; }
 
     /// <summary>The immutable deployment-profile selection reported by the manifest.</summary>
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }

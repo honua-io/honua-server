@@ -3,13 +3,16 @@
 
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
@@ -36,13 +39,15 @@ internal static class ProposalEndpoints
         group.MapGet("/", HandleListProposals)
             .WithDisplayName("List Operation Proposals")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
-            .Produces<ProposalListResponse>();
+            .Produces<ProposalListResponse>()
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/{id}", HandleGetProposal)
             .WithDisplayName("Get Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ProposalDetailResponse>()
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/{id}/approve", HandleApproveProposal)
             .WithDisplayName("Approve Operation Proposal")
@@ -50,7 +55,8 @@ internal static class ProposalEndpoints
             .Produces<ProposalDetailResponse>()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status409Conflict);
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/{id}/reject", HandleRejectProposal)
             .WithDisplayName("Reject Operation Proposal")
@@ -59,16 +65,57 @@ internal static class ProposalEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status409Conflict);
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+    }
+
+    /// <summary>
+    /// The durable control plane (<see cref="IOperationProposalStore"/>,
+    /// <see cref="IOperationGateway"/>) is composed only when Redis is configured, but these
+    /// routes are mapped unconditionally. Before honua-release#202 that combination produced an
+    /// untyped <c>500</c> leaking the unresolved DI service name on a Redis-less install; the
+    /// approval surface is journey-critical, so it now refuses with the same machine-readable
+    /// capability-unavailable receipt the geoprocessing job surfaces emit.
+    /// </summary>
+    private static IResult ControlPlaneUnavailable(HttpContext context)
+    {
+        // Report the composition cause, not a blanket "add Redis": on a host where Redis is
+        // running but the Pro `caching.redis` entitlement is missing, telling the operator to
+        // configure Redis is remediation that cannot work (honua-release#202).
+        var substrate = context.RequestServices.GetService<IOptions<DurableJobSubstrateOptions>>()?.Value
+            ?? new DurableJobSubstrateOptions();
+        var unentitled = substrate.Classify(jobStorePresent: false, jobQueuePresent: false)
+            == DurableJobSubstrateCause.RedisNotEntitled;
+
+        return unentitled
+            ? ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+                context,
+                CapabilityUnavailableCodes.UnentitledControlPlaneDetail,
+                missingDependency: null,
+                CapabilityUnavailableCodes.EntitlementRemediation,
+                CapabilityUnavailableCodes.EntitlementRemediationRef,
+                errorCode: CapabilityUnavailableCodes.EntitlementErrorCode,
+                missingEntitlement: CapabilityUnavailableCodes.RedisCacheEntitlement)
+            : ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+                context,
+                CapabilityUnavailableCodes.DurableControlPlaneDetail,
+                CapabilityUnavailableCodes.RedisDependency,
+                CapabilityUnavailableCodes.RedisRemediation,
+                CapabilityUnavailableCodes.RedisRemediationRef);
     }
 
     private static async Task<IResult> HandleListProposals(
-        [FromServices] IOperationProposalStore proposalStore,
         [FromQuery] string? status,
         [FromQuery] string? kind,
         [FromQuery] string? requestedBy,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] IOperationProposalStore? proposalStore = null)
     {
+        if (proposalStore is null)
+        {
+            return ControlPlaneUnavailable(context);
+        }
+
         OperationClass? kindFilter = null;
         if (!string.IsNullOrWhiteSpace(kind) && Enum.TryParse<OperationClass>(kind, ignoreCase: true, out var parsedKind))
         {
@@ -103,9 +150,14 @@ internal static class ProposalEndpoints
 
     private static async Task<IResult> HandleGetProposal(
         string id,
-        [FromServices] IOperationProposalStore proposalStore,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] IOperationProposalStore? proposalStore = null)
     {
+        if (proposalStore is null)
+        {
+            return ControlPlaneUnavailable(context);
+        }
+
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
         return proposal == null
             ? Results.NotFound()
@@ -114,11 +166,16 @@ internal static class ProposalEndpoints
 
     private static async Task<IResult> HandleApproveProposal(
         string id,
-        [FromServices] IOperationGateway gateway,
         [FromServices] IPermissionResolver permissionResolver,
-        [FromServices] IOperationProposalStore proposalStore,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] IOperationGateway? gateway = null,
+        [FromServices] IOperationProposalStore? proposalStore = null)
     {
+        if (gateway is null || proposalStore is null)
+        {
+            return ControlPlaneUnavailable(context);
+        }
+
         var actor = ConsolePrincipal.ResolveActorId(context.User);
         var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, context).ConfigureAwait(false);
         if (denied != null)
@@ -143,10 +200,15 @@ internal static class ProposalEndpoints
     private static async Task<IResult> HandleRejectProposal(
         string id,
         [FromBody] RejectProposalRequest? request,
-        [FromServices] IOperationGateway gateway,
         [FromServices] IPermissionResolver permissionResolver,
-        HttpContext context)
+        HttpContext context,
+        [FromServices] IOperationGateway? gateway = null)
     {
+        if (gateway is null)
+        {
+            return ControlPlaneUnavailable(context);
+        }
+
         if (string.IsNullOrWhiteSpace(request?.Reason))
         {
             return Results.Problem(detail: "A rejection reason is required.", statusCode: StatusCodes.Status400BadRequest);

@@ -290,8 +290,15 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
             case GeoprocessingValidationException validationEx:
                 return new RpcException(new Status(StatusCode.InvalidArgument, validationEx.Message));
 
+            // honua-release#202: carry the capability-unavailable receipt in trailing metadata so a
+            // gRPC client can branch on the same fields the HTTP surfaces expose, instead of
+            // string-matching the status detail. Mirrors the admission-trailer pattern below.
             case GeoprocessingStoreUnavailableException storeEx:
-                return new RpcException(new Status(StatusCode.Unavailable, storeEx.Message));
+                return storeEx.HasDependencyReceipt
+                    ? new RpcException(
+                        new Status(StatusCode.Unavailable, storeEx.Message),
+                        BuildCapabilityUnavailableTrailers(storeEx))
+                    : new RpcException(new Status(StatusCode.Unavailable, storeEx.Message));
 
             case GeoprocessingIdempotencyConflictException conflictEx:
                 return new RpcException(new Status(StatusCode.AlreadyExists, conflictEx.Message));
@@ -315,6 +322,37 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
                 Log.UnexpectedInternalError(_logger, ex);
                 return new RpcException(new Status(StatusCode.Internal, "An unexpected error occurred."));
         }
+    }
+
+    /// <summary>
+    /// Projects the capability-unavailable receipt (honua-release#202) onto gRPC trailing
+    /// metadata. gRPC has no problem+json extension members, so the fields ride trailers under the
+    /// same <c>honua-</c> prefix the admission path already uses; a client reads them without
+    /// parsing the status detail. Keys are lower-case because gRPC metadata keys are
+    /// case-insensitive and normalised to lower-case on the wire.
+    /// </summary>
+    private static global::Grpc.Core.Metadata BuildCapabilityUnavailableTrailers(
+        GeoprocessingStoreUnavailableException exception)
+    {
+        var trailers = new global::Grpc.Core.Metadata
+        {
+            { "honua-error-code", exception.ErrorCode! },
+            { "honua-capability", exception.CapabilityId! },
+            { "honua-remediation", exception.Remediation! },
+            { "honua-remediation-ref", exception.RemediationRef! },
+        };
+
+        if (exception.MissingDependency is not null)
+        {
+            trailers.Add("honua-missing-dependency", exception.MissingDependency);
+        }
+
+        if (exception.MissingEntitlement is not null)
+        {
+            trailers.Add("honua-missing-entitlement", exception.MissingEntitlement);
+        }
+
+        return trailers;
     }
 
     private static void EnrichActivity(string operation)

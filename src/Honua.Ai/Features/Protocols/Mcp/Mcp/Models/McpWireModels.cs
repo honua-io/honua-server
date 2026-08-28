@@ -93,6 +93,38 @@ internal sealed class McpErrorData
     [JsonPropertyName("retryable")]
     public bool? Retryable { get; set; }
 
+    /// <summary>
+    /// Identifier of the infrastructure dependency that was not composed (for example
+    /// <c>redis</c>) when the error is a capability-unavailable refusal (honua-release#202).
+    /// Lets an agent distinguish "this server cannot do this until an operator changes the
+    /// install" from a transient outage worth retrying.
+    /// </summary>
+    [JsonPropertyName("missingDependency")]
+    public string? MissingDependency { get; set; }
+
+    /// <summary>
+    /// Capability-manifest id the missing dependency disables (for example <c>jobs.runner</c>),
+    /// joinable to <c>GET /api/v1/capabilities/manifest</c>.
+    /// </summary>
+    [JsonPropertyName("capability")]
+    public string? Capability { get; set; }
+
+    /// <summary>
+    /// Identifier of the entitlement whose absence composed the capability out (for example
+    /// <c>caching.redis</c>). Present instead of <see cref="MissingDependency"/> when the
+    /// dependency is deployed but not licensed, so an agent reports the right fix.
+    /// </summary>
+    [JsonPropertyName("missingEntitlement")]
+    public string? MissingEntitlement { get; set; }
+
+    /// <summary>Operator-facing remediation sentence for a capability-unavailable refusal.</summary>
+    [JsonPropertyName("remediation")]
+    public string? Remediation { get; set; }
+
+    /// <summary>Documentation reference for <see cref="Remediation"/>.</summary>
+    [JsonPropertyName("remediationRef")]
+    public string? RemediationRef { get; set; }
+
     [JsonPropertyName("violations")]
     public IReadOnlyList<McpValidationViolation>? Violations { get; set; }
 }

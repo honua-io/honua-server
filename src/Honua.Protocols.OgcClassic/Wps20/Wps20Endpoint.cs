@@ -118,9 +118,19 @@ internal static partial class Wps20Endpoint
         {
             return Exception("InvalidParameterValue", ex.Message, "input");
         }
-        catch (GeoprocessingStoreUnavailableException)
+        catch (GeoprocessingStoreUnavailableException storeEx)
         {
-            return Exception("ServerBusy", "The job store is unavailable.", null, StatusCodes.Status503ServiceUnavailable);
+            // honua-release#202: project the capability-unavailable receipt into the OWS exception
+            // report. The exceptionCode stays "ServerBusy" because OWS constrains that vocabulary
+            // and CITE checks it; the machine-readable fields ride additional ows:ExceptionText
+            // elements as stable "key: value" lines, the same convention the GeoServices
+            // error.details[] projection uses.
+            return Exception(
+                "ServerBusy",
+                storeEx.Message,
+                null,
+                StatusCodes.Status503ServiceUnavailable,
+                BuildCapabilityUnavailableTexts(storeEx));
         }
         catch (Wps20EchoException ex)
         {
@@ -567,10 +577,49 @@ internal static partial class Wps20Endpoint
     private static string Operation(string name, string endpoint) =>
         $"<ows:Operation name=\"{name}\"><ows:DCP><ows:HTTP><ows:Get xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:href=\"{endpoint}\"/><ows:Post xmlns:xlink=\"http://www.w3.org/1999/xlink\" xlink:href=\"{endpoint}\"/></ows:HTTP></ows:DCP></ows:Operation>";
 
-    private static IResult Exception(string code, string message, string? locator = null, int statusCode = StatusCodes.Status400BadRequest)
+    private static IResult Exception(
+        string code,
+        string message,
+        string? locator = null,
+        int statusCode = StatusCodes.Status400BadRequest,
+        IReadOnlyList<string>? additionalTexts = null)
     {
         var locatorAttribute = locator is null ? string.Empty : $" locator=\"{X(locator)}\"";
-        return Xml($"<?xml version=\"1.0\" encoding=\"UTF-8\"?><ows:ExceptionReport xmlns:ows=\"{OwsNamespace}\" version=\"{Version}\"><ows:Exception exceptionCode=\"{X(code)}\"{locatorAttribute}><ows:ExceptionText>{X(message)}</ows:ExceptionText></ows:Exception></ows:ExceptionReport>", statusCode);
+        var extraTexts = additionalTexts is { Count: > 0 }
+            ? string.Concat(additionalTexts.Select(text => $"<ows:ExceptionText>{X(text)}</ows:ExceptionText>"))
+            : string.Empty;
+        return Xml($"<?xml version=\"1.0\" encoding=\"UTF-8\"?><ows:ExceptionReport xmlns:ows=\"{OwsNamespace}\" version=\"{Version}\"><ows:Exception exceptionCode=\"{X(code)}\"{locatorAttribute}><ows:ExceptionText>{X(message)}</ows:ExceptionText>{extraTexts}</ows:Exception></ows:ExceptionReport>", statusCode);
+    }
+
+    /// <summary>
+    /// The capability-unavailable receipt (honua-release#202) as additional
+    /// <c>ows:ExceptionText</c> lines. OWS 1.1 permits repeated ExceptionText elements, so this
+    /// adds machine-readable fields without inventing an exceptionCode outside the OWS vocabulary.
+    /// Returns <see langword="null"/> when the exception carries no receipt.
+    /// </summary>
+    private static List<string>? BuildCapabilityUnavailableTexts(
+        GeoprocessingStoreUnavailableException exception)
+    {
+        if (!exception.HasDependencyReceipt)
+        {
+            return null;
+        }
+
+        var texts = new List<string>(5) { $"code: {exception.ErrorCode}" };
+        if (exception.MissingDependency is not null)
+        {
+            texts.Add($"missingDependency: {exception.MissingDependency}");
+        }
+
+        if (exception.MissingEntitlement is not null)
+        {
+            texts.Add($"missingEntitlement: {exception.MissingEntitlement}");
+        }
+
+        texts.Add($"capability: {exception.CapabilityId}");
+        texts.Add($"remediation: {exception.Remediation}");
+        texts.Add($"remediationRef: {exception.RemediationRef}");
+        return texts;
     }
 
     private static IResult Xml(string content, int statusCode = StatusCodes.Status200OK) =>

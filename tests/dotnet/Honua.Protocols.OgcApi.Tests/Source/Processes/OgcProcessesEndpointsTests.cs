@@ -9,6 +9,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -589,6 +590,81 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.Created, HttpStatusCode.ServiceUnavailable);
         response.StatusCode.Should().NotBe(HttpStatusCode.NotImplemented);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_WithoutDurableJobStore_ReturnsTypedCapabilityUnavailableRefusal()
+    {
+        // honua-release#202: Redis is optional for a local install (PostGIS is not). The
+        // WebAppFixture runs without Redis, so no durable job store is composed. Submission
+        // must be refused up front with a machine-readable receipt an agent can branch on —
+        // never a hang, an untyped 500, or a job accepted into a queue that can never drain.
+        var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        root.GetProperty("type").GetString().Should().Be(CapabilityUnavailableCodes.ProblemType,
+            "the refusal must carry a typed problem URI, not about:blank");
+        root.GetProperty("status").GetInt32().Should().Be(503);
+        root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+        root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        root.GetProperty("capability").GetString().Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
+        root.GetProperty("remediation").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_SynchronousWithoutDurableJobStore_RefusesImmediatelyInsteadOfWaiting()
+    {
+        // The synchronous path waits up to 30s on the terminal-result service. Without a job
+        // store the refusal must come from submission, before that wait — the no-hang half of
+        // the honua-release#202 contract.
+        var body = $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}}}}";
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var response = await _fixture.Client.SendAsync(request);
+        stopwatch.Stop();
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(20),
+            "submission must refuse before the synchronous 30s terminal wait is entered");
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("code").GetString()
+            .Should().Be(CapabilityUnavailableCodes.ErrorCode);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}")]
+    public async Task JobStatus_WithoutDurableJobStore_ReturnsTypedCapabilityUnavailableRefusal()
+    {
+        // The whole lifecycle degrades consistently: a client that polls a job id it was never
+        // able to obtain gets the same typed receipt as the submission that refused it.
+        var response = await _fixture.Client.GetAsync("/ogc/processes/jobs/does-not-exist");
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("type").GetString()
+            .Should().Be(CapabilityUnavailableCodes.ProblemType);
+        document.RootElement.GetProperty("missingDependency").GetString()
+            .Should().Be(CapabilityUnavailableCodes.RedisDependency);
     }
 
     [IntegrationTest]

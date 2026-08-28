@@ -277,6 +277,11 @@ internal static class McpToolHelpers
             ResourceUri = jsonRpcError.Data?.ResourceUri,
             ConflictingJobId = jsonRpcError.Data?.ConflictingJobId,
             Retryable = jsonRpcError.Data?.Retryable,
+            MissingDependency = jsonRpcError.Data?.MissingDependency,
+            MissingEntitlement = jsonRpcError.Data?.MissingEntitlement,
+            Capability = jsonRpcError.Data?.Capability,
+            Remediation = jsonRpcError.Data?.Remediation,
+            RemediationRef = jsonRpcError.Data?.RemediationRef,
             Violations = violations,
             Error = new McpGeoprocessingError
             {
@@ -325,6 +330,11 @@ internal static class McpToolHelpers
         GeoprocessingNotFoundException => "UnknownDataset",
         GeoprocessingPreconditionFailedException => "PreconditionFailed",
         Honua.Infrastructure.Rendering.RasterRenderingUnavailableException => "PreconditionFailed",
+        // honua-release#202: a refusal that names a dependency the install never composed is a
+        // precondition failure, not an execution failure — nothing ever ran. Matches the
+        // RasterRenderingUnavailableException precedent above. Adapters that reuse this
+        // exception for a transient upstream carry no receipt and keep the previous kind.
+        GeoprocessingStoreUnavailableException { HasDependencyReceipt: true } => "PreconditionFailed",
         GeoprocessingStoreUnavailableException => "ExecutionFailed",
         GeoprocessingIdempotencyConflictException => "Conflict",
         _ when jsonRpcError.Data?.Code == McpErrorMapper.Codes.NotFound => "UnknownDataset",

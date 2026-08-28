@@ -127,10 +127,10 @@ internal static class JobEndpoints
                 context.User,
                 context.RequestAborted).ConfigureAwait(false);
         }
-        catch (GeoprocessingStoreUnavailableException)
+        catch (GeoprocessingStoreUnavailableException storeEx)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
-            return JobStoreUnavailableResult();
+            return JobStoreUnavailableResult(storeEx);
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -214,10 +214,10 @@ internal static class JobEndpoints
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
             return ProcessEndpoints.FormatOgcAuthError(authEx.RequiresAuthentication);
         }
-        catch (GeoprocessingStoreUnavailableException)
+        catch (GeoprocessingStoreUnavailableException storeEx)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
-            return JobStoreUnavailableResult();
+            return JobStoreUnavailableResult(storeEx);
         }
 
         if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
@@ -292,10 +292,10 @@ internal static class JobEndpoints
             OgcProcessesLog.AuthorizationDenied(logger, OperatorResourceType.Job.ToString(), OperatorOperation.Read.ToString());
             return ProcessEndpoints.FormatOgcAuthError(authEx.RequiresAuthentication);
         }
-        catch (GeoprocessingStoreUnavailableException)
+        catch (GeoprocessingStoreUnavailableException storeEx)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
-            return JobStoreUnavailableResult();
+            return JobStoreUnavailableResult(storeEx);
         }
 
         if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
@@ -359,10 +359,10 @@ internal static class JobEndpoints
             OgcProcessesLog.JobNotFound(logger, jobId);
             return JobNotFoundResult(jobId);
         }
-        catch (GeoprocessingStoreUnavailableException)
+        catch (GeoprocessingStoreUnavailableException storeEx)
         {
             OgcProcessesLog.JobStoreUnavailable(logger);
-            return JobStoreUnavailableResult();
+            return JobStoreUnavailableResult(storeEx);
         }
 
         if (OgcProcessesCiteEchoFixture.IsJob(job))
@@ -480,9 +480,9 @@ internal static class JobEndpoints
             OgcProcessesLog.DismissRejectedApprovalRequired(logger, jobId, approvalEx.PolicyRef);
             return ProcessEndpoints.FormatOgcApprovalError(approvalEx.PolicyRef, approvalEx.Message);
         }
-        catch (GeoprocessingStoreUnavailableException)
+        catch (GeoprocessingStoreUnavailableException storeEx)
         {
-            return JobStoreUnavailableResult();
+            return JobStoreUnavailableResult(storeEx);
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -544,7 +544,8 @@ internal static class JobEndpoints
             MediaTypes.Json,
             StatusCodes.Status409Conflict);
 
-    private static IResult JobStoreUnavailableResult() => OgcProcessesResults.StoreUnavailable();
+    private static IResult JobStoreUnavailableResult(GeoprocessingStoreUnavailableException? exception = null)
+        => OgcProcessesResults.StoreUnavailable(exception);
 
     private static IResult JobNotFoundResult(string jobId) => OgcProcessesResults.NoSuchJob(jobId);
 
