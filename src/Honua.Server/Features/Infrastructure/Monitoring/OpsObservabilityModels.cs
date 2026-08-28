@@ -13,6 +13,10 @@ namespace Honua.Infrastructure.Monitoring;
 /// </summary>
 public sealed class OpsHealthSnapshotResponse
 {
+    /// <summary>Gets per-section source freshness, completeness, backend and coverage evidence.</summary>
+    [JsonPropertyName("evidencePosture")]
+    public EvidencePosture? EvidencePosture { get; init; }
+
     /// <summary>Gets the UTC time the snapshot was produced.</summary>
     [JsonPropertyName("generatedAt")]
     public required DateTimeOffset GeneratedAt { get; init; }
@@ -471,6 +475,10 @@ public sealed class OpsHealthHistoryVitalsPoint
 /// <summary>Response for <c>GET /api/v{version}/admin/observability/findings</c>.</summary>
 public sealed class OpsFindingsListResponse
 {
+    /// <summary>Gets the exact source posture used for this evaluation.</summary>
+    [JsonPropertyName("evidencePosture")]
+    public EvidencePosture? EvidencePosture { get; init; }
+
     /// <summary>Gets the UTC time the findings were evaluated.</summary>
     [JsonPropertyName("generatedAt")]
     public required DateTimeOffset GeneratedAt { get; init; }
@@ -483,6 +491,14 @@ public sealed class OpsFindingsListResponse
 /// <summary>Wire view of a single deterministic ops finding.</summary>
 public sealed class OpsFindingView
 {
+    /// <summary>Gets stable sources required before this finding can authorize a proposal.</summary>
+    [JsonPropertyName("requiredSourceIds")]
+    public IReadOnlyList<string> RequiredSourceIds { get; init; } = [EvidencePostureVocabulary.SourceIds.Findings];
+
+    /// <summary>Gets the inclusive observation window supporting this finding.</summary>
+    [JsonPropertyName("observationWindow")]
+    public EvidenceSourceCoverage? ObservationWindow { get; init; }
+
     /// <summary>Gets the deterministic finding identifier (used to propose its action).</summary>
     [JsonPropertyName("id")]
     public required string Id { get; init; }

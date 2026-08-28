@@ -200,11 +200,11 @@ public sealed class McpOpsObservabilityReaderTests
         IOpsHealthSnapshotService? health = null,
         IAuthorizationService? authorization = null,
         IServiceProvider? services = null,
-        IOpsFindingsService? findings = null,
+        IOpsFindingsEvidenceSource? findings = null,
         IOperateEventFeed? operateEvents = null) =>
         new(
             health ?? Substitute.For<IOpsHealthSnapshotService>(),
-            findings ?? Substitute.For<IOpsFindingsService>(),
+            findings ?? Substitute.For<IOpsFindingsEvidenceSource>(),
             operateEvents ?? Substitute.For<IOperateEventFeed>(),
             authorization ?? CreateAuthorization(AuthorizationResult.Success()),
             services ?? CreateServices());
