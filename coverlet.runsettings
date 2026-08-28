@@ -12,7 +12,23 @@
           <Format>cobertura</Format>
           <DeterministicReport>true</DeterministicReport>
           <UseSourceLink>true</UseSourceLink>
-          <Exclude>[xunit.*]*,[*.Tests]*,[*.TestKit]*,[Honua.LoadTests]*,[Honua.Architecture.Tests]*</Exclude>
+          <!--
+            [Honua.Server]* (#3567). Honua.Core.Tests references only Honua.Core,
+            Honua.Scene and Honua.TestKit; Honua.Server lands in its output solely
+            because Honua.TestKit carries a ProjectReference to it. Instrumenting
+            that 23 MB assembly is where the foundation lane's time went: on batch
+            run 33097133234 the "Run .NET Tests (Core)" step took 18m23s for a test
+            run xUnit measured at 8 seconds, and the collector was observed holding
+            Honua.Server.dll/.pdb open for the bulk of it. The report it bought was
+            empty — in that run's `foundation-coverage` artifact Honua.Server
+            accounts for 85,632 of the counted line entries and ZERO covered ones,
+            because no Honua.Core.Tests case executes server code. Nothing else in
+            PR CI collects coverage (`grep -rn 'XPlat Code Coverage'`), so this
+            removes ~18 minutes of critical path and zero covered lines. Delete the
+            clause if a suite that genuinely exercises Honua.Server ever collects
+            coverage — the cost returns with it.
+          -->
+          <Exclude>[Honua.Server]*,[xunit.*]*,[*.Tests]*,[*.TestKit]*,[Honua.LoadTests]*,[Honua.Architecture.Tests]*</Exclude>
           <ExcludeByFile>**/*.Designer.cs,**/*.g.cs,**/*.g.i.cs,**/Migrations/*.cs,**/obj/**/*.cs,**/*.AssemblyInfo.cs,**/*GlobalUsings.g.cs</ExcludeByFile>
           <ExcludeByAttribute>Obsolete,GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute</ExcludeByAttribute>
           <SingleHit>false</SingleHit>
