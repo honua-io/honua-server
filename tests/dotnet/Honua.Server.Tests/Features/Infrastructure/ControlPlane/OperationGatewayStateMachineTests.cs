@@ -10,6 +10,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Server.Features.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -119,7 +120,7 @@ public sealed class OperationGatewayStateMachineTests
     }
 
     [Fact]
-    public async Task ApplyApprovedProposal_WithRegisteredKind_SucceedsToSubmitted()
+    public async Task ApplyApprovedProposal_WithRegisteredQueuedKind_TransitionsToSubmitted()
     {
         // Sanity: a kind WITH a registered executor still resolves to Submitted.
         var proposal = CreateProposal("p-deploy", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
@@ -131,6 +132,20 @@ public sealed class OperationGatewayStateMachineTests
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Submitted);
         result.ExecutionOperationId.Should().Be(DeployExecutor.OperationId);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_WithRegisteredSynchronousKind_TransitionsToSucceeded()
+    {
+        var proposal = CreateProposal("p-seed", OperationClass.Seed, OperationProposalStatus.AwaitingApproval);
+        var store = new InMemoryProposalStore(proposal);
+        var sut = BuildGateway(store: store, executor: new SynchronousExecutor());
+
+        var result = await sut.ApplyApprovedProposalAsync("p-seed", "admin");
+
+        result.Should().NotBeNull();
+        result!.Status.Should().Be(OperationProposalStatus.Succeeded);
+        result.ExecutionOperationId.Should().Be(SynchronousExecutor.OperationId);
     }
 
     [Fact]
@@ -149,6 +164,67 @@ public sealed class OperationGatewayStateMachineTests
         result.ExecutionOperationId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ApplyApprovedProposal_PreActuationCancellation_CompensatesClaimToCancelled()
+    {
+        var proposal = CreateProposal("p-cancel", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
+        var store = new InMemoryProposalStore(proposal);
+        var executor = new CancelingValidationExecutor();
+        var sut = BuildGateway(
+            store: store,
+            executor: executor,
+            configure: services => services.AddSingleton<
+                Honua.Core.Features.Operations.Abstractions.IOperationApprovalRequestMapper>(
+                new CancelingReplayMapper()));
+
+        var apply = () => sut.ApplyApprovedProposalAsync("p-cancel", "admin");
+
+        await apply.Should().ThrowAsync<OperationCanceledException>();
+        var persisted = await store.GetAsync("p-cancel");
+        persisted!.Status.Should().Be(OperationProposalStatus.Cancelled);
+        persisted.ResolutionReason.Should().Contain("before actuation");
+        executor.ExecuteCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_FailedReplay_AuditsFailureRatherThanAppliedSuccess()
+    {
+        var proposal = CreateProposal("p-failed-audit", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
+        var store = new InMemoryProposalStore(proposal);
+        var audit = new RecordingAuditLog();
+        var sut = BuildGateway(
+            store: store,
+            executor: new ThrowingExecutor(),
+            configure: services => services.AddSingleton<IAuditLog>(audit));
+
+        var result = await sut.ApplyApprovedProposalAsync("p-failed-audit", "admin");
+
+        result!.Status.Should().Be(OperationProposalStatus.Failed);
+        audit.Events.Should().Contain(item =>
+            item.Action == "operation.apply_failed" && item.Outcome == AuditOutcome.Failure);
+        audit.Events.Should().NotContain(item =>
+            item.Action == "operation.applied" && item.Outcome == AuditOutcome.Success);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposal_TamperedPersistedPlan_FailsWithoutActuation()
+    {
+        var original = CreateProposal("p-tampered", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
+        var tampered = original with
+        {
+            Plan = original.Plan with { ExecutionPayload = "caller-supplied-replacement" },
+        };
+        var store = new InMemoryProposalStore(tampered);
+        var executor = new RecordingExecutor();
+        var sut = BuildGateway(store: store, executor: executor);
+
+        var result = await sut.ApplyApprovedProposalAsync("p-tampered", "admin");
+
+        result!.Status.Should().Be(OperationProposalStatus.Failed);
+        result.Plan.BlockingReasons.Should().ContainMatch("*proof did not match*");
+        executor.ExecuteCount.Should().Be(0);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private static OperationProposal CreateProposal(
@@ -157,12 +233,14 @@ public sealed class OperationGatewayStateMachineTests
         OperationProposalStatus status)
     {
         var now = DateTimeOffset.UtcNow;
+        var plan = new OperationProposalPlan { Summary = "test proposal" };
         return new OperationProposal
         {
             ProposalId = proposalId,
             Kind = kind,
             Status = status,
-            Plan = new OperationProposalPlan { Summary = "test proposal" },
+            Plan = plan,
+            SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
             Audit = new OperationAuditInfo
             {
                 OperationInstanceId = $"opinst-{proposalId}",
@@ -177,13 +255,14 @@ public sealed class OperationGatewayStateMachineTests
     private static OperationGateway BuildGateway(
         IOperationProposalStore store,
         IOperationExecutor? executor = null,
-        IGuardrailLadder? ladder = null)
+        IGuardrailLadder? ladder = null,
+        Action<IServiceCollection>? configure = null)
     {
         var resolvedLadder = ladder ?? Substitute.For<IGuardrailLadder>();
         IEnumerable<IOperationExecutor> executors = executor != null
             ? [executor]
             : [];
-        return CanonicalOperationGatewayTestComposition.Build(store, resolvedLadder, executors);
+        return CanonicalOperationGatewayTestComposition.Build(store, resolvedLadder, executors, configure);
     }
 
     /// <summary>
@@ -222,6 +301,94 @@ public sealed class OperationGatewayStateMachineTests
             string? executionPayload,
             CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Simulated executor failure.");
+    }
+
+    private sealed class SynchronousExecutor : IOperationExecutor
+    {
+        public const string OperationId = "seed-operation-id";
+
+        public OperationClass OperationClass => OperationClass.Seed;
+
+        public Task<OperationProposalPlan?> PlanAsync(
+            OperationGatewayRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<OperationProposalPlan?>(request.Plan);
+
+        public Task<string?> ExecuteAsync(
+            OperationGatewayRequest request,
+            string? executionPayload,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(OperationId);
+    }
+
+    private sealed class RecordingExecutor : IOperationExecutor
+    {
+        public OperationClass OperationClass => OperationClass.Deploy;
+
+        public int ExecuteCount { get; private set; }
+
+        public Task<OperationProposalPlan?> PlanAsync(
+            OperationGatewayRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<OperationProposalPlan?>(request.Plan);
+
+        public Task<string?> ExecuteAsync(
+            OperationGatewayRequest request,
+            string? executionPayload,
+            CancellationToken cancellationToken = default)
+        {
+            ExecuteCount++;
+            return Task.FromResult<string?>("unexpected");
+        }
+    }
+
+    private sealed class CancelingValidationExecutor : IOperationExecutor
+    {
+        public OperationClass OperationClass => OperationClass.Deploy;
+
+        public int ExecuteCount { get; private set; }
+
+        public Task<OperationProposalPlan?> PlanAsync(
+            OperationGatewayRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<OperationProposalPlan?>(new OperationCanceledException(cancellationToken));
+
+        public Task<string?> ExecuteAsync(
+            OperationGatewayRequest request,
+            string? executionPayload,
+            CancellationToken cancellationToken = default)
+        {
+            ExecuteCount++;
+            return Task.FromResult<string?>(null);
+        }
+    }
+
+    private sealed class CancelingReplayMapper
+        : Honua.Core.Features.Operations.Abstractions.IOperationApprovalRequestMapper
+    {
+        public string OperationId => "control-plane.deploy";
+
+        public OperationGatewayRequest Map(
+            Honua.Core.Features.Operations.Abstractions.IOperationDescriptor descriptor,
+            Honua.Core.Features.Operations.Domain.OperationRequest request,
+            Honua.Core.Features.Operations.Domain.OperationPolicyContext context,
+            Honua.Core.Features.Operations.Domain.PolicyDecision decision)
+            => throw new NotSupportedException();
+
+        public Honua.Core.Features.Operations.Abstractions.OperationApprovalReplayMapping MapReplay(
+            OperationGatewayRequest request)
+            => throw new OperationCanceledException();
+    }
+
+    private sealed class RecordingAuditLog : IAuditLog
+    {
+        public List<AuditEvent> Events { get; } = [];
+
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            Events.Add(auditEvent);
+            return Task.FromResult<string?>($"audit-{Events.Count}");
+        }
     }
 
     /// <summary>

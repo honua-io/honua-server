@@ -96,6 +96,28 @@ internal sealed class MetadataReleaseOperationExecutor(MetadataReleaseControlSer
 
         return operation.OperationId;
     }
+
+    public async Task<OperationBackendStatus?> GetBackendStatusAsync(
+        string executionOperationId,
+        CancellationToken cancellationToken = default)
+    {
+        var operation = await controlService.GetAsync(executionOperationId, cancellationToken).ConfigureAwait(false);
+        return operation is null ? null : new OperationBackendStatus
+        {
+            State = operation.Status switch
+            {
+                WorkflowOperationStatus.Succeeded => OperationBackendState.Succeeded,
+                WorkflowOperationStatus.Failed or WorkflowOperationStatus.RolledBack => OperationBackendState.Failed,
+                WorkflowOperationStatus.ManualInterventionRequired => OperationBackendState.Indeterminate,
+                WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval
+                    => OperationBackendState.Queued,
+                _ => OperationBackendState.Running,
+            },
+            Reason = operation.Status is WorkflowOperationStatus.Failed or WorkflowOperationStatus.RolledBack
+                ? $"Backend workflow reached {operation.Status}."
+                : null,
+        };
+    }
 }
 
 /// <summary>

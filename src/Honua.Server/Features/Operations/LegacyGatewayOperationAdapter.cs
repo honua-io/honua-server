@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using LegacyExecutor = Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor;
 using TypedExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
@@ -74,10 +75,14 @@ internal sealed class LegacyGatewayOperationAdapter(LegacyExecutor actuator) : T
         };
     }
 
-    public Task<OperationStatus> GetStatusAsync(
+    public async Task<OperationStatus> GetStatusAsync(
         OperationHandle handle,
         CancellationToken cancellationToken = default)
-        => Task.FromResult(new OperationStatus
+    {
+        var backend = string.IsNullOrWhiteSpace(handle.JobId)
+            ? null
+            : await actuator.GetBackendStatusAsync(handle.JobId, cancellationToken).ConfigureAwait(false);
+        return new OperationStatus
         {
             OperationInstanceId = handle.OperationInstanceId,
             OperationId = handle.OperationId,
@@ -88,14 +93,23 @@ internal sealed class LegacyGatewayOperationAdapter(LegacyExecutor actuator) : T
             UpdatedAt = handle.UpdatedAt,
             AuthorizationOutcome = handle.AuthorizationOutcome,
             PolicyDecision = handle.PolicyDecision,
-            Status = handle.Status,
+            Status = backend?.State switch
+            {
+                OperationBackendState.Succeeded => OperationHandleStatus.Completed,
+                OperationBackendState.Failed => OperationHandleStatus.Failed,
+                OperationBackendState.Cancelled => OperationHandleStatus.Cancelled,
+                OperationBackendState.Indeterminate => OperationHandleStatus.Indeterminate,
+                OperationBackendState.Running => OperationHandleStatus.Running,
+                _ => handle.Status,
+            },
             Result = handle.Result,
             JobId = handle.JobId,
             ApprovalLane = handle.ApprovalLane,
-            Reason = handle.Reason,
+            Reason = backend?.Reason ?? handle.Reason,
             ResourceIds = handle.ResourceIds,
             EvidenceRefs = handle.EvidenceRefs,
-        });
+        };
+    }
 
     private static Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest RequireGatewayRequest(
         OperationRequest request)

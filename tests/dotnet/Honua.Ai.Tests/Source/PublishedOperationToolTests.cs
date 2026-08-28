@@ -340,7 +340,8 @@ public sealed class PublishedOperationToolTests
             .NotBe(firstBody.GetProperty("correlationId").GetString());
         secondBody.GetProperty("createdAt").GetDateTimeOffset().Should()
             .BeOnOrAfter(firstBody.GetProperty("createdAt").GetDateTimeOffset());
-        secondBody.TryGetProperty("auditId", out _).Should().BeFalse(
+        secondBody.GetProperty("auditId").GetString().Should().StartWith("audit-dev-");
+        secondBody.GetProperty("auditId").GetString().Should().NotBe("audit-original",
             "the cached payload audit identity is evidence, not the new invocation audit identity");
         secondBody.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString()).Should()
             .Contain("cached-operation-instance:op-done")
@@ -618,6 +619,10 @@ public sealed class PublishedOperationToolTests
         }
 
         services.AddSingleton<IPublishedOperationCache>(cache ?? new PublishedOperationCache());
+        services.AddSingleton<IOperationEnvelopeFactory>(new OperationEnvelopeFactory(
+            new VolatileOperationInstanceStore(),
+            new VolatileOperationAuditLog(),
+            TimeProvider.System));
         if (license is not null)
         {
             services.AddSingleton(license);
@@ -783,9 +788,9 @@ public sealed class PublishedOperationToolTests
             PolicyDecision decision)
             => new() { Kind = Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange };
 
-        public OperationRequest MapReplay(
+        public OperationApprovalReplayMapping MapReplay(
             Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest request)
-            => new() { OperationId = OperationId };
+            => new() { Request = new OperationRequest { OperationId = OperationId } };
     }
 
     private sealed class CountingInvoker(Func<OperationRequest, OperationHandle> handler) : IOperationInvoker

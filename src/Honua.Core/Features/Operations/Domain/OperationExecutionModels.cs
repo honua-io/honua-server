@@ -66,6 +66,12 @@ public sealed record OperationPolicyContext
     public string? ApprovedProposalId { get; init; }
 
     /// <summary>
+    /// Hash of the exact persisted approval plan. It is only a lookup claim: the canonical
+    /// runtime re-reads the proposal authority and recomputes the hash before actuation.
+    /// </summary>
+    public string? ApprovedPlanHash { get; init; }
+
+    /// <summary>
     /// Canonical invocation identity assigned by the operation runtime before policy evaluation.
     /// Protocol adapters must not derive this value from the descriptor id or a resource id.
     /// </summary>
@@ -81,6 +87,12 @@ public sealed record OperationPolicyContext
 
     /// <summary>Trusted routed database schema captured at invocation time.</summary>
     public string? SchemaName { get; init; }
+
+    /// <summary>
+    /// Trusted domain idempotency key. When present, retries identify the same invocation and
+    /// the envelope factory performs a durable lookup instead of minting another instance.
+    /// </summary>
+    public string? IdempotencyKey { get; init; }
 
     /// <summary>
     /// Trusted authorization outcome established before the operation policy decision.
@@ -149,6 +161,9 @@ public sealed record OperationValidation
 /// </summary>
 public sealed record OperationHandle
 {
+    /// <summary>Optimistic-concurrency version incremented by the durable store.</summary>
+    public long Version { get; init; }
+
     /// <summary>Stable identity of this invocation.</summary>
     public required string OperationInstanceId { get; init; }
 

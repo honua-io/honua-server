@@ -207,7 +207,34 @@ public sealed class OperationEnvelopeArchitectureTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
             () => validator.StartAsync(CancellationToken.None));
 
-        Assert.Contains("Operations:Policy:Enabled=true", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("enabled policy with a fail-closed default", exception.Message, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public async Task ProductionStartup_WithPermissiveCanonicalPolicyDefault_FailsClosed()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOperationInstanceStore>(new RecordingStore());
+        services.AddSingleton<IOperationProposalStore>(new StubProposalStore());
+        services.AddSingleton<IAuditLog>(new DurableAuditLog());
+        services.AddSingleton<IOptions<OperationPolicyOptions>>(
+            Options.Create(new OperationPolicyOptions
+            {
+                Enabled = true,
+                DefaultDecision = PolicyDecisionKind.Allow,
+            }));
+        services.AddSingleton<IOperationPolicyDecisionPoint>(provider =>
+            new CanonicalOperationPolicyDecisionPoint(
+                provider.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+                new BlockingGuardrailLadder()));
+        await using var provider = services.BuildServiceProvider();
+        var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+
+        Assert.Contains("fail-closed default decision", exception.Message, StringComparison.Ordinal);
     }
 
     [ArchitectureTest]
@@ -264,6 +291,44 @@ public sealed class OperationEnvelopeArchitectureTests
         Assert.Equal(typeof(string), first.ParameterType);
         Assert.Equal("operationInstanceId", first.Name);
         Assert.False(first.HasDefaultValue);
+    }
+
+    [ArchitectureTest]
+    public void OperationInstanceStore_ExposesVersionedTransitionPrecondition()
+    {
+        var method = typeof(IOperationInstanceStore).GetMethod(nameof(IOperationInstanceStore.TrySetAsync));
+        Assert.NotNull(method);
+        Assert.Contains(method!.GetParameters(), parameter =>
+            parameter.Name == "expectedVersion" && parameter.ParameterType == typeof(long));
+    }
+
+    [ArchitectureTest]
+    public void RestStatusEndpoint_DependsOnDurableInstanceStoreNotHandleCache()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "src/Honua.Server/Features/Operations/OperationsEndpoints.cs"));
+        Assert.Contains("IOperationInstanceStore instanceStore", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("OperationHandleStore", source, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public void CacheHitProjection_UsesCanonicalEnvelopeFactory()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Tools/PublishedOperationTool.cs"));
+        Assert.Contains("CompleteCacheHitAsync", source, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public void PlannedJanitor_DoesNotCaptureScopedAuditSink()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "src/Honua.Server/Features/Operations/PlannedProposalReconciler.cs"));
+        Assert.Contains("IServiceScopeFactory scopeFactory", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("IAuditLog auditLog", source, StringComparison.Ordinal);
     }
 
     [ArchitectureTest]
@@ -564,7 +629,19 @@ public sealed class OperationEnvelopeArchitectureTests
             PolicyDecision decision)
             => new() { Kind = OperationClass.ServicePublish };
 
-        public OperationRequest MapReplay(OperationGatewayRequest request)
-            => new() { OperationId = OperationId };
+        public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
+            => new() { Request = new OperationRequest { OperationId = OperationId } };
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName
+            ?? throw new InvalidOperationException("Could not locate the repository root.");
     }
 }

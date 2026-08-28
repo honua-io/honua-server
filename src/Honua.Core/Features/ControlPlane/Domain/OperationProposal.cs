@@ -60,6 +60,13 @@ public enum OperationProposalStatus
     /// The applied operation was rolled back.
     /// </summary>
     RolledBack = 7,
+
+    /// <summary>
+    /// Approval replay was cancelled before the canonical actuator was invoked.
+    /// No side effect occurred and a retry creates a new operation instance unless
+    /// the original request carried an idempotency key.
+    /// </summary>
+    Cancelled = 9,
 }
 
 /// <summary>
@@ -197,6 +204,12 @@ public sealed record OperationProposal
     /// Structured plan/diff/dry-run/risk produced for the approval surface.
     /// </summary>
     public OperationProposalPlan Plan { get; init; } = new();
+
+    /// <summary>
+    /// SHA-256 hash of the exact persisted <see cref="Plan"/> payload. Approved replay
+    /// recomputes this value from durable storage before any actuator is invoked.
+    /// </summary>
+    public string? SealedPlanHash { get; init; }
 
     /// <summary>
     /// Guardrail decision that routed this operation to approval.

@@ -23,5 +23,21 @@ public interface IOperationApprovalRequestMapper
         PolicyDecision decision);
 
     /// <summary>Rebuilds the sealed typed actuator request from the persisted proposal payload.</summary>
-    OperationRequest MapReplay(OperationGatewayRequest request);
+    OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request);
+}
+
+/// <summary>
+/// Typed request and accepted authority context reconstructed from a persisted
+/// proposal. The gateway, never a protocol caller, applies this context to replay.
+/// </summary>
+public sealed record OperationApprovalReplayMapping
+{
+    /// <summary>Exact typed actuator request reconstructed from the sealed plan.</summary>
+    public required OperationRequest Request { get; init; }
+
+    /// <summary>Tenant identity captured when the proposal was accepted.</summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>Database schema route captured when the proposal was accepted.</summary>
+    public string? SchemaName { get; init; }
 }

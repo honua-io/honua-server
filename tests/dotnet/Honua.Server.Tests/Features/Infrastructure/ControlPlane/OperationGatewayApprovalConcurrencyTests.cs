@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Server.Features.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -134,12 +135,14 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     private static OperationProposal CreateProposal(string proposalId, OperationProposalStatus status)
     {
         var now = DateTimeOffset.UtcNow;
+        var plan = new OperationProposalPlan { Summary = "test proposal" };
         return new OperationProposal
         {
             ProposalId = proposalId,
             Kind = OperationClass.Deploy,
             Status = status,
-            Plan = new OperationProposalPlan { Summary = "test proposal" },
+            Plan = plan,
+            SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
             Audit = new OperationAuditInfo
             {
                 OperationInstanceId = $"opinst-{proposalId}",

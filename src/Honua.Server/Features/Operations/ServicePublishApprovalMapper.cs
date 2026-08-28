@@ -59,7 +59,7 @@ internal sealed class ServicePublishApprovalRequestMapper : IOperationApprovalRe
         };
     }
 
-    public OperationRequest MapReplay(OperationGatewayRequest request)
+    public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         var payload = JsonSerializer.Deserialize(
@@ -67,7 +67,12 @@ internal sealed class ServicePublishApprovalRequestMapper : IOperationApprovalRe
                     ?? throw new InvalidOperationException("The persisted service.publish replay payload is unavailable."),
                 ServicePublishApprovalJsonContext.Default.ServicePublishApprovalPayload)
             ?? throw new InvalidOperationException("The persisted service.publish replay payload is invalid.");
-        return payload.ToOperationRequest();
+        return new OperationApprovalReplayMapping
+        {
+            Request = payload.ToOperationRequest(),
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName,
+        };
     }
 }
 

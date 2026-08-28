@@ -13,7 +13,7 @@ namespace Honua.Server.Features.Operations;
 /// </summary>
 internal sealed partial class PlannedProposalReconciler(
     IOperationProposalStore proposalStore,
-    IAuditLog auditLog,
+    IServiceScopeFactory scopeFactory,
     TimeProvider clock,
     ILogger<PlannedProposalReconciler> logger) : BackgroundService
 {
@@ -91,6 +91,8 @@ internal sealed partial class PlannedProposalReconciler(
             return;
         }
 
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog>();
         var auditId = await auditLog.RecordAsync(new AuditEvent
         {
             Timestamp = clock.GetUtcNow(),
@@ -103,7 +105,8 @@ internal sealed partial class PlannedProposalReconciler(
             Outcome = AuditOutcome.Failure,
             CorrelationId = proposal.Audit.CorrelationId ?? proposal.ProposalId,
             Details = $"operationInstanceId={proposal.Audit.OperationInstanceId};kind={proposal.Kind}",
-        }, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken)
+            .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(auditId))
         {
             Log.AuditIdentityMissing(logger, proposal.ProposalId);

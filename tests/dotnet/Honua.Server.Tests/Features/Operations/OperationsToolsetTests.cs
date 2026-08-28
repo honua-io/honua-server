@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
@@ -174,7 +175,8 @@ public sealed class OperationsToolsetTests
             .GetCurrentAsync(Arg.Any<CancellationToken>())
             .Returns(snapshot);
 
-        var executor = BuildExecutor(publishing, graphProvider);
+        var notifications = Substitute.For<IMcpNotificationPublisher>();
+        var executor = BuildExecutor(publishing, graphProvider, notifications);
         var dispatcher = BuildDispatcher(executor, new AllowAllPolicyDecisionPoint());
 
         var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext(), CancellationToken.None);
@@ -190,6 +192,8 @@ public sealed class OperationsToolsetTests
             Arg.Any<string>(),
             Arg.Is<LayerPublishRequest>(r => r.Schema == "public" && r.Table == "parcels" && r.LayerName == "Parcels"),
             Arg.Any<CancellationToken>());
+        notifications.Received(1).BroadcastResourcesListChanged();
+        notifications.Received(1).BroadcastToolsListChanged();
     }
 
     [UnitTest]
@@ -241,6 +245,80 @@ public sealed class OperationsToolsetTests
         handle.Reason.Should().Contain("side effects may have committed");
         (await store.GetAsync(handle.OperationInstanceId)).Should().BeEquivalentTo(handle);
         audit.CanceledWriteCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_CanceledDuringValidation_PersistsCancelledWithoutActuation()
+    {
+        using var requestCancellation = new CancellationTokenSource();
+        var store = new VolatileOperationInstanceStore();
+        var audit = new CancellationCheckingAuditLog();
+        var executor = new CancelingDuringValidationExecutor(requestCancellation);
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            instanceStore: store,
+            auditLog: audit);
+
+        var exception = await Assert.ThrowsAsync<OperationCanceledException>(() => dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext(),
+            requestCancellation.Token));
+
+        exception.Should().NotBeNull();
+        executor.SubmitCount.Should().Be(0);
+        var cancelled = audit.Events.Should().ContainSingle(entry => entry.Action == "operation.cancelled").Subject;
+        var envelope = await store.GetAsync(cancelled.ResourceId!);
+        envelope.Should().NotBeNull();
+        envelope!.Status.Should().Be(OperationHandleStatus.Cancelled);
+        envelope.Reason.Should().Contain("no side effect occurred");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_QueuedActuation_WritesSubmittedSuccessAudit()
+    {
+        var audit = new CancellationCheckingAuditLog();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [new QueuedExecutor()],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            auditLog: audit);
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Queued);
+        audit.Events.Should().ContainSingle(entry =>
+            entry.Action == "operation.submitted" && entry.Outcome == AuditOutcome.Success);
+        audit.Events.Should().NotContain(entry => entry.Action == "operation.completed");
+    }
+
+    [UnitTest]
+    public async Task EnvelopeFactory_IdempotentRetry_ReturnsOriginalInstanceAndAuditsTouch()
+    {
+        var store = new VolatileOperationInstanceStore();
+        var audit = new CancellationCheckingAuditLog();
+        var factory = new OperationEnvelopeFactory(store, audit, TimeProvider.System);
+        var context = new OperationPolicyContext
+        {
+            PrincipalId = "gp-caller",
+            IdempotencyKey = "gp-idem-1",
+        };
+
+        var first = await factory.CreateAcceptedAsync("control-plane.geoprocess", context);
+        var retry = await factory.CreateAcceptedAsync("control-plane.geoprocess", context);
+
+        retry.OperationInstanceId.Should().Be(first.OperationInstanceId);
+        retry.CorrelationId.Should().Be(first.CorrelationId);
+        retry.AuditId.Should().Be(first.AuditId);
+        retry.EvidenceRefs.Should().ContainSingle(reference => reference.StartsWith("retry-audit:", StringComparison.Ordinal));
+        audit.Events.Should().ContainSingle(entry =>
+            entry.Action == "operation.retry" && entry.ResourceId == first.OperationInstanceId);
     }
 
     [UnitTest]
@@ -390,6 +468,26 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task SubmitAsync_ApprovedDryRun_ValidatesWithoutActuation()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var dispatcher = BuildDispatcher(BuildExecutor(publishing), new AllowAllPolicyDecisionPoint());
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest() with { DryRun = true },
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handle.Reason.Should().Contain("no actuator");
+        handle.Result!.Details["dryRun"].Should().Be(bool.TrueString);
+        await publishing.Received(1).ValidateTableForPublishAsync(
+            Arg.Any<string>(), Arg.Any<TablePublishValidationRequest>(), Arg.Any<CancellationToken>());
+        await publishing.DidNotReceiveWithAnyArgs()
+            .PublishLayerAsync(default!, default!, default);
+    }
+
+    [UnitTest]
     public async Task SubmitAsync_Flows_Descriptor_Policy_Metadata_Tier_And_Roles_Into_Decision_Input()
     {
         var publishing = Substitute.For<ILayerPublishingService>();
@@ -433,7 +531,8 @@ public sealed class OperationsToolsetTests
 
     private static ServicePublishExecutor BuildExecutor(
         ILayerPublishingService publishing,
-        IMetadataV2GraphProvider? graphProvider = null)
+        IMetadataV2GraphProvider? graphProvider = null,
+        IMcpNotificationPublisher? notifications = null)
     {
         publishing
             .ValidateTableForPublishAsync(
@@ -458,7 +557,8 @@ public sealed class OperationsToolsetTests
             publishing,
             resolver,
             graphProvider ?? Substitute.For<IMetadataV2GraphProvider>(),
-            TimeProvider.System);
+            TimeProvider.System,
+            notifications);
     }
 
     private static OperationDispatcher BuildDispatcher(
@@ -598,12 +698,78 @@ public sealed class OperationsToolsetTests
             => throw new NotSupportedException();
     }
 
+    private sealed class CancelingDuringValidationExecutor(CancellationTokenSource requestCancellation)
+        : IOperationExecutor
+    {
+        public string OperationId => "service.publish";
+
+        public int SubmitCount { get; private set; }
+
+        public Task<OperationValidation> ValidateAsync(
+            OperationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            requestCancellation.Cancel();
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            SubmitCount++;
+            throw new InvalidOperationException("Actuator must not run after canceled validation.");
+        }
+
+        public Task<OperationStatus> GetStatusAsync(
+            OperationHandle handle,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class QueuedExecutor : IOperationExecutor
+    {
+        public string OperationId => "service.publish";
+
+        public Task<OperationValidation> ValidateAsync(
+            OperationRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return Task.FromResult(new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId!,
+                OperationId = OperationId,
+                CorrelationId = context.CorrelationId!,
+                Status = OperationHandleStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
+                JobId = "job-queued",
+            });
+        }
+
+        public Task<OperationStatus> GetStatusAsync(
+            OperationHandle handle,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
     private sealed class CancellationCheckingAuditLog : IAuditLog
     {
         public int CanceledWriteCount { get; private set; }
 
+        public List<AuditEvent> Events { get; } = [];
+
         public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
+            Events.Add(auditEvent);
             if (cancellationToken.IsCancellationRequested)
             {
                 CanceledWriteCount++;

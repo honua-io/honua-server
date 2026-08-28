@@ -153,7 +153,7 @@ public sealed class OperationGatewayAutonomyTests
         var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
         await first.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("simulated proposal counter outage");
-        (await store.GetAsync(routed.ProposalId!))!.Status.Should().Be(OperationProposalStatus.Submitted);
+        (await store.GetAsync(routed.ProposalId!))!.Status.Should().Be(OperationProposalStatus.Succeeded);
 
         var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
         await retry.Should().ThrowAsync<InvalidOperationException>()

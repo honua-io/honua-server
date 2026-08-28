@@ -56,11 +56,13 @@ public sealed class AdminOperationApprovalBridgeTests
         mapped.ExecutionPayload.Should().Contain("\"schemaName\":\"tenant_a\"");
 
         var replay = mapper.MapReplay(mapped);
-        replay.OperationId.Should().Be(ServicePublishOperation.OperationId);
-        replay.ConnectionId.Should().Be("connection-1");
-        replay.Parameters["schema"].Should().Be("public");
-        replay.Parameters["table"].Should().Be("roads");
-        replay.Parameters["layerName"].Should().Be("Roads");
+        replay.Request.OperationId.Should().Be(ServicePublishOperation.OperationId);
+        replay.Request.ConnectionId.Should().Be("connection-1");
+        replay.Request.Parameters["schema"].Should().Be("public");
+        replay.Request.Parameters["table"].Should().Be("roads");
+        replay.Request.Parameters["layerName"].Should().Be("Roads");
+        replay.TenantId.Should().Be("tenant-a");
+        replay.SchemaName.Should().Be("tenant_a");
     }
 
     [UnitTest]
@@ -172,7 +174,7 @@ public sealed class AdminOperationApprovalBridgeTests
         result.IsDurable.Should().BeFalse();
         result.Reason.Should().Contain("guardrail blocks");
         await gateway.DidNotReceiveWithAnyArgs()
-            .CreateApprovalProposalAsync(default!, default);
+            .CreateApprovalProposalAsync(default!, default!, default);
     }
 
     private static AdminOperationApprovalBridge CreateBridge(IServiceProvider services)
@@ -245,7 +247,7 @@ public sealed class AdminOperationApprovalBridgeTests
                 ExecutionPayload = "{}",
             };
 
-        public OperationRequest MapReplay(OperationGatewayRequest request)
-            => Request();
+        public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
+            => new() { Request = Request() };
     }
 }

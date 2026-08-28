@@ -1460,7 +1460,7 @@ public sealed class GeoprocessingJobServiceTests
                 ProposalId = "gp-proposal-1",
             }));
 
-        var sut = CreateServiceWithGateway(gateway);
+        var sut = CreateServiceWithGateway(gateway, out var envelopeFactory);
 
         var act = async () => await sut.SubmitJobAsync(CreateImportPlan(), "idem-1", CreatePrincipal());
 
@@ -1477,6 +1477,10 @@ public sealed class GeoprocessingJobServiceTests
         captured!.Kind.Should().Be(OperationClass.Geoprocess);
         captured.IdempotencyKey.Should().Be("idem-1");
         captured.ExecutionPayload.Should().NotBeNullOrWhiteSpace();
+        await envelopeFactory.Received(1).CreateAcceptedAsync(
+            "control-plane.geoprocess",
+            Arg.Is<OperationPolicyContext>(context => context.IdempotencyKey == "idem-1"),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -1866,9 +1870,11 @@ public sealed class GeoprocessingJobServiceTests
             .WithMessage("*payload is missing or malformed*");
     }
 
-    private GeoprocessingJobService CreateServiceWithGateway(IOperationGateway gateway)
+    private GeoprocessingJobService CreateServiceWithGateway(
+        IOperationGateway gateway,
+        out IOperationEnvelopeFactory factory)
     {
-        var factory = Substitute.For<IOperationEnvelopeFactory>();
+        factory = Substitute.For<IOperationEnvelopeFactory>();
         factory.CreateAcceptedAsync(
                 Arg.Any<string>(),
                 Arg.Any<OperationPolicyContext>(),

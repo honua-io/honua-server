@@ -8,6 +8,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -40,9 +41,10 @@ public sealed class PlannedProposalReconcilerTests
             .Returns(true);
         audit.RecordAsync(Arg.Any<AuditEvent>(), Arg.Any<CancellationToken>())
             .Returns("audit-janitor-1");
+        await using var services = BuildServices(audit);
         var reconciler = new PlannedProposalReconciler(
             store,
-            audit,
+            services.GetRequiredService<IServiceScopeFactory>(),
             new FixedTimeProvider(Now),
             NullLogger<PlannedProposalReconciler>.Instance);
 
@@ -82,9 +84,10 @@ public sealed class PlannedProposalReconcilerTests
                 Arg.Any<TimeSpan>(),
                 Arg.Any<CancellationToken>())
             .Returns(false);
+        await using var services = BuildServices(audit);
         var reconciler = new PlannedProposalReconciler(
             store,
-            audit,
+            services.GetRequiredService<IServiceScopeFactory>(),
             new FixedTimeProvider(Now),
             NullLogger<PlannedProposalReconciler>.Instance);
 
@@ -109,6 +112,11 @@ public sealed class PlannedProposalReconcilerTests
         CreatedAt = updatedAt,
         UpdatedAt = updatedAt,
     };
+
+    private static ServiceProvider BuildServices(IAuditLog audit)
+        => new ServiceCollection()
+            .AddScoped(_ => audit)
+            .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

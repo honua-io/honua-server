@@ -46,11 +46,14 @@ public sealed class OperationRuntimeStartupValidator(IServiceScopeFactory scopeF
                 "Production operation runtime requires a fail-closed policy decision point.");
         }
 
-        if (policy is CanonicalOperationPolicyDecisionPoint &&
-            services.GetRequiredService<IOptions<OperationPolicyOptions>>().Value.Enabled is false)
+        if (policy is CanonicalOperationPolicyDecisionPoint)
         {
-            throw new InvalidOperationException(
-                "Production operation runtime requires Operations:Policy:Enabled=true.");
+            var options = services.GetRequiredService<IOptions<OperationPolicyOptions>>().Value;
+            if (!options.Enabled || options.DefaultDecision == Honua.Core.Features.Operations.Domain.PolicyDecisionKind.Allow)
+            {
+                throw new InvalidOperationException(
+                    "Production operation runtime requires an enabled policy with a fail-closed default decision.");
+            }
         }
 
         var catalog = services.GetRequiredService<IOperationCatalog>();

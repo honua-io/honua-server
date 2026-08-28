@@ -81,6 +81,30 @@ internal sealed class GeoprocessOperationExecutor : IOperationExecutor
         return record.OperationId;
     }
 
+    public async Task<OperationBackendStatus?> GetBackendStatusAsync(
+        string executionOperationId,
+        CancellationToken cancellationToken = default)
+    {
+        var store = _serviceProvider.GetService<IExecutionJobStore>();
+        var job = store is null
+            ? null
+            : await store.GetAsync(executionOperationId, cancellationToken).ConfigureAwait(false);
+        return job is null ? null : new OperationBackendStatus
+        {
+            State = job.Status switch
+            {
+                ExecutionJobStatus.Succeeded => OperationBackendState.Succeeded,
+                ExecutionJobStatus.Failed => OperationBackendState.Failed,
+                ExecutionJobStatus.Cancelled => OperationBackendState.Cancelled,
+                ExecutionJobStatus.Queued or ExecutionJobStatus.Provisioning => OperationBackendState.Queued,
+                _ => OperationBackendState.Running,
+            },
+            Reason = job.Status is ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled
+                ? $"Backend job reached {job.Status}."
+                : null,
+        };
+    }
+
     /// <summary>
     /// Builds the approval-surface plan summary shown to a reviewer for a gated plan.
     /// </summary>
