@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Focused, offline regression tests for the inverted review-admission ladder in
 # train_refresh_review_gate: objections block, clean exact-head evidence admits,
-# a missing review holds only for the courtesy window (dispatching the catch-up
-# exactly once), then admission proceeds with review trailing.
+# a missing review admits with review trailing and marks the exact head for the
+# parent controller to dispatch.
 
 set -euo pipefail
 
@@ -25,11 +25,8 @@ train_attesting_logins_json() { printf '%s' '["chatgpt-codex-connector","chatgpt
 train_resolve_clean_comment_commits() { printf '%s' "$1"; }
 PUBLISHED_STATE=""; PUBLISHED_DESC=""
 train_publish_review_gate_status() { PUBLISHED_STATE="$3"; PUBLISHED_DESC="$4"; }
-DISPATCH_COUNT=0
 train_side_effect() {
-  if [[ "$*" == *"workflow run claude-review.yml"* ]]; then
-    DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
-  fi
+  fail "review admission must not dispatch from the selector subshell"
 }
 GH_COMMIT_DATE=""
 gh() {
@@ -78,16 +75,15 @@ printf 'PASS: %s\n' "clean exact-head evidence admits"
 
 # 3. No evidence, no objections: admits IMMEDIATELY (operator decision
 #    2026-08-28, "yes permanently" -- no courtesy window), and the catch-up is
-#    still dispatched exactly once so the trailing review happens.
-unset TRAIN_REVIEW_CATCHUP_NEEDED TRAIN_REVIEW_CATCHUP_DISPATCHED 2>/dev/null || true
-DISPATCH_COUNT=0
+#    marked so the parent controller can dispatch the exact PR/head.
+unset TRAIN_REVIEW_CATCHUP_NEEDED 2>/dev/null || true
 rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
 [[ "${rc}" == 0 ]] || fail "finding-free head was not admitted immediately (${PUBLISHED_DESC})"
 [[ "${PUBLISHED_DESC}" == *"review trails"* ]] || fail "wrong trailing reason: ${PUBLISHED_DESC}"
-[[ "${DISPATCH_COUNT}" == 1 ]] || fail "catch-up dispatch count ${DISPATCH_COUNT}, expected 1"
+[[ "${TRAIN_REVIEW_CATCHUP_NEEDED}" == 1 ]] || fail "exact-head review was not marked for dispatch"
 rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
-[[ "${DISPATCH_COUNT}" == 1 ]] || fail "catch-up re-dispatched within one controller run"
-printf 'PASS: %s\n' "finding-free head admits immediately; catch-up dispatched once"
+[[ "${TRAIN_REVIEW_CATCHUP_NEEDED}" == 1 ]] || fail "exact-head review dispatch marker was not stable"
+printf 'PASS: %s\n' "finding-free head admits immediately; exact head marked for dispatch"
 
 # 4. Readiness probes evaluate admission without dispatching another catch-up.
 unset TRAIN_REVIEW_CATCHUP_NEEDED TRAIN_REVIEW_CATCHUP_DISPATCHED 2>/dev/null || true
