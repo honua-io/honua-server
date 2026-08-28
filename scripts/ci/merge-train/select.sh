@@ -391,8 +391,15 @@ train_refresh_review_gate() {
   if [[ "${state}" == "failure" && -n "${TRAIN_REVIEW_CATCHUP_NEEDED:-}" \
         && -z "${TRAIN_REVIEW_CATCHUP_DISPATCHED:-}" && "${TRAIN_APPLY:-0}" == "1" ]]; then
     TRAIN_REVIEW_CATCHUP_DISPATCHED=1
+    # >/dev/null is LOAD-BEARING: `gh workflow run` prints the run URL on
+    # STDOUT, and this dispatch executes inside the selection path whose stdout
+    # is captured into the selected-candidates JSON. Without the redirect the
+    # URL lands inside that capture and the post-loop `jq 'length'` dies on
+    # "Invalid numeric literal at line 2, column 6" -- the colon in https: --
+    # crashing the whole train run (observed live, run 33135946439-era,
+    # 2026-08-28T02:15Z). stderr stays visible for the failure warn below.
     train_side_effect gh workflow run claude-review.yml \
-      --repo "${GITHUB_REPOSITORY}" --ref "${TRAIN_BASE_BRANCH:-trunk}" \
+      --repo "${GITHUB_REPOSITORY}" --ref "${TRAIN_BASE_BRANCH:-trunk}" >/dev/null \
       || train_warn "review catch-up dispatch failed; heads attest via schedule or manual request"
   fi
 
