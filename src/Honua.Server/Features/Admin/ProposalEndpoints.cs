@@ -33,16 +33,17 @@ internal static class ProposalEndpoints
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/proposals")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
-            .WithTags("Admin", "Proposals")
-            .RequireAdminAuthorization();
+            .WithTags("Admin", "Proposals");
 
         group.MapGet("/", HandleListProposals)
+            .RequireAdminAuthorization()
             .WithDisplayName("List Operation Proposals")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ProposalListResponse>()
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/{id}", HandleGetProposal)
+            .RequireAdminAuthorization()
             .WithDisplayName("Get Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ProposalDetailResponse>()
@@ -50,6 +51,7 @@ internal static class ProposalEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/{id}/approve", HandleApproveProposal)
+            .RequireAdminApproveAuthorization()
             .WithDisplayName("Approve Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ProposalDetailResponse>()
@@ -59,6 +61,7 @@ internal static class ProposalEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/{id}/reject", HandleRejectProposal)
+            .RequireAdminApproveAuthorization()
             .WithDisplayName("Reject Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ProposalDetailResponse>()

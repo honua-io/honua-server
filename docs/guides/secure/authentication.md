@@ -30,6 +30,27 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 
 The response's `data.key` is shown once — store it immediately. Manage the lifecycle with `POST /api/v1/admin/api-keys/{id}/rotate` (returns a new secret), `POST .../{id}/revoke`, and `GET .../{id}/effective-permissions`.
 
+For the focused Console read/approve client, mint a named key with:
+
+```json
+{
+  "name": "console-read-approve",
+  "permissions": ["admin:read", "admin:approve"],
+  "expiresAt": null
+}
+```
+
+`admin:approve` remains read-level on the general admin surface and adds only
+`POST /api/v1/admin/proposals/{proposalId}/approve` and
+`POST /api/v1/admin/proposals/{proposalId}/reject`. It does not grant other
+mutations. In particular, some read-like workflows use POST and are unavailable
+to this key: `connections/test`, `external-services/discover`, and
+`import/geoservices/start`. This scope ceiling is enforced in both
+authentication modes: enabling OIDC (`Oidc:Enabled=true`) rebuilds the admin
+policies for composite sign-in but preserves scoped API-key permission
+enforcement. Console users who sign in with an operator bearer
+token are authorized by operator RBAC instead of this API-key recipe.
+
 ### 3. Enable OIDC for browser and admin sign-in
 
 ```bash

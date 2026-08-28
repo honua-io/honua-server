@@ -270,6 +270,8 @@ public static class OidcAuthenticationExtensions
                 adminRoles,
                 schemes);
 
+            UpdateAdminApprovePolicy(authzOptions, adminRoles, schemes);
+
             UpdateRolePolicy(
                 authzOptions,
                 AuthenticationExtensions.TemporalHistoryReadPolicy,
@@ -351,6 +353,38 @@ public static class OidcAuthenticationExtensions
         {
             policy.RequireAuthenticatedUser();
             policy.RequireAssertion(context => roles.Any(role => context.User.IsInRole(role)));
+            // Preserve scoped API-key permission enforcement (#1985) when the policy is
+            // rebuilt for OIDC. Without this requirement a scoped admin key (e.g.
+            // admin:read or admin:read + admin:approve) — which the API-key handler
+            // stamps with the admin role — would satisfy the role assertion alone and
+            // regain full mutating authority whenever Oidc:Enabled=true. OIDC, session,
+            // operator-bearer, and client-certificate admins carry no "permission"
+            // claims and are treated as full admin by the requirement, so they are
+            // unaffected.
+            policy.AddRequirements(new AdminPermissionRequirement());
+
+            foreach (var scheme in schemes)
+            {
+                policy.AuthenticationSchemes.Add(scheme);
+            }
+        });
+    }
+
+    private static void UpdateAdminApprovePolicy(
+        Microsoft.AspNetCore.Authorization.AuthorizationOptions authzOptions,
+        IReadOnlyCollection<string> roles,
+        IReadOnlyCollection<string> schemes)
+    {
+        if (authzOptions.GetPolicy(AuthenticationExtensions.AdminApprovePolicy) == null)
+        {
+            return;
+        }
+
+        authzOptions.AddPolicy(AuthenticationExtensions.AdminApprovePolicy, policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.RequireAssertion(context => roles.Any(role => context.User.IsInRole(role)));
+            policy.AddRequirements(new AdminApproveRequirement());
 
             foreach (var scheme in schemes)
             {

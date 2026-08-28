@@ -48,6 +48,17 @@ public sealed class AdminApiKeyPermissionTests
     }
 
     [Fact]
+    public void ResolveAccessLevel_ApproveGrant_IsReadAndDistinct()
+    {
+        var principal = AdminPrincipal("admin:read", "admin:approve");
+
+        AdminApiKeyPermission.ResolveAccessLevel(principal)
+            .Should().Be(AdminApiKeyPermission.AdminAccessLevel.Read);
+        AdminApiKeyPermission.HasApproveGrant(principal).Should().BeTrue();
+        AdminApiKeyPermission.IsAuthorized(principal, "PUT").Should().BeFalse();
+    }
+
+    [Fact]
     public void ResolveAccessLevel_NoPermissionClaimsButAdminRole_IsWrite()
     {
         // Bootstrap password / client certificate / dev-bypass: admin role, no
