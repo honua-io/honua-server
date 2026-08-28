@@ -4,6 +4,8 @@
 using System.Buffers;
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -111,6 +113,8 @@ internal sealed class PublishedOperationTool : IMcpTool
     {
         var readOnly = _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
         var destructive =
+            _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
+            ||
             _descriptor.Policy.SideEffectClass == OperationSideEffectClass.DestroysState
             || _descriptor.Policy.BlastRadiusClass == OperationBlastRadiusClass.DeploymentScope;
 
@@ -167,6 +171,31 @@ internal sealed class PublishedOperationTool : IMcpTool
 
         var parameters = ReadParameters(arguments);
         var dryRun = ReadBool(arguments, "dryRun");
+
+        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        {
+            var gate = httpContext.RequestServices.GetRequiredService<OperatorApprovalGate>();
+            var approval = gate.CheckApproval(principal, new OperatorAuthorizationRequest
+            {
+                ResourceType = OperatorResourceType.Catalog,
+                Operation = OperatorOperation.Publish
+            });
+            if (approval.IsRequired)
+            {
+                return McpToolHelpers.SuccessResult(
+                    new McpOperationToolOutput
+                    {
+                        Status = OperationHandleStatus.RequiresApproval.ToString(),
+                        RequiresApproval = true,
+                        Deterministic = IsDeterministic,
+                        OperationId = _descriptor.OperationId,
+                        ApprovalLane = approval.PolicyRef,
+                        Message = $"This operation requires approval (policy: {approval.PolicyRef})."
+                    },
+                    McpJsonContext.Default.McpOperationToolOutput);
+            }
+        }
+
         var cacheKey = IsCacheable && !dryRun
             ? IPublishedOperationCache.BuildKey(_descriptor.OperationId, _catalogVersion, parameters, context)
             : null;
@@ -314,10 +343,9 @@ internal sealed class PublishedOperationTool : IMcpTool
         };
     }
 
-    // Builds a JSON Schema object for the operation's parameters using a
-    // Utf8JsonWriter (reflection-free, AOT-safe). Operation parameters are
-    // string-valued on the wire (OperationRequest keeps them as strings), so each
-    // property is typed string with the descriptor's title as its description.
+    // Builds JSON Schema from the descriptor's AOT-safe constrained schema model.
+    // Invocation still normalizes values into OperationRequest strings, but discovery
+    // must advertise the canonical Admin API JSON types rather than a string-only fork.
     private static JsonElement BuildInputSchema(IReadOnlyList<OperationParameterDescriptor> parameters)
     {
         var buffer = new ArrayBufferWriter<byte>();
@@ -330,7 +358,7 @@ internal sealed class PublishedOperationTool : IMcpTool
             foreach (var parameter in parameters)
             {
                 writer.WriteStartObject(parameter.Name);
-                writer.WriteString("type", "string");
+                WriteSchema(writer, parameter.Schema);
                 if (!string.IsNullOrWhiteSpace(parameter.Title))
                 {
                     writer.WriteString("description", parameter.Title);
@@ -353,5 +381,42 @@ internal sealed class PublishedOperationTool : IMcpTool
 
         using var document = JsonDocument.Parse(buffer.WrittenMemory);
         return document.RootElement.Clone();
+    }
+
+    private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema)
+    {
+        writer.WriteString("type", schema.Type switch
+        {
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.WholeNumber => "integer",
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.DecimalNumber => "number",
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Flag => "boolean",
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.List => "array",
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Structured => "object",
+            _ => "string"
+        });
+        if (!string.IsNullOrWhiteSpace(schema.Format)) writer.WriteString("format", schema.Format);
+        if (schema.EnumValues.Count > 0)
+        {
+            writer.WriteStartArray("enum");
+            foreach (var value in schema.EnumValues) writer.WriteStringValue(value);
+            writer.WriteEndArray();
+        }
+        if (schema.Items is not null)
+        {
+            writer.WriteStartObject("items");
+            WriteSchema(writer, schema.Items);
+            writer.WriteEndObject();
+        }
+        if (schema.Properties.Count > 0)
+        {
+            writer.WriteStartObject("properties");
+            foreach (var property in schema.Properties)
+            {
+                writer.WriteStartObject(property.Key);
+                WriteSchema(writer, property.Value);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+        }
     }
 }

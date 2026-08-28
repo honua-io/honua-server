@@ -24,7 +24,8 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
         => Task.FromResult<IReadOnlyList<IOperationDescriptor>>(
         [
             ServicePublishOperation.BuildDescriptor(),
-            BuildAdminServerStatusDescriptor()
+            BuildAdminServerStatusDescriptor(),
+            .. AdminApiOperationCatalog.Descriptors
         ]);
 
     private static OperationDescriptor BuildAdminServerStatusDescriptor() => new()
