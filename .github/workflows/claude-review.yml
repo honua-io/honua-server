@@ -334,7 +334,17 @@ jobs:
             --model claude-opus-5 --max-turns ${{ steps.diff.outputs.max_turns }}
             --json-schema '{"type":"object","additionalProperties":false,"required":["verdict","findings"],"properties":{"verdict":{"type":"string","enum":["clean","findings"]},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["path","line","summary"],"properties":{"path":{"type":"string"},"line":{"type":"integer"},"summary":{"type":"string"}}}}}}'
             --allowedTools "Read,Grep,Glob,Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
+
           prompt: |
+            TOOL SURFACE — read this before planning any command.
+            Your only tools are Read, Grep, Glob, `gh pr comment`, and the inline-comment
+            MCP tool. Everything else is DENIED by the workflow, not by policy you can
+            argue with: no `python3`, no heredocs, no `cd`, no `Write`, no other `Bash`
+            form. A denied call still consumes a turn. Measured on 2026-08-27, 19 of 20
+            turn-budget exhaustions carried permission denials, one run losing 13 of its
+            41 turns that way — so a denied call is not free, it is how reviews run out
+            of budget before publishing evidence. Inspect files with Read and Grep.
+
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.target.outputs.pr }}
             HEAD SHA: ${{ steps.target.outputs.head }}
@@ -401,6 +411,13 @@ jobs:
         run: |
           set -euo pipefail
           out=/home/runner/work/_temp/claude-execution-output.json
+          # claude-code-action writes its transcript to a FIXED per-runner path, not a
+          # per-step one. The turn-budget fallback below is a second invocation of the
+          # same action, so it overwrites this file before the diagnostic steps and the
+          # artifact upload read it. Snapshot the reviewer's transcript now, while it is
+          # still the reviewer's, and have those steps read the snapshot.
+          snapshot=/home/runner/work/_temp/claude-review-transcript.json
+          if [ -f "${out}" ]; then cp "${out}" "${snapshot}"; fi
           echo "max_turns=false" >> "${GITHUB_OUTPUT}"
           if [ ! -f "${out}" ] || ! jq -e \
             '[.[] | select(.type == "result")] | last | .subtype == "error_max_turns"' \
@@ -437,6 +454,9 @@ jobs:
         if: failure() && steps.target.outputs.skip == 'false'
         run: |
           set -uo pipefail
+          # Read the snapshot taken before the turn-budget fallback ran, falling back to
+          # the live path when no snapshot exists (the reviewer failed before producing
+          # a result, so nothing overwrote anything).
           # The action reports EVERY failed run as "Claude did not return
           # structured_output", because its guard is
           # `isSuccess && structured_output`, where
@@ -445,7 +465,11 @@ jobs:
           # as a schema problem, naming the one thing that is demonstrably fine.
           # That message cost a full debugging session once (#3491); print what
           # actually happened instead.
-          out=/home/runner/work/_temp/claude-execution-output.json
+          # Prefer the snapshot taken before the turn-budget fallback overwrote the
+          # action's fixed transcript path; fall back to the live file when the
+          # reviewer failed before producing a result and nothing was overwritten.
+          out=/home/runner/work/_temp/claude-review-transcript.json
+          [ -f "${out}" ] || out=/home/runner/work/_temp/claude-execution-output.json
           if [ ! -f "${out}" ]; then
             echo "::warning::No claude-execution-output.json; the reviewer failed before producing a result."
             exit 0
@@ -461,7 +485,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: claude-review-execution-${{ steps.target.outputs.pr }}-${{ github.run_attempt }}
-          path: /home/runner/work/_temp/claude-execution-output.json
+          path: |
+            /home/runner/work/_temp/claude-review-transcript.json
+            /home/runner/work/_temp/claude-execution-output.json
           if-no-files-found: ignore
           retention-days: 7
 
