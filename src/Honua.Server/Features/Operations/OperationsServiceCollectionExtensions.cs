@@ -43,13 +43,10 @@ internal static class OperationsServiceCollectionExtensions
             services.AddHostedService<OperationRuntimeStartupValidator>();
             services.AddHostedService<PlannedProposalReconciler>();
         }
-        services.TryAddScoped<IOperationEnvelopeFactory>(sp =>
-            new OperationEnvelopeFactory(
-                sp.GetRequiredService<IOperationInstanceStore>(),
-                environment.IsDevelopment() || environment.IsEnvironment("Test")
-                    ? new VolatileOperationAuditLog()
-                    : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
-                sp.GetRequiredService<TimeProvider>()));
+        services.TryAddSingleton<IOperationEnvelopeFactory>(sp =>
+            new ScopedOperationEnvelopeFactory(
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                environment.IsDevelopment() || environment.IsEnvironment("Test")));
 
         // Grounding catalog: descriptor providers aggregated by the catalog.
         services.TryAddEnumerable(

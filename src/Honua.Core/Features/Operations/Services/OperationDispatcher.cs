@@ -264,7 +264,12 @@ public sealed class OperationDispatcher : IOperationInvoker
         }
         catch (OperationCanceledException)
         {
-            throw;
+            executed = envelope with
+            {
+                Status = OperationHandleStatus.Indeterminate,
+                UpdatedAt = _clock.GetUtcNow(),
+                Reason = "Actuation was canceled after it began; side effects may have committed.",
+            };
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

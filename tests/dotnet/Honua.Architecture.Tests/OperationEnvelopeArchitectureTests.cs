@@ -8,8 +8,12 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Server.Features.Operations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 using IOperationProposalStore = Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore;
 using IOperationGateway = Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway;
@@ -184,6 +188,29 @@ public sealed class OperationEnvelopeArchitectureTests
     }
 
     [ArchitectureTest]
+    public async Task ProductionStartup_WithDisabledCanonicalPolicy_FailsClosed()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOperationInstanceStore>(new RecordingStore());
+        services.AddSingleton<IOperationProposalStore>(new StubProposalStore());
+        services.AddSingleton<IAuditLog>(new DurableAuditLog());
+        services.AddSingleton<IOptions<OperationPolicyOptions>>(
+            Options.Create(new OperationPolicyOptions { Enabled = false }));
+        services.AddSingleton<IOperationPolicyDecisionPoint>(provider =>
+            new CanonicalOperationPolicyDecisionPoint(
+                provider.GetRequiredService<IOptions<OperationPolicyOptions>>(),
+                new BlockingGuardrailLadder()));
+        await using var provider = services.BuildServiceProvider();
+        var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+
+        Assert.Contains("Operations:Policy:Enabled=true", exception.Message, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
     public async Task ProductionStartup_WithoutExactlyOneActuator_FailsClosed()
     {
         var descriptor = Descriptor();
@@ -326,6 +353,26 @@ public sealed class OperationEnvelopeArchitectureTests
             OperationPolicyContext context,
             CancellationToken cancellationToken = default)
             => Task.FromResult(PolicyDecision.Allowed);
+    }
+
+    private sealed class BlockingGuardrailLadder : IGuardrailLadder
+    {
+        private static readonly GuardrailDecision Decision = new(
+            GuardrailTier.Blocked,
+            OperationClass.AdminConfigChange,
+            HonuaEdition.Community,
+            "architecture-test");
+
+        public GuardrailDecision Resolve(OperationClass operationClass, HonuaEdition edition) => Decision;
+
+        public GuardrailDecision Resolve(OperationClass operationClass) => Decision;
+
+        public GuardrailDecision Resolve(OperationClass operationClass, string? actionDiscriminator) => Decision;
+
+        public GuardrailDecision Resolve(
+            OperationClass operationClass,
+            string? actionDiscriminator,
+            HonuaEdition edition) => Decision;
     }
 
     private sealed class RecordingStore : IOperationInstanceStore
