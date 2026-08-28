@@ -24,6 +24,7 @@ public sealed class OperationDispatcher : IOperationInvoker
     private readonly IOperationApprovalBridge? _approvalBridge;
     private readonly IOperationInstanceStore _instanceStore;
     private readonly IAuditLog _auditLog;
+    private readonly IOperationEnvelopeFactory _envelopeFactory;
     private readonly TimeProvider _clock;
 
     /// <summary>
@@ -36,6 +37,7 @@ public sealed class OperationDispatcher : IOperationInvoker
     /// <param name="approvalBridge">Optional durable approval persistence seam.</param>
     /// <param name="instanceStore">Operation-instance store. Omit only in explicit tests.</param>
     /// <param name="auditLog">Audit sink. Omit only in explicit tests.</param>
+    /// <param name="envelopeFactory">Canonical durable acceptance factory. Omit only in explicit tests.</param>
     public OperationDispatcher(
         IOperationCatalog catalog,
         IEnumerable<IOperationExecutor> executors,
@@ -43,7 +45,8 @@ public sealed class OperationDispatcher : IOperationInvoker
         TimeProvider clock,
         IOperationApprovalBridge? approvalBridge = null,
         IOperationInstanceStore? instanceStore = null,
-        IAuditLog? auditLog = null)
+        IAuditLog? auditLog = null,
+        IOperationEnvelopeFactory? envelopeFactory = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -55,6 +58,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         _approvalBridge = approvalBridge;
         _instanceStore = instanceStore ?? new VolatileOperationInstanceStore();
         _auditLog = auditLog ?? new VolatileOperationAuditLog();
+        _envelopeFactory = envelopeFactory ?? new OperationEnvelopeFactory(_instanceStore, _auditLog, clock);
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
@@ -78,38 +82,31 @@ public sealed class OperationDispatcher : IOperationInvoker
         ArgumentNullException.ThrowIfNull(context);
 
         var createdAt = _clock.GetUtcNow();
-        var operationInstanceId = string.IsNullOrWhiteSpace(context.OperationInstanceId)
-            ? $"opinst-{Guid.NewGuid():N}"
-            : context.OperationInstanceId;
-        var correlationId = string.IsNullOrWhiteSpace(context.CorrelationId)
-            ? $"corr-{Guid.NewGuid():N}"
-            : context.CorrelationId;
-        var invocationContext = context with
-        {
-            OperationInstanceId = operationInstanceId,
-            CorrelationId = correlationId,
-        };
-
-        var envelope = new OperationHandle
-        {
-            OperationInstanceId = operationInstanceId,
-            OperationId = request.OperationId,
-            CorrelationId = correlationId,
-            Status = OperationHandleStatus.Accepted,
-            CreatedAt = createdAt,
-            UpdatedAt = createdAt,
-            AuthorizationOutcome = invocationContext.AuthorizationOutcome,
-        };
+        OperationHandle envelope;
+        var invocationContext = context;
 
         string? acceptanceAuditId;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
-            var existing = await _instanceStore.GetAsync(operationInstanceId, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(context.OperationInstanceId))
+            {
+                throw new InvalidOperationException("Approved replay requires the original canonical operation identity.");
+            }
+
+            var existing = await _instanceStore
+                .GetAsync(context.OperationInstanceId, cancellationToken)
+                .ConfigureAwait(false);
             if (existing is null || string.IsNullOrWhiteSpace(existing.AuditId))
             {
-                return envelope with
+                return new OperationHandle
                 {
+                    OperationInstanceId = context.OperationInstanceId,
+                    OperationId = request.OperationId,
+                    CorrelationId = string.IsNullOrWhiteSpace(context.CorrelationId)
+                        ? $"corr-{Guid.NewGuid():N}"
+                        : context.CorrelationId,
                     Status = OperationHandleStatus.Failed,
+                    CreatedAt = createdAt,
                     UpdatedAt = _clock.GetUtcNow(),
                     Reason = "Approved replay could not resolve the original durable operation instance.",
                 };
@@ -123,88 +120,34 @@ public sealed class OperationDispatcher : IOperationInvoker
                 AuthorizationOutcome = invocationContext.AuthorizationOutcome,
             };
             await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
+            invocationContext = context with
+            {
+                OperationInstanceId = envelope.OperationInstanceId,
+                CorrelationId = envelope.CorrelationId,
+            };
+            createdAt = envelope.CreatedAt;
         }
         else
         {
-            bool accepted;
-            try
+            envelope = await _envelopeFactory
+                .CreateAcceptedAsync(request.OperationId, context, cancellationToken)
+                .ConfigureAwait(false);
+            if (envelope.Status == OperationHandleStatus.Failed)
             {
-                accepted = await _instanceStore.TryCreateAsync(envelope, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                return envelope with
-                {
-                    Status = OperationHandleStatus.Failed,
-                    UpdatedAt = _clock.GetUtcNow(),
-                    Reason = $"The canonical operation instance could not be durably accepted ({ex.GetType().Name}).",
-                };
+                return envelope;
             }
 
-            if (!accepted)
+            invocationContext = context with
             {
-                return envelope with
-                {
-                    Status = OperationHandleStatus.Failed,
-                    UpdatedAt = _clock.GetUtcNow(),
-                    Reason = "The canonical operation instance could not be durably accepted.",
-                };
-            }
-
-            try
-            {
-                acceptanceAuditId = await WriteAuditAsync(
-                        envelope,
-                        invocationContext,
-                        "operation.accepted",
-                        AuditOutcome.Success,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                return await PersistFailureAsync(
-                        envelope,
-                        $"The operation was not accepted because durable audit persistence failed ({ex.GetType().Name}).",
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            if (string.IsNullOrWhiteSpace(acceptanceAuditId))
-            {
-                return await PersistFailureAsync(
-                        envelope,
-                        "The operation was not accepted because durable audit persistence did not return an identity.",
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            envelope = envelope with { AuditId = acceptanceAuditId, UpdatedAt = _clock.GetUtcNow() };
-            try
-            {
-                await _instanceStore.SetAsync(envelope, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                return envelope with
-                {
-                    Status = OperationHandleStatus.Failed,
-                    UpdatedAt = _clock.GetUtcNow(),
-                    Reason = $"The durable audit identity could not be joined to the operation instance ({ex.GetType().Name}).",
-                };
-            }
+                OperationInstanceId = envelope.OperationInstanceId,
+                CorrelationId = envelope.CorrelationId,
+            };
+            acceptanceAuditId = envelope.AuditId;
+            createdAt = envelope.CreatedAt;
         }
+
+        var operationInstanceId = envelope.OperationInstanceId;
+        var correlationId = envelope.CorrelationId;
 
         OperationDescriptor descriptor;
         IOperationExecutor executor;
@@ -279,7 +222,17 @@ public sealed class OperationDispatcher : IOperationInvoker
             {
                 var decided = await BuildDecisionHandleAsync(
                         descriptor,
-                        request,
+                        validation.ApprovalPlan is null || request.GatewayRequest is null
+                            ? request
+                            : request with
+                            {
+                                GatewayRequest = request.GatewayRequest with
+                                {
+                                    Plan = validation.ApprovalPlan,
+                                    ExecutionPayload = validation.ApprovalPlan.ExecutionPayload
+                                        ?? request.GatewayRequest.ExecutionPayload,
+                                },
+                            },
                         invocationContext,
                         decision,
                         createdAt,

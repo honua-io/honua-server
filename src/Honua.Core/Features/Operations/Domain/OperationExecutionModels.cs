@@ -132,6 +132,12 @@ public sealed record OperationValidation
     /// Human-readable diagnostic messages describing the plan or the problems found.
     /// </summary>
     public IReadOnlyList<string> Messages { get; init; } = [];
+
+    /// <summary>
+    /// Typed, validated approval plan produced from the accepted request. When policy requires
+    /// approval, this exact plan is persisted with the proposal and consumed during replay.
+    /// </summary>
+    public Honua.Core.Features.ControlPlane.Domain.OperationProposalPlan? ApprovalPlan { get; init; }
 }
 
 /// <summary>

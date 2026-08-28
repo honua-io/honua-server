@@ -12,6 +12,8 @@ using Honua.Server.Features.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using IOperationProposalStore = Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore;
+using IOperationGateway = Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway;
+using OperationGatewayRequest = Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest;
 
 namespace Honua.Architecture.Tests;
 
@@ -191,6 +193,7 @@ public sealed class OperationEnvelopeArchitectureTests
         services.AddSingleton<IOperationProposalStore>(new StubProposalStore());
         services.AddSingleton<IAuditLog>(new DurableAuditLog());
         services.AddSingleton<IOperationPolicyDecisionPoint>(new AllowPolicy());
+        services.AddSingleton<IOperationApprovalRequestMapper>(new TestMapper(descriptor.OperationId));
         services.AddSingleton<IOperationCatalog>(
             new OperationCatalog([new DescriptorProvider(descriptor)], TimeProvider.System));
         await using var provider = services.BuildServiceProvider();
@@ -200,6 +203,50 @@ public sealed class OperationEnvelopeArchitectureTests
             () => validator.StartAsync(CancellationToken.None));
 
         Assert.Contains("exactly one actuator", exception.Message, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public async Task ProductionStartup_ApprovalDescriptorWithoutMapper_FailsClosed()
+    {
+        var descriptor = Descriptor();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IOperationInstanceStore>(new RecordingStore());
+        services.AddSingleton<IOperationProposalStore>(new StubProposalStore());
+        services.AddSingleton<IAuditLog>(new DurableAuditLog());
+        services.AddSingleton<IOperationPolicyDecisionPoint>(new AllowPolicy());
+        services.AddSingleton<IOperationCatalog>(
+            new OperationCatalog([new DescriptorProvider(descriptor)], TimeProvider.System));
+        services.AddSingleton<IOperationExecutor>(new CountingExecutor(descriptor.OperationId));
+        await using var provider = services.BuildServiceProvider();
+        var validator = new OperationRuntimeStartupValidator(provider.GetRequiredService<IServiceScopeFactory>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => validator.StartAsync(CancellationToken.None));
+
+        Assert.Contains("safe approval mapper", exception.Message, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
+    public void GatewayApprovalApi_RequiresOperationInstanceIdentity()
+    {
+        var method = typeof(IOperationGateway).GetMethod(nameof(IOperationGateway.CreateApprovalProposalAsync));
+        Assert.NotNull(method);
+        var first = method!.GetParameters()[0];
+
+        Assert.Equal(typeof(string), first.ParameterType);
+        Assert.Equal("operationInstanceId", first.Name);
+        Assert.False(first.HasDefaultValue);
+    }
+
+    [ArchitectureTest]
+    public void CompatibilityDescriptorWithoutSafeMapper_IsNeverAdvertised()
+    {
+        var descriptor = Descriptor() with { IsCompatibilityOnly = true };
+
+        Assert.False(OperationDescriptorPublication.CanAdvertise(
+            descriptor,
+            new Dictionary<string, int>(StringComparer.Ordinal)));
     }
 
     [ArchitectureTest]
@@ -457,5 +504,20 @@ public sealed class OperationEnvelopeArchitectureTests
                 IsDurable = false,
                 Reason = "The durable proposal or audit sink is unavailable.",
             });
+    }
+
+    private sealed class TestMapper(string operationId) : IOperationApprovalRequestMapper
+    {
+        public string OperationId => operationId;
+
+        public OperationGatewayRequest Map(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            PolicyDecision decision)
+            => new() { Kind = OperationClass.ServicePublish };
+
+        public OperationRequest MapReplay(OperationGatewayRequest request)
+            => new() { OperationId = OperationId };
     }
 }

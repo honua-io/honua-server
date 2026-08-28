@@ -66,7 +66,7 @@ internal sealed partial class AdminOperationApprovalBridge(
             }
 
             var result = await gateway
-                .CreateApprovalProposalAsync(gatewayRequest, cancellationToken)
+                .CreateApprovalProposalAsync(context.OperationInstanceId, gatewayRequest, cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.Outcome != OperationGatewayOutcome.ProposalCreated ||
@@ -113,25 +113,4 @@ internal sealed partial class AdminOperationApprovalBridge(
             string operationId,
             Exception exception);
     }
-}
-
-/// <summary>
-/// Explicit compatibility mapper for a typed operation whose sealed request can be replayed by
-/// the durable proposal runtime. Remaining protocol-adapter conversion can remove these mappers.
-/// </summary>
-internal interface IOperationApprovalRequestMapper
-{
-    /// <summary>
-    /// Typed descriptor identity this mapper supports.
-    /// </summary>
-    string OperationId { get; }
-
-    /// <summary>
-    /// Maps a bounded typed request into the current durable gateway request.
-    /// </summary>
-    OperationGatewayRequest Map(
-        IOperationDescriptor descriptor,
-        OperationRequest request,
-        OperationPolicyContext context,
-        PolicyDecision decision);
 }

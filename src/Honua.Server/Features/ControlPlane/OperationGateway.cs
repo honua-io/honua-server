@@ -14,6 +14,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
 using ICanonicalOperationInvoker = Honua.Core.Features.Operations.Abstractions.IOperationInvoker;
+using IOperationApprovalRequestMapper = Honua.Core.Features.Operations.Abstractions.IOperationApprovalRequestMapper;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane;
@@ -161,10 +162,13 @@ internal sealed partial class OperationGateway : IOperationGateway
     }
 
     public async Task<OperationGatewayResult> CreateApprovalProposalAsync(
+        string operationInstanceId,
         OperationGatewayRequest request,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationInstanceId);
         ArgumentNullException.ThrowIfNull(request);
+        request = request with { OperationInstanceId = operationInstanceId };
 
         // The approval requirement was already decided by an upstream domain gate
         // (e.g. the geoprocessing destructive-plan gate), so we do NOT re-run the
@@ -218,10 +222,14 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var invoker = scope.ServiceProvider.GetRequiredService<ICanonicalOperationInvoker>();
+            var operationId = LegacyOperationIds.For(proposal.Kind);
+            var mapper = scope.ServiceProvider
+                .GetServices<IOperationApprovalRequestMapper>()
+                .SingleOrDefault(candidate => string.Equals(candidate.OperationId, operationId, StringComparison.Ordinal));
             var handle = await invoker.SubmitAsync(
-                    new OperationRequest
+                    mapper?.MapReplay(request) ?? new OperationRequest
                     {
-                        OperationId = LegacyOperationIds.For(proposal.Kind),
+                        OperationId = operationId,
                         GatewayRequest = request,
                     },
                     new OperationPolicyContext

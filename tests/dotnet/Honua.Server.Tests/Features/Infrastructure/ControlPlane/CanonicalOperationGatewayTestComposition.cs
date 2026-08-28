@@ -95,6 +95,8 @@ internal static class CanonicalOperationGatewayTestComposition
             }
 
             var result = await Gateway.CreateApprovalProposalAsync(
+                context.OperationInstanceId
+                    ?? throw new InvalidOperationException("Canonical test identity is unavailable."),
                 request.GatewayRequest with
                 {
                     OperationInstanceId = context.OperationInstanceId,

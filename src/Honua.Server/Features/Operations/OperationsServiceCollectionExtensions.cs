@@ -41,7 +41,15 @@ internal static class OperationsServiceCollectionExtensions
             services.TryAddSingleton<IOperationInstanceStore>(sp =>
                 new RedisOperationInstanceStore(sp.GetRequiredService<IConnectionMultiplexer>()));
             services.AddHostedService<OperationRuntimeStartupValidator>();
+            services.AddHostedService<PlannedProposalReconciler>();
         }
+        services.TryAddScoped<IOperationEnvelopeFactory>(sp =>
+            new OperationEnvelopeFactory(
+                sp.GetRequiredService<IOperationInstanceStore>(),
+                environment.IsDevelopment() || environment.IsEnvironment("Test")
+                    ? new VolatileOperationAuditLog()
+                    : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
+                sp.GetRequiredService<TimeProvider>()));
 
         // Grounding catalog: descriptor providers aggregated by the catalog.
         services.TryAddEnumerable(
@@ -52,7 +60,6 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>()));
 
         // Executors: concrete work, registered as an enumerable for the dispatcher.
-        services.TryAddScoped<ServicePublishExecutor>();
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
         services.TryAddEnumerable(
@@ -85,7 +92,8 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IOperationInstanceStore>(),
                 environment.IsDevelopment() || environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
-                    : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>()));
+                    : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
+                sp.GetRequiredService<IOperationEnvelopeFactory>()));
 
         return services;
     }

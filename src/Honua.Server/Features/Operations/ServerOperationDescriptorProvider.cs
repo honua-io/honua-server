@@ -49,6 +49,7 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
             Category = "control-plane",
             ExecutionKind = OperationExecutionKind.Job,
             ApprovalModel = OperationApprovalModel.OperatorGate,
+            IsCompatibilityOnly = true,
             Policy = new OperationPolicyMetadata
             {
                 BlastRadiusClass = OperationBlastRadiusClass.DeploymentScope,

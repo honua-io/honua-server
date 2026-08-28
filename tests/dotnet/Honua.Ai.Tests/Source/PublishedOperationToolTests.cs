@@ -477,7 +477,8 @@ public sealed class PublishedOperationToolTests
         var source = new PublishedOperationToolSource(
             Catalog(DeterministicReadOnlyDescriptor(), MutatingDescriptor(), ServicePublishDescriptor()),
             Options.Create(new McpPublishedOperationOptions { Enabled = true }),
-            NullLogger<PublishedOperationToolSource>.Instance);
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: [new TestApprovalMapper(MutatingOpId)]);
 
         var names = (await source.GetToolsAsync(CancellationToken.None)).Select(t => t.Name).ToArray();
 
@@ -492,7 +493,8 @@ public sealed class PublishedOperationToolTests
         var source = new PublishedOperationToolSource(
             Catalog(DeterministicReadOnlyDescriptor(), MutatingDescriptor()),
             Options.Create(new McpPublishedOperationOptions { Enabled = true, DeterministicOnly = true }),
-            NullLogger<PublishedOperationToolSource>.Instance);
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: [new TestApprovalMapper(MutatingOpId)]);
 
         var names = (await source.GetToolsAsync(CancellationToken.None)).Select(t => t.Name).ToArray();
 
@@ -768,6 +770,22 @@ public sealed class PublishedOperationToolTests
         public Task<OperationHandle> SubmitAsync(
             OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken = default)
             => Task.FromResult(handler(request, context));
+    }
+
+    private sealed class TestApprovalMapper(string operationId) : IOperationApprovalRequestMapper
+    {
+        public string OperationId => operationId;
+
+        public Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest Map(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            PolicyDecision decision)
+            => new() { Kind = Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange };
+
+        public OperationRequest MapReplay(
+            Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest request)
+            => new() { OperationId = OperationId };
     }
 
     private sealed class CountingInvoker(Func<OperationRequest, OperationHandle> handler) : IOperationInvoker
