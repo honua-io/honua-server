@@ -157,6 +157,15 @@ Issue work is claimed with a **lease, not a lock**:
 - An open PR carrying `Closes #N` / `Refs #N` supersedes the label as the
   claim; when the PR merges or closes, the issue is unclaimed again unless the
   PR closed it.
+- **Finishing is proven by the PR, never by a comment.** Do not stamp "done" —
+  a completion claim without a PR is exactly the reports-success-while-doing-
+  nothing failure this repo keeps finding. The open PR is the completion signal;
+  its merge is the proof.
+- **Honest stops are the one exception**: if you stop WITHOUT a PR (context
+  ceiling, unsafe half-state, blocked premise), comment
+  `released: <your-lane> <UTC timestamp> — <why, and what state you left>` so
+  the issue records the attempt immediately instead of after the 3-hour expiry.
+  A release stamp is courtesy; the lease expiry remains the guarantee.
 - Agents die without cleanup. That is expected, not exceptional — which is why
   there is no unlock step to forget, and why squatting on a stale claim is
   never an error. A dead lane costs the fleet a bounded wait, never a deadlock.
