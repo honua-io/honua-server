@@ -69,31 +69,166 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         var deploySnapshot = await _deployProbe.ProbeAsync(cancellationToken).ConfigureAwait(false);
         var gpQueue = await BuildGpQueueViewAsync(cancellationToken).ConfigureAwait(false);
         var healthMetrics = _metricsCollector.GetHealthMetrics();
-        var servingLatency = await BuildServingLatencyViewAsync(cancellationToken).ConfigureAwait(false);
+        var servingLatencyResult = await BuildServingLatencyViewAsync(cancellationToken).ConfigureAwait(false);
+        var servingLatency = servingLatencyResult.View;
+
+        var generatedAt = _timeProvider.GetUtcNow();
+        var alertDispatch = BuildAlertDispatchView();
+        var database = new OpsDatabaseView
+        {
+            ConnectionPoolUtilization = healthMetrics.HasDatabaseConnectionPoolUtilization
+                ? healthMetrics.DatabaseConnectionPoolUtilization
+                : null,
+            HasConnectionPoolData = healthMetrics.HasDatabaseConnectionPoolUtilization,
+            ActiveConnections = healthMetrics.ActiveConnections,
+            ConnectionAcquisitionTimeouts = healthMetrics.ConnectionAcquisitionTimeouts,
+            ConnectionAcquisitionFailures = healthMetrics.ConnectionAcquisitionFailures,
+            CacheHitRatio = healthMetrics.CacheHitRatio,
+            ErrorRate = healthMetrics.ErrorRate,
+        };
+
+        var sectionSources = new[]
+        {
+            EvidencePostureFactory.Complete(
+                EvidencePostureVocabulary.SourceIds.OpsHealthChecks,
+                EvidencePostureVocabulary.BackendKinds.InProcess,
+                "aspnet-health-checks",
+                generatedAt,
+                SectionValidity),
+            BuildServingLatencySource(servingLatencyResult, generatedAt),
+            gpQueue.Available
+                ? EvidencePostureFactory.Complete(
+                    EvidencePostureVocabulary.SourceIds.GpQueue,
+                    EvidencePostureVocabulary.BackendKinds.DurableStore,
+                    "execution-job-store",
+                    generatedAt,
+                    SectionValidity)
+                : EvidencePostureFactory.NotConfigured(
+                    EvidencePostureVocabulary.SourceIds.GpQueue,
+                    EvidencePostureVocabulary.BackendKinds.DurableStore,
+                    "execution-job-store"),
+            BuildAlertDispatchSource(alertDispatch),
+            EvidencePostureFactory.Complete(
+                EvidencePostureVocabulary.SourceIds.DeployRelease,
+                EvidencePostureVocabulary.BackendKinds.ConfigProjection,
+                "control-plane-options",
+                generatedAt,
+                ProjectionValidity),
+            database.HasConnectionPoolData
+                ? EvidencePostureFactory.Complete(
+                    EvidencePostureVocabulary.SourceIds.DatabaseCache,
+                    EvidencePostureVocabulary.BackendKinds.InProcess,
+                    "production-metrics",
+                    generatedAt,
+                    SectionValidity)
+                : EvidencePostureFactory.Unavailable(
+                    EvidencePostureVocabulary.SourceIds.DatabaseCache,
+                    EvidencePostureVocabulary.BackendKinds.InProcess,
+                    "production-metrics",
+                    EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
+                    maximumAge: SectionValidity),
+        };
+
+        // Validate the sections first so the documented top-level `honua_ops_health` source can
+        // summarize them truthfully: it is complete only when every section is individually
+        // actionable, and it publishes which section ids it actually covered.
+        var validatedSections = sectionSources
+            .Select(source => EvidencePostureFactory.Validate(source, generatedAt))
+            .ToArray();
+        var aggregate = EvidencePostureFactory.Aggregate(
+            EvidencePostureVocabulary.SourceIds.OpsHealth,
+            "ops-health-composer",
+            SectionValidity,
+            validatedSections);
 
         return new OpsHealthSnapshotResponse
         {
-            GeneratedAt = DateTimeOffset.UtcNow,
+            EvidencePosture = EvidencePostureFactory.Build(generatedAt, [aggregate, .. validatedSections]),
+            GeneratedAt = generatedAt,
             OverallStatus = healthReport.Status.ToString(),
             Health = BuildHealthView(healthReport),
             ServingLatency = servingLatency,
             Geoprocessing = gpQueue,
-            AlertDispatch = BuildAlertDispatchView(),
+            AlertDispatch = alertDispatch,
             Deploy = BuildDeployView(deploySnapshot),
-            Database = new OpsDatabaseView
-            {
-                ConnectionPoolUtilization = healthMetrics.HasDatabaseConnectionPoolUtilization
-                    ? healthMetrics.DatabaseConnectionPoolUtilization
-                    : null,
-                HasConnectionPoolData = healthMetrics.HasDatabaseConnectionPoolUtilization,
-                ActiveConnections = healthMetrics.ActiveConnections,
-                ConnectionAcquisitionTimeouts = healthMetrics.ConnectionAcquisitionTimeouts,
-                ConnectionAcquisitionFailures = healthMetrics.ConnectionAcquisitionFailures,
-                CacheHitRatio = healthMetrics.CacheHitRatio,
-                ErrorRate = healthMetrics.ErrorRate,
-            },
+            Database = database,
         };
     }
+
+    /// <summary>
+    /// Server-owned maximum observation age for the live in-process/durable sections. Clients read
+    /// this instead of inferring freshness from the response timestamp.
+    /// </summary>
+    private static readonly TimeSpan SectionValidity = TimeSpan.FromMinutes(2);
+
+    /// <summary>Server-owned maximum observation age for configuration-projected sections.</summary>
+    private static readonly TimeSpan ProjectionValidity = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Projects the serving-latency section. A cluster rollup that failed to read leaves this
+    /// replica reporting only its own samples, which is incomplete cluster coverage — never a
+    /// whole-cluster "complete" posture.
+    /// </summary>
+    private static EvidenceSourceEnvelope BuildServingLatencySource(
+        ServingLatencyReadResult result,
+        DateTimeOffset generatedAt)
+    {
+        var coverage = new EvidenceSourceCoverage
+        {
+            ObservedReplicaCount = result.View.ClusterReplicaCount ?? 1,
+            ExpectedReplicaCount = result.RollupDegraded ? null : result.View.ClusterReplicaCount ?? 1,
+        };
+
+        return result.RollupDegraded
+            ? EvidencePostureFactory.Partial(
+                EvidencePostureVocabulary.SourceIds.ServingLatency,
+                EvidencePostureVocabulary.BackendKinds.InProcess,
+                "honua-telemetry",
+                generatedAt,
+                SectionValidity,
+                EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage,
+                coverage)
+            : EvidencePostureFactory.Complete(
+                EvidencePostureVocabulary.SourceIds.ServingLatency,
+                EvidencePostureVocabulary.BackendKinds.InProcess,
+                "honua-telemetry",
+                generatedAt,
+                SectionValidity,
+                coverage);
+    }
+
+    /// <summary>
+    /// Projects the alert-dispatch section. An enabled dispatcher that has never completed a poll
+    /// has no heartbeat to report, so its observation time stays missing rather than being filled
+    /// in with the response time.
+    /// </summary>
+    private static EvidenceSourceEnvelope BuildAlertDispatchSource(OpsAlertDispatchView alertDispatch)
+    {
+        if (!alertDispatch.DispatcherEnabled)
+        {
+            return EvidencePostureFactory.NotConfigured(
+                EvidencePostureVocabulary.SourceIds.AlertDispatch,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                "alert-dispatch-store");
+        }
+
+        return alertDispatch.LastPollAt is { } lastPollAt
+            ? EvidencePostureFactory.Complete(
+                EvidencePostureVocabulary.SourceIds.AlertDispatch,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                "alert-dispatch-store",
+                lastPollAt,
+                SectionValidity)
+            : EvidencePostureFactory.Unavailable(
+                EvidencePostureVocabulary.SourceIds.AlertDispatch,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                "alert-dispatch-store",
+                EvidencePostureVocabulary.ReasonCodes.NeverSucceeded,
+                maximumAge: SectionValidity);
+    }
+
+    /// <summary>Serving-latency projection plus whether the cluster rollup read degraded.</summary>
+    private readonly record struct ServingLatencyReadResult(OpsServingLatencyView View, bool RollupDegraded);
 
     private static OpsHealthChecksView BuildHealthView(HealthReport report)
     {
@@ -120,7 +255,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
     // window is merged with peers' most-recent persisted rollup flushes so the snapshot reports whole-cluster
     // health, not just the instance that served the request (#2553). Fail-open: a rollup-store outage or a
     // missing store (non-Postgres) transparently degrades to the local-only view.
-    private async Task<OpsServingLatencyView> BuildServingLatencyViewAsync(CancellationToken cancellationToken)
+    private async Task<ServingLatencyReadResult> BuildServingLatencyViewAsync(CancellationToken cancellationToken)
     {
         var snapshot = HonuaTelemetry.GetServingLatencySnapshot();
 
@@ -144,6 +279,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
         }
 
         var clusterReplicaCount = 1;
+        var rollupDegraded = false;
         if (_rollupStore is not null)
         {
             try
@@ -176,8 +312,10 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Fail-open: report the responding instance only.
+                // Fail-open for the diagnostic view: report the responding instance only. The
+                // evidence envelope still records that cluster coverage is incomplete.
                 clusterReplicaCount = 1;
+                rollupDegraded = true;
             }
         }
 
@@ -200,12 +338,14 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             })
             .ToList();
 
-        return new OpsServingLatencyView
-        {
-            WindowSeconds = snapshot.WindowSeconds,
-            Protocols = protocols,
-            ClusterReplicaCount = clusterReplicaCount,
-        };
+        return new ServingLatencyReadResult(
+            new OpsServingLatencyView
+            {
+                WindowSeconds = snapshot.WindowSeconds,
+                Protocols = protocols,
+                ClusterReplicaCount = clusterReplicaCount,
+            },
+            rollupDegraded);
     }
 
     private async Task<OpsGpQueueView> BuildGpQueueViewAsync(CancellationToken cancellationToken)
