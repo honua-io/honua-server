@@ -47,8 +47,12 @@ internal sealed class McpPlatformOpsReader(
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
         var skew = PlatformReleaseSkewProjector.Build(_controlPlaneOptions.CurrentValue);
+        var observedAt = DateTimeOffset.UtcNow;
         var response = new DeployPreflightPlatformRelease
         {
+            EvidencePosture = EvidencePostureFactory.Build(observedAt,
+                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus,
+                    EvidencePostureVocabulary.BackendKinds.ConfigProjection, "control-plane-options", observedAt, TimeSpan.FromMinutes(5))),
             ReleaseVersion = skew.ReleaseVersion,
             ReleaseDeclared = skew.ReleaseDeclared,
             IsCoVersioned = skew.IsCoVersioned,
@@ -80,7 +84,8 @@ internal sealed class McpPlatformOpsReader(
                 Page = 1,
                 PageSize = 1,
                 TotalCount = 1,
-                HasMore = false
+                HasMore = false,
+                EvidencePosture = DeployControlEndpoints.BuildDeployOperationsPosture([operation.UpdatedAt], 1, 1, false),
             };
 
             return Serialize(response, DeployControlJsonContext.Default.DeployOperationListResponse);
@@ -101,7 +106,8 @@ internal sealed class McpPlatformOpsReader(
             Page = result.Page,
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
-            HasMore = result.HasMore
+            HasMore = result.HasMore,
+            EvidencePosture = DeployControlEndpoints.BuildDeployOperationsPosture(result.Items.Select(item => item.UpdatedAt), result.Page, result.PageSize, result.HasMore),
         };
 
         return Serialize(list, DeployControlJsonContext.Default.DeployOperationListResponse);
