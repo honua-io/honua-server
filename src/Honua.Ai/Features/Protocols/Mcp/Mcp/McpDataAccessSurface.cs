@@ -9,6 +9,9 @@ using Honua.Ai.Protocols.Mcp.Prompts;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Ai.Protocols.Mcp.Views;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -167,7 +170,7 @@ internal sealed class McpDataAccessSurface
             return request.Method switch
             {
                 "initialize" => HandleInitialize(httpContext, request),
-                "tools/list" => await ListToolsAsync(request, cancellationToken).ConfigureAwait(false),
+                "tools/list" => await ListToolsAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "tools/call" => await CallToolAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "resources/list" => ListResources(request),
                 "resources/templates/list" => ListResourceTemplates(request),
@@ -233,6 +236,27 @@ internal sealed class McpDataAccessSurface
         httpContext.Items[ElicitationCapabilityItemKey] =
             AdvertisesElicitation(parameters.Capabilities.Value);
 
+        // honua-server#3428: the SESSION leg of the workflow-view negotiation
+        // contract. A client that wants the bounded surface for the whole session
+        // sends initialize.params._meta["honua.io/workflow-view"]; the transport
+        // binds the negotiated name to the session it issues on success, exactly
+        // as it binds the elicitation capability above. An unknown or malformed
+        // name is rejected here rather than silently ignored, so a client never
+        // believes it narrowed discovery when it did not.
+        if (!McpWorkflowViewNegotiation.TryReadRequestedView(request.Params, out var requestedView, out var viewError))
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(viewError!));
+        }
+
+        if (requestedView is not null
+            && !McpWorkflowViewNegotiation.IsFullCatalog(requestedView)
+            && McpWorkflowViewCatalog.Find(requestedView) is null)
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(UnknownViewMessage(requestedView)));
+        }
+
+        httpContext.Items[McpWorkflowViewNegotiation.HttpContextItemKey] = requestedView;
+
         var negotiatedVersion = NegotiateProtocolVersion(parameters.ProtocolVersion);
         var result = new McpInitializeResult
         {
@@ -278,19 +302,58 @@ internal sealed class McpDataAccessSurface
     }
 
     private async Task<McpJsonRpcResponse> ListToolsAsync(
+        HttpContext httpContext,
         McpJsonRpcRequest request,
         CancellationToken cancellationToken)
     {
+        // Merge the static, registry-bound catalog with any runtime-published tools
+        // (#2483). Static tools always win on a name collision, and the dynamic set is
+        // empty unless a host composed a tool source, so default hosts are unchanged.
+        var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);
+
+        // honua-server#3428: resolve the effective workflow view from the explicit
+        // request / session / server-profile negotiation contract. Selecting a view
+        // can only NARROW discovery — it never grants authority and never removes
+        // the escape hatch: with no view selected (or the reserved `full` name) the
+        // complete paginated catalog is served exactly as before, parity counts
+        // untouched. Discovery is not authority: every tools/call still
+        // reauthenticates and reauthorizes on the existing call-time path,
+        // regardless of whether the tool was discovered through a view.
+        if (!McpWorkflowViewNegotiation.TryReadRequestedView(request.Params, out var requestView, out var viewError))
+        {
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(viewError!));
+        }
+
+        var effectiveView = McpWorkflowViewNegotiation.ResolveEffectiveView(
+            requestView,
+            SessionWorkflowView(httpContext),
+            ProfileDefaultWorkflowView(httpContext));
+
+        if (effectiveView is not null)
+        {
+            var definition = McpWorkflowViewCatalog.Find(effectiveView);
+            if (definition is null)
+            {
+                return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(UnknownViewMessage(effectiveView)));
+            }
+
+            var projection = McpWorkflowViewProjector.Project(
+                definition,
+                _tools.Values.Select(t => (t.Describe(), IsDynamic: false))
+                    .Concat(dynamicTools.Select(t => (t.Describe(), IsDynamic: true))));
+
+            return SuccessResponse(
+                request.Id,
+                McpWorkflowViewWire.BuildToolsListResult(projection),
+                WorkflowViewJsonContext.Default.McpWorkflowViewToolsListResult);
+        }
+
         if (!TryReadCursor(request, out var cursor, out var error))
         {
             return error;
         }
 
-        // Merge the static, registry-bound catalog with any runtime-published tools
-        // (#2483). Static tools always win on a name collision, and the dynamic set is
-        // empty unless a host composed a tool source, so default hosts are unchanged.
         var describes = _tools.Values.Select(t => t.Describe());
-        var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);
         if (dynamicTools.Count > 0)
         {
             describes = describes.Concat(dynamicTools.Select(t => t.Describe()));
@@ -313,6 +376,36 @@ internal sealed class McpDataAccessSurface
             return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
         }
     }
+
+    /// <summary>
+    /// Reads the view bound to the current session (negotiated at
+    /// <c>initialize</c>), which the transport rehydrates onto
+    /// <see cref="HttpContext.Items"/> for every request on that session.
+    /// </summary>
+    private static string? SessionWorkflowView(HttpContext httpContext) =>
+        httpContext.Items.TryGetValue(McpWorkflowViewNegotiation.HttpContextItemKey, out var value)
+            ? value as string
+            : null;
+
+    /// <summary>
+    /// Reads the server-profile default view
+    /// (<c>Mcp:WorkflowViews:DefaultView</c>). Resolved leniently so a lightweight
+    /// host that never bound the options behaves as if no default were configured.
+    /// </summary>
+    private static string? ProfileDefaultWorkflowView(HttpContext httpContext) =>
+        httpContext.RequestServices?
+            .GetService<IOptions<McpWorkflowViewOptions>>()?
+            .Value.DefaultView;
+
+    /// <summary>
+    /// The client-facing message for a view name this server does not publish. It
+    /// names the published views so a client can recover without keeping its own
+    /// inventory.
+    /// </summary>
+    private static string UnknownViewMessage(string requested) =>
+        $"Unknown workflow view '{requested}'. Published views: "
+        + string.Join(", ", McpWorkflowViewCatalog.Names)
+        + $". Omit the view (or use '{McpWorkflowViewNegotiation.FullCatalogViewName}') for the complete paginated catalog.";
 
     /// <summary>
     /// Resolves the runtime-published dynamic tools (#2483) from every registered
@@ -352,6 +445,26 @@ internal sealed class McpDataAccessSurface
         var tools = _tools.Values.ToList();
         tools.AddRange(await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false));
         return tools;
+    }
+
+    /// <summary>
+    /// Returns the exact merged tool catalog served by <c>tools/list</c>, flagged
+    /// with whether each entry came from a runtime tool source (#2483) rather than
+    /// the static, registry-bound roster. The server-authored workflow-view
+    /// projection (honua-server#3428) derives from this, so a view never owns a
+    /// catalog of its own; the flag also fixes the wire order so a runtime
+    /// publication appends to the tools array instead of re-sorting it.
+    /// </summary>
+    public async Task<IReadOnlyList<(IMcpTool Tool, bool IsDynamic)>> GetCatalogEntriesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var entries = _tools.Values.Select(static t => (Tool: t, IsDynamic: false)).ToList();
+        foreach (var tool in await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false))
+        {
+            entries.Add((tool, true));
+        }
+
+        return entries;
     }
 
     private async Task<IMcpTool?> ResolveDynamicToolAsync(string name, CancellationToken cancellationToken)
