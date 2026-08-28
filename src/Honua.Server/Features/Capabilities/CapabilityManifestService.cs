@@ -398,7 +398,9 @@ internal sealed class CapabilityManifestService(
             Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
             Capability("realtime.feature-streams", "realtime", context, entitlementKey: "streaming.feature-subscriptions"),
             Capability("alerts.geofence", "alerts", context, entitlementKey: "alerts.enter-exit", configured: alertOptionsValue.Enabled),
-            Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || batchBackends.Any(), requiresAuthentication: true),
+            // A compute backend is always registered, so `supported` alone over-claims: without
+            // the Redis-backed durable job store nothing can be submitted (honua-release#202).
+            Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || batchBackends.Any(), requiresAuthentication: true, requiresDurableJobStore: true),
             Capability("ai.spec-apply", "ai", context, entitlementKey: FeatureCatalog.AiSpecApplyKey),
             Capability("ai.grounding", "ai", context, entitlementKey: FeatureCatalog.AiGroundingKey),
             Capability("gitops.release-manifest", "gitops", context, configured: deployTargetCount > 0, policyCapability: "catalog.publish", requiresEnvironment: true),
@@ -475,7 +477,8 @@ internal sealed class CapabilityManifestService(
                 policyCapability: spec.PolicyCapability,
                 requiresAuthentication: spec.RequiresAuthentication,
                 requiresEnvironment: spec.RequiresEnvironment,
-                requiresWorkspace: spec.RequiresWorkspace));
+                requiresWorkspace: spec.RequiresWorkspace,
+                requiresDurableJobStore: spec.RequiresDurableJobStore));
         }
 
         return capabilities.ToArray();
@@ -517,7 +520,7 @@ internal sealed class CapabilityManifestService(
             },
             ["realtime.feature-streams"] = new() { EntitlementKey = "streaming.feature-subscriptions" },
             ["alerts.geofence"] = new() { EntitlementKey = "alerts.enter-exit", Configured = alertsConfigured },
-            ["jobs.runner"] = new() { Supported = jobsSupported, RequiresAuthentication = true },
+            ["jobs.runner"] = new() { Supported = jobsSupported, RequiresAuthentication = true, RequiresDurableJobStore = true },
             ["ai.spec-apply"] = new() { EntitlementKey = FeatureCatalog.AiSpecApplyKey },
             ["ai.grounding"] = new() { EntitlementKey = FeatureCatalog.AiGroundingKey },
             ["gitops.release-manifest"] = new()
@@ -578,7 +581,8 @@ internal sealed class CapabilityManifestService(
         string? policyCapability = null,
         bool requiresAuthentication = false,
         bool requiresEnvironment = false,
-        bool requiresWorkspace = false)
+        bool requiresWorkspace = false,
+        bool requiresDurableJobStore = false)
     {
         var available = true;
         string? reasonCode = null;
@@ -594,6 +598,19 @@ internal sealed class CapabilityManifestService(
         {
             available = false;
             reasonCode = CapabilityReasonCodes.DisabledByConfiguration;
+        }
+        // Checked ahead of the caller-scoped gates on purpose: an uncomposed substrate is a
+        // property of the deployment, not of who is asking, so an anonymous probe of a Redis-less
+        // install must read `dependency-unavailable` rather than `insufficient-policy`. The reason
+        // code follows the actual cause: an unentitled-but-present Redis is a licence problem, and
+        // reporting it as a missing dependency would send the operator to a fix that cannot work
+        // (honua-release#202).
+        else if (requiresDurableJobStore && !options.DurableJobRuntimeAvailable)
+        {
+            available = false;
+            reasonCode = options.DurableJobSubstrateCause == DurableJobSubstrateCause.RedisNotEntitled
+                ? CapabilityReasonCodes.LicenseRequired
+                : CapabilityReasonCodes.DependencyUnavailable;
         }
         else if (requiresEnvironment && !context.EnvironmentAvailable)
         {
@@ -759,7 +776,8 @@ internal sealed class CapabilityManifestService(
                 ConfiguredWorkloadCount = options.ControlPlane.ExecutionWorkloads.Count,
                 AvailableBackendCount = batchCapabilities.AvailableBackendCount,
                 SupportsCancellation = batchCapabilities.SupportsCancellation,
-                SupportsProgressPolling = batchCapabilities.SupportsProgressPolling
+                SupportsProgressPolling = batchCapabilities.SupportsProgressPolling,
+                DurableJobRuntimeAvailable = options.DurableJobRuntimeAvailable
             },
             Upload = new CapabilityManifestUploadLimits
             {
@@ -1058,6 +1076,12 @@ internal sealed class CapabilityManifestService(
         public bool RequiresEnvironment { get; init; }
 
         public bool RequiresWorkspace { get; init; }
+
+        /// <summary>
+        /// Whether the capability needs the Redis-backed durable job store that is only
+        /// composed when Redis is configured (honua-release#202).
+        /// </summary>
+        public bool RequiresDurableJobStore { get; init; }
     }
 
     private sealed record CapabilityPolicyContext(
@@ -1083,6 +1107,15 @@ internal static class CapabilityReasonCodes
     public const string InsufficientPolicy = "insufficient-policy";
     public const string EnvironmentUnavailable = "environment-unavailable";
     public const string WorkspaceScopeRequired = "workspace-scope-required";
+
+    /// <summary>
+    /// The capability is supported and configured, but an infrastructure dependency the install
+    /// never composed makes it unusable (honua-release#202). Today the only such dependency is
+    /// the Redis-backed durable job store behind <c>jobs.runner</c>: Redis is optional for a
+    /// local install, so its absence must read as an honest degraded posture, not as an
+    /// available capability whose every operation 503s.
+    /// </summary>
+    public const string DependencyUnavailable = Core.Features.Capabilities.CapabilityUnavailableCodes.ErrorCode;
 }
 
 internal static partial class CapabilityManifestLog

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -2047,7 +2048,10 @@ internal static class GPServerEndpoints
 
             GeoprocessingStoreUnavailableException storeEx =>
                 LogAndReturn(logger, operation, storeEx.Message,
-                    StandardErrorHelpers.CreateServiceUnavailable(context, storeEx.Message)),
+                    StandardErrorHelpers.CreateServiceUnavailable(
+                        context,
+                        storeEx.Message,
+                        additionalDetails: BuildCapabilityUnavailableDetails(storeEx))),
 
             GeoprocessingIdempotencyConflictException conflictEx =>
                 LogAndReturn(logger, operation, conflictEx.Message,
@@ -2076,6 +2080,40 @@ internal static class GPServerEndpoints
     {
         GPServerLog.RequestFailed(logger, operation, error);
         return result;
+    }
+
+    /// <summary>
+    /// Projects the capability-unavailable receipt (honua-release#202) onto the GeoServices
+    /// error envelope. The Esri error shape has no extension members, but its
+    /// <c>error.details[]</c> array already carries stable <c>Key: value</c> lines
+    /// (<c>CorrelationId:</c>, <c>Timestamp:</c>), so the machine-readable code, missing
+    /// dependency, capability id, and remediation ride the same convention rather than being
+    /// buried in prose. Returns <see langword="null"/> when the exception carries no receipt
+    /// (adapters reuse it for other unavailable upstreams).
+    /// </summary>
+    private static string[]? BuildCapabilityUnavailableDetails(
+        GeoprocessingStoreUnavailableException exception)
+    {
+        if (!exception.HasDependencyReceipt)
+        {
+            return null;
+        }
+
+        var details = new List<string>(5) { $"code: {exception.ErrorCode}" };
+        if (exception.MissingDependency is not null)
+        {
+            details.Add($"missingDependency: {exception.MissingDependency}");
+        }
+
+        if (exception.MissingEntitlement is not null)
+        {
+            details.Add($"missingEntitlement: {exception.MissingEntitlement}");
+        }
+
+        details.Add($"capability: {exception.CapabilityId}");
+        details.Add($"remediation: {exception.Remediation}");
+        details.Add($"remediationRef: {exception.RemediationRef}");
+        return [.. details];
     }
 
     /// <summary>

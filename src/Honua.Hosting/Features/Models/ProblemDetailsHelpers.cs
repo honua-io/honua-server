@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Validation.Contracts;
 
 namespace Honua.Infrastructure.Models;
@@ -111,6 +112,68 @@ internal static class ProblemDetailsHelpers
             problemDetails,
             ProblemJsonContext.Default.ProblemDetailsResponse,
             statusCode: statusCode,
+            contentType: ContentType);
+    }
+
+    /// <summary>
+    /// Creates the canonical <em>capability-unavailable</em> refusal (honua-release#202): an
+    /// RFC 7807 <c>503</c> that names the missing infrastructure dependency, the capability it
+    /// disables, and the remediation, as machine-readable extension members
+    /// (<c>code</c>/<c>capability</c>/<c>missingDependency</c>/<c>remediation</c>/<c>remediationRef</c>).
+    /// Use this instead of a bare 503 whenever a request is refused because a dependency was
+    /// never composed, so a terminal agent can branch on the receipt rather than the prose.
+    /// </summary>
+    /// <param name="context">Current request context.</param>
+    /// <param name="detail">Human-readable explanation of what is unavailable and why.</param>
+    /// <param name="missingDependency">
+    /// Identifier of the dependency that was not composed, or <see langword="null"/> when the
+    /// dependency is deployed and only the licence blocks it.
+    /// </param>
+    /// <param name="remediation">Operator-facing remediation sentence.</param>
+    /// <param name="remediationRef">Documentation reference for the remediation.</param>
+    /// <param name="capability">
+    /// Capability-manifest id the missing dependency disables, when one exists. Pass
+    /// <see langword="null"/> rather than an unrelated id when the manifest has no capability
+    /// covering the refused surface — a client that follows the id must not land on a claim that
+    /// contradicts the refusal.
+    /// </param>
+    /// <param name="errorCode">
+    /// Machine-readable code; defaults to <c>dependency-unavailable</c>. Pass
+    /// <c>license-required</c> when an entitlement, not a dependency, is what composed the
+    /// capability out.
+    /// </param>
+    /// <param name="missingEntitlement">Entitlement whose absence composed the capability out.</param>
+    /// <returns>A <c>503</c> problem result carrying the capability-unavailable receipt.</returns>
+    public static IResult CreateCapabilityUnavailableProblem(
+        HttpContext context,
+        string detail,
+        string? missingDependency,
+        string remediation,
+        string remediationRef,
+        string? capability = null,
+        string? errorCode = null,
+        string? missingEntitlement = null)
+    {
+        var problemDetails = CreateProblemDetails(
+            CapabilityUnavailableCodes.ProblemType,
+            StatusCodes.Status503ServiceUnavailable,
+            CapabilityUnavailableCodes.Title,
+            detail,
+            BuildInstance(context),
+            context) with
+        {
+            Code = errorCode ?? CapabilityUnavailableCodes.ErrorCode,
+            Capability = capability,
+            MissingDependency = missingDependency,
+            MissingEntitlement = missingEntitlement,
+            Remediation = remediation,
+            RemediationRef = remediationRef,
+        };
+
+        return Results.Json(
+            problemDetails,
+            ProblemJsonContext.Default.ProblemDetailsResponse,
+            statusCode: StatusCodes.Status503ServiceUnavailable,
             contentType: ContentType);
     }
 

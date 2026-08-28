@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Grpc.Core;
 using Grpc.Net.Client;
 using Grpc.Net.Client.Web;
@@ -131,7 +132,23 @@ public sealed class GrpcProcessServiceIntegrationTests : IAsyncLifetime
         }
         catch (RpcException ex) when (ex.StatusCode == StatusCode.Unavailable)
         {
-            // Redis not configured in test environment — expected
+            // Redis not configured in test environment — expected. honua-release#202 requires the
+            // refusal to be machine-readable on gRPC too: the receipt rides trailing metadata
+            // because gRPC has no problem+json extension members, so a client branches on the
+            // trailers rather than string-matching the status detail.
+            var trailers = ex.Trailers.ToDictionary(
+                entry => entry.Key,
+                entry => entry.Value,
+                StringComparer.OrdinalIgnoreCase);
+
+            trailers.Should().ContainKey("honua-error-code");
+            trailers["honua-error-code"].Should().Be(CapabilityUnavailableCodes.ErrorCode);
+            trailers.Should().ContainKey("honua-capability");
+            trailers["honua-capability"].Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
+            trailers.Should().ContainKey("honua-missing-dependency");
+            trailers["honua-missing-dependency"].Should().Be(CapabilityUnavailableCodes.RedisDependency);
+            trailers.Should().ContainKey("honua-remediation-ref");
+            trailers["honua-remediation-ref"].Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
         }
     }
 

@@ -10,6 +10,7 @@ using Honua.TestKit.Attributes;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.Geoprocessing;
 using NSubstitute;
 using Microsoft.AspNetCore.Hosting;
@@ -86,6 +87,54 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         xml.Should().Contain("<ows:Identifier>result</ows:Identifier>");
         xml.Should().Contain("<wps:ProcessOffering processVersion=\"1.0.0\"");
         xml.Should().Contain("<wps:Process>").And.NotContain("<wps:Process processVersion=");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "Execute")]
+    public async Task Execute_WithoutDurableJobStore_ProjectsCapabilityUnavailableReceiptIntoExceptionReport()
+    {
+        // honua-release#202: the WPS surface must carry the same machine-readable receipt as the
+        // other job surfaces on a Redis-less install. OWS constrains the exceptionCode vocabulary
+        // (and CITE checks it), so the code stays ServerBusy and the receipt rides additional
+        // ows:ExceptionText lines using the stable "key: value" convention.
+        var catalog = Substitute.For<IProcessCatalog>();
+        catalog.GetProcess("echo").Returns(new ProcessDefinition
+        {
+            ProcessId = "echo",
+            Title = "Echo",
+            Description = "Echoes a literal value.",
+            Category = "test",
+            Parameters = [new ProcessParameterSpec { Name = "value", DisplayName = "Value", Description = "Value to echo.", ValueType = ProcessParameterValueType.Text, Required = true }],
+            OutputArtifactKinds = []
+        });
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        jobs.SubmitJobAsync(Arg.Any<AnalysisPlan>(), Arg.Any<string?>(), Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<CancellationToken>())
+            .Returns<ExecutionJobRecord>(_ => throw new GeoprocessingStoreUnavailableException());
+
+        await using var fixture = new WebAppFixture().ReplaceService(catalog).ReplaceService(jobs);
+        await fixture.InitializeAsync();
+        const string body = "<wps:Execute service='WPS' version='2.0.0' xmlns:wps='http://www.opengis.net/wps/2.0' xmlns:ows='http://www.opengis.net/ows/2.0'><ows:Identifier>echo</ows:Identifier><wps:Input id='value'><wps:Data><wps:LiteralValue>aloha</wps:LiteralValue></wps:Data></wps:Input></wps:Execute>";
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/xml");
+        var response = await fixture.Client.PostAsync("/wps", content);
+        var xml = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, xml);
+
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        var document = XDocument.Parse(xml);
+        var exception = document.Descendants(ows + "Exception").Single();
+        exception.Attribute("exceptionCode")?.Value.Should().Be(
+            "ServerBusy",
+            "the OWS exception-code vocabulary is constrained and CITE checks it");
+
+        var texts = exception.Elements(ows + "ExceptionText").Select(element => element.Value).ToArray();
+        texts.Should().Contain($"code: {CapabilityUnavailableCodes.ErrorCode}");
+        texts.Should().Contain($"missingDependency: {CapabilityUnavailableCodes.RedisDependency}");
+        texts.Should().Contain($"capability: {CapabilityUnavailableCodes.DurableJobsCapability}");
+        texts.Should().Contain($"remediationRef: {CapabilityUnavailableCodes.RedisRemediationRef}");
     }
 
     [IntegrationTest]

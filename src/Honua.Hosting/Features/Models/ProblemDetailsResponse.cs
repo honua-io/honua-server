@@ -59,4 +59,37 @@ internal sealed record ProblemDetailsResponse
     /// Null/omitted for problem responses that do not set it.
     /// </summary>
     public string? Code { get; init; }
+
+    /// <summary>
+    /// Capability-manifest id this refusal disables (RFC 7807 extension member), for example
+    /// <c>jobs.runner</c>. Lets a client join the refusal to
+    /// <c>GET /api/v1/capabilities/manifest</c> without parsing prose (honua-release#202).
+    /// Null/omitted for problem responses that do not set it.
+    /// </summary>
+    public string? Capability { get; init; }
+
+    /// <summary>
+    /// Identifier of the infrastructure dependency that was not composed (RFC 7807 extension
+    /// member), for example <c>redis</c>. Null/omitted for problem responses that do not set it.
+    /// </summary>
+    public string? MissingDependency { get; init; }
+
+    /// <summary>
+    /// Identifier of the entitlement whose absence composed the capability out (RFC 7807
+    /// extension member), for example <c>caching.redis</c>. Present instead of
+    /// <see cref="MissingDependency"/> when the dependency is deployed but not licensed.
+    /// </summary>
+    public string? MissingEntitlement { get; init; }
+
+    /// <summary>
+    /// Operator-facing remediation sentence (RFC 7807 extension member) telling the caller what
+    /// to change to make the capability available. Null/omitted when no remediation is known.
+    /// </summary>
+    public string? Remediation { get; init; }
+
+    /// <summary>
+    /// Documentation reference for <see cref="Remediation"/> (RFC 7807 extension member).
+    /// Null/omitted when no reference is known.
+    /// </summary>
+    public string? RemediationRef { get; init; }
 }

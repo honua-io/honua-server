@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 
 namespace Honua.Geoprocessing;
 
@@ -175,17 +176,113 @@ internal sealed class GeoprocessingValidationException : Exception
 /// </summary>
 internal sealed class GeoprocessingStoreUnavailableException : Exception
 {
+    private GeoprocessingStoreUnavailableException(
+        string detail,
+        string errorCode,
+        string? missingDependency,
+        string? missingEntitlement,
+        string remediation,
+        string remediationRef)
+        : base(detail)
+    {
+        ErrorCode = errorCode;
+        MissingDependency = missingDependency;
+        MissingEntitlement = missingEntitlement;
+        CapabilityId = CapabilityUnavailableCodes.DurableJobsCapability;
+        Remediation = remediation;
+        RemediationRef = remediationRef;
+    }
+
+    /// <summary>
+    /// The default refusal: no Redis connection string, so nothing Redis-backed was composed.
+    /// </summary>
     public GeoprocessingStoreUnavailableException()
-        : base("Job operations require Redis-backed durable storage. " +
-               "Ensure a valid Redis connection is configured.")
-    { }
+        : this(
+            CapabilityUnavailableCodes.DurableJobStoreDetail,
+            CapabilityUnavailableCodes.ErrorCode,
+            CapabilityUnavailableCodes.RedisDependency,
+            missingEntitlement: null,
+            CapabilityUnavailableCodes.RedisRemediation,
+            CapabilityUnavailableCodes.RedisRemediationRef)
+    {
+    }
 
     /// <summary>
     /// Creates the exception with a custom message for adapters that surface
     /// other unavailable upstream dependencies (e.g. geocoding providers)
-    /// through the same retryable <c>unavailable</c> error channel.
+    /// through the same retryable <c>unavailable</c> error channel. Such callers
+    /// carry no dependency identifier, so the structured members stay null and
+    /// adapters fall back to the plain message.
     /// </summary>
     public GeoprocessingStoreUnavailableException(string message) : base(message) { }
+
+    /// <summary>
+    /// Builds the refusal whose receipt matches why the substrate is actually missing
+    /// (honua-release#202). Reporting "configure Redis" to a host that already runs Redis and
+    /// only lacks the entitlement is remediation that cannot work, so the cause is preserved.
+    /// </summary>
+    /// <param name="cause">The classified composition cause.</param>
+    /// <returns>An exception carrying the cause-specific receipt.</returns>
+    public static GeoprocessingStoreUnavailableException ForCause(DurableJobSubstrateCause cause)
+        => cause switch
+        {
+            DurableJobSubstrateCause.RedisNotEntitled => new GeoprocessingStoreUnavailableException(
+                CapabilityUnavailableCodes.UnentitledRedisDetail,
+                CapabilityUnavailableCodes.EntitlementErrorCode,
+                missingDependency: null,
+                CapabilityUnavailableCodes.RedisCacheEntitlement,
+                CapabilityUnavailableCodes.EntitlementRemediation,
+                CapabilityUnavailableCodes.EntitlementRemediationRef),
+
+            DurableJobSubstrateCause.RuntimeIncomplete => new GeoprocessingStoreUnavailableException(
+                CapabilityUnavailableCodes.RuntimeIncompleteDetail,
+                CapabilityUnavailableCodes.ErrorCode,
+                CapabilityUnavailableCodes.JobQueueDependency,
+                missingEntitlement: null,
+                CapabilityUnavailableCodes.RuntimeIncompleteRemediation,
+                CapabilityUnavailableCodes.RedisRemediationRef),
+
+            _ => new GeoprocessingStoreUnavailableException(),
+        };
+
+    /// <summary>
+    /// Machine-readable error code for this refusal: <c>dependency-unavailable</c> when a
+    /// dependency was never composed, <c>license-required</c> when the licence is what blocks it.
+    /// Null for the message-only reuse path.
+    /// </summary>
+    public string? ErrorCode { get; }
+
+    /// <summary>
+    /// Identifier of the infrastructure dependency that was not composed (for example
+    /// <c>redis</c>), or <see langword="null"/> when the refusal names no missing dependency —
+    /// notably the entitlement case, where Redis is present and nothing is missing but a licence.
+    /// </summary>
+    public string? MissingDependency { get; }
+
+    /// <summary>
+    /// Identifier of the entitlement whose absence composed the capability out (for example
+    /// <c>caching.redis</c>), or <see langword="null"/> when licensing is not the cause.
+    /// </summary>
+    public string? MissingEntitlement { get; }
+
+    /// <summary>
+    /// The capability-manifest capability id this refusal disables (for example
+    /// <c>jobs.runner</c>), so a client can join the refusal to
+    /// <c>GET /api/v1/capabilities/manifest</c>.
+    /// </summary>
+    public string? CapabilityId { get; }
+
+    /// <summary>Operator-facing remediation sentence, when one is known.</summary>
+    public string? Remediation { get; }
+
+    /// <summary>Documentation reference for the remediation, when one is known.</summary>
+    public string? RemediationRef { get; }
+
+    /// <summary>
+    /// Whether this instance carries the structured capability-unavailable receipt
+    /// (dependency + capability + remediation) rather than only a message.
+    /// </summary>
+    public bool HasDependencyReceipt => ErrorCode is not null;
 }
 
 /// <summary>
