@@ -499,3 +499,25 @@ test('the body builder refuses anything that would not attest', () => {
   assert.throws(() => buildCleanCommentBody('abc123'), /40-character/);
   assert.throws(() => buildCleanCommentBody(claudeHead, 'codex'), /no clean-comment template/);
 });
+
+test('hasOpenObjection is exposed and identity-scoped for inverted admission', () => {
+  // The merge train's inverted admission rule (fix-forward) no longer demands
+  // positive exact-head evidence, so a standing objection must be visible on
+  // its own rather than only through exactReview/exactCleanComment being false.
+  const objected = evaluateCodexEvidence({
+    reviews: [review('CHANGES_REQUESTED')], cleanComments: [], unresolvedCount: 0, head,
+  });
+  assert.equal(objected.hasOpenObjection, true);
+
+  // Withdrawn by the SAME identity -> cleared.
+  const withdrawn = evaluateCodexEvidence({
+    reviews: [review('CHANGES_REQUESTED'), review('COMMENTED', '2026-01-03T00:00:00Z')],
+    cleanComments: [], unresolvedCount: 0, head,
+  });
+  assert.equal(withdrawn.hasOpenObjection, false);
+
+  const clean = evaluateCodexEvidence({
+    reviews: [], cleanComments: [cleanComment()], unresolvedCount: 0, head,
+  });
+  assert.equal(clean.hasOpenObjection, false);
+});

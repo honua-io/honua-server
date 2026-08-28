@@ -325,8 +325,14 @@ train_refresh_review_gate() {
   local pr="$1" head="$2" snapshot="$3" unresolved clean_comments payload result state description
   local attesting_logins
   attesting_logins="$(train_attesting_logins_json)" || return 1
-  unresolved="$(jq --argjson bots "${attesting_logins}" --arg head "${head}" \
-    '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login as $l | $bots | index($l)) and .commit.oid == $head))] | length' <<<"${snapshot}")" || return 1
+  # Unresolved reviewer findings block admission wherever their comments sit.
+  # This filter was head-scoped (`and .commit.oid == $head`), which hid
+  # still-applicable findings anchored to earlier commits -- the exact weakness
+  # review-gate-evidence.js documents in its Copilot note (observed on #3197).
+  # Under inverted admission the unresolved count is the primary objection
+  # signal, so it must see every open finding, not just exact-head ones.
+  unresolved="$(jq --argjson bots "${attesting_logins}" \
+    '[.reviewThreads[]? | select(.isResolved == false and any(.comments.nodes[]?; (.author.login as $l | $bots | index($l))))] | length' <<<"${snapshot}")" || return 1
   clean_comments="$(train_resolve_clean_comment_commits "$(jq -c '.cleanComments // []' <<<"${snapshot}")" "${attesting_logins}")" || return 1
   # Keep review history off the process argument vector. Busy PRs can carry
   # enough paginated review evidence to exceed Linux ARG_MAX when injected
@@ -335,15 +341,69 @@ train_refresh_review_gate() {
     --argjson unresolvedCount "${unresolved}" --arg head "${head}" \
     '{reviews:(.[0].reviews // []),cleanComments:(.[1] // []),unresolvedCount:$unresolvedCount,head:$head}')" || return 1
   result="$(printf '%s' "${payload}" | node "${TRAIN_REVIEW_GATE_EVIDENCE_SCRIPT:-$(dirname "${BASH_SOURCE[0]}")/../review-gate-evidence.js}")" || return 1
-  if jq -e '.exactReview or .exactCleanComment' <<<"${result}" >/dev/null; then
-    state=success; description='Current exact-head Codex evidence is clean'
+  # INVERTED ADMISSION (fix-forward). The gate no longer demands a positive
+  # exact-head blessing before every land; it demands the ABSENCE OF OBJECTIONS.
+  # Rationale, measured 2026-08-27/28: requiring fresh positive attestation made
+  # reviewer trouble halt the whole repo -- a 9h and a 3h full stall, both traced
+  # to green heads waiting on a blessing from a lane that fails 59% of its runs
+  # at its turn cap and whose scheduled remediation never fired. Real findings
+  # still block hard (unresolved threads, standing negative reviews); a missing
+  # or stale review holds only for a bounded courtesy window while the train
+  # dispatches the review itself, then admission proceeds and review trails the
+  # merge. The batch CI before landing and the required exact-head PR Gate are
+  # unchanged.
+  local courtesy_min head_committed age_min
+  if (( unresolved > 0 )); then
+    state=failure
+    description="${unresolved} unresolved reviewer finding(s) block admission"
+  elif jq -e '.hasOpenObjection == true' <<<"${result}" >/dev/null; then
+    state=failure
+    description='Open reviewer objection (negative review not withdrawn by its own identity)'
+  elif jq -e '.exactReview or .exactCleanComment' <<<"${result}" >/dev/null; then
+    state=success
+    description='Current exact-head review evidence is clean'
   else
-    state=failure; description='No current clean exact-head Codex evidence'
+    courtesy_min="${TRAIN_REVIEW_COURTESY_MINUTES:-30}"
+    head_committed="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head}" \
+      --jq '.commit.committer.date' 2>/dev/null || true)"
+    if [[ -n "${head_committed}" ]]; then
+      age_min=$(( ( $(date -u +%s) - $(date -u -d "${head_committed}" +%s) ) / 60 ))
+    else
+      # Unknown age fails toward the hold, never toward admission.
+      age_min=-1
+    fi
+    if (( age_min < 0 || age_min < courtesy_min )); then
+      state=failure
+      description="No review at this head yet; courtesy hold (${age_min}/${courtesy_min}m) while the trailing review runs"
+      TRAIN_REVIEW_CATCHUP_NEEDED=1
+    else
+      state=success
+      description='No reviewer objections; review trails this merge (fix-forward admission)'
+    fi
   fi
+
+  # Feed ourselves: when admission is blocked only on a missing review, the
+  # train dispatches the bounded catch-up pass (#3562) instead of waiting for a
+  # schedule GitHub does not reliably fire (claude-review.yml has never had a
+  # schedule-event run; merge-train's own cron fires at ~a third of nominal).
+  # The pass carries its own per-head dedup and selection caps. One dispatch per
+  # controller run; failure is non-fatal -- the courtesy window simply expires.
+  if [[ "${state}" == "failure" && -n "${TRAIN_REVIEW_CATCHUP_NEEDED:-}" \
+        && -z "${TRAIN_REVIEW_CATCHUP_DISPATCHED:-}" && "${TRAIN_APPLY:-0}" == "1" ]]; then
+    TRAIN_REVIEW_CATCHUP_DISPATCHED=1
+    train_side_effect gh workflow run claude-review.yml \
+      --repo "${GITHUB_REPOSITORY}" --ref "${TRAIN_BASE_BRANCH:-trunk}" \
+      || train_warn "review catch-up dispatch failed; heads attest via schedule or manual request"
+  fi
+
   if [[ "${TRAIN_APPLY:-0}" == "1" ]]; then
     train_publish_review_gate_status "${pr}" "${head}" "${state}" "${description}" || return 1
   fi
-  [[ "${state}" == "success" ]]
+  if [[ "${state}" != "success" ]]; then
+    train_warn "review gate #${pr}: ${description}"
+    return 1
+  fi
+  return 0
 }
 
 train_snapshot_gate_success() {
@@ -370,7 +430,7 @@ train_pr_admission() {
   jq -e '(.labelsTruncated or .reviewsTruncated or .commentsTruncated or .reviewThreadsTruncated or .checksTruncated) | not' <<<"${snapshot}" >/dev/null || { train_warn "reject #${pr}: snapshot truncated"; return 1; }
   labels="$(jq -c '.labels // []' <<<"${snapshot}")"
   train_pr_has_hold_label "${labels}" && { train_warn "reject #${pr}: held/escalated"; return 1; }
-  train_refresh_review_gate "${pr}" "${expected_head}" "${snapshot}" || { train_warn "reject #${pr}: current Codex evidence is unavailable or negative"; return 1; }
+  train_refresh_review_gate "${pr}" "${expected_head}" "${snapshot}" || { train_warn "reject #${pr}: review admission refused (finding open, objection standing, or courtesy hold)"; return 1; }
   train_snapshot_gate_success "${snapshot}" "PR Gate" || { train_warn "reject #${pr}: PR Gate not successful on head"; return 1; }
   if [[ "${TRAIN_APPLY:-0}" != "1" ]]; then
     train_snapshot_gate_success "${snapshot}" "Review Gate" || { train_warn "reject #${pr}: Review Gate not successful on head"; return 1; }
