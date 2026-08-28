@@ -88,6 +88,14 @@ grep -Fq '.observation.base_sha == $base_sha' "${benchmark}"
 grep -Fq 'merge-base --is-ancestor' "${benchmark}"
 grep -Fq 'Make one non-blocking exact-artifact download attempt' "${benchmark}"
 grep -Fq 'try-server-test-prebuild.sh' "${benchmark}"
+grep -Fq 'vars.HONUA_SERVER_TEST_PREBUILD_CONSUME' .github/workflows/ci.yml
+grep -Fq -- '--prebuild-consume "${PREBUILD_CONSUME}"' .github/workflows/ci.yml
+grep -Fq 'HONUA_SERVER_TEST_PREBUILD_CONSUME=`${CONSUME_SWITCH:-unset}`' .github/workflows/ci.yml
+grep -Fq 'Fallback: `${REASON:-consumer_disabled}`' .github/workflows/ci.yml
+if grep -Fq 'HONUA_SERVER_TEST_ATTEMPT1_REUSE' .github/workflows/ci.yml; then
+  echo '::error::The retired default-on attempt-1 switch is still wired into live shards.' >&2
+  exit 1
+fi
 grep -Fq 'rounded_runner_minutes_including_prebuild' scripts/ci/summarize-server-test-prebuild-benchmark.py
 grep -Fq '  workflow_run:' "${parity}"
 grep -Fq 'workflows: [PR Gate]' "${parity}"
@@ -156,4 +164,4 @@ if grep -Fq '  pull_request_target:' "${observer}"; then
   exit 1
 fi
 
-echo 'server-test-prebuild=ok mode=read-only-shadow single-attempt-fallback'
+echo 'server-test-prebuild=ok mode=shadow-plus-var-gated-consumer single-attempt-fallback'

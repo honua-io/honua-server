@@ -27,8 +27,8 @@ usage() {
   cat >&2 <<'EOF'
 Usage:
   server-test-shard-cache.sh plan --shard NAME --project CSPROJ --matrix-json JSON --source-sha SHA --runner-os OS --sdk VERSION
-                                  [--run-id ID] [--run-attempt N] [--attempt1-reuse SWITCH]
-  server-test-shard-cache.sh restore --project CSPROJ --source-sha SHA --payload DIR --cache-hit true|false
+                                  [--run-id ID] [--run-attempt N] [--prebuild-consume SWITCH]
+  server-test-shard-cache.sh restore --project CSPROJ --source-sha SHA --payload DIR --cache-hit true|false [--read-mode MODE]
 EOF
 }
 
@@ -44,9 +44,10 @@ runner_os=""
 sdk=""
 payload=""
 cache_hit="false"
+read_mode=""
 run_attempt="1"
 run_id="${GITHUB_RUN_ID:-}"
-attempt1_reuse=""
+prebuild_consume=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,9 +59,10 @@ while [[ $# -gt 0 ]]; do
     --sdk) sdk="${2:-}"; shift 2 ;;
     --payload) payload="${2:-}"; shift 2 ;;
     --cache-hit) cache_hit="${2:-}"; shift 2 ;;
+    --read-mode) read_mode="${2:-}"; shift 2 ;;
     --run-attempt) run_attempt="${2:-}"; shift 2 ;;
     --run-id) run_id="${2:-}"; shift 2 ;;
-    --attempt1-reuse) attempt1_reuse="${2:-}"; shift 2 ;;
+    --prebuild-consume) prebuild_consume="${2:-}"; shift 2 ;;
     *) usage; exit 2 ;;
   esac
 done
@@ -135,17 +137,18 @@ case "${mode}" in
     # Attempt-1 opportunistic reuse (#3213). Contract, kill switch and fail-open
     # rules: docs/internal/ci/server-test-binary-artifacts.md.
     #
-    # The one switch rule lives here and nowhere else: reuse is ON unless the
-    # raw value is exactly `false`. The value is echoed back for the job summary,
+    # The one switch rule lives here and nowhere else: consume only when the raw
+    # value is exactly `true`. Absent is off, so promotion and rollback each
+    # change one repository variable. The value is echoed for the job summary,
     # sanitised so free text cannot forge extra output lines.
-    if [[ -z "${attempt1_reuse}" ]]; then
-      attempt1_switch="unset"
-    elif [[ "${attempt1_reuse}" =~ ^[A-Za-z0-9._-]{1,32}$ ]]; then
-      attempt1_switch="${attempt1_reuse}"
+    if [[ -z "${prebuild_consume}" ]]; then
+      consume_switch="unset"
+    elif [[ "${prebuild_consume}" =~ ^[A-Za-z0-9._-]{1,32}$ ]]; then
+      consume_switch="${prebuild_consume}"
     else
-      attempt1_switch="unprintable"
+      consume_switch="unprintable"
     fi
-    emit attempt1_switch "${attempt1_switch}"
+    emit consume_switch "${consume_switch}"
 
     if [[ "${run_scope}" == "local" ]]; then
       # Without a run identity the key is not run-scoped, so reading it could
@@ -155,10 +158,10 @@ case "${mode}" in
       # The kill switch governs ATTEMPT-1 reuse only. It must never withdraw the
       # pre-existing #2735 failed-rerun read, so this branch is checked first.
       restore_mode="rerun"
-    elif [[ "${attempt1_reuse}" == "false" ]]; then
-      restore_mode="disabled"
-    else
+    elif [[ "${prebuild_consume}" == "true" ]]; then
       restore_mode="opportunistic"
+    else
+      restore_mode="disabled"
     fi
     emit restore_mode "${restore_mode}"
     emit restore_enabled "$([[ "${restore_mode}" == "disabled" ]] && echo false || echo true)"
@@ -183,7 +186,11 @@ case "${mode}" in
     fi
     if [[ "${cache_hit}" != "true" ]]; then
       emit restored false
-      emit reason exact_cache_miss
+      if [[ "${read_mode}" == "disabled" ]]; then
+        emit reason consumer_disabled
+      else
+        emit reason exact_cache_miss
+      fi
       emit integrity_check_ms 0
       emit unpack_ms 0
       exit 0
