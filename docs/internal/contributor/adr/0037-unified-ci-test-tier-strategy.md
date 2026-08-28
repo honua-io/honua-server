@@ -272,12 +272,28 @@ file. There is no separate parity check because there is no second source
 of truth to drift from.
 
 In addition to selecting shards, the **PR Fast tier always runs** regardless
-of which shards are selected: `dotnet-foundation-tests` invokes
+of which shards are selected: the foundation lane invokes
 `dotnet test --filter "Tier=Fast"` against `Honua.Server.Tests` (alongside the
 unfiltered Core / LoadTests / Architecture projects whose contents are
 already Fast-tier). This honours the "Tier=Fast across all projects on every
 PR" contract and prevents a PR with no matching shard from skipping the fast
 server unit tests.
+
+Since #3567 that lane is not one job but four parallel FAMILIES —
+`.NET Foundation Tests (Core | Server | Protocols | Providers)`, job id
+`dotnet-foundation-family-tests` — fanned back in by `dotnet-foundation-tests`,
+which keeps the `.NET Foundation Tests` check name, merges every family's trx
+and cobertura output into the `foundation-test-results` / `foundation-coverage`
+artifacts, and performs the `foundation`-flagged Codecov upload. The
+family→project/filter mapping lives in `scripts/ci/run-foundation-family.sh`
+and is guarded offline by `scripts/ci/validate-foundation-families.sh` (run from
+`scripts/ci/validate-ci-router.sh`), which fails if the workflow matrix and the
+runner script disagree about the family set, if a claimed project does not
+exist, or if two families claim the same project. `test-all` requires both the
+matrix job and the fan-in job, so `CI Gate` cannot go green with a family
+un-run. Splitting was worth it because the lane was a serial ~39-minute
+critical path the merge train waited on; the families are the pre-split steps
+regrouped, not a change to which tests run.
 
 **Slow and Fast tests stay out of PR shards.** `scripts/ci/run-server-test-shard.sh`
 composes the matrix-supplied filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast` before

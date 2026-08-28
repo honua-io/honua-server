@@ -1406,4 +1406,7 @@ else
   echo "⚠️  Skipping shard filter/test-class coverage checks (no working Python 3: tried python3/python/py)"
 fi
 
+echo "Validating .NET Foundation Tests family split..."
+scripts/ci/validate-foundation-families.sh
+
 echo "CI router validation passed."
