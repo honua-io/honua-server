@@ -89,4 +89,28 @@ rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
 [[ "${DISPATCH_COUNT}" == 1 ]] || fail "catch-up re-dispatched within one controller run"
 printf 'PASS: %s\n' "finding-free head admits immediately; catch-up dispatched once"
 
+# 4. The trusted Review Gate publishes the same inverted-admission vocabulary
+#    and counts unresolved findings at any commit. These static guards exercise
+#    the inline github-script evaluator without weakening its trusted workflow.
+REVIEW_GATE_WORKFLOW="${TRAIN_DIR}/../../../.github/workflows/review-gate.yml"
+grep -Fq 'const { exactReview, exactCleanComment, hasOpenObjection }' "${REVIEW_GATE_WORKFLOW}" \
+  || fail "Review Gate does not consume hasOpenObjection"
+grep -Fq 'isAttestingReviewer(comment.author?.login, comment.author?.__typename)))' "${REVIEW_GATE_WORKFLOW}" \
+  || fail "Review Gate does not count unresolved findings at any commit"
+if grep -Fq 'comment.commit?.oid === head' "${REVIEW_GATE_WORKFLOW}"; then
+  fail "Review Gate still head-scopes unresolved findings"
+fi
+for description in \
+  'unresolved reviewer finding(s) block admission' \
+  'Open reviewer objection (negative review not withdrawn by its own identity)' \
+  'Current exact-head review evidence is clean' \
+  'No reviewer objections; review trails this merge (fix-forward admission)'; do
+  grep -Fq "${description}" "${REVIEW_GATE_WORKFLOW}" \
+    || fail "Review Gate is missing status description: ${description}"
+done
+if grep -Fq 'no exact-head review evidence from an attesting reviewer' "${REVIEW_GATE_WORKFLOW}"; then
+  fail "Review Gate still fails finding-free unreviewed heads"
+fi
+printf 'PASS: %s\n' "trusted Review Gate matches inverted admission vocabulary"
+
 printf 'ALL PASS\n'
