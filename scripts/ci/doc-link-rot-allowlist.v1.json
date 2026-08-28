@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "description": "Pre-existing broken heading anchors inside docs/**/*.md, recorded so the link/anchor gate can be strict about everything else. scripts/ci/check-doc-links.py reports each of these as a warning instead of an error. The list is a ratchet, not a parking lot: an entry that no longer matches a real break is an ERROR, so it can only shrink. Do not add to it — fix the link instead.",
+  "issue": "https://github.com/honua-io/honua-server/issues/3592",
+  "inventoriedOn": "2026-08-28",
+  "totals": {
+    "entries": 14,
+    "missingFiles": 0,
+    "brokenAnchors": 14,
+    "byArea": {
+      "docs/archive": 3,
+      "docs/internal": 8,
+      "docs/developer": 1,
+      "docs/gis": 1,
+      "docs/guides": 1
+    }
+  },
+  "entries": [
+    {
+      "source": "docs/archive/developer/AI_OPERATOR_CONTRACT.md",
+      "target": "../../guides/connect/ai-agents-mcp.md#operator-surface",
+      "reason": "Archived contract; the heading it names never existed in the rewritten MCP guide. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
+    },
+    {
+      "source": "docs/archive/developer/AI_OPERATOR_CONTRACT.md",
+      "target": "../../guides/connect/ai-agents-mcp.md#resources-1",
+      "reason": "Archived contract; duplicate-heading suffix from the pre-restructure page. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
+    },
+    {
+      "source": "docs/archive/developer/AI_OPERATOR_CONTRACT.md",
+      "target": "../../guides/connect/ai-agents-mcp.md#tools-1",
+      "reason": "Archived contract; duplicate-heading suffix from the pre-restructure page. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
+    },
+    {
+      "source": "docs/developer/api-specs/README.md",
+      "target": "../../guides/query-analyze/query-features.md#vector-tiles-mvt",
+      "reason": "Heading renamed during the workflow-first restructure."
+    },
+    {
+      "source": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
+      "target": "#evidence-envelope-schema",
+      "reason": "Same-file anchor pointing at a section that was never written."
+    },
+    {
+      "source": "docs/guides/query-analyze/automate-workflows.md",
+      "target": "../deploy/backup-and-restore.md#workflow-orchestration",
+      "reason": "Only customer-facing entry in this inventory. backup-and-restore.md has no workflow-orchestration section; the nearest live content is its Redis durable-job loss contract."
+    },
+    {
+      "source": "docs/internal/admin-api/analysis-content.md",
+      "target": "../../reference/admin-api/overview.md#analysis-report-endpoints",
+      "reason": "Console-pending contract; the overview never grew the named section."
+    },
+    {
+      "source": "docs/internal/admin-api/scene-dataset-registry.md",
+      "target": "../../guides/publish/publish-3d-scenes.md#browser-safe-access-via-signed-envelope",
+      "reason": "Heading dropped when publish-3d-scenes.md was rewritten."
+    },
+    {
+      "source": "docs/internal/contributor/RELEASE_CHECKLIST.md",
+      "target": "../../concepts/ecosystem.md#machine-readable-ci-manifest",
+      "reason": "Heading dropped when concepts/ecosystem.md was rewritten."
+    },
+    {
+      "source": "docs/internal/contributor/architecture/metadata-v2-extensions.md",
+      "target": "../adr/0040-metadata-v2-canonical-graph.md#promote-l2--l1-criteria",
+      "reason": "ADR heading renamed; the slug's double hyphen comes from the stripped arrow."
+    },
+    {
+      "source": "docs/internal/demo/nvidia-construction.md",
+      "target": "../../guides/publish/publish-3d-scenes.md#demo-fixture-nvidia-construction-site-899",
+      "reason": "Demo fixture section removed from the public guide."
+    },
+    {
+      "source": "docs/internal/developer/GROUNDING.md",
+      "target": "../../guides/connect/ai-agents-mcp.md#payload-notes",
+      "reason": "Heading dropped in the MCP guide rewrite. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
+    },
+    {
+      "source": "docs/internal/features/README.md",
+      "target": "../../guides/secure/authentication.md#authentication",
+      "reason": "Points at the page's H1-derived slug, which GitHub does not emit for the title heading of that page."
+    },
+    {
+      "source": "docs/internal/spikes/point-cloud-reality-capture-ingest.md",
+      "target": "../../guides/publish/publish-3d-scenes.md#mime-types",
+      "reason": "Heading dropped when publish-3d-scenes.md was rewritten."
+    }
+  ]
+}

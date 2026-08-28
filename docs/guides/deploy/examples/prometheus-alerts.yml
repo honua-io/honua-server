@@ -1,5 +1,11 @@
 # Reference Prometheus alerting rules for Honua server production monitoring.
 # Use this as a standalone example; the bundled self-hosted stack uses docker/monitoring/prometheus/alerts.yml.
+#
+# Every runbook_url below is registered in scripts/ci/code-referenced-anchors.v1.json and gated by
+# scripts/ci/check-doc-links.py, so a renamed heading fails CI instead of paging someone to a 404.
+# They previously pointed at docs.honua.io/operations/runbook#..., a page this repository has never
+# had. Four are deliberately fragment-less: the runbook section they need does not exist yet, and
+# pointing at a page beats inventing an anchor. Those gaps are tracked in honua-server#3592.
 
 groups:
   - name: honua.server.alerts
@@ -14,7 +20,7 @@ groups:
         annotations:
           summary: "Honua database connection pool utilization is high"
           description: "Database connection pool utilization is {{ $value | humanizePercentage }} for more than 5 minutes"
-          runbook_url: "https://docs.honua.io/operations/runbook#database-connection-issues"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#database-connections"
 
       - alert: HonuaDbPoolUtilizationCritical
         expr: honua_db_pool_utilization_ratio > 0.95
@@ -25,7 +31,7 @@ groups:
         annotations:
           summary: "Honua database connection pool nearly exhausted"
           description: "Database connection pool utilization is {{ $value | humanizePercentage }} - immediate action required"
-          runbook_url: "https://docs.honua.io/operations/runbook#database-connection-issues"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#database-connections"
 
       - alert: HonuaDbConnectionFailures
         expr: increase(honua_db_connection_acquisition_failures_total[5m]) > 0
@@ -36,7 +42,7 @@ groups:
         annotations:
           summary: "Honua database connection acquisition failures detected"
           description: "{{ $value }} database connection failures in the last 5 minutes"
-          runbook_url: "https://docs.honua.io/operations/runbook#database-connection-issues"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#database-connections"
 
       # Cache Performance Alerts
       - alert: HonuaCacheHitRatioLow
@@ -48,7 +54,7 @@ groups:
         annotations:
           summary: "Honua cache hit ratio is low"
           description: "Cache hit ratio is {{ $value | humanizePercentage }} for more than 10 minutes"
-          runbook_url: "https://docs.honua.io/operations/runbook#cache-performance-problems"
+          runbook_url: "https://docs.honua.io/guides/deploy/scaling-and-performance#caching-layers"
 
       - alert: HonuaCacheHitRatioCritical
         expr: honua_cache_hit_ratio < 0.5
@@ -59,7 +65,7 @@ groups:
         annotations:
           summary: "Honua cache hit ratio is critically low"
           description: "Cache hit ratio is {{ $value | humanizePercentage }} - performance severely impacted"
-          runbook_url: "https://docs.honua.io/operations/runbook#cache-performance-problems"
+          runbook_url: "https://docs.honua.io/guides/deploy/scaling-and-performance#caching-layers"
 
       # Memory and Performance Alerts
       - alert: HonuaMemoryUsageHigh
@@ -71,7 +77,7 @@ groups:
         annotations:
           summary: "Honua server memory usage is high"
           description: "Memory usage is {{ $value | humanizeBytes }} for more than 10 minutes"
-          runbook_url: "https://docs.honua.io/operations/runbook#memory-and-gc-issues"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#memory-and-performance"
 
       - alert: HonuaMemoryUsageCritical
         expr: honua_memory_usage_bytes > 2e9  # 2GB
@@ -82,7 +88,7 @@ groups:
         annotations:
           summary: "Honua server memory usage is critical"
           description: "Memory usage is {{ $value | humanizeBytes }} - potential OOM risk"
-          runbook_url: "https://docs.honua.io/operations/runbook#memory-and-gc-issues"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#memory-and-performance"
 
       # Query Performance Alerts
       #
@@ -99,7 +105,7 @@ groups:
         annotations:
           summary: "Honua query latency is high"
           description: "95th percentile query latency is {{ $value }}ms for more than 5 minutes"
-          runbook_url: "https://docs.honua.io/operations/runbook#general-troubleshooting"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#memory-and-performance"
 
       - alert: HonuaQueryLatencyCritical
         expr: histogram_quantile(0.95, sum(rate(honua_database_query_duration_ms_bucket[5m])) by (le)) > 5000
@@ -110,7 +116,7 @@ groups:
         annotations:
           summary: "Honua query latency is critical"
           description: "95th percentile query latency is {{ $value }}ms - severe performance degradation"
-          runbook_url: "https://docs.honua.io/operations/runbook#general-troubleshooting"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#memory-and-performance"
 
       # Error Rate Alerts
       #
@@ -127,7 +133,7 @@ groups:
         annotations:
           summary: "Honua error rate is elevated"
           description: "Error rate is {{ $value | humanizePercentage }} for more than 5 minutes"
-          runbook_url: "https://docs.honua.io/operations/runbook#general-troubleshooting"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#quick-triage"
 
       - alert: HonuaErrorRateCritical
         expr: rate(honua_request_error_total[5m]) / rate(honua_serving_request_duration_ms_count[5m]) > 0.05
@@ -138,7 +144,7 @@ groups:
         annotations:
           summary: "Honua error rate is critical"
           description: "Error rate is {{ $value | humanizePercentage }} - immediate investigation required"
-          runbook_url: "https://docs.honua.io/operations/runbook#general-troubleshooting"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#quick-triage"
 
       # Rate Limiting Alerts
       #
@@ -156,7 +162,7 @@ groups:
         annotations:
           summary: "High rate limiting violations detected"
           description: "{{ $value }} rate limit violations in the last 5 minutes"
-          runbook_url: "https://docs.honua.io/operations/runbook#rate-limiting-violations"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting"
 
       # File Upload Queue Alerts
       - alert: HonuaUploadQueueDepthHigh
@@ -168,7 +174,7 @@ groups:
         annotations:
           summary: "Upload queue depth is high"
           description: "Upload queue depth is {{ $value }} for more than 5 minutes"
-          runbook_url: "https://docs.honua.io/operations/runbook#file-upload-problems"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#imports"
 
       - alert: HonuaUploadQueueFull
         expr: honua_upload_queue_depth >= 20  # Assuming max queue depth is 20
@@ -179,7 +185,7 @@ groups:
         annotations:
           summary: "Upload queue is full"
           description: "Upload queue is at maximum capacity - uploads will be rejected"
-          runbook_url: "https://docs.honua.io/operations/runbook#file-upload-problems"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#imports"
 
       # Service Health Alert
       - alert: HonuaServiceDown
@@ -191,7 +197,7 @@ groups:
         annotations:
           summary: "Honua server is down"
           description: "Honua server instance {{ $labels.instance }} has been down for more than 1 minute"
-          runbook_url: "https://docs.honua.io/operations/runbook#emergency-procedures"
+          runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#quick-triage"
 
       # Circuit Breaker Alerts (based on log analysis or custom metrics)
       #
@@ -207,7 +213,7 @@ groups:
         annotations:
           summary: "Circuit breaker opened for external service"
           description: "Circuit breaker for {{ $labels.service }} has opened - external integration degraded"
-          runbook_url: "https://docs.honua.io/operations/runbook#circuit-breaker-incidents"
+          runbook_url: "https://docs.honua.io/guides/deploy/scaling-and-performance#outbound-http-resilience"
 
   # Redis-specific alerts (if using Redis for caching)
   - name: honua.redis.alerts
@@ -221,7 +227,7 @@ groups:
         annotations:
           summary: "Redis is down"
           description: "Redis instance is down - cache functionality impacted"
-          runbook_url: "https://docs.honua.io/operations/runbook#cache-performance-problems"
+          runbook_url: "https://docs.honua.io/guides/deploy/scaling-and-performance#what-needs-redis-when-multi-node"
 
       - alert: RedisMemoryHigh
         expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
@@ -232,7 +238,7 @@ groups:
         annotations:
           summary: "Redis memory usage is high"
           description: "Redis memory usage is {{ $value | humanizePercentage }}"
-          runbook_url: "https://docs.honua.io/operations/runbook#cache-performance-problems"
+          runbook_url: "https://docs.honua.io/guides/deploy/scaling-and-performance"
 
       - alert: RedisLatencyHigh
         expr: redis_latency_percentiles_usec{quantile="0.99"} > 10000
@@ -243,4 +249,4 @@ groups:
         annotations:
           summary: "Redis latency is high"
           description: "99th percentile Redis latency is {{ $value }}μs"
-          runbook_url: "https://docs.honua.io/operations/runbook#cache-performance-problems"
+          runbook_url: "https://docs.honua.io/guides/deploy/scaling-and-performance"
