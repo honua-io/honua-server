@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 ACTION = ROOT / ".github" / "actions" / "lean-gate" / "action.yml"
 SCOPE_SCRIPT = ROOT / "scripts" / "ci" / "compute-lean-gate-build-scope.sh"
+FORMAT_SCOPE_SCRIPT = ROOT / "scripts" / "ci" / "compute-lean-gate-format-scope.sh"
 PR_GATE = ROOT / ".github" / "workflows" / "pr-gate.yml"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 TEXT = ACTION.read_text(encoding="utf-8")
@@ -83,6 +84,41 @@ require(
     "compute the build scope with the shared script",
 )
 
+# ---------------------------------------------------------------------------
+# Affected-scope FORMAT contract. The format check keeps the Honua.sln
+# workspace in every mode; 'affected' only adds --include over the diff's
+# surviving formattable files. The silent-violation shapes here: a scoped run
+# that drops --verify-no-changes or --no-restore weakens the gate without
+# failing, a new caller inheriting 'affected' by default would narrow a gate
+# it never asked to narrow, and an 'affected' mode without a non-empty include
+# list must fail loudly rather than quietly formatting nothing.
+# ---------------------------------------------------------------------------
+
+require(
+    r"^\s{2}format-scope:\s*$",
+    "expose a `format-scope` input",
+)
+require(
+    r"format-scope:.*?\n(?:.*\n)*?\s+default: 'full'",
+    "default `format-scope` to full so a new caller cannot silently narrow "
+    "the format check",
+)
+require(
+    r"run: scripts/ci/compute-lean-gate-format-scope\.sh",
+    "compute the format scope with the shared script",
+)
+require(
+    r"dotnet format Honua\.sln --verify-no-changes --no-restore --verbosity diagnostic \\\s+"
+    r"--include \"\$\{include_paths\[@\]\}\"",
+    "run the scoped format check over the same solution workspace with the "
+    "same --verify-no-changes/--no-restore contract as the full run",
+)
+require(
+    r"include list is missing or empty",
+    "fail loudly when format scope says 'affected' without a non-empty "
+    "include list",
+)
+
 if not SCOPE_SCRIPT.is_file():
     raise AssertionError(f"lean gate must ship {SCOPE_SCRIPT.relative_to(ROOT)}")
 SCOPE_TEXT = SCOPE_SCRIPT.read_text(encoding="utf-8")
@@ -122,6 +158,11 @@ require(
     text=PR_GATE_TEXT,
 )
 require(
+    r"uses: \./\.github/actions/lean-gate\n(?:.*\n)*?\s+format-scope: affected",
+    "have pr-gate.yml pass format-scope: affected",
+    text=PR_GATE_TEXT,
+)
+require(
     r"uses: actions/checkout@[^\n]+\n\s+with:\n\s+fetch-depth: 2",
     "have pr-gate.yml check out with fetch-depth 2 so the merge ref's base "
     "parent exists locally",
@@ -135,6 +176,12 @@ require(
     "backstop for the per-PR narrowing",
     text=CI_TEXT,
 )
+require(
+    r"uses: \./\.github/actions/lean-gate\n(?:.*\n)*?\s+format-scope: full",
+    "have ci.yml's Merge Queue Gate keep format-scope: full as the "
+    "full-solution backstop for the per-PR --include narrowing",
+    text=CI_TEXT,
+)
 
 # ---------------------------------------------------------------------------
 # Behavioural smoke for the scope script's fail-safe directions. Both scripts
@@ -146,13 +193,17 @@ require(
 PREPULL_SCRIPT = ROOT / "scripts" / "ci" / "prepull-testcontainers-postgis.sh"
 if not PREPULL_SCRIPT.is_file():
     raise AssertionError(f"lean gate must ship {PREPULL_SCRIPT.relative_to(ROOT)}")
+if not FORMAT_SCOPE_SCRIPT.is_file():
+    raise AssertionError(
+        f"lean gate must ship {FORMAT_SCOPE_SCRIPT.relative_to(ROOT)}"
+    )
 
-for script in (SCOPE_SCRIPT, PREPULL_SCRIPT):
+for script in (SCOPE_SCRIPT, FORMAT_SCOPE_SCRIPT, PREPULL_SCRIPT):
     if subprocess.run(["bash", "-n", str(script)]).returncode != 0:
         raise AssertionError(f"{script.relative_to(ROOT)} is not valid bash")
 
 
-def scope_mode(**overrides: str) -> str:
+def scope_mode(script: Path, **overrides: str) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         output = Path(tmp) / "gh-output"
         output.touch()
@@ -160,15 +211,15 @@ def scope_mode(**overrides: str) -> str:
             **os.environ,
             "GITHUB_OUTPUT": str(output),
             "GATE_FILTER_PATH": str(Path(tmp) / "gate.slnf"),
+            "GATE_FORMAT_INCLUDE_PATH": str(Path(tmp) / "format-include.txt"),
             **overrides,
         }
         result = subprocess.run(
-            [str(SCOPE_SCRIPT)], env=env, capture_output=True, text=True
+            [str(script)], env=env, capture_output=True, text=True
         )
         if result.returncode != 0:
             raise AssertionError(
-                f"compute-lean-gate-build-scope.sh exited {result.returncode}: "
-                f"{result.stderr}"
+                f"{script.name} exited {result.returncode}: {result.stderr}"
             )
         modes = re.findall(r"^mode=(\S+)$", output.read_text(encoding="utf-8"), re.M)
         if len(modes) != 1:
@@ -176,12 +227,19 @@ def scope_mode(**overrides: str) -> str:
         return modes[0]
 
 
-if scope_mode(BUILD_SCOPE="full", GITHUB_EVENT_NAME="pull_request") != "full":
+if scope_mode(SCOPE_SCRIPT, BUILD_SCOPE="full", GITHUB_EVENT_NAME="pull_request") != "full":
     raise AssertionError("build-scope=full must never narrow the build")
-if scope_mode(BUILD_SCOPE="affected", GITHUB_EVENT_NAME="merge_group") != "full":
+if scope_mode(SCOPE_SCRIPT, BUILD_SCOPE="affected", GITHUB_EVENT_NAME="merge_group") != "full":
     raise AssertionError(
         "a merge_group batch has no trustworthy diff base and must build the "
         "full solution; it is the backstop for the per-PR narrowing"
+    )
+if scope_mode(FORMAT_SCOPE_SCRIPT, FORMAT_SCOPE="full", GITHUB_EVENT_NAME="pull_request") != "full":
+    raise AssertionError("format-scope=full must never narrow the format check")
+if scope_mode(FORMAT_SCOPE_SCRIPT, FORMAT_SCOPE="affected", GITHUB_EVENT_NAME="merge_group") != "full":
+    raise AssertionError(
+        "a merge_group batch has no trustworthy diff base and must format the "
+        "full solution; it is the backstop for the per-PR --include narrowing"
     )
 
 print("Lean-gate command contract fixtures passed.")

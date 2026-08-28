@@ -54,8 +54,38 @@ env:
   GH_TOKEN: ${{ secrets.RELEASE_BUNDLE_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
+  release-context:
+    name: Classify release ref
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      candidate: ${{ steps.classify.outputs.candidate }}
+      tag_prefix: ${{ steps.classify.outputs.tag_prefix }}
+    steps:
+      - name: Separate trunk candidates from off-trunk test builds
+        id: classify
+        shell: bash
+        env:
+          PROMOTE: ${{ github.event.inputs.promote }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == "refs/heads/trunk" ]]; then
+            echo "candidate=true" >> "$GITHUB_OUTPUT"
+            echo "tag_prefix=rc" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "candidate=false" >> "$GITHUB_OUTPUT"
+          echo "tag_prefix=test-off-trunk" >> "$GITHUB_OUTPUT"
+          echo "::notice::${GITHUB_REF} is off trunk; this run may build only test-off-trunk images and cannot emit a candidate manifest."
+          if [[ "${PROMOTE}" == "true" ]]; then
+            echo "::error::Candidate promotion is permitted only from refs/heads/trunk; got ${GITHUB_REF}."
+            exit 1
+          fi
+
   rc-image:
-    name: Build & publish RC AOT image
+    name: Build & publish AOT image
+    needs: release-context
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
@@ -84,7 +114,7 @@ jobs:
             exit 1
           fi
           short="$(git rev-parse --short HEAD)"
-          tag="rc-${{ github.event.inputs.release_id }}-${short}"
+          tag="${{ needs.release-context.outputs.tag_prefix }}-${{ github.event.inputs.release_id }}-${short}"
           echo "server_sha=${server_sha}" >> "$GITHUB_OUTPUT"
           echo "image_tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "image_ref=${REGISTRY_GHCR}/${IMAGE_NAME}:${tag}" >> "$GITHUB_OUTPUT"
@@ -239,8 +269,10 @@ jobs:
 
   aggregate:
     name: Assemble manifest & validate train
-    needs: [rc-image, integration, sdk-cut]
-    if: ${{ always() && needs.rc-image.result == 'success' }}
+    needs: [release-context, rc-image, integration, sdk-cut]
+    # Off-trunk runs deliberately stop at the unambiguous test image/evidence channel.
+    # No candidate manifest is produced for the downstream release validator to accept.
+    if: ${{ always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -315,8 +347,8 @@ jobs:
 
   promote:
     name: Promote (publish SDKs + retag image)
-    needs: [rc-image, aggregate]
-    if: ${{ github.event.inputs.promote == 'true' && needs.aggregate.outputs.verdict == 'pass' }}
+    needs: [release-context, rc-image, aggregate]
+    if: ${{ needs.release-context.outputs.candidate == 'true' && github.event.inputs.promote == 'true' && needs.aggregate.outputs.verdict == 'pass' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release-promote

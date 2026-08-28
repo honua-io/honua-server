@@ -1,8 +1,13 @@
 # Pull Request
 
 ## Issue Link
-<!-- Required: Link to the GitHub issue this PR addresses -->
-Fixes #
+<!-- Required. Every issue this PR touches gets a DISPOSITION, not a bare number:
+       Closes #N                     — this PR completes the issue (auto-closes on merge)
+       Refs #N (<what remains>)      — deliberate partial; say what is left
+     A bare "#N" closes nothing and strands the ticket open after merge.
+     Cross-repo closing keywords (Closes other-org/repo#N) DO NOT WORK on GitHub —
+     state the disposition and close the foreign issue manually. -->
+Closes #
 
 ## Summary
 <!-- Required: Brief description of what this PR does and why -->
