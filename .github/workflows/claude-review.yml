@@ -284,6 +284,7 @@ jobs:
             core.info(`Reviewing PR #${number} at ${head}.`);
 
       - name: Stage the pull request as read-only data
+        id: diff
         if: steps.target.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -341,6 +342,21 @@ jobs:
             echo "::error::Staged diff is ${diff_lines} lines, over the ${MAX_DIFF_LINES}-line reviewable ceiling; refusing to stage a diff that cannot be judged in full."
             exit 1
           fi
+          # Keep 40 as the floor for ordinary reviews. The 1,501-8,000-line
+          # middle tier gives the reported 2-4k-line diffs that exhausted 40
+          # turns another 50% without paying that cost on small changes.
+          # Above 8,000 lines, cap at 80 turns: large diffs need more traversal,
+          # but action cost scales with turns and an unbounded budget is unsafe.
+          if [ "${diff_lines}" -le 1500 ]; then
+            max_turns=40
+          elif [ "${diff_lines}" -le 8000 ]; then
+            max_turns=60
+          else
+            max_turns=80
+          fi
+          echo "diff_lines=${diff_lines}" >> "${GITHUB_OUTPUT}"
+          echo "max_turns=${max_turns}" >> "${GITHUB_OUTPUT}"
+          echo "Reviewer budget: ${max_turns} turns for ${diff_lines} diff lines."
           # Derive the path list from the staged diff rather than `--json files`,
           # which the API also caps (at 100 per page). The reviewer must never be
           # handed a file list that disagrees with the diff it is judging.
@@ -405,10 +421,20 @@ jobs:
           # documents for `--json-schema`; a path would silently yield no
           # `structured_output` and disable the verification step's cross-check.
           claude_args: >-
-            --model claude-opus-5 --max-turns 40
+            --model claude-opus-5 --max-turns ${{ steps.diff.outputs.max_turns }}
             --json-schema '{"type":"object","additionalProperties":false,"required":["verdict","findings"],"properties":{"verdict":{"type":"string","enum":["clean","findings"]},"findings":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["path","line","summary"],"properties":{"path":{"type":"string"},"line":{"type":"integer"},"summary":{"type":"string"}}}}}}'
             --allowedTools "Read,Grep,Glob,Bash(gh pr comment:*),mcp__github_inline_comment__create_inline_comment"
+
           prompt: |
+            TOOL SURFACE — read this before planning any command.
+            Your only tools are Read, Grep, Glob, `gh pr comment`, and the inline-comment
+            MCP tool. Everything else is DENIED by the workflow, not by policy you can
+            argue with: no `python3`, no heredocs, no `cd`, no `Write`, no other `Bash`
+            form. A denied call still consumes a turn. Measured on 2026-08-27, 19 of 20
+            turn-budget exhaustions carried permission denials, one run losing 13 of its
+            41 turns that way — so a denied call is not free, it is how reviews run out
+            of budget before publishing evidence. Inspect files with Read and Grep.
+
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.target.outputs.pr }}
             HEAD SHA: ${{ steps.target.outputs.head }}
@@ -466,10 +492,61 @@ jobs:
             what was actually published from GitHub and fails the job if it
             disagrees with this verdict.
 
+      - name: Detect an exhausted reviewer turn budget
+        id: exhausted
+        if: failure() && steps.claude.outcome == 'failure'
+        env:
+          DIFF_LINES: ${{ steps.diff.outputs.diff_lines }}
+          MAX_TURNS: ${{ steps.diff.outputs.max_turns }}
+        run: |
+          set -euo pipefail
+          out=/home/runner/work/_temp/claude-execution-output.json
+          # claude-code-action writes its transcript to a FIXED per-runner path, not a
+          # per-step one. The turn-budget fallback below is a second invocation of the
+          # same action, so it overwrites this file before the diagnostic steps and the
+          # artifact upload read it. Snapshot the reviewer's transcript now, while it is
+          # still the reviewer's, and have those steps read the snapshot.
+          snapshot=/home/runner/work/_temp/claude-review-transcript.json
+          if [ -f "${out}" ]; then cp "${out}" "${snapshot}"; fi
+          echo "max_turns=false" >> "${GITHUB_OUTPUT}"
+          if [ ! -f "${out}" ] || ! jq -e \
+            '[.[] | select(.type == "result")] | last | .subtype == "error_max_turns"' \
+            "${out}" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          echo "max_turns=true" >> "${GITHUB_OUTPUT}"
+          printf '%s\n' \
+            "review exhausted its turn budget at ${MAX_TURNS} turns for an ${DIFF_LINES}-line diff; Codex attestation or a human @claude review re-request can satisfy Review Gate" \
+            > review-input/exhausted-body.md
+
+      - name: Publish reviewer turn-budget fallback
+        if: failure() && steps.claude.outcome == 'failure' && steps.exhausted.outputs.max_turns == 'true'
+        uses: anthropics/claude-code-action@c81e3bc69d1b18badbb63ba39581218f02421678 # v1.0.201
+        with:
+          # Use the same App identity and append-only write surface as the main
+          # review. GITHUB_TOKEN remains read-only, and no candidate text is
+          # included in this trusted fallback prompt.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          classify_inline_comments: 'false'
+          allowed_bots: 'dependabot[bot]'
+          claude_args: >-
+            --model claude-opus-5 --max-turns 3
+            --allowedTools "Bash(gh pr comment:*)"
+          prompt: |
+            Post the pre-computed turn-budget fallback for PR
+            #${{ steps.target.outputs.pr }}. Run exactly:
+              gh pr comment ${{ steps.target.outputs.pr }} --body-file review-input/exhausted-body.md
+            Do not edit the file and do not post any other text.
+
       - name: Explain a reviewer failure honestly
         if: failure() && steps.target.outputs.skip == 'false'
         run: |
           set -uo pipefail
+          # Read the snapshot taken before the turn-budget fallback ran, falling back to
+          # the live path when no snapshot exists (the reviewer failed before producing
+          # a result, so nothing overwrote anything).
           # The action reports EVERY failed run as "Claude did not return
           # structured_output", because its guard is
           # `isSuccess && structured_output`, where
@@ -478,7 +555,11 @@ jobs:
           # as a schema problem, naming the one thing that is demonstrably fine.
           # That message cost a full debugging session once (#3491); print what
           # actually happened instead.
-          out=/home/runner/work/_temp/claude-execution-output.json
+          # Prefer the snapshot taken before the turn-budget fallback overwrote the
+          # action's fixed transcript path; fall back to the live file when the
+          # reviewer failed before producing a result and nothing was overwritten.
+          out=/home/runner/work/_temp/claude-review-transcript.json
+          [ -f "${out}" ] || out=/home/runner/work/_temp/claude-execution-output.json
           if [ ! -f "${out}" ]; then
             echo "::warning::No claude-execution-output.json; the reviewer failed before producing a result."
             exit 0
@@ -494,7 +575,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: claude-review-execution-${{ steps.target.outputs.pr }}-${{ github.run_attempt }}
-          path: /home/runner/work/_temp/claude-execution-output.json
+          path: |
+            /home/runner/work/_temp/claude-review-transcript.json
+            /home/runner/work/_temp/claude-execution-output.json
           if-no-files-found: ignore
           retention-days: 7
 

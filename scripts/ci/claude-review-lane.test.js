@@ -104,6 +104,27 @@ test('the action is pinned to an immutable commit', () => {
   assert.match(pin ?? '', /^[0-9a-f]{40}$/);
 });
 
+test('the reviewer turn budget scales with the staged diff and stays capped', () => {
+  assert.match(source, /id: diff/);
+  assert.match(source, /diff_lines=\$\{diff_lines\}/);
+  assert.match(source, /if \[ "\$\{diff_lines\}" -le 1500 \]; then/);
+  assert.match(source, /elif \[ "\$\{diff_lines\}" -le 8000 \]; then/);
+  assert.match(source, /max_turns=40/);
+  assert.match(source, /max_turns=60/);
+  assert.match(source, /max_turns=80/);
+  assert.match(source, /--max-turns \$\{\{ steps\.diff\.outputs\.max_turns \}\}/);
+});
+
+test('an exhausted review posts the explicit fallback without widening token permissions', () => {
+  assert.match(source, /steps\.claude\.outcome == 'failure'/);
+  assert.match(source, /\.subtype == "error_max_turns"/);
+  assert.match(source, /review exhausted its turn budget at .* turns for an .*line diff; Codex attestation or a human @claude review re-request can satisfy Review Gate/);
+  assert.match(
+    source,
+    /if: failure\(\) && steps\.claude\.outcome == 'failure' && steps\.exhausted\.outputs\.max_turns == 'true'/,
+  );
+});
+
 test('no comment event can cancel a review already in flight', () => {
   // A run is created for EVERY comment and concurrency is evaluated at run
   // creation, so cancelling would let Codex's rate-limit notice kill a live
