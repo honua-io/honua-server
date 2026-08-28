@@ -462,7 +462,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         GuardrailDecision decision,
         string idempotencyKey)
     {
-        if (existing.Status == OperationProposalStatus.Planned ||
+        if (existing.Status != OperationProposalStatus.AwaitingApproval ||
             string.IsNullOrWhiteSpace(existing.Audit.AuditId))
         {
             return new OperationGatewayResult
@@ -617,6 +617,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     private static OperationGatewayRequest RebuildRequest(OperationProposal proposal) => new()
     {
+        OperationInstanceId = proposal.Audit.OperationInstanceId,
         Kind = proposal.Kind,
         RequestedBy = proposal.RequestedBy,
         RequestedByAgent = proposal.RequestedByAgent,
