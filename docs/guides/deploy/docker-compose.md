@@ -189,12 +189,12 @@ The 2026.1 install topology is deliberate and applies to every deployment shape:
 |---|---|
 | Multi-layer cache | Falls back to the in-memory provider. Reads still serve correctly; the cache is process-local and not shared across replicas. |
 | Durable geoprocessing jobs (GPServer, OGC API Processes, WPS, MCP, gRPC) | **Unavailable.** No durable job store or queue is composed and no worker loop runs, so submission is refused up front on every one of those surfaces. |
-| Workflows / orchestration | **Unavailable.** The orchestration engine is not registered; workflow definitions and runs are not persisted. |
+| Workflows / orchestration | **Unavailable.** The orchestration engine is not registered; workflow definitions and runs are not persisted. Publishing a workflow package to a `Schedule` target is refused up front, because the compiled workflow definition has nowhere durable to land. `Job` and `ProcessEndpoint` publications still succeed; their *runs* are refused by the durable job store instead. |
 | Operation proposals and the Console approval flow | **Unavailable.** Proposal state has no PostGIS path — it is Redis-only. |
 | Queued imports | Development/Test fall back to an in-process queue (non-durable). Outside those environments the import routes refuse with `503`. |
 | Multi-replica coordination | Not available. Cross-replica cache invalidation, feature-change event durability, and shared streaming fan-out all degrade to node-local behaviour, so run **one** server instance. |
 
-Every surface in that list refuses with a typed error instead of accepting work it cannot finish, with one known exception: publishing a workflow package to a `Schedule` target reports success while silently skipping definition persistence and run creation, because the stores it needs are absent. Treat workflow authoring as unavailable on a no-Redis install rather than relying on that response.
+Nothing in that list fails silently: every affected surface refuses with a typed error instead of accepting work it cannot finish.
 
 ### The typed refusal
 

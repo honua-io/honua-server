@@ -13,6 +13,9 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Orchestration.Abstractions;
+using Honua.Core.Features.Orchestration.Domain;
+using Honua.Server.Tests.Features.Orchestration;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -40,6 +43,7 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
     private readonly InMemoryProgressStore _progressStore = new();
     private readonly RecordingJobQueue _jobQueue = new();
     private readonly RecordingMetadataReleaseService _releaseService = new();
+    private readonly FakeWorkflowDefinitionStore _definitionStore = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
@@ -59,6 +63,13 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
                 // Capture the publishâ†’metadata-release bridge deterministically without requiring an
                 // active Metadata v2 snapshot in the test environment (#2176).
                 services.AddSingleton<IMetadataReleaseService>(_releaseService);
+                // Stand in for the Redis-backed IWorkflowDefinitionStore that
+                // AddOrchestration composes only when IConnectionMultiplexer is registered. Without
+                // it a Schedule publication has no durable receipt and is refused (#3585); these
+                // tests cover the durable path, so they must supply the store the way a Redis-backed
+                // deployment does. WorkflowPackagePublishDegradedTests covers the absent case.
+                services.RemoveAll<IWorkflowDefinitionStore>();
+                services.AddSingleton<IWorkflowDefinitionStore>(_definitionStore);
             });
     }
 
@@ -209,6 +220,18 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
             processId = "workflow.tests.area",
             enabled = true
         });
+
+        // The Schedule publication's success claim is only honest if the compiled workflow
+        // definition actually reached the durable store — that record is what the cron scheduler
+        // enumerates, and it is what a Redis-less install used to skip while still returning 200
+        // (#3585). Assert the durable receipt, not just the response.
+        var persistedDefinition = await _definitionStore.GetAsync($"workflow-package:{packageId}:v{version.Version}");
+        persistedDefinition.Should().NotBeNull(
+            "a Schedule publication must persist its compiled workflow definition before reporting success");
+        persistedDefinition!.Trigger!.Kind.Should().Be(WorkflowTriggerKind.Cron);
+        persistedDefinition.Trigger.CronExpression.Should().Be("0 0 * * *");
+        (await _definitionStore.ListScheduledAsync())
+            .Should().Contain(definition => definition.WorkflowId == persistedDefinition.WorkflowId);
 
         var publications = await _client.GetAsync("/api/v1/console/workflow-publications");
         publications.StatusCode.Should().Be(HttpStatusCode.OK);

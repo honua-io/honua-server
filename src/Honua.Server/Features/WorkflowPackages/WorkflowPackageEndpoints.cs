@@ -93,7 +93,8 @@ internal static class WorkflowPackageEndpoints
             .Produces<ApiResponse<WorkflowPublication>>()
             .Produces<ApiResponse<WorkflowPackageValidationResult>>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status409Conflict);
+            .Produces(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/workflow-publications", HandleListPublications)
             .WithName("ListWorkflowPublications")
@@ -106,7 +107,8 @@ internal static class WorkflowPackageEndpoints
             .Accepts<RunWorkflowPublicationRequest>("application/json")
             .Produces<ApiResponse<WorkflowPublicationRunResult>>(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status409Conflict);
+            .Produces(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> HandleGetNodeRegistry(
@@ -373,13 +375,34 @@ internal static class WorkflowPackageEndpoints
         {
             return BadRequest(context, ex.Message);
         }
+        // A publication target whose durable store was never composed is refused with the
+        // capability-unavailable receipt (honua-release#202) rather than a bare 503, so a terminal
+        // agent can branch on `code`/`missingDependency` instead of parsing prose (#3585).
+        catch (WorkflowPublicationDependencyUnavailableException ex)
+        {
+            return ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+                context,
+                ex.Message,
+                ex.MissingDependency,
+                ex.Remediation,
+                ex.RemediationRef,
+                ex.Capability);
+        }
         catch (GeoprocessingStoreUnavailableException ex)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status503ServiceUnavailable,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                ex.Message);
+            return ex.HasDependencyReceipt
+                ? ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+                    context,
+                    ex.Message,
+                    ex.MissingDependency!,
+                    ex.Remediation!,
+                    ex.RemediationRef!,
+                    ex.CapabilityId)
+                : ProblemDetailsHelpers.CreateAdminProblem(
+                    context,
+                    StatusCodes.Status503ServiceUnavailable,
+                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
+                    ex.Message);
         }
         catch (GeoprocessingAdmissionException ex)
         {

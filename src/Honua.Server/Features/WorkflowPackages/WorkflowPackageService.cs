@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -285,8 +286,30 @@ internal sealed class WorkflowPackageService(
         var workflowDefinitionId = request.Target == WorkflowPublicationTarget.Schedule
             ? $"workflow-package:{packageId}:v{version}"
             : null;
-        if (request.Target == WorkflowPublicationTarget.Schedule && workflowDefinitionStore != null)
+        if (request.Target == WorkflowPublicationTarget.Schedule)
         {
+            // A Schedule publication's only durable receipt is the compiled WorkflowDefinition
+            // written to the Redis-backed IWorkflowDefinitionStore: that record is what the cron
+            // scheduler enumerates, while the publication itself lives in a process-local store.
+            // On a host composed without it (a Redis-less install — see
+            // OrchestrationServiceCollectionExtensions.AddOrchestration, which registers nothing
+            // when IConnectionMultiplexer is absent) this method used to skip the write and still
+            // return a WorkflowPublication carrying a WorkflowDefinitionId and an Active status for
+            // a definition that was never persisted and that nothing would ever fire. That is a
+            // fabricated success — a skipped write cannot satisfy a write step. Refuse up front
+            // with the capability-unavailable receipt instead, the same contract geoprocessing
+            // submission and the proposal control plane use (honua-server#3585, honua-release#202).
+            if (workflowDefinitionStore is null)
+            {
+                WorkflowPackageLog.SchedulePublicationRefusedWithoutDurableStore(
+                    logger,
+                    packageId,
+                    version,
+                    publicationId,
+                    CapabilityUnavailableCodes.RedisDependency);
+                throw new WorkflowPublicationDependencyUnavailableException();
+            }
+
             var definition = await CompileWorkflowDefinitionAsync(
                 packageVersion,
                 workflowDefinitionId!,
@@ -1008,4 +1031,50 @@ internal sealed class WorkflowPublicationConflictException(string publicationId)
     : InvalidOperationException($"Workflow publication '{publicationId}' already exists.")
 {
     public string PublicationId { get; } = publicationId;
+}
+
+/// <summary>
+/// Raised when a publication target needs a durable store this deployment never composed, so the
+/// publish is refused instead of reported as successful without a durable record
+/// (honua-server#3585). Deliberately does NOT derive from <see cref="InvalidOperationException"/>:
+/// the Console endpoint maps that base type to <c>409 Conflict</c>, and this is a <c>503</c>
+/// capability-unavailable refusal carrying the honua-release#202 receipt.
+/// </summary>
+internal sealed class WorkflowPublicationDependencyUnavailableException : Exception
+{
+    /// <summary>
+    /// Human-readable detail for a <see cref="WorkflowPublicationTarget.Schedule"/> publication on
+    /// a host with no durable workflow definition store.
+    /// </summary>
+    internal const string ScheduleTargetDetail =
+        "Publishing a workflow package to a Schedule target requires the Redis-backed durable " +
+        "workflow definition store. This server was started without a Redis connection, so the " +
+        "compiled workflow definition could not be persisted and no scheduler would ever run it. " +
+        "The publication is refused up front rather than reported as successful without a " +
+        "durable record.";
+
+    public WorkflowPublicationDependencyUnavailableException()
+        : base(ScheduleTargetDetail)
+    {
+        MissingDependency = CapabilityUnavailableCodes.RedisDependency;
+        Capability = CapabilityUnavailableCodes.DurableJobsCapability;
+        Remediation = CapabilityUnavailableCodes.RedisRemediation;
+        RemediationRef = CapabilityUnavailableCodes.RedisRemediationRef;
+    }
+
+    /// <summary>Identifier of the infrastructure dependency that was not composed.</summary>
+    public string MissingDependency { get; }
+
+    /// <summary>
+    /// Capability-manifest id this refusal disables, so a client can join it to
+    /// <c>GET /api/v1/capabilities/manifest</c> (which reports the same
+    /// <c>dependency-unavailable</c> reason code for that id on a Redis-less install).
+    /// </summary>
+    public string Capability { get; }
+
+    /// <summary>Operator-facing remediation sentence.</summary>
+    public string Remediation { get; }
+
+    /// <summary>Documentation reference for <see cref="Remediation"/>.</summary>
+    public string RemediationRef { get; }
 }
