@@ -654,6 +654,33 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task Post_AnonymousToolCallWithTenantHeader_FailsClosedBeforeToolExecution()
+    {
+        // Tenant resolvability is not authority. A caller presenting no credential at
+        // all, but a well-formed X-Honua-Tenant header that tenant resolution would
+        // otherwise honour, must still be denied at the tool boundary — authentication
+        // is decided before tenant selection, and an anonymous principal can never be
+        // widened by a client-supplied tenant (#3430).
+        using var request = BuildRpc(
+            """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""",
+            sessionId: null,
+            bearer: null);
+        request.Headers.Add("X-Honua-Tenant", "tenant-target");
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var result = document.RootElement.GetProperty("result");
+        result.GetProperty("isError").GetBoolean().Should().BeTrue(
+            "an unauthenticated caller must not execute a tool however the tenant resolves");
+        result.GetProperty("structuredContent").GetProperty("code").GetString()
+            .Should().Be("unauthenticated");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "initialize")]
     public async Task Post_InitializeWithBearerAndApiKey_PrefersBearerPrincipalBinding()
     {
