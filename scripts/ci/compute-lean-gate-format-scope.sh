@@ -132,8 +132,13 @@ fi
 # Format-sensitive configuration the shared force-full list cannot see: these
 # files change what "correctly formatted" means for files OUTSIDE the diff, so
 # an --include of the diff alone would under-check.
-if printf '%s\n' "${changed_files}" \
-  | grep -qE '((^|/)\.editorconfig$|\.globalconfig$|\.csproj$|\.props$|\.targets$|\.slnf?$|\.ruleset$)'; then
+# Herestring, NOT a pipe: with `set -o pipefail`, `grep -q` exits on the first
+# match and a large enough name list leaves printf catching SIGPIPE, turning a
+# TRUE match into a false condition -- which would silently SKIP the force-full
+# on the exact diffs that most need it. A never-narrow guard cannot itself be
+# allowed to narrow under load.
+if grep -qE '((^|/)\.editorconfig$|\.globalconfig$|\.csproj$|\.props$|\.targets$|\.slnf?$|\.ruleset$)' \
+     <<<"${changed_files}"; then
   full "diff touches format-sensitive configuration (.editorconfig/.globalconfig/.csproj/.props/.targets/.sln/.ruleset)"
 fi
 
