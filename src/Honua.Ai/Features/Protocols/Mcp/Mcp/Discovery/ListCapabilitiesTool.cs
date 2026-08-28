@@ -50,7 +50,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
     {
         Name = ToolName,
         Title = "List capabilities",
-        Description = "List every tool and resource this server exposes, with LLM-grade descriptions and read/write hints, plus the grounding resource URIs to read first. Call this first to discover the full workflow surface (discover, ground, query, analyze, compose, publish) before composing a plan.",
+        Description = "List every tool and resource this server exposes, with LLM-grade descriptions and read/write hints, plus the grounding resource URIs to read first, and the named server-authored workflow views that narrow discovery to one bounded journey. Call this first to discover the full workflow surface (discover, ground, query, analyze, compose, publish) before composing a plan; then, if a view matches your task, re-list tools with that view to work from a smaller, server-selected set.",
         InputSchema = DiscoveryToolSchemas.ListCapabilitiesArgumentSchema,
         OutputSchema = DiscoveryToolSchemas.ListCapabilitiesOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("List capabilities")
@@ -103,6 +103,14 @@ internal sealed class ListCapabilitiesTool : IMcpTool
             output.Tools = await BuildToolManifestAsync(surface, registry, cancellationToken).ConfigureAwait(false);
             output.ToolCount = output.Tools.Count;
 
+            // honua-server#3428: advertise the server-authored workflow discovery
+            // views alongside the full catalog, projected from the same live
+            // roster. This is the discovery half of the negotiation contract — the
+            // client learns the view names, revisions, and digests from the server
+            // instead of hard-coding them.
+            output.WorkflowViews =
+                await BuildWorkflowViewSummariesAsync(surface, cancellationToken).ConfigureAwait(false);
+
             if (includeResources || includeGroundingResources)
             {
                 var resources = BuildResourceManifest(surface, registry);
@@ -124,6 +132,30 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         }
 
         return McpToolHelpers.SuccessResult(output, DiscoveryJsonContext.Default.McpListCapabilitiesOutput);
+    }
+
+    /// <summary>
+    /// Projects every published workflow view over the live catalog and returns
+    /// its summary (honua-server#3428). Deriving the summaries here — rather than
+    /// storing them — is what guarantees the advertised member counts, digests,
+    /// and byte measurements describe the surface this host actually serves.
+    /// </summary>
+    private static async Task<List<Views.McpWorkflowViewSummary>> BuildWorkflowViewSummariesAsync(
+        McpDataAccessSurface surface,
+        CancellationToken cancellationToken)
+    {
+        var entries = await surface.GetCatalogEntriesAsync(cancellationToken).ConfigureAwait(false);
+        var catalog = entries.Select(e => (e.Tool.Describe(), e.IsDynamic)).ToArray();
+
+        var summaries = new List<Views.McpWorkflowViewSummary>(Views.McpWorkflowViewCatalog.Names.Count);
+        foreach (var name in Views.McpWorkflowViewCatalog.Names)
+        {
+            var definition = Views.McpWorkflowViewCatalog.All[name];
+            summaries.Add(Views.McpWorkflowViewWire.BuildSummary(
+                Views.McpWorkflowViewProjector.Project(definition, catalog)));
+        }
+
+        return summaries;
     }
 
     private static async Task<List<McpCapabilityTool>> BuildToolManifestAsync(
