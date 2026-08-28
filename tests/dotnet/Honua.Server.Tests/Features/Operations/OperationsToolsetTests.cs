@@ -182,7 +182,7 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
-    public async Task SubmitAsync_With_RequireApproval_Policy_ShortCircuits_Executor_And_Routes_To_Approval_Lane()
+    public async Task SubmitAsync_With_RequireApproval_And_No_Durable_Bridge_Fails_Closed()
     {
         var publishing = Substitute.For<ILayerPublishingService>();
         var executor = BuildExecutor(publishing);
@@ -200,9 +200,57 @@ public sealed class OperationsToolsetTests
         // Guardrail seam: RequireApproval never reaches the executor.
         await publishing.DidNotReceive().PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.ProposalId.Should().BeNull();
+        handle.AuditId.Should().BeNull();
         handle.ApprovalLane.Should().Be("studio-publish-requests");
+        handle.Reason.Should().Contain("durable proposal infrastructure is unavailable");
         handle.Result.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_With_Durable_Approval_Retains_Separate_Joined_Identities()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var executor = BuildExecutor(publishing);
+        var bridge = Substitute.For<IOperationApprovalBridge>();
+        bridge.CreateProposalAsync(
+                Arg.Any<IOperationDescriptor>(),
+                Arg.Any<OperationRequest>(),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<PolicyDecision>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationApprovalBridgeResult
+            {
+                IsDurable = true,
+                ProposalId = "proposal-123",
+                AuditId = "audit-456",
+                Reason = "Awaiting operator approval.",
+            });
+        var dispatcher = BuildDispatcher(
+            executor,
+            new StubPolicyDecisionPoint(new PolicyDecision
+            {
+                Kind = PolicyDecisionKind.RequireApproval,
+                ApprovalLane = "studio-publish-requests",
+            }),
+            bridge);
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext { CorrelationId = "corr-789" },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.OperationInstanceId.Should().StartWith("opinst-");
+        handle.OperationInstanceId.Should().NotBe(handle.OperationId);
+        handle.OperationInstanceId.Should().NotBe(handle.ProposalId);
+        handle.HandleId.Should().Be(handle.OperationInstanceId);
+        handle.ProposalId.Should().Be("proposal-123");
+        handle.AuditId.Should().Be("audit-456");
+        handle.CorrelationId.Should().Be("corr-789");
+        await publishing.DidNotReceive().PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -265,6 +313,10 @@ public sealed class OperationsToolsetTests
         capturing.Context.Should().NotBeNull();
         capturing.Context!.Tier.Should().Be("enterprise");
         capturing.Context.Roles.Should().BeEquivalentTo("operator", "publisher");
+        capturing.Context.OperationInstanceId.Should().StartWith("opinst-");
+        capturing.Context.OperationInstanceId.Should().NotBe(capturing.Descriptor.OperationId);
+        capturing.Context.CorrelationId.Should().StartWith("corr-");
+        capturing.Context.CorrelationId.Should().NotBe(capturing.Context.OperationInstanceId);
     }
 
     private static ServicePublishExecutor BuildExecutor(
@@ -286,10 +338,11 @@ public sealed class OperationsToolsetTests
 
     private static OperationDispatcher BuildDispatcher(
         IOperationExecutor executor,
-        IOperationPolicyDecisionPoint policy)
+        IOperationPolicyDecisionPoint policy,
+        IOperationApprovalBridge? approvalBridge = null)
     {
         var catalog = new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System);
-        return new OperationDispatcher(catalog, [executor], policy, TimeProvider.System);
+        return new OperationDispatcher(catalog, [executor], policy, TimeProvider.System, approvalBridge);
     }
 
     private static OperationRequest BuildRequest()

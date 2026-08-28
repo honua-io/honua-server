@@ -78,7 +78,10 @@ public sealed class PublishServiceToolTests
             return new OperationHandle
             {
                 OperationId = PublishServiceTool.PublishOperationId,
-                HandleId = "op-abc",
+                OperationInstanceId = "op-abc",
+                CorrelationId = "corr-abc",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
                 Status = OperationHandleStatus.Completed,
                 MetadataRevision = 42,
                 Result = new OperationResultSummary
@@ -136,8 +139,13 @@ public sealed class PublishServiceToolTests
         var invoker = new FakeInvoker((_, _) => new OperationHandle
         {
             OperationId = PublishServiceTool.PublishOperationId,
-            HandleId = "op-pending",
+            OperationInstanceId = "op-pending",
+            CorrelationId = "corr-pending",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Status = OperationHandleStatus.RequiresApproval,
+            ProposalId = "proposal-pending",
+            AuditId = "audit-pending",
             ApprovalLane = "operator-gate",
             Reason = "Publishing requires operator approval on this tier."
         });

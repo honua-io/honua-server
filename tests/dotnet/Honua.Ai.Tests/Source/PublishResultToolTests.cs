@@ -148,7 +148,10 @@ public sealed class PublishResultToolTests
             return new OperationHandle
             {
                 OperationId = PublishResultTool.PublishOperationId,
-                HandleId = "op-abc",
+                OperationInstanceId = "op-abc",
+                CorrelationId = "corr-abc",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
                 Status = OperationHandleStatus.Completed,
                 MetadataRevision = 42,
                 Result = new OperationResultSummary
@@ -207,7 +210,10 @@ public sealed class PublishResultToolTests
         var invoker = new FakeInvoker((_, _) => new OperationHandle
         {
             OperationId = PublishResultTool.PublishOperationId,
-            HandleId = "op-1",
+            OperationInstanceId = "op-1",
+            CorrelationId = "corr-1",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Status = OperationHandleStatus.Completed,
             Result = new OperationResultSummary
             {
@@ -237,8 +243,13 @@ public sealed class PublishResultToolTests
         var invoker = new FakeInvoker((_, _) => new OperationHandle
         {
             OperationId = PublishResultTool.PublishOperationId,
-            HandleId = "op-pending",
+            OperationInstanceId = "op-pending",
+            CorrelationId = "corr-pending",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Status = OperationHandleStatus.RequiresApproval,
+            ProposalId = "proposal-pending",
+            AuditId = "audit-pending",
             ApprovalLane = "operator-gate",
             Reason = "Publishing requires operator approval on this tier."
         });
@@ -263,7 +274,10 @@ public sealed class PublishResultToolTests
         var invoker = new FakeInvoker((_, _) => new OperationHandle
         {
             OperationId = PublishResultTool.PublishOperationId,
-            HandleId = "op-denied",
+            OperationInstanceId = "op-denied",
+            CorrelationId = "corr-denied",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Status = OperationHandleStatus.Denied,
             Reason = "The caller is not authorized to publish on this tier."
         });

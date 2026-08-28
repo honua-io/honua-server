@@ -1282,7 +1282,7 @@ internal static class AlertAdminEndpoints
         return true;
     }
 
-    private static Task RecordZoneAuditAsync(
+    private static Task<string?> RecordZoneAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         AlertZoneDefinition zone,
@@ -1305,7 +1305,7 @@ internal static class AlertAdminEndpoints
             cancellationToken);
     }
 
-    private static Task RecordRuleAuditAsync(
+    private static Task<string?> RecordRuleAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         AlertRuleDefinition rule,
@@ -1330,7 +1330,7 @@ internal static class AlertAdminEndpoints
             cancellationToken);
     }
 
-    private static Task RecordAuditAsync(
+    private static Task<string?> RecordAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         string resourceType,

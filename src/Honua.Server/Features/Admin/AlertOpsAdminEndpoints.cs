@@ -143,7 +143,7 @@ internal static class AlertOpsAdminEndpoints
             AlertOpsAdminJsonContext.Default.ApiResponseAlertChannelStateResponse);
     }
 
-    private static Task RecordAuditAsync(
+    private static Task<string?> RecordAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         string action,

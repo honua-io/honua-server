@@ -18,6 +18,7 @@ public sealed class OperationDispatcher : IOperationInvoker
     private readonly IOperationCatalog _catalog;
     private readonly Dictionary<string, IOperationExecutor> _executors;
     private readonly IOperationPolicyDecisionPoint _policy;
+    private readonly IOperationApprovalBridge? _approvalBridge;
     private readonly TimeProvider _clock;
 
     /// <summary>
@@ -26,12 +27,14 @@ public sealed class OperationDispatcher : IOperationInvoker
     /// <param name="catalog">Operation grounding catalog.</param>
     /// <param name="executors">Registered operation executors.</param>
     /// <param name="policy">Policy decision point consulted before execution.</param>
-    /// <param name="clock">Time provider used for handle id generation.</param>
+    /// <param name="clock">Time provider used for envelope timestamps.</param>
+    /// <param name="approvalBridge">Optional durable approval persistence seam.</param>
     public OperationDispatcher(
         IOperationCatalog catalog,
         IEnumerable<IOperationExecutor> executors,
         IOperationPolicyDecisionPoint policy,
-        TimeProvider clock)
+        TimeProvider clock,
+        IOperationApprovalBridge? approvalBridge = null)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(executors);
@@ -40,6 +43,7 @@ public sealed class OperationDispatcher : IOperationInvoker
         _catalog = catalog;
         _policy = policy;
         _clock = clock;
+        _approvalBridge = approvalBridge;
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
@@ -62,21 +66,49 @@ public sealed class OperationDispatcher : IOperationInvoker
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        var createdAt = _clock.GetUtcNow();
+        var operationInstanceId = $"opinst-{Guid.NewGuid():N}";
+        var correlationId = string.IsNullOrWhiteSpace(context.CorrelationId)
+            ? $"corr-{Guid.NewGuid():N}"
+            : context.CorrelationId;
+        var invocationContext = context with
+        {
+            OperationInstanceId = operationInstanceId,
+            CorrelationId = correlationId,
+        };
+
         var descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
             ?? throw new OperationNotFoundException(request.OperationId);
         var executor = ResolveExecutor(request.OperationId);
 
         var decision = await _policy
-            .EvaluateAsync(descriptor, request, context, cancellationToken)
+            .EvaluateAsync(descriptor, request, invocationContext, cancellationToken)
             .ConfigureAwait(false);
 
         // Guardrail seam: anything other than Allow short-circuits the executor.
         if (decision.Kind != PolicyDecisionKind.Allow)
         {
-            return BuildDecisionHandle(request.OperationId, decision);
+            return await BuildDecisionHandleAsync(
+                    descriptor,
+                    request,
+                    invocationContext,
+                    decision,
+                    createdAt,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        return await executor.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
+        var executed = await executor.SubmitAsync(request, invocationContext, cancellationToken).ConfigureAwait(false);
+        return executed with
+        {
+            OperationInstanceId = operationInstanceId,
+            OperationId = descriptor.OperationId,
+            CorrelationId = correlationId,
+            CreatedAt = createdAt,
+            UpdatedAt = _clock.GetUtcNow(),
+            AuthorizationOutcome = invocationContext.AuthorizationOutcome,
+            PolicyDecision = PolicyDecisionKind.Allow,
+        };
     }
 
     private IOperationExecutor ResolveExecutor(string operationId)
@@ -84,7 +116,13 @@ public sealed class OperationDispatcher : IOperationInvoker
             ? executor
             : throw new OperationNotFoundException(operationId);
 
-    private OperationHandle BuildDecisionHandle(string operationId, PolicyDecision decision)
+    private async Task<OperationHandle> BuildDecisionHandleAsync(
+        OperationDescriptor descriptor,
+        OperationRequest request,
+        OperationPolicyContext context,
+        PolicyDecision decision,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
     {
         // Map each non-Allow decision onto its own structured handle status. Deny and
         // DryRunFirst are distinct terminal outcomes (no side effect occurred), separate
@@ -97,20 +135,59 @@ public sealed class OperationDispatcher : IOperationInvoker
             _ => OperationHandleStatus.Failed
         };
 
+        string? proposalId = null;
+        string? auditId = null;
+        var reason = decision.Reason ?? decision.Kind.ToString();
+
+        if (decision.Kind == PolicyDecisionKind.RequireApproval)
+        {
+            if (_approvalBridge is null)
+            {
+                status = OperationHandleStatus.Failed;
+                reason = "Approval is required, but durable proposal infrastructure is unavailable.";
+            }
+            else
+            {
+                var approval = await _approvalBridge
+                    .CreateProposalAsync(descriptor, request, context, decision, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!approval.IsDurable ||
+                    string.IsNullOrWhiteSpace(approval.ProposalId) ||
+                    string.IsNullOrWhiteSpace(approval.AuditId))
+                {
+                    status = OperationHandleStatus.Failed;
+                    reason = approval.Reason
+                        ?? "Approval is required, but durable proposal or audit persistence failed.";
+                }
+                else
+                {
+                    proposalId = approval.ProposalId;
+                    auditId = approval.AuditId;
+                    reason = approval.Reason ?? reason;
+                }
+            }
+        }
+
         return new OperationHandle
         {
-            OperationId = operationId,
-            HandleId = NewHandleId(),
+            OperationInstanceId = context.OperationInstanceId
+                ?? throw new InvalidOperationException("The canonical operation instance id was not assigned."),
+            OperationId = descriptor.OperationId,
+            CorrelationId = context.CorrelationId
+                ?? throw new InvalidOperationException("The canonical correlation id was not assigned."),
             Status = status,
+            ProposalId = proposalId,
+            AuditId = auditId,
+            CreatedAt = createdAt,
+            UpdatedAt = _clock.GetUtcNow(),
+            AuthorizationOutcome = context.AuthorizationOutcome,
+            PolicyDecision = decision.Kind,
 
             // Only RequireApproval routes to an approval lane; Deny/DryRunFirst carry none.
             ApprovalLane = decision.Kind == PolicyDecisionKind.RequireApproval
                 ? decision.ApprovalLane
                 : null,
-            Reason = decision.Reason ?? decision.Kind.ToString()
+            Reason = reason,
         };
     }
-
-    private string NewHandleId()
-        => $"op-{_clock.GetUtcNow().ToUnixTimeMilliseconds():x}-{Guid.NewGuid():N}"[..32];
 }

@@ -68,6 +68,12 @@ public enum OperationGatewayOutcome
 public sealed record OperationGatewayRequest
 {
     /// <summary>
+    /// Canonical typed-operation invocation identity, when the request originated from the
+    /// operation catalog runtime. This is never the descriptor or proposal identity.
+    /// </summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>
     /// Operation class being routed.
     /// </summary>
     public required OperationClass Kind { get; init; }
@@ -171,6 +177,11 @@ public sealed record OperationGatewayResult
     /// Proposal identifier when a proposal was created.
     /// </summary>
     public string? ProposalId { get; init; }
+
+    /// <summary>
+    /// Durable audit identity assigned while the proposal was accepted.
+    /// </summary>
+    public string? AuditId { get; init; }
 
     /// <summary>
     /// Underlying execution operation identifier when the operation executed.
