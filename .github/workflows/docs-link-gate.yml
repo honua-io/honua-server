@@ -1,0 +1,62 @@
+name: Docs Link Gate
+
+# Grades documentation links the way a reader and an agent actually follow them:
+# the target file AND the `#fragment` must resolve. The previous state of the art
+# here was "the file exists", under which a renamed heading stayed green forever —
+# which is how `docs/guides/deploy/examples/prometheus-alerts.yml` shipped 19
+# `runbook_url` annotations pointing at `docs.honua.io/operations/runbook#...`, a
+# page this repository has never had.
+#
+# It also gates `scripts/ci/code-referenced-anchors.v1.json`: the absolute
+# docs.honua.io URLs that product code and shipped config hand to an operator or
+# an agent at runtime. #3583 turns one of those into a wire contract
+# (`remediationRef` on a typed capability refusal), so a moved heading stops being
+# a docs nit and becomes a broken API response. The manifest entry for it carries
+# `pendingPr: 3583` and is a warning until that branch lands.
+#
+# ROUTING. Path-filtered rather than folded into `PR Gate`: `pr-gate.yml` carries
+# an explicit "do not add a paths filter" contract because it is the required
+# verification context, and this check has nothing to say about a change that
+# touches no documentation. It is also not a step in `ci.yml` — that workflow has
+# no `pull_request` trigger (schedule / merge_group / workflow_dispatch only), so
+# a step there would never grade a pull request. `scripts/ci/**` is deliberately
+# NOT a trigger beyond this checker's own two files: a shared-infrastructure edit
+# already escalates `pre-pr-check.sh` to a full run, and widening the trigger to
+# the whole directory would fire this lane on every CI script change for nothing.
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'docs/**'
+      - 'scripts/ci/check-doc-links.py'
+      - 'scripts/ci/check-doc-links.test.py'
+      - '.github/workflows/docs-link-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-link-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Documentation links and anchors
+    runs-on: ubuntu-latest
+    # Stdlib Python over ~1.6k Markdown files and a handful of source roots: a
+    # cold run is seconds, not minutes. The ceiling is a bound, not a budget.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # The checker's own tests run first and are self-contained (synthetic docs
+      # trees in temp directories). A checker that wrongly reports clean is the
+      # failure mode that matters here, so it is proved before it is trusted —
+      # and its last two cases assert the live repository is green, which means a
+      # genuine break is named by BOTH steps rather than only the second.
+      - name: Test the documentation link checker
+        run: python3 scripts/ci/check-doc-links.test.py
+
+      - name: Check documentation links, anchors, and code-referenced anchors
+        run: python3 scripts/ci/check-doc-links.py
