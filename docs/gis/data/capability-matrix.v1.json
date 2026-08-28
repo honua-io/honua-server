@@ -1876,8 +1876,8 @@
       "key": "serve.i3s-scene",
       "displayName": "I3S Scene Serving",
       "category": "Serve",
-      "edition": "Community",
-      "status": null,
+      "edition": "Enterprise",
+      "status": "experimental",
       "entryCount": 6,
       "provingTestCount": 25,
       "maturity": {

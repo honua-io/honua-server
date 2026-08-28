@@ -139,8 +139,6 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Search and browse spatiotemporal asset catalogs through the STAC API."),
         new("serve.3d-tiles-scene", "3D Tiles Scene Serving", Categories.Serve,
             HonuaEdition.Community, "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately."),
-        new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
-            HonuaEdition.Community, "Serve published I3S scene layers Esri clients consume directly."),
         new("serve.elevation", "Elevation Query", Categories.Serve,
             HonuaEdition.Community, "Query elevation profile and point-value surfaces. Sun/shadow, slice, line-of-sight, and viewshed analytics are Pro-gated separately."),
 
@@ -229,6 +227,8 @@ public static class CapabilityKeyCatalog
     /// </summary>
     public static IReadOnlyList<CapabilityKeyDefinition> DescriptiveKeys { get; } =
     [
+        new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
+            HonuaEdition.Enterprise, "Serve published I3S scene layers through Enterprise-gated SceneServer handlers; unlicensed requests currently return HTTP 403.", Status: ExperimentalStatus),
         new("provider.redshift", "Amazon Redshift Provider", Categories.DataProviders,
             HonuaEdition.Enterprise, "Experimental, off-by-default Amazon Redshift feature provider; enabling the capability key alone does not enable the provider.", Status: ExperimentalStatus),
         new("provider.snowflake", "Snowflake Provider", Categories.DataProviders,
