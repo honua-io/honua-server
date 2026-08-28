@@ -25,6 +25,7 @@ namespace Honua.Infrastructure.Authentication;
 ///   <item><c>admin</c>, <c>*</c>, <c>admin:*</c> — full admin (read and write).</item>
 ///   <item><c>admin:write</c>, <c>admin:manage</c> — admin write (implies read).</item>
 ///   <item><c>admin:read</c> — admin read only (safe HTTP methods).</item>
+///   <item><c>admin:approve</c> — admin read plus proposal approve/reject only.</item>
 /// </list>
 /// A principal that carries the <c>admin</c> role but no <c>permission</c> claims
 /// at all (the bootstrap <c>HONUA_ADMIN_PASSWORD</c> key, a client certificate, or
@@ -61,6 +62,8 @@ internal static class AdminApiKeyPermission
     /// Admin sub-grants that authorize mutating operations (each implies read).
     /// </summary>
     private static readonly string[] WriteSubGrants = ["write", "manage", "*"];
+
+    internal const string ApproveGrant = "admin:approve";
 
     /// <summary>
     /// Describes how much admin authority a principal's grants confer.
@@ -136,6 +139,14 @@ internal static class AdminApiKeyPermission
 
         // Read-only admin: permit only safe, non-mutating HTTP methods.
         return IsSafeMethod(httpMethod);
+    }
+
+    /// <summary>Determines whether the principal carries the narrow proposal-decision grant.</summary>
+    public static bool HasApproveGrant(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        return principal.FindAll(PermissionClaimType).Any(claim =>
+            string.Equals(claim.Value?.Trim(), ApproveGrant, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

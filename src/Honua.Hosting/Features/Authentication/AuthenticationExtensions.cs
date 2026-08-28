@@ -28,6 +28,9 @@ public static class AuthenticationExtensions
     /// </summary>
     public const string AdminPolicyAlias = "AdminPolicy";
 
+    /// <summary>Authorization policy for proposal approve/reject decisions.</summary>
+    public const string AdminApprovePolicy = "AdminApprove";
+
     /// <summary>
     /// Authorization policy name for the read-only operational-observability surfaces (A12).
     /// Admits the admin family (full admin or <c>admin:read</c>) or a dedicated read-only
@@ -103,6 +106,7 @@ public static class AuthenticationExtensions
         // (#1985). Registered as a singleton authorization handler so it participates
         // in every policy that adds AdminPermissionRequirement below.
         services.AddSingleton<IAuthorizationHandler, AdminPermissionAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationHandler, AdminApproveAuthorizationHandler>();
 
         // Enforces the read-only ops-reader split (A12): admits admin or ops:read grants for safe
         // reads while requiring full admin write for mutating requests routed through OpsReadPolicy.
@@ -136,6 +140,7 @@ public static class AuthenticationExtensions
         {
             options.AddPolicy(AdminPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(AdminPolicyAlias, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(AdminApprovePolicy, policy => ConfigureAdminApprovePolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(OpsReadPolicy, policy => ConfigureOpsReadPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalHistoryReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalDiffReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
@@ -170,6 +175,18 @@ public static class AuthenticationExtensions
         _ = policy.RequireAuthenticatedUser();
         _ = policy.RequireRole("admin");
         _ = policy.AddRequirements(new AdminPermissionRequirement());
+        policy.AuthenticationSchemes.Add(ApiKeyScheme);
+        if (mtlsCapabilityEnabled)
+        {
+            policy.AuthenticationSchemes.Add(ClientCertificateAuthenticationDefaults.AuthenticationScheme);
+        }
+    }
+
+    private static void ConfigureAdminApprovePolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
+    {
+        _ = policy.RequireAuthenticatedUser();
+        _ = policy.RequireRole("admin");
+        _ = policy.AddRequirements(new AdminApproveRequirement());
         policy.AuthenticationSchemes.Add(ApiKeyScheme);
         if (mtlsCapabilityEnabled)
         {
@@ -254,6 +271,10 @@ public static class AuthenticationExtensions
     /// </summary>
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
+
+    /// <summary>Requires full admin authority or the narrow <c>admin:approve</c> grant.</summary>
+    public static TBuilder RequireAdminApproveAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminApprovePolicy);
 
     /// <summary>
     /// Requires read-only ops-reader authorization for an endpoint or group (A12). Safe reads are

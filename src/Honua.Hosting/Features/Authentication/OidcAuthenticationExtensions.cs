@@ -270,6 +270,8 @@ public static class OidcAuthenticationExtensions
                 adminRoles,
                 schemes);
 
+            UpdateAdminApprovePolicy(authzOptions, adminRoles, schemes);
+
             UpdateRolePolicy(
                 authzOptions,
                 AuthenticationExtensions.TemporalHistoryReadPolicy,
@@ -351,6 +353,29 @@ public static class OidcAuthenticationExtensions
         {
             policy.RequireAuthenticatedUser();
             policy.RequireAssertion(context => roles.Any(role => context.User.IsInRole(role)));
+
+            foreach (var scheme in schemes)
+            {
+                policy.AuthenticationSchemes.Add(scheme);
+            }
+        });
+    }
+
+    private static void UpdateAdminApprovePolicy(
+        Microsoft.AspNetCore.Authorization.AuthorizationOptions authzOptions,
+        IReadOnlyCollection<string> roles,
+        IReadOnlyCollection<string> schemes)
+    {
+        if (authzOptions.GetPolicy(AuthenticationExtensions.AdminApprovePolicy) == null)
+        {
+            return;
+        }
+
+        authzOptions.AddPolicy(AuthenticationExtensions.AdminApprovePolicy, policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.RequireAssertion(context => roles.Any(role => context.User.IsInRole(role)));
+            policy.AddRequirements(new AdminApproveRequirement());
 
             foreach (var scheme in schemes)
             {

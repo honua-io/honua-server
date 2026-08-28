@@ -4,6 +4,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -12,6 +14,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -27,6 +30,12 @@ namespace Honua.Server.Tests.Features.Admin;
 [Operation(Operations.ApprovalManagement)]
 public sealed class ProposalEndpointsTests : IAsyncLifetime
 {
+    private const string AdminPassword = "proposal-admin-bootstrap-key";
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
     private readonly TestProposalStore _proposalStore = new();
     private readonly StubGuardrailLadder _ladder = new();
     private readonly RecordingProposalNotifier _notifier = new();
@@ -37,6 +46,12 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     public ProposalEndpointsTests()
     {
         _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IOperationProposalStore>();
@@ -56,7 +71,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
+        _client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -166,6 +181,70 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         _executor.Executed.Should().BeTrue();
         _notifier.ResolvedCount.Should().BeGreaterThan(0);
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceId}/access-policy")]
+    public async Task ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces()
+    {
+        var key = await CreateApiKeyAsync("console-read-approve", ["admin:read", "admin:approve"]);
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        using var client = CreateApiKeyClient(key.Key);
+
+        (await client.GetAsync("/api/v1/admin/api-keys")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var effective = await client.GetAsync($"/api/v1/admin/api-keys/{key.ApiKey.Id}/effective-permissions");
+        effective.StatusCode.Should().Be(HttpStatusCode.OK);
+        var effectiveBody = await effective.Content.ReadAsStringAsync();
+        effectiveBody.Should().Contain("admin:read").And.Contain("admin:approve");
+
+        var approve = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        approve.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var rejectedProposal = await SeedProposalAsync(requestedBy: "agent:other-proposer");
+        var reject = await client.PostAsJsonAsync(
+            $"/api/v1/admin/proposals/{rejectedProposal.ProposalId}/reject",
+            new { reason = "Not approved for release." });
+        reject.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var forbidden = await client.PutAsJsonAsync(
+            "/api/v1/admin/services/x/access-policy",
+            new { allowAnonymous = true });
+        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ReadOnlyScopedKey_ApproveNamesMissingGrant()
+    {
+        var key = await CreateApiKeyAsync("console-read-only", ["admin:read"]);
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        using var client = CreateApiKeyClient(key.Key);
+
+        var response = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("admin:approve");
+    }
+
+    private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(string name, IReadOnlyList<string> permissions)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = name, Permissions = permissions },
+            JsonOptions);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var result = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await response.Content.ReadAsStringAsync(), JsonOptions);
+        return result!.Data!;
+    }
+
+    private HttpClient CreateApiKeyClient(string apiKey)
+        => _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", apiKey));
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
