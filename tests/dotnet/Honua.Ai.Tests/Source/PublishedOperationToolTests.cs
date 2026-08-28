@@ -305,7 +305,7 @@ public sealed class PublishedOperationToolTests
         captured.Should().NotBeNull();
         captured!.Tier.Should().Be("pro", "tier is resolved from the running edition for tier-aware policy");
         captured.Roles.Should().BeEquivalentTo("operator", "publisher");
-        captured.PrincipalId.Should().Be("agent-x");
+        captured.PrincipalId.Should().Be("test:subject:-:subject-agent-x");
     }
 
     // ---- Deterministic, param-keyed caching ------------------------------------
@@ -443,17 +443,18 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
-    public async Task Invoke_WhenInvokerUnavailable_ReturnsFailedWithoutThrowing()
+    public async Task Invoke_WhenInvokerUnavailable_ReturnsProtocolErrorWithoutSyntheticEnvelope()
     {
         var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
 
         var result = await tool.InvokeAsync(
             Context(invoker: null), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
-        result.IsError.Should().BeFalse();
-        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Failed");
+        result.IsError.Should().BeTrue();
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("error");
+        result.StructuredContent!.Value.TryGetProperty("operationInstanceId", out _).Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("message").GetString()
-            .Should().Contain("operations toolset is unavailable");
+            .Should().Be("An internal MCP operation failed.");
     }
 
     // ---- Tool source: publish / deterministic mode -----------------------------
@@ -624,7 +625,11 @@ public sealed class PublishedOperationToolTests
             services.AddSingleton(authorization);
         }
 
-        var claims = new List<Claim> { new(ClaimTypes.Name, principalName) };
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, principalName),
+            new(ClaimTypes.NameIdentifier, $"subject-{principalName}"),
+        };
         claims.AddRange((roles ?? []).Select(r => new Claim(ClaimTypes.Role, r)));
 
         return new DefaultHttpContext

@@ -5,6 +5,8 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -75,21 +77,16 @@ internal sealed class PublishServiceTool : IMcpTool
         var invoker = httpContext.RequestServices.GetService<IOperationInvoker>();
         if (invoker is null)
         {
-            return McpToolHelpers.SuccessResult(
-                new McpPublishServiceOutput
-                {
-                    Status = OperationHandleStatus.Failed.ToString(),
-                    RequiresApproval = false,
-                    OperationId = PublishOperationId,
-                    Message = "The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."
-                },
-                McpJsonContext.Default.McpPublishServiceOutput);
+            return McpToolHelpers.ErrorResult(
+                new InvalidOperationException("The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."));
         }
 
         var request = BuildRequest(argument);
         var context = new OperationPolicyContext
         {
-            PrincipalId = principal.Identity?.Name,
+            PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
+            TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+            SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
             AuthorizationOutcome = "authorized",
         };
 

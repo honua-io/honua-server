@@ -8,6 +8,11 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.MultiTenancy;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Server.Features.Operations;
 
@@ -37,7 +42,7 @@ internal sealed class ServicePublishApprovalRequestMapper : IOperationApprovalRe
             throw new ArgumentException("The mapper only accepts service.publish requests.", nameof(request));
         }
 
-        var payload = ServicePublishApprovalPayload.From(request);
+        var payload = ServicePublishApprovalPayload.From(request, context);
         var serialized = JsonSerializer.Serialize(
             payload,
             ServicePublishApprovalJsonContext.Default.ServicePublishApprovalPayload);
@@ -92,18 +97,58 @@ internal sealed class ServicePublishApprovalExecutor(IServiceScopeFactory scopeF
             ?? throw new InvalidOperationException("The service.publish replay payload is invalid.");
 
         await using var scope = scopeFactory.CreateAsyncScope();
+        var tenantContext = scope.ServiceProvider.GetService<RequestTenantContext>();
+        var previousTenant = tenantContext?.TenantId;
+        var previousTenantSource = tenantContext?.Source ?? TenantContextSource.Anonymous;
+        tenantContext?.Set(payload.TenantId, TenantContextSource.Claim);
+        var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
+        var previousSchema = schemaContext?.CurrentSchema;
+        if (schemaContext is not null)
+        {
+            schemaContext.CurrentSchema = payload.SchemaName;
+        }
+
         var executor = scope.ServiceProvider.GetRequiredService<ServicePublishExecutor>();
-        var result = await executor.SubmitAsync(
-                payload.ToOperationRequest(),
-                new OperationPolicyContext
+        try
+        {
+            if (payload.DryRun)
+            {
+                var validation = await executor.ValidateAsync(payload.ToOperationRequest(), cancellationToken)
+                    .ConfigureAwait(false);
+                if (!validation.IsValid)
                 {
-                    OperationInstanceId = request.OperationInstanceId,
-                    CorrelationId = request.CorrelationId,
-                    PrincipalId = request.RequestedBy,
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
-        return result.OperationInstanceId;
+                    throw new InvalidOperationException("The approved dry-run payload no longer validates.");
+                }
+
+                return request.OperationInstanceId;
+            }
+
+            var result = await executor.SubmitAsync(
+                    payload.ToOperationRequest(),
+                    new OperationPolicyContext
+                    {
+                        OperationInstanceId = request.OperationInstanceId,
+                        CorrelationId = request.CorrelationId,
+                        PrincipalId = request.RequestedBy,
+                        TenantId = payload.TenantId,
+                        SchemaName = payload.SchemaName,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var notifications = scope.ServiceProvider.GetService<IMcpNotificationPublisher>();
+            notifications?.BroadcastResourcesListChanged();
+            notifications?.BroadcastToolsListChanged();
+            return result.OperationInstanceId;
+        }
+        finally
+        {
+            if (schemaContext is not null)
+            {
+                schemaContext.CurrentSchema = previousSchema;
+            }
+
+            tenantContext?.Set(previousTenant, previousTenantSource);
+        }
     }
 }
 
@@ -123,7 +168,13 @@ internal sealed record ServicePublishApprovalPayload
 
     public string[] Fields { get; init; } = [];
 
-    public static ServicePublishApprovalPayload From(OperationRequest request)
+    public bool DryRun { get; init; }
+
+    public string? TenantId { get; init; }
+
+    public string? SchemaName { get; init; }
+
+    public static ServicePublishApprovalPayload From(OperationRequest request, OperationPolicyContext context)
         => new()
         {
             ConnectionId = Require(request.ConnectionId, "connectionId"),
@@ -133,6 +184,9 @@ internal sealed record ServicePublishApprovalPayload
             ServiceName = request.ServiceName,
             Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
             Fields = request.Fields.ToArray(),
+            DryRun = request.DryRun,
+            TenantId = context.TenantId,
+            SchemaName = context.SchemaName,
         };
 
     public OperationRequest ToOperationRequest() => new()
@@ -142,6 +196,7 @@ internal sealed record ServicePublishApprovalPayload
         ServiceName = ServiceName,
         Parameters = Parameters,
         Fields = Fields,
+        DryRun = DryRun,
     };
 
     private static string GetRequiredParameter(OperationRequest request, string name)
