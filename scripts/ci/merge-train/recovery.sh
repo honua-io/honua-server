@@ -281,17 +281,43 @@ train_recovery_clear_labels() {
 
 train_recovery_complete_continuation() {
   local target="$1" batch="$2" trunk="$3" included="$4" run_id="$5" last="$6" event_sha="$7"
-  local key="recovery-${run_id}-${event_sha:0:12}"
-  train_recovery_write_state "${batch}" "${trunk}" "${included}" requeue "${run_id}" "${last}"
+  local key="recovery-${run_id}-${event_sha:0:12}" rc=0
+
+  # Every state write here must be checked. Callers invoke this function in an
+  # `|| rc=$?` list, which disables errexit for its whole body, so an unchecked
+  # write silently swallows a CAS conflict and recovery carries on to dispatch a
+  # live train against state another controller has already overwritten -- then
+  # returns success. A detected concurrent writer must fail recovery BEFORE the
+  # dispatch and before any further side effect.
+  train_recovery_write_state "${batch}" "${trunk}" "${included}" requeue "${run_id}" "${last}" || rc=$?
+  if (( rc != 0 )); then
+    train_err "recovery refusing to dispatch ${key}: requeue state write failed (rc=${rc})"
+    return "${rc}"
+  fi
+
   if [[ -n "${TRAIN_RECOVERY_BEFORE_DISPATCH_CMD:-}" ]]; then
     "${TRAIN_RECOVERY_BEFORE_DISPATCH_CMD}" "${target}" "${key}" || return $?
   fi
-  train_recovery_dispatch_live "${key}"
-  if [[ "${target}" == done ]]; then
-    train_recovery_write_state "" "${event_sha}" "" done "" "${event_sha}"
-  else
-    train_recovery_write_state "" "${trunk}" "" select "" null
+
+  train_recovery_dispatch_live "${key}" || rc=$?
+  if (( rc != 0 )); then
+    train_err "recovery continuation ${key} could not be dispatched (rc=${rc})"
+    return "${rc}"
   fi
+
+  # The dispatch has happened, so the terminal write cannot be skipped -- but a
+  # conflict here still means the journal no longer reflects reality, and that
+  # must surface rather than be reported as a completed continuation.
+  if [[ "${target}" == done ]]; then
+    train_recovery_write_state "" "${event_sha}" "" done "" "${event_sha}" || rc=$?
+  else
+    train_recovery_write_state "" "${trunk}" "" select "" null || rc=$?
+  fi
+  if (( rc != 0 )); then
+    train_err "recovery continuation ${key} dispatched but its terminal state write failed (rc=${rc}); durable journal retained for the next controller"
+    return "${rc}"
+  fi
+
   train_decision "RECOVERY CONTINUATION: ${key} durably dispatched; state=${target}"
 }
 
