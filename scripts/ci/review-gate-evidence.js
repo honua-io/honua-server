@@ -214,7 +214,10 @@ function evaluateCodexEvidence({ reviews, cleanComments = [], unresolvedCount, h
   // attest. Tests asserting `freshCleanReaction === false` therefore pass against
   // any implementation -- do not count them as coverage.
   const freshCleanReaction = false;
-  return { exactReview, exactCleanComment, freshCleanReaction };
+  // hasOpenObjection is exposed for the merge train's inverted admission rule
+  // (fix-forward): admission no longer requires positive exact-head evidence,
+  // but a standing identity-scoped objection must still block on its own.
+  return { exactReview, exactCleanComment, freshCleanReaction, hasOpenObjection };
 }
 
 // Every attesting login, flattened. This is THE source of truth for the reviewer
