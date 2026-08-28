@@ -299,6 +299,18 @@ internal sealed class McpPublishServiceOutput
     [JsonPropertyName("auditId")]
     public string? AuditId { get; set; }
 
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("authorizationOutcome")]
+    public string? AuthorizationOutcome { get; set; }
+
+    [JsonPropertyName("policyOutcome")]
+    public string? PolicyOutcome { get; set; }
+
     [JsonPropertyName("serviceUri")]
     public string? ServiceUri { get; set; }
 
@@ -322,6 +334,17 @@ internal sealed class McpPublishServiceOutput
 
     [JsonPropertyName("message")]
     public string? Message { get; set; }
+
+    [JsonPropertyName("details")]
+    public IReadOnlyDictionary<string, string> Details { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("resourceIds")]
+    public IReadOnlyDictionary<string, string> ResourceIds { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("evidenceRefs")]
+    public IReadOnlyList<string> EvidenceRefs { get; set; } = [];
 }
 
 /// <summary>
@@ -495,6 +518,18 @@ internal sealed class McpPublishResultOutput
     [JsonPropertyName("auditId")]
     public string? AuditId { get; set; }
 
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("authorizationOutcome")]
+    public string? AuthorizationOutcome { get; set; }
+
+    [JsonPropertyName("policyOutcome")]
+    public string? PolicyOutcome { get; set; }
+
     [JsonPropertyName("sourceJobId")]
     public string? SourceJobId { get; set; }
 
@@ -524,6 +559,17 @@ internal sealed class McpPublishResultOutput
 
     [JsonPropertyName("message")]
     public string? Message { get; set; }
+
+    [JsonPropertyName("details")]
+    public IReadOnlyDictionary<string, string> Details { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("resourceIds")]
+    public IReadOnlyDictionary<string, string> ResourceIds { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("evidenceRefs")]
+    public IReadOnlyList<string> EvidenceRefs { get; set; } = [];
 }
 
 /// <summary>

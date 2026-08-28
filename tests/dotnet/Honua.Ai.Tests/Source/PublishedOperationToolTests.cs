@@ -80,6 +80,41 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public void PublishedOperationSchemas_AdvertiseCanonicalEnvelope()
+    {
+        var schemas = new[]
+        {
+            McpToolOutputSchemas.PublishServiceOutputSchema,
+            McpToolOutputSchemas.PublishResultOutputSchema,
+            McpToolOutputSchemas.OperationToolOutputSchema
+        };
+        var envelopeFields = new[]
+        {
+            "operationId",
+            "operationInstanceId",
+            "handleId",
+            "proposalId",
+            "correlationId",
+            "auditId",
+            "createdAt",
+            "updatedAt",
+            "authorizationOutcome",
+            "policyOutcome",
+            "resourceIds",
+            "evidenceRefs"
+        };
+
+        foreach (var schema in schemas)
+        {
+            var properties = schema.GetProperty("properties");
+            foreach (var field in envelopeFields)
+            {
+                properties.TryGetProperty(field, out _).Should().BeTrue($"{field} is part of the canonical operation envelope");
+            }
+        }
+    }
+
+    [UnitTest]
     public void ProjectName_SanitizesOperationIdIntoToolName()
     {
         PublishedOperationTool.ProjectName("service.publish").Should().Be("honua_op_service_publish");
@@ -278,7 +313,10 @@ public sealed class PublishedOperationToolTests
     [UnitTest]
     public async Task Invoke_DeterministicReadOnly_CachesOnParams()
     {
-        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId) with
+        {
+            AuditId = "audit-original",
+        });
         var cache = new PublishedOperationCache();
         var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
 
@@ -288,9 +326,24 @@ public sealed class PublishedOperationToolTests
             Context(invoker, cache), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         invoker.SubmitCount.Should().Be(1, "identical inputs must be served from the param-keyed cache");
-        first.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
-        second.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
-        second.StructuredContent!.Value.GetProperty("deterministic").GetBoolean().Should().BeTrue();
+        var firstBody = first.StructuredContent!.Value;
+        var secondBody = second.StructuredContent!.Value;
+        firstBody.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+        secondBody.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
+        secondBody.GetProperty("deterministic").GetBoolean().Should().BeTrue();
+        secondBody.GetProperty("operationInstanceId").GetString().Should()
+            .NotBe(firstBody.GetProperty("operationInstanceId").GetString());
+        secondBody.GetProperty("handleId").GetString().Should()
+            .Be(secondBody.GetProperty("operationInstanceId").GetString());
+        secondBody.GetProperty("correlationId").GetString().Should()
+            .NotBe(firstBody.GetProperty("correlationId").GetString());
+        secondBody.GetProperty("createdAt").GetDateTimeOffset().Should()
+            .BeOnOrAfter(firstBody.GetProperty("createdAt").GetDateTimeOffset());
+        secondBody.TryGetProperty("auditId", out _).Should().BeFalse(
+            "the cached payload audit identity is evidence, not the new invocation audit identity");
+        secondBody.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString()).Should()
+            .Contain("cached-operation-instance:op-done")
+            .And.Contain("cached-audit:audit-original");
 
         // A different parameter is a cache miss → re-executes.
         await tool.InvokeAsync(Context(invoker, cache), Args("""{"layerId":"9"}"""), CancellationToken.None);

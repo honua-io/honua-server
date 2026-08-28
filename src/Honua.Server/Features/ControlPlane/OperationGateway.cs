@@ -364,43 +364,52 @@ internal sealed partial class OperationGateway : IOperationGateway
             throw new InvalidOperationException("Failed to durably persist the operation proposal.");
         }
 
-        proposal = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException("The durably persisted operation proposal could not be reloaded.");
-
-        var auditId = await WriteAuditAsync(
-                proposal,
-                "operation.proposed",
-                request.RequestedBy ?? request.RequestedByAgent ?? AuditEvent.AnonymousActor,
-                AuditOutcome.Success,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(auditId))
+        string? auditId = null;
+        try
         {
-            await TryFailProposalAfterAuditFailureAsync(proposal, cancellationToken).ConfigureAwait(false);
-            return new OperationGatewayResult
+            proposal = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("The durably persisted operation proposal could not be reloaded.");
+
+            auditId = await WriteAuditAsync(
+                    proposal,
+                    "operation.proposed",
+                    request.RequestedBy ?? request.RequestedByAgent ?? AuditEvent.AnonymousActor,
+                    AuditOutcome.Success,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(auditId))
             {
-                Outcome = OperationGatewayOutcome.Failed,
-                Decision = decision,
-                Message = "The proposal was not accepted because durable audit persistence did not return an identity.",
+                await TryFailPlannedProposalAsync(proposal.ProposalId, auditId, CancellationToken.None).ConfigureAwait(false);
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = decision,
+                    Message = "The proposal was not accepted because durable audit persistence did not return an identity.",
+                };
+            }
+
+            proposal = proposal with
+            {
+                Status = OperationProposalStatus.AwaitingApproval,
+                Audit = proposal.Audit with { AuditId = auditId },
+                UpdatedAt = DateTimeOffset.UtcNow,
             };
+            if (!await _proposalStore.TrySetAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                await TryFailPlannedProposalAsync(proposal.ProposalId, auditId, CancellationToken.None).ConfigureAwait(false);
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = decision,
+                    AuditId = auditId,
+                    Message = "The proposal was not accepted because its durable audit identity could not be joined to the proposal.",
+                };
+            }
         }
-
-        proposal = proposal with
+        catch (OperationCanceledException)
         {
-            Status = OperationProposalStatus.AwaitingApproval,
-            Audit = proposal.Audit with { AuditId = auditId },
-            UpdatedAt = DateTimeOffset.UtcNow,
-        };
-        if (!await _proposalStore.TrySetAsync(proposal, cancellationToken: cancellationToken).ConfigureAwait(false))
-        {
-            await TryFailProposalAfterAuditFailureAsync(proposal, cancellationToken).ConfigureAwait(false);
-            return new OperationGatewayResult
-            {
-                Outcome = OperationGatewayOutcome.Failed,
-                Decision = decision,
-                AuditId = auditId,
-                Message = "The proposal was not accepted because its durable audit identity could not be joined to the proposal.",
-            };
+            await TryFailPlannedProposalAsync(proposal.ProposalId, auditId, CancellationToken.None).ConfigureAwait(false);
+            throw;
         }
 
         await _notifier.NotifyPendingAsync(proposal, cancellationToken).ConfigureAwait(false);
@@ -416,13 +425,21 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
-    private async Task TryFailProposalAfterAuditFailureAsync(
-        OperationProposal proposal,
+    private async Task TryFailPlannedProposalAsync(
+        string proposalId,
+        string? auditId,
         CancellationToken cancellationToken)
     {
+        var proposal = await _proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
+        if (proposal is null || proposal.Status != OperationProposalStatus.Planned)
+        {
+            return;
+        }
+
         var failed = proposal with
         {
             Status = OperationProposalStatus.Failed,
+            Audit = string.IsNullOrWhiteSpace(auditId) ? proposal.Audit : proposal.Audit with { AuditId = auditId },
             UpdatedAt = DateTimeOffset.UtcNow,
             ResolvedAt = DateTimeOffset.UtcNow,
             ResolutionReason = "Durable audit acceptance failed.",
