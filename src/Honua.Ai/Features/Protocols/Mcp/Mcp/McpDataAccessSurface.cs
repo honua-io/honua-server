@@ -329,6 +329,11 @@ internal sealed class McpDataAccessSurface
             SessionWorkflowView(httpContext),
             ProfileDefaultWorkflowView(httpContext));
 
+        if (!TryReadCursor(request, out var cursor, out var error))
+        {
+            return error;
+        }
+
         if (effectiveView is not null)
         {
             var definition = McpWorkflowViewCatalog.Find(effectiveView);
@@ -342,15 +347,24 @@ internal sealed class McpDataAccessSurface
                 _tools.Values.Select(t => (t.Describe(), IsDynamic: false))
                     .Concat(dynamicTools.Select(t => (t.Describe(), IsDynamic: true))));
 
+            try
+            {
+                _ = McpPagination.Page(projection.Descriptors, cursor, int.MaxValue, out _);
+            }
+            catch (GeoprocessingValidationException ex)
+            {
+                return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(ex.Message));
+            }
+
+            if (projection.BudgetViolations.Count > 0)
+            {
+                return ErrorResponse(request.Id, McpErrorMapper.Map(new InvalidOperationException()));
+            }
+
             return SuccessResponse(
                 request.Id,
                 McpWorkflowViewWire.BuildToolsListResult(projection),
                 WorkflowViewJsonContext.Default.McpWorkflowViewToolsListResult);
-        }
-
-        if (!TryReadCursor(request, out var cursor, out var error))
-        {
-            return error;
         }
 
         var describes = _tools.Values.Select(t => t.Describe());
@@ -394,8 +408,8 @@ internal sealed class McpDataAccessSurface
     /// </summary>
     private static string? ProfileDefaultWorkflowView(HttpContext httpContext) =>
         httpContext.RequestServices?
-            .GetService<IOptions<McpWorkflowViewOptions>>()?
-            .Value.DefaultView;
+            .GetService<IOptionsMonitor<McpWorkflowViewOptions>>()?
+            .CurrentValue.DefaultView;
 
     /// <summary>
     /// The client-facing message for a view name this server does not publish. It

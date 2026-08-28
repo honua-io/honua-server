@@ -81,9 +81,8 @@ internal sealed record McpWorkflowViewProjection
 
     /// <summary>
     /// Budget violations, one human-readable message each. Empty when the view is
-    /// within every ceiling. The budget is enforced by a test gate rather than by
-    /// dropping members at runtime, so an over-budget view is a build-time signal
-    /// to split or refine server-owned stages.
+    /// within every ceiling. The runtime fails closed rather than returning an
+    /// unbounded view, while the test gate catches static-catalog regressions.
     /// </summary>
     public IReadOnlyList<string> BudgetViolations
     {
@@ -170,23 +169,15 @@ internal static class McpWorkflowViewProjector
                 Digest(canonical)));
         }
 
-        // Deterministic wire order. Static members first, grouped by stage in the
-        // server-authored journey order, then by ordinal name; runtime-published
-        // members follow in the same shape. Keeping dynamic members in the tail
-        // means a mid-conversation `tools/list_changed` refresh APPENDS to the
-        // tools array rather than re-sorting it, which is what preserves a host's
-        // prompt cache (MCP 2026-07-28 client best practices, caching note).
-        selected.Sort(static (a, b) =>
-        {
-            var byDynamic = a.IsDynamic.CompareTo(b.IsDynamic);
-            if (byDynamic != 0)
-            {
-                return byDynamic;
-            }
-
-            var byStage = a.StageIndex.CompareTo(b.StageIndex);
-            return byStage != 0 ? byStage : string.CompareOrdinal(a.ToolName, b.ToolName);
-        });
+        // Static members are deterministic by stage/name. Dynamic members retain
+        // source publication order in the tail, so a source that appends a new
+        // operation preserves the existing descriptor prefix across refreshes.
+        var staticMembers = selected
+            .Where(static member => !member.IsDynamic)
+            .OrderBy(static member => member.StageIndex)
+            .ThenBy(static member => member.ToolName, StringComparer.Ordinal);
+        var dynamicMembers = selected.Where(static member => member.IsDynamic);
+        selected = staticMembers.Concat(dynamicMembers).ToList();
 
         var populatedStages = selected.Select(static m => m.StageId).ToHashSet(StringComparer.Ordinal);
         var emptyStages = definition.Stages

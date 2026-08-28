@@ -305,14 +305,40 @@ public sealed class McpWorkflowViewTests
     {
         var surface = BuildFullSurface();
         var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
-            services.AddSingleton<IOptions<McpWorkflowViewOptions>>(
-                new OptionsWrapper<McpWorkflowViewOptions>(
+            services.AddSingleton<IOptionsMonitor<McpWorkflowViewOptions>>(
+                new StubOptionsMonitor(
                     new McpWorkflowViewOptions { DefaultView = McpWorkflowViewCatalog.SetupViewName })));
 
         var view = await ListToolsAsync(surface, view: null, context: context);
 
         view.Meta.GetProperty("view").GetString().Should().Be("setup");
         view.Names.Should().NotContain("honua_geocode_address");
+    }
+
+    [UnitTest]
+    public async Task ToolsList_ServerProfileDefaultView_UsesTheMonitorCurrentValue()
+    {
+        var monitor = new StubOptionsMonitor(new McpWorkflowViewOptions());
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+            services.AddSingleton<IOptionsMonitor<McpWorkflowViewOptions>>(monitor));
+
+        var full = await ListToolsAsync(BuildFullSurface(), view: null, context: context);
+        monitor.CurrentValue = new McpWorkflowViewOptions { DefaultView = McpWorkflowViewCatalog.SetupViewName };
+        var narrowed = await ListToolsAsync(BuildFullSurface(), view: null, context: context);
+
+        full.Meta.ValueKind.Should().Be(JsonValueKind.Undefined);
+        narrowed.Meta.GetProperty("view").GetString().Should().Be(McpWorkflowViewCatalog.SetupViewName);
+    }
+
+    [UnitTest]
+    public async Task ToolsList_ViewRejectsMalformedCursor()
+    {
+        var response = await DispatchAsync(
+            BuildFullSurface(),
+            """{"jsonrpc":"2.0","id":"t","method":"tools/list","params":{"view":"setup","cursor":"not-a-cursor"}}""");
+
+        response!.Error.Should().NotBeNull();
+        response.Error!.Code.Should().Be(McpErrorMapper.JsonRpcInvalidParams);
     }
 
     [UnitTest]
@@ -464,6 +490,44 @@ public sealed class McpWorkflowViewTests
         // The static prefix is unchanged by the publication.
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
         names[..^1].Should().Equal(baseline.Members.Select(m => m.ToolName));
+    }
+
+    [UnitTest]
+    public void RuntimePublishedMembers_PreserveTheirExistingPrefixWhenAnotherToolAppears()
+    {
+        var baseline = McpWorkflowViewProjector.Project(
+            McpWorkflowViewCatalog.Setup,
+            BuildCatalogEntries().Concat(
+            [
+                (DescribeOperation("honua_op_service_zulu"), true),
+                (DescribeOperation("honua_op_import_zulu"), true),
+            ]));
+        var extended = McpWorkflowViewProjector.Project(
+            McpWorkflowViewCatalog.Setup,
+            BuildCatalogEntries().Concat(
+            [
+                (DescribeOperation("honua_op_service_zulu"), true),
+                (DescribeOperation("honua_op_import_zulu"), true),
+                (DescribeOperation("honua_op_import_alpha"), true),
+            ]));
+
+        extended.Members.Take(baseline.Members.Count).Select(m => m.ToolName)
+            .Should().Equal(baseline.Members.Select(m => m.ToolName));
+    }
+
+    [UnitTest]
+    public async Task ToolsList_OverBudgetDynamicViewFailsClosed()
+    {
+        var dynamicNames = Enumerable.Range(0, McpWorkflowViewBudget.MaxDescriptors + 1)
+            .Select(i => $"honua_op_import_{i:D3}")
+            .ToArray();
+        var response = await DispatchAsync(
+            BuildFullSurface(new StubToolSource(dynamicNames)),
+            """{"jsonrpc":"2.0","id":"t","method":"tools/list","params":{"view":"setup"}}""");
+
+        response!.Error.Should().NotBeNull();
+        response.Error!.Code.Should().Be(McpErrorMapper.JsonRpcServerError);
+        response.Error.Data!.Code.Should().Be(McpErrorMapper.Codes.Internal);
     }
 
     // ------------------------------------------------------------------
@@ -796,7 +860,7 @@ public sealed class McpWorkflowViewTests
     {
         public StubOptionsMonitor(McpWorkflowViewOptions value) => CurrentValue = value;
 
-        public McpWorkflowViewOptions CurrentValue { get; }
+        public McpWorkflowViewOptions CurrentValue { get; set; }
 
         public McpWorkflowViewOptions Get(string? name) => CurrentValue;
 
