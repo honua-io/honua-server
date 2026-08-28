@@ -82,7 +82,7 @@ public sealed class OperationGatewayIdempotencyTests
     private static OperationGateway BuildGateway(IOperationProposalStore store, IGuardrailLadder ladder)
     {
         var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => NullAuditLog.Instance);
+        services.AddScoped<IAuditLog>(_ => new DurableAuditLog());
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
 
         return new OperationGateway(
@@ -99,6 +99,12 @@ public sealed class OperationGatewayIdempotencyTests
     /// proposals (unlike the single-slot store) so a duplicate-proposal regression
     /// is observable.
     /// </summary>
+    private sealed class DurableAuditLog : IAuditLog
+    {
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) =>
+            Task.FromResult<string?>("audit-test");
+    }
+
     private sealed class MultiProposalStore : IOperationProposalStore
     {
         private readonly Dictionary<string, OperationProposal> _proposals = new(StringComparer.Ordinal);

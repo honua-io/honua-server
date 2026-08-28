@@ -424,7 +424,7 @@ internal static class InvestigationEndpoints
     private static string ResolveActor(HttpContext context)
         => context.User?.Identity?.Name ?? AuditEvent.AnonymousActor;
 
-    private static Task RecordAuditAsync(
+    private static Task<string?> RecordAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         string actor,

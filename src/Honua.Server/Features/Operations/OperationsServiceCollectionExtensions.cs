@@ -23,6 +23,7 @@ internal static class OperationsServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<OperationHandleStore>();
+        services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
 
         // Grounding catalog: descriptor providers aggregated by the catalog.
         services.TryAddEnumerable(
@@ -62,7 +63,8 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IOperationCatalog>(),
                 sp.GetServices<IOperationExecutor>(),
                 sp.GetRequiredService<IOperationPolicyDecisionPoint>(),
-                sp.GetRequiredService<TimeProvider>()));
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetService<IOperationApprovalBridge>()));
 
         return services;
     }

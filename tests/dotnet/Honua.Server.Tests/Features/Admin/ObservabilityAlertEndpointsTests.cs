@@ -216,10 +216,10 @@ public sealed class ObservabilityAlertEndpointsTests : IAsyncLifetime
     {
         public List<AuditEvent> Recorded { get; } = new();
 
-        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             Recorded.Add(auditEvent);
-            return Task.CompletedTask;
+            return Task.FromResult<string?>("audit-test");
         }
     }
 

@@ -195,10 +195,10 @@ internal sealed class CapturingAuditLog : IAuditLog
 {
     public List<AuditEvent> Events { get; } = new();
 
-    public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+    public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
     {
         Events.Add(auditEvent);
-        return Task.CompletedTask;
+        return Task.FromResult<string?>("audit-test");
     }
 }
 
@@ -206,15 +206,15 @@ internal sealed class TokenCapturingAuditLog : IAuditLog
 {
     public List<CancellationToken> CapturedTokens { get; } = new();
 
-    public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+    public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
     {
         CapturedTokens.Add(cancellationToken);
-        return Task.CompletedTask;
+        return Task.FromResult<string?>("audit-test");
     }
 }
 
 internal sealed class ThrowingAuditLog : IAuditLog
 {
-    public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+    public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("Simulated audit sink outage.");
 }

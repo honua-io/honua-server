@@ -179,6 +179,7 @@ internal static class OperationsEndpoints
             var policyContext = new OperationPolicyContext
             {
                 PrincipalId = context.User.Identity?.Name,
+                AuthorizationOutcome = "authorized",
                 Roles = context.User.FindAll(ClaimTypes.Role)
                     .Select(claim => claim.Value)
                     .ToArray()
@@ -231,12 +232,23 @@ internal static class OperationsEndpoints
 
         var status = new OperationStatus
         {
+            OperationInstanceId = handle.OperationInstanceId,
             OperationId = handle.OperationId,
-            HandleId = handle.HandleId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            ProposalId = handle.ProposalId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyDecision = handle.PolicyDecision,
             Status = handle.Status,
             Result = handle.Result,
             JobId = handle.JobId,
-            MetadataRevision = handle.MetadataRevision
+            MetadataRevision = handle.MetadataRevision,
+            ApprovalLane = handle.ApprovalLane,
+            Reason = handle.Reason,
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
         };
 
         return Results.Json(

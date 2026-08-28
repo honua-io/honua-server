@@ -164,7 +164,7 @@ internal static class StudioAiProxyEndpoints
         await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static Task RecordAuditAsync(
+    private static Task<string?> RecordAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         StudioAiProxyCallSummary summary,
