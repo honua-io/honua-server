@@ -23,20 +23,22 @@ internal static class AdminApiOperationCatalog
         string OpenApiOperationId,
         bool Destructive,
         bool SupportsDryRun = false,
-        string? DryRunPath = null);
+        string? DryRunPath = null,
+        IReadOnlySet<string>? QueryParameters = null,
+        bool RawBody = false);
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
         new("admin.layer.publish", "Publish layer", HttpMethod.Post, "/connections/{connectionId}/layers", "publishLayer", true, true, "/connections/{connectionId}/tables/validate"),
-        new("admin.layer.set-enabled", "Set layer enabled", HttpMethod.Put, "/connections/{connectionId}/layers/{layerId}/enabled", "setLayerEnabled", true),
+        new("admin.layer.set-enabled", "Set layer enabled", HttpMethod.Put, "/connections/{connectionId}/layers/{layerId}/enabled", "setLayerEnabled", true, QueryParameters: new HashSet<string>(["serviceName"], StringComparer.Ordinal)),
         new("admin.layer.fields.get", "Get layer fields", HttpMethod.Get, "/metadata/layers/{layerId}/fields", "getAdminLayerFields", false),
         new("admin.layer.fields.set", "Set layer fields", HttpMethod.Put, "/metadata/layers/{layerId}/fields", "updateAdminLayerFields", true),
         new("admin.layer.filter.get", "Get layer filter", HttpMethod.Get, "/metadata/layers/{layerId}/filter", "getAdminLayerFilter", false),
         new("admin.layer.filter.set", "Set layer filter", HttpMethod.Put, "/metadata/layers/{layerId}/filter", "updateAdminLayerFilter", true),
         new("admin.layer.popup-info.get", "Get layer popup info", HttpMethod.Get, "/metadata/layers/{layerId}/popup-info", "getAdminLayerPopupInfo", false),
-        new("admin.layer.popup-info.set", "Set layer popup info", HttpMethod.Put, "/metadata/layers/{layerId}/popup-info", "setAdminLayerPopupInfo", true),
+        new("admin.layer.popup-info.set", "Set layer popup info", HttpMethod.Put, "/metadata/layers/{layerId}/popup-info", "setAdminLayerPopupInfo", true, RawBody: true),
         new("admin.layer.drawing-info.get", "Get layer drawing info", HttpMethod.Get, "/metadata/layers/{layerId}/drawing-info", "getAdminLayerDrawingInfo", false),
-        new("admin.layer.drawing-info.set", "Set layer drawing info", HttpMethod.Put, "/metadata/layers/{layerId}/drawing-info", "setAdminLayerDrawingInfo", true),
+        new("admin.layer.drawing-info.set", "Set layer drawing info", HttpMethod.Put, "/metadata/layers/{layerId}/drawing-info", "setAdminLayerDrawingInfo", true, RawBody: true),
         new("admin.layer.style.get", "Get layer style", HttpMethod.Get, "/metadata/layers/{layerId}/style", "getAdminLayerStyle", false),
         new("admin.layer.style.set", "Set layer style", HttpMethod.Put, "/metadata/layers/{layerId}/style", "updateAdminLayerStyle", true),
         new("admin.layer.style.import-sld", "Import layer SLD", HttpMethod.Post, "/metadata/layers/{layerId}/style/import-sld", "importLayerSldStyle", true),
@@ -45,7 +47,6 @@ internal static class AdminApiOperationCatalog
         new("admin.services.settings.get", "Get service settings", HttpMethod.Get, "/services/{serviceName}/settings", "getServiceSettings", false),
         new("admin.services.protocols.set", "Set service protocols", HttpMethod.Put, "/services/{serviceName}/protocols", "updateServiceProtocols", true),
         new("admin.services.access-policy.set", "Set service access policy", HttpMethod.Put, "/services/{serviceName}/access-policy", "updateServiceAccessPolicy", true),
-        new("admin.services.timeinfo.set", "Set service time info", HttpMethod.Put, "/services/{serviceName}/timeinfo", "updateServiceTimeInfo", true),
         new("admin.services.layer-metadata.set", "Set service layer metadata", HttpMethod.Put, "/services/{serviceName}/layers/{layerId}/metadata", "updateLayerMetadata", true)
     ];
 
@@ -66,9 +67,8 @@ internal static class AdminApiOperationCatalog
         var inputs = new List<OperationParameterDescriptor>();
         if (operation.TryGetProperty("parameters", out var parameters))
         {
-            foreach (var parameter in parameters.EnumerateArray())
+            foreach (var resolvedParameter in parameters.EnumerateArray().Select(parameter => Resolve(root, parameter)))
             {
-                var resolvedParameter = Resolve(root, parameter);
                 var parameterName = resolvedParameter.GetProperty("name").GetString()!;
                 if (parameterName == "id" && definition.Path.StartsWith("/connections/", StringComparison.Ordinal))
                 {
@@ -133,22 +133,21 @@ internal static class AdminApiOperationCatalog
 
     internal static JsonElement FindOperation(JsonElement root, string operationId)
     {
-        foreach (var path in root.GetProperty("paths").EnumerateObject())
-            foreach (var method in path.Value.EnumerateObject())
-            {
-                if (method.Value.ValueKind == JsonValueKind.Object && method.Value.TryGetProperty("operationId", out var id) && id.GetString() == operationId)
-                    return method.Value;
-            }
+        foreach (var method in root.GetProperty("paths").EnumerateObject()
+                     .SelectMany(static path => path.Value.EnumerateObject())
+                     .Where(static method => method.Value.ValueKind == JsonValueKind.Object))
+            if (method.Value.TryGetProperty("operationId", out var id) && id.GetString() == operationId)
+                return method.Value;
         throw new InvalidOperationException($"Admin OpenAPI operation '{operationId}' was not found.");
     }
 
     private static IReadOnlyList<OperationParameterDescriptor> BuildOutputSchema(JsonElement root, JsonElement operation)
     {
-        foreach (var response in operation.GetProperty("responses").EnumerateObject().OrderBy(static item => item.Name, StringComparer.Ordinal))
-        {
-            if (response.Name[0] == '2' && TryGetContentSchema(response.Value, "content", out var schema))
+        foreach (var response in operation.GetProperty("responses").EnumerateObject()
+                     .OrderBy(static item => item.Name, StringComparer.Ordinal)
+                     .Where(static response => response.Name[0] == '2'))
+            if (TryGetContentSchema(response.Value, "content", out var schema))
                 return [new OperationParameterDescriptor { Name = "response", Title = "Admin API response", Required = true, Schema = ConvertSchema(root, schema) }];
-        }
         return [];
     }
 
@@ -158,7 +157,7 @@ internal static class AdminApiOperationCatalog
         if (!owner.TryGetProperty(property, out var container)) return false;
         var content = property == "content" ? container : container.TryGetProperty("content", out var nested) ? nested : default;
         if (content.ValueKind != JsonValueKind.Object) return false;
-        foreach (var mediaType in content.EnumerateObject())
+        foreach (var mediaType in content.EnumerateObject().Where(static mediaType => mediaType.Value.ValueKind == JsonValueKind.Object))
         {
             if (mediaType.Value.TryGetProperty("schema", out schema)) return true;
         }
@@ -167,6 +166,8 @@ internal static class AdminApiOperationCatalog
 
     private static JsonElement Resolve(JsonElement root, JsonElement schema)
     {
+        if (schema.TryGetProperty("allOf", out var allOf) && allOf.GetArrayLength() == 1)
+            return Resolve(root, allOf[0]);
         if (!schema.TryGetProperty("$ref", out var reference)) return schema;
         var current = root;
         foreach (var segment in reference.GetString()![2..].Split('/')) current = current.GetProperty(segment);
