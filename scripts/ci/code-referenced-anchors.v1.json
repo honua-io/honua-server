@@ -52,9 +52,14 @@
       "sources": [
         "src/Honua.Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
       ],
-      "why": "remediationRef on the typed dependency-unavailable refusal (OGC API Processes problem+json, GeoServices error details, MCP error data). An agent is expected to follow this URL to learn how to make the request succeed, so a moved heading is a product defect, not a docs nit.",
-      "pendingPr": 3583,
-      "pendingNote": "The heading exists only on feat/redis-optional-degraded-receipt. Warn-until-present: the gate stays green on trunk today and enforces the reference the moment #3583 lands. DROP THIS MARKER IN THE SAME PR THAT LANDS #3583 — once the heading resolves, a leftover marker is a hard error, because a warn-forever escape hatch is how a reference quietly stops being enforced."
+      "why": "CapabilityUnavailableCodes.RedisRemediationRef — the remediationRef on the typed dependency-unavailable refusal (OGC API Processes problem+json, GeoServices error details, MCP error data). An agent is expected to follow this URL to learn how to make the request succeed, so a moved heading is a product defect, not a docs nit. Carried a pendingPr: 3583 marker while that branch was open; the marker was dropped when #3583 landed and the heading became real."
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/docker-compose#redis-is-configured-but-not-entitled",
+      "sources": [
+        "src/Honua.Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
+      ],
+      "why": "CapabilityUnavailableCodes.EntitlementRemediationRef — the remediationRef for a host where Redis IS configured but the Pro 'caching.redis' entitlement is absent. Same wire contract as the entry above, different remediation, and it must not silently collapse onto the Redis-optional anchor: telling an operator to configure Redis that is already configured is worse than no link."
     },
     {
       "url": "https://docs.honua.io/guides/deploy/troubleshooting#database-connections",

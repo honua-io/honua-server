@@ -9,10 +9,12 @@ name: Docs Link Gate
 #
 # It also gates `scripts/ci/code-referenced-anchors.v1.json`: the absolute
 # docs.honua.io URLs that product code and shipped config hand to an operator or
-# an agent at runtime. #3583 turns one of those into a wire contract
+# an agent at runtime. #3583 turned two of those into wire contracts
 # (`remediationRef` on a typed capability refusal), so a moved heading stops being
-# a docs nit and becomes a broken API response. The manifest entry for it carries
-# `pendingPr: 3583` and is a warning until that branch lands.
+# a docs nit and becomes a broken API response an agent is told to follow. Both are
+# registered and enforced. An entry may carry `pendingPr: <n>` while the heading it
+# names exists only on an open branch — a warning until that branch lands, then a
+# hard error until the marker is deleted, so the escape hatch cannot be forgotten.
 #
 # ROUTING. Path-filtered rather than folded into `PR Gate`: `pr-gate.yml` carries
 # an explicit "do not add a paths filter" contract because it is the required
