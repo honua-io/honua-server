@@ -5,7 +5,7 @@
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-08-17.
+> Last updated: 2026-08-28.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -180,6 +180,47 @@ verdict depends on the vulnerability database at scan time and is never
 reusable. The observation receipt already carries per-image content digests over
 the merge tree the images are actually built from, so reuse eligibility is
 measured before anything is enforced; see `native-image-impact-routing.md`.
+
+#### Realised post-change saving (2026-08-28)
+
+The AC#7 follow-up used the Actions **per-workflow** runs endpoint, not the
+repository-wide endpoint: the latter stops exposing history after 1,000 runs
+even when a wider `created` range was requested. Pages were fetched until empty,
+durations were `updated_at - run_started_at`, and rates use the **2.371-day
+observed span** from #3512 landing at `2026-08-26T11:11:42Z` through the newest
+post-change GDAL run at `2026-08-28T20:05:51Z`. This is the same observed-span
+normalisation as `honua-flow/tools/ci-baseline.py`; dividing by a nominal window
+would understate a capped or incomplete sample.
+
+The post-change cohort contains 60 GDAL Worker Image runs, satisfying the
+30-run observation floor. Only two Serving Image Boundary runs occurred in that
+same span. That is the measured outcome of the narrowing, not a short sample to
+pad to 30 by waiting for image-defining changes: the old route would have fired
+on the shared-source changes represented by the still-broad GDAL lane.
+
+| Signal | Serving baseline (2026-08-13–17) | Serving after #3512 | Realised change | GDAL current baseline for #3553 |
+|---|---:|---:|---:|---:|
+| Observed span | 3.40 days | 2.371 days | — | 2.371 days |
+| Runs | 100 | 2 | — | 60 |
+| Runs/day | 29.4 | 0.8 | **-97.1%** | 25.3 |
+| Successful runs | 19 | 2 | — | 50 |
+| Cancelled runs | 80 | 0 | — | 9 |
+| Successful wall-minutes | 2667 | 101.8 | — | 803.9 |
+| Successful wall-minutes/day | 785 | 42.9 | **-742.1/day (-94.5%)** | 339.1 |
+
+The realised serving saving is therefore **742 successful wall-minutes/day**,
+or **94.5%** of the measured pre-change rate. It is below the 785-minute/day
+ceiling, as predicted. The two remaining runs were the change's own
+image-defining workflow executions and completed in 49.1 and 52.8 minutes after
+the three variants were parallelised; no cancelled serving run consumed time in
+the post-change span.
+
+The GDAL column is deliberately a baseline, not a claimed saving: #3553's
+narrowing had not landed at the cutoff. One run had another conclusion, so the
+60-run cohort is 50 successful, 9 cancelled, and 1 other. Its current 339.1
+successful wall-minutes/day replaces the earlier 119-minute/day snapshot for
+evaluating #3553; the difference reflects the much denser current PR activity,
+which is why both the run count and exact observed span are recorded.
 
 ## Trusted observers and evidence ledgers (read-only)
 
