@@ -363,23 +363,19 @@ train_refresh_review_gate() {
     state=success
     description='Current exact-head review evidence is clean'
   else
-    courtesy_min="${TRAIN_REVIEW_COURTESY_MINUTES:-30}"
-    head_committed="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head}" \
-      --jq '.commit.committer.date' 2>/dev/null || true)"
-    if [[ -n "${head_committed}" ]]; then
-      age_min=$(( ( $(date -u +%s) - $(date -u -d "${head_committed}" +%s) ) / 60 ))
-    else
-      # Unknown age fails toward the hold, never toward admission.
-      age_min=-1
-    fi
-    if (( age_min < 0 || age_min < courtesy_min )); then
-      state=failure
-      description="No review at this head yet; courtesy hold (${age_min}/${courtesy_min}m) while the trailing review runs"
-      TRAIN_REVIEW_CATCHUP_NEEDED=1
-    else
-      state=success
-      description='No reviewer objections; review trails this merge (fix-forward admission)'
-    fi
+    # OPERATOR DECISION 2026-08-28 ("yes permanently"): a finding-free head with
+    # a green PR Gate admits IMMEDIATELY -- no courtesy window. The window was
+    # meant to let the trailing review object pre-merge, but composed with the
+    # adjudication loop it metered drain to a trickle: every finding-fix push
+    # reset the 30 minutes, the reviewer usually found something on the new
+    # head, and PRs ping-ponged between freshly-pushed and freshly-reviewed
+    # while the train never caught them clean. Findings that land after the
+    # merge are fix-forward work items, harvested by the post-merge findings
+    # sweep in honua-flow. Objections and unresolved findings still block
+    # absolutely, above; the catch-up dispatch below keeps reviews flowing.
+    state=success
+    description='No reviewer objections; review trails this merge (fix-forward admission)'
+    TRAIN_REVIEW_CATCHUP_NEEDED=1
   fi
 
   # Feed ourselves: when admission is blocked only on a missing review, the
@@ -388,7 +384,7 @@ train_refresh_review_gate() {
   # schedule-event run; merge-train's own cron fires at ~a third of nominal).
   # The pass carries its own per-head dedup and selection caps. One dispatch per
   # controller run; failure is non-fatal -- the courtesy window simply expires.
-  if [[ "${state}" == "failure" && -n "${TRAIN_REVIEW_CATCHUP_NEEDED:-}" \
+  if [[ -n "${TRAIN_REVIEW_CATCHUP_NEEDED:-}" \
         && -z "${TRAIN_REVIEW_CATCHUP_DISPATCHED:-}" && "${TRAIN_APPLY:-0}" == "1" ]]; then
     TRAIN_REVIEW_CATCHUP_DISPATCHED=1
     # >/dev/null is LOAD-BEARING: `gh workflow run` prints the run URL on

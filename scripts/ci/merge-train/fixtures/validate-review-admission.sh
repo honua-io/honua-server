@@ -76,30 +76,17 @@ rc=0; run_gate "$(snapshot "" "$(clean_comment)")" || rc=$?
 [[ "${PUBLISHED_DESC}" == *"evidence is clean"* ]] || fail "wrong admit reason: ${PUBLISHED_DESC}"
 printf 'PASS: %s\n' "clean exact-head evidence admits"
 
-# 3. No evidence + young head: courtesy hold, and the catch-up is dispatched once.
-GH_COMMIT_DATE="$(date -u -d '-5 minutes' +%Y-%m-%dT%H:%M:%SZ)"
+# 3. No evidence, no objections: admits IMMEDIATELY (operator decision
+#    2026-08-28, "yes permanently" -- no courtesy window), and the catch-up is
+#    still dispatched exactly once so the trailing review happens.
 unset TRAIN_REVIEW_CATCHUP_NEEDED TRAIN_REVIEW_CATCHUP_DISPATCHED 2>/dev/null || true
 DISPATCH_COUNT=0
 rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
-[[ "${rc}" != 0 ]] || fail "young unreviewed head was admitted inside the courtesy window"
-[[ "${PUBLISHED_DESC}" == *"courtesy hold"* ]] || fail "wrong hold reason: ${PUBLISHED_DESC}"
+[[ "${rc}" == 0 ]] || fail "finding-free head was not admitted immediately (${PUBLISHED_DESC})"
+[[ "${PUBLISHED_DESC}" == *"review trails"* ]] || fail "wrong trailing reason: ${PUBLISHED_DESC}"
 [[ "${DISPATCH_COUNT}" == 1 ]] || fail "catch-up dispatch count ${DISPATCH_COUNT}, expected 1"
 rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
 [[ "${DISPATCH_COUNT}" == 1 ]] || fail "catch-up re-dispatched within one controller run"
-printf 'PASS: %s\n' "courtesy hold blocks young unreviewed head and dispatches catch-up once"
-
-# 4. No evidence + window expired: admits with review trailing.
-GH_COMMIT_DATE="$(date -u -d '-120 minutes' +%Y-%m-%dT%H:%M:%SZ)"
-rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
-[[ "${rc}" == 0 ]] || fail "window-expired unreviewed head did not admit (${PUBLISHED_DESC})"
-[[ "${PUBLISHED_DESC}" == *"review trails"* ]] || fail "wrong trailing reason: ${PUBLISHED_DESC}"
-printf 'PASS: %s\n' "expired courtesy window admits with review trailing"
-
-# 5. Unknown head age fails toward the hold, never toward admission.
-GH_COMMIT_DATE=""
-unset TRAIN_REVIEW_CATCHUP_NEEDED 2>/dev/null || true
-rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
-[[ "${rc}" != 0 ]] || fail "unknown head age was admitted"
-printf 'PASS: %s\n' "unknown head age holds rather than admits"
+printf 'PASS: %s\n' "finding-free head admits immediately; catch-up dispatched once"
 
 printf 'ALL PASS\n'
