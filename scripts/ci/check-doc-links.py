@@ -2,12 +2,25 @@
 """Documentation link and heading-anchor gate for `docs/`.
 
 Ported from `tools/check_links.py` in the sibling `geospatial-mcp` repository
-(https://github.com/honua-io/geospatial-mcp). The slug algorithm, the fenced-code
-exclusion, the duplicate-heading `-1`/`-2` suffixing, the strip set, and the
-relative-link resolution below are that checker's rules, kept verbatim so the two
-repositories grade heading drift identically — including the literal Unicode
-general/supplemental punctuation ranges in `SLUG_STRIP_RE`, whose compiled
-pattern `check-doc-links.test.py` pins against the origin's byte for byte.
+(https://github.com/honua-io/geospatial-mcp). The **anchor** rules are that
+checker's, verbatim, so the two repositories grade heading drift identically:
+the slug algorithm, the duplicate-heading `-1`/`-2` suffixing, the exclusion of
+headings inside fenced code, and the literal Unicode general/supplemental
+punctuation ranges in `SLUG_STRIP_RE`, whose compiled pattern
+`check-doc-links.test.py` pins against the origin's byte for byte.
+
+Two deliberate departures from the origin, both proved by named cases in the
+companion test:
+
+* **Links inside fenced code are not scanned.** The origin scans a document's
+  raw text, so a Markdown example inside a ```` ```md ```` block is graded as a
+  real link. `docs/` here contains such examples, so link extraction skips
+  fences the same way heading extraction already did.
+* **Fragment matching is case-sensitive.** The origin lowercases the fragment
+  before comparing it against the (already lowercase) slugs, which quietly
+  passes `#What-To-Watch`. GitHub emits only the lowercase anchor and does not
+  scroll for the mixed-case spelling, so a link that reads as working but is not
+  should fail the gate.
 
 Three checks run, in order:
 
@@ -37,9 +50,10 @@ Three checks run, in order:
     references are added.
 
 An entry may carry `"pendingPr": <number>` for a heading that exists only on an
-open pull request. It degrades to a warning until that branch lands and the
-heading appears, so trunk stays green today and the reference is enforced the
-moment it is real.
+open pull request. It degrades to a warning until that branch lands, so trunk
+stays green today. Once the heading appears the marker is an ERROR until it is
+deleted — a warn-forever escape hatch is how a reference stops being enforced
+for good, so removing the marker is part of landing the branch it names.
 
 Usage:
     python3 scripts/ci/check-doc-links.py [--repo-root DIR] [--docs-root DIR]
