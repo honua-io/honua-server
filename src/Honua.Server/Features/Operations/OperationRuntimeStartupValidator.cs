@@ -3,7 +3,9 @@
 
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Operations;
 
@@ -42,6 +44,13 @@ public sealed class OperationRuntimeStartupValidator(IServiceScopeFactory scopeF
         {
             throw new InvalidOperationException(
                 "Production operation runtime requires a fail-closed policy decision point.");
+        }
+
+        if (policy is CanonicalOperationPolicyDecisionPoint &&
+            services.GetRequiredService<IOptions<OperationPolicyOptions>>().Value.Enabled is false)
+        {
+            throw new InvalidOperationException(
+                "Production operation runtime requires Operations:Policy:Enabled=true.");
         }
 
         var catalog = services.GetRequiredService<IOperationCatalog>();

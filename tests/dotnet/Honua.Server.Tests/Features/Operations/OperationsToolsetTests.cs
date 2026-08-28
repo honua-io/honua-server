@@ -49,6 +49,9 @@ public sealed class OperationsToolsetTests
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
             descriptor.ImplementationType == typeof(ServicePublishExecutor));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationEnvelopeFactory) &&
+            descriptor.Lifetime == ServiceLifetime.Singleton);
         services.Should().NotContain(descriptor =>
             descriptor.ServiceType == typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor) &&
             descriptor.ImplementationType != null &&
@@ -213,6 +216,62 @@ public sealed class OperationsToolsetTests
         (await store.GetAsync(handle.OperationInstanceId)).Should().BeEquivalentTo(handle);
         audit.CanceledWriteCount.Should().Be(0,
             "terminal evidence must use a bounded token independent of the disconnected request");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ActuatorPropagatesCancellation_PersistsIndeterminateEnvelope()
+    {
+        using var requestCancellation = new CancellationTokenSource();
+        var store = new VolatileOperationInstanceStore();
+        var audit = new CancellationCheckingAuditLog();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [new CancelingDuringActuationExecutor(requestCancellation)],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            instanceStore: store,
+            auditLog: audit);
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext(),
+            requestCancellation.Token);
+
+        handle.Status.Should().Be(OperationHandleStatus.Indeterminate);
+        handle.Reason.Should().Contain("side effects may have committed");
+        (await store.GetAsync(handle.OperationInstanceId)).Should().BeEquivalentTo(handle);
+        audit.CanceledWriteCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task LegacyAdapter_ExecutionIdentity_ReturnsQueuedEnvelope()
+    {
+        var actuator = Substitute.For<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>();
+        actuator.OperationClass.Returns(OperationClass.Deploy);
+        actuator.ExecuteAsync(
+                Arg.Any<Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns("workflow-queued");
+        var adapter = new LegacyGatewayOperationAdapter(actuator);
+
+        var handle = await adapter.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = adapter.OperationId,
+                GatewayRequest = new Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest
+                {
+                    Kind = OperationClass.Deploy,
+                },
+            },
+            new OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-queued",
+                CorrelationId = "corr-queued",
+            });
+
+        handle.Status.Should().Be(OperationHandleStatus.Queued);
+        handle.JobId.Should().Be("workflow-queued");
     }
 
     [UnitTest]
@@ -506,6 +565,31 @@ public sealed class OperationsToolsetTests
                 CreatedAt = now,
                 UpdatedAt = now,
             });
+        }
+
+        public Task<OperationStatus> GetStatusAsync(
+            OperationHandle handle,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class CancelingDuringActuationExecutor(CancellationTokenSource requestCancellation)
+        : IOperationExecutor
+    {
+        public string OperationId => "service.publish";
+
+        public Task<OperationValidation> ValidateAsync(
+            OperationRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            requestCancellation.Cancel();
+            throw new OperationCanceledException(cancellationToken);
         }
 
         public Task<OperationStatus> GetStatusAsync(

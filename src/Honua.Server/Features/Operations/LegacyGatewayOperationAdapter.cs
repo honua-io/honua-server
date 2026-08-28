@@ -52,7 +52,10 @@ internal sealed class LegacyGatewayOperationAdapter(LegacyExecutor actuator) : T
             OperationId = OperationId,
             CorrelationId = context.CorrelationId
                 ?? throw new InvalidOperationException("Canonical correlation identity is unavailable."),
-            Status = OperationHandleStatus.Completed,
+            Status = executionId is not null && actuator.OperationClass is
+                OperationClass.Deploy or OperationClass.MetadataRelease or OperationClass.Geoprocess
+                    ? OperationHandleStatus.Queued
+                    : OperationHandleStatus.Completed,
             CreatedAt = now,
             UpdatedAt = now,
             JobId = executionId,
