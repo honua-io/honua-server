@@ -91,7 +91,10 @@ public sealed class WorkflowPackagePublishDegradedTests : IAsyncLifetime
         root.GetProperty("capability").GetString().Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
         root.GetProperty("remediation").GetString().Should().Be(CapabilityUnavailableCodes.RedisRemediation);
         root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
-        root.GetProperty("detail").GetString().Should().NotBeNullOrWhiteSpace();
+        root.GetProperty("detail").GetString()
+            .Should().Be(CapabilityUnavailableCodes.DurableWorkflowPublicationDetail);
+        root.TryGetProperty("missingEntitlement", out _).Should().BeFalse(
+            "no Redis connection string is configured, so a dependency is missing rather than a licence");
 
         // A refused publish must leave no trace: the fabricated-success bug was visible precisely
         // because a publication record existed for a definition that did not.
@@ -100,6 +103,65 @@ public sealed class WorkflowPackagePublishDegradedTests : IAsyncLifetime
         using var publicationsDocument = JsonDocument.Parse(await publications.Content.ReadAsStringAsync());
         publicationsDocument.RootElement.GetProperty("data").GetProperty("items").EnumerateArray()
             .Should().NotContain(item => item.GetProperty("publicationId").GetString() == "pub-schedule-3585");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish")]
+    public async Task PublishVersion_ScheduleTargetWithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis()
+    {
+        // The default quickstart lands here, not on the no-Redis path: outside Production, Redis
+        // is deployed but the Pro `caching.redis` entitlement gates IConnectionMultiplexer, so the
+        // durable workflow definition store is composed out by licensing. "Configure Redis and
+        // restart" would be remediation that cannot work (honua-release#202), so the receipt must
+        // name the entitlement and match what the manifest reports for `jobs.runner` on this host.
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
+            .ConfigureServices(static services =>
+                services.Configure<DurableJobSubstrateOptions>(options =>
+                {
+                    options.RedisConfigured = true;
+                    options.RedisEntitled = false;
+                }));
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            var packageId = await CreatePackageAsync("schedule-unentitled", client);
+            var version = await CreateVersionAsync(packageId, client);
+
+            using var response = await client.PostAsJsonAsync(
+                $"/api/v1/console/workflow-packages/{packageId}/versions/{version}/publish",
+                new
+                {
+                    publicationId = "pub-schedule-3585-unentitled",
+                    target = "Schedule",
+                    schedule = new { cronExpression = "0 0 * * *", timeZone = "UTC", enabled = true },
+                    enabled = true
+                },
+                JsonOptions);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = document.RootElement;
+            root.GetProperty("type").GetString().Should().Be(CapabilityUnavailableCodes.ProblemType);
+            root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.EntitlementErrorCode);
+            root.GetProperty("missingEntitlement").GetString()
+                .Should().Be(CapabilityUnavailableCodes.RedisCacheEntitlement);
+            root.TryGetProperty("missingDependency", out _).Should().BeFalse(
+                "Redis is present; nothing is missing but a licence");
+            root.GetProperty("capability").GetString().Should().Be(CapabilityUnavailableCodes.DurableJobsCapability);
+            root.GetProperty("detail").GetString()
+                .Should().Be(CapabilityUnavailableCodes.UnentitledWorkflowPublicationDetail);
+            root.GetProperty("remediation").GetString().Should().NotContain("Set ConnectionStrings__Redis");
+            root.GetProperty("remediationRef").GetString()
+                .Should().Be(CapabilityUnavailableCodes.EntitlementRemediationRef);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
@@ -129,9 +191,9 @@ public sealed class WorkflowPackagePublishDegradedTests : IAsyncLifetime
         }
     }
 
-    private async Task<string> CreatePackageAsync(string name)
+    private async Task<string> CreatePackageAsync(string name, HttpClient? client = null)
     {
-        using var response = await _client.PostAsJsonAsync(
+        using var response = await (client ?? _client).PostAsJsonAsync(
             "/api/v1/console/workflow-packages",
             new
             {
@@ -171,9 +233,9 @@ public sealed class WorkflowPackagePublishDegradedTests : IAsyncLifetime
         return document.RootElement.GetProperty("data").GetProperty("packageId").GetString()!;
     }
 
-    private async Task<int> CreateVersionAsync(string packageId)
+    private async Task<int> CreateVersionAsync(string packageId, HttpClient? client = null)
     {
-        using var response = await _client.PostAsync(
+        using var response = await (client ?? _client).PostAsync(
             $"/api/v1/console/workflow-packages/{packageId}/versions",
             content: null);
 

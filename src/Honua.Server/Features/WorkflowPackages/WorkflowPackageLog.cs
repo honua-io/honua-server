@@ -56,11 +56,10 @@ internal static partial class WorkflowPackageLog
         string publicationId,
         Exception exception);
 
-    [LoggerMessage(118509, LogLevel.Warning, "Workflow package {PackageId} version {Version} schedule publication {PublicationId} refused: the durable workflow definition store is unavailable because {MissingDependency} is not composed")]
+    [LoggerMessage(118509, LogLevel.Warning, "Workflow package {PackageId} version {Version} schedule publication {PublicationId} refused: no durable workflow definition store is composed, so the publication would have no durable record")]
     public static partial void SchedulePublicationRefusedWithoutDurableStore(
         ILogger logger,
         string packageId,
         int version,
-        string publicationId,
-        string missingDependency);
+        string publicationId);
 }

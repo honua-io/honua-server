@@ -129,6 +129,34 @@ public static class CapabilityUnavailableCodes
         "entitlement. Redis is configured on this server, but the active licence does not entitle " +
         "it, so the durable control plane was never composed.";
 
+    /// <summary>
+    /// Detail sentence for a workflow-package <c>Schedule</c> publication refused on a host where
+    /// Redis is present but the Pro <c>caching.redis</c> entitlement is not, so "configure Redis"
+    /// would be the wrong fix (honua-server#3585).
+    /// </summary>
+    public const string UnentitledWorkflowPublicationDetail =
+        "Publishing a workflow package to a Schedule target requires the durable workflow " +
+        "definition store, which needs the Pro 'caching.redis' entitlement. Redis is configured " +
+        "on this server, but the active licence does not entitle it, so the store was never " +
+        "composed. The publication is refused up front rather than reported as successful " +
+        "without a durable record.";
+
+    /// <summary>
+    /// Detail sentence for a workflow-package <c>Schedule</c> publication refused because no
+    /// durable workflow definition store was composed (honua-server#3585).
+    /// </summary>
+    /// <remarks>
+    /// The compiled <c>WorkflowDefinition</c> is the publication's only durable receipt — it is
+    /// the record the cron scheduler enumerates — so a publish that cannot write it has nothing
+    /// to report success about.
+    /// </remarks>
+    public const string DurableWorkflowPublicationDetail =
+        "Publishing a workflow package to a Schedule target requires the Redis-backed durable " +
+        "workflow definition store. This server was started without a Redis connection, so the " +
+        "compiled workflow definition could not be persisted and no scheduler would ever run it. " +
+        "The publication is refused up front rather than reported as successful without a " +
+        "durable record.";
+
     /// <summary>Detail sentence for a refusal caused by the absent durable control plane.</summary>
     /// <remarks>
     /// Refusals on this path deliberately carry no <c>capability</c> member: the manifest has no

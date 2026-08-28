@@ -241,7 +241,7 @@ Redis-backed services are gated on the Pro `caching.redis` entitlement as well a
 
 **This is the default for the repository quickstart**: the root `docker-compose.yml` leaves `HONUA_DEV_GRANT_EDITION` empty, so the stack starts Redis but runs as Community and durable jobs stay unavailable. Set `HONUA_DEV_GRANT_EDITION=Pro` (a development-only grant, honoured outside Production) or install a licence that includes `caching.redis`.
 
-Because "add Redis" is not the fix here, this case reports itself differently. The refusal carries `"code": "license-required"` with `"missingEntitlement": "caching.redis"` and **no** `missingDependency`, and the capabilities manifest reports `jobs.runner` with `"reasonCode": "license-required"` rather than `dependency-unavailable`.
+Because "add Redis" is not the fix here, this case reports itself differently. The refusal carries `"code": "license-required"` with `"missingEntitlement": "caching.redis"` and **no** `missingDependency`, and the capabilities manifest reports `jobs.runner` with `"reasonCode": "license-required"` rather than `dependency-unavailable`. Workflow-package `Schedule` publication splits the same way: it is refused on both hosts, but names the entitlement here and the missing Redis dependency there, so the remediation you are handed is one that can actually work.
 
 ### Running the no-Redis variant
 

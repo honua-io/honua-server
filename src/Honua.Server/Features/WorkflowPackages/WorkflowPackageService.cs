@@ -305,8 +305,7 @@ internal sealed class WorkflowPackageService(
                     logger,
                     packageId,
                     version,
-                    publicationId,
-                    CapabilityUnavailableCodes.RedisDependency);
+                    publicationId);
                 throw new WorkflowPublicationDependencyUnavailableException();
             }
 
@@ -1040,41 +1039,13 @@ internal sealed class WorkflowPublicationConflictException(string publicationId)
 /// the Console endpoint maps that base type to <c>409 Conflict</c>, and this is a <c>503</c>
 /// capability-unavailable refusal carrying the honua-release#202 receipt.
 /// </summary>
-internal sealed class WorkflowPublicationDependencyUnavailableException : Exception
-{
-    /// <summary>
-    /// Human-readable detail for a <see cref="WorkflowPublicationTarget.Schedule"/> publication on
-    /// a host with no durable workflow definition store.
-    /// </summary>
-    internal const string ScheduleTargetDetail =
-        "Publishing a workflow package to a Schedule target requires the Redis-backed durable " +
-        "workflow definition store. This server was started without a Redis connection, so the " +
-        "compiled workflow definition could not be persisted and no scheduler would ever run it. " +
-        "The publication is refused up front rather than reported as successful without a " +
-        "durable record.";
-
-    public WorkflowPublicationDependencyUnavailableException()
-        : base(ScheduleTargetDetail)
-    {
-        MissingDependency = CapabilityUnavailableCodes.RedisDependency;
-        Capability = CapabilityUnavailableCodes.DurableJobsCapability;
-        Remediation = CapabilityUnavailableCodes.RedisRemediation;
-        RemediationRef = CapabilityUnavailableCodes.RedisRemediationRef;
-    }
-
-    /// <summary>Identifier of the infrastructure dependency that was not composed.</summary>
-    public string MissingDependency { get; }
-
-    /// <summary>
-    /// Capability-manifest id this refusal disables, so a client can join it to
-    /// <c>GET /api/v1/capabilities/manifest</c> (which reports the same
-    /// <c>dependency-unavailable</c> reason code for that id on a Redis-less install).
-    /// </summary>
-    public string Capability { get; }
-
-    /// <summary>Operator-facing remediation sentence.</summary>
-    public string Remediation { get; }
-
-    /// <summary>Documentation reference for <see cref="Remediation"/>.</summary>
-    public string RemediationRef { get; }
-}
+/// <remarks>
+/// The exception says <em>what</em> could not be satisfied; it deliberately carries no receipt.
+/// <em>Why</em> the substrate is missing — no Redis connection string versus a present-but-
+/// unentitled Redis — is a deployment fact held by <c>DurableJobSubstrateOptions</c>, and the two
+/// causes need different remediation. The Console endpoint classifies it there, exactly as
+/// <c>ProposalEndpoints.ControlPlaneUnavailable</c> does, so this service stays free of licensing
+/// and connection-string knowledge.
+/// </remarks>
+internal sealed class WorkflowPublicationDependencyUnavailableException()
+    : Exception(CapabilityUnavailableCodes.DurableWorkflowPublicationDetail);
