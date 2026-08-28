@@ -71,8 +71,11 @@ internal sealed class OpsAutonomyRuleOptions
 internal sealed class OpsAutonomyEvaluator(
     IOptionsMonitor<OpsAutonomyOptions> options,
     IOpsAutonomyPolicyStore? store = null,
-    IOpsActionSafetyCatalog? safetyCatalog = null) : IOpsAutonomyEvaluator
+    IOpsActionSafetyCatalog? safetyCatalog = null,
+    TimeProvider? timeProvider = null) : IOpsAutonomyEvaluator
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
     public async Task<OpsAutonomyFindingDecision> EvaluateFindingAsync(
         OpsFinding finding,
         CancellationToken cancellationToken = default)
@@ -118,6 +121,14 @@ internal sealed class OpsAutonomyEvaluator(
         if (context is null)
         {
             return RouteDenied("no-autonomy-context");
+        }
+
+        if (!EvidencePosture.IsActionable(
+                context.EvidencePosture,
+                context.RequiredEvidenceSourceIds,
+                _timeProvider.GetUtcNow()))
+        {
+            return RouteDenied("evidence-incomplete");
         }
 
         var policy = await ResolvePolicyAsync(context.Rule, cancellationToken).ConfigureAwait(false);

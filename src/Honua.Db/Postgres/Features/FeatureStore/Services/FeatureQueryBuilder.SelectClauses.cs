@@ -227,7 +227,7 @@ internal sealed partial class FeatureQueryBuilder
 
         foreach (var fieldName in requestedOutFields)
         {
-            if (!IsValidFieldName(fieldName))
+            if (!IsValidJsonAttributeName(fieldName))
             {
                 throw new ArgumentException($"Invalid field name for projection: {fieldName}");
             }

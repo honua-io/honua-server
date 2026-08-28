@@ -3,6 +3,7 @@
 
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 
@@ -78,15 +79,21 @@ internal static class McpToolSchemas
         }
         """;
 
-    private const string ProposeOperationArgumentSchemaJson = """
+    private static readonly string ProposeOperationArgumentSchemaJson = $$"""
         {
           "type": "object",
-          "required": ["kind"],
+          "required": ["kind", "resourceId", "executionPayload"],
           "properties": {
             "kind": {
               "type": "string",
-              "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"],
-              "description": "In-scope mutating control-plane operation class to propose."
+              "enum": ["Deploy", "MetadataRelease"],
+              "description": "Mutating control-plane operation class safely representable by this generic proposal tool."
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": {{OperationAuthorityContext.MaxResourceIdLength}},
+              "description": "Exact tenant-scoped target resource identifier bound to the proposal."
             },
             "reason": {
               "type": "string",
@@ -94,13 +101,15 @@ internal static class McpToolSchemas
             },
             "executionPayload": {
               "type": "string",
-              "description": "Opaque, class-specific JSON execution payload replayed when the proposal is approved."
+              "minLength": 2,
+              "description": "Class-specific JSON execution specification. Deploy requires targetId matching resourceId and desiredRevision. MetadataRelease requires action=create, packageId, targetEnvironment, resourceSemanticId matching resourceId, and newFieldName."
             },
             "idempotencyKey": {
               "type": "string",
               "description": "Stable idempotency key for the underlying operation."
             }
-          }
+          },
+          "additionalProperties": false
         }
         """;
 

@@ -14,6 +14,7 @@ using Honua.Core.Features.Scene.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.Soap;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -113,17 +114,9 @@ internal static class GeoservicesCatalogEndpoints
         XDocument request;
         try
         {
-            var settings = new XmlReaderSettings
-            {
-                Async = true,
-                DtdProcessing = DtdProcessing.Prohibit,
-                XmlResolver = null,
-                MaxCharactersInDocument = MaxSoapRequestCharacters
-            };
-            using var reader = XmlReader.Create(context.Request.Body, settings);
-            request = await XDocument.LoadAsync(
-                reader,
-                LoadOptions.None,
+            request = await SoapXmlDocumentReader.LoadAsync(
+                context.Request.Body,
+                MaxSoapRequestCharacters,
                 context.RequestAborted).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.Xml.XmlException)

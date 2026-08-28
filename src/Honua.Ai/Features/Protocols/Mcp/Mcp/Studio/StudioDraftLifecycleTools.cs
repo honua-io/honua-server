@@ -83,10 +83,23 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         }
 
         var family = ParseFamily(argument.Family);
+        // The live family registry enriches the envelope with the format that family
+        // advertises. Stamping it is an enrichment, not a precondition: where the lifecycle
+        // service publishes no registry the draft is created without a format, exactly as it
+        // was before. A registry that is present but omits the family is still a hard
+        // validation failure -- that is a genuinely unsupported family.
+        var families = lifecycleService.GetCapabilities()?.Families;
+        var familyDescriptor = families?.FirstOrDefault(descriptor => descriptor.Family == family);
+        if (familyDescriptor is null && families is { Count: > 0 })
+        {
+            throw new GeoprocessingValidationException($"Studio package family '{family}' is not available.");
+        }
+
         var envelope = new StudioPackageEnvelope
         {
             Family = family,
             SchemaVersion = argument.SchemaVersion,
+            Format = familyDescriptor?.Format,
             Body = argument.Body,
         };
 
@@ -338,6 +351,42 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             StudioAuthorizationOperation.UpdateDraft,
             draftId.ToString("D"),
             OperatorOperation.Create).ConfigureAwait(false);
+
+        // Composition drafts get their composition blocks checked before the write. The validator
+        // is optional here, exactly as it was before this surface validated at all: a host without
+        // one still updates drafts rather than failing closed on a missing collaborator.
+        var compositionValidator = StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(existing.Family)
+            ? httpContext.RequestServices.GetService<IStudioPackageValidator>()
+            : null;
+        if (compositionValidator is not null)
+        {
+            // Only diagnostics about a composition BLOCK are fatal here -- those the composition
+            // sub-validators raise, which are always nested under "/body/" (/body/interactions,
+            // /body/layers, /body/widgets, /body/controls, ...). Everything shallower describes
+            // the draft as a whole rather than the composition being edited, and must not be
+            // fatal on this path:
+            //   * "/format", "/schemaVersion" and the like are envelope-level. A draft created
+            //     without a stamped format is pre-existing valid state; a rename must not be the
+            //     operation that suddenly rejects it.
+            //   * "/body" exactly -- studio.body.required (a draft legitimately carrying no body),
+            //     studio.body.invalid and studio.composition.invalid (the body is simply not a
+            //     composition document, e.g. a map authored outside the composition tools).
+            // The strict family-package branch is excluded by code as well: it reports under
+            // "/body/format", but a composition draft's body is a composition document, never a
+            // honua_map_package.v1 one, so it always mismatches -- including for a body the
+            // composition tools themselves just produced.
+            var diagnostic = compositionValidator.Validate(envelope).Diagnostics.FirstOrDefault(static candidate =>
+                candidate.Severity == StudioPackageDiagnosticSeverity.Error
+                && candidate.Path is not null
+                && candidate.Path.StartsWith("/body/", StringComparison.Ordinal)
+                && !candidate.Code.StartsWith("studio.map.", StringComparison.Ordinal)
+                && !candidate.Code.StartsWith("studio.app.", StringComparison.Ordinal));
+            if (diagnostic is not null)
+            {
+                throw new GeoprocessingValidationException(
+                    $"{diagnostic.Code} at {diagnostic.Path}: {diagnostic.Message}");
+            }
+        }
         var updated = await ApplyUpdateAsync(
             lifecycleService,
             draftId,

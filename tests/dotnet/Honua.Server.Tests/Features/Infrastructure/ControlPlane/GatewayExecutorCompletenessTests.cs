@@ -177,13 +177,28 @@ public sealed class GatewayExecutorCompletenessTests
         {
             Kind = OperationClass.MetadataRelease,
             RequestedBy = "agent:proposer",
+            Authority = new OperationAuthorityContext
+            {
+                Issuer = "test-service",
+                Actor = "agent:proposer",
+                Scheme = "Service",
+                EffectiveTenant = "tenant-1",
+                ScopeGoverned = false,
+            },
             ExecutionPayload = payload,
         });
 
         proposeResult.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         proposeResult.ProposalId.Should().NotBeNullOrEmpty();
 
-        var approved = await gateway.ApplyApprovedProposalAsync(proposeResult.ProposalId!, "admin");
+        var approved = await gateway.ApplyApprovedProposalAsync(
+            proposeResult.ProposalId!,
+            new OperationApproverIdentity
+            {
+                Actor = "admin",
+                Issuer = "https://approver.example",
+                Scheme = "Bearer",
+            });
 
         approved.Should().NotBeNull();
         approved!.Status.Should().Be(OperationProposalStatus.Submitted);

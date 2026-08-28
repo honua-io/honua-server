@@ -57,7 +57,10 @@ public sealed class PublishedOperationToolTests
 
         // Typed input schema projected from the descriptor's parameters.
         descriptor.InputSchema.GetProperty("type").GetString().Should().Be("object");
+        descriptor.InputSchema.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
         descriptor.InputSchema.GetProperty("properties").TryGetProperty("layerId", out _).Should().BeTrue();
+        descriptor.InputSchema.GetProperty("properties").GetProperty("layerId")
+            .GetProperty("type").GetString().Should().Be("string");
         descriptor.InputSchema.GetProperty("required").EnumerateArray()
             .Select(e => e.GetString()).Should().Contain("layerId");
 

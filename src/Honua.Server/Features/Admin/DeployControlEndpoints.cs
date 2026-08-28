@@ -6,6 +6,7 @@ using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
@@ -182,6 +183,7 @@ internal static class DeployControlEndpoints
 
         return new DeployPreflightPlatformRelease
         {
+            EvidencePosture = EvidencePostureProjection.ForPlatformRelease(DateTimeOffset.UtcNow),
             ReleaseVersion = skew.ReleaseVersion,
             ReleaseDeclared = skew.ReleaseDeclared,
             IsCoVersioned = skew.IsCoVersioned,
@@ -369,9 +371,18 @@ internal static class DeployControlEndpoints
                 .ListDeployOperationsAsync(status, kind, page, pageSize, cancellationToken)
                 .ConfigureAwait(false);
 
+            var generatedAt = DateTimeOffset.UtcNow;
+            var items = result.Items.Select(MapOperationResponse).ToArray();
             var response = new DeployOperationListResponse
             {
-                Items = result.Items.Select(MapOperationResponse).ToArray(),
+                EvidencePosture = EvidencePostureProjection.ForDeployOperations(
+                    generatedAt,
+                    result.Page,
+                    result.PageSize,
+                    items.Length,
+                    result.HasMore,
+                    items.Select(item => item.UpdatedAt).ToArray()),
+                Items = items,
                 Page = result.Page,
                 PageSize = result.PageSize,
                 TotalCount = result.TotalCount,
@@ -659,6 +670,15 @@ internal static class DeployControlEndpoints
         }
 
         var requestedBy = ResolveRequestedBy(context);
+        var authority = OperationAuthorityContext.Capture(
+            context.User,
+            context.RequestServices.GetRequiredService<ITenantContext>(),
+            context.RequestServices.GetRequiredService<IConfiguration>()
+                .GetValue("MultiTenancy:Enabled", true)) with
+        {
+            ResourceType = OperatorResourceType.Deployment,
+            Operation = OperatorOperation.Publish,
+        };
         var reason = string.IsNullOrWhiteSpace(request?.Reason)
             ? $"Converge serving targets to platform release {declaredVersion}."
             : request!.Reason!;
@@ -713,6 +733,7 @@ internal static class DeployControlEndpoints
                     declaredServing,
                     declaredVersion,
                     requestedBy,
+                    authority,
                     reason,
                     request?.CorrelationId,
                     isUnknown,
@@ -746,6 +767,7 @@ internal static class DeployControlEndpoints
         string declaredServing,
         string declaredVersion,
         string? requestedBy,
+        OperationAuthorityContext authority,
         string reason,
         string? correlationId,
         bool isUnknown,
@@ -762,6 +784,7 @@ internal static class DeployControlEndpoints
         {
             Kind = OperationClass.Deploy,
             RequestedBy = requestedBy,
+            Authority = authority with { ResourceId = targetId },
             Reason = reason,
             CorrelationId = correlationId,
             // Stable idempotency key so a double-converge folds onto one operation/proposal per target.

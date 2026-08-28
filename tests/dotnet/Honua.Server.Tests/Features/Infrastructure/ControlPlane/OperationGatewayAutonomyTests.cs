@@ -55,7 +55,8 @@ public sealed class OperationGatewayAutonomyTests
             auditLog,
             CreateOpsNotifier(outbox));
 
-        var result = await sut.RouteAsync(Request());
+        var request = Request();
+        var result = await sut.RouteAsync(request);
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Executed);
         result.ExecutionOperationId.Should().Be(RecordingExecutor.OperationId);
@@ -89,7 +90,8 @@ public sealed class OperationGatewayAutonomyTests
             });
         var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
 
-        var result = await sut.RouteAsync(Request());
+        var request = Request();
+        var result = await sut.RouteAsync(request);
 
         result.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         result.ProposalId.Should().NotBeNullOrWhiteSpace();
@@ -104,9 +106,11 @@ public sealed class OperationGatewayAutonomyTests
         proposal.AutonomyMetadata.Rule.Should().Be(Rule);
         proposal.AutonomyMetadata.ActionDiscriminator.Should().Be(RedriveAction);
         proposal.AutonomyMetadata.EvidenceRefs.Should().Equal("test");
+        proposal.AutonomyMetadata.RequiredEvidenceSourceIds.Should().Equal(EvidenceSourceIds.AlertDispatch);
+        proposal.AutonomyMetadata.EvidencePosture.Should().BeEquivalentTo(request.AutonomyContext!.EvidencePosture);
         proposal.Plan.ExecutionPayload.Should().NotBeNull();
 
-        var approved = await sut.ApplyApprovedProposalAsync(result.ProposalId!, "human-approver");
+        var approved = await sut.ApplyApprovedProposalAsync(result.ProposalId!, HumanApprover());
         approved.Should().NotBeNull();
         evaluator.ProposalApprovedCount.Should().Be(1);
         evaluator.ProposalRejectedCount.Should().Be(0);
@@ -150,12 +154,12 @@ public sealed class OperationGatewayAutonomyTests
         var sut = BuildGateway(store, evaluator, new RecordingExecutor(), RecordingConvergence.Converged());
         var routed = await sut.RouteAsync(Request());
 
-        var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, HumanApprover());
         await first.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("simulated proposal counter outage");
         (await store.GetAsync(routed.ProposalId!))!.Status.Should().Be(OperationProposalStatus.Submitted);
 
-        var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
+        var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, HumanApprover());
         await retry.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*cannot be approved*");
         evaluator.ProposalApprovedCount.Should().Be(2,
@@ -216,6 +220,7 @@ public sealed class OperationGatewayAutonomyTests
         var result = await sut.RouteAsync(Request());
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
+        result.OperationInstanceId.Should().StartWith("opinst-");
         result.Message.Should().Contain("No post-action convergence verifier");
         executor.ExecuteCount.Should().Be(0, "autonomy must fail closed before invoking an unverifiable action");
         evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Failed);
@@ -427,6 +432,10 @@ public sealed class OperationGatewayAutonomyTests
             Kind = OperationClass.AdminConfigChange,
             ActionDiscriminator = RedriveAction,
             RequestedByAgent = "ops-findings-autonomy",
+            Authority = OperationAuthorityContext.CaptureService(
+                "honua-server",
+                "ops-findings-autonomy",
+                "platform"),
             Reason = "Redrive dead-lettered alert dispatches.",
             IdempotencyKey = FindingId,
             ExecutionPayload = "{\"action\":\"alerts.redrive_dead_letters\"}",
@@ -438,8 +447,32 @@ public sealed class OperationGatewayAutonomyTests
                 ActionMarkedAutoSafe = true,
                 BlastRadius = 1,
                 EvidenceRefs = ["test"],
+                EvidencePosture = CompleteEvidence(),
+                RequiredEvidenceSourceIds = [EvidenceSourceIds.AlertDispatch],
             },
         };
+
+    private static OperationApproverIdentity HumanApprover() => new()
+    {
+        Actor = "human-approver",
+        Issuer = "https://approver.example",
+        Scheme = "Bearer",
+    };
+
+    private static EvidencePostureEnvelope CompleteEvidence()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return EvidencePosture.Envelope(now,
+        [
+            EvidencePosture.Source(
+                EvidenceSourceIds.AlertDispatch,
+                EvidenceBackendKinds.DurableStore,
+                "alert-dispatch-store",
+                now,
+                now,
+                evaluatedAt: now),
+        ]);
+    }
 
     private static GuardrailDecision RequiresApprovalDecision()
         => new(

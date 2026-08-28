@@ -196,6 +196,50 @@ public sealed class McpOpsObservabilityReaderTests
         item.GetProperty("kind").GetString().Should().Be("release");
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ListOperateEvents_EmptySuccessfulSource_RemainsInEvidenceCoverage()
+    {
+        var principal = CreatePrincipal();
+        var operateEvents = Substitute.For<IOperateEventFeed>();
+        operateEvents.ListAsync(Arg.Any<OperateEventFilter>(), Arg.Any<CancellationToken>())
+            .Returns(new OperateEventPage
+            {
+                Items =
+                [
+                    new OperateEvent
+                    {
+                        EventId = "alert:1",
+                        Kind = OperateEventKind.Alert,
+                        Severity = OperateEventSeverity.Warning,
+                        OccurredAt = DateTimeOffset.UtcNow,
+                        Title = "Alert",
+                    },
+                ],
+                QueriedSources = [OperateEventKind.Alert, OperateEventKind.Audit],
+            });
+        using var services = CreateServices();
+        var reader = CreateReader(
+            authorization: CreateAuthorization(AuthorizationResult.Success()),
+            operateEvents: operateEvents,
+            services: services);
+
+        var result = await reader.ListOperateEventsAsync(
+            principal,
+            new McpOperateEventsArgument(),
+            CancellationToken.None);
+
+        var coverage = result.GetProperty("evidencePosture")
+            .GetProperty("sources")[0]
+            .GetProperty("coverage");
+        coverage.GetProperty("includedComponentIds").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().BeEquivalentTo(["alert", "audit"]);
+        coverage.GetProperty("expectedComponentIds").EnumerateArray()
+            .Select(item => item.GetString())
+            .Should().BeEquivalentTo(["alert", "audit"]);
+    }
+
     private static McpOpsObservabilityReader CreateReader(
         IOpsHealthSnapshotService? health = null,
         IAuthorizationService? authorization = null,
@@ -258,6 +302,7 @@ public sealed class McpOpsObservabilityReaderTests
             Geoprocessing = new OpsGpQueueView
             {
                 TotalActive = 0,
+                Configured = true,
                 Available = true,
                 Buckets = [],
             },

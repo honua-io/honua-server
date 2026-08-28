@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/supported_operation_kinds.schema.json",
   "title": "supported_operation_kinds inputSchema",
-  "description": "Argument shape for the read-only operation-executor discovery tool (advertised name honua_supported_operation_kinds). Returns stable operation-kind identifiers derived from the live registered executor catalog. Takes no arguments. x-honua-reference-shape: this shape tracks the reference implementation.",
+  "description": "Argument shape for the read-only operation discovery tool (advertised name honua_supported_operation_kinds). Returns stable operation-kind identifiers that are both present in the live executor catalog and safely representable by honua_propose_operation. Takes no arguments. x-honua-reference-shape: this shape tracks the reference implementation.",
   "x-honua-reference-shape": true,
   "type": "object",
   "properties": {},

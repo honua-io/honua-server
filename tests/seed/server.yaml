@@ -178,9 +178,12 @@ sql:
           description   TEXT,
           is_built_in   BOOLEAN      NOT NULL DEFAULT FALSE,
           created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-          updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+          updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          deleted_at    TIMESTAMPTZ
       );
+  - "ALTER TABLE honua.rbac_roles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;"
   - "CREATE UNIQUE INDEX IF NOT EXISTS uq_rbac_roles_name_lower ON honua.rbac_roles (LOWER(name));"
+  - "CREATE INDEX IF NOT EXISTS idx_rbac_roles_active_name ON honua.rbac_roles (name) WHERE deleted_at IS NULL;"
   - |
       CREATE TABLE IF NOT EXISTS honua.rbac_role_permissions (
           role_id       UUID         NOT NULL,

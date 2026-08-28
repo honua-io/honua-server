@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.HealthCheck;
@@ -45,5 +46,51 @@ public sealed class ProductionHealthChecksRegistrationTests
             "feature-change-outbox",
             "plugins",
         });
+    }
+
+    [UnitTest]
+    public void AddProductionHealthChecks_WithRedisConnectionStringButNoMultiplexer_OmitsRedisCheck()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Redis"] = "redis:6379",
+            })
+            .Build();
+
+        services.AddProductionHealthChecks(configuration);
+
+        RegistrationNames(services).Should().NotContain(
+            "redis",
+            "Community deployments can configure a Redis cache string without being entitled "
+            + "to the IConnectionMultiplexer dependency");
+    }
+
+    [UnitTest]
+    public void AddProductionHealthChecks_WithRedisMultiplexer_RegistersRedisCheck()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+            throw new InvalidOperationException("The registration test must not resolve Redis."));
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Redis"] = "redis:6379",
+            })
+            .Build();
+
+        services.AddProductionHealthChecks(configuration);
+
+        RegistrationNames(services).Should().Contain("redis");
+    }
+
+    private static string[] RegistrationNames(IServiceCollection services)
+    {
+        using var provider = services.BuildServiceProvider();
+        return provider.GetRequiredService<IOptions<HealthCheckServiceOptions>>()
+            .Value.Registrations
+            .Select(registration => registration.Name)
+            .ToArray();
     }
 }
