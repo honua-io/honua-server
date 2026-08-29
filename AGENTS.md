@@ -225,10 +225,13 @@ There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A P
 Keep a ready PR non-draft and let `PR Gate` complete. The routine merge
 authority is the fleet's serialized per-PR lander: it continuously lands any
 open PR that is MERGEABLE, non-draft, unlabeled by `hold`/`train:hold`/
-`train:escalated`, has `PR Gate` green at its exact current head, and has ZERO
-unresolved review threads. You do not dispatch anything — resolve findings
+`train:escalated`, is currently based on `trunk`, has both `PR Gate` and
+`Review Gate` green at its exact current head, and has ZERO unresolved review
+threads. The lander rechecks every condition immediately before merging. You do
+not dispatch anything — resolve findings
 (with evidence, never bare resolutions) and keep the head green; the lander
-does the rest. The full CI matrix TRAILS on trunk after landings; a
+does the rest. The full CI matrix TRAILS on trunk after landings, with trunk
+runs serialized and never cancelled by a newer trailing dispatch; a
 deterministic trunk red pauses the lander for everything except `fix/`,
 `revert/`, and `hotfix/` branches until a fix-forward PR lands (never weaken
 tests to clear it). `.github/workflows/merge-train.yml` remains for manual

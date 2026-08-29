@@ -2,13 +2,15 @@
 
 ## Status
 
-Accepted. Phase 1 (deterministic git assembly, smart-CI, attribution, FF-CAS
-land, and a dry-run-by-default workflow) is active. Automatic triggers remain
+Accepted for manual and release-candidate batch validation. Phase 1
+(deterministic git assembly, smart-CI, attribution, FF-CAS land, and a
+dry-run-by-default workflow) remains available. Automatic triggers remain
 dry-run-only; an explicit `workflow_dispatch` with `train_apply=true` and a
-`MERGE_TRAIN_TOKEN` is the only path that lands a batch. The separate serial
-`pr-merge-train.yml` lander referenced by earlier revisions of this ADR was
-deleted on 2026-07-21 (`d2afeb9d5`); `merge-train.yml` is now the sole merge
-authority and `scripts/ci/validate-single-merge-authority.sh` enforces that.
+`MERGE_TRAIN_TOKEN` is the only path that lands a batch. Since 2026-08-29,
+routine landings use the fleet's serialized per-PR lander with exact-head
+`PR Gate` and `Review Gate`, trunk-base, mergeability, hold-label, and unresolved
+thread checks immediately before merge, followed by non-cancelling trailing
+trunk CI. `merge-train.yml` is no longer the routine merge authority.
 
 ## Context
 

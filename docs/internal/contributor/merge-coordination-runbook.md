@@ -1,12 +1,15 @@
 # Merge coordination runbook
 
-Merging on `honua-server` has exactly one authority: `merge-train.yml`. Nothing
-else merges, reruns, or triages on a PR's behalf, and no live Claude/Codex
-session needs to babysit a queue.
+Routine merging on `honua-server` is performed by the fleet's serialized per-PR
+lander. It rechecks that the PR is open, non-draft, MERGEABLE, based on `trunk`,
+not held or escalated, has exact-head successful `PR Gate` and `Review Gate`
+contexts, and has no unresolved review threads immediately before merging. No
+live Claude/Codex session needs to babysit a queue.
 
 | Workflow | Trigger | Job |
 |---|---|---|
-| `merge-train.yml` | 15-minute schedule (dry-run) or an explicit `train_apply=true` dispatch | Sole merge authority: exact-head `PR Gate` + `Review Gate` admission, batch assembly, batch CI dispatch, failure attribution, and compare-and-swap landing. |
+| Fleet serialized per-PR lander | External serialized service | Routine merge authority: rechecks trunk base, exact-head `PR Gate` + `Review Gate`, review-thread, mergeability, draft, and hold/escalation admission immediately before landing. A deterministic trailing trunk CI failure pauses routine landings except fix-forward branches. |
+| `merge-train.yml` | 15-minute schedule (dry-run) or an explicit `train_apply=true` dispatch | Manual/release-candidate batch authority: exact-head `PR Gate` + `Review Gate` admission, batch assembly, batch CI dispatch, failure attribution, and compare-and-swap landing. Not the routine landing path. |
 | `merge-train-rerun-recovery.yml` | `workflow_run` (CI) completed successfully on a `train/batch/*` branch | Resumes the active immutable batch when a failed batch CI is rerun green: clears stale `train:escalated`/`train:landing` labels, lands or re-queues the recorded batch, then dispatches one live continuation run of `merge-train.yml`. |
 
 Flake reruns, timeout classification, and failure attribution live **inside**

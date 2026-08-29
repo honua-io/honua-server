@@ -140,15 +140,12 @@ test('an `@claude review` re-request requires a human with write access', () => 
   assert.match(source, /comment\.user\.type == 'User'/);
 });
 
-test('only a clean, green, eligible exact head nudges the merge train', () => {
+test('clean, green, eligible exact-head evidence does not dispatch the merge train', () => {
   assert.match(source, /echo "clean=false" >> "\$\{GITHUB_OUTPUT\}"/);
   assert.match(source, /if \[ "\$\{verdict\}" != "clean" \]; then\n\s+exit 0/);
   assert.match(source, /\.name == "PR Gate" and \.app\.id == 15368/);
   assert.match(source, /sort_by\(\.started_at\) \| last \| \.conclusion == "success"/);
   assert.match(source, /\. == "hold" or \. == "train:hold" or \. == "train:escalated"/);
-  assert.match(source, /steps\.evidence\.outputs\.clean == 'true'/);
-  assert.match(source, /steps\.evidence\.outputs\.pr_gate_green == 'true'/);
-  assert.match(source, /steps\.evidence\.outputs\.eligible == 'true'/);
-  assert.match(source, /gh workflow run merge-train\.yml[^\n]*--ref trunk/);
-  assert.match(source, /-f train_apply=true -f max_batch=10 >\/dev\/null 2>&1 \|\| true/);
+  assert.doesNotMatch(source, /gh workflow run merge-train\.yml/);
+  assert.doesNotMatch(source, /train_apply=true/);
 });
