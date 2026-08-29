@@ -907,12 +907,12 @@ WHERE service_name = 'test_service';
 
 INSERT INTO honua.layers (
     layer_id, layer_name, description, table_name,
-    geometry_type, srid, extent, default_visibility
+    geometry_type, srid, extent, temporal_column, default_visibility
 )
 VALUES (
     0, 'Test Layer', 'Client compatibility certification layer',
     'features', 'Point', 4326,
-    ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), true
+    ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), 'created_at', true
 )
 ON CONFLICT (layer_id) DO UPDATE SET
     layer_name = EXCLUDED.layer_name,
@@ -921,6 +921,7 @@ ON CONFLICT (layer_id) DO UPDATE SET
     geometry_type = EXCLUDED.geometry_type,
     srid = EXCLUDED.srid,
     extent = EXCLUDED.extent,
+    temporal_column = EXCLUDED.temporal_column,
     default_visibility = EXCLUDED.default_visibility;
 
 UPDATE honua.layers

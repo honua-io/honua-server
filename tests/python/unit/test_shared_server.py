@@ -4,15 +4,17 @@
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 from shared.server import HonuaServer
 
 
 def test_server_environment_overrides_auth_defaults(monkeypatch, tmp_path: Path) -> None:
-    """A dedicated certification lane can disable the shared auth bypass."""
+    """Per-server values override the anonymous shared-harness defaults."""
     (tmp_path / "src" / "Honua.Server").mkdir(parents=True)
     captured: dict[str, str] = {}
+    server_module = importlib.import_module("shared.server")
 
     class Process:
         stdout = None
@@ -23,7 +25,7 @@ def test_server_environment_overrides_auth_defaults(monkeypatch, tmp_path: Path)
         captured.update(kwargs["env"])
         return Process()
 
-    monkeypatch.setattr("shared.server.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(server_module.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(HonuaServer, "_wait_for_health", lambda self, timeout: None)
 
     server = HonuaServer(
