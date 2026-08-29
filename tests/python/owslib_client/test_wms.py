@@ -747,6 +747,7 @@ def test_ext_wms111_maintained_client_witness(
     assert drawn > 0
     wms_collector.record(
         "NB-OWS-WMS-111-WITNESS-01", "pass", measured_count=drawn,
+        protocol_version="1.1.1",
         notes=("OWSLib WebMapService negotiated WMS 1.1.1, parsed capabilities, discovered "
                f"layer {wms_layer}, and executed a non-empty GetMap using the 1.1.1 SRS shape."),
     )

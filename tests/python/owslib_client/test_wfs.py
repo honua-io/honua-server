@@ -860,6 +860,7 @@ def _legacy_version_witness(
     assert delta <= GEOGRAPHIC_TOLERANCE_DEGREES
     wfs_collector.record(
         case_id, "pass", measured_count=1, measured_delta=delta,
+        protocol_version=version,
         notes=(f"OWSLib WebFeatureService negotiated WFS {version}, parsed capabilities, "
                f"discovered {matches[0]}, and executed GetFeature; {expected_srs} coordinate "
                f"{coordinate} obeyed that version's axis-order contract."),
