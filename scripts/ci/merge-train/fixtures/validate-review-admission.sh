@@ -89,4 +89,14 @@ rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
 [[ "${DISPATCH_COUNT}" == 1 ]] || fail "catch-up re-dispatched within one controller run"
 printf 'PASS: %s\n' "finding-free head admits immediately; catch-up dispatched once"
 
+# 4. Readiness probes evaluate admission without dispatching another catch-up.
+unset TRAIN_REVIEW_CATCHUP_NEEDED TRAIN_REVIEW_CATCHUP_DISPATCHED 2>/dev/null || true
+TRAIN_REVIEW_CATCHUP_DISPATCH_DISABLED=1
+DISPATCH_COUNT=0
+rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
+unset TRAIN_REVIEW_CATCHUP_DISPATCH_DISABLED
+[[ "${rc}" == 0 ]] || fail "side-effect-free readiness evaluation rejected finding-free head"
+[[ "${DISPATCH_COUNT}" == 0 ]] || fail "readiness evaluation dispatched ${DISPATCH_COUNT} catch-up run(s)"
+printf 'PASS: %s\n' "readiness evaluation suppresses catch-up dispatch side effects"
+
 printf 'ALL PASS\n'
