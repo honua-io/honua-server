@@ -15533,10 +15533,11 @@
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.ApproveProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_AlreadyResolved_ReturnsConflict",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties",
-        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_HappyPath_ExecutesAndMarksSubmitted",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveProposal_HappyPath_ExecutesAndMarksSucceeded",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_BlockedTier_ReturnsBlocked",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_DirectExecuteTier_ExecutesImmediately",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_IdempotentApprovalRetry_ReusesCanonicalInstance",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.Gateway_RequiresApprovalTier_PersistsProposalAndNotifies",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ReadOnlyScopedKey_ApproveNamesMissingGrant"
       ],
