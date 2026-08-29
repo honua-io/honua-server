@@ -54,7 +54,7 @@ In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/
 
 ## Scene ingest (admin, Enterprise)
 
-Ingest endpoints convert a source document into a deterministic 3D Tiles tileset, register it in the scene dataset registry, and return the servable tileset URL. All routes require admin authorization, are gated by an Enterprise entitlement (a `402` upgrade response otherwise), and accept `multipart/form-data` with a `file` field. Conversion is pure-managed (no native PDAL/py3dtiles dependency); the tileset is materialised inline and promoted atomically to its asset root.
+Ingest endpoints convert a source document into a deterministic 3D Tiles tileset, register it in the scene dataset registry, and return the servable tileset URL. All routes require admin authorization, are gated by an Enterprise entitlement (a `402` upgrade response otherwise), and accept `multipart/form-data` with a `file` field. Geographic, uncompressed LAS and CityGML conversion is managed in-process; compressed or projected point clouds use the configured out-of-process `pcloud.translate` worker. The tileset is materialised inline and promoted atomically to its asset root.
 
 | Method | Path | Source → output | Entitlement |
 | --- | --- | --- | --- |
@@ -68,7 +68,7 @@ Common form fields: `file` (required), `sceneId` (optional URL slug; derived whe
 Decodes a LAS point cloud into a quadtree of `.pnts` tiles plus `tileset.json`, preserving per-point **classification**, **intensity**, and **RGB**. Output is byte-stable for identical input.
 
 - **Supported formats:** uncompressed ASPRS **LAS** 1.1–1.4, point data record formats 0, 1, 2, 3, 6, 7, 8. Compressed **LAZ** and **COPC**, plus projected-CRS LAS, dispatch through the configured `pcloud.translate` geoprocessing worker and then enter the managed tiler. When no decompressor/worker is registered, the request fails explicitly with `400`; Honua never treats compressed bytes as LAS.
-- **CRS:** geographic source coordinates only (EPSG:4326 / 4979 / OGC CRS84). Axis order is selected by the optional `sourceCrsAxisOrder` field (`lonlat` default, or `latlon`). Projected source CRS are rejected with a `400`; reproject to geographic before ingest.
+- **CRS:** geographic source coordinates (EPSG:4326 / 4979 / OGC CRS84) enter the managed tiler directly. Axis order is selected by the optional `sourceCrsAxisOrder` field (`lonlat` default, or `latlon`). Provide projected input's EPSG identifier in `sourceEpsg`; Honua dispatches it through `pcloud.translate` for reprojection before managed tiling, or returns `400` when no worker is available.
 - **Limits:** upload capped at 256 MiB; total point count capped (default 250 M) to bound worst-case memory. Per-tile point budget and LOD depth follow the shared `SceneGeneration` tiling options.
 
 Run `POST /api/v1/admin/scenes/ingest/pointcloud` with form values `file=cloud.las`, `sceneId=lidar-survey`, and `sourceCrsAxisOrder=lonlat`. Success returns `201` with the scene id and tileset URL.
@@ -91,8 +91,8 @@ slice to 2026.2; this table records runtime truth without promoting it.
 
 | Capability key | Edition | Route/surface | Unlicensed result | Proving tests |
 |---|---|---|---|---:|
-| `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated | 76 |
-| `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptor/node/statistics/geometry/attribute routes | `403` | 25 |
+| `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated | 60 |
+| `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptor/node/statistics/geometry/attribute routes | `403` | 41 |
 | `scene.catalog` | Community | `/api/scenes*` | Not edition-gated | 4 |
 | `scene.bim-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/citygml` | `402` entitlement response | 6 |
 | `scene.pointcloud-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/pointcloud` | `402` entitlement response | 10 |
