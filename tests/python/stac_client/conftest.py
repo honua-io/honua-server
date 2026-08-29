@@ -373,6 +373,13 @@ def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
         connection_string=fixture.get_npgsql_connection_string(),
         port=port,
         project_root=PROJECT_ROOT,
+        environment={
+            # This certification lane includes anonymous and invalid-key admin
+            # probes, so it must inspect credentials instead of using the shared
+            # protocol harness's full-admin development bypass.
+            "HONUA_DEV_AUTH": "false",
+            "HONUA_DEV_AUTH_ALLOW_BYPASS": "false",
+        },
     )
     server.start(timeout=float(os.getenv("HONUA_STAC_COMPAT_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS))))
 
