@@ -693,7 +693,7 @@ internal sealed partial class Wfs20Handler
             return resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         }
 
-        if (Wfs20Utilities.Crs84Identifiers.Contains(srsName, StringComparer.OrdinalIgnoreCase))
+        if (IsCrs84Request(srsName))
         {
             return SpatialReference.WGS84.Wkid;
         }
