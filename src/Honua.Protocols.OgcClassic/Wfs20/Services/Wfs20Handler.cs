@@ -280,7 +280,10 @@ internal sealed partial class Wfs20Handler
         // storage CRS rather than an unconditional EPSG:4326 assumption (#2737).
         var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var expression = Fes20Parser.ParseFilter(filter, defaultSrid);
-        expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, resource);
+        expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
+            expression,
+            resource,
+            propertyName => WfsPropertyNameResolver.Resolve(resource, propertyName, allowGeometryAlias: true));
 
         if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
         {
@@ -390,7 +393,7 @@ internal sealed partial class Wfs20Handler
         var resolved = ImmutableArray.CreateBuilder<string>();
         foreach (var requestedProperty in requestedProperties)
         {
-            var fieldName = FilterExpressionHelpers.ResolveFieldName(resource, requestedProperty, allowGeometryAlias: true)
+            var fieldName = WfsPropertyNameResolver.Resolve(resource, requestedProperty, allowGeometryAlias: true)
                 ?? throw new ArgumentException($"Unknown property '{requestedProperty}' for feature type '{resource.Metadata.Name}'.");
 
             var geometryField = resource.FindPrimaryGeometryField();
@@ -434,7 +437,7 @@ internal sealed partial class Wfs20Handler
                 continue;
             }
 
-            var fieldName = FilterExpressionHelpers.ResolveFieldName(resource, tokens[0], allowGeometryAlias: false)
+            var fieldName = WfsPropertyNameResolver.Resolve(resource, tokens[0], allowGeometryAlias: false)
                 ?? throw new ArgumentException($"Unknown sort field '{tokens[0]}' for feature type '{resource.Metadata.Name}'.");
 
             var fieldDefinition = resource.SchemaFields.FirstOrDefault(field =>
