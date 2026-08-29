@@ -746,6 +746,213 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         error.GetProperty("data").GetProperty("requiresReauthentication").GetBoolean().Should().BeTrue();
     }
 
+    // ---- Session matrix: GET/SSE and DELETE cells (#3430) -----------------------
+    // The issue requires POST, GET/SSE and DELETE to each cover anonymous, valid,
+    // unknown/expired, cross-scheme, cross-issuer and cross-tenant callers. POST
+    // covered every case and GET/DELETE covered only the cross-issuer/cross-tenant
+    // legs, so the anonymous, unknown-well-formed-id, expired and cross-scheme cells
+    // below were the untested half of the matrix. Every one of them is a case where
+    // a caller reaches a session it does not own.
+
+    [IntegrationTest]
+    [Endpoint("GET /mcp")]
+    [Endpoint("DELETE /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task Session_AnonymousCaller_CannotStreamOrDeleteBearerOwnedSession()
+    {
+        // Anonymous is not a principal: with no credential at all there is no durable
+        // actor to key a session on, so the stream and the terminate must both be
+        // refused before the session is even looked up. Tenant resolvability is not
+        // authority, and neither is knowing a session id.
+        var owner = CreateToken("stream-owner", additionalClaims:
+        [
+            new Claim("tid", "tenant-a"),
+            new Claim("scope", "honua.mcp.full"),
+        ]);
+        var sessionId = await OpenSessionAsync(_client, owner);
+
+        using var stream = BuildStream(sessionId, bearer: null);
+        using var streamResponse = await _client.SendAsync(stream, HttpCompletionOption.ResponseHeadersRead);
+        streamResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "an anonymous caller has no durable actor and must never read another principal's SSE stream");
+
+        using var delete = BuildDelete(sessionId, bearer: null);
+        using var deleteResponse = await _client.SendAsync(delete);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "an anonymous caller must never terminate another principal's session");
+
+        // The owner's session survived both attempts.
+        using var ownerDelete = BuildDelete(sessionId, owner);
+        using var ownerDeleteResponse = await _client.SendAsync(ownerDelete);
+        ownerDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /mcp")]
+    [Endpoint("DELETE /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task Session_ApiKeyCaller_CannotStreamOrDeleteBearerOwnedSession()
+    {
+        // Cross-scheme (#2852): an API-key principal is a different canonical actor
+        // than a bearer principal even when the underlying display/subject value
+        // matches, and it must not silently rebind onto a bearer-owned session. POST
+        // proved this; GET/SSE and DELETE did not.
+        var owner = CreateToken("admin", additionalClaims:
+        [
+            new Claim("tid", "tenant-a"),
+            new Claim("scope", "honua.mcp.full"),
+        ]);
+        var sessionId = await OpenSessionAsync(_client, owner);
+
+        using var stream = BuildStream(sessionId, bearer: null, apiKey: "test-admin-key");
+        using var streamResponse = await _client.SendAsync(stream, HttpCompletionOption.ResponseHeadersRead);
+        streamResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "an API-key principal must not read a bearer-owned SSE stream even when the name matches");
+
+        using var delete = BuildDelete(sessionId, bearer: null, apiKey: "test-admin-key");
+        using var deleteResponse = await _client.SendAsync(delete);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden,
+            "an API-key principal must not terminate a bearer-owned session");
+
+        using var ownerDelete = BuildDelete(sessionId, owner);
+        using var ownerDeleteResponse = await _client.SendAsync(ownerDelete);
+        ownerDeleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task Get_UnknownWellFormedSessionId_IsRefusedWithoutOpeningAStream()
+    {
+        // The existing GET coverage sent no session header at all. A well-formed but
+        // unknown id is the interesting case: POST may serve it statelessly, but GET
+        // has no stateless fallback and must refuse rather than open a stream.
+        var token = CreateToken("stream-owner", additionalClaims:
+        [
+            new Claim("tid", "tenant-a"),
+            new Claim("scope", "honua.mcp.full"),
+        ]);
+
+        using var stream = BuildStream($"mcp-{Guid.NewGuid():N}", token);
+        using var response = await _client.SendAsync(stream, HttpCompletionOption.ResponseHeadersRead);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "GET has no stateless fallback: an unknown session id cannot open an event stream");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /mcp")]
+    [Endpoint("DELETE /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    public async Task Session_ExpiredSession_CannotBeStreamedOrDeletedByItsOwner()
+    {
+        // Idle expiry was proven only as a session-manager unit case. At the transport
+        // boundary an expired session must read as unknown on both verbs — including
+        // for the original owner, whose credential is still perfectly valid.
+        var fixture = CreateShortIdleSessionFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            var owner = CreateToken("expiry-owner", additionalClaims:
+            [
+                new Claim("tid", "tenant-a"),
+                new Claim("scope", "honua.mcp.full"),
+            ]);
+            var streamSessionId = await OpenSessionAsync(client, owner);
+            var deleteSessionId = await OpenSessionAsync(client, owner);
+
+            // Outlive the configured idle timeout.
+            await Task.Delay(TimeSpan.FromSeconds(2));
+
+            using var stream = BuildStream(streamSessionId, owner);
+            using var streamResponse = await client.SendAsync(stream, HttpCompletionOption.ResponseHeadersRead);
+            streamResponse.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                "an idle-expired session must not open a stream even for its own owner");
+
+            using var delete = BuildDelete(deleteSessionId, owner);
+            using var deleteResponse = await client.SendAsync(delete);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                "an idle-expired session is unknown, not owned");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Runs an <c>initialize</c> with the supplied bearer and returns the issued
+    /// session id.
+    /// </summary>
+    private static async Task<string> OpenSessionAsync(HttpClient client, string bearer)
+    {
+        using var initialize = BuildInitialize(bearer);
+        using var response = await client.SendAsync(initialize);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return response.Headers.GetValues("Mcp-Session-Id").Single();
+    }
+
+    private static HttpRequestMessage BuildStream(string sessionId, string? bearer, string? apiKey = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");
+        if (bearer is not null)
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+        }
+
+        if (apiKey is not null)
+        {
+            request.Headers.Add("X-API-Key", apiKey);
+        }
+
+        request.Headers.Add("Mcp-Session-Id", sessionId);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        return request;
+    }
+
+    private static HttpRequestMessage BuildDelete(string sessionId, string? bearer, string? apiKey = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Delete, "/mcp");
+        if (bearer is not null)
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+        }
+
+        if (apiKey is not null)
+        {
+            request.Headers.Add("X-API-Key", apiKey);
+        }
+
+        request.Headers.Add("Mcp-Session-Id", sessionId);
+        return request;
+    }
+
+    /// <summary>
+    /// Fixture whose MCP sessions go idle almost immediately, so transport-level
+    /// expiry is observable without a long-running test.
+    /// </summary>
+    private static WebAppFixture CreateShortIdleSessionFixture()
+        => new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
+                builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
+                builder.UseSetting("Oidc:Enabled", "true");
+                builder.UseSetting("Oidc:RequireHttps", "true");
+                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
+                builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+                builder.UseSetting("Oidc:Generic:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Authority", Issuer);
+                builder.UseSetting("Oidc:Generic:ClientId", Audience);
+                builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
+                builder.UseSetting("Mcp:ServerInitiatedStreamEnabled", "true");
+                builder.UseSetting("Mcp:SessionIdleTimeout", "00:00:01");
+            });
+
     private static string CreateToken(
         string? subject,
         string issuer = Issuer,

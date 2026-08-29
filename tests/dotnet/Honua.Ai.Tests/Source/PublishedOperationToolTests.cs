@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
@@ -428,6 +429,115 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public async Task Invoke_SameParamsSamePrincipalDifferentTenant_MissesCache()
+    {
+        // Security regression (#3430): the deterministic result cache is a process-wide
+        // singleton and OperationPolicyContext.PrincipalId is the canonical actor id,
+        // which is deliberately NOT tenant-qualified. Before the tenant component was
+        // added to the cache key, one caller with an identical actor/tier/role set and
+        // identical parameters moving between two tenants was served the FIRST tenant's
+        // cached result — a cross-tenant read that never reaches the policy decision
+        // point. Each tenant must take its own round-trip.
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        var first = await tool.InvokeAsync(
+            Context(invoker, cache, principalName: "agent-a", tenantId: "tenant-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        var second = await tool.InvokeAsync(
+            Context(invoker, cache, principalName: "agent-a", tenantId: "tenant-b"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(
+            2, "the same actor in a different tenant is a distinct cache key and must re-execute");
+        second.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse(
+            "serving tenant-a's cached result to tenant-b would be a cross-tenant read");
+        first.StructuredContent!.Value.GetProperty("cacheKey").GetString().Should()
+            .NotBe(second.StructuredContent!.Value.GetProperty("cacheKey").GetString());
+
+        // The first tenant's own entry still hits: tenant scoping isolates, it does not
+        // disable caching.
+        var third = await tool.InvokeAsync(
+            Context(invoker, cache, principalName: "agent-a", tenantId: "tenant-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        third.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
+        invoker.SubmitCount.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void BuildKey_DelimiterBearingComponents_AreCollisionFree()
+    {
+        // The pre-image is assembled from caller-influenced values (tenant, schema,
+        // roles, parameter names/values). Without per-component escaping, a value
+        // carrying the component delimiter could be re-parsed into another caller's
+        // key — the same injectivity requirement #3430 places on the MCP session
+        // binding key.
+        var left = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext { PrincipalId = "actor", TenantId = "a|b", SchemaName = "s" });
+        var right = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext { PrincipalId = "actor", TenantId = "a", SchemaName = "b|s" });
+
+        left.Should().NotBe(right);
+
+        // An absent tenant is distinct from a tenant literally named like the reserved
+        // absent tag, so "no tenant" can never collide with a concrete tenant.
+        var absentTenant = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext { PrincipalId = "actor", TenantId = null });
+        var literalTenant = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext { PrincipalId = "actor", TenantId = "none" });
+
+        absentTenant.Should().NotBe(literalTenant);
+
+        // The key is returned to the caller, so it must not carry the routed schema or
+        // the role set in plaintext.
+        var disclosing = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext
+            {
+                PrincipalId = "actor",
+                TenantId = "tenant-secret",
+                SchemaName = "schema-secret",
+                Roles = ["role-secret"],
+            });
+
+        disclosing.Should().StartWith("sha256:");
+        disclosing.Should().NotContain("schema-secret").And.NotContain("role-secret");
+    }
+
+    [UnitTest]
+    public void BuildKey_NullEmptyAndWhitespaceParameters_AreDistinct()
+    {
+        var context = new OperationPolicyContext { PrincipalId = "actor" };
+        var keys = new string?[] { null, string.Empty, " " }
+            .Select(value => IPublishedOperationCache.BuildKey(
+                "op",
+                "cat-v1",
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["value"] = value },
+                context));
+
+        keys.Should().OnlyHaveUniqueItems(
+            "null, empty, and whitespace parameter values are distinct executor inputs");
+    }
+
+    [UnitTest]
     public async Task Invoke_MutatingOperation_IsNeverCached()
     {
         var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
@@ -610,12 +720,20 @@ public sealed class PublishedOperationToolTests
         ILicenseEntitlementService? license = null,
         IAuthorizationService? authorization = null,
         string[]? roles = null,
-        string principalName = "agent-x")
+        string principalName = "agent-x",
+        string? tenantId = null)
     {
         var services = new ServiceCollection();
         if (invoker is not null)
         {
             services.AddSingleton(invoker);
+        }
+
+        if (tenantId is not null)
+        {
+            var tenantContext = Substitute.For<ITenantContext>();
+            tenantContext.TenantId.Returns(tenantId);
+            services.AddSingleton(tenantContext);
         }
 
         services.AddSingleton<IPublishedOperationCache>(cache ?? new PublishedOperationCache());
