@@ -739,6 +739,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_AnonymousCaller_CannotStreamOrDeleteBearerOwnedSession",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_ApiKeyCaller_CannotStreamOrDeleteBearerOwnedSession",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_ExpiredSession_CannotBeStreamedOrDeletedByItsOwner",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_SameActorWithDifferentAuthorizationCeiling_CannotPostStreamOrDelete",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_TerminatesSession_AndSubsequentPostIsServedStatelessly",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_UnknownSession_Returns404",
@@ -5848,6 +5851,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Get_UnknownWellFormedSessionId_IsRefusedWithoutOpeningAStream",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_AnonymousCaller_CannotStreamOrDeleteBearerOwnedSession",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_ApiKeyCaller_CannotStreamOrDeleteBearerOwnedSession",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_ExpiredSession_CannotBeStreamedOrDeletedByItsOwner",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_SameActorWithDifferentAuthorizationCeiling_CannotPostStreamOrDelete",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_ByDefault_Returns405WithAllowHeader",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.GetStreamTeardown_LeavesSessionUsable_ToolsListStill200",
