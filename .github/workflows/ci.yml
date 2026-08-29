@@ -99,7 +99,9 @@ on:
         default: ''
 
 concurrency:
-  # PR runs key on the PR number (re-push cancels the prior run). merge_group
+  # PR runs key on the PR number (re-push cancels the prior run). Trunk runs
+  # serialize without cancellation so at least one trailing matrix always
+  # reaches a terminal result for the fleet lander's red/green brake. merge_group
   # and other non-PR events key on github.ref. For merge_group, github.ref is
   # the unique per-batch queue ref (refs/heads/gh-readonly-queue/trunk/pr-...),
   # so each batch gets its OWN concurrency group: a reformed group runs under a
@@ -109,7 +111,7 @@ concurrency:
   # gate the per-batch group is cheap, so leave cancel-in-progress on (it still
   # collapses duplicate checks_requested events for the SAME batch ref).
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/trunk' }}
 
 env:
   DOTNET_VERSION: '10.0.x'
@@ -903,8 +905,8 @@ jobs:
           scripts/ci/merge-train/fixtures/validate-mode.sh
           bash scripts/ci/validate-single-merge-authority.sh
 
-      # The merge train is the sole merge authority, so its offline fixtures
-      # gate every CI run rather than only a local pre-PR check. They carry the
+      # The manual batch train remains a merge authority, so its offline
+      # fixtures gate every CI run rather than only a local pre-PR check. They carry the
       # startup-recovery drift guard: a phase added to the persisted-state
       # schema without a recovery class deadlocks all merging repo-wide (#3045),
       # and a guard that never runs in CI would not have caught it. Both are
