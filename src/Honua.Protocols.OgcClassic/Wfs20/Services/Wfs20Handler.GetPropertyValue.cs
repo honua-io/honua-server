@@ -402,7 +402,7 @@ internal sealed partial class Wfs20Handler
 
     private static ValueReferenceResolution ResolveValueReference(MetadataV2Resource resource, string valueReference)
     {
-        var resolvedName = FilterExpressionHelpers.ResolveFieldName(resource, valueReference, allowGeometryAlias: true)
+        var resolvedName = WfsPropertyNameResolver.Resolve(resource, valueReference, allowGeometryAlias: true)
             ?? throw new ArgumentException($"Unknown valueReference '{valueReference}' for feature type '{resource.Metadata.Name}'.");
 
         var geometryField = resource.FindPrimaryGeometryField();
