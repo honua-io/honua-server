@@ -181,39 +181,45 @@ reusable. The observation receipt already carries per-image content digests over
 the merge tree the images are actually built from, so reuse eligibility is
 measured before anything is enforced; see `native-image-impact-routing.md`.
 
-#### Realised post-change saving (2026-08-28)
+#### Post-change Serving trigger measurement (2026-08-28)
 
 The AC#7 follow-up used the Actions **per-workflow** runs endpoint, not the
 repository-wide endpoint: the latter stops exposing history after 1,000 runs
 even when a wider `created` range was requested. Pages were fetched until empty,
-durations were `updated_at - run_started_at`, and rates use the **2.371-day
+workflow elapsed times were `updated_at - run_started_at`, and rates use the **2.371-day
 observed span** from #3512 landing at `2026-08-26T11:11:42Z` through the newest
 post-change GDAL run at `2026-08-28T20:05:51Z`. This is the same observed-span
 normalisation as `honua-flow/tools/ci-baseline.py`; dividing by a nominal window
 would understate a capped or incomplete sample.
 
-The post-change cohort contains 60 GDAL Worker Image runs, satisfying the
-30-run observation floor. Only two Serving Image Boundary runs occurred in that
-same span. That is the measured outcome of the narrowing, not a short sample to
-pad to 30 by waiting for image-defining changes: the old route would have fired
-on the shared-source changes represented by the still-broad GDAL lane.
+The post-change cohort contains 60 GDAL Worker Image runs. Replaying the exact
+pre-#3512 Serving path filter against each run head's commit file list identifies
+48 counterfactual Serving-eligible heads and 12 that do not match. This is a
+conservative replay: a single head commit can omit an eligible path changed by
+an earlier commit in the same PR, so it can undercount but cannot invent an old
+trigger. The 48 positively classified heads satisfy the revised 30-observation
+contract in `evidence-driven-pipeline-baseline.md`. Only two Serving Image
+Boundary runs occurred in the same span, so the directly supported result is at
+least **46 avoided workflow invocations** (95.8% of the positive
+counterfactual), not a runner-minute or billed-cost saving.
 
-| Signal | Serving baseline (2026-08-13–17) | Serving after #3512 | Realised change | GDAL current baseline for #3553 |
+| Signal | Serving baseline (2026-08-13–17) | Serving after #3512 | Observed change | GDAL current baseline for #3553 |
 |---|---:|---:|---:|---:|
 | Observed span | 3.40 days | 2.371 days | — | 2.371 days |
 | Runs | 100 | 2 | — | 60 |
 | Runs/day | 29.4 | 0.8 | **-97.1%** | 25.3 |
 | Successful runs | 19 | 2 | — | 50 |
 | Cancelled runs | 80 | 0 | — | 9 |
-| Successful wall-minutes | 2667 | 101.8 | — | 803.9 |
-| Successful wall-minutes/day | 785 | 42.9 | **-742.1/day (-94.5%)** | 339.1 |
+| Successful workflow elapsed minutes | 2667 | 101.8 | — | 803.9 |
+| Successful workflow elapsed minutes/day | 785 | 42.9 | — | 339.1 |
 
-The realised serving saving is therefore **742 successful wall-minutes/day**,
-or **94.5%** of the measured pre-change rate. It is below the 785-minute/day
-ceiling, as predicted. The two remaining runs were the change's own
-image-defining workflow executions and completed in 49.1 and 52.8 minutes after
-the three variants were parallelised; no cancelled serving run consumed time in
-the post-change span.
+The elapsed-minute rows describe workflow critical-path time only. They are not
+runner consumption or cost: after #3512 the three build variants run in parallel,
+so summing job `completed_at - started_at` durations would produce a different
+quantity. The historical 785 elapsed-minute/day figure therefore remains a
+ceiling observation, not a realised saving. The two remaining runs were the
+change's own image-defining workflow executions and completed in 49.1 and 52.8
+minutes; no cancelled Serving run occurred in the post-change span.
 
 The GDAL column is deliberately a baseline, not a claimed saving: #3553's
 narrowing had not landed at the cutoff. One run had another conclusion, so the

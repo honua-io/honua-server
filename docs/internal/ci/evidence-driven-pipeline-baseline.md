@@ -101,6 +101,13 @@ The post-change report must retain this methodology, include at least 30 runs,
 and compare admission, verification, first-failure, cancellation, and runner
 time separately. A faster wall clock that increases runner minutes, or lower
 runner minutes that weakens evidence, does not pass ADR-0074's promotion gate.
+When enforcement intentionally suppresses workflow creation, the 30-run floor
+may instead be met by at least 30 same-period candidate heads replayed against
+the old trigger. Such a counterfactual must report its classifier and positive
+count, compare avoided invocations rather than substituting another workflow's
+runtimes, and must not convert workflow elapsed time into runner-minute or cost
+savings. Any runner-minute claim still requires summed per-job durations under
+the methodology above.
 
 ## Early-failure shadow comparison contract
 

@@ -243,6 +243,10 @@ way, as do the tag/release publication lanes
 (`deploy-platform-images.yml`, `nightly-container-build.yml`), which this work
 does not touch.
 
-After enforcement, compare 30 runs with the ADR-0074 baseline. Promotion still
-requires the program-level latency and billed-minute thresholds; otherwise the
-router returns to observation mode.
+After enforcement, compare 30 runs with the ADR-0074 baseline. When narrowing
+suppresses the workflow itself, this may use 30 same-period candidate heads
+replayed against the old trigger under the counterfactual rules in
+`evidence-driven-pipeline-baseline.md`; another workflow's runtime is not a
+substitute for Serving runner consumption. Promotion still requires the
+program-level latency and billed-minute thresholds; otherwise the router returns
+to observation mode.
