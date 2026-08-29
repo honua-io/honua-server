@@ -165,7 +165,10 @@ jobs:
             --native-runs evidence/runs/native \
             --pr-gate-artifacts evidence/artifacts/pr-gate \
             --native-artifacts evidence/artifacts/native \
+            --receipt-cutoff "${RECEIPT_CUTOFF}" \
             --output evidence/index.json
+        env:
+          RECEIPT_CUTOFF: ${{ steps.policy.outputs.receipt_cutoff }}
 
       - name: Download only indexed observation receipts
         if: always() && hashFiles('evidence/index.json') != ''
