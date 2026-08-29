@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 from collections import deque
+from collections.abc import Mapping
 from threading import Thread
 from pathlib import Path
 from urllib.parse import urlparse
@@ -38,6 +39,7 @@ class HonuaServer:
         connection_string: str,
         port: int = DEFAULT_PORT,
         project_root: Path | None = None,
+        environment: Mapping[str, str] | None = None,
     ):
         """
         Initialize the server manager.
@@ -46,10 +48,12 @@ class HonuaServer:
             connection_string: PostgreSQL connection string for the test database
             port: Port to run the server on
             project_root: Path to the Honua project root (auto-detected if None)
+            environment: Per-server environment overrides
         """
         self.connection_string = connection_string
         self.port = port
         self.project_root = project_root or self._find_project_root()
+        self.environment = dict(environment or {})
         self._process: subprocess.Popen | None = None
         self._stdout_lines: deque[str] = deque(maxlen=2000)
         self._stderr_lines: deque[str] = deque(maxlen=2000)
@@ -113,6 +117,7 @@ class HonuaServer:
             # editing, #1548). Honoured only outside Production; this fixture runs as "Test".
             "Licensing__DevGrantEdition": "Pro",
         })
+        env.update(self.environment)
         # Keep protocol/client compatibility runs focused on external behavior.
         # Query-cache behavior is covered separately in dedicated .NET tests.
         env.setdefault(
