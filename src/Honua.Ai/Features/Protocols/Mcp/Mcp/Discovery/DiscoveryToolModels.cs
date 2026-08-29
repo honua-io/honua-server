@@ -123,6 +123,19 @@ internal sealed class McpListCapabilitiesOutput
 
     [JsonPropertyName("groundingResources")]
     public IReadOnlyList<string> GroundingResources { get; set; } = [];
+
+    /// <summary>
+    /// The named, server-authored workflow discovery views this server publishes
+    /// (honua-server#3428). A client selects one by name on <c>tools/list</c>
+    /// (<c>{"view": "setup"}</c>) or negotiates it for the session at
+    /// <c>initialize</c>, and receives only that view's canonical descriptors.
+    /// Advertising the views here is what keeps the contract server-owned: no
+    /// client maintains its own view or tool inventory. Selecting a view narrows
+    /// discovery only — the complete paginated catalog stays available, and every
+    /// call is still independently authorized.
+    /// </summary>
+    [JsonPropertyName("workflowViews")]
+    public IReadOnlyList<Views.McpWorkflowViewSummary> WorkflowViews { get; set; } = [];
 }
 
 /// <summary>

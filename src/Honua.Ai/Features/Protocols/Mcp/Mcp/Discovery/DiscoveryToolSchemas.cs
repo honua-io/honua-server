@@ -129,7 +129,27 @@ internal static class DiscoveryToolSchemas
                 }
               }
             },
-            "groundingResources": { "type": "array", "items": { "type": "string" } }
+            "groundingResources": { "type": "array", "items": { "type": "string" } },
+            "workflowViews": {
+              "type": "array",
+              "description": "Named server-authored workflow discovery views. Pass one of these names as tools/list params.view (or negotiate it once at initialize via params._meta[\"honua.io/workflow-view\"]) to receive only that bounded set of canonical descriptors. Omit the view, or pass \"full\", for the complete paginated catalog. Selecting a view narrows discovery only; every call is still independently authenticated and authorized.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "revision": { "type": "string" },
+                  "revisionDigest": { "type": "string" },
+                  "membershipDigest": { "type": "string" },
+                  "descriptorDigest": { "type": "string" },
+                  "toolCount": { "type": "integer" },
+                  "descriptorBytes": { "type": "integer" },
+                  "estimatedTokens": { "type": "integer" },
+                  "stages": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
           }
         }
         """;
