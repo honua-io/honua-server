@@ -295,12 +295,7 @@ internal sealed partial class Wfs20Handler
     {
         var resource = featureType.Resource;
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
-        var otherCrs = Wfs20Utilities.Crs84Identifiers
-            .Where(identifier => !string.Equals(identifier, FormatCrs(srid), StringComparison.OrdinalIgnoreCase))
-            .Append(FormatCrs(3857))
-            .Where(identifier => !string.Equals(identifier, FormatCrs(srid), StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var otherCrs = BuildOtherCrsIdentifiers(srid, _dataSourceProvider);
 
         return new FeatureType
         {
@@ -316,6 +311,18 @@ internal sealed partial class Wfs20Handler
             },
             WGS84BoundingBox = await BuildWgs84BoundingBoxAsync(resource, cancellationToken).ConfigureAwait(false)
         };
+    }
+
+    internal static string[] BuildOtherCrsIdentifiers(int srid, string? dataSourceProvider)
+    {
+        var supportsOutputTransformation = !string.Equals(dataSourceProvider, "mysql", StringComparison.OrdinalIgnoreCase) &&
+                                           !string.Equals(dataSourceProvider, "mariadb", StringComparison.OrdinalIgnoreCase);
+        return (supportsOutputTransformation ? Wfs20Utilities.Crs84Identifiers : [])
+            .Where(identifier => !string.Equals(identifier, FormatCrs(srid), StringComparison.OrdinalIgnoreCase))
+            .Concat(supportsOutputTransformation ? [FormatCrs(3857)] : [])
+            .Where(identifier => !string.Equals(identifier, FormatCrs(srid), StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private async Task<FeatureType[]> BuildFeatureTypesAsync(

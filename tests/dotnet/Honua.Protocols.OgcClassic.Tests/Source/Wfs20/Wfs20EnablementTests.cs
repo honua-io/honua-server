@@ -40,6 +40,15 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 [Protocol(TestProtocols.Wfs20)]
 public sealed class Wfs20EnablementTests
 {
+    [Theory]
+    [UnitTest]
+    [InlineData("mysql")]
+    [InlineData("mariadb")]
+    public void BuildOtherCrsIdentifiers_ProviderWithoutOutputTransformation_AdvertisesNone(string provider)
+    {
+        Wfs20Handler.BuildOtherCrsIdentifiers(3857, provider).Should().BeEmpty();
+    }
+
     [UnitTest]
     public async Task GetPublishedFeatureTypesAsync_WithWfsPublication_ReturnsMetadataV2Descriptor()
     {
@@ -168,7 +177,8 @@ public sealed class Wfs20EnablementTests
             Substitute.For<IFilterExpressionService>(),
             new Wfs20QueryParameterAdapter(NullLogger<Wfs20QueryParameterAdapter>.Instance),
             Substitute.For<IQueryProcessor>(),
-            Options.Create(new Wfs20Options()));
+            Options.Create(new Wfs20Options()),
+            Substitute.For<Microsoft.Extensions.Configuration.IConfiguration>());
 
         var editServices = new Wfs20EditServices(
             Substitute.For<IFeatureWriter>(),

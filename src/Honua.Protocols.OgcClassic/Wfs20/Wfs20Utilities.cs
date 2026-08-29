@@ -28,7 +28,7 @@ internal static class Wfs20Utilities
     /// <summary>
     /// Current capabilities update sequence.
     /// </summary>
-    public const string CurrentUpdateSequence = "20260325";
+    public const string CurrentUpdateSequence = "20260829";
 
     /// <summary>
     /// CRS84 identifiers accepted by WFS query parameters and advertised in capabilities.

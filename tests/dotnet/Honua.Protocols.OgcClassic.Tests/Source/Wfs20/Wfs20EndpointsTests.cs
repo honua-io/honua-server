@@ -100,7 +100,15 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             "urn:ogc:def:crs:OGC:1.3:CRS84",
             "http://www.opengis.net/def/crs/OGC/1.3/CRS84");
 
-        foreach (var crs84Identifier in crs84Identifiers)
+        var acceptedCrs84Identifiers = crs84Identifiers.Concat(
+        [
+            "CRS84",
+            "OGC:CRS84",
+            "urn:ogc:def:crs:OGC::CRS84",
+            "urn:ogc:def:crs:OGC:CRS84"
+        ]);
+
+        foreach (var crs84Identifier in acceptedCrs84Identifiers)
         {
             var requestUri =
                 $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1&SRSNAME={Uri.EscapeDataString(crs84Identifier)}";
@@ -108,6 +116,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             var content = await response.Content.ReadAsStringAsync();
 
             response.StatusCode.Should().Be(HttpStatusCode.OK, $"GetFeature should accept advertised CRS '{crs84Identifier}': {content}");
+            content.Should().Contain("srsName=\"urn:ogc:def:crs:OGC:1.3:CRS84\"");
         }
     }
 
@@ -509,7 +518,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_GetCapabilities_UpdateSequenceCurrent_ReturnsCurrentUpdateSequence()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE=20260325");
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE=20260829");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
