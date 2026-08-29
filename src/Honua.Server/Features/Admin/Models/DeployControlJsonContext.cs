@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.ControlPlane;
+using Honua.Infrastructure.Monitoring;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -13,6 +14,9 @@ namespace Honua.Server.Features.Admin.Models;
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
+[JsonSerializable(typeof(EvidencePosture))]
+[JsonSerializable(typeof(EvidenceSourceEnvelope))]
+[JsonSerializable(typeof(EvidenceSourceCoverage))]
 [JsonSerializable(typeof(DeployPreflightResponse))]
 [JsonSerializable(typeof(DeployPreflightReadiness))]
 [JsonSerializable(typeof(DeployPreflightMigration))]

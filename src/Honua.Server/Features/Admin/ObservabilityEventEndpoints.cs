@@ -53,7 +53,10 @@ internal static class ObservabilityEventEndpoints
             PartialResult = page.PartialResult,
             SourceErrors = page.SourceErrors?.ToDictionary(
                 pair => pair.Key.ToString().ToLowerInvariant(),
-                pair => pair.Value)
+                pair => pair.Value),
+            EvidencePosture = McpOpsObservabilityReader.BuildEventPosture(
+                EvidencePostureVocabulary.SourceIds.OperateEvents, "operate-event-feed", filter.From, filter.To,
+                page.Items.Select(item => item.OccurredAt), page.Truncated, page.PartialResult),
         };
 
         return Results.Json(response, ObservabilityJsonContext.Default.OperateEventPageResponse);

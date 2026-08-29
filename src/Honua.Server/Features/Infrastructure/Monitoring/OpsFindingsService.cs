@@ -21,7 +21,7 @@ namespace Honua.Infrastructure.Monitoring;
 /// existing <see cref="IOperationGateway"/> approval flow. No background loop and no model calls
 /// (ADR-0028) — findings are computed only when requested.
 /// </summary>
-internal sealed class OpsFindingsService : IOpsFindingsService
+internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
 {
     internal const string RequestedByAgent = "ops-findings";
 
@@ -43,7 +43,7 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     private readonly IOptionsMonitor<ControlPlaneOptions> _controlPlaneOptions;
     private readonly IAlertDispatchHealth _alertHealth;
     private readonly IDeployPreflightProbe _deployProbe;
-    private readonly IReadOnlyList<IBatchComputeBackend> _batchBackends;
+    private readonly List<IBatchComputeBackend> _batchBackends;
     private readonly Func<string, string?> _environmentAccessor;
     private readonly IOperationGateway? _gateway;
     private readonly IWorkflowOperationStore? _workflowStore;
@@ -51,6 +51,12 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     private readonly IOpsDatabasePressureSignal? _databasePressureSignal;
     private readonly IRuntimeTunableAdmissionGate? _admissionGate;
     private readonly IOpsHealthRollupStore? _rollupStore;
+
+    /// <summary>
+    /// Server-owned validity window for the live operational signals the rules read. A signal older
+    /// than this is stale evidence and cannot authorize a proposal.
+    /// </summary>
+    private static readonly TimeSpan SignalValidity = TimeSpan.FromMinutes(5);
 
     public OpsFindingsService(
         IOptionsMonitor<OpsFindingsOptions> options,
@@ -79,6 +85,9 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     }
 
     public async Task<IReadOnlyList<OpsFinding>> EvaluateAsync(CancellationToken cancellationToken = default)
+        => (await EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false)).Findings;
+
+    public async Task<OpsFindingsEvaluation> EvaluateWithEvidenceAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
         var options = _options.CurrentValue;
@@ -92,16 +101,165 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         await EvaluatePendingContractMigrationsAsync(now, findings, cancellationToken).ConfigureAwait(false);
         await EvaluateGpQueueDepthAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluateDeployManualInterventionAsync(now, findings, cancellationToken).ConfigureAwait(false);
-        await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
+        var rollupDegraded = await EvaluateServingLatencySloAsync(now, options, findings, cancellationToken).ConfigureAwait(false);
         await EvaluatePlatformReleaseRuntimeDivergenceAsync(now, findings, cancellationToken).ConfigureAwait(false);
 
-        // Most urgent first; stable ordering by rule then id keeps output deterministic.
-        return findings
-            .OrderByDescending(f => (int)f.Severity)
-            .ThenBy(f => f.Rule, StringComparer.Ordinal)
-            .ThenBy(f => f.Id, StringComparer.Ordinal)
-            .ToList();
+        return new OpsFindingsEvaluation
+        {
+            EvaluatedAt = now,
+            // Most urgent first; stable ordering by rule then id keeps output deterministic.
+            Findings = findings
+                .OrderByDescending(f => (int)f.Severity)
+                .ThenBy(f => f.Rule, StringComparer.Ordinal)
+                .ThenBy(f => f.Id, StringComparer.Ordinal)
+                .ToList(),
+            Posture = BuildEvidencePosture(now, options, rollupDegraded),
+        };
     }
+
+    /// <summary>
+    /// Projects the posture of the signals this evaluation actually read. Every entry is derived
+    /// from the live signal — a source that is not wired reports <c>notConfigured</c>, one whose
+    /// backend failed reports <c>unavailable</c>, and a heartbeat-bearing source publishes its own
+    /// observation time rather than the evaluation time.
+    /// </summary>
+    private EvidencePosture BuildEvidencePosture(DateTimeOffset now, OpsFindingsOptions options, bool rollupDegraded)
+    {
+        var sections = new[]
+        {
+            BuildAlertDispatchSource(),
+            EvidencePostureFactory.Complete(
+                EvidencePostureVocabulary.SourceIds.FindingsControlPlane,
+                EvidencePostureVocabulary.BackendKinds.ConfigProjection,
+                "control-plane-options",
+                now,
+                SignalValidity),
+            EvidencePostureFactory.Complete(
+                EvidencePostureVocabulary.SourceIds.FindingsDeployPreflight,
+                EvidencePostureVocabulary.BackendKinds.InProcess,
+                "deploy-preflight-probe",
+                now,
+                SignalValidity),
+            BuildStoreSource(
+                EvidencePostureVocabulary.SourceIds.FindingsGpQueue,
+                "execution-job-store",
+                _jobStore is not null,
+                now),
+            BuildStoreSource(
+                EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
+                "workflow-operation-store",
+                _workflowStore is not null,
+                now),
+            BuildServingLatencyRollupSource(now, options, rollupDegraded),
+            BuildStoreSource(
+                EvidencePostureVocabulary.SourceIds.FindingsDatabasePressure,
+                "database-pressure-signal",
+                _databasePressureSignal is not null,
+                now),
+            BuildStoreSource(
+                EvidencePostureVocabulary.SourceIds.FindingsBatchBackends,
+                "batch-compute-backends",
+                _batchBackends.Count > 0,
+                now,
+                EvidencePostureVocabulary.BackendKinds.InProcess),
+        };
+
+        var validated = sections.Select(source => EvidencePostureFactory.Validate(source, now)).ToArray();
+        var aggregate = EvidencePostureFactory.Aggregate(
+            EvidencePostureVocabulary.SourceIds.Findings,
+            "ops-findings-engine",
+            SignalValidity,
+            validated);
+
+        return EvidencePostureFactory.Build(now, [aggregate, .. validated]);
+    }
+
+    private EvidenceSourceEnvelope BuildAlertDispatchSource()
+    {
+        const string BackendId = "alert-dispatch-store";
+        if (!_alertHealth.IsDispatcherEnabled)
+        {
+            return EvidencePostureFactory.NotConfigured(
+                EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                BackendId);
+        }
+
+        if (_alertHealth.IsStoragePollFailing)
+        {
+            // The dispatcher is enabled but its most recent pass could not reach the backlog store:
+            // whatever backlog is cached is unverified, so it cannot authorize an action.
+            return EvidencePostureFactory.Unavailable(
+                EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                BackendId,
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
+                observedAt: _alertHealth.LastPollAt,
+                lastSuccessfulAt: _alertHealth.LastPollAt,
+                maximumAge: SignalValidity);
+        }
+
+        return _alertHealth.LastPollAt is { } lastPollAt
+            ? EvidencePostureFactory.Complete(
+                EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                BackendId,
+                lastPollAt,
+                SignalValidity)
+            : EvidencePostureFactory.Unavailable(
+                EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                BackendId,
+                EvidencePostureVocabulary.ReasonCodes.NeverSucceeded,
+                maximumAge: SignalValidity);
+    }
+
+    private EvidenceSourceEnvelope BuildServingLatencyRollupSource(
+        DateTimeOffset now,
+        OpsFindingsOptions options,
+        bool rollupDegraded)
+    {
+        const string BackendId = "ops-health-rollup-store";
+        if (_rollupStore is null)
+        {
+            return EvidencePostureFactory.NotConfigured(
+                EvidencePostureVocabulary.SourceIds.FindingsServingLatencyRollup,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                BackendId);
+        }
+
+        if (rollupDegraded)
+        {
+            return EvidencePostureFactory.Unavailable(
+                EvidencePostureVocabulary.SourceIds.FindingsServingLatencyRollup,
+                EvidencePostureVocabulary.BackendKinds.DurableStore,
+                BackendId,
+                EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
+                maximumAge: SignalValidity);
+        }
+
+        return EvidencePostureFactory.Complete(
+            EvidencePostureVocabulary.SourceIds.FindingsServingLatencyRollup,
+            EvidencePostureVocabulary.BackendKinds.DurableStore,
+            BackendId,
+            now,
+            SignalValidity,
+            new EvidenceSourceCoverage
+            {
+                RequestedFrom = now.AddMinutes(-options.ServingLatencyLookbackMinutes),
+                RequestedTo = now,
+            });
+    }
+
+    private static EvidenceSourceEnvelope BuildStoreSource(
+        string sourceId,
+        string backendId,
+        bool configured,
+        DateTimeOffset now,
+        string backendKind = EvidencePostureVocabulary.BackendKinds.DurableStore)
+        => configured
+            ? EvidencePostureFactory.Complete(sourceId, backendKind, backendId, now, SignalValidity)
+            : EvidencePostureFactory.NotConfigured(sourceId, backendKind, backendId);
 
     public async Task<OpsFindingProposalResult> ProposeAsync(string findingId, CancellationToken cancellationToken = default)
     {
@@ -110,8 +268,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
             return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId ?? string.Empty };
         }
 
-        var findings = await EvaluateAsync(cancellationToken).ConfigureAwait(false);
-        var finding = findings.FirstOrDefault(f => string.Equals(f.Id, findingId, StringComparison.Ordinal));
+        var evaluation = await EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
+        var finding = evaluation.Findings.FirstOrDefault(f => string.Equals(f.Id, findingId, StringComparison.Ordinal));
         if (finding is null)
         {
             return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.FindingNotFound, FindingId = findingId };
@@ -120,6 +278,24 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         if (finding.RecommendedAction is null)
         {
             return new OpsFindingProposalResult { Status = OpsFindingProposalStatus.NoRecommendedAction, FindingId = findingId };
+        }
+
+        // Evidence integrity precedes both the deterministic auto-safe policy and gateway lookup, so
+        // an incomplete source makes zero gateway/actuator calls. The posture comes from the same
+        // evaluation pass that produced the finding and is derived from the signals the rule read.
+        var requiredSourceIds = OpsFindingEvidenceMap.RequiredSourceIds(finding.Rule);
+        var requiredSources = evaluation.Posture.Sources
+            .Where(source => requiredSourceIds.Contains(source.SourceId, StringComparer.Ordinal))
+            .ToArray();
+        if (requiredSources.Length != requiredSourceIds.Count ||
+            requiredSources.Any(source => !EvidencePostureFactory.IsActionable(source)))
+        {
+            return new OpsFindingProposalResult
+            {
+                Status = OpsFindingProposalStatus.Blocked,
+                FindingId = findingId,
+                Message = "evidencePostureNotActionable",
+            };
         }
 
         // Degraded mode: the operation gateway is only wired when the durable control-plane graph is
@@ -155,7 +331,10 @@ internal sealed class OpsFindingsService : IOpsFindingsService
                 ActionDiscriminator = action.ActionDiscriminator,
                 ActionMarkedAutoSafe = action.AutoSafe,
                 BlastRadius = Math.Max(1, action.BlastRadius),
-                EvidenceRefs = finding.EvidenceRefs,
+                // Bounded, secret-free evidence reference: source id, observation time, completeness.
+                EvidenceRefs = finding.EvidenceRefs.Concat(requiredSources
+                    .OrderBy(source => source.SourceId, StringComparer.Ordinal)
+                    .Select(source => $"evidence:{source.SourceId}:{source.ObservedAt:O}:{source.Completeness}")).ToArray(),
             },
         };
 
@@ -596,11 +775,12 @@ internal sealed class OpsFindingsService : IOpsFindingsService
     // flap the finding. Informational — a generic protocol-level latency/error-rate breach has no single
     // safe automatic remediation (unlike the post-promotion case, there is no specific deploy to roll
     // back). Fails open when the rollup store is unavailable or errors (#2511-style graceful degradation).
-    private async Task EvaluateServingLatencySloAsync(DateTimeOffset now, OpsFindingsOptions options, List<OpsFinding> findings, CancellationToken cancellationToken)
+    /// <returns>True when the rollup store is configured but its read failed (degraded coverage).</returns>
+    private async Task<bool> EvaluateServingLatencySloAsync(DateTimeOffset now, OpsFindingsOptions options, List<OpsFinding> findings, CancellationToken cancellationToken)
     {
         if (_rollupStore is null)
         {
-            return;
+            return false;
         }
 
         IReadOnlyList<OpsHealthLatencyRow> rows;
@@ -611,12 +791,12 @@ internal sealed class OpsFindingsService : IOpsFindingsService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return;
+            return true;
         }
 
         if (rows.Count == 0)
         {
-            return;
+            return false;
         }
 
         var latestPerProtocol = rows
@@ -662,6 +842,8 @@ internal sealed class OpsFindingsService : IOpsFindingsService
                 RecommendedAction = null,
             });
         }
+
+        return false;
     }
 
     // Rule (h): platform-release runtime divergence (#2556 EXCLUSIVELY owns this rule; pinned divergence

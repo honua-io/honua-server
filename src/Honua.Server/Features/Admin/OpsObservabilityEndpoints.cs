@@ -126,14 +126,18 @@ internal static class OpsObservabilityEndpoints
     }
 
     private static async Task<IResult> HandleGetFindings(
-        [FromServices] IOpsFindingsService service,
+        [FromServices] IOpsFindingsEvidenceSource service,
         HttpContext context)
     {
-        var findings = await service.EvaluateAsync(context.RequestAborted).ConfigureAwait(false);
+        var evaluation = await service.EvaluateWithEvidenceAsync(context.RequestAborted).ConfigureAwait(false);
         var response = new OpsFindingsListResponse
         {
-            GeneratedAt = DateTimeOffset.UtcNow,
-            Findings = findings.Select(OpsFindingResponseMapper.Map).ToList(),
+            // generatedAt remains response/evaluation time; source observation times live in the posture.
+            GeneratedAt = evaluation.EvaluatedAt,
+            EvidencePosture = evaluation.Posture,
+            Findings = evaluation.Findings
+                .Select(finding => OpsFindingResponseMapper.Map(finding, evaluation.Posture))
+                .ToList(),
         };
 
         return Results.Json(response, OpsObservabilityJsonContext.Default.OpsFindingsListResponse);

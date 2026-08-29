@@ -784,6 +784,135 @@ public sealed class OpsFindingsServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData("backendOutage")]
+    [InlineData("neverSucceeded")]
+    [InlineData("stale")]
+    [InlineData("futureObservation")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_IncompleteRequiredSourceEvidence_BlocksWithZeroGatewayCalls(string scenario)
+    {
+        // The posture is derived from the live signal the rule read, so each scenario degrades the
+        // real alert-dispatch heartbeat rather than injecting a synthetic envelope.
+        var now = DateTimeOffset.UtcNow;
+        var alertHealth = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
+            IsStoragePollFailing = scenario == "backendOutage",
+            LastPollAt = scenario switch
+            {
+                "backendOutage" => now,
+                "neverSucceeded" => null,
+                "stale" => now.AddHours(-1),
+                "futureObservation" => now.AddHours(1),
+                _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+            },
+        };
+        var gateway = Substitute.For<IOperationGateway>();
+        var service = CreateService(alertHealth: alertHealth, gateway: gateway);
+
+        // Bounded diagnostic data is still produced; only the action is withheld.
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+        var finding = evaluation.Findings.Single(f => f.Rule == OpsFindingsService.RuleAlertDispatchBacklog);
+        var source = evaluation.Posture.Sources.Single(
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch);
+        Assert.NotEqual(EvidencePostureVocabulary.Completeness.Complete, source.Completeness);
+        Assert.NotEmpty(source.ReasonCodes);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.Blocked, result.Status);
+        Assert.Equal("evidencePostureNotActionable", result.Message);
+        await gateway.DidNotReceive().RouteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_NotConfiguredRequiredSource_IsDistinctFromUnavailableAndBlocks()
+    {
+        // The serving-latency rollup store is not wired at all: the source must report
+        // notConfigured (not unavailable, and never complete).
+        var service = CreateService();
+
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+
+        var rollup = evaluation.Posture.Sources.Single(
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsServingLatencyRollup);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.NotConfigured, rollup.Completeness);
+        Assert.Contains(EvidencePostureVocabulary.ReasonCodes.NotConfigured, rollup.ReasonCodes);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Unavailable, evaluation.Posture.Status);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_RollupStoreThrows_ReportsUnavailableRatherThanNotConfigured()
+    {
+        var rollupStore = Substitute.For<IOpsHealthRollupStore>();
+        rollupStore.ReadLatencyAsync(
+                Arg.Any<OpsHealthRollupTier>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns<Task<IReadOnlyList<OpsHealthLatencyRow>>>(_ => throw new InvalidOperationException("rollup down"));
+        var service = CreateService(rollupStore: rollupStore);
+
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+
+        var rollup = evaluation.Posture.Sources.Single(
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsServingLatencyRollup);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Unavailable, rollup.Completeness);
+        Assert.Contains(EvidencePostureVocabulary.ReasonCodes.SourceUnavailable, rollup.ReasonCodes);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Propose_CompleteFreshEvidence_PreservesFlowAndPersistsBoundedSnapshotReference()
+    {
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
+            .Returns([BuildDeployOperation("op-complete", WorkflowOperationStatus.ManualInterventionRequired, "rev-1", "rev-2")]);
+        var gateway = CreateProposalGateway(OperationClass.Deploy, "proposal-complete");
+        var service = CreateService(workflowStore: workflowStore, gateway: gateway);
+        var finding = (await service.EvaluateAsync()).Single(item => item.Rule == OpsFindingsService.RuleDeployManualIntervention);
+
+        var result = await service.ProposeAsync(finding.Id);
+
+        Assert.Equal(OpsFindingProposalStatus.ProposalCreated, result.Status);
+        await gateway.Received(1).RouteAsync(
+            Arg.Is<OperationGatewayRequest>(request => request.AutonomyContext != null &&
+                request.AutonomyContext.EvidenceRefs.Any(reference =>
+                    reference.StartsWith("evidence:honua_ops_findings.workflow_operations:", StringComparison.Ordinal) &&
+                    reference.EndsWith(":complete", StringComparison.Ordinal))),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_PublishesRequiredSourceIdsAndObservationWindowPerFinding()
+    {
+        var alertHealth = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow,
+            LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
+        };
+        var service = CreateService(alertHealth: alertHealth);
+
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+        var finding = evaluation.Findings.Single(f => f.Rule == OpsFindingsService.RuleAlertDispatchBacklog);
+        var view = OpsFindingResponseMapper.Map(finding, evaluation.Posture);
+
+        Assert.Equal(
+            [EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch],
+            view.RequiredSourceIds);
+        Assert.NotNull(view.ObservationWindow);
+        Assert.Equal(alertHealth.LastPollAt!.Value.ToUniversalTime(), view.ObservationWindow!.ReturnedFrom);
+        Assert.Equal(alertHealth.LastPollAt!.Value.ToUniversalTime(), view.ObservationWindow.ReturnedTo);
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task Propose_AlertDeadLetterFinding_RoutesRedriveActionThroughGateway()
@@ -792,6 +921,7 @@ public sealed class OpsFindingsServiceTests
         {
             IsDispatcherEnabled = true,
             IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow,
             LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
         };
         var gateway = CreateProposalGateway(OperationClass.AdminConfigChange, "proposal-alert-redrive");
@@ -819,6 +949,7 @@ public sealed class OpsFindingsServiceTests
         var alertHealth = new FakeAlertDispatchHealth
         {
             IsDispatcherEnabled = true,
+            LastPollAt = DateTimeOffset.UtcNow,
             LastBacklog = new AlertDispatchBacklog
             {
                 PendingCount = 1,
