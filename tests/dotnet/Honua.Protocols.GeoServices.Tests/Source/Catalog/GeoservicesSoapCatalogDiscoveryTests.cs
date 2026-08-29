@@ -140,7 +140,8 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
 
         using var soapResponse = await PostSoapAsync(client);
         soapResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var soapEntries = ReadSoapEntries(XDocument.Parse(await soapResponse.Content.ReadAsStringAsync()))
+        var soapDescriptions = ReadSoapEntries(XDocument.Parse(await soapResponse.Content.ReadAsStringAsync()));
+        var soapEntries = soapDescriptions
             .Select(entry => new CatalogEntry(entry.Name, entry.Type, entry.RestUrl))
             .OrderBy(entry => entry.Name, StringComparer.Ordinal)
             .ThenBy(entry => entry.Type, StringComparer.Ordinal)
@@ -150,14 +151,21 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         soapEntries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal)
             .Should().BeEquivalentTo(expectedNames);
 
-        ReadSoapEntries(XDocument.Parse(await soapResponse.Content.ReadAsStringAsync()))
-            .Where(entry => entry.Type == "FeatureServer")
-            .Should().OnlyContain(entry => entry.Capabilities == "Query");
-
         foreach (var entry in soapEntries)
         {
             using var handoff = await client.GetAsync(new Uri(entry.Url).PathAndQuery);
             handoff.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
+
+            if (entry.Type == "FeatureServer")
+            {
+                using var featureServerPayload = JsonDocument.Parse(await handoff.Content.ReadAsStringAsync());
+                var canonicalCapabilities = ServiceRbacTestFixture
+                    .GetPropertyCaseInsensitive(featureServerPayload.RootElement, "capabilities")
+                    .GetString();
+                soapDescriptions.Single(description =>
+                        description.Name == entry.Name && description.Type == entry.Type)
+                    .Capabilities.Should().Be(canonicalCapabilities);
+            }
         }
     }
 
