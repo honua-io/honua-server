@@ -51,6 +51,8 @@ internal static class StudioAiProxyServiceCollectionExtensions
             "studio-ai-proxy",
             HttpResiliencePolicies.FastApiDefaults);
         services.TryAddSingleton<StudioAiProxyApiKeyResolver>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<StudioAiTranscriptSigner>();
 
         // Bedrock bridge: the Converse-API chat-client factory lives in this slice
         // (Adapters/Bedrock) so the proxy owns its own provider plumbing. TryAdd, so any other

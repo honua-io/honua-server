@@ -59,6 +59,18 @@ adapter — you can declare as many named providers of the same `Kind` as you wa
   "Enabled": true,
   "DefaultProvider": "claude",
   "MaxPromptCharacters": 32000,
+  "TranscriptSigning": {
+    "KeyId": "studio-transcript-2026-08",
+    "PrivateKeyReference": "secret://studio-ai/transcript-ed25519-seed",
+    "LifetimeSeconds": 900,
+    "OverlapKeys": [
+      {
+        "KeyId": "studio-transcript-2026-07",
+        "PublicKey": "<base64 Ed25519 public key>",
+        "NotAfter": "2026-09-15T00:00:00Z"
+      }
+    ]
+  },
   "Providers": {
     "claude": {
       "Kind": "anthropic",
@@ -100,6 +112,15 @@ Notes:
   value, a secret-store reference (`ISecretProvider`, e.g. `secret://...`), or a per-provider
   environment variable fallback: `HONUA_STUDIOAI_{PROVIDERNAME}_API_KEY` (provider name upper-cased,
   e.g. `HONUA_STUDIOAI_CLAUDE_API_KEY`).
+- **Certification signing keys are reference-only.** `TranscriptSigning:PrivateKeyReference` must
+  be a reference understood by `ISecretProvider` and resolve to a base64-encoded 32-byte Ed25519
+  seed. Inline key material is rejected; the server never generates a fallback key. Missing or
+  invalid material makes certification-bound calls fail closed before provider dispatch with
+  `studio_ai/provenance_signing_unavailable`.
+- **Rotation is overlap-window based.** The active public key is derived from the resolved seed and
+  published with its SHA-256 fingerprint in the capabilities evidence. Public-only previous or
+  next keys may be listed under `OverlapKeys` with explicit `NotBefore`, `NotAfter`, and `Revoked`
+  policy. Private material is never included in capabilities, SSE events, logs, or receipts.
 - **`anthropic` providers require HTTPS**; `openai`-kind providers may point at plain-HTTP localhost
   endpoints (Ollama/vLLM/LM Studio) — validated at startup by `StudioAiProxyConfigurationValidator`.
 - **`bedrock` providers need only a `Model`** (and optionally `Region`, default `us-west-2`) — no
@@ -156,6 +177,13 @@ Streams one chat turn as Server-Sent Events (`Content-Type: text/event-stream`).
 
 ```jsonc
 {
+  "certification": {                 // optional; when present, signed provenance is mandatory
+    "candidateId": "candidate-7",
+    "releaseId": "2026.1-rc1",
+    "endpointIdentity": "honua.example/api/v1/studio/ai/chat",
+    "actionId": "compose-map",
+    "runNonce": "single-use-random-value"
+  },
   "provider": "claude",              // optional; falls back to StudioAiProxy:DefaultProvider
   "model": "claude-opus-4-1",        // optional admin-only per-call override
   "system": "You are a GIS analyst.",
@@ -174,6 +202,14 @@ Streams one chat turn as Server-Sent Events (`Content-Type: text/event-stream`).
   "temperature": 0.2
 }
 ```
+
+For a successful certification-bound call, the last SSE frame is
+`event: transcript_provenance`. It carries an Ed25519 detached signature, the base64 canonical
+transcript bytes, their SHA-256 digest, and the signer key id. The canonical JSON object binds the
+schema/canonicalization/digest versions; all certification identities; provider and exact model;
+canonical request and provider-event bytes; selected response; terminal-result digest; issue and
+expiry times; and signer id. Object keys use ordinal ordering, arrays retain semantic order, JSON
+is UTF-8 with no insignificant whitespace, and the canonical bytes are the signature input.
 
 The `model` and `maxTokens` fields are admin-only controls. For admitted non-admin Studio users,
 the proxy ignores both fields and uses the operator-configured provider model and output-token

@@ -76,6 +76,11 @@ internal static class StudioAiProxyEndpoints
         // for end users. Admin callers retain explicit overrides, while every non-admin request
         // is pinned to configured limits by omitting both wire-level overrides before dispatch.
         var allowCallerOverrides = authorizationService.IsAdmin(context.User);
+        if (httpRequest.Certification is not null && !allowCallerOverrides)
+        {
+            return Results.Forbid();
+        }
+
         var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
             httpRequest,
             allowCallerOverrides);
@@ -144,6 +149,7 @@ internal static class StudioAiProxyEndpoints
         StudioAiChatEventType.ToolCallStop => "tool_call_stop",
         StudioAiChatEventType.MessageStop => "message_stop",
         StudioAiChatEventType.Error => "error",
+        StudioAiChatEventType.TranscriptProvenance => "transcript_provenance",
         _ => "message"
     };
 

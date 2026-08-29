@@ -105,8 +105,6 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         await using var stream = await successResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
-        yield return new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = model };
-
         // Multiple tool calls can interleave within one streamed turn, each identified by its
         // "index" in the delta payload; the first delta for an index carries id+name, later deltas
         // for the same index only carry argument fragments.
@@ -116,6 +114,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         var stopReason = StudioAiStopReason.EndTurn;
         var sawDone = false;
         var sawFinishReason = false;
+        var emittedMessageStart = false;
 
         while (true)
         {
@@ -174,6 +173,12 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             if (parseFailed || chunk is null)
             {
                 continue;
+            }
+
+            if (!emittedMessageStart)
+            {
+                emittedMessageStart = true;
+                yield return new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = chunk.Model };
             }
 
             if (chunk.Usage is { } usage)

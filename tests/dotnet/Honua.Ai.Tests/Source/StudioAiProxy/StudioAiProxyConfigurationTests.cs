@@ -160,6 +160,40 @@ public sealed class StudioAiProxyConfigurationTests
         options.GetProvider("missing").Should().BeNull();
     }
 
+    [UnitTest]
+    public void Validate_InvalidOverlapKeys_FailStartupValidation()
+    {
+        var options = ConfigWith("claude", new StudioAiProxyProviderOptions
+        {
+            Kind = StudioAiProxyConfiguration.AnthropicKind,
+            Endpoint = "https://api.anthropic.com",
+            Model = "claude-sonnet-4-5"
+        });
+        options.TranscriptSigning.KeyId = "active";
+        options.TranscriptSigning.PrivateKeyReference = "env://SIGNING_KEY";
+        options.TranscriptSigning.OverlapKeys =
+        [
+            new() { KeyId = "", PublicKey = "not-base64" },
+            new() { KeyId = "active", PublicKey = Convert.ToBase64String(new byte[31]) },
+            new()
+            {
+                KeyId = "rotation",
+                PublicKey = Convert.ToBase64String(new byte[32]),
+                NotBefore = new DateTimeOffset(2026, 8, 30, 0, 0, 0, TimeSpan.Zero),
+                NotAfter = new DateTimeOffset(2026, 8, 29, 0, 0, 0, TimeSpan.Zero)
+            }
+        ];
+
+        var result = new StudioAiProxyConfigurationValidator().Validate(name: null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("KeyId is required and cannot be empty");
+        result.FailureMessage.Should().Contain("valid Base64");
+        result.FailureMessage.Should().Contain("duplicated");
+        result.FailureMessage.Should().Contain("decode to 32 bytes");
+        result.FailureMessage.Should().Contain("NotBefore must be earlier than NotAfter");
+    }
+
     private static StudioAiProxyConfiguration ConfigWith(string name, StudioAiProxyProviderOptions provider) => new()
     {
         Enabled = true,
