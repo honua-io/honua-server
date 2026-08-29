@@ -796,7 +796,7 @@ builder.Services.AddServerFeatures(
     builder.Environment.EnvironmentName);
 builder.Services.AddOperateObservabilityFixtures(builder.Configuration, builder.Environment);
 builder.Services.AddWorkflowPackages();
-builder.Services.AddOperationsToolset(builder.Configuration);
+builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 // #2483 (ADR-0056 Increment 4): publish validated operations-toolset descriptors as
 // first-class MCP tools. Off unless Mcp:PublishOperations:Enabled=true; wired after the
 // operations toolset so the tool source can resolve the canonical IOperationCatalog.

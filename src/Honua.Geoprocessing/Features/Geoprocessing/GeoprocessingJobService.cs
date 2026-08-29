@@ -127,7 +127,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         ILayerAccessAuthorizer? layerAccessAuthorizer = null,
         IHttpContextAccessor? httpContextAccessor = null,
         IServiceScopeFactory? serviceScopeFactory = null,
-        IPrincipalMembershipSource? principalMembershipSource = null)
+        IPrincipalMembershipSource? principalMembershipSource = null,
+        Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory? operationEnvelopeFactory = null)
         : this(
             progressStore,
             cancellationNotifiers,
@@ -147,7 +148,15 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 logger,
                 principalMembershipSource),
             new GeoprocessingJobDispatcher(
-                logger, executorOptions, progressStore, jobQueue, workloadRegistry, backends, admissionEvaluator, operationGateway),
+                logger,
+                executorOptions,
+                progressStore,
+                jobQueue,
+                workloadRegistry,
+                backends,
+                admissionEvaluator,
+                operationGateway,
+                operationEnvelopeFactory),
             new CustomCodeJobSubmissionGate(
                 logger, scopedJobTokenIssuer, customCodeOptions, customCodeSignatureVerifier),
             new GeoprocessingJobArtifactService(

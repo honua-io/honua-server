@@ -273,26 +273,7 @@ public sealed class GatewayExecutorCompletenessTests
         IOperationProposalStore proposalStore,
         IEnumerable<IOperationExecutor> executors,
         IGuardrailLadder ladder)
-    {
-        var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => new DurableAuditLog());
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
-        var notifier = Substitute.For<IProposalNotifier>();
-
-        return new OperationGateway(
-            ladder,
-            proposalStore,
-            executors,
-            scopeFactory,
-            notifier,
-            NullLogger<OperationGateway>.Instance);
-    }
-
-    private sealed class DurableAuditLog : IAuditLog
-    {
-        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) =>
-            Task.FromResult<string?>("audit-gateway-completeness");
-    }
+        => CanonicalOperationGatewayTestComposition.Build(proposalStore, ladder, executors);
 
     /// <summary>Executor stand-in for classes not under test here (AdminConfigChange/Deploy).</summary>
     private sealed class StubExecutor(OperationClass operationClass) : IOperationExecutor
@@ -415,7 +396,8 @@ public sealed class GatewayExecutorCompletenessTests
                 .Where(proposal => proposal.Status is not (OperationProposalStatus.Succeeded
                     or OperationProposalStatus.Failed
                     or OperationProposalStatus.Rejected
-                    or OperationProposalStatus.RolledBack))
+                    or OperationProposalStatus.RolledBack
+                    or OperationProposalStatus.Cancelled))
                 .ToArray();
 
             return Task.FromResult<IReadOnlyList<OperationProposal>>(active);

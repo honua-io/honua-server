@@ -153,7 +153,7 @@ public sealed class OperationGatewayAutonomyTests
         var first = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
         await first.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("simulated proposal counter outage");
-        (await store.GetAsync(routed.ProposalId!))!.Status.Should().Be(OperationProposalStatus.Submitted);
+        (await store.GetAsync(routed.ProposalId!))!.Status.Should().Be(OperationProposalStatus.Succeeded);
 
         var retry = () => sut.ApplyApprovedProposalAsync(routed.ProposalId!, "human-approver");
         await retry.Should().ThrowAsync<InvalidOperationException>()
@@ -175,9 +175,10 @@ public sealed class OperationGatewayAutonomyTests
             });
         var sut = BuildGateway(store, evaluator, new ThrowingExecutor(), RecordingConvergence.Converged());
 
-        var act = () => sut.RouteAsync(Request());
+        var result = await sut.RouteAsync(Request());
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
+        result.Message.Should().Contain("actuation failed");
         store.Count.Should().Be(0);
         evaluator.OutcomeCount.Should().Be(1);
         evaluator.LastOutcome.Should().Be(OpsAutonomyActionOutcome.Failed);
@@ -366,24 +367,20 @@ public sealed class OperationGatewayAutonomyTests
         var ladder = Substitute.For<IGuardrailLadder>();
         ladder.Resolve(OperationClass.AdminConfigChange, RedriveAction).Returns(RequiresApprovalDecision());
 
-        var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => auditLog ?? new RecordingAuditLog());
-        services.AddScoped(_ => evaluator);
-        services.AddScoped(_ => convergence);
-        if (opsNotificationService is not null)
-        {
-            services.AddScoped(_ => opsNotificationService);
-        }
-
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
-
-        return new OperationGateway(
-            ladder,
+        return CanonicalOperationGatewayTestComposition.Build(
             store,
+            ladder,
             [executor],
-            scopeFactory,
-            Substitute.For<IProposalNotifier>(),
-            NullLogger<OperationGateway>.Instance);
+            services =>
+            {
+                services.AddScoped<IAuditLog>(_ => auditLog ?? new RecordingAuditLog());
+                services.AddScoped(_ => evaluator);
+                services.AddScoped(_ => convergence);
+                if (opsNotificationService is not null)
+                {
+                    services.AddScoped(_ => opsNotificationService);
+                }
+            });
     }
 
     private static RecordingAutonomyEvaluator AutoApplyingEvaluator()
@@ -424,6 +421,8 @@ public sealed class OperationGatewayAutonomyTests
     private static OperationGatewayRequest Request()
         => new()
         {
+            OperationInstanceId = $"opinst-{FindingId}",
+            CorrelationId = $"corr-{FindingId}",
             Kind = OperationClass.AdminConfigChange,
             ActionDiscriminator = RedriveAction,
             RequestedByAgent = "ops-findings-autonomy",

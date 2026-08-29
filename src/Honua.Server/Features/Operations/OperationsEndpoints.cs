@@ -9,6 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Security;
@@ -63,6 +64,7 @@ internal static class OperationsEndpoints
     private static async Task<IResult> HandleListOperations(
         HttpContext context,
         IOperationCatalog catalog,
+        IEnumerable<IOperationApprovalRequestMapper> requestMappers,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
@@ -76,6 +78,13 @@ internal static class OperationsEndpoints
         }
 
         var snapshot = await catalog.GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var mapperCounts = OperationDescriptorPublication.CountMappings(requestMappers);
+        snapshot = snapshot with
+        {
+            Operations = snapshot.Operations
+                .Where(descriptor => OperationDescriptorPublication.CanAdvertise(descriptor, mapperCounts))
+                .ToArray(),
+        };
         context.Response.Headers.ETag = $"\"{snapshot.CatalogVersion}\"";
         return Results.Json(
             ApiResponse<OperationCatalogSnapshot>.CreateSuccess(snapshot),
@@ -128,7 +137,6 @@ internal static class OperationsEndpoints
         OperationInvokeRequest request,
         IOperationCatalog catalog,
         IOperationInvoker invoker,
-        OperationHandleStore handleStore,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
@@ -193,8 +201,6 @@ internal static class OperationsEndpoints
             var handle = await invoker
                 .SubmitAsync(ToRequest(id, request), policyContext, cancellationToken)
                 .ConfigureAwait(false);
-            handleStore.Record(handle);
-
             return Results.Json(
                 ApiResponse<OperationHandle>.CreateSuccess(handle),
                 OperationsJsonContext.Default.ApiResponseOperationHandle);
@@ -216,7 +222,7 @@ internal static class OperationsEndpoints
     private static async Task<IResult> HandleGetHandleStatus(
         HttpContext context,
         string handleId,
-        OperationHandleStore handleStore,
+        IOperationInstanceStore instanceStore,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
@@ -229,7 +235,7 @@ internal static class OperationsEndpoints
             return Results.Forbid();
         }
 
-        var handle = handleStore.Get(handleId);
+        var handle = await instanceStore.GetAsync(handleId, cancellationToken).ConfigureAwait(false);
         if (handle is null)
         {
             return NotFound(context, $"Operation handle '{handleId}' was not found.");

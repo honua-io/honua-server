@@ -83,20 +83,10 @@ internal sealed class PublishedOperationCache : IPublishedOperationCache
     public void Set(string key, McpOperationToolOutput output)
         => _entries[key] = Clone(output, cacheHit: false);
 
-    // Cache stores an immutable result snapshot. A cache hit is still a new invocation:
-    // mint its envelope identities and retain the cached invocation only as evidence.
+    // Cache stores an immutable result snapshot. It never creates invocation identities;
+    // the canonical envelope factory durably accepts every cache-hit invocation.
     private static McpOperationToolOutput Clone(McpOperationToolOutput source, bool cacheHit)
     {
-        var operationInstanceId = cacheHit ? $"opinst-{Guid.NewGuid():N}" : source.OperationInstanceId;
-        var correlationId = cacheHit ? $"corr-{Guid.NewGuid():N}" : source.CorrelationId;
-        var now = DateTimeOffset.UtcNow;
-        var evidenceRefs = cacheHit
-            ? source.EvidenceRefs
-                .Concat([$"cached-operation-instance:{source.OperationInstanceId}"])
-                .Concat(string.IsNullOrWhiteSpace(source.AuditId) ? [] : [$"cached-audit:{source.AuditId}"])
-                .ToArray()
-            : [.. source.EvidenceRefs];
-
         return new McpOperationToolOutput
         {
             Status = source.Status,
@@ -105,13 +95,13 @@ internal sealed class PublishedOperationCache : IPublishedOperationCache
             CacheHit = cacheHit,
             CacheKey = source.CacheKey,
             OperationId = source.OperationId,
-            OperationInstanceId = operationInstanceId,
-            HandleId = operationInstanceId,
-            ProposalId = cacheHit ? null : source.ProposalId,
-            CorrelationId = correlationId,
-            AuditId = cacheHit ? null : source.AuditId,
-            CreatedAt = cacheHit ? now : source.CreatedAt,
-            UpdatedAt = cacheHit ? now : source.UpdatedAt,
+            OperationInstanceId = source.OperationInstanceId,
+            HandleId = source.HandleId,
+            ProposalId = source.ProposalId,
+            CorrelationId = source.CorrelationId,
+            AuditId = source.AuditId,
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt,
             AuthorizationOutcome = source.AuthorizationOutcome,
             PolicyOutcome = source.PolicyOutcome,
             JobId = source.JobId,
@@ -121,7 +111,7 @@ internal sealed class PublishedOperationCache : IPublishedOperationCache
             Message = source.Message,
             Details = new Dictionary<string, string>(source.Details, StringComparer.Ordinal),
             ResourceIds = new Dictionary<string, string>(source.ResourceIds, StringComparer.Ordinal),
-            EvidenceRefs = evidenceRefs,
+            EvidenceRefs = [.. source.EvidenceRefs],
         };
     }
 }

@@ -103,6 +103,31 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
 
         return record?.OperationId;
     }
+
+    public async Task<OperationBackendStatus?> GetBackendStatusAsync(
+        string executionOperationId,
+        CancellationToken cancellationToken = default)
+    {
+        var operation = await deployWorkflowService.GetAsync(executionOperationId, cancellationToken).ConfigureAwait(false);
+        return operation is null ? null : BackendStatus(operation.Status);
+    }
+
+    private static OperationBackendStatus BackendStatus(WorkflowOperationStatus status) => new()
+    {
+        State = status switch
+        {
+            WorkflowOperationStatus.Succeeded => OperationBackendState.Succeeded,
+            WorkflowOperationStatus.Failed => OperationBackendState.Failed,
+            WorkflowOperationStatus.RolledBack => OperationBackendState.Failed,
+            WorkflowOperationStatus.ManualInterventionRequired => OperationBackendState.Indeterminate,
+            WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Planned or WorkflowOperationStatus.AwaitingApproval
+                => OperationBackendState.Queued,
+            _ => OperationBackendState.Running,
+        },
+        Reason = status is WorkflowOperationStatus.Failed or WorkflowOperationStatus.RolledBack
+            ? $"Backend workflow reached {status}."
+            : null,
+    };
 }
 
 /// <summary>

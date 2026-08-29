@@ -8,11 +8,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
-using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Infrastructure.Middleware;
-using Honua.Infrastructure.MultiTenancy;
-using Honua.Ai.Protocols.Mcp;
-using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Server.Features.Operations;
 
@@ -63,92 +58,21 @@ internal sealed class ServicePublishApprovalRequestMapper : IOperationApprovalRe
             },
         };
     }
-}
 
-/// <summary>
-/// Approval-replay compatibility actuator for Slice 1. It consumes the exact typed
-/// payload produced by <see cref="ServicePublishApprovalRequestMapper"/> and delegates
-/// to the same <see cref="ServicePublishExecutor"/> used by direct typed invocation.
-/// </summary>
-internal sealed class ServicePublishApprovalExecutor(IServiceScopeFactory scopeFactory)
-    : Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor
-{
-    public OperationClass OperationClass => OperationClass.ServicePublish;
-
-    public Task<OperationProposalPlan?> PlanAsync(
-        OperationGatewayRequest request,
-        CancellationToken cancellationToken = default)
-        => Task.FromResult(request.Plan);
-
-    public async Task<string?> ExecuteAsync(
-        OperationGatewayRequest request,
-        string? executionPayload,
-        CancellationToken cancellationToken = default)
+    public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.OperationInstanceId) ||
-            string.IsNullOrWhiteSpace(request.CorrelationId))
-        {
-            throw new InvalidOperationException("The canonical operation identity is required for approval replay.");
-        }
-
+        ArgumentNullException.ThrowIfNull(request);
         var payload = JsonSerializer.Deserialize(
-                executionPayload ?? throw new InvalidOperationException("The service.publish replay payload is unavailable."),
+                request.Plan?.ExecutionPayload ?? request.ExecutionPayload
+                    ?? throw new InvalidOperationException("The persisted service.publish replay payload is unavailable."),
                 ServicePublishApprovalJsonContext.Default.ServicePublishApprovalPayload)
-            ?? throw new InvalidOperationException("The service.publish replay payload is invalid.");
-
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var tenantContext = scope.ServiceProvider.GetService<RequestTenantContext>();
-        var previousTenant = tenantContext?.TenantId;
-        var previousTenantSource = tenantContext?.Source ?? TenantContextSource.Anonymous;
-        tenantContext?.Set(payload.TenantId, TenantContextSource.Claim);
-        var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
-        var previousSchema = schemaContext?.CurrentSchema;
-        if (schemaContext is not null)
+            ?? throw new InvalidOperationException("The persisted service.publish replay payload is invalid.");
+        return new OperationApprovalReplayMapping
         {
-            schemaContext.CurrentSchema = payload.SchemaName;
-        }
-
-        var executor = scope.ServiceProvider.GetRequiredService<ServicePublishExecutor>();
-        try
-        {
-            if (payload.DryRun)
-            {
-                var validation = await executor.ValidateAsync(payload.ToOperationRequest(), cancellationToken)
-                    .ConfigureAwait(false);
-                if (!validation.IsValid)
-                {
-                    throw new InvalidOperationException("The approved dry-run payload no longer validates.");
-                }
-
-                return request.OperationInstanceId;
-            }
-
-            var result = await executor.SubmitAsync(
-                    payload.ToOperationRequest(),
-                    new OperationPolicyContext
-                    {
-                        OperationInstanceId = request.OperationInstanceId,
-                        CorrelationId = request.CorrelationId,
-                        PrincipalId = request.RequestedBy,
-                        TenantId = payload.TenantId,
-                        SchemaName = payload.SchemaName,
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
-            var notifications = scope.ServiceProvider.GetService<IMcpNotificationPublisher>();
-            notifications?.BroadcastResourcesListChanged();
-            notifications?.BroadcastToolsListChanged();
-            return result.OperationInstanceId;
-        }
-        finally
-        {
-            if (schemaContext is not null)
-            {
-                schemaContext.CurrentSchema = previousSchema;
-            }
-
-            tenantContext?.Set(previousTenant, previousTenantSource);
-        }
+            Request = payload.ToOperationRequest(),
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName,
+        };
     }
 }
 

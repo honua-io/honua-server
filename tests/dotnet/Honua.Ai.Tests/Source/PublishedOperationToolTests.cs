@@ -252,7 +252,8 @@ public sealed class PublishedOperationToolTests
         body.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
         body.GetProperty("approvalLane").GetString().Should().Be("operator-gate");
         body.TryGetProperty("proposalId", out _).Should().BeFalse();
-        body.TryGetProperty("auditId", out _).Should().BeFalse();
+        body.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace(
+            "the failed approval envelope retains its durable acceptance evidence");
     }
 
     [UnitTest]
@@ -339,7 +340,8 @@ public sealed class PublishedOperationToolTests
             .NotBe(firstBody.GetProperty("correlationId").GetString());
         secondBody.GetProperty("createdAt").GetDateTimeOffset().Should()
             .BeOnOrAfter(firstBody.GetProperty("createdAt").GetDateTimeOffset());
-        secondBody.TryGetProperty("auditId", out _).Should().BeFalse(
+        secondBody.GetProperty("auditId").GetString().Should().StartWith("audit-dev-");
+        secondBody.GetProperty("auditId").GetString().Should().NotBe("audit-original",
             "the cached payload audit identity is evidence, not the new invocation audit identity");
         secondBody.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString()).Should()
             .Contain("cached-operation-instance:op-done")
@@ -476,7 +478,8 @@ public sealed class PublishedOperationToolTests
         var source = new PublishedOperationToolSource(
             Catalog(DeterministicReadOnlyDescriptor(), MutatingDescriptor(), ServicePublishDescriptor()),
             Options.Create(new McpPublishedOperationOptions { Enabled = true }),
-            NullLogger<PublishedOperationToolSource>.Instance);
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: [new TestApprovalMapper(MutatingOpId)]);
 
         var names = (await source.GetToolsAsync(CancellationToken.None)).Select(t => t.Name).ToArray();
 
@@ -491,7 +494,8 @@ public sealed class PublishedOperationToolTests
         var source = new PublishedOperationToolSource(
             Catalog(DeterministicReadOnlyDescriptor(), MutatingDescriptor()),
             Options.Create(new McpPublishedOperationOptions { Enabled = true, DeterministicOnly = true }),
-            NullLogger<PublishedOperationToolSource>.Instance);
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: [new TestApprovalMapper(MutatingOpId)]);
 
         var names = (await source.GetToolsAsync(CancellationToken.None)).Select(t => t.Name).ToArray();
 
@@ -615,6 +619,10 @@ public sealed class PublishedOperationToolTests
         }
 
         services.AddSingleton<IPublishedOperationCache>(cache ?? new PublishedOperationCache());
+        services.AddSingleton<IOperationEnvelopeFactory>(new OperationEnvelopeFactory(
+            new VolatileOperationInstanceStore(),
+            new VolatileOperationAuditLog(),
+            TimeProvider.System));
         if (license is not null)
         {
             services.AddSingleton(license);
@@ -767,6 +775,22 @@ public sealed class PublishedOperationToolTests
         public Task<OperationHandle> SubmitAsync(
             OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken = default)
             => Task.FromResult(handler(request, context));
+    }
+
+    private sealed class TestApprovalMapper(string operationId) : IOperationApprovalRequestMapper
+    {
+        public string OperationId => operationId;
+
+        public Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest Map(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            PolicyDecision decision)
+            => new() { Kind = Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange };
+
+        public OperationApprovalReplayMapping MapReplay(
+            Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest request)
+            => new() { Request = new OperationRequest { OperationId = OperationId } };
     }
 
     private sealed class CountingInvoker(Func<OperationRequest, OperationHandle> handler) : IOperationInvoker

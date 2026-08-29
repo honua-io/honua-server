@@ -45,11 +45,12 @@ public sealed class OperationGatewayIdempotencyTests
         // Refresh-then-repropose: the caller re-issues the same request.
         var second = await sut.RouteAsync(request);
 
-        first.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
+        first.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, first.Message);
         second.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         second.ProposalId.Should().Be(first.ProposalId, "the same idempotency key must fold onto the same proposal");
         store.Count.Should().Be(1, "re-proposing with the same idempotency key must not mint a duplicate proposal");
         store.ActiveCount.Should().Be(1);
+        store.Single.Plan.Summary.Should().Be("Deploy proposal");
     }
 
     [Fact]
@@ -111,34 +112,66 @@ public sealed class OperationGatewayIdempotencyTests
         retry.ProposalId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task RouteAsync_AuditInfrastructureThrows_FinalizesAndAuditsPlannedProposalFailure()
+    {
+        var store = new MultiProposalStore();
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
+        var audit = new ThrowingOnceAuditLog();
+        var sut = BuildGateway(store, ladder, audit);
+
+        var result = await sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "agent",
+            IdempotencyKey = "fault-during-audit",
+        });
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.Failed);
+        result.ProposalId.Should().BeNull();
+        store.Single.Status.Should().Be(OperationProposalStatus.Failed);
+        store.ActiveCount.Should().Be(0);
+        audit.Events.Should().Contain(item =>
+            item.Action == "operation.proposal_failed" && item.Outcome == AuditOutcome.Failure);
+    }
+
+    [Fact]
+    public async Task ApplyApprovedProposalAsync_ConsumesPersistedValidatedPlanWithoutReplanning()
+    {
+        var store = new MultiProposalStore();
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
+        var actuator = new PlanCapturingExecutor();
+        var sut = CanonicalOperationGatewayTestComposition.Build(store, ladder, [actuator]);
+
+        var routed = await sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "agent",
+            ExecutionPayload = "live-request-payload",
+        });
+        var persisted = store.Single;
+
+        await sut.ApplyApprovedProposalAsync(routed.ProposalId!, "approver");
+
+        persisted.Plan.Summary.Should().Be("validated deploy plan");
+        persisted.Plan.ExecutionPayload.Should().Be("validated-plan-payload");
+        actuator.PlanCalls.Should().Be(1, "approved replay must not revalidate against live state");
+        actuator.ExecutedPayload.Should().Be("validated-plan-payload");
+    }
+
     private static OperationGateway BuildGateway(
         IOperationProposalStore store,
         IGuardrailLadder ladder,
         IAuditLog? auditLog = null)
-    {
-        var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => auditLog ?? new DurableAuditLog());
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
-
-        return new OperationGateway(
-            ladder,
+        => CanonicalOperationGatewayTestComposition.Build(
             store,
-            [],
-            scopeFactory,
-            Substitute.For<IProposalNotifier>(),
-            NullLogger<OperationGateway>.Instance);
-    }
-
-    /// <summary>
-    /// In-memory proposal store keyed by proposal id, able to hold multiple
-    /// proposals (unlike the single-slot store) so a duplicate-proposal regression
-    /// is observable.
-    /// </summary>
-    private sealed class DurableAuditLog : IAuditLog
-    {
-        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) =>
-            Task.FromResult<string?>("audit-test");
-    }
+            ladder,
+            [CanonicalOperationGatewayTestComposition.PlanningOnly(OperationClass.Deploy)],
+            auditLog is null ? null : services => services.AddSingleton(auditLog));
 
     private sealed class CancelingOnceAuditLog : IAuditLog
     {
@@ -152,6 +185,58 @@ public sealed class OperationGatewayIdempotencyTests
             }
 
             return Task.FromResult<string?>("audit-retry");
+        }
+    }
+
+    private sealed class ThrowingOnceAuditLog : IAuditLog
+    {
+        private int _calls;
+
+        public List<AuditEvent> Events { get; } = [];
+
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+            {
+                return Task.FromException<string?>(new InvalidOperationException("audit unavailable"));
+            }
+
+            Events.Add(auditEvent);
+            return Task.FromResult<string?>("audit-failure");
+        }
+    }
+
+    private sealed class PlanCapturingExecutor
+        : Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor
+    {
+        public OperationClass OperationClass => OperationClass.Deploy;
+
+        public int PlanCalls { get; private set; }
+
+        public string? ExecutedPayload { get; private set; }
+
+        public Task<OperationProposalPlan?> PlanAsync(
+            OperationGatewayRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            PlanCalls++;
+            return Task.FromResult<OperationProposalPlan?>(new OperationProposalPlan
+            {
+                Summary = "validated deploy plan",
+                Diff = ["old -> new"],
+                RiskLevel = ProposalRiskLevel.High,
+                Warnings = ["review canary"],
+                ExecutionPayload = "validated-plan-payload",
+            });
+        }
+
+        public Task<string?> ExecuteAsync(
+            OperationGatewayRequest request,
+            string? executionPayload,
+            CancellationToken cancellationToken = default)
+        {
+            ExecutedPayload = executionPayload;
+            return Task.FromResult<string?>("deploy-job-1");
         }
     }
 
@@ -244,6 +329,7 @@ public sealed class OperationGatewayIdempotencyTests
             => proposal.Status is not (OperationProposalStatus.Succeeded
                 or OperationProposalStatus.Failed
                 or OperationProposalStatus.Rejected
-                or OperationProposalStatus.RolledBack);
+                or OperationProposalStatus.RolledBack
+                or OperationProposalStatus.Cancelled);
     }
 }

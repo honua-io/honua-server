@@ -32,7 +32,8 @@ internal sealed partial class AdminOperationApprovalBridge(
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(decision);
 
-        if (!_requestMappers.TryGetValue(descriptor.OperationId, out var mapper))
+        _requestMappers.TryGetValue(descriptor.OperationId, out var mapper);
+        if (request.GatewayRequest is null && mapper is null)
         {
             return Failure(
                 $"Approval is required, but operation '{descriptor.OperationId}' has no durable replay mapper.");
@@ -52,7 +53,8 @@ internal sealed partial class AdminOperationApprovalBridge(
 
         try
         {
-            var gatewayRequest = mapper.Map(descriptor, request, context, decision) with
+            var gatewayRequest = (request.GatewayRequest
+                ?? mapper!.Map(descriptor, request, context, decision)) with
             {
                 OperationInstanceId = context.OperationInstanceId,
                 CorrelationId = context.CorrelationId,
@@ -64,7 +66,7 @@ internal sealed partial class AdminOperationApprovalBridge(
             }
 
             var result = await gateway
-                .CreateApprovalProposalAsync(gatewayRequest, cancellationToken)
+                .CreateApprovalProposalAsync(context.OperationInstanceId, gatewayRequest, cancellationToken)
                 .ConfigureAwait(false);
 
             if (result.Outcome != OperationGatewayOutcome.ProposalCreated ||
@@ -111,25 +113,4 @@ internal sealed partial class AdminOperationApprovalBridge(
             string operationId,
             Exception exception);
     }
-}
-
-/// <summary>
-/// Explicit compatibility mapper for a typed operation whose sealed request can be replayed by
-/// the current durable proposal runtime. Slice 2 replaces these adapters with the unified runtime.
-/// </summary>
-internal interface IOperationApprovalRequestMapper
-{
-    /// <summary>
-    /// Typed descriptor identity this mapper supports.
-    /// </summary>
-    string OperationId { get; }
-
-    /// <summary>
-    /// Maps a bounded typed request into the current durable gateway request.
-    /// </summary>
-    OperationGatewayRequest Map(
-        IOperationDescriptor descriptor,
-        OperationRequest request,
-        OperationPolicyContext context,
-        PolicyDecision decision);
 }

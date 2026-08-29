@@ -159,21 +159,6 @@ internal sealed class PublishResultTool : IMcpTool
 
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
 
-        // A completed promotion mutates the promotion-resource catalog (a new
-        // honua://published-services/{id} appears) and the capability surface, so
-        // fire listChanged to active sessions — mirrors PublishServiceTool
-        // (honua-server#1954). Queued/RequiresApproval/Denied did not change the
-        // catalog yet, so they emit nothing. Resolved leniently.
-        if (handle.Status == OperationHandleStatus.Completed)
-        {
-            var publisher = httpContext.RequestServices.GetService<IMcpNotificationPublisher>();
-            if (publisher is not null)
-            {
-                publisher.BroadcastResourcesListChanged();
-                publisher.BroadcastToolsListChanged();
-            }
-        }
-
         return McpToolHelpers.SuccessResult(
             Project(handle, sourceId, artifact.ArtifactId),
             McpJsonContext.Default.McpPublishResultOutput);

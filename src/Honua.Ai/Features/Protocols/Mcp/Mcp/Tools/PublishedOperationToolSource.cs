@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -38,17 +39,20 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
     private readonly IServiceScopeFactory? _scopeFactory;
     private readonly IOptions<McpPublishedOperationOptions> _options;
     private readonly ILogger<PublishedOperationToolSource> _logger;
+    private readonly IReadOnlyDictionary<string, int> _mapperCounts;
 
     public PublishedOperationToolSource(
         IOperationCatalog catalog,
         IOptions<McpPublishedOperationOptions> options,
         ILogger<PublishedOperationToolSource> logger,
-        IServiceScopeFactory? scopeFactory = null)
+        IServiceScopeFactory? scopeFactory = null,
+        IEnumerable<IOperationApprovalRequestMapper>? requestMappers = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _mapperCounts = OperationDescriptorPublication.CountMappings(requestMappers ?? []);
     }
 
     /// <inheritdoc />
@@ -74,6 +78,10 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
         var tools = new List<IMcpTool>(snapshot.Operations.Count);
         foreach (var descriptor in snapshot.Operations)
         {
+            if (!OperationDescriptorPublication.CanAdvertise(descriptor, _mapperCounts))
+            {
+                continue;
+            }
             if (executorOperationIds is not null && !executorOperationIds.Contains(descriptor.OperationId))
             {
                 continue;
