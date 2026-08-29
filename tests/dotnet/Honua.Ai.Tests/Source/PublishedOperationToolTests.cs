@@ -521,6 +521,21 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public void BuildKey_NullEmptyAndWhitespaceParameters_AreDistinct()
+    {
+        var context = new OperationPolicyContext { PrincipalId = "actor" };
+        var keys = new string?[] { null, string.Empty, " " }
+            .Select(value => IPublishedOperationCache.BuildKey(
+                "op",
+                "cat-v1",
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["value"] = value },
+                context));
+
+        keys.Should().OnlyHaveUniqueItems(
+            "null, empty, and whitespace parameter values are distinct executor inputs");
+    }
+
+    [UnitTest]
     public async Task Invoke_MutatingOperation_IsNeverCached()
     {
         var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));

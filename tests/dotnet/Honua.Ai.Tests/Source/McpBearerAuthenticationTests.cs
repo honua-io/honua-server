@@ -859,17 +859,18 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
                 new Claim("tid", "tenant-a"),
                 new Claim("scope", "honua.mcp.full"),
             ]);
-            var sessionId = await OpenSessionAsync(client, owner);
+            var streamSessionId = await OpenSessionAsync(client, owner);
+            var deleteSessionId = await OpenSessionAsync(client, owner);
 
             // Outlive the configured idle timeout.
             await Task.Delay(TimeSpan.FromSeconds(2));
 
-            using var stream = BuildStream(sessionId, owner);
+            using var stream = BuildStream(streamSessionId, owner);
             using var streamResponse = await client.SendAsync(stream, HttpCompletionOption.ResponseHeadersRead);
             streamResponse.StatusCode.Should().Be(HttpStatusCode.NotFound,
                 "an idle-expired session must not open a stream even for its own owner");
 
-            using var delete = BuildDelete(sessionId, owner);
+            using var delete = BuildDelete(deleteSessionId, owner);
             using var deleteResponse = await client.SendAsync(delete);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound,
                 "an idle-expired session is unknown, not owned");

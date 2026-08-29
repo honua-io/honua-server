@@ -115,7 +115,7 @@ internal interface IPublishedOperationCache
     /// concrete one.
     /// </summary>
     private static string Component(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? "none" : $"value:{Uri.EscapeDataString(value)}";
+        value is null ? "none" : $"value:{value.Length}:{Uri.EscapeDataString(value)}";
 }
 
 /// <inheritdoc />
