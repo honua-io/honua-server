@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -283,6 +284,34 @@ internal static class ImageServerSoapEndpoints
         }
 
         var referenceRaster = SelectReferenceRaster(rasters);
+        var rasterIds = rasters.Select(static raster => raster.Id).ToArray();
+        var mergeStrategy = revalidation.Resolution.MergeStrategy;
+        var schemaName = request.HttpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
+        var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+            request.HttpContext.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+            ImageServerStatisticsBudget.CreateStatisticsOperationKey(
+                schemaName,
+                revalidation.Resolution.LayerId,
+                rasterIds,
+                mergeStrategy),
+            schemaName,
+            (services, ct) =>
+            {
+                var scopedRasterStore = services.GetRequiredService<IRasterStore>();
+                return rasters.Length == 1
+                    ? scopedRasterStore.GetStatisticsAsync(
+                        revalidation.Resolution.LayerId,
+                        referenceRaster.Id,
+                        cancellationToken: ct)
+                    : scopedRasterStore.GetMosaicStatisticsAsync(
+                        revalidation.Resolution.LayerId,
+                        rasterIds,
+                        mergeStrategy,
+                        cancellationToken: ct);
+            },
+            onBudgetExceeded: () => request.HttpContext.Response.Headers.CacheControl = "no-store",
+            cancellationToken).ConfigureAwait(false);
+        statistics = statistics.OrderBy(static statistic => statistic.Band).ToArray();
 
         var referenceExtent = referenceRaster.Extent;
         var pixelSizeX = referenceRaster.Width > 0 && referenceExtent.HasValue
@@ -308,6 +337,10 @@ internal static class ImageServerSoapEndpoints
             new XElement("MaxPixelSize", "0"),
             new XElement("CopyrightText", string.Empty),
             new XElement("ServiceDataType", "esriImageServiceDataTypeGeneric"),
+            BuildDoubleArray("MinValues", statistics.Select(static value => value.MinValue ?? 0)),
+            BuildDoubleArray("MaxValues", statistics.Select(static value => value.MaxValue ?? 0)),
+            BuildDoubleArray("MeanValues", statistics.Select(static value => value.MeanValue ?? 0)),
+            BuildDoubleArray("StdvValues", statistics.Select(static value => value.StandardDeviation ?? 0)),
             new XElement("ServiceProperties", string.Empty),
             new XElement("MaxNCols", MaxImageDimension),
             new XElement("MaxNRows", MaxImageDimension),
@@ -917,6 +950,21 @@ internal static class ImageServerSoapEndpoints
                 BuildProperty("BandDefinitionKeyword", "NONE", "xsd:string", xsi),
                 BuildProperty("LowCellSize", "0", "xsd:double", xsi),
                 BuildProperty("HighCellSize", "0", "xsd:double", xsi)));
+    }
+
+    private static XElement? BuildDoubleArray(string name, IEnumerable<double> values)
+    {
+        var materialized = values.ToArray();
+        if (materialized.Length == 0)
+        {
+            return null;
+        }
+
+        XNamespace xsi = XmlSchemaInstanceNamespace;
+        return new XElement(
+            name,
+            new XAttribute(xsi + "type", "tns:ArrayOfDouble"),
+            materialized.Select(static value => new XElement("Double", FormatDouble(value))));
     }
 
     private static XElement BuildProperty(string key, string value, string type, XNamespace xsi)

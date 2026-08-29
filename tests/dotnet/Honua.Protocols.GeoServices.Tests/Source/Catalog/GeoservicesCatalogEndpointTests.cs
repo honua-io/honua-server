@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -986,6 +987,21 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 .Value.Should().Be(WebAppFixture.TestServiceId);
             result.Elements().Single(element => element.Name.LocalName == "BandCount")
                 .Value.Should().Be("3");
+            foreach (var (name, expected) in new[]
+                     {
+                         ("MinValues", 0d),
+                         ("MaxValues", 200d),
+                         ("MeanValues", 100d),
+                         ("StdvValues", 25d),
+                     })
+            {
+                var values = result.Elements().Single(element => element.Name.LocalName == name);
+                values.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
+                    .Value.Should().Be("tns:ArrayOfDouble");
+                values.Elements().Should().HaveCount(3)
+                    .And.OnlyContain(element =>
+                        element.Name.LocalName == "Double" && element.Value == expected.ToString(CultureInfo.InvariantCulture));
+            }
             result.Elements().Single(element => element.Name.LocalName == "AllowedCompressions")
                 .Value.Should().Be("None");
             result.Elements().Single(element => element.Name.LocalName == "AllowedMosaicMethods")
@@ -1714,6 +1730,22 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.ListRastersAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns([raster]);
         rasterStore.GetPrimaryRasterInfoAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(raster);
+        rasterStore.GetStatisticsAsync(
+                Arg.Any<int>(),
+                raster.Id,
+                Arg.Any<int[]?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Range(1, bandCount).Select(band => new RasterStatistics
+            {
+                Band = band,
+                MinValue = 0,
+                MaxValue = 200,
+                MeanValue = 100,
+                StandardDeviation = 25,
+                ValidPixelCount = 64,
+                NoDataPixelCount = 0
+            }).ToArray());
         rasterStore.QueryRastersAsync(Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
             .Returns([raster]);
         rasterStore.ExportImageAsync(
