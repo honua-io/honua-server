@@ -29,7 +29,20 @@ internal static class OperationsServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
-        services.TryAddScoped<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>();
+        // The real verifier's constructor requires the durable proposal store, and the
+        // dispatcher requires a verifier, so hosts composed without the store failed
+        // ValidateOnBuild at boot (trunk red 2026-08-29, run 33241561197 — third of
+        // the family after #3614/#3617). Degraded hosts get the fail-closed verifier:
+        // replay can never verify without the durable authority (ruling 4).
+        if (services.Any(descriptor => descriptor.ServiceType ==
+                typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore)))
+        {
+            services.TryAddScoped<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>();
+        }
+        else
+        {
+            services.TryAddScoped<IOperationApprovalReplayVerifier, UnavailableOperationApprovalReplayVerifier>();
+        }
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
         if (environment.IsDevelopment() || environment.IsEnvironment("Test"))

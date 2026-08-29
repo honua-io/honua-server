@@ -100,6 +100,45 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public void AddOperationsToolset_WithoutProposalStore_UsesFailClosedReplayVerifierAndBoots()
+    {
+        // Regression: the real replay verifier requires IOperationProposalStore in its
+        // constructor and the dispatcher requires a verifier, so no-store hosts failed
+        // ValidateOnBuild at boot (trunk red, run 33241561197). Degraded hosts must
+        // compose, and replay verification must refuse without the durable authority.
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationApprovalReplayVerifier) &&
+            descriptor.ImplementationType == typeof(UnavailableOperationApprovalReplayVerifier));
+        services.Should().NotContain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationApprovalReplayVerifier) &&
+            descriptor.ImplementationType == typeof(OperationApprovalReplayVerifier));
+        new UnavailableOperationApprovalReplayVerifier()
+            .VerifyAsync("proposal", "instance", "hash").Result.Should().BeFalse(
+                "replay can never verify without the durable proposal authority");
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_WithProposalStore_UsesDurableReplayVerifier()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationApprovalReplayVerifier) &&
+            descriptor.ImplementationType == typeof(OperationApprovalReplayVerifier));
+    }
+
+    [UnitTest]
     public void AddOperationsToolset_WithControlPlaneExecutors_RegistersLegacyAdaptersWithoutThrowing()
     {
         // Regression: the legacy adapters are factory descriptors, and registering
