@@ -103,6 +103,17 @@ internal static class AdminConnectImportOperationCatalog
             }
             else result.Add(new OperationParameterDescriptor { Name = "body", Title = "Request body", Required = true, Schema = ConvertSchema(root, schema) });
         }
+        if (result.Any(static parameter => parameter.Name == "file") &&
+            result.All(static parameter => parameter.Name != "fileName"))
+        {
+            result.Add(new OperationParameterDescriptor
+            {
+                Name = "fileName",
+                Title = "Original filename, including its supported extension.",
+                Required = true,
+                Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text }
+            });
+        }
         return result;
     }
 
@@ -190,6 +201,7 @@ internal sealed class AdminConnectImportApprovalRequestMapper(
         return new OperationGatewayRequest
         {
             OperationInstanceId = context.OperationInstanceId,
+            OperationId = OperationId,
             Kind = OperationClass.AdminConfigChange,
             RequestedBy = context.PrincipalId,
             Reason = decision.Reason,
@@ -235,17 +247,22 @@ internal sealed record AdminConnectImportApprovalPayload
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
 
-    public static AdminConnectImportApprovalPayload From(OperationRequest request, OperationPolicyContext context) => new()
+    public static AdminConnectImportApprovalPayload From(OperationRequest request, OperationPolicyContext context)
     {
-        OperationId = request.OperationId,
-        Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
-        ConnectionId = request.ConnectionId,
-        ServiceName = request.ServiceName,
-        Fields = request.Fields.ToArray(),
-        DryRun = request.DryRun,
-        TenantId = context.TenantId,
-        SchemaName = context.SchemaName
-    };
+        if (request.Parameters.TryGetValue("password", out var password) && !string.IsNullOrEmpty(password))
+            throw new InvalidOperationException("Inline passwords cannot be persisted for approval; use secretReference.");
+        return new AdminConnectImportApprovalPayload
+        {
+            OperationId = request.OperationId,
+            Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
+            ConnectionId = request.ConnectionId,
+            ServiceName = request.ServiceName,
+            Fields = request.Fields.ToArray(),
+            DryRun = request.DryRun,
+            TenantId = context.TenantId,
+            SchemaName = context.SchemaName
+        };
+    }
 
     public OperationRequest ToOperationRequest() => new()
     {

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net.Http.Headers;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
@@ -25,7 +26,19 @@ internal sealed class AdminConnectImportOperationExecutor(
         var missing = descriptor.InputSchema.Where(static parameter => parameter.Required)
             .Where(parameter => !request.Parameters.TryGetValue(parameter.Name, out var value) || string.IsNullOrWhiteSpace(value))
             .Select(parameter => $"Required parameter '{parameter.Name}' is missing.").ToArray();
-        return Task.FromResult(new OperationValidation { IsValid = missing.Length == 0, Status = missing.Length == 0 ? "valid" : "invalid", Messages = missing });
+        var messages = missing.ToList();
+        if (definition.SideEffect != OperationSideEffectClass.ReadOnly &&
+            request.Parameters.TryGetValue("password", out var password) &&
+            !string.IsNullOrEmpty(password))
+        {
+            messages.Add("Inline passwords cannot be persisted for approval; use secretReference.");
+        }
+        if (request.Parameters.TryGetValue("file", out var encodedFile) && !string.IsNullOrWhiteSpace(encodedFile))
+        {
+            try { _ = Convert.FromBase64String(encodedFile); }
+            catch (FormatException) { messages.Add("The file parameter must be base64-encoded binary content."); }
+        }
+        return Task.FromResult(new OperationValidation { IsValid = messages.Count == 0, Status = messages.Count == 0 ? "valid" : "invalid", Messages = messages });
     }
 
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken = default)
@@ -44,25 +57,29 @@ internal sealed class AdminConnectImportOperationExecutor(
         CopyHeader(current, message, "X-API-Key");
         CopyHeader(current, message, "X-Honua-Tenant");
         if (definition.Method != HttpMethod.Get && definition.Method != HttpMethod.Delete)
-            message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, routeNames) : BuildJson(request, routeNames);
+            message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, routeNames) : BuildJson(request, routeNames, OperationId);
 
         using var response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);
         var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         var now = clock.GetUtcNow();
         var instanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
         var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
+        var queued = response.StatusCode == HttpStatusCode.Accepted;
+        var resources = queued ? ReadQueuedResources(payload) : new Dictionary<string, string>(StringComparer.Ordinal);
         return new OperationHandle
         {
             OperationInstanceId = instanceId,
             OperationId = OperationId,
             CorrelationId = correlationId,
-            Status = response.IsSuccessStatusCode ? OperationHandleStatus.Completed : OperationHandleStatus.Failed,
+            Status = queued ? OperationHandleStatus.Queued : response.IsSuccessStatusCode ? OperationHandleStatus.Completed : OperationHandleStatus.Failed,
+            JobId = resources.GetValueOrDefault("jobId"),
+            ResourceIds = resources,
             CreatedAt = now,
             UpdatedAt = now,
             Reason = response.IsSuccessStatusCode ? null : $"Admin API returned HTTP {(int)response.StatusCode} ({response.StatusCode}).",
             Result = new OperationResultSummary
             {
-                Summary = $"{definition.Title} {(response.IsSuccessStatusCode ? "completed" : "failed")}.",
+                Summary = $"{definition.Title} {(queued ? "queued" : response.IsSuccessStatusCode ? "completed" : "failed")}.",
                 Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), ["response"] = payload }
             }
         };
@@ -83,8 +100,10 @@ internal sealed class AdminConnectImportOperationExecutor(
     private static HashSet<string> RouteNames(string path) => path.Split('/').Where(static segment => segment.StartsWith('{') && segment.EndsWith('}')).Select(static segment => segment[1..^1]).ToHashSet(StringComparer.Ordinal);
     private static void CopyHeader(HttpContext current, HttpRequestMessage message, string name) { if (current.Request.Headers.TryGetValue(name, out var values) && values.Count > 0) message.Headers.TryAddWithoutValidation(name, values.ToArray()); }
 
-    private static StringContent BuildJson(OperationRequest request, HashSet<string> routeNames)
+    internal static StringContent BuildJson(OperationRequest request, HashSet<string> routeNames, string operationId)
     {
+        var schemas = AdminConnectImportOperationCatalog.Descriptors.Single(item => item.OperationId == operationId)
+            .InputSchema.ToDictionary(static item => item.Name, static item => item.Schema.Type, StringComparer.Ordinal);
         var buffer = new System.Buffers.ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
@@ -92,23 +111,42 @@ internal sealed class AdminConnectImportOperationExecutor(
             foreach (var pair in request.Parameters.Where(pair => !routeNames.Contains(pair.Key) && pair.Value is not null))
             {
                 writer.WritePropertyName(pair.Key);
-                try { using var value = JsonDocument.Parse(pair.Value!); value.RootElement.WriteTo(writer); }
-                catch (JsonException) { writer.WriteStringValue(pair.Value); }
+                if (schemas.GetValueOrDefault(pair.Key) == Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Text)
+                    writer.WriteStringValue(pair.Value);
+                else
+                {
+                    try { using var value = JsonDocument.Parse(pair.Value!); value.RootElement.WriteTo(writer); }
+                    catch (JsonException) { writer.WriteStringValue(pair.Value); }
+                }
             }
             writer.WriteEndObject();
         }
         return new StringContent(Encoding.UTF8.GetString(buffer.WrittenSpan), Encoding.UTF8, "application/json");
     }
 
-    private static MultipartFormDataContent BuildMultipart(OperationRequest request, HashSet<string> routeNames)
+    internal static MultipartFormDataContent BuildMultipart(OperationRequest request, HashSet<string> routeNames)
     {
         var content = new MultipartFormDataContent();
         foreach (var pair in request.Parameters.Where(pair => !routeNames.Contains(pair.Key) && pair.Value is not null))
         {
-            var part = new StringContent(pair.Value!, Encoding.UTF8);
-            if (pair.Key == "file") content.Add(part, pair.Key, "upload");
+            HttpContent part = pair.Key == "file"
+                ? new ByteArrayContent(Convert.FromBase64String(pair.Value!))
+                : new StringContent(pair.Value!, Encoding.UTF8);
+            if (pair.Key == "file")
+                content.Add(part, pair.Key, request.Parameters.GetValueOrDefault("fileName") ?? "upload.bin");
+            else if (pair.Key == "fileName") continue;
             else content.Add(part, pair.Key);
         }
         return content;
+    }
+
+    internal static Dictionary<string, string> ReadQueuedResources(string payload)
+    {
+        using var document = JsonDocument.Parse(payload);
+        var resources = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var name in new[] { "jobId", "statusUrl", "cancelUrl" })
+            if (document.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
+                resources[name] = value.GetString()!;
+        return resources;
     }
 }

@@ -218,7 +218,9 @@ public sealed class OperationsToolsetTests
         composed.Count(descriptor => descriptor.ImplementationType ==
             typeof(AdminConnectImportOperationDescriptorProvider)).Should().Be(1);
         composed.Count(descriptor => descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationFactory != null).Should().Be(AdminConnectImportOperationCatalog.Definitions.Count);
+            descriptor.ImplementationFactory != null).Should().Be(
+                AdminConnectImportOperationCatalog.Definitions.Count + 4,
+                "the admin catalog and four legacy operation-class adapters are each registered once");
     }
 
     [UnitTest]
@@ -486,6 +488,69 @@ public sealed class OperationsToolsetTests
         create.InputSchema.Select(static parameter => parameter.Name).Should().Contain("secretReference");
         create.InputSchema.Single(static parameter => parameter.Name == "secretReference").Schema.Type
             .Should().Be(Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Text);
+
+        var upload = AdminConnectImportOperationCatalog.Descriptors.Single(
+            descriptor => descriptor.OperationId == "admin.import.upload");
+        upload.InputSchema.Should().ContainSingle(parameter => parameter.Name == "fileName" && parameter.Required);
+    }
+
+    [UnitTest]
+    public void LaneA_ApprovalPayload_PreservesTypedIdentity_AndRejectsInlinePassword()
+    {
+        var definition = AdminConnectImportOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.connections.create");
+        var mapper = new AdminConnectImportApprovalRequestMapper(definition);
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var request = new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?> { ["password"] = "plaintext" }
+        };
+
+        var decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval };
+        var map = () => mapper.Map(descriptor, request, new OperationPolicyContext(), decision);
+
+        map.Should().Throw<InvalidOperationException>().WithMessage("*secretReference*");
+
+        var safe = mapper.Map(descriptor, request with
+        {
+            Parameters = new Dictionary<string, string?> { ["secretReference"] = "vault://connection" }
+        }, new OperationPolicyContext(), decision);
+        safe.OperationId.Should().Be(definition.OperationId);
+    }
+
+    [UnitTest]
+    public async Task LaneA_Transport_PreservesText_DecodesFiles_AndProjectsQueuedJob()
+    {
+        using var json = AdminConnectImportOperationExecutor.BuildJson(
+            new OperationRequest
+            {
+                OperationId = "admin.connections.create",
+                Parameters = new Dictionary<string, string?> { ["name"] = "true", ["sslRequired"] = "true" }
+            }, [], "admin.connections.create");
+        using var jsonDocument = JsonDocument.Parse(await json.ReadAsStringAsync());
+        jsonDocument.RootElement.GetProperty("name").GetString().Should().Be("true");
+        jsonDocument.RootElement.GetProperty("sslRequired").ValueKind.Should().Be(JsonValueKind.True);
+
+        using var multipart = AdminConnectImportOperationExecutor.BuildMultipart(
+            new OperationRequest
+            {
+                OperationId = "admin.import.upload",
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["file"] = Convert.ToBase64String([0x01, 0x02, 0x03]),
+                    ["fileName"] = "roads.geojson"
+                }
+            }, []);
+        var file = multipart.Single(part => part.Headers.ContentDisposition?.Name == "file");
+        (await file.ReadAsByteArrayAsync()).Should().Equal(0x01, 0x02, 0x03);
+        file.Headers.ContentDisposition!.FileName.Should().Be("roads.geojson");
+
+        var resources = AdminConnectImportOperationExecutor.ReadQueuedResources(
+            "{\"jobId\":\"job-1\",\"statusUrl\":\"/jobs/job-1\",\"cancelUrl\":\"/jobs/job-1/cancel\"}");
+        resources.Should().Contain(new KeyValuePair<string, string>("jobId", "job-1"));
+        resources.Should().ContainKey("statusUrl").And.ContainKey("cancelUrl");
     }
 
     [UnitTest]
