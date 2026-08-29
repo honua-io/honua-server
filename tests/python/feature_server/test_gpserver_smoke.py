@@ -118,4 +118,8 @@ class TestGPServerSmoke:
         assert data["error"]["code"] == 503
         assert data["error"]["message"] == "Service Unavailable"
         details = " ".join(data["error"].get("details") or [])
-        assert "Redis-backed durable storage" in details
+        # Assert the stable machine-readable marker, not prose: the human wording
+        # changed once already ("durable storage" -> "job store") and red-failed
+        # trunk (matrix 2026-08-29) while behavior was correct.
+        assert "dependency-unavailable" in details
+        assert "redis" in details.lower()
