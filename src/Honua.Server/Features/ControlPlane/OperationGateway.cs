@@ -17,6 +17,7 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using ICanonicalOperationInvoker = Honua.Core.Features.Operations.Abstractions.IOperationInvoker;
+using IOperationEnvelopeFactory = Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory;
 using IOperationApprovalRequestMapper = Honua.Core.Features.Operations.Abstractions.IOperationApprovalRequestMapper;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -426,6 +427,39 @@ internal sealed partial class OperationGateway : IOperationGateway
         GuardrailDecision decision,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.OperationInstanceId))
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var envelope = await scope.ServiceProvider.GetRequiredService<IOperationEnvelopeFactory>()
+                .CreateAcceptedAsync(
+                    LegacyOperationIds.For(request.Kind),
+                    new OperationPolicyContext
+                    {
+                        CorrelationId = request.CorrelationId,
+                        PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
+                        AuthorizationOutcome = "gateway-authorized",
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (envelope.Status == OperationHandleStatus.Failed)
+            {
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = decision,
+                    Message = envelope.Reason,
+                };
+            }
+
+            // Ruling 4: every approval must join the sealed proposal to the original
+            // durable invocation before it can later be replayed.
+            request = request with
+            {
+                OperationInstanceId = envelope.OperationInstanceId,
+                CorrelationId = envelope.CorrelationId,
+            };
+        }
+
         var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
         if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
         {

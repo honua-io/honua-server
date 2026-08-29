@@ -674,6 +674,7 @@ class PostGISFixture:
                         geometry_type,
                         srid,
                         extent,
+                        temporal_column,
                         default_visibility
                     )
                     VALUES (
@@ -685,6 +686,7 @@ class PostGISFixture:
                         'Mixed',
                         4326,
                         ST_MakeEnvelope(-180, -90, 180, 90, 4326),
+                        'created_at',
                         true
                     )
                     ON CONFLICT (layer_id) DO NOTHING;
@@ -736,10 +738,12 @@ class PostGISFixture:
                         (%s, 'event_time', 'Time', 10, NULL, true, NULL, 'Event time'),
                         (%s, 'uid', 'Uuid', 11, NULL, true, NULL, 'Unique identifier'),
                         (%s, 'tags', 'Json', 12, NULL, true, NULL, 'Tag array'),
-                        (%s, 'numbers', 'Json', 13, NULL, true, NULL, 'Number array')
+                        (%s, 'numbers', 'Json', 13, NULL, true, NULL, 'Number array'),
+                        (%s, 'eo:cloud_cover', 'Double', 14, NULL, true, NULL, 'Cloud cover percentage')
                     ON CONFLICT (layer_id, field_name) DO NOTHING;
                     """,
                     (
+                        layer_id,
                         layer_id,
                         layer_id,
                         layer_id,
@@ -1388,6 +1392,7 @@ class PostGISFixture:
                     "uid": str(uuid.uuid4()),
                     "tags": ["red", "blue"] if index % 2 == 0 else ["green"],
                     "numbers": [index, index + 1, index + 2],
+                    "eo:cloud_cover": 6.5 + index,
                     "description": None if index % 3 == 0 else f"description_{index}",
                 }
 

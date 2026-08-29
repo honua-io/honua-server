@@ -78,18 +78,16 @@ internal static class OperationsServiceCollectionExtensions
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
-        // Legacy adapters are FACTORY descriptors (each closes over its operation
-        // class), and TryAddEnumerable REJECTS factory descriptors at registration
-        // time — their implementation type is indistinguishable from the service
-        // type (ArgumentException). That throw only fires in hosts that register a
-        // control-plane executor, so PR Gate's unit smoke stayed green while every
-        // full-host integration suite failed at boot (trunk red 2026-08-29,
-        // run 33237378473). Plain AddScoped accepts factories; the marker restores
-        // the idempotence TryAddEnumerable was providing across repeated
-        // AddOperationsToolset calls.
-        if (services.Any(descriptor => descriptor.ServiceType ==
-                typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor))
-            && !services.Any(descriptor => descriptor.ServiceType == typeof(LegacyAdapterRegistrationMarker)))
+        // Legacy adapters register UNCONDITIONALLY and resolve their control-plane
+        // actuator at USE time. The former registration-time services.Any gate was
+        // an ordering snapshot: hosts that register control-plane executors after
+        // AddOperationsToolset (post-Program ConfigureServices) got no adapters, so
+        // the dispatcher had no compatibility actuator and converge returned
+        // NotSupported with null operation ids (trunk red 2026-08-29, run
+        // 33249627814 — same ordering class the #3621 review caught for the replay
+        // verifier). The marker keeps repeated AddOperationsToolset calls
+        // idempotent; degraded hosts get a typed use-time refusal from the adapter.
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(LegacyAdapterRegistrationMarker)))
         {
             services.AddSingleton<LegacyAdapterRegistrationMarker>();
             AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.Deploy);
@@ -127,9 +125,7 @@ internal static class OperationsServiceCollectionExtensions
         IServiceCollection services,
         Honua.Core.Features.Guardrails.Domain.OperationClass operationClass)
         => services.AddScoped<IOperationExecutor>(sp =>
-            new LegacyGatewayOperationAdapter(
-                sp.GetServices<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>()
-                    .Single(actuator => actuator.OperationClass == operationClass)));
+            new LegacyGatewayOperationAdapter(sp, operationClass));
 
     /// <summary>
     /// Registration sentinel proving the legacy gateway adapters were already added, so
