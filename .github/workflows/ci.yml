@@ -1330,8 +1330,8 @@ jobs:
           # Attempt-1 opportunistic reuse (#3213). Contract, fail-open behaviour
           # and rollback: docs/internal/ci/server-test-binary-artifacts.md.
           # The raw repository variable is forwarded verbatim; the single
-          # "on unless exactly 'false'" rule lives in the plan script.
-          ATTEMPT1_REUSE: ${{ vars.HONUA_SERVER_TEST_ATTEMPT1_REUSE }}
+          # "on only when exactly 'true'" rule lives in the plan script.
+          PREBUILD_CONSUME: ${{ vars.HONUA_SERVER_TEST_PREBUILD_CONSUME }}
         run: |
           scripts/ci/server-test-shard-cache.sh plan \
             --shard "${SHARD_NAME}" \
@@ -1342,7 +1342,7 @@ jobs:
             --sdk "$(dotnet --version)" \
             --run-id '${{ github.run_id }}' \
             --run-attempt '${{ github.run_attempt }}' \
-            --attempt1-reuse "${ATTEMPT1_REUSE}"
+            --prebuild-consume "${PREBUILD_CONSUME}"
 
       - name: Start exact-head cache restore timer
         if: steps.shard-cache-plan.outputs.restore_enabled == 'true'
@@ -1379,7 +1379,8 @@ jobs:
             --project '${{ steps.shard-cache-plan.outputs.project }}' \
             --source-sha '${{ github.sha }}' \
             --payload '${{ steps.shard-cache-plan.outputs.payload_dir }}' \
-            --cache-hit "${CACHE_HIT:-false}"
+            --cache-hit "${CACHE_HIT:-false}" \
+            --read-mode '${{ steps.shard-cache-plan.outputs.restore_mode }}'
 
       - name: Restore
         if: steps.shard-cache-materialize.outputs.restored != 'true'
@@ -1448,7 +1449,7 @@ jobs:
         env:
           CACHE_KEY: ${{ steps.shard-cache-plan.outputs.cache_key }}
           RESTORE_MODE: ${{ steps.shard-cache-plan.outputs.restore_mode }}
-          ATTEMPT1_SWITCH: ${{ steps.shard-cache-plan.outputs.attempt1_switch }}
+          CONSUME_SWITCH: ${{ steps.shard-cache-plan.outputs.consume_switch }}
           DOWNLOAD_OUTCOME: ${{ steps.shard-cache-download.outcome }}
           BUILD_OUTCOME: ${{ steps.shard-cache-build.outcome }}
           PACKAGE_OUTCOME: ${{ steps.shard-cache-package.outcome }}
@@ -1480,7 +1481,7 @@ jobs:
             echo
             echo "- Key: \`${CACHE_KEY:-unavailable}\`"
             echo "- Attempt: \`${{ github.run_attempt }}\`"
-            echo "- Read mode: \`${RESTORE_MODE:-disabled}\` (switch \`${ATTEMPT1_SWITCH:-unset}\`, lookup outcome \`${DOWNLOAD_OUTCOME:-skipped}\`)"
+            echo "- Read mode: \`${RESTORE_MODE:-disabled}\` (HONUA_SERVER_TEST_PREBUILD_CONSUME=\`${CONSUME_SWITCH:-unset}\`, lookup outcome \`${DOWNLOAD_OUTCOME:-skipped}\`)"
             echo "- Decision: \`${REASON:-not_evaluated}\`"
             echo "- Exact cache hit: \`${CACHE_HIT:-false}\`"
             echo "- Materialized without build: \`${MATERIALIZED:-false}\`"
@@ -1488,7 +1489,7 @@ jobs:
             # A failed or cancelled build must not be reported as the unchanged
             # happy path.
             if [[ "${MATERIALIZED:-false}" != 'true' && "${BUILD_OUTCOME}" == 'success' ]]; then
-              echo "- Fallback: this shard restored and built \`${PROJECT_SUFFIX}\` locally (unchanged path)."
+              echo "- Fallback: \`${REASON:-consumer_disabled}\`; this shard restored and built \`${PROJECT_SUFFIX}\` locally (unchanged path)."
             fi
             # Writer identity is only meaningful when this job actually
             # published; a designated writer that hit the cache saved nothing.
