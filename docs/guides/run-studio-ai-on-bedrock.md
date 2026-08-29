@@ -22,9 +22,9 @@ provider-neutral `/api/v1/studio/ai/*` surface described in
 {
   "StudioAiProxy": {
     "Enabled": true,
-    "DefaultProvider": "bedrock-claude",
+    "DefaultProvider": "bedrock_claude",
     "Providers": {
-      "bedrock-claude": {
+      "bedrock_claude": {
         "Kind": "bedrock",
         "Model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "Region": "us-west-2",
@@ -39,10 +39,17 @@ provider-neutral `/api/v1/studio/ai/*` surface described in
 
 For environment-based deployment, use
 `StudioAiProxy__Enabled=true`,
-`StudioAiProxy__DefaultProvider=bedrock-claude`, and the corresponding nested
-`StudioAiProxy__Providers__bedrock-claude__*` variables. Bedrock providers do
-not take an API key or endpoint; the AWS SDK resolves credentials and the
-regional service endpoint.
+`StudioAiProxy__DefaultProvider=bedrock_claude`, and the corresponding nested
+`StudioAiProxy__Providers__bedrock_claude__*` variables. Provider names used in
+shell environment-variable assignments must contain only letters, digits, and
+underscores.
+
+By default, the AWS SDK resolves credentials through its standard chain and
+uses the regional service endpoint, so no API key or endpoint setting is
+required. Bedrock API keys are also supported as optional bearer tokens. Set
+`StudioAiProxy__Providers__bedrock_claude__ApiKey` directly, or set it to a
+secret reference supported by the configured secret provider. Keep credentials
+out of checked-in configuration.
 
 ## Verify
 
