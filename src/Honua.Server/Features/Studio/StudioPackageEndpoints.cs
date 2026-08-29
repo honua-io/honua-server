@@ -837,6 +837,11 @@ internal static class StudioPackageEndpoints
             };
         }
 
+        if (operation.Status == OperationHandleStatus.Failed)
+        {
+            return ServerError(context, operation.Reason ?? "Studio draft mutation failed.");
+        }
+
         return operation.Status == OperationHandleStatus.Denied
             ? Forbidden(
                 context,

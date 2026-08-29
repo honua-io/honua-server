@@ -53,5 +53,6 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 [JsonSerializable(typeof(JsonElement))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    UseStringEnumConverter = true)]
 internal sealed partial class StudioMcpJsonContext : JsonSerializerContext;

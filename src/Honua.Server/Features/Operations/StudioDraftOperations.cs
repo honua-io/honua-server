@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -10,6 +12,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using OperationGatewayRequest = Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest;
 
@@ -75,17 +78,23 @@ internal static class StudioDraftOperations
 internal sealed record StudioDraftCreatePayload
 {
     public required CreateStudioPackageDraftCommand Command { get; init; }
+    public string? TenantId { get; init; }
+    public string? SchemaName { get; init; }
 }
 
 internal sealed record StudioDraftUpdatePayload
 {
     public required Guid DraftId { get; init; }
     public required UpdateStudioPackageDraftCommand Command { get; init; }
+    public string? TenantId { get; init; }
+    public string? SchemaName { get; init; }
 }
 
 internal sealed record StudioDraftDeletePayload
 {
     public required Guid DraftId { get; init; }
+    public string? TenantId { get; init; }
+    public string? SchemaName { get; init; }
 }
 
 internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
@@ -153,6 +162,7 @@ internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
                         {
                             ArgumentException => "argument",
                             KeyNotFoundException => "not-found",
+                            StudioCompositionConflictException => "owner-conflict",
                             _ => "conflict",
                         },
                     },
@@ -319,6 +329,14 @@ internal sealed class StudioDraftMutationRuntime(
             {
                 [StudioDraftOperations.PayloadParameter] = JsonSerializer.Serialize(payload, payloadType),
             },
+            GatewayRequest = new OperationGatewayRequest
+            {
+                OperationId = operationId,
+                Kind = OperationClass.StudioDraftMutation,
+                RequestedBy = context.PrincipalId,
+                CorrelationId = context.CorrelationId,
+                IdempotencyKey = ScopeIdempotencyKey(context),
+            },
         };
         var handle = await invoker.SubmitAsync(request, new OperationPolicyContext
         {
@@ -326,7 +344,7 @@ internal sealed class StudioDraftMutationRuntime(
             TenantId = context.TenantId,
             SchemaName = context.SchemaName,
             CorrelationId = context.CorrelationId,
-            IdempotencyKey = context.IdempotencyKey,
+            IdempotencyKey = ScopeIdempotencyKey(context),
             AuthorizationOutcome = context.AuthorizationOutcome,
             Roles = context.Roles,
         }, cancellationToken).ConfigureAwait(false);
@@ -341,6 +359,18 @@ internal sealed class StudioDraftMutationRuntime(
         }
 
         return new StudioDraftMutationReceipt<TResult> { Operation = durable, Value = value };
+    }
+
+    private static string? ScopeIdempotencyKey(StudioDraftMutationContext context)
+    {
+        if (string.IsNullOrWhiteSpace(context.IdempotencyKey))
+        {
+            return null;
+        }
+
+        var material = Encoding.UTF8.GetBytes(
+            $"{context.TenantId ?? "<default>"}:{context.PrincipalId ?? "<anonymous>"}:{context.IdempotencyKey}");
+        return Convert.ToHexString(SHA256.HashData(material)).ToLowerInvariant();
     }
 }
 
@@ -362,7 +392,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             throw new ArgumentException("The Studio approval mapper requires its exact typed payload.", nameof(request));
         }
 
-        ValidatePayload(payload);
+        payload = SealScope(payload, context);
         return new OperationGatewayRequest
         {
             OperationId = OperationId,
@@ -389,6 +419,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
         var payload = request.Plan?.ExecutionPayload ?? request.ExecutionPayload
             ?? throw new InvalidOperationException("The persisted Studio mutation payload is unavailable.");
         ValidatePayload(payload);
+        var scope = ReadScope(payload);
         return new OperationApprovalReplayMapping
         {
             Request = new OperationRequest
@@ -399,8 +430,39 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
                     [StudioDraftOperations.PayloadParameter] = payload,
                 },
             },
+            TenantId = scope.TenantId,
+            SchemaName = scope.SchemaName,
         };
     }
+
+    private string SealScope(string payload, OperationPolicyContext context) => OperationId switch
+    {
+        StudioDraftOperations.Create => JsonSerializer.Serialize(
+            JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftCreatePayload)! with
+            { TenantId = context.TenantId, SchemaName = context.SchemaName },
+            StudioDraftOperationJsonContext.Default.StudioDraftCreatePayload),
+        StudioDraftOperations.Update => JsonSerializer.Serialize(
+            JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftUpdatePayload)! with
+            { TenantId = context.TenantId, SchemaName = context.SchemaName },
+            StudioDraftOperationJsonContext.Default.StudioDraftUpdatePayload),
+        StudioDraftOperations.Delete => JsonSerializer.Serialize(
+            JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload)! with
+            { TenantId = context.TenantId, SchemaName = context.SchemaName },
+            StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload),
+        _ => throw new InvalidOperationException($"Unsupported Studio mutation descriptor '{OperationId}'."),
+    };
+
+    private (string? TenantId, string? SchemaName) ReadScope(string payload) => OperationId switch
+    {
+        StudioDraftOperations.Create => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftCreatePayload)!),
+        StudioDraftOperations.Update => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftUpdatePayload)!),
+        StudioDraftOperations.Delete => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload)!),
+        _ => throw new InvalidOperationException($"Unsupported Studio mutation descriptor '{OperationId}'."),
+    };
+
+    private static (string? TenantId, string? SchemaName) Read(StudioDraftCreatePayload payload) => (payload.TenantId, payload.SchemaName);
+    private static (string? TenantId, string? SchemaName) Read(StudioDraftUpdatePayload payload) => (payload.TenantId, payload.SchemaName);
+    private static (string? TenantId, string? SchemaName) Read(StudioDraftDeletePayload payload) => (payload.TenantId, payload.SchemaName);
 
     private void ValidatePayload(string payload)
     {

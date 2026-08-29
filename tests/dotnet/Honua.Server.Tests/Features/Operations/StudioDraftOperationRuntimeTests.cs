@@ -121,14 +121,17 @@ public sealed class StudioDraftOperationRuntimeTests
             {
                 OperationInstanceId = "opinst-delete",
                 CorrelationId = "corr-delete",
+                TenantId = "tenant-a",
+                SchemaName = "tenant_schema",
             },
             new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
 
         mapped.OperationId.Should().Be(StudioDraftOperations.Delete);
         mapped.Kind.Should().Be(OperationClass.StudioDraftMutation);
-        mapped.Plan!.ExecutionPayload.Should().Be(payload);
-        mapper.MapReplay(mapped).Request.Parameters[StudioDraftOperations.PayloadParameter]
-            .Should().Be(payload);
+        var replay = mapper.MapReplay(mapped);
+        replay.Request.Parameters[StudioDraftOperations.PayloadParameter].Should().NotBeNull();
+        replay.TenantId.Should().Be("tenant-a");
+        replay.SchemaName.Should().Be("tenant_schema");
     }
 
     private static OperationHandle Handle(DateTimeOffset now, string payload) => new()

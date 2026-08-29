@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -170,6 +171,25 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
             throw new GeoprocessingAuthorizationException(
                 requiresAuthentication: false,
                 message: ex.Message,
+                resourceType: OperatorResourceType.StudioDraft,
+                operation: OperatorOperation.Create,
+                policyCode: "studio_authorization/owner_conflict");
+        }
+
+        if (receipt.Operation.Status == OperationHandleStatus.Failed
+            && receipt.Operation.Result?.Details.TryGetValue("errorKind", out var errorKind) == true
+            && string.Equals(errorKind, "owner-conflict", StringComparison.Ordinal))
+        {
+            var message = receipt.Operation.Reason ?? "The existing Studio item is owned by another principal.";
+            await RecordAuthorizationDecisionAsync(
+                httpContext,
+                StudioAuthorizationOperation.CreateDraft,
+                argument.ItemId?.ToString("D"),
+                StudioAuthorizationDecision.Deny("studio_authorization/owner_conflict", message),
+                resourceType: "studio-content-item").ConfigureAwait(false);
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: message,
                 resourceType: OperatorResourceType.StudioDraft,
                 operation: OperatorOperation.Create,
                 policyCode: "studio_authorization/owner_conflict");
