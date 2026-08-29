@@ -108,7 +108,7 @@ def test_gpserver_python_client_submit_and_poll_workflow(
         # changed once already ("durable storage" -> "job store") and red-failed
         # trunk (matrix 2026-08-29) while behavior was correct.
         assert "dependency-unavailable" in details
-        assert "redis" in details.lower()
+        assert "missingDependency: redis" in details
         return
 
     assert submit_data["jobId"]
