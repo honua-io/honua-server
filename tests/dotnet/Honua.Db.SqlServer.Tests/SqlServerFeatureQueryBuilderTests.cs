@@ -463,6 +463,15 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Throws<ArgumentException>(() => SqlServerLayerMapping.FromStorage(TestLayerId, storage));
     }
 
+    [Theory]
+    [InlineData("parcels", true)]
+    [InlineData("parcels\n", false)]
+    [InlineData("parcels\r\n", false)]
+    public void Identifier_IsValid_RequiresExactMatch(string value, bool expected)
+    {
+        Assert.Equal(expected, SqlServerIdentifier.IsValid(value));
+    }
+
     // BH2-D01 regression: SRID resolves to 0 when both filter and mapping SRID are absent ->
     // SQL Server spatial predicates return NULL (not false) -> silent zero-row result.
     [Fact]
