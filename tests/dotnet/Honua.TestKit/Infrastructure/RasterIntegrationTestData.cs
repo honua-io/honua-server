@@ -30,42 +30,22 @@ public static class RasterIntegrationTestData
 
     public static Task SeedIssue522MosaicAsync(WebAppFixture fixture, int layerId = WebAppFixture.TestLayerId)
     {
-        return ReplaceLayerRastersAsync(
-            fixture,
-            layerId,
-            new RasterSeed(
-                Name: "west",
-                Width: 2,
-                Height: 2,
-                UpperLeftX: 0,
-                UpperLeftY: 2,
-                ScaleX: 1,
-                ScaleY: -1,
-                Value: 20,
-                AcquisitionDate: WestAcquisition,
-                CreatedAt: WestAcquisition),
-            new RasterSeed(
-                Name: "overlap-newest",
-                Width: 2,
-                Height: 2,
-                UpperLeftX: 1,
-                UpperLeftY: 2,
-                ScaleX: 1,
-                ScaleY: -1,
-                Value: 5,
-                AcquisitionDate: OverlapAcquisition,
-                CreatedAt: OverlapAcquisition),
-            new RasterSeed(
-                Name: "east",
-                Width: 2,
-                Height: 2,
-                UpperLeftX: 2,
-                UpperLeftY: 2,
-                ScaleX: 1,
-                ScaleY: -1,
-                Value: 40,
-                AcquisitionDate: EastAcquisition,
-                CreatedAt: EastAcquisition));
+        return ReplaceLayerRastersAsync(fixture, layerId, CreateIssue522Mosaic());
+    }
+
+    public static Task RunWithIssue522MosaicAsync(
+        WebAppFixture fixture,
+        Func<Task> action,
+        int layerId = WebAppFixture.TestLayerId)
+    {
+        ArgumentNullException.ThrowIfNull(fixture);
+        ArgumentNullException.ThrowIfNull(action);
+
+        return fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
+        {
+            await ReplaceLayerRastersUnderLockAsync(fixture, layerId, CreateIssue522Mosaic()).ConfigureAwait(false);
+            await action().ConfigureAwait(false);
+        });
     }
 
     public static Task SeedOverlappingRasterStackAsync(
@@ -104,27 +84,42 @@ public static class RasterIntegrationTestData
     {
         ArgumentNullException.ThrowIfNull(fixture);
 
-        var schemaName = fixture.CurrentSchema
-            ?? throw new InvalidOperationException("Fixture schema is not initialized.");
-
         // #2020: serialize the global honua.raster_data DELETE + INSERT(s) under the schema-mutation
         // advisory lock (multi-statement, parameterized, on one schema-scoped connection).
         await fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            await using var connection = await fixture.Postgres.GetConnectionAsync(schemaName).ConfigureAwait(false);
-
-            await using (var delete = connection.CreateCommand())
-            {
-                delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
-                delete.Parameters.AddWithValue("layerId", layerId);
-                await delete.ExecuteNonQueryAsync().ConfigureAwait(false);
-            }
-
-            foreach (var raster in rasters)
-            {
-                await InsertConstantRasterAsync(connection, layerId, raster).ConfigureAwait(false);
-            }
+            await ReplaceLayerRastersUnderLockAsync(fixture, layerId, rasters).ConfigureAwait(false);
         }).ConfigureAwait(false);
+    }
+
+    private static RasterSeed[] CreateIssue522Mosaic()
+        =>
+        [
+            new RasterSeed("west", 2, 2, 0, 2, 1, -1, 20, WestAcquisition, WestAcquisition),
+            new RasterSeed("overlap-newest", 2, 2, 1, 2, 1, -1, 5, OverlapAcquisition, OverlapAcquisition),
+            new RasterSeed("east", 2, 2, 2, 2, 1, -1, 40, EastAcquisition, EastAcquisition),
+        ];
+
+    private static async Task ReplaceLayerRastersUnderLockAsync(
+        WebAppFixture fixture,
+        int layerId,
+        IReadOnlyList<RasterSeed> rasters)
+    {
+        var schemaName = fixture.CurrentSchema
+            ?? throw new InvalidOperationException("Fixture schema is not initialized.");
+        await using var connection = await fixture.Postgres.GetConnectionAsync(schemaName).ConfigureAwait(false);
+
+        await using (var delete = connection.CreateCommand())
+        {
+            delete.CommandText = "DELETE FROM honua.raster_data WHERE layer_id = @layerId;";
+            delete.Parameters.AddWithValue("layerId", layerId);
+            await delete.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+
+        foreach (var raster in rasters)
+        {
+            await InsertConstantRasterAsync(connection, layerId, raster).ConfigureAwait(false);
+        }
     }
 
     private static async Task InsertConstantRasterAsync(
