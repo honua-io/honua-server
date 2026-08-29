@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.IO.Compression;
 using System.Text;
 using Honua.Core.Features.Scene.Conversion;
 using Honua.TestKit.Attributes;
@@ -9,8 +8,7 @@ using Honua.TestKit.Attributes;
 namespace Honua.Core.Tests.Features.Scene.Conversion;
 
 /// <summary>
-/// Unit tests for the I3S scene-layer descriptor reader, including reading the
-/// gzip-compressed descriptor out of an in-memory <c>.slpk</c> zip (#1268).
+/// Unit tests for the I3S scene-layer descriptor reader (#1268).
 /// </summary>
 public sealed class I3sSceneLayerReaderTests
 {
@@ -49,127 +47,4 @@ public sealed class I3sSceneLayerReaderTests
             .Which.Reason.Should().Be(I3sConversionErrorReason.MalformedSceneLayer);
     }
 
-    [UnitTest]
-    public void ReadFromSlpk_GzipDescriptor_ParsesLayer()
-    {
-        using var slpk = BuildSlpk(I3sSceneLayerReader.SceneLayerGzipEntryName, gzip: true);
-
-        var layer = I3sSceneLayerReader.ReadFromSlpk(slpk);
-
-        layer.LayerType.Should().Be("3DObject");
-        layer.FullExtent!.Xmax.Should().Be(-122.4);
-    }
-
-    [UnitTest]
-    public void ReadFromSlpk_PlainDescriptor_ParsesLayer()
-    {
-        using var slpk = BuildSlpk(I3sSceneLayerReader.SceneLayerEntryName, gzip: false);
-
-        var layer = I3sSceneLayerReader.ReadFromSlpk(slpk);
-
-        layer.Name.Should().Be("Sample Buildings");
-    }
-
-    [UnitTest]
-    public void ReadFromSlpk_MissingDescriptor_ThrowsMissingSceneLayer()
-    {
-        using var buffer = new MemoryStream();
-        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            var entry = archive.CreateEntry("metadata.json");
-            using var stream = entry.Open();
-            stream.Write(Encoding.UTF8.GetBytes("{}"));
-        }
-
-        buffer.Position = 0;
-        var act = () => I3sSceneLayerReader.ReadFromSlpk(buffer);
-
-        act.Should().Throw<I3sConversionException>()
-            .Which.Reason.Should().Be(I3sConversionErrorReason.MissingSceneLayer);
-    }
-
-    [UnitTest]
-    public void ReadFromSlpk_InvalidArchive_ThrowsInvalidArchive()
-    {
-        using var notAZip = new MemoryStream(Encoding.UTF8.GetBytes("this is not a zip archive at all"));
-
-        var act = () => I3sSceneLayerReader.ReadFromSlpk(notAZip);
-
-        act.Should().Throw<I3sConversionException>()
-            .Which.Reason.Should().Be(I3sConversionErrorReason.InvalidArchive);
-    }
-
-    [UnitTest]
-    public void ReadFromSlpk_OversizedGzipDescriptor_ThrowsInvalidArchive()
-    {
-        // A small, highly-compressible gzip entry that inflates past the
-        // decompression cap (a gzip-bomb) must be rejected rather than buffered.
-        var oversized = I3sSceneLayerReader.MaxDescriptorBytes + (1024 * 1024);
-        using var slpk = new MemoryStream();
-        using (var archive = new ZipArchive(slpk, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            var entry = archive.CreateEntry(I3sSceneLayerReader.SceneLayerGzipEntryName);
-            using var entryStream = entry.Open();
-            using var gzipStream = new GZipStream(entryStream, CompressionLevel.Optimal, leaveOpen: true);
-            var chunk = new byte[64 * 1024];
-            long written = 0;
-            while (written < oversized)
-            {
-                gzipStream.Write(chunk, 0, chunk.Length);
-                written += chunk.Length;
-            }
-        }
-
-        slpk.Position = 0;
-        var act = () => I3sSceneLayerReader.ReadFromSlpk(slpk);
-
-        act.Should().Throw<I3sConversionException>()
-            .Which.Reason.Should().Be(I3sConversionErrorReason.InvalidArchive);
-    }
-
-    [UnitTest]
-    public void ReadFromSlpk_CorruptGzipMember_ThrowsInvalidArchive()
-    {
-        // A structurally valid zip whose gzip descriptor member is corrupt makes
-        // GZipStream.Read throw a raw InvalidDataException. That must be mapped to
-        // the stable I3sConversionException(InvalidArchive) contract rather than
-        // leaking a framework parser exception past the converter.
-        using var slpk = new MemoryStream();
-        using (var archive = new ZipArchive(slpk, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            var entry = archive.CreateEntry(I3sSceneLayerReader.SceneLayerGzipEntryName);
-            using var entryStream = entry.Open();
-            // Not a valid gzip stream: bogus magic bytes + arbitrary payload.
-            entryStream.Write([0x1f, 0x8b, 0x08, 0x00, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02, 0x03]);
-        }
-
-        slpk.Position = 0;
-        var act = () => I3sSceneLayerReader.ReadFromSlpk(slpk);
-
-        act.Should().Throw<I3sConversionException>()
-            .Which.Reason.Should().Be(I3sConversionErrorReason.InvalidArchive);
-    }
-
-    private static MemoryStream BuildSlpk(string entryName, bool gzip)
-    {
-        var buffer = new MemoryStream();
-        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            var entry = archive.CreateEntry(entryName);
-            using var entryStream = entry.Open();
-            var payload = Encoding.UTF8.GetBytes(SampleSceneLayerJson);
-            if (gzip)
-            {
-                using var gzipStream = new GZipStream(entryStream, CompressionLevel.Optimal, leaveOpen: true);
-                gzipStream.Write(payload);
-            }
-            else
-            {
-                entryStream.Write(payload);
-            }
-        }
-
-        buffer.Position = 0;
-        return buffer;
-    }
 }

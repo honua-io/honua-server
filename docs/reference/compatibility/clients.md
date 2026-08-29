@@ -73,7 +73,7 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
 - **I3S / ArcGIS Scene Layer is a bounded Enterprise adapter, not a certification claim.**
   Service/layer descriptors, node pages, statistics, geometry buffers, and
   attribute buffers are served under the canonical `SceneServer` routes and
-  `/scenes` aliases. The current edition check returns `403`. Broader I3S
+  `/scenes` aliases. The entitlement gate returns `402`. Broader I3S
   geometry/client certification remains 2026.2 work. CesiumJS-oriented 3D
   Tiles hosting and generation are also served; generation uses tiled LOD for
   larger inputs and the server-side feature limit, rather than the obsolete

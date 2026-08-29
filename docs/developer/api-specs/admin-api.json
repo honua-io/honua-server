@@ -15539,7 +15539,7 @@
           "Scenes"
         ],
         "summary": "Ingest Point Cloud Scene",
-        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; otherwise they are rejected with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402.",
+        "description": "Uploads a LAS/LAZ/COPC point cloud (multipart/form-data, `file` field, 256 MiB maximum) and converts it into a 3D Tiles point tileset (`.pnts` quadtree), registering the result as a servable scene. Compressed input and projected source CRSs are dispatched to the out-of-tree point-cloud translate worker when one is configured; without a compatible worker the request fails explicitly with 400. Enterprise-gated: an operator without the `scene.pointcloud-ingest` entitlement receives 402.",
         "operationId": "ingestPointCloudScene",
         "requestBody": {
           "required": true,

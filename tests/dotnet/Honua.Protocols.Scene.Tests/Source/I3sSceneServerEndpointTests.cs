@@ -13,6 +13,7 @@ using Honua.Core.Features.Scene.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -94,7 +95,9 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
             })
             .ConfigureServices(services =>
             {
-                services.AddSingleton<ILicenseStatusProvider>(new StubLicenseStatusProvider(edition));
+                var licenseService = new TestLicenseEntitlementService(edition);
+                services.AddSingleton<ILicenseEntitlementService>(licenseService);
+                services.AddSingleton<ILicenseStatusProvider>(licenseService);
                 // Register a real-transcoder-backed node geometry provider so the
                 // #1810 geometries route serves actual transcoded bytes end to
                 // end. It transcodes a single fixture square for every scene/node
@@ -231,11 +234,11 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /scenes/{sceneId}/SceneServer")]
-    public async Task GetService_CommunityEdition_Returns403()
+    public async Task GetService_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync($"/scenes/{SceneId}/SceneServer");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
     }
 
     [IntegrationTest]
@@ -364,11 +367,11 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer")]
-    public async Task GetService_AtGeoServicesPath_CommunityEdition_Returns403()
+    public async Task GetService_AtGeoServicesPath_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync($"/rest/services/{SceneId}/SceneServer");
 
-        await response.AssertGeoServicesErrorAsync(403);
+        await response.AssertGeoServicesErrorAsync(402);
     }
 
     [IntegrationTest]
@@ -451,12 +454,12 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}")]
-    public async Task GetNodePage_ScenesAlias_CommunityEdition_Returns403()
+    public async Task GetNodePage_ScenesAlias_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync(
             $"/scenes/{SceneId}/SceneServer/layers/0/nodepages/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
     }
 
     [IntegrationTest]
@@ -531,12 +534,12 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
-    public async Task GetNodeGeometry_CommunityEdition_Returns403()
+    public async Task GetNodeGeometry_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/geometries/0");
 
-        await response.AssertGeoServicesErrorAsync(403);
+        await response.AssertGeoServicesErrorAsync(402);
     }
 
     [IntegrationTest]
@@ -621,12 +624,12 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
-    public async Task GetNodeAttribute_CommunityEdition_Returns403()
+    public async Task GetNodeAttribute_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
 
-        await response.AssertGeoServicesErrorAsync(403);
+        await response.AssertGeoServicesErrorAsync(402);
     }
 
     [IntegrationTest]
@@ -726,17 +729,4 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         }
     }
 
-    private sealed class StubLicenseStatusProvider : ILicenseStatusProvider
-    {
-        private readonly HonuaEdition _edition;
-
-        public StubLicenseStatusProvider(HonuaEdition edition) => _edition = edition;
-
-        public LicenseStatus GetCurrentStatus() =>
-            new(_edition, IsValid: true, ExpiresAt: null, LicensedTo: "test");
-
-        public Task<LicenseUploadResult> UploadLicenseAsync(
-            Stream licenseStream, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new LicenseUploadResult(false, "Stub does not support upload."));
-    }
 }

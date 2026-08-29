@@ -130,19 +130,4 @@ public static class I3sToTilesetConverter
             generatorTag: GeneratorTag);
     }
 
-    /// <summary>
-    /// Reads an I3S descriptor from an SLPK stream and converts it to a tileset
-    /// document in one step.
-    /// </summary>
-    /// <param name="slpkStream">A seekable stream over an SLPK zip archive.</param>
-    /// <param name="rootContentUri">Optional relative root content URI.</param>
-    /// <param name="leaveOpen">Whether to leave the stream open after reading.</param>
-    public static TilesetDocument ConvertFromSlpk(
-        Stream slpkStream,
-        string? rootContentUri = null,
-        bool leaveOpen = false)
-    {
-        var layer = I3sSceneLayerReader.ReadFromSlpk(slpkStream, leaveOpen);
-        return Convert(layer, rootContentUri);
-    }
 }
