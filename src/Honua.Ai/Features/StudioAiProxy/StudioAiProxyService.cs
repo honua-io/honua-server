@@ -23,6 +23,8 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
     private const int MaxMessageCount = 256;
     private const int MaxToolCallCount = 256;
     private const int MaxToolComponentCharacters = 64_000;
+    private const int MaxTranscriptEventCount = 4_096;
+    private const long MaxTranscriptCharacters = 1_000_000;
 
     private readonly StudioAiProxyConfiguration _configuration;
     private readonly Dictionary<string, IStudioAiProxyAdapter> _adaptersByKind;
@@ -246,6 +248,8 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         var enumerator = adapter.StreamAsync(providerOptions, request, cancellationToken).GetAsyncEnumerator(cancellationToken);
         var sawTerminalEvent = false;
         var transcriptEvents = signingKey is null ? null : new List<StudioAiChatEvent>();
+        long transcriptCharacters = 0;
+        string? providerReportedModel = null;
 
         try
         {
@@ -274,7 +278,30 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 }
 
                 var evt = enumerator.Current;
-                transcriptEvents?.Add(evt);
+                if (transcriptEvents is not null)
+                {
+                    transcriptCharacters += EventCharacterCount(evt);
+                    if (transcriptEvents.Count >= MaxTranscriptEventCount || transcriptCharacters > MaxTranscriptCharacters)
+                    {
+                        summary.Succeeded = false;
+                        summary.StopReason = StudioAiStopReason.Error;
+                        summary.ErrorMessage = "Certification transcript exceeded the capture limit.";
+                        yield return new StudioAiChatEvent
+                        {
+                            Type = StudioAiChatEventType.Error,
+                            Model = model,
+                            ErrorCode = "studio_ai/provenance_transcript_too_large",
+                            ErrorMessage = "Certification transcript exceeded the capture limit."
+                        };
+                        yield break;
+                    }
+
+                    transcriptEvents.Add(evt);
+                    if (evt.Type == StudioAiChatEventType.MessageStart && !string.IsNullOrWhiteSpace(evt.Model))
+                    {
+                        providerReportedModel = evt.Model;
+                    }
+                }
                 if (evt.Type is StudioAiChatEventType.MessageStop or StudioAiChatEventType.Error)
                 {
                     sawTerminalEvent = true;
@@ -306,13 +333,38 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         }
         else if (signingKey is not null && summary.Succeeded)
         {
+            if (string.IsNullOrWhiteSpace(providerReportedModel))
+            {
+                summary.Succeeded = false;
+                summary.StopReason = StudioAiStopReason.Error;
+                summary.ErrorMessage = "The provider did not report the model used; certification is unavailable.";
+                yield return new StudioAiChatEvent
+                {
+                    Type = StudioAiChatEventType.Error,
+                    Model = model,
+                    ErrorCode = StudioAiTranscriptSigner.UnavailableCode,
+                    ErrorMessage = "The provider did not report the model used; certification is unavailable."
+                };
+                yield break;
+            }
+
             yield return new StudioAiChatEvent
             {
                 Type = StudioAiChatEventType.TranscriptProvenance,
-                Provenance = _transcriptSigner.Sign(signingKey, request, providerName, model, transcriptEvents!)
+                Provenance = _transcriptSigner.Sign(signingKey, request, providerName, providerReportedModel, transcriptEvents!)
             };
         }
     }
+
+    private static long EventCharacterCount(StudioAiChatEvent evt)
+        => (evt.Model?.Length ?? 0L)
+            + (evt.Text?.Length ?? 0L)
+            + (evt.ToolCallId?.Length ?? 0L)
+            + (evt.ToolName?.Length ?? 0L)
+            + (evt.ToolArgumentsDelta?.Length ?? 0L)
+            + (evt.ToolArguments?.GetRawText().Length ?? 0L)
+            + (evt.ErrorMessage?.Length ?? 0L)
+            + (evt.ErrorCode?.Length ?? 0L);
 
     private void ApplySummary(StudioAiProxyCallSummary summary, string providerName, StudioAiChatEvent evt)
     {

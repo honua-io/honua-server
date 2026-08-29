@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.ServiceRegistration;
+using Org.BouncyCastle.Crypto.Parameters;
 
 namespace Honua.Ai.StudioAiProxy;
 
@@ -171,6 +172,44 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
                 && !signing.PrivateKeyReference.Contains("://", StringComparison.Ordinal))
             {
                 errors.Add("StudioAiProxy:TranscriptSigning:PrivateKeyReference must be a secret reference, not inline key material.");
+            }
+        }
+
+        var keyIds = new HashSet<string>(StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(signing.KeyId))
+        {
+            keyIds.Add(signing.KeyId);
+        }
+
+        for (var index = 0; index < signing.OverlapKeys.Count; index++)
+        {
+            var overlap = signing.OverlapKeys[index];
+            var prefix = $"StudioAiProxy:TranscriptSigning:OverlapKeys:{index}";
+            ValidateRequiredString(overlap.KeyId, $"{prefix}:KeyId", errors);
+            if (!string.IsNullOrWhiteSpace(overlap.KeyId) && !keyIds.Add(overlap.KeyId))
+            {
+                errors.Add($"{prefix}:KeyId '{overlap.KeyId}' is duplicated.");
+            }
+
+            byte[] publicKey;
+            try
+            {
+                publicKey = Convert.FromBase64String(overlap.PublicKey ?? string.Empty);
+            }
+            catch (FormatException)
+            {
+                errors.Add($"{prefix}:PublicKey must be valid Base64.");
+                continue;
+            }
+
+            if (publicKey.Length != Ed25519PublicKeyParameters.KeySize)
+            {
+                errors.Add($"{prefix}:PublicKey must decode to {Ed25519PublicKeyParameters.KeySize} bytes.");
+            }
+
+            if (overlap.NotBefore is { } notBefore && overlap.NotAfter is { } notAfter && notBefore >= notAfter)
+            {
+                errors.Add($"{prefix}:NotBefore must be earlier than NotAfter.");
             }
         }
     }

@@ -169,6 +169,31 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task StudioAiProxy_FlagOn_NonAdminCannotRequestCertifiedTranscript()
+    {
+        await using var fixture = await CreateEndUserFixtureAsync(new CapturingAuditLog());
+        using var client = CreateBearerClient(
+            fixture,
+            CreateToken("studio-user-enabled", tenantId: "studio-tenant"));
+
+        using var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        {
+            certification = new
+            {
+                candidateId = "candidate-7",
+                releaseId = "release-9",
+                endpointIdentity = "honua.example/api/v1/studio/ai/chat",
+                actionId = "compose-map",
+                runNonce = "unique-run-nonce"
+            },
+            messages = new[] { new { role = "user", content = "must not be signed" } }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/studio/ai/capabilities")]
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOn_ClientCredentialsBearerReturns403()
