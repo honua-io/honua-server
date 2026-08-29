@@ -119,12 +119,14 @@ class NativeImageImpactTests(unittest.TestCase):
         # #3204 narrowed the authoritative serving trigger to image-DEFINING
         # inputs, so the solution file and test-only fixtures now agree with the
         # graph-derived candidate: neither selects a serving image on the pull
-        # request. The worker trigger was not touched and still fires.
+        # request. #3556 subsequently applied the same image-defining boundary
+        # to the worker workflow, so the solution no longer selects that image.
         solution = report("Honua.sln")
         self.assertFalse(solution["legacy"]["serving_trigger"])
-        self.assertTrue(solution["legacy"]["worker_trigger"])
+        self.assertFalse(solution["legacy"]["worker_trigger"])
         self.assertFalse(any(solution["candidate"]["serving_variants"].values()))
         self.assertFalse(solution["candidate"]["worker_build"])
+        self.assertFalse(solution["comparison"]["worker_legacy_only"])
         fixture = report("tests/fixtures/ai-builder/example.json")
         self.assertFalse(fixture["legacy"]["serving_trigger"])
         self.assertFalse(fixture["comparison"]["serving_legacy_only"])
