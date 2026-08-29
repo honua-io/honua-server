@@ -37,7 +37,13 @@ public sealed class GeocodeCoordinatorTelemetryTests
         {
             ShouldListenTo = source => source.Name == GeocodingTelemetry.ActivitySourceName,
             Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add
+            ActivityStopped = activity =>
+            {
+                if (activity.OperationName == "geocoding.suggest")
+                {
+                    activities.Add(activity);
+                }
+            }
         };
         ActivitySource.AddActivityListener(listener);
 
