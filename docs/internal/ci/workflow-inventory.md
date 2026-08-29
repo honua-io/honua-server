@@ -186,8 +186,8 @@ measured before anything is enforced; see `native-image-impact-routing.md`.
 The AC#7 follow-up used the Actions **per-workflow** runs endpoint, not the
 repository-wide endpoint: the latter stops exposing history after 1,000 runs
 even when a wider `created` range was requested. Pages were fetched until empty,
-workflow elapsed times were `updated_at - run_started_at`, and rates use the **2.371-day
-observed span** from #3512 landing at `2026-08-26T11:11:42Z` through the newest
+workflow elapsed times were `updated_at - run_started_at`, and rates use the
+**2.371-day observed span** from #3512 landing at `2026-08-26T11:11:42Z` through the newest
 post-change GDAL run at `2026-08-28T20:05:51Z`. This is the same observed-span
 normalisation as `honua-flow/tools/ci-baseline.py`; dividing by a nominal window
 would understate a capped or incomplete sample.
@@ -224,7 +224,7 @@ minutes; no cancelled Serving run occurred in the post-change span.
 The GDAL column is deliberately a baseline, not a claimed saving: #3553's
 narrowing had not landed at the cutoff. One run had another conclusion, so the
 60-run cohort is 50 successful, 9 cancelled, and 1 other. Its current 339.1
-successful wall-minutes/day replaces the earlier 119-minute/day snapshot for
+successful workflow elapsed minutes/day replaces the earlier 119-minute/day snapshot for
 evaluating #3553; the difference reflects the much denser current PR activity,
 which is why both the run count and exact observed span are recorded.
 
