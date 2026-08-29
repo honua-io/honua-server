@@ -582,6 +582,7 @@ jobs:
           retention-days: 7
 
       - name: Verify the published evidence matches the verdict
+        id: evidence
         if: always() && steps.target.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -590,6 +591,9 @@ jobs:
           STRUCTURED: ${{ steps.claude.outputs.structured_output }}
         run: |
           set -euo pipefail
+          echo "clean=false" >> "${GITHUB_OUTPUT}"
+          echo "pr_gate_green=false" >> "${GITHUB_OUTPUT}"
+          echo "eligible=false" >> "${GITHUB_OUTPUT}"
           # Deterministic enforcement of every invariant the prompt states.
           # The reviewer cannot be trusted to have obeyed prose, so the outcome
           # is re-derived from GitHub and the job fails loudly on any deviation.
@@ -628,3 +632,49 @@ jobs:
             exit 1
           fi
           echo "Published evidence is consistent with the reported verdict."
+
+          if [ "${verdict}" != "clean" ]; then
+            exit 0
+          fi
+          echo "clean=true" >> "${GITHUB_OUTPUT}"
+
+          pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}")"
+          if [ "$(jq -r '.state' <<<"${pr_json}")" != "open" ] ||
+             [ "$(jq -r '.draft' <<<"${pr_json}")" != "false" ] ||
+             [ "$(jq -r '.head.sha' <<<"${pr_json}")" != "${HEAD}" ]; then
+            echo "::notice::PR #${PR} is no longer an open, non-draft pull request at ${HEAD}; train nudge skipped."
+            exit 0
+          fi
+          if jq -e '[.labels[].name] | any(. == "hold" or . == "train:hold" or . == "train:escalated")' \
+            <<<"${pr_json}" >/dev/null; then
+            echo "::notice::PR #${PR} is held; train nudge skipped."
+            exit 0
+          fi
+          echo "eligible=true" >> "${GITHUB_OUTPUT}"
+
+          pr_gate_green="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD}/check-runs" --paginate --slurp \
+            --jq '[.[].check_runs[] | select(.name == "PR Gate" and .app.id == 15368)]
+                  | sort_by(.started_at) | last | .conclusion == "success"')"
+          if [ "${pr_gate_green}" != "true" ]; then
+            echo "::notice::PR Gate is not green for ${HEAD}; train nudge skipped."
+            exit 0
+          fi
+          echo "pr_gate_green=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Nudge merge train after clean green review
+        if: >-
+          success() &&
+          steps.evidence.outputs.clean == 'true' &&
+          steps.evidence.outputs.pr_gate_green == 'true' &&
+          steps.evidence.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}
+        run: |
+          # train_apply=true is deliberate: a dry-run nudge starts a train that
+          # can land nothing, which defeats this step's purpose (prompt landing
+          # once clean exact-head evidence exists). Automated live dispatch is
+          # the operator-decided posture (2026-08-28) already practiced by the
+          # train's own self-chain and the fleet stall restart; the per-PR
+          # admission ladder and the train:escalated label remain the brakes.
+          gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
+            -f train_apply=true -f max_batch=10 >/dev/null 2>&1 || true
