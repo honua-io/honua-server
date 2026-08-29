@@ -8,6 +8,9 @@ so the server performs no model inference of its own as part of executing a capa
 forwards a client's inference request through this explicitly configured proxy at
 `/api/v1/studio/ai/*`.
 
+> **Off by default.** Set `StudioAiProxy__Enabled=true` (or
+> `StudioAiProxy:Enabled` to `true` in configuration) to enable the proxy.
+
 ## What this is (and isn't)
 
 - **Is**: a thin, provider-neutral proxy — one request/response contract (messages, optional tools,

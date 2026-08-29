@@ -57,6 +57,8 @@
   - [Excel & Power BI](guides/connect/excel-power-bi.md)
   - [MapLibre web maps](guides/connect/maplibre-web-maps.md)
   - [AI agents (MCP)](guides/connect/ai-agents-mcp.md)
+  - [Run the Studio AI proxy](guides/run-studio-ai-proxy.md)
+  - [Run Studio AI on Amazon Bedrock](guides/run-studio-ai-on-bedrock.md)
 - Edit data
   - [Edit features](guides/edit/edit-features.md)
   - [Attachments & related records](guides/edit/attachments-and-related-records.md)
