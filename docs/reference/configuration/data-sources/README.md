@@ -13,9 +13,25 @@ Honua serves data from one primary provider (PostgreSQL/PostGIS by default) plus
 | [MySQL/MariaDB](mysql-mariadb.md) | Read/query only (primary) | `DataSource__Provider=mysql` | MySQL 8.0.11+ / MariaDB 10.6+; no edits, statistics, encoded exports, streaming GeoJSON, KNN, temporal filters, or cross-SRID transforms. |
 | [Amazon Redshift](redshift.md) | Read/query only (additional) | Layer connection resolves to `redshift` | Native `GEOMETRY`/`GEOGRAPHY` (not PostGIS) over the PostgreSQL wire protocol via Npgsql; no edits, native MVT, encoded exports, statistics, distance/KNN, or temporal filters. |
 | [Snowflake](snowflake.md) | Read/query only (additional) | Layer connection resolves to `snowflake`/`snowflakedb` | Native `GEOGRAPHY`/`GEOMETRY` tables; no edits, statistics, native MVT/encoded exports, distance/KNN, temporal filters, or cross-SRID transforms. Not Native AOT compatible. |
-| [Databricks](databricks.md) | Read/query only (additional, best-effort) | Layer connection resolves to `databricks`/`databrickssql`/`dbsql` | HTTP read-through over the SQL Statement Execution REST API against a SQL Warehouse; no native driver. No edits/statistics/encoded exports; spatial functions depend on the DBSQL/runtime. |
+| [Databricks](databricks.md) | Read/query only (additional, best-effort) | Layer connection resolves to `databricks`/`databrickssql`/`dbsql` | HTTP read-through over the SQL Statement Execution REST API against a SQL Warehouse; no native driver. Statistics are supported; edits and native encoded exports are not. Spatial functions depend on the DBSQL/runtime. |
 
 Provider selection variables are listed in the [environment variable reference](../environment-variables.md#database-and-providers).
+
+## Experimental warehouse environment variables
+
+All three warehouse providers are Enterprise, experimental, and off by default
+for 2026.1. Enabling a provider without its matching experimental flag fails
+startup; these switches do not promote the provider to GA.
+
+| Provider | Required opt-in and enable switch | Connection settings | Native AOT |
+|---|---|---|---|
+| Redshift | `Experimental__Features__RedshiftProvider=true`; `Redshift__Enabled=true` | `Redshift__ConnectionString`; optional `Redshift__CommandTimeoutSeconds` | Supported by the Npgsql-based adapter. |
+| Snowflake | `Experimental__Features__SnowflakeProvider=true`; `Snowflake__Enabled=true` | `Snowflake__ConnectionString`; optional `Snowflake__CommandTimeoutSeconds` | Not supported by `Snowflake.Data`. AOT verification sets MSBuild `HonuaSkipSnowflakeForAotVerification=true`, which defines `HONUA_SKIP_SNOWFLAKE` and removes the provider from that build. |
+| Databricks | `Experimental__Features__DatabricksProvider=true`; `Databricks__Enabled=true` | `Databricks__Host`, `Databricks__WarehouseId`, `Databricks__Token`; optional `Databricks__Catalog`, `Databricks__Schema`, `Databricks__CommandTimeoutSeconds` | Supported by the HTTP adapter. |
+
+Store credentials in the deployment secret mechanism; do not commit connection
+strings or tokens. The provider-specific pages describe layer bindings,
+predicate limitations, and failure behavior.
 
 ### HTTP-Stack GA Proof
 
