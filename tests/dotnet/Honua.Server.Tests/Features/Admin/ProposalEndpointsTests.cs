@@ -11,6 +11,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Domain;
+using IOperationInstanceStore = Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -307,6 +309,11 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("status").GetString().Should().Be("Rejected");
         document.RootElement.GetProperty("resolutionReason").GetString().Should().Be("not safe right now");
+        var instanceStore = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
+        var instance = await instanceStore.GetAsync(proposal.Audit.OperationInstanceId!);
+        instance.Should().NotBeNull();
+        instance!.Status.Should().Be(OperationHandleStatus.Rejected);
+        instance.ProposalId.Should().Be(proposal.ProposalId);
     }
 
     [IntegrationTest]
@@ -339,7 +346,38 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         result.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         result.ProposalId.Should().NotBeNullOrEmpty();
         _notifier.PendingCount.Should().BeGreaterThan(0);
-        (await _proposalStore.GetAsync(result.ProposalId!)).Should().NotBeNull();
+        var proposal = await _proposalStore.GetAsync(result.ProposalId!);
+        proposal.Should().NotBeNull();
+        var instanceStore = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
+        var instance = await instanceStore.GetAsync(proposal!.Audit.OperationInstanceId!);
+        instance.Should().NotBeNull();
+        instance!.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        instance.ProposalId.Should().Be(result.ProposalId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task Gateway_IdempotentApprovalRetry_ReusesCanonicalInstance()
+    {
+        _ladder.Tier = GuardrailTier.RequiresApproval;
+        var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.AdminConfigChange,
+            RequestedBy = "agent:proposer",
+            IdempotencyKey = $"approval-{Guid.NewGuid():N}",
+        };
+
+        var first = await gateway.RouteAsync(request);
+        var second = await gateway.RouteAsync(request);
+
+        second.ProposalId.Should().Be(first.ProposalId);
+        var proposal = await _proposalStore.GetAsync(first.ProposalId!);
+        var instanceStore = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
+        var active = await instanceStore.ListActiveAsync();
+        active.Should().ContainSingle(instance =>
+            instance.OperationInstanceId == proposal!.Audit.OperationInstanceId &&
+            instance.Status == OperationHandleStatus.RequiresApproval);
     }
 
     [IntegrationTest]

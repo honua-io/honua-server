@@ -936,7 +936,8 @@ class PostGISFixture:
                 ST_XMin(l.extent)::double precision,
                 ST_YMin(l.extent)::double precision,
                 ST_XMax(l.extent)::double precision,
-                ST_YMax(l.extent)::double precision
+                ST_YMax(l.extent)::double precision,
+                l.temporal_column
             FROM honua.service_layers sl
             JOIN honua.services s ON s.service_name = sl.service_name
             JOIN honua.layers l ON l.layer_id = sl.layer_id
@@ -1057,6 +1058,7 @@ class PostGISFixture:
             south,
             east,
             north,
+            temporal_column,
         ) in layer_rows:
             service_part = self._metadata_id_part(row_service_name)
             layer_part = self._metadata_id_part(row_layer_id)
@@ -1099,6 +1101,10 @@ class PostGISFixture:
                 "primaryStorageBindingId": feature_storage_id,
                 "schemaFields": fields_by_layer.get(row_layer_id, []),
                 "spatial": feature_spatial,
+                "temporal": {
+                    "startTimeField": temporal_column,
+                    "endTimeField": temporal_column,
+                } if temporal_column else None,
                 "status": status,
                 "extensions": {},
             })

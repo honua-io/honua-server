@@ -100,6 +100,7 @@ class HonuaServer:
             # still prove that missing and invalid credentials are rejected.
             "HONUA_DEV_AUTH": "false",
             "HONUA_DEV_AUTH_ALLOW_BYPASS": "false",
+            "HONUA_ADMIN_PASSWORD": "ClientCompatAdmin123!",
             "HONUA_REGISTER_TEST_INFRASTRUCTURE": "true",
             "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests
