@@ -40,9 +40,13 @@ internal static class OperationsServiceCollectionExtensions
         {
             services.TryAddSingleton<IOperationInstanceStore>(sp =>
                 new RedisOperationInstanceStore(sp.GetRequiredService<IConnectionMultiplexer>()));
-            services.AddHostedService<OperationRuntimeStartupValidator>();
-            services.AddHostedService<PlannedProposalReconciler>();
-            services.AddHostedService<QueuedOperationReconciler>();
+            if (services.Any(descriptor => descriptor.ServiceType ==
+                    typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore)))
+            {
+                services.AddHostedService<OperationRuntimeStartupValidator>();
+                services.AddHostedService<PlannedProposalReconciler>();
+                services.AddHostedService<QueuedOperationReconciler>();
+            }
         }
         services.TryAddSingleton<IOperationEnvelopeFactory>(sp =>
             new ScopedOperationEnvelopeFactory(

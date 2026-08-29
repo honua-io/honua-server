@@ -7,6 +7,8 @@ using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -57,6 +59,44 @@ public sealed class OperationsToolsetTests
             descriptor.ServiceType == typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor) &&
             descriptor.ImplementationType != null &&
             descriptor.ImplementationType.Name.Contains("ServicePublish", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_ProductionWithoutProposalStore_DoesNotRegisterDurableRuntimeHostedServices()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        services.Should().NotContain(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) &&
+            descriptor.ImplementationType != null &&
+            (descriptor.ImplementationType == typeof(OperationRuntimeStartupValidator) ||
+             descriptor.ImplementationType == typeof(PlannedProposalReconciler) ||
+             descriptor.ImplementationType == typeof(QueuedOperationReconciler)));
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_ProductionWithProposalStore_RegistersDurableRuntimeHostedServices()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) &&
+            descriptor.ImplementationType == typeof(OperationRuntimeStartupValidator));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) &&
+            descriptor.ImplementationType == typeof(PlannedProposalReconciler));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) &&
+            descriptor.ImplementationType == typeof(QueuedOperationReconciler));
     }
 
     [UnitTest]
