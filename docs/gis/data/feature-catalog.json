@@ -9129,7 +9129,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Scene.I3sConformanceFixtureTests.ServiceDescriptor_PassesProtocolShapeValidator",
-        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetService_AtGeoServicesPath_CommunityEdition_Returns403",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetService_AtGeoServicesPath_CommunityEdition_Returns402",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetService_AtGeoServicesPath_ReturnsI3sServiceDescriptor"
       ],
       "proof_ledger_surface": "i3s-sceneserver",
@@ -9177,7 +9177,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_CommunityEdition_Returns403",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_CommunityEdition_Returns402",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_EnterpriseEdition_ReturnsObjectIdAttributeFile",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeAttribute_SceneWithNoTranscodableGeometry_Returns404",
@@ -9197,7 +9197,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_CommunityEdition_Returns403",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_CommunityEdition_Returns402",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_EnterpriseEdition_ReturnsTranscodedI3sBuffer",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodeGeometry_SceneWithNoTranscodableGeometry_Returns404",
@@ -11696,7 +11696,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetService_CommunityEdition_Returns403",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetService_CommunityEdition_Returns402",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetService_EnterpriseEdition_ReturnsI3sServiceDescriptor",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetService_ProtectedScene_WithAuth_ReturnsI3sServiceDescriptor",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetService_ProtectedScene_WithoutAuth_ReturnsUnauthorized",
@@ -11705,7 +11705,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int",
@@ -11723,7 +11723,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodepages-pageid-int",
@@ -11733,12 +11733,12 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodePage_ScenesAlias_CommunityEdition_Returns403",
+        "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodePage_ScenesAlias_CommunityEdition_Returns402",
         "Honua.Server.Tests.Features.Protocols.Scene.I3sSceneServerEndpointTests.GetNodePage_ScenesAlias_EnterpriseEdition_ReturnsNodePage"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-attributes-fieldkey-attributeid-int",
@@ -11752,7 +11752,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-geometries-geometryid-int",
@@ -11766,7 +11766,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-statistics-fieldkey-0",
@@ -11780,7 +11780,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-exports-openusd-stage-usda",

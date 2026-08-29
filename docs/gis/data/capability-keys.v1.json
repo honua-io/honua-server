@@ -614,8 +614,9 @@
       "key": "serve.i3s-scene",
       "displayName": "I3S Scene Serving",
       "category": "Serve",
-      "edition": "Community",
-      "description": "Serve published I3S scene layers Esri clients consume directly."
+      "edition": "Enterprise",
+      "description": "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.",
+      "status": "experimental"
     },
     {
       "key": "serve.odata",

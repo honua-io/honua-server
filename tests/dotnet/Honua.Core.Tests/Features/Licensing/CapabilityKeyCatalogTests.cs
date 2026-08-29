@@ -76,6 +76,7 @@ public sealed class CapabilityKeyCatalogTests
     {
         CapabilityKeyCatalog.All.Should().HaveCount(
             CapabilityKeyCatalog.CommunityKeys.Count
+            + CapabilityKeyCatalog.RoutedExperimentalKeys.Count
             + CapabilityKeyCatalog.DescriptiveKeys.Count
             + FeatureCatalog.All.Count);
     }
@@ -134,6 +135,14 @@ public sealed class CapabilityKeyCatalogTests
         deployable.Should().NotIntersectWith(descriptive);
         deployable.Should().BeEquivalentTo(
             CapabilityKeyCatalog.All.Select(k => k.Key).Except(descriptive, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void DeployableKeys_IncludesRoutedExperimentalKeys()
+    {
+        CapabilityKeyCatalog.DeployableKeys.Should().Contain(
+            capability => capability.Key == "serve.i3s-scene"
+                && capability.Status == CapabilityKeyCatalog.ExperimentalStatus);
     }
 
     [Fact]
