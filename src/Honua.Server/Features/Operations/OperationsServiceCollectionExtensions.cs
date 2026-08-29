@@ -66,6 +66,30 @@ internal static class OperationsServiceCollectionExtensions
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
+        var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==
+            typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore));
+        if (hasProposalStore &&
+            !services.Any(descriptor => descriptor.ServiceType == typeof(AdminConnectImportRegistrationMarker)))
+        {
+            services.AddSingleton<AdminConnectImportRegistrationMarker>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider,
+                AdminConnectImportOperationDescriptorProvider>());
+            foreach (var definition in AdminConnectImportOperationCatalog.Definitions)
+            {
+                if (definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
+                {
+                    services.AddSingleton<IOperationApprovalRequestMapper>(
+                        new AdminConnectImportApprovalRequestMapper(definition));
+                }
+                services.AddScoped<IOperationExecutor>(sp => new AdminConnectImportOperationExecutor(
+                    definition,
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetRequiredService<IHttpContextAccessor>(),
+                    sp.GetRequiredService<TimeProvider>()));
+            }
+            services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
+            services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+        }
         // Legacy adapters are FACTORY descriptors (each closes over its operation
         // class), and TryAddEnumerable REJECTS factory descriptors at registration
         // time — their implementation type is indistinguishable from the service
@@ -125,4 +149,6 @@ internal static class OperationsServiceCollectionExtensions
     /// <c>TryAddEnumerable</c> (which cannot hold factory descriptors).
     /// </summary>
     internal sealed class LegacyAdapterRegistrationMarker;
+
+    internal sealed class AdminConnectImportRegistrationMarker;
 }
