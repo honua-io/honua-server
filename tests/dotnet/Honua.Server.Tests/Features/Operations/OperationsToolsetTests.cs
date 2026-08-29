@@ -8,6 +8,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -71,7 +72,7 @@ public sealed class OperationsToolsetTests
 
         services.Should().NotContain(descriptor =>
             descriptor.ServiceType == typeof(IHostedService) &&
-            descriptor.ImplementationType is not null &&
+            descriptor.ImplementationType != null &&
             (descriptor.ImplementationType == typeof(OperationRuntimeStartupValidator) ||
              descriptor.ImplementationType == typeof(PlannedProposalReconciler) ||
              descriptor.ImplementationType == typeof(QueuedOperationReconciler)));
