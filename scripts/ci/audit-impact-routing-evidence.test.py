@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import json
+import shutil
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -478,6 +479,54 @@ def test_policy_and_discovery() -> None:
         assert current_attempt["integrity_failures"] == []
 
 
+def test_policy_generation_ignores_routing_irrelevant_workflow_edits() -> None:
+    paths = (
+        MODULE.PR_GATE_WORKFLOW,
+        "scripts/ci/classify-pr-gate-impact.py",
+        ".github/workflows/pr-gate.yml",
+        MODULE.NATIVE_WORKFLOW,
+        "scripts/ci/native-image-impact.py",
+        ".github/native-image-impact.json",
+        MODULE.SERVING_WORKFLOW,
+        MODULE.WORKER_WORKFLOW,
+        "scripts/ci/trusted-pr-workflow-run.js",
+    )
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        for relative in paths:
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPOSITORY_ROOT / relative, target)
+        original = MODULE.current_blobs(root)
+
+        workflow = root / MODULE.SERVING_WORKFLOW
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                "actions/checkout@v7.0.1", "actions/checkout@v7.0.2", 1
+            ),
+            encoding="utf-8",
+        )
+        irrelevant = MODULE.current_blobs(root)
+        assert irrelevant["serving_workflow"] != original["serving_workflow"]
+        assert irrelevant["policy_generation_sha256"] == original["policy_generation_sha256"]
+
+        classifier = root / "scripts/ci/native-image-impact.py"
+        classifier.write_text(
+            classifier.read_text(encoding="utf-8") + "\n# routing policy revision\n",
+            encoding="utf-8",
+        )
+        changed_classifier = MODULE.current_blobs(root)
+        assert changed_classifier["policy_generation_sha256"] != original["policy_generation_sha256"]
+
+        classifier.write_bytes((REPOSITORY_ROOT / "scripts/ci/native-image-impact.py").read_bytes())
+        routing_policy = root / ".github/native-image-impact.json"
+        routing_policy.write_text(
+            routing_policy.read_text(encoding="utf-8") + " ", encoding="utf-8"
+        )
+        changed_policy = MODULE.current_blobs(root)
+        assert changed_policy["policy_generation_sha256"] != original["policy_generation_sha256"]
+
+
 def test_summary_requires_real_candidate_and_image_evidence() -> None:
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
     with tempfile.TemporaryDirectory() as temporary:
@@ -740,11 +789,7 @@ def test_integrity_failures_do_not_count() -> None:
         # describes the previous one. Treating that as an integrity failure is
         # what made all 209 native receipts fail at once and left the ledger
         # permanently red on routine repository maintenance.
-        for field in (
-            "observer_workflow_blob_sha",
-            "resolver_blob_sha",
-            "gate_workflow_blob_sha",
-        ):
+        for field in ("policy_blob_sha",):
             bad = pr_gate_receipt(blobs)
             bad[field] = "f" * 40
             archive(archives, 301, MODULE.PR_GATE_STREAM, bad)
@@ -777,6 +822,31 @@ def test_integrity_failures_do_not_count() -> None:
             assert "contradicts its own declared policy head" in (
                 contradiction["integrity_failures"][0]["reason"]
             ), field
+
+        # Whole-file workflow/resolver pins are provenance rather than the
+        # semantic generation. An old action/version edit stays countable, but
+        # a mismatch against the receipt's exact checked-out policy head is a
+        # real contradiction and still fails closed.
+        for field in (
+            "observer_workflow_blob_sha",
+            "resolver_blob_sha",
+            "gate_workflow_blob_sha",
+        ):
+            old_provenance = pr_gate_receipt(blobs)
+            old_provenance[field] = "f" * 40
+            archive(archives, 301, MODULE.PR_GATE_STREAM, old_provenance)
+            retained = MODULE.summarize(
+                index, archives, root / "serving", root / "worker",
+                policy(), REPOSITORY_ROOT,
+            )
+            assert retained["counts"]["validated_pr_gate_receipts"] == 1, field
+            assert retained["counts"]["receipts_superseded_policy_generation"] == 0, field
+            contradiction = MODULE.summarize(
+                index, archives, root / "serving", root / "worker",
+                policy(), REPOSITORY_ROOT,
+                policy_head_sha=old_provenance["policy_sha"],
+            )
+            assert contradiction["counts"]["integrity_failures"] == 1, field
 
         # A trust-boundary violation is never drift, whatever its policy head.
         for field, value in (
@@ -1482,7 +1552,12 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
                 "integrity_clean": green,
                 "receipt_loss_within_budget": green,
             },
-            "counts": {"integrity_failures": 0 if green else 3},
+            "policy_generation_sha256": ("a" if day < 23 else "b") * 64,
+            "counts": {
+                "integrity_failures": 0 if green else 3,
+                "docs_only_success_heads": day - 18,
+                "native_countable_heads": day - 17,
+            },
             "receipt_emission": {"all": {"loss_ratio": loss, "measured": True}},
         }
 
@@ -1493,6 +1568,11 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
     assert ready["consecutive_green_days"] == 7
     assert ready["promotion_gate_ready"] is True
     assert ready["maximum_loss_ratio_in_streak"] == 0.01
+    assert ready["policy_generation_resets"] == 1
+    assert ready["largest_sample_within_generation"] == {
+        "docs_only_heads": 7,
+        "native_heads": 8,
+    }
 
     # A red day breaks the streak rather than being averaged away.
     broken = MODULE.trend(
@@ -1520,6 +1600,7 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
     )
 
 test_policy_and_discovery()
+test_policy_generation_ignores_routing_irrelevant_workflow_edits()
 test_summary_requires_real_candidate_and_image_evidence()
 test_integrity_failures_do_not_count()
 test_workflows_are_read_only_and_attempt_bound()

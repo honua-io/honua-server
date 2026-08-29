@@ -181,18 +181,20 @@ now separate, counted, named facts:
 |---|---|---|
 | `integrity_failures` | The receipt is malformed, violates its trust boundary, is not attributable to its producer, or contradicts its own declared policy head. | Yes |
 | `receipt_loss_regression` | A successful observer that OWED a receipt did not leave one, above `maximum_receipt_loss_ratio`. | Yes |
-| `policy_generation_superseded_receipts` | Cohort drift: the receipt is intact but pins the previous generation of the nine policy inputs. | No |
+| `policy_generation_superseded_receipts` | Cohort drift: the receipt is intact but pins the previous semantic classifier/routing-policy generation. | No |
 | `image_outcome_superseded_heads` | The head's authoritative image run was cancelled by a **witnessed** later push on the same PR. It can never acquire a successful outcome. | No |
 | `image_outcome_pending_heads` | The head's image run is still building. Undetermined, not absent — the next audit sees how it ended. | No |
 | `quarantined` | Named in `.github/impact-routing-tombstones.json` with an owning issue and an expiry. | No, until the expiry |
 
-Cohort drift is the important distinction. Every receipt pins the blob SHAs of
-nine files, so **any** commit touching one of them — a Dependabot
-`actions/checkout` bump does it — starts a new policy generation and every
-receipt in the retention window then describes the previous one. That resets the
-countable sample **by design** (see "Changing the selector…" in
-`native-image-impact-routing.md`); it is not evidence loss and must never redden
-the integrity check. `policy_generation_sha256` names the current generation.
+Cohort drift is the important distinction. Only a classifier or native
+routing-policy change starts a semantic generation. Workflow action-version,
+timeout, name, and comment edits retain it; their whole-file SHAs remain receipt
+provenance. Authoritative workflow routing fragments are parsed and checked
+against the generation-pinned native policy, so an actual routing change cannot
+escape the digest. A semantic reset is by design (see "Changing the selector…"
+in `native-image-impact-routing.md`); it is not evidence loss and must never
+redden the integrity check. `policy_generation_sha256` names the current
+generation.
 
 The one case where a stale policy input IS an integrity failure: the receipt's
 own `policy_sha` equals the commit the ledger checked out. The two are then
