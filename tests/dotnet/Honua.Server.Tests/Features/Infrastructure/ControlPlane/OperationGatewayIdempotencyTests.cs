@@ -79,10 +79,45 @@ public sealed class OperationGatewayIdempotencyTests
         store.Count.Should().Be(2);
     }
 
-    private static OperationGateway BuildGateway(IOperationProposalStore store, IGuardrailLadder ladder)
+    [Fact]
+    public async Task RouteAsync_CanceledDuringAudit_FinalizesPlannedProposal()
+    {
+        var store = new MultiProposalStore();
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
+        var sut = BuildGateway(store, ladder, new CancelingOnceAuditLog());
+
+        var route = () => sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "agent",
+            IdempotencyKey = "cancel-during-audit"
+        });
+
+        await route.Should().ThrowAsync<OperationCanceledException>();
+        store.Single.Status.Should().Be(OperationProposalStatus.Failed);
+        store.Single.ResolutionReason.Should().Be("Durable audit acceptance failed.");
+        store.ActiveCount.Should().Be(0, "a canceled request must not orphan a Planned proposal");
+
+        var retry = await sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "agent",
+            IdempotencyKey = "cancel-during-audit"
+        });
+        retry.Outcome.Should().Be(OperationGatewayOutcome.Failed,
+            "a terminal failed proposal must never be returned as actionable approval work");
+        retry.ProposalId.Should().BeNull();
+    }
+
+    private static OperationGateway BuildGateway(
+        IOperationProposalStore store,
+        IGuardrailLadder ladder,
+        IAuditLog? auditLog = null)
     {
         var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => NullAuditLog.Instance);
+        services.AddScoped<IAuditLog>(_ => auditLog ?? new DurableAuditLog());
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
 
         return new OperationGateway(
@@ -99,6 +134,27 @@ public sealed class OperationGatewayIdempotencyTests
     /// proposals (unlike the single-slot store) so a duplicate-proposal regression
     /// is observable.
     /// </summary>
+    private sealed class DurableAuditLog : IAuditLog
+    {
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) =>
+            Task.FromResult<string?>("audit-test");
+    }
+
+    private sealed class CancelingOnceAuditLog : IAuditLog
+    {
+        private int _calls;
+
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+            {
+                return Task.FromException<string?>(new OperationCanceledException(cancellationToken));
+            }
+
+            return Task.FromResult<string?>("audit-retry");
+        }
+    }
+
     private sealed class MultiProposalStore : IOperationProposalStore
     {
         private readonly Dictionary<string, OperationProposal> _proposals = new(StringComparer.Ordinal);
@@ -112,6 +168,11 @@ public sealed class OperationGatewayIdempotencyTests
         public int ActiveCount
         {
             get { lock (_lock) { return _proposals.Values.Count(IsActive); } }
+        }
+
+        public OperationProposal Single
+        {
+            get { lock (_lock) { return _proposals.Values.Single(); } }
         }
 
         public Task<OperationProposal?> GetAsync(string proposalId, CancellationToken cancellationToken = default)

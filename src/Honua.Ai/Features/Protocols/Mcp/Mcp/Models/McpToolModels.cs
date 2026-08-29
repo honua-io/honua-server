@@ -284,8 +284,32 @@ internal sealed class McpPublishServiceOutput
     [JsonPropertyName("operationId")]
     public string OperationId { get; set; } = string.Empty;
 
+    [JsonPropertyName("operationInstanceId")]
+    public string OperationInstanceId { get; set; } = string.Empty;
+
     [JsonPropertyName("handleId")]
     public string HandleId { get; set; } = string.Empty;
+
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; set; }
+
+    [JsonPropertyName("correlationId")]
+    public string CorrelationId { get; set; } = string.Empty;
+
+    [JsonPropertyName("auditId")]
+    public string? AuditId { get; set; }
+
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("authorizationOutcome")]
+    public string? AuthorizationOutcome { get; set; }
+
+    [JsonPropertyName("policyOutcome")]
+    public string? PolicyOutcome { get; set; }
 
     [JsonPropertyName("serviceUri")]
     public string? ServiceUri { get; set; }
@@ -310,6 +334,17 @@ internal sealed class McpPublishServiceOutput
 
     [JsonPropertyName("message")]
     public string? Message { get; set; }
+
+    [JsonPropertyName("details")]
+    public IReadOnlyDictionary<string, string> Details { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("resourceIds")]
+    public IReadOnlyDictionary<string, string> ResourceIds { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("evidenceRefs")]
+    public IReadOnlyList<string> EvidenceRefs { get; set; } = [];
 }
 
 /// <summary>
@@ -356,8 +391,32 @@ internal sealed class McpOperationToolOutput
     [JsonPropertyName("operationId")]
     public string OperationId { get; set; } = string.Empty;
 
+    [JsonPropertyName("operationInstanceId")]
+    public string OperationInstanceId { get; set; } = string.Empty;
+
     [JsonPropertyName("handleId")]
     public string HandleId { get; set; } = string.Empty;
+
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; set; }
+
+    [JsonPropertyName("correlationId")]
+    public string CorrelationId { get; set; } = string.Empty;
+
+    [JsonPropertyName("auditId")]
+    public string? AuditId { get; set; }
+
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("authorizationOutcome")]
+    public string? AuthorizationOutcome { get; set; }
+
+    [JsonPropertyName("policyOutcome")]
+    public string? PolicyOutcome { get; set; }
 
     [JsonPropertyName("jobId")]
     public string? JobId { get; set; }
@@ -377,6 +436,13 @@ internal sealed class McpOperationToolOutput
     [JsonPropertyName("details")]
     public IReadOnlyDictionary<string, string> Details { get; set; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("resourceIds")]
+    public IReadOnlyDictionary<string, string> ResourceIds { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("evidenceRefs")]
+    public IReadOnlyList<string> EvidenceRefs { get; set; } = [];
 }
 
 /// <summary>
@@ -437,8 +503,32 @@ internal sealed class McpPublishResultOutput
     [JsonPropertyName("operationId")]
     public string OperationId { get; set; } = string.Empty;
 
+    [JsonPropertyName("operationInstanceId")]
+    public string OperationInstanceId { get; set; } = string.Empty;
+
     [JsonPropertyName("handleId")]
     public string HandleId { get; set; } = string.Empty;
+
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; set; }
+
+    [JsonPropertyName("correlationId")]
+    public string CorrelationId { get; set; } = string.Empty;
+
+    [JsonPropertyName("auditId")]
+    public string? AuditId { get; set; }
+
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("authorizationOutcome")]
+    public string? AuthorizationOutcome { get; set; }
+
+    [JsonPropertyName("policyOutcome")]
+    public string? PolicyOutcome { get; set; }
 
     [JsonPropertyName("sourceJobId")]
     public string? SourceJobId { get; set; }
@@ -469,6 +559,17 @@ internal sealed class McpPublishResultOutput
 
     [JsonPropertyName("message")]
     public string? Message { get; set; }
+
+    [JsonPropertyName("details")]
+    public IReadOnlyDictionary<string, string> Details { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("resourceIds")]
+    public IReadOnlyDictionary<string, string> ResourceIds { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    [JsonPropertyName("evidenceRefs")]
+    public IReadOnlyList<string> EvidenceRefs { get; set; } = [];
 }
 
 /// <summary>

@@ -333,7 +333,7 @@ internal static partial class EmbedGovernanceEndpoints
         return context.User.Identity?.Name ?? AuditEvent.AnonymousActor;
     }
 
-    private static Task EmitAuditAsync(
+    private static Task<string?> EmitAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         AuditEventType eventType,

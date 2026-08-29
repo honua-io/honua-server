@@ -54,6 +54,28 @@ public sealed record OperationRequest
 public sealed record OperationPolicyContext
 {
     /// <summary>
+    /// Canonical invocation identity assigned by the operation runtime before policy evaluation.
+    /// Protocol adapters must not derive this value from the descriptor id or a resource id.
+    /// </summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>
+    /// Correlation identity propagated independently from the operation instance identity.
+    /// </summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Trusted tenant identity captured at invocation time.</summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>Trusted routed database schema captured at invocation time.</summary>
+    public string? SchemaName { get; init; }
+
+    /// <summary>
+    /// Trusted authorization outcome established before the operation policy decision.
+    /// </summary>
+    public string? AuthorizationOutcome { get; init; }
+
+    /// <summary>
     /// Resolved connection string for the target connection, when the operation needs one.
     /// </summary>
     public string? ResolvedConnectionString { get; init; }
@@ -109,48 +131,63 @@ public sealed record OperationValidation
 /// </summary>
 public sealed record OperationHandle
 {
-    /// <summary>
-    /// Operation identifier this handle was produced for.
-    /// </summary>
+    /// <summary>Stable identity of this invocation.</summary>
+    public required string OperationInstanceId { get; init; }
+
+    /// <summary>Descriptor identifier for the operation type.</summary>
     public required string OperationId { get; init; }
 
-    /// <summary>
-    /// Lifecycle status of the operation.
-    /// </summary>
+    /// <summary>Lifecycle status of the invocation.</summary>
     public required OperationHandleStatus Status { get; init; }
 
     /// <summary>
-    /// Stable handle identifier, used to look the handle's status back up.
+    /// Getter-only legacy alias for <see cref="OperationInstanceId"/>. It cannot receive a
+    /// proposal id or any other downstream identity.
     /// </summary>
-    public required string HandleId { get; init; }
+    public string HandleId => OperationInstanceId;
 
-    /// <summary>
-    /// Synchronous result summary, populated only when <see cref="Status"/> is
-    /// <see cref="OperationHandleStatus.Completed"/>.
-    /// </summary>
+    /// <summary>Independent correlation identity for logs and traces.</summary>
+    public required string CorrelationId { get; init; }
+
+    /// <summary>Durable audit identity assigned at audit write time.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>Durable proposal identity when approval is required.</summary>
+    public string? ProposalId { get; init; }
+
+    /// <summary>Time when the envelope was created before policy evaluation.</summary>
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Time when this envelope projection was last updated.</summary>
+    public required DateTimeOffset UpdatedAt { get; init; }
+
+    /// <summary>Trusted authorization outcome, when evaluated.</summary>
+    public string? AuthorizationOutcome { get; init; }
+
+    /// <summary>Policy outcome, when evaluated.</summary>
+    public PolicyDecisionKind? PolicyDecision { get; init; }
+
+    /// <summary>Synchronous result summary for a completed operation.</summary>
     public OperationResultSummary? Result { get; init; }
 
-    /// <summary>
-    /// Durable job identifier, populated when the operation was queued as a job.
-    /// </summary>
+    /// <summary>Durable job identity when execution is queued.</summary>
     public string? JobId { get; init; }
 
-    /// <summary>
-    /// Approval lane identifier, populated when <see cref="Status"/> is
-    /// <see cref="OperationHandleStatus.RequiresApproval"/>.
-    /// </summary>
+    /// <summary>Approval lane selected by policy.</summary>
     public string? ApprovalLane { get; init; }
 
-    /// <summary>
-    /// Metadata v2 graph revision that resulted from the operation, when it mutated the
-    /// canonical metadata graph (for example a publish that created a new layer resource).
-    /// </summary>
+    /// <summary>Metadata revision produced by the invocation.</summary>
     public long? MetadataRevision { get; init; }
 
-    /// <summary>
-    /// Reason describing a non-completed outcome (deny/require-approval/dry-run/failure).
-    /// </summary>
+    /// <summary>Reason for a non-completed outcome.</summary>
     public string? Reason { get; init; }
+
+    /// <summary>Stable resource identities produced or targeted by the invocation.</summary>
+    public IReadOnlyDictionary<string, string> ResourceIds { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Durable evidence references associated with the invocation.</summary>
+    public IReadOnlyList<string> EvidenceRefs { get; init; } = [];
 }
 
 /// <summary>
@@ -180,35 +217,60 @@ public sealed record OperationResultSummary
 /// </summary>
 public sealed record OperationStatus
 {
-    /// <summary>
-    /// Operation identifier.
-    /// </summary>
+    /// <summary>Stable operation invocation identity.</summary>
+    public required string OperationInstanceId { get; init; }
+
+    /// <summary>Descriptor identifier for the operation type.</summary>
     public required string OperationId { get; init; }
 
-    /// <summary>
-    /// Handle identifier the status is for.
-    /// </summary>
-    public required string HandleId { get; init; }
+    /// <summary>Getter-only legacy alias for <see cref="OperationInstanceId"/>.</summary>
+    public string HandleId => OperationInstanceId;
 
-    /// <summary>
-    /// Current lifecycle status.
-    /// </summary>
+    /// <summary>Independent correlation identity.</summary>
+    public required string CorrelationId { get; init; }
+
+    /// <summary>Durable audit identity, when assigned.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>Durable proposal identity, when assigned.</summary>
+    public string? ProposalId { get; init; }
+
+    /// <summary>Time when the envelope was created.</summary>
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Time when this status projection was last updated.</summary>
+    public required DateTimeOffset UpdatedAt { get; init; }
+
+    /// <summary>Trusted authorization outcome, when evaluated.</summary>
+    public string? AuthorizationOutcome { get; init; }
+
+    /// <summary>Policy outcome, when evaluated.</summary>
+    public PolicyDecisionKind? PolicyDecision { get; init; }
+
+    /// <summary>Current lifecycle status.</summary>
     public required OperationHandleStatus Status { get; init; }
 
-    /// <summary>
-    /// Result summary when the operation has completed.
-    /// </summary>
+    /// <summary>Result summary when completed.</summary>
     public OperationResultSummary? Result { get; init; }
 
-    /// <summary>
-    /// Durable job identifier when the operation is running as a job.
-    /// </summary>
+    /// <summary>Durable job identity when queued or running.</summary>
     public string? JobId { get; init; }
 
-    /// <summary>
-    /// Metadata v2 revision produced by the operation, when applicable.
-    /// </summary>
+    /// <summary>Approval lane selected by policy.</summary>
+    public string? ApprovalLane { get; init; }
+
+    /// <summary>Metadata revision produced by the invocation.</summary>
     public long? MetadataRevision { get; init; }
+
+    /// <summary>Reason for a non-completed status.</summary>
+    public string? Reason { get; init; }
+
+    /// <summary>Stable resource identities produced or targeted by the invocation.</summary>
+    public IReadOnlyDictionary<string, string> ResourceIds { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Durable evidence references associated with the invocation.</summary>
+    public IReadOnlyList<string> EvidenceRefs { get; init; } = [];
 }
 
 /// <summary>

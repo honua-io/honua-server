@@ -374,6 +374,16 @@ public enum OperationPriority
 public sealed record OperationAuditInfo
 {
     /// <summary>
+    /// Canonical typed-operation invocation identity, when applicable.
+    /// </summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>
+    /// Durable audit identity assigned when this operation was accepted.
+    /// </summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>
     /// Operator or service principal that requested the operation.
     /// </summary>
     public string? RequestedBy { get; init; }

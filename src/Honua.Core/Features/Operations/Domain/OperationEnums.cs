@@ -180,7 +180,18 @@ public enum OperationHandleStatus
     Denied,
 
     /// <summary>
+    /// A human reviewer rejected the durable proposal. No actuator call occurred.
+    /// </summary>
+    Rejected,
+
+    /// <summary>
     /// The operation failed.
     /// </summary>
-    Failed
+    Failed,
+
+    /// <summary>
+    /// The operation may have changed state, but durable verification or evidence could not
+    /// establish a safe terminal outcome.
+    /// </summary>
+    Indeterminate
 }

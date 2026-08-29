@@ -275,7 +275,7 @@ public sealed class GatewayExecutorCompletenessTests
         IGuardrailLadder ladder)
     {
         var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => NullAuditLog.Instance);
+        services.AddScoped<IAuditLog>(_ => new DurableAuditLog());
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
         var notifier = Substitute.For<IProposalNotifier>();
 
@@ -286,6 +286,12 @@ public sealed class GatewayExecutorCompletenessTests
             scopeFactory,
             notifier,
             NullLogger<OperationGateway>.Instance);
+    }
+
+    private sealed class DurableAuditLog : IAuditLog
+    {
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default) =>
+            Task.FromResult<string?>("audit-gateway-completeness");
     }
 
     /// <summary>Executor stand-in for classes not under test here (AdminConfigChange/Deploy).</summary>

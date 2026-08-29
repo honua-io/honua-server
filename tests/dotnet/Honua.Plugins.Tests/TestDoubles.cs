@@ -31,10 +31,10 @@ internal sealed class RecordingAuditLog : IAuditLog
 {
     public List<AuditEvent> Events { get; } = [];
 
-    public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+    public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
     {
         Events.Add(auditEvent);
-        return Task.CompletedTask;
+        return Task.FromResult<string?>("audit-test");
     }
 }
 

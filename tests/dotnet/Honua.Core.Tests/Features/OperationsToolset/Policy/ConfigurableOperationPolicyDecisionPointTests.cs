@@ -202,7 +202,7 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
     }
 
     [UnitTest]
-    public async Task Dispatcher_With_RequireApproval_Rule_ShortCircuits_Executor()
+    public async Task Dispatcher_With_RequireApproval_Rule_WithoutBridge_FailsClosed()
     {
         var executor = new RecordingExecutor();
         var pdp = BuildPdp(new OperationPolicyOptions
@@ -228,7 +228,7 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
 
         var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext(), CancellationToken.None);
 
-        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
         handle.ApprovalLane.Should().Be("studio-publish-requests");
         handle.Result.Should().BeNull();
 
@@ -297,7 +297,10 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
             return Task.FromResult(new OperationHandle
             {
                 OperationId = OperationId,
-                HandleId = "handle",
+                OperationInstanceId = "handle",
+                CorrelationId = "correlation",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
                 Status = OperationHandleStatus.Completed
             });
         }
@@ -306,7 +309,10 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
             => Task.FromResult(new OperationStatus
             {
                 OperationId = OperationId,
-                HandleId = handle.HandleId,
+                OperationInstanceId = handle.OperationInstanceId,
+                CorrelationId = handle.CorrelationId,
+                CreatedAt = handle.CreatedAt,
+                UpdatedAt = handle.UpdatedAt,
                 Status = handle.Status
             });
     }

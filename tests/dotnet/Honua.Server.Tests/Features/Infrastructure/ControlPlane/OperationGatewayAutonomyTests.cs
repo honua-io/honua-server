@@ -367,7 +367,7 @@ public sealed class OperationGatewayAutonomyTests
         ladder.Resolve(OperationClass.AdminConfigChange, RedriveAction).Returns(RequiresApprovalDecision());
 
         var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => auditLog ?? NullAuditLog.Instance);
+        services.AddScoped<IAuditLog>(_ => auditLog ?? new RecordingAuditLog());
         services.AddScoped(_ => evaluator);
         services.AddScoped(_ => convergence);
         if (opsNotificationService is not null)
@@ -609,10 +609,10 @@ public sealed class OperationGatewayAutonomyTests
     {
         public List<AuditEvent> Events { get; } = [];
 
-        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             Events.Add(auditEvent);
-            return Task.CompletedTask;
+            return Task.FromResult<string?>("audit-test");
         }
     }
 

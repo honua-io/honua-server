@@ -1415,7 +1415,7 @@ public sealed class ReplicaConflictResolutionServiceTests
 
         public int Records { get; private set; }
 
-        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             if (Throws)
             {
@@ -1423,7 +1423,7 @@ public sealed class ReplicaConflictResolutionServiceTests
             }
 
             Records++;
-            return Task.CompletedTask;
+            return Task.FromResult<string?>("audit-test");
         }
     }
 

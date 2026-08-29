@@ -2,8 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -14,6 +16,8 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -27,6 +31,118 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class OperationsToolsetTests
 {
     private const string TestConnectionId = "11111111-1111-1111-1111-111111111111";
+
+    [UnitTest]
+    public void AddOperationsToolset_RegistersServicePublishApprovalMapperAndReplayActuator()
+    {
+        var services = new ServiceCollection();
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build());
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+            descriptor.ImplementationType == typeof(ServicePublishApprovalRequestMapper));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(ServicePublishApprovalExecutor));
+    }
+
+    [UnitTest]
+    public async Task ServicePublishApprovalReplay_InvokesTypedPublishActuator()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        publishing
+            .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishedLayerSummary
+            {
+                LayerId = 7,
+                LayerName = "Roads",
+                Schema = "public",
+                Table = "roads",
+                GeometryType = "LineString",
+                Srid = 4326,
+                ServiceName = "roads",
+            });
+        var graphProvider = Substitute.For<IMetadataV2GraphProvider>();
+        graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(
+            new MetadataV2GraphSnapshot(new MetadataV2Graph { Revision = 42 }, "\"etag\"", DateTimeOffset.UtcNow));
+        var typedExecutor = BuildExecutor(publishing, graphProvider);
+        var notifications = Substitute.For<IMcpNotificationPublisher>();
+        var services = new ServiceCollection()
+            .AddScoped(_ => typedExecutor)
+            .AddSingleton(notifications)
+            .BuildServiceProvider();
+        var replay = new ServicePublishApprovalExecutor(services.GetRequiredService<IServiceScopeFactory>());
+        var gatewayRequest = new ServicePublishApprovalRequestMapper().Map(
+            ServicePublishOperation.BuildDescriptor(),
+            BuildRequest(),
+            new OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-123",
+                CorrelationId = "corr-123",
+                PrincipalId = "publisher-1",
+            },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval, Reason = "approval required" });
+
+        var operationInstanceId = await replay.ExecuteAsync(
+            gatewayRequest,
+            gatewayRequest.ExecutionPayload,
+            CancellationToken.None);
+
+        operationInstanceId.Should().Be("opinst-123");
+        await publishing.Received(1).PublishLayerAsync(
+            Arg.Any<string>(),
+            Arg.Is<LayerPublishRequest>(request =>
+                request.Schema == "public" && request.Table == "parcels" && request.LayerName == "Parcels"),
+            Arg.Any<CancellationToken>());
+        notifications.Received(1).BroadcastResourcesListChanged();
+        notifications.Received(1).BroadcastToolsListChanged();
+    }
+
+    [UnitTest]
+    public async Task ServicePublishApprovalReplay_DryRunValidatesWithoutActuationOrNotification()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        publishing.ValidateTableForPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<TablePublishValidationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new TablePublishValidationResult
+            {
+                IsValid = true,
+                Status = "valid",
+                Schema = "public",
+                Table = "parcels",
+                ServiceName = "default",
+            });
+        var notifications = Substitute.For<IMcpNotificationPublisher>();
+        var services = new ServiceCollection()
+            .AddScoped(_ => BuildExecutor(publishing, Substitute.For<IMetadataV2GraphProvider>()))
+            .AddSingleton(notifications)
+            .BuildServiceProvider();
+        var replay = new ServicePublishApprovalExecutor(services.GetRequiredService<IServiceScopeFactory>());
+        var gatewayRequest = new ServicePublishApprovalRequestMapper().Map(
+            ServicePublishOperation.BuildDescriptor(),
+            BuildRequest() with { DryRun = true },
+            new OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-dry-run",
+                CorrelationId = "corr-dry-run",
+                PrincipalId = "publisher-1",
+            },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+        var operationInstanceId = await replay.ExecuteAsync(
+            gatewayRequest, gatewayRequest.ExecutionPayload, CancellationToken.None);
+
+        operationInstanceId.Should().Be("opinst-dry-run");
+        await publishing.Received(1).ValidateTableForPublishAsync(
+            Arg.Any<string>(), Arg.Any<TablePublishValidationRequest>(), Arg.Any<CancellationToken>());
+        await publishing.DidNotReceiveWithAnyArgs()
+            .PublishLayerAsync(default!, default!, default);
+        notifications.DidNotReceiveWithAnyArgs().BroadcastResourcesListChanged();
+        notifications.DidNotReceiveWithAnyArgs().BroadcastToolsListChanged();
+    }
 
     [UnitTest]
     public async Task Catalog_Lists_ServicePublish_Descriptor_With_ExecutionKind_ApprovalModel_And_Policy()
@@ -182,7 +298,7 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
-    public async Task SubmitAsync_With_RequireApproval_Policy_ShortCircuits_Executor_And_Routes_To_Approval_Lane()
+    public async Task SubmitAsync_With_RequireApproval_And_No_Durable_Bridge_Fails_Closed()
     {
         var publishing = Substitute.For<ILayerPublishingService>();
         var executor = BuildExecutor(publishing);
@@ -200,9 +316,57 @@ public sealed class OperationsToolsetTests
         // Guardrail seam: RequireApproval never reaches the executor.
         await publishing.DidNotReceive().PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.ProposalId.Should().BeNull();
+        handle.AuditId.Should().BeNull();
         handle.ApprovalLane.Should().Be("studio-publish-requests");
+        handle.Reason.Should().Contain("durable proposal infrastructure is unavailable");
         handle.Result.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_With_Durable_Approval_Retains_Separate_Joined_Identities()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var executor = BuildExecutor(publishing);
+        var bridge = Substitute.For<IOperationApprovalBridge>();
+        bridge.CreateProposalAsync(
+                Arg.Any<IOperationDescriptor>(),
+                Arg.Any<OperationRequest>(),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<PolicyDecision>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationApprovalBridgeResult
+            {
+                IsDurable = true,
+                ProposalId = "proposal-123",
+                AuditId = "audit-456",
+                Reason = "Awaiting operator approval.",
+            });
+        var dispatcher = BuildDispatcher(
+            executor,
+            new StubPolicyDecisionPoint(new PolicyDecision
+            {
+                Kind = PolicyDecisionKind.RequireApproval,
+                ApprovalLane = "studio-publish-requests",
+            }),
+            bridge);
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext { CorrelationId = "corr-789" },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.OperationInstanceId.Should().StartWith("opinst-");
+        handle.OperationInstanceId.Should().NotBe(handle.OperationId);
+        handle.OperationInstanceId.Should().NotBe(handle.ProposalId);
+        handle.HandleId.Should().Be(handle.OperationInstanceId);
+        handle.ProposalId.Should().Be("proposal-123");
+        handle.AuditId.Should().Be("audit-456");
+        handle.CorrelationId.Should().Be("corr-789");
+        await publishing.DidNotReceive().PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -265,6 +429,10 @@ public sealed class OperationsToolsetTests
         capturing.Context.Should().NotBeNull();
         capturing.Context!.Tier.Should().Be("enterprise");
         capturing.Context.Roles.Should().BeEquivalentTo("operator", "publisher");
+        capturing.Context.OperationInstanceId.Should().StartWith("opinst-");
+        capturing.Context.OperationInstanceId.Should().NotBe(capturing.Descriptor.OperationId);
+        capturing.Context.CorrelationId.Should().StartWith("corr-");
+        capturing.Context.CorrelationId.Should().NotBe(capturing.Context.OperationInstanceId);
     }
 
     private static ServicePublishExecutor BuildExecutor(
@@ -286,10 +454,11 @@ public sealed class OperationsToolsetTests
 
     private static OperationDispatcher BuildDispatcher(
         IOperationExecutor executor,
-        IOperationPolicyDecisionPoint policy)
+        IOperationPolicyDecisionPoint policy,
+        IOperationApprovalBridge? approvalBridge = null)
     {
         var catalog = new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System);
-        return new OperationDispatcher(catalog, [executor], policy, TimeProvider.System);
+        return new OperationDispatcher(catalog, [executor], policy, TimeProvider.System, approvalBridge);
     }
 
     private static OperationRequest BuildRequest()

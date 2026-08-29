@@ -80,6 +80,41 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public void PublishedOperationSchemas_AdvertiseCanonicalEnvelope()
+    {
+        var schemas = new[]
+        {
+            McpToolOutputSchemas.PublishServiceOutputSchema,
+            McpToolOutputSchemas.PublishResultOutputSchema,
+            McpToolOutputSchemas.OperationToolOutputSchema
+        };
+        var envelopeFields = new[]
+        {
+            "operationId",
+            "operationInstanceId",
+            "handleId",
+            "proposalId",
+            "correlationId",
+            "auditId",
+            "createdAt",
+            "updatedAt",
+            "authorizationOutcome",
+            "policyOutcome",
+            "resourceIds",
+            "evidenceRefs"
+        };
+
+        foreach (var schema in schemas)
+        {
+            var properties = schema.GetProperty("properties");
+            foreach (var field in envelopeFields)
+            {
+                properties.TryGetProperty(field, out _).Should().BeTrue($"{field} is part of the canonical operation envelope");
+            }
+        }
+    }
+
+    [UnitTest]
     public void ProjectName_SanitizesOperationIdIntoToolName()
     {
         PublishedOperationTool.ProjectName("service.publish").Should().Be("honua_op_service_publish");
@@ -196,7 +231,7 @@ public sealed class PublishedOperationToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
-    public async Task Invoke_PolicyRequiresApproval_SurfacesApprovalLane()
+    public async Task Invoke_PolicyRequiresApproval_WithoutDurableBridge_FailsClosed()
     {
         var invoker = Dispatcher(
             MutatingDescriptor(),
@@ -213,9 +248,43 @@ public sealed class PublishedOperationToolTests
         var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
-        body.GetProperty("status").GetString().Should().Be("RequiresApproval");
-        body.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+        body.GetProperty("status").GetString().Should().Be("Failed");
+        body.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
         body.GetProperty("approvalLane").GetString().Should().Be("operator-gate");
+        body.TryGetProperty("proposalId", out _).Should().BeFalse();
+        body.TryGetProperty("auditId", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_op_geo_export")]
+    public async Task Invoke_DurableApproval_ProjectsCanonicalJoinedIdentities()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var invoker = new CountingInvoker(_ => new OperationHandle
+        {
+            OperationInstanceId = "opinst-123",
+            OperationId = MutatingOpId,
+            ProposalId = "proposal-456",
+            CorrelationId = "corr-789",
+            AuditId = "audit-101",
+            Status = OperationHandleStatus.RequiresApproval,
+            CreatedAt = now,
+            UpdatedAt = now,
+            AuthorizationOutcome = "authorized",
+            PolicyDecision = PolicyDecisionKind.RequireApproval,
+            ApprovalLane = "operator-gate",
+        });
+        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+
+        var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
+
+        var body = result.StructuredContent!.Value;
+        body.GetProperty("operationInstanceId").GetString().Should().Be("opinst-123");
+        body.GetProperty("handleId").GetString().Should().Be("opinst-123");
+        body.GetProperty("proposalId").GetString().Should().Be("proposal-456");
+        body.GetProperty("correlationId").GetString().Should().Be("corr-789");
+        body.GetProperty("auditId").GetString().Should().Be("audit-101");
+        body.GetProperty("policyOutcome").GetString().Should().Be("RequireApproval");
     }
 
     [UnitTest]
@@ -236,7 +305,7 @@ public sealed class PublishedOperationToolTests
         captured.Should().NotBeNull();
         captured!.Tier.Should().Be("pro", "tier is resolved from the running edition for tier-aware policy");
         captured.Roles.Should().BeEquivalentTo("operator", "publisher");
-        captured.PrincipalId.Should().Be("agent-x");
+        captured.PrincipalId.Should().Be("test:subject:-:subject-agent-x");
     }
 
     // ---- Deterministic, param-keyed caching ------------------------------------
@@ -244,7 +313,10 @@ public sealed class PublishedOperationToolTests
     [UnitTest]
     public async Task Invoke_DeterministicReadOnly_CachesOnParams()
     {
-        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId) with
+        {
+            AuditId = "audit-original",
+        });
         var cache = new PublishedOperationCache();
         var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
 
@@ -254,9 +326,24 @@ public sealed class PublishedOperationToolTests
             Context(invoker, cache), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         invoker.SubmitCount.Should().Be(1, "identical inputs must be served from the param-keyed cache");
-        first.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
-        second.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
-        second.StructuredContent!.Value.GetProperty("deterministic").GetBoolean().Should().BeTrue();
+        var firstBody = first.StructuredContent!.Value;
+        var secondBody = second.StructuredContent!.Value;
+        firstBody.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+        secondBody.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
+        secondBody.GetProperty("deterministic").GetBoolean().Should().BeTrue();
+        secondBody.GetProperty("operationInstanceId").GetString().Should()
+            .NotBe(firstBody.GetProperty("operationInstanceId").GetString());
+        secondBody.GetProperty("handleId").GetString().Should()
+            .Be(secondBody.GetProperty("operationInstanceId").GetString());
+        secondBody.GetProperty("correlationId").GetString().Should()
+            .NotBe(firstBody.GetProperty("correlationId").GetString());
+        secondBody.GetProperty("createdAt").GetDateTimeOffset().Should()
+            .BeOnOrAfter(firstBody.GetProperty("createdAt").GetDateTimeOffset());
+        secondBody.TryGetProperty("auditId", out _).Should().BeFalse(
+            "the cached payload audit identity is evidence, not the new invocation audit identity");
+        secondBody.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString()).Should()
+            .Contain("cached-operation-instance:op-done")
+            .And.Contain("cached-audit:audit-original");
 
         // A different parameter is a cache miss → re-executes.
         await tool.InvokeAsync(Context(invoker, cache), Args("""{"layerId":"9"}"""), CancellationToken.None);
@@ -356,17 +443,18 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
-    public async Task Invoke_WhenInvokerUnavailable_ReturnsFailedWithoutThrowing()
+    public async Task Invoke_WhenInvokerUnavailable_ReturnsProtocolErrorWithoutSyntheticEnvelope()
     {
         var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
 
         var result = await tool.InvokeAsync(
             Context(invoker: null), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
-        result.IsError.Should().BeFalse();
-        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Failed");
+        result.IsError.Should().BeTrue();
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("error");
+        result.StructuredContent!.Value.TryGetProperty("operationInstanceId", out _).Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("message").GetString()
-            .Should().Contain("operations toolset is unavailable");
+            .Should().Be("An internal MCP operation failed.");
     }
 
     // ---- Tool source: publish / deterministic mode -----------------------------
@@ -537,7 +625,11 @@ public sealed class PublishedOperationToolTests
             services.AddSingleton(authorization);
         }
 
-        var claims = new List<Claim> { new(ClaimTypes.Name, principalName) };
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, principalName),
+            new(ClaimTypes.NameIdentifier, $"subject-{principalName}"),
+        };
         claims.AddRange((roles ?? []).Select(r => new Claim(ClaimTypes.Role, r)));
 
         return new DefaultHttpContext
@@ -575,7 +667,10 @@ public sealed class PublishedOperationToolTests
     private static OperationHandle CompletedHandle(string operationId) => new()
     {
         OperationId = operationId,
-        HandleId = "op-done",
+        OperationInstanceId = "op-done",
+        CorrelationId = "corr-done",
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
         Status = OperationHandleStatus.Completed,
         Result = new OperationResultSummary
         {
@@ -705,7 +800,10 @@ public sealed class PublishedOperationToolTests
             return Task.FromResult(new OperationHandle
             {
                 OperationId = operationId,
-                HandleId = "op-run",
+                OperationInstanceId = "op-run",
+                CorrelationId = "corr-run",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
                 Status = OperationHandleStatus.Completed,
             });
         }
@@ -714,7 +812,10 @@ public sealed class PublishedOperationToolTests
             => Task.FromResult(new OperationStatus
             {
                 OperationId = operationId,
-                HandleId = handle.HandleId,
+                OperationInstanceId = handle.OperationInstanceId,
+                CorrelationId = handle.CorrelationId,
+                CreatedAt = handle.CreatedAt,
+                UpdatedAt = handle.UpdatedAt,
                 Status = handle.Status,
             });
     }

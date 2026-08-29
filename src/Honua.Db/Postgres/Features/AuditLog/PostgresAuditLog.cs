@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -55,7 +56,7 @@ internal sealed class PostgresAuditLog : IAuditLog
         _table = SchemaSearchPath.QualifyTable("audit_log", schemaName);
     }
 
-    public async Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+    public async Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(auditEvent);
 
@@ -83,6 +84,7 @@ internal sealed class PostgresAuditLog : IAuditLog
                 @correlation_id, @remote_ip, @user_agent, @details,
                 @prev_hash, @entry_hash
             )
+            RETURNING audit_id
             """;
 
         try
@@ -143,10 +145,10 @@ internal sealed class PostgresAuditLog : IAuditLog
                 command.Parameters.AddWithValue("@prev_hash", (object?)previousHash ?? DBNull.Value);
                 command.Parameters.AddWithValue("@entry_hash", entryHash);
 
-                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                var assignedAuditId = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+                return Convert.ToString(assignedAuditId, CultureInfo.InvariantCulture);
             }
-
-            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -158,6 +160,7 @@ internal sealed class PostgresAuditLog : IAuditLog
             // Intentionally broad: audit-write failures must NOT block the audited action; we log
             // and continue. (The IAuditLog contract documents this best-effort policy.)
             AuditLogPostgresLog.RecordFailed(_logger, auditEvent.Action, ex);
+            return null;
         }
     }
 

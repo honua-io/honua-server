@@ -47,7 +47,9 @@ public sealed class PublishResultToolTests
         return new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
-            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "agent-x")], "Test"))
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Name, "agent-x"), new Claim(ClaimTypes.NameIdentifier, "actor-123")],
+                "Test"))
         };
     }
 
@@ -148,7 +150,10 @@ public sealed class PublishResultToolTests
             return new OperationHandle
             {
                 OperationId = PublishResultTool.PublishOperationId,
-                HandleId = "op-abc",
+                OperationInstanceId = "op-abc",
+                CorrelationId = "corr-abc",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
                 Status = OperationHandleStatus.Completed,
                 MetadataRevision = 42,
                 Result = new OperationResultSummary
@@ -207,7 +212,10 @@ public sealed class PublishResultToolTests
         var invoker = new FakeInvoker((_, _) => new OperationHandle
         {
             OperationId = PublishResultTool.PublishOperationId,
-            HandleId = "op-1",
+            OperationInstanceId = "op-1",
+            CorrelationId = "corr-1",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Status = OperationHandleStatus.Completed,
             Result = new OperationResultSummary
             {
@@ -237,8 +245,13 @@ public sealed class PublishResultToolTests
         var invoker = new FakeInvoker((_, _) => new OperationHandle
         {
             OperationId = PublishResultTool.PublishOperationId,
-            HandleId = "op-pending",
+            OperationInstanceId = "op-pending",
+            CorrelationId = "corr-pending",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Status = OperationHandleStatus.RequiresApproval,
+            ProposalId = "proposal-pending",
+            AuditId = "audit-pending",
             ApprovalLane = "operator-gate",
             Reason = "Publishing requires operator approval on this tier."
         });
@@ -263,7 +276,10 @@ public sealed class PublishResultToolTests
         var invoker = new FakeInvoker((_, _) => new OperationHandle
         {
             OperationId = PublishResultTool.PublishOperationId,
-            HandleId = "op-denied",
+            OperationInstanceId = "op-denied",
+            CorrelationId = "corr-denied",
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Status = OperationHandleStatus.Denied,
             Reason = "The caller is not authorized to publish on this tier."
         });
@@ -368,7 +384,7 @@ public sealed class PublishResultToolTests
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_publish_result")]
-    public async Task PublishResult_WhenInvokerUnavailable_ReturnsFailedWithoutThrowing()
+    public async Task PublishResult_WhenInvokerUnavailable_ReturnsProtocolErrorWithoutSyntheticEnvelope()
     {
         var jobService = JobServiceReturning(CompletedPackage(FeatureLayerArtifact()));
         var tool = CreateTool(jobService);
@@ -376,10 +392,11 @@ public sealed class PublishResultToolTests
 
         var result = await tool.InvokeAsync(AuthenticatedContext(invoker: null), arguments, CancellationToken.None);
 
-        result.IsError.Should().BeFalse();
+        result.IsError.Should().BeTrue();
         var content = result.StructuredContent!.Value;
-        content.GetProperty("status").GetString().Should().Be("Failed");
-        content.GetProperty("message").GetString().Should().Contain("operations toolset is unavailable");
+        content.GetProperty("status").GetString().Should().Be("error");
+        content.TryGetProperty("operationInstanceId", out _).Should().BeFalse();
+        content.GetProperty("message").GetString().Should().Be("An internal MCP operation failed.");
     }
 
     private sealed class FakeInvoker(Func<OperationRequest, OperationPolicyContext, OperationHandle> handler)

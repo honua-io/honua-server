@@ -23,6 +23,12 @@ internal static class OperationsServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<OperationHandleStore>();
+        services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
+                ServicePublishApprovalExecutor>());
 
         // Grounding catalog: descriptor providers aggregated by the catalog.
         services.TryAddEnumerable(
@@ -33,6 +39,7 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>()));
 
         // Executors: concrete work, registered as an enumerable for the dispatcher.
+        services.TryAddScoped<ServicePublishExecutor>();
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
         services.TryAddEnumerable(
@@ -62,7 +69,8 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IOperationCatalog>(),
                 sp.GetServices<IOperationExecutor>(),
                 sp.GetRequiredService<IOperationPolicyDecisionPoint>(),
-                sp.GetRequiredService<TimeProvider>()));
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetService<IOperationApprovalBridge>()));
 
         return services;
     }

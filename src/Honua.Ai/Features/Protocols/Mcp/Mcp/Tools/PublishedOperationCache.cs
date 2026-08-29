@@ -83,22 +83,45 @@ internal sealed class PublishedOperationCache : IPublishedOperationCache
     public void Set(string key, McpOperationToolOutput output)
         => _entries[key] = Clone(output, cacheHit: false);
 
-    // Cache stores an immutable snapshot; every read/write returns a fresh instance so
-    // a caller mutating its output can never corrupt a cached entry.
-    private static McpOperationToolOutput Clone(McpOperationToolOutput source, bool cacheHit) => new()
+    // Cache stores an immutable result snapshot. A cache hit is still a new invocation:
+    // mint its envelope identities and retain the cached invocation only as evidence.
+    private static McpOperationToolOutput Clone(McpOperationToolOutput source, bool cacheHit)
     {
-        Status = source.Status,
-        RequiresApproval = source.RequiresApproval,
-        Deterministic = source.Deterministic,
-        CacheHit = cacheHit,
-        CacheKey = source.CacheKey,
-        OperationId = source.OperationId,
-        HandleId = source.HandleId,
-        JobId = source.JobId,
-        ApprovalLane = source.ApprovalLane,
-        MetadataRevision = source.MetadataRevision,
-        Summary = source.Summary,
-        Message = source.Message,
-        Details = new Dictionary<string, string>(source.Details, StringComparer.Ordinal),
-    };
+        var operationInstanceId = cacheHit ? $"opinst-{Guid.NewGuid():N}" : source.OperationInstanceId;
+        var correlationId = cacheHit ? $"corr-{Guid.NewGuid():N}" : source.CorrelationId;
+        var now = DateTimeOffset.UtcNow;
+        var evidenceRefs = cacheHit
+            ? source.EvidenceRefs
+                .Concat([$"cached-operation-instance:{source.OperationInstanceId}"])
+                .Concat(string.IsNullOrWhiteSpace(source.AuditId) ? [] : [$"cached-audit:{source.AuditId}"])
+                .ToArray()
+            : [.. source.EvidenceRefs];
+
+        return new McpOperationToolOutput
+        {
+            Status = source.Status,
+            RequiresApproval = source.RequiresApproval,
+            Deterministic = source.Deterministic,
+            CacheHit = cacheHit,
+            CacheKey = source.CacheKey,
+            OperationId = source.OperationId,
+            OperationInstanceId = operationInstanceId,
+            HandleId = operationInstanceId,
+            ProposalId = cacheHit ? null : source.ProposalId,
+            CorrelationId = correlationId,
+            AuditId = cacheHit ? null : source.AuditId,
+            CreatedAt = cacheHit ? now : source.CreatedAt,
+            UpdatedAt = cacheHit ? now : source.UpdatedAt,
+            AuthorizationOutcome = source.AuthorizationOutcome,
+            PolicyOutcome = source.PolicyOutcome,
+            JobId = source.JobId,
+            ApprovalLane = source.ApprovalLane,
+            MetadataRevision = source.MetadataRevision,
+            Summary = source.Summary,
+            Message = source.Message,
+            Details = new Dictionary<string, string>(source.Details, StringComparer.Ordinal),
+            ResourceIds = new Dictionary<string, string>(source.ResourceIds, StringComparer.Ordinal),
+            EvidenceRefs = evidenceRefs,
+        };
+    }
 }

@@ -460,10 +460,10 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     {
         public List<AuditEvent> Recorded { get; } = [];
 
-        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             Recorded.Add(auditEvent);
-            return Task.CompletedTask;
+            return Task.FromResult<string?>("audit-test");
         }
     }
 }

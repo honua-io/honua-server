@@ -43,12 +43,16 @@ internal sealed class AdminServerStatusExecutor : IOperationExecutor
         var readiness = await _readiness.CheckReadinessAsync(cancellationToken).ConfigureAwait(false);
         var status = readiness.IsReady ? "ready" : "not_ready";
         var version = HonuaDeploymentIdentity.GetReleaseVersion(typeof(AdminServerStatusExecutor).Assembly);
+        var now = _clock.GetUtcNow();
 
         return new OperationHandle
         {
+            OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
             OperationId = OperationId,
-            HandleId = $"op-{_clock.GetUtcNow().ToUnixTimeMilliseconds():x}-{Guid.NewGuid():N}"[..32],
+            CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
             Status = OperationHandleStatus.Completed,
+            CreatedAt = now,
+            UpdatedAt = now,
             Result = new OperationResultSummary
             {
                 Summary = $"Server is {status}.",
@@ -69,10 +73,21 @@ internal sealed class AdminServerStatusExecutor : IOperationExecutor
         ArgumentNullException.ThrowIfNull(handle);
         return Task.FromResult(new OperationStatus
         {
+            OperationInstanceId = handle.OperationInstanceId,
             OperationId = OperationId,
-            HandleId = handle.HandleId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            ProposalId = handle.ProposalId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyDecision = handle.PolicyDecision,
             Status = handle.Status,
-            Result = handle.Result
+            Result = handle.Result,
+            ApprovalLane = handle.ApprovalLane,
+            Reason = handle.Reason,
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
         });
     }
 }
