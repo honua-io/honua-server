@@ -123,14 +123,15 @@ def test_conn02_transport_scheme(
 
     assert scheme in {"http", "https"}, f"unexpected transport scheme {scheme!r}"
 
-    record_pass(
-        ogc_features_evidence,
+    ogc_features_evidence.record(
         "CERT-CONN-02",
-        timer,
+        "pass" if scheme == "https" else "skip",
+        duration_ms=timer.elapsed_ms,
+        client_identity="py-geopandas",
         notes=(
-            f"Certified endpoint uses scheme '{scheme}'. The client-compat "
-            "compose network is plain HTTP by design; TLS posture is exercised "
-            "in the release tier against the HTTPS candidate build."
+            "GeoPandas exercised an HTTPS endpoint and therefore a TLS transport."
+            if scheme == "https"
+            else "GeoPandas exercised plain HTTP; TLS was not exercised in this run."
         ),
     )
 
@@ -165,6 +166,7 @@ def test_auth01_anonymous_admin_probe_is_rejected(
             "httpx is used here because the control plane has no GeoPandas "
             "client surface."
         ),
+        client_identity="httpx",
     )
 
 
@@ -212,6 +214,7 @@ def test_auth02_api_key_is_accepted(
             + "). httpx is used because the control plane has no GeoPandas "
             "client surface."
         ),
+        client_identity="httpx",
     )
 
 
@@ -1430,6 +1433,7 @@ def test_nb_auth01_wrong_api_key_is_unauthorized(
             "An invalid X-API-Key produced 401 (not 403, which would imply an "
             "authenticated-but-forbidden principal, and not 500)."
         ),
+        client_identity="httpx",
     )
 
 

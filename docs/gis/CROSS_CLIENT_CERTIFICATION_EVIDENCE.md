@@ -29,6 +29,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
       "duration_ms": 142,
       "measured_count": null,
       "measured_delta": null,
+      "client_identity": "<client that performed this observation>",
       "notes": "",
       "evidence_ref": ""
     }
@@ -67,6 +68,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `results[].duration_ms` | number \| null | No | Execution time in milliseconds (automated lanes). Null for manual lanes. |
 | `results[].measured_count` | number \| null | No | Observed item count for count-based evidence (CERT-DISC-01, CERT-QFLT-01, CERT-QFLT-02, CERT-PAGE-01). Null when not applicable to the test case. |
 | `results[].measured_delta` | number \| null | No | Maximum absolute coordinate deviation in the CRS's native unit — decimal degrees for geographic CRS, meters for projected CRS (CERT-GEOM-01). See the [Geometry Tolerance](CROSS_CLIENT_CERTIFICATION_MATRIX.md#geometry-tolerance-cert-geom-01) section for default pass thresholds. Null when not applicable to the test case. |
+| `results[].client_identity` | string | Conditional | Required when the client that performed an observation differs from `client_lane`; names the actual client (for example, `httpx`) instead of falsely inheriting the lane identity. Omitted when it is identical to `client_lane`. |
 | `results[].notes` | string | No | Free-text notes (failure details, caveats) |
 | `results[].evidence_ref` | string | No | Path or URL to supporting evidence (screenshot, log) |
 | `summary` | object | Yes | Aggregated counts from the `results` array only; extension results are tracked separately in `extensions` |

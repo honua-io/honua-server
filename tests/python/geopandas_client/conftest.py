@@ -316,6 +316,7 @@ def record_pass(
     measured_delta: float | None = None,
     notes: str = "",
     evidence_ref: str = "",
+    client_identity: str = "",
 ) -> None:
     """Record a passing observation with its measurement and timing."""
     collector.record(
@@ -326,6 +327,7 @@ def record_pass(
         measured_delta=measured_delta,
         notes=notes,
         evidence_ref=evidence_ref,
+        client_identity=client_identity,
     )
 
 
