@@ -159,7 +159,11 @@ public sealed class OperationDispatcher : IOperationInvoker
             envelope = await _envelopeFactory
                 .CreateAcceptedAsync(request.OperationId, context, cancellationToken)
                 .ConfigureAwait(false);
-            if (envelope.Status == OperationHandleStatus.Failed)
+            // A durable idempotency lookup may return the already-routed invocation. Only a
+            // newly accepted (or explicitly reset pre-actuation cancellation) envelope may
+            // proceed to validation/policy/actuation; the retry touch audit was already written
+            // by the factory.
+            if (envelope.Status != OperationHandleStatus.Accepted)
             {
                 return envelope;
             }

@@ -50,6 +50,13 @@ public sealed class OperationsToolsetTests
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
             descriptor.ImplementationType == typeof(ServicePublishExecutor));
+        services.Count(descriptor =>
+                descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+                descriptor.ImplementationInstance is StudioDraftApprovalRequestMapper)
+            .Should().Be(3);
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(StudioDraftDeleteExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationEnvelopeFactory) &&
             descriptor.Lifetime == ServiceLifetime.Singleton);

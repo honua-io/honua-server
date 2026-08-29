@@ -2,7 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Domain;
 using Honua.Core.Features.Studio.Abstractions;
@@ -463,6 +467,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleCreateDraft(
         CreateStudioPackageDraftRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -514,7 +519,7 @@ internal static class StudioPackageEndpoints
             // ownerId, matching the MCP lifecycle path. New-item creates fall back to actor.
             var ownerId = request.OwnerId ?? existingPointers?.OwnerId;
 
-            var draft = await service.CreateDraftAsync(
+            var receipt = await mutationRuntime.CreateAsync(
                 new CreateStudioPackageDraftCommand
                 {
                     ItemId = request.ItemId,
@@ -525,8 +530,16 @@ internal static class StudioPackageEndpoints
                     ExpectedExistingItemPresent = existingPointers is not null,
                     Envelope = request.Envelope,
                     ActorId = actor,
-                },
+                }, BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+
+            var draft = receipt.Value
+                ?? throw new InvalidOperationException("Completed Studio draft creation has no durable result projection.");
 
             StudioEndpointsLog.DraftCreated(logger, draft.DraftId, draft.ItemId, draft.Family);
             return Results.Json(
@@ -646,6 +659,7 @@ internal static class StudioPackageEndpoints
         Guid draftId,
         UpdateStudioPackageDraftRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -690,7 +704,8 @@ internal static class StudioPackageEndpoints
 
             var ownerId = request.OwnerId;
 
-            var draft = await service.UpdateDraftAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.UpdateAsync(
                 draftId,
                 new UpdateStudioPackageDraftCommand
                 {
@@ -699,14 +714,18 @@ internal static class StudioPackageEndpoints
                     OwnerId = ownerId,
                     Envelope = request.Envelope,
                     Generation = request.Generation,
-                    ActorId = ConsolePrincipal.ResolveActorId(context.User),
+                    ActorId = actor,
                 },
+                BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-
-            if (draft is null)
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return MutationDecision(context, receipt.Operation);
             }
+
+            var draft = receipt.Value
+                ?? throw new InvalidOperationException("Completed Studio draft update has no durable result projection.");
 
             StudioEndpointsLog.DraftUpdated(logger, draft.DraftId, draft.Generation);
             return Results.Json(
@@ -731,6 +750,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleDeleteDraft(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -752,7 +772,17 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var deleted = await service.DeleteDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
+            var receipt = await mutationRuntime.DeleteAsync(
+                draftId,
+                BuildMutationContext(context, ConsolePrincipal.ResolveActorId(context.User)),
+                context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+
+            var deleted = receipt.Value;
             return deleted
                 ? Results.Json(
                     ApiResponse<object>.SuccessWithMessage("Studio package draft deleted."),
@@ -764,6 +794,55 @@ internal static class StudioPackageEndpoints
             StudioEndpointsLog.EndpointFailed(logger, "draft.delete", ex);
             return ServerError(context, "Studio package draft could not be deleted.");
         }
+    }
+
+    private static StudioDraftMutationContext BuildMutationContext(HttpContext context, string? actorId) => new()
+    {
+        PrincipalId = actorId,
+        TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
+        SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+        CorrelationId = context.TraceIdentifier,
+        IdempotencyKey = context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+        AuthorizationOutcome = "authorized",
+        Roles = context.User.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
+    };
+
+    private static void SetOperationHeaders(HttpContext context, OperationHandle operation)
+    {
+        context.Response.Headers["X-Honua-Operation-Instance-Id"] = operation.OperationInstanceId;
+        context.Response.Headers["X-Honua-Operation-Correlation-Id"] = operation.CorrelationId;
+        if (!string.IsNullOrWhiteSpace(operation.AuditId))
+        {
+            context.Response.Headers["X-Honua-Operation-Audit-Id"] = operation.AuditId;
+        }
+    }
+
+    private static IResult MutationDecision(HttpContext context, OperationHandle operation)
+    {
+        if (operation.Status == OperationHandleStatus.RequiresApproval)
+        {
+            return Results.Json(
+                ApiResponse<OperationHandle>.CreateSuccess(operation),
+                StudioApiJsonContext.Default.ApiResponseOperationHandle,
+                statusCode: StatusCodes.Status202Accepted);
+        }
+
+        if (operation.Result?.Details.TryGetValue("errorKind", out var errorKind) == true)
+        {
+            return errorKind switch
+            {
+                "argument" => BadRequest(context, operation.Reason ?? "Studio draft mutation input was invalid."),
+                "not-found" => NotFound(context, operation.Reason ?? "Studio package draft was not found."),
+                _ => Conflict(context, operation.Reason ?? "Studio draft mutation conflicted with current state."),
+            };
+        }
+
+        return operation.Status == OperationHandleStatus.Denied
+            ? Forbidden(
+                context,
+                operation.Reason ?? "Studio draft mutation was denied by operation policy.",
+                "studio_operation/denied")
+            : Conflict(context, operation.Reason ?? "Studio draft mutation did not complete.");
     }
 
     private static async Task<IResult> HandleValidateDraft(

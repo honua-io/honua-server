@@ -47,6 +47,12 @@ public enum OperationClass
     /// approval replay can never be routed to an unrelated legacy actuator.
     /// </summary>
     ServicePublish = 5,
+
+    /// <summary>
+    /// Creates, updates, or deletes a Studio draft through a typed descriptor. The persisted
+    /// descriptor id selects the exact actuator during approval replay.
+    /// </summary>
+    StudioDraftMutation = 6,
 }
 
 /// <summary>

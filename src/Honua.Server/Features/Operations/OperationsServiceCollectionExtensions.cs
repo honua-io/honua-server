@@ -4,6 +4,7 @@
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Studio.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -32,6 +33,16 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddScoped<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
+        foreach (var operationId in new[]
+                 {
+                     StudioDraftOperations.Create,
+                     StudioDraftOperations.Update,
+                     StudioDraftOperations.Delete,
+                 })
+        {
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new StudioDraftApprovalRequestMapper(operationId));
+        }
         if (environment.IsDevelopment() || environment.IsEnvironment("Test"))
         {
             services.TryAddSingleton<IOperationInstanceStore, VolatileOperationInstanceStore>();
@@ -62,6 +73,10 @@ internal static class OperationsServiceCollectionExtensions
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftCreateExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftUpdateExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftDeleteExecutor>());
+        services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
         if (services.Any(descriptor => descriptor.ServiceType ==
                 typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor)))
         {
@@ -91,7 +106,9 @@ internal static class OperationsServiceCollectionExtensions
                 environment.IsDevelopment() || environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
-                sp.GetRequiredService<IOperationApprovalReplayVerifier>()));
+                sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is null
+                    ? null
+                    : sp.GetRequiredService<IOperationApprovalReplayVerifier>()));
 
         return services;
     }

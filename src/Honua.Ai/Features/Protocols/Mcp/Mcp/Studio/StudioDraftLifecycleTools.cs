@@ -2,7 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -50,7 +53,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
             + "every subsequent honua_studio_update_draft / composition-mutation call for optimistic concurrency. "
             + "The optional `ownerId` field is admin-only; non-admin callers must omit it and become the owner automatically.",
         InputSchema = StudioMcpSchemas.CreateDraftArgumentSchema,
-        OutputSchema = McpToolOutputSchemas.StudioDraftOutputSchema,
+        OutputSchema = McpToolOutputSchemas.StudioDraftMutationOutputSchema,
         // Write tool: it authors a new draft. Not destructive; not idempotent
         // (a replay creates a second distinct draft/content item).
         Annotations = McpToolAnnotationSets.Write("Create Studio draft", destructive: false, idempotent: false)
@@ -125,10 +128,11 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
         // A non-admin caller can create only a draft they own. Admins retain
         // the REST surface's ability to assign an explicit owner.
         var ownerId = requestedOwnerId ?? existingPointers?.OwnerId ?? actorId;
-        StudioPackageDraft draft;
+        StudioDraftMutationReceipt<StudioPackageDraft> receipt;
         try
         {
-            draft = await lifecycleService.CreateDraftAsync(
+            var mutationRuntime = httpContext.RequestServices.GetRequiredService<IStudioDraftMutationRuntime>();
+            receipt = await mutationRuntime.CreateAsync(
                 new CreateStudioPackageDraftCommand
                 {
                     ItemId = argument.ItemId,
@@ -140,6 +144,15 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
                     Envelope = envelope,
                     ActorId = actorId,
                     BaseVersionId = argument.BaseVersionId,
+                },
+                new StudioDraftMutationContext
+                {
+                    PrincipalId = actorId,
+                    TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+                    SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+                    CorrelationId = httpContext.TraceIdentifier,
+                    AuthorizationOutcome = "authorized",
+                    Roles = principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
                 },
                 cancellationToken).ConfigureAwait(false);
         }
@@ -162,8 +175,14 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
                 policyCode: "studio_authorization/owner_conflict");
         }
 
-        Audit(principal, ToolName, draft.DraftId, generationBefore: null, generationAfter: draft.Generation);
-        return McpToolHelpers.SuccessResult(draft, StudioJsonContext.Default.StudioPackageDraft);
+        if (receipt.Value is { } draft)
+        {
+            Audit(principal, ToolName, draft.DraftId, generationBefore: null, generationAfter: draft.Generation);
+        }
+
+        return McpToolHelpers.SuccessResult(
+            McpStudioDraftMutationOutput.From(receipt),
+            StudioMcpJsonContext.Default.McpStudioDraftMutationOutput);
     }
 }
 

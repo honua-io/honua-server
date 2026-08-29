@@ -1,0 +1,239 @@
+// Copyright (c) Honua. All rights reserved.
+// Licensed under the Elastic License 2.0. See LICENSE in the project root.
+
+using FluentAssertions;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
+using Honua.Server.Features.Operations;
+using Honua.TestKit.Attributes;
+using NSubstitute;
+using System.Text.Json;
+
+namespace Honua.Server.Tests.Features.OperationsToolset;
+
+public sealed class StudioDraftOperationRuntimeTests
+{
+    [UnitTest]
+    public async Task DeleteAsync_ProjectsResultFromDurableStore_NotInvokerHandle()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var stale = Handle(now, "false");
+        var durable = Handle(now, "true") with { Version = 2 };
+        var runtime = new StudioDraftMutationRuntime(
+            new StubInvoker(stale),
+            new StubStore(durable));
+
+        var receipt = await runtime.DeleteAsync(
+            Guid.NewGuid(),
+            new StudioDraftMutationContext { PrincipalId = "studio-author" });
+
+        receipt.Operation.Should().BeSameAs(durable);
+        receipt.Value.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_IdempotentCompletedRetry_ReturnsOriginalWithoutSecondActuation()
+    {
+        var executor = new CountingExecutor();
+        var store = new VolatileOperationInstanceStore();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            instanceStore: store,
+            auditLog: new VolatileOperationAuditLog());
+        var context = new OperationPolicyContext { IdempotencyKey = "studio-create-1" };
+        var request = new OperationRequest { OperationId = StudioDraftOperations.Create };
+
+        var first = await dispatcher.SubmitAsync(request, context);
+        var retry = await dispatcher.SubmitAsync(request, context);
+
+        retry.OperationInstanceId.Should().Be(first.OperationInstanceId);
+        retry.Status.Should().Be(OperationHandleStatus.Completed);
+        retry.EvidenceRefs.Should().ContainSingle(reference => reference.StartsWith("retry-audit:", StringComparison.Ordinal));
+        executor.SubmitCount.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task DeleteAsync_RequireApproval_PersistsEnvelopeWithoutLifecycleActuation()
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        var executor = new StudioDraftDeleteExecutor(lifecycle, TimeProvider.System);
+        var bridge = new DurableApprovalBridge();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new RequireApprovalPolicy(),
+            TimeProvider.System,
+            approvalBridge: bridge,
+            instanceStore: new VolatileOperationInstanceStore(),
+            auditLog: new VolatileOperationAuditLog());
+        var payload = JsonSerializer.Serialize(
+            new StudioDraftDeletePayload { DraftId = Guid.NewGuid() },
+            StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload);
+
+        var handle = await dispatcher.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = StudioDraftOperations.Delete,
+                Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [StudioDraftOperations.PayloadParameter] = payload,
+                },
+            },
+            new OperationPolicyContext { PrincipalId = "studio-operator" });
+
+        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.ProposalId.Should().Be("proposal-studio");
+        handle.AuditId.Should().NotBeNull();
+        bridge.Request.Should().NotBeNull();
+        bridge.Request!.OperationId.Should().Be(StudioDraftOperations.Delete);
+        await lifecycle.DidNotReceiveWithAnyArgs().DeleteDraftAsync(default, default);
+    }
+
+    [UnitTest]
+    public void DeleteApprovalMapper_SealsAndReplaysExactTypedPayloadAndDescriptor()
+    {
+        var mapper = new StudioDraftApprovalRequestMapper(StudioDraftOperations.Delete);
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == StudioDraftOperations.Delete);
+        var payload = JsonSerializer.Serialize(
+            new StudioDraftDeletePayload { DraftId = Guid.Parse("11111111-1111-1111-1111-111111111111") },
+            StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload);
+        var request = new OperationRequest
+        {
+            OperationId = StudioDraftOperations.Delete,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [StudioDraftOperations.PayloadParameter] = payload,
+            },
+        };
+
+        var mapped = mapper.Map(
+            descriptor,
+            request,
+            new OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-delete",
+                CorrelationId = "corr-delete",
+            },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+        mapped.OperationId.Should().Be(StudioDraftOperations.Delete);
+        mapped.Kind.Should().Be(OperationClass.StudioDraftMutation);
+        mapped.Plan!.ExecutionPayload.Should().Be(payload);
+        mapper.MapReplay(mapped).Request.Parameters[StudioDraftOperations.PayloadParameter]
+            .Should().Be(payload);
+    }
+
+    private static OperationHandle Handle(DateTimeOffset now, string payload) => new()
+    {
+        OperationInstanceId = "opinst-studio",
+        OperationId = StudioDraftOperations.Delete,
+        CorrelationId = "corr-studio",
+        AuditId = "audit-studio",
+        Status = OperationHandleStatus.Completed,
+        CreatedAt = now,
+        UpdatedAt = now,
+        Result = new OperationResultSummary
+        {
+            Summary = "deleted",
+            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [StudioDraftOperations.ResultParameter] = payload,
+            },
+        },
+    };
+
+    private sealed class StubInvoker(OperationHandle handle) : IOperationInvoker
+    {
+        public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default) => Task.FromResult(handle);
+    }
+
+    private sealed class StubStore(OperationHandle handle) : IOperationInstanceStore
+    {
+        public Task<bool> TryCreateAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task SetAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<OperationHandle?> GetAsync(string operationInstanceId, CancellationToken cancellationToken = default)
+            => Task.FromResult<OperationHandle?>(handle);
+    }
+
+    private sealed class CountingExecutor : IOperationExecutor
+    {
+        public string OperationId => StudioDraftOperations.Create;
+        public int SubmitCount { get; private set; }
+
+        public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            SubmitCount++;
+            var now = DateTimeOffset.UtcNow;
+            return Task.FromResult(new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId!,
+                OperationId = OperationId,
+                CorrelationId = context.CorrelationId!,
+                Status = OperationHandleStatus.Completed,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class RequireApprovalPolicy : IOperationPolicyDecisionPoint
+    {
+        public Task<PolicyDecision> EvaluateAsync(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default) => Task.FromResult(new PolicyDecision
+            {
+                Kind = PolicyDecisionKind.RequireApproval,
+                ApprovalLane = "studio-operator",
+            });
+    }
+
+    private sealed class DurableApprovalBridge : IOperationApprovalBridge
+    {
+        public OperationRequest? Request { get; private set; }
+
+        public Task<OperationApprovalBridgeResult> CreateProposalAsync(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            PolicyDecision decision,
+            CancellationToken cancellationToken = default)
+        {
+            Request = request;
+            return Task.FromResult(new OperationApprovalBridgeResult
+            {
+                IsDurable = true,
+                ProposalId = "proposal-studio",
+                AuditId = "audit-proposal-studio",
+            });
+        }
+    }
+}
