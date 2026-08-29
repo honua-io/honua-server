@@ -31,6 +31,16 @@ internal static class Wfs20Utilities
     public const string CurrentUpdateSequence = "20260325";
 
     /// <summary>
+    /// CRS84 identifiers accepted by WFS query parameters and advertised in capabilities.
+    /// </summary>
+    public static readonly ImmutableArray<string> Crs84Identifiers =
+    [
+        "CRS:84",
+        "urn:ogc:def:crs:OGC:1.3:CRS84",
+        "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+    ];
+
+    /// <summary>
     /// Default namespace for WFS 2.0
     /// </summary>
     public const string WfsNamespace = "http://www.opengis.net/wfs/2.0";

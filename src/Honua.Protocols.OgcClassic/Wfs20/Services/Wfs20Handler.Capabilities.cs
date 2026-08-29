@@ -295,9 +295,12 @@ internal sealed partial class Wfs20Handler
     {
         var resource = featureType.Resource;
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
-        string[]? otherCrs = srid == 3857
-            ? null
-            : [FormatCrs(3857)];
+        var otherCrs = Wfs20Utilities.Crs84Identifiers
+            .Where(identifier => !string.Equals(identifier, FormatCrs(srid), StringComparison.OrdinalIgnoreCase))
+            .Append(FormatCrs(3857))
+            .Where(identifier => !string.Equals(identifier, FormatCrs(srid), StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         return new FeatureType
         {
@@ -306,7 +309,7 @@ internal sealed partial class Wfs20Handler
             Abstract = resource.Metadata.Description,
             Keywords = BuildKeywords(resource),
             DefaultCRS = FormatCrs(srid),
-            OtherCRS = otherCrs,
+            OtherCRS = otherCrs.Length == 0 ? null : otherCrs,
             OutputFormats = new OutputFormats
             {
                 Formats = Wfs20Utilities.OutputFormats.All.ToArray()

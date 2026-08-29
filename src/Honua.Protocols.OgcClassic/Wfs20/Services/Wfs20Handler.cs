@@ -654,7 +654,7 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (Wfs20Utilities.Crs84Identifiers.Contains(srsName, StringComparer.OrdinalIgnoreCase))
         {
             return SpatialReference.WGS84.Wkid;
         }
@@ -691,7 +691,7 @@ internal sealed partial class Wfs20Handler
             return resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         }
 
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (Wfs20Utilities.Crs84Identifiers.Contains(srsName, StringComparer.OrdinalIgnoreCase))
         {
             return SpatialReference.WGS84.Wkid;
         }
