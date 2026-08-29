@@ -51,6 +51,9 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
+        var now = _clock.GetUtcNow();
+        var operationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
+        var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
         var current = _httpContextAccessor.HttpContext ?? throw new InvalidOperationException("Admin operations require an active authenticated request.");
         var relativePath = BindPath(request, request.DryRun && _definition.SupportsDryRun ? _definition.DryRunPath : null);
         var query = _definition.QueryParameters?.Where(name => request.Parameters.TryGetValue(name, out var value) && value is not null)
@@ -92,23 +95,52 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         {
             return new OperationHandle
             {
+                OperationInstanceId = operationInstanceId,
                 OperationId = OperationId,
-                HandleId = NewHandleId(),
+                CorrelationId = correlationId,
                 Status = OperationHandleStatus.Failed,
+                CreatedAt = now,
+                UpdatedAt = now,
                 Reason = $"Admin API returned {(int)response.StatusCode} ({response.ReasonPhrase}).",
                 Result = new OperationResultSummary { Summary = $"{_definition.Title} failed.", Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), ["response"] = payload } }
             };
         }
         return new OperationHandle
         {
+            OperationInstanceId = operationInstanceId,
             OperationId = OperationId,
-            HandleId = NewHandleId(),
+            CorrelationId = correlationId,
             Status = OperationHandleStatus.Completed,
+            CreatedAt = now,
+            UpdatedAt = now,
             Result = new OperationResultSummary { Summary = $"{_definition.Title} completed.", Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = payload } }
         };
     }
 
-    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default) => Task.FromResult(new OperationStatus { OperationId = OperationId, HandleId = handle.HandleId, Status = handle.Status, Result = handle.Result });
+    public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(handle);
+        return Task.FromResult(new OperationStatus
+        {
+            OperationInstanceId = handle.OperationInstanceId,
+            OperationId = OperationId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            ProposalId = handle.ProposalId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyDecision = handle.PolicyDecision,
+            Status = handle.Status,
+            Result = handle.Result,
+            JobId = handle.JobId,
+            MetadataRevision = handle.MetadataRevision,
+            ApprovalLane = handle.ApprovalLane,
+            Reason = handle.Reason,
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
+        });
+    }
 
     private string BindPath(OperationRequest request, string? pathOverride)
     {
@@ -124,8 +156,6 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
     private string[] GetMissingRouteParameters(OperationRequest request) => RouteNames(_definition.Path).Where(name => string.IsNullOrWhiteSpace(name switch { "connectionId" => request.ConnectionId, "serviceName" => request.ServiceName, _ => request.Parameters.GetValueOrDefault(name) })).Select(name => $"Required route parameter '{name}' is missing.").ToArray();
     private HashSet<string> RouteNames() => RouteNames(_definition.Path);
     private static HashSet<string> RouteNames(string path) => path.Split('/').Where(static segment => segment.StartsWith('{') && segment.EndsWith('}')).Select(static segment => segment[1..^1]).ToHashSet(StringComparer.Ordinal);
-    private string NewHandleId() => $"op-{_clock.GetUtcNow().ToUnixTimeMilliseconds():x}-{Guid.NewGuid():N}"[..32];
-
     private string BuildBody(OperationRequest request, OperationDescriptor descriptor)
     {
         var routeNames = RouteNames();
