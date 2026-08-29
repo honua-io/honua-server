@@ -460,21 +460,20 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("actions/upload-artifact");
         workflow.Should().Contain("github.event.pull_request.head.repo.fork == false");
 
-        foreach (var transitiveInput in new[]
-                 {
-                     "src/Honua.Analyzers/**",
-                     "src/Honua.Core.Abstractions/**",
-                     "src/Honua.Hosting/**",
-                     "src/Honua.ServiceDefaults/**",
-                     "src/Honua.Geometry/**",
-                     "Directory.Build.targets",
-                     "eng/**",
-                     "scripts/docker/restore-dotnet-with-github-packages.sh",
-                     ".dockerignore"
-                 })
-        {
-            workflow.Should().Contain(transitiveInput);
-        }
+        var pullRequestPaths = workflow
+            .Split('\n')
+            .SkipWhile(line => line != "    paths:")
+            .Skip(1)
+            .TakeWhile(line => line.StartsWith("      - '", StringComparison.Ordinal))
+            .Select(line => line.Trim()[3..^1]);
+
+        pullRequestPaths.Should().Equal(
+            "docker/worker-gdal/**",
+            "src/Honua.Worker.Gdal/**",
+            ".dockerignore",
+            "scripts/docker/restore-dotnet-with-github-packages.sh",
+            "scripts/ci/verify-serving-image-boundary.py",
+            ".github/workflows/worker-gdal-image.yml");
     }
 
     [ArchitectureTest]
