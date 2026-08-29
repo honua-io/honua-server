@@ -367,33 +367,35 @@ def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
         return
 
     fixture = PostGISFixture()
-    fixture.start()
-    fixture.apply_sql_file(seed_path)
-    fixture.seed_metadata_v2_snapshot()
-
-    worker_id = _get_worker_id()
-    port = int(os.getenv("HONUA_STAC_COMPAT_PORT", str(DEFAULT_PORT))) + _get_worker_index(worker_id)
-    server = HonuaServer(
-        connection_string=fixture.get_npgsql_connection_string(),
-        port=port,
-        project_root=PROJECT_ROOT,
-    )
-    server.start(timeout=float(os.getenv("HONUA_STAC_COMPAT_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS))))
-
-    auth_server = HonuaServer(
-        connection_string=fixture.get_npgsql_connection_string(),
-        port=DEFAULT_AUTH_PORT + _get_worker_index(worker_id),
-        project_root=PROJECT_ROOT,
-        environment={
-            "HONUA_DEV_AUTH": "false",
-            "HONUA_DEV_AUTH_ALLOW_BYPASS": "false",
-        },
-    )
-    auth_server.start(
-        timeout=float(os.getenv("HONUA_STAC_COMPAT_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS)))
-    )
-
+    server: HonuaServer | None = None
+    auth_server: HonuaServer | None = None
     try:
+        fixture.start()
+        fixture.apply_sql_file(seed_path)
+        fixture.seed_metadata_v2_snapshot()
+
+        worker_id = _get_worker_id()
+        port = int(os.getenv("HONUA_STAC_COMPAT_PORT", str(DEFAULT_PORT))) + _get_worker_index(worker_id)
+        server = HonuaServer(
+            connection_string=fixture.get_npgsql_connection_string(),
+            port=port,
+            project_root=PROJECT_ROOT,
+        )
+        server.start(timeout=float(os.getenv("HONUA_STAC_COMPAT_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS))))
+
+        auth_server = HonuaServer(
+            connection_string=fixture.get_npgsql_connection_string(),
+            port=DEFAULT_AUTH_PORT + _get_worker_index(worker_id),
+            project_root=PROJECT_ROOT,
+            environment={
+                "HONUA_DEV_AUTH": "false",
+                "HONUA_DEV_AUTH_ALLOW_BYPASS": "false",
+            },
+        )
+        auth_server.start(
+            timeout=float(os.getenv("HONUA_STAC_COMPAT_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS)))
+        )
+
         yield _build_runtime(
             base_url=server.base_url,
             auth_base_url=auth_server.base_url,
@@ -404,8 +406,10 @@ def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
             seed_snapshot_path=str(seed_path),
         )
     finally:
-        auth_server.stop()
-        server.stop()
+        if auth_server is not None:
+            auth_server.stop()
+        if server is not None:
+            server.stop()
         fixture.stop()
 
 
