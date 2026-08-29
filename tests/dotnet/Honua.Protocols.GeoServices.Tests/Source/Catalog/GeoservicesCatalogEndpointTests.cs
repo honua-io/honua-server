@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
@@ -1081,6 +1082,21 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 .Value.Should().Be(WebAppFixture.TestServiceId);
             result.Elements().Single(element => element.Name.LocalName == "BandCount")
                 .Value.Should().Be("3");
+            foreach (var (name, expected) in new[]
+                     {
+                         ("MinValues", 0d),
+                         ("MaxValues", 200d),
+                         ("MeanValues", 100d),
+                         ("StdvValues", 25d),
+                     })
+            {
+                var values = result.Elements().Single(element => element.Name.LocalName == name);
+                values.Attribute(XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance"))?
+                    .Value.Should().Be("tns:ArrayOfDouble");
+                values.Elements().Should().HaveCount(3)
+                    .And.OnlyContain(element =>
+                        element.Name.LocalName == "Double" && element.Value == expected.ToString(CultureInfo.InvariantCulture));
+            }
             result.Elements().Single(element => element.Name.LocalName == "AllowedCompressions")
                 .Value.Should().Be("None");
             result.Elements().Single(element => element.Name.LocalName == "AllowedMosaicMethods")

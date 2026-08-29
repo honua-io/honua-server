@@ -5,6 +5,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -45,6 +46,8 @@ internal readonly record struct ImageServerLayerResolution(
     IResult? ErrorResult)
 {
     public string? ServiceId { get; init; }
+
+    public RasterMergeStrategy MergeStrategy { get; init; }
 }
 
 internal sealed class MetadataV2ImageServerLayerResolver(
@@ -138,7 +141,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             layer.PublicationLayerIndex,
             null)
         {
-            ServiceId = service.Metadata.Id
+            ServiceId = service.Metadata.Id,
+            MergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(layer.Resource, mosaicRule: null)
         };
     }
 
@@ -202,7 +206,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             candidate.Publication.LayerIndex,
             null)
         {
-            ServiceId = candidate.Service!.Metadata.Id
+            ServiceId = candidate.Service!.Metadata.Id,
+            MergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(candidate.Resource, mosaicRule: null)
         };
     }
 
@@ -254,7 +259,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             publication.LayerIndex,
             null)
         {
-            ServiceId = service.Metadata.Id
+            ServiceId = service.Metadata.Id,
+            MergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resource, mosaicRule: null)
         };
     }
 
