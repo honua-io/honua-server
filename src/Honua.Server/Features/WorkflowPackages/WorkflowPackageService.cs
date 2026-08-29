@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -285,8 +286,29 @@ internal sealed class WorkflowPackageService(
         var workflowDefinitionId = request.Target == WorkflowPublicationTarget.Schedule
             ? $"workflow-package:{packageId}:v{version}"
             : null;
-        if (request.Target == WorkflowPublicationTarget.Schedule && workflowDefinitionStore != null)
+        if (request.Target == WorkflowPublicationTarget.Schedule)
         {
+            // A Schedule publication's only durable receipt is the compiled WorkflowDefinition
+            // written to the Redis-backed IWorkflowDefinitionStore: that record is what the cron
+            // scheduler enumerates, while the publication itself lives in a process-local store.
+            // On a host composed without it (a Redis-less install — see
+            // OrchestrationServiceCollectionExtensions.AddOrchestration, which registers nothing
+            // when IConnectionMultiplexer is absent) this method used to skip the write and still
+            // return a WorkflowPublication carrying a WorkflowDefinitionId and an Active status for
+            // a definition that was never persisted and that nothing would ever fire. That is a
+            // fabricated success — a skipped write cannot satisfy a write step. Refuse up front
+            // with the capability-unavailable receipt instead, the same contract geoprocessing
+            // submission and the proposal control plane use (honua-server#3585, honua-release#202).
+            if (workflowDefinitionStore is null)
+            {
+                WorkflowPackageLog.SchedulePublicationRefusedWithoutDurableStore(
+                    logger,
+                    packageId,
+                    version,
+                    publicationId);
+                throw new WorkflowPublicationDependencyUnavailableException();
+            }
+
             var definition = await CompileWorkflowDefinitionAsync(
                 packageVersion,
                 workflowDefinitionId!,
@@ -1009,3 +1031,21 @@ internal sealed class WorkflowPublicationConflictException(string publicationId)
 {
     public string PublicationId { get; } = publicationId;
 }
+
+/// <summary>
+/// Raised when a publication target needs a durable store this deployment never composed, so the
+/// publish is refused instead of reported as successful without a durable record
+/// (honua-server#3585). Deliberately does NOT derive from <see cref="InvalidOperationException"/>:
+/// the Console endpoint maps that base type to <c>409 Conflict</c>, and this is a <c>503</c>
+/// capability-unavailable refusal carrying the honua-release#202 receipt.
+/// </summary>
+/// <remarks>
+/// The exception says <em>what</em> could not be satisfied; it deliberately carries no receipt.
+/// <em>Why</em> the substrate is missing — no Redis connection string versus a present-but-
+/// unentitled Redis — is a deployment fact held by <c>DurableJobSubstrateOptions</c>, and the two
+/// causes need different remediation. The Console endpoint classifies it there, exactly as
+/// <c>ProposalEndpoints.ControlPlaneUnavailable</c> does, so this service stays free of licensing
+/// and connection-string knowledge.
+/// </remarks>
+internal sealed class WorkflowPublicationDependencyUnavailableException()
+    : Exception(CapabilityUnavailableCodes.DurableWorkflowPublicationDetail);

@@ -16347,7 +16347,10 @@
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.DataWiredWorkflow_ValidatesAndPublishesToScheduleButRejectsSingleJobTargets",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_EmitsWorkflowMetadataReleaseArtifact",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.PublishVersion_WithDuplicatePublicationId_ReturnsConflict",
-        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowLifecycle_ValidatesDryRunsPublishesTargetsAndStampsJobProvenance"
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowLifecycle_ValidatesDryRunsPublishesTargetsAndStampsJobProvenance",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackagePublishDegradedTests.PublishVersion_NonScheduleTargetsWithoutDurableWorkflowStore_StillPublish",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackagePublishDegradedTests.PublishVersion_ScheduleTargetWithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis",
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackagePublishDegradedTests.PublishVersion_ScheduleTargetWithoutDurableWorkflowStore_ReturnsTypedCapabilityUnavailableRefusal"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",

@@ -80,9 +80,9 @@ internal static class GeoprocessingOutputArtifactEndpoints
         {
             return AuthorizationError(exception.RequiresAuthentication);
         }
-        catch (GeoprocessingStoreUnavailableException)
+        catch (GeoprocessingStoreUnavailableException exception)
         {
-            return StoreUnavailable();
+            return GeoprocessingProblemDetailsHelpers.StoreUnavailable(context, exception);
         }
 
         if (job.Spec.Kind != ExecutionJobKind.Geoprocessing)
@@ -118,9 +118,9 @@ internal static class GeoprocessingOutputArtifactEndpoints
         {
             return JobNotFound(jobId);
         }
-        catch (GeoprocessingStoreUnavailableException)
+        catch (GeoprocessingStoreUnavailableException exception)
         {
-            return StoreUnavailable();
+            return GeoprocessingProblemDetailsHelpers.StoreUnavailable(context, exception);
         }
 
         if (artifactIndex < 0
@@ -195,9 +195,4 @@ internal static class GeoprocessingOutputArtifactEndpoints
             title: "Artifact not available",
             detail: $"Job '{jobId}' has no downloadable staged artifact at index {artifactIndex}.");
 
-    private static IResult StoreUnavailable()
-        => Results.Problem(
-            statusCode: StatusCodes.Status503ServiceUnavailable,
-            title: "Job store unavailable",
-            detail: "The job store is temporarily unavailable.");
 }

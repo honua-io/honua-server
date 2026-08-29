@@ -156,10 +156,7 @@ internal static class AnalysisReportEndpoints
                     validationEx.Message);
                 return true;
             case GeoprocessingStoreUnavailableException storeEx:
-                problem = ProblemDetailsHelpers.CreateAdminProblem(
-                    StatusCodes.Status503ServiceUnavailable,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                    storeEx.Message);
+                problem = GeoprocessingProblemDetailsHelpers.StoreUnavailable(httpContext, storeEx);
                 return true;
             default:
                 problem = Results.Empty;

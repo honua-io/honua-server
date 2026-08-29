@@ -1,11 +1,13 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
@@ -93,7 +95,8 @@ internal static class WorkflowPackageEndpoints
             .Produces<ApiResponse<WorkflowPublication>>()
             .Produces<ApiResponse<WorkflowPackageValidationResult>>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status409Conflict);
+            .Produces(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/workflow-publications", HandleListPublications)
             .WithName("ListWorkflowPublications")
@@ -106,7 +109,8 @@ internal static class WorkflowPackageEndpoints
             .Accepts<RunWorkflowPublicationRequest>("application/json")
             .Produces<ApiResponse<WorkflowPublicationRunResult>>(StatusCodes.Status201Created)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status409Conflict);
+            .Produces(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status503ServiceUnavailable);
     }
 
     private static async Task<IResult> HandleGetNodeRegistry(
@@ -373,13 +377,16 @@ internal static class WorkflowPackageEndpoints
         {
             return BadRequest(context, ex.Message);
         }
+        // A publication target whose durable store was never composed is refused with the
+        // capability-unavailable receipt (honua-release#202) rather than a bare 503, so a terminal
+        // agent can branch on `code`/`missingDependency` instead of parsing prose (#3585).
+        catch (WorkflowPublicationDependencyUnavailableException)
+        {
+            return WorkflowPublicationUnavailable(context);
+        }
         catch (GeoprocessingStoreUnavailableException ex)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status503ServiceUnavailable,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status503ServiceUnavailable),
-                ex.Message);
+            return GeoprocessingProblemDetailsHelpers.StoreUnavailable(context, ex);
         }
         catch (GeoprocessingAdmissionException ex)
         {
@@ -405,6 +412,52 @@ internal static class WorkflowPackageEndpoints
                 ProblemDetailsHelpers.GetTitle(StatusCodes.Status409Conflict),
                 ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Projects the workflow-publication refusal (#3585) as the canonical capability-unavailable
+    /// <c>503</c>, classified by why the durable workflow substrate is actually missing.
+    /// </summary>
+    /// <remarks>
+    /// <c>IWorkflowDefinitionStore</c> is composed only alongside <c>IConnectionMultiplexer</c>,
+    /// whose registration needs BOTH a Redis connection string and the Pro <c>caching.redis</c>
+    /// entitlement. Telling an operator to "configure Redis" on a host that already runs Redis and
+    /// only lacks the licence is remediation that cannot work — the failure mode
+    /// honua-release#202 exists to prevent — and the default quickstart lands on exactly that
+    /// path. The classification is read from the same <see cref="DurableJobSubstrateOptions"/> the
+    /// capability manifest uses, so the refusal's <c>code</c> matches the manifest's
+    /// <c>reasonCode</c> for <c>jobs.runner</c> on the same host. Mirrors
+    /// <c>ProposalEndpoints.ControlPlaneUnavailable</c>.
+    /// </remarks>
+    private static IResult WorkflowPublicationUnavailable(HttpContext context)
+    {
+        var substrate = context.RequestServices.GetService<IOptions<DurableJobSubstrateOptions>>()?.Value
+            ?? new DurableJobSubstrateOptions();
+
+        // Only RedisNotConfigured and RedisNotEntitled are reachable here: the definition store is
+        // registered unconditionally wherever the multiplexer is, so there is no store-without-queue
+        // analogue of RuntimeIncomplete for it. Anything that is not the entitlement case therefore
+        // collapses to the dependency receipt, matching ForCause's own default arm.
+        var unentitled = substrate.Classify(jobStorePresent: false, jobQueuePresent: false)
+            == DurableJobSubstrateCause.RedisNotEntitled;
+
+        return unentitled
+            ? ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+                context,
+                CapabilityUnavailableCodes.UnentitledWorkflowPublicationDetail,
+                missingDependency: null,
+                CapabilityUnavailableCodes.EntitlementRemediation,
+                CapabilityUnavailableCodes.EntitlementRemediationRef,
+                CapabilityUnavailableCodes.DurableJobsCapability,
+                errorCode: CapabilityUnavailableCodes.EntitlementErrorCode,
+                missingEntitlement: CapabilityUnavailableCodes.RedisCacheEntitlement)
+            : ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+                context,
+                CapabilityUnavailableCodes.DurableWorkflowPublicationDetail,
+                CapabilityUnavailableCodes.RedisDependency,
+                CapabilityUnavailableCodes.RedisRemediation,
+                CapabilityUnavailableCodes.RedisRemediationRef,
+                CapabilityUnavailableCodes.DurableJobsCapability);
     }
 
     private static IResult BadRequest(HttpContext context, string detail)
