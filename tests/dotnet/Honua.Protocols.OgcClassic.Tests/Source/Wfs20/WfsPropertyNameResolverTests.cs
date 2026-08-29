@@ -49,4 +49,40 @@ public sealed class WfsPropertyNameResolverTests
 
         resolved.Should().BeNull();
     }
+
+    [Fact]
+    public void Resolve_EncodedUnknownPrefix_DoesNotFallBackToLocalField()
+    {
+        var resource = _resource with
+        {
+            SchemaFields = [.. _resource.SchemaFields, new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]
+        };
+
+        var resolved = WfsPropertyNameResolver.Resolve(
+            resource,
+            "missing_x003A_name",
+            allowGeometryAlias: true);
+
+        resolved.Should().BeNull();
+    }
+
+    [Fact]
+    public void Resolve_AdvertisedEncoding_TakesPrecedenceOverEscapeLikeCanonicalName()
+    {
+        var resource = _resource with
+        {
+            SchemaFields =
+            [
+                .. _resource.SchemaFields,
+                new MetadataV2Field { Name = "eo_x003A_cloud_cover", Type = MetadataV2FieldType.Double }
+            ]
+        };
+
+        var resolved = WfsPropertyNameResolver.Resolve(
+            resource,
+            "eo_x003A_cloud_cover",
+            allowGeometryAlias: true);
+
+        resolved.Should().Be("eo:cloud_cover");
+    }
 }
