@@ -615,7 +615,7 @@
       "displayName": "I3S Scene Serving",
       "category": "Serve",
       "edition": "Enterprise",
-      "description": "Serve published I3S scene layers through Enterprise-gated SceneServer handlers; unlicensed requests currently return HTTP 403.",
+      "description": "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.",
       "status": "experimental"
     },
     {

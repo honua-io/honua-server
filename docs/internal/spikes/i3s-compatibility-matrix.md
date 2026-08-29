@@ -90,7 +90,7 @@ under a single `SceneServer`. Honua's planned mount convention is the same
 GeoServices-style root path used by `FeatureServer`, `MapServer`, and
 `ImageServer`; no new mount convention is introduced.
 
-| I3S endpoint (1.7) | Honua route (planned, NOT IMPLEMENTED) | Translation feasibility | Recommendation |
+| I3S endpoint (1.7) | Honua route (historical spike plan) | Translation feasibility | Recommendation |
 | --- | --- | --- | --- |
 | `GET /rest/services/{id}/SceneServer` | `GET /rest/services/{id}/SceneServer` | Easy — projection over service catalog | Translation adapter |
 | `GET /rest/services/{id}/SceneServer/layers/0` | `GET /rest/services/{id}/SceneServer/layers/0` | Easy — projection over layer metadata + tileset model | Translation adapter |
@@ -383,7 +383,7 @@ that are wrong before child issues are opened.
 | At least one public/simple I3S reference dataset is identified for future tests | "Reference fixtures and compatibility targets" — the Honua synthetic minimal fixture is the committed CI dataset; the public `Esri/i3s-spec` repository is the schema/spec reference; the publicly hosted Philadelphia Buildings layer is the manual ArcGIS Scene Viewer smoke target |
 | Enterprise gating notes are explicit | "Enterprise gating, licensing, and support boundary" |
 | The plan states how I3S work relates to `honua-server-837`, `honua-server-838`, `honua-server-842`, `honua-server-849` | "Relationship to sibling tickets" |
-| No production I3S serving is added in this spike | This page is the only artifact; no source files, endpoint registrations, or routing changes are introduced. The MVP compatibility contract row is updated to "Not implemented — Enterprise roadmap" |
+| No production I3S serving was added by this historical spike | This page was the spike's only artifact; later work added the Enterprise descriptor/node-metadata preview documented by ADR-0078, while production geometry remains deferred. |
 
 ## Cross-references
 

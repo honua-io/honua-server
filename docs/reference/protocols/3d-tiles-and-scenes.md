@@ -92,7 +92,7 @@ slice to 2026.2; this table records runtime truth without promoting it.
 | Capability key | Edition | Route/surface | Unlicensed result | Proving tests |
 |---|---|---|---|---:|
 | `serve.3d-tiles-scene` | Community | `/scenes/{sceneId}/tileset.json` and assets | Not edition-gated | 60 |
-| `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptor/node/statistics/geometry/attribute routes | `403` | 41 |
+| `serve.i3s-scene` | Enterprise | Canonical and alias `SceneServer` descriptor/node/statistics/geometry/attribute routes | `402` | 41 |
 | `scene.catalog` | Community | `/api/scenes*` | Not edition-gated | 4 |
 | `scene.bim-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/citygml` | `402` entitlement response | 6 |
 | `scene.pointcloud-ingest` | Enterprise | `/api/v1/admin/scenes/ingest/pointcloud` | `402` entitlement response | 10 |

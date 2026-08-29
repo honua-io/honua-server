@@ -50,6 +50,35 @@ public sealed class LicenseGateTests
     }
 
     [UnitTest]
+    public async Task RequireEntitlement_RoutedExperimentalCapabilityBelowEdition_ReturnsPaymentRequired()
+    {
+        var context = BuildContext(HonuaEdition.Community);
+
+        var result = LicenseGate.RequireEntitlement(
+            context,
+            "serve.i3s-scene",
+            "I3S Scene Serving",
+            NullLogger.Instance);
+
+        result.Should().NotBeNull();
+        (await GetStatusCodeAsync(result!)).Should().Be(StatusCodes.Status402PaymentRequired);
+    }
+
+    [UnitTest]
+    public void RequireEntitlement_RoutedExperimentalCapabilityAtEdition_ReturnsNull()
+    {
+        var context = BuildContext(HonuaEdition.Enterprise);
+
+        var result = LicenseGate.RequireEntitlement(
+            context,
+            "serve.i3s-scene",
+            "I3S Scene Serving",
+            NullLogger.Instance);
+
+        result.Should().BeNull();
+    }
+
+    [UnitTest]
     public void CreateFailedPreconditionRpcException_MissingPaidEntitlement_ReturnsFailedPrecondition()
     {
         var context = BuildContext(HonuaEdition.Community);

@@ -53,7 +53,7 @@ public static class CapabilityKeyCatalog
     public static IReadOnlyList<CapabilityKeyDefinition> RoutedExperimentalKeys { get; } =
     [
         new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
-            HonuaEdition.Enterprise, "Serve published I3S scene layers through Enterprise-gated SceneServer handlers; unlicensed requests currently return HTTP 403.", Status: ExperimentalStatus),
+            HonuaEdition.Enterprise, "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.", Status: ExperimentalStatus),
     ];
 
     /// <summary>
