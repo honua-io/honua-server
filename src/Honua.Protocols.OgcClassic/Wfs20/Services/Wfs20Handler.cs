@@ -1693,6 +1693,8 @@ internal sealed partial class Wfs20Handler
     {
         return fieldType switch
         {
+            MetadataV2FieldType.Unknown => "xsd:string",
+            MetadataV2FieldType.String => "xsd:string",
             MetadataV2FieldType.Integer => "xsd:int",
             MetadataV2FieldType.BigInteger => "xsd:long",
             MetadataV2FieldType.Double => "xsd:double",
@@ -1702,8 +1704,18 @@ internal sealed partial class Wfs20Handler
             MetadataV2FieldType.Date => "xsd:date",
             MetadataV2FieldType.Time => "xsd:time",
             MetadataV2FieldType.Binary => "xsd:base64Binary",
-            MetadataV2FieldType.Json => "xsd:anyType",
-            _ => "xsd:string"
+            // WFS serializes JSON attributes as JSON text inside a GML element. XSD 1.0
+            // has no JSON primitive, so string is the faithful wire type. Advertising
+            // anyType makes GDAL abandon the declared schema and infer every field from
+            // values, which also degrades unrelated numeric and temporal field dtypes.
+            MetadataV2FieldType.Json => "xsd:string",
+            MetadataV2FieldType.Uuid => "xsd:string",
+            MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography =>
+                throw new ArgumentOutOfRangeException(
+                    nameof(fieldType),
+                    fieldType,
+                    "Spatial fields must use MapGeometryPropertyType."),
+            _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, "Unsupported metadata field type.")
         };
     }
 

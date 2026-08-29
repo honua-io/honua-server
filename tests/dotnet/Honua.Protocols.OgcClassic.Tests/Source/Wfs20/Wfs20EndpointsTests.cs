@@ -367,6 +367,106 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         return new TestMetadataV2GraphProvider(graph);
     }
 
+    private static TestMetadataV2GraphProvider BuildFieldTypeMetadataProvider()
+    {
+        const string ResourceId = "res-field-types";
+        const string StorageBindingId = "binding-field-types";
+        const string ServiceId = "svc-field-types-wfs";
+
+        var fields = Enum.GetValues<MetadataV2FieldType>()
+            .Where(type => type is not MetadataV2FieldType.Geography)
+            .Select(type => new MetadataV2Field
+            {
+                Name = type.ToString().ToLowerInvariant(),
+                Type = type,
+                Nullable = true
+            })
+            .ToArray();
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                ResourceId,
+                "Field Types",
+                MetadataV2ResourceType.FeatureDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                fields: fields,
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = MetadataV2GeometryType.Point
+                })
+            .AddStorageBinding(StorageBindingId, ResourceId, "field_types", storageLayerId: 0)
+            .AddService(
+                ServiceId,
+                "field_types",
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                protocols: [MetadataV2ServiceProtocols.Wfs20])
+            .AddPublication(
+                "pub-field-types-wfs",
+                ServiceId,
+                ResourceId,
+                layerIndex: 0,
+                storageBindingId: StorageBindingId,
+                serviceLocalId: "field_types",
+                publicationType: MetadataV2PublicationType.WfsFeatureType)
+            .Build();
+
+        return new TestMetadataV2GraphProvider(graph);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "DescribeFeatureType")]
+    public async Task Wfs_DescribeFeatureType_MapsEveryDeclaredAttributeTypeToConcreteXsdType()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+            .ReplaceService<IMetadataV2GraphProvider>(BuildFieldTypeMetadataProvider());
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var response = await fixture.Client.GetAsync(
+                "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES=field_types");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+            XNamespace xsd = "http://www.w3.org/2001/XMLSchema";
+            var servedTypes = XDocument.Parse(content)
+                .Descendants(xsd + "element")
+                .Where(element => element.Attribute("name") is not null && element.Attribute("type") is not null)
+                .ToDictionary(
+                    element => element.Attribute("name")!.Value,
+                    element => element.Attribute("type")!.Value,
+                    StringComparer.Ordinal);
+
+            var expected = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["unknown"] = "xsd:string",
+                ["string"] = "xsd:string",
+                ["integer"] = "xsd:int",
+                ["biginteger"] = "xsd:long",
+                ["double"] = "xsd:double",
+                ["float"] = "xsd:float",
+                ["boolean"] = "xsd:boolean",
+                ["datetime"] = "xsd:dateTime",
+                ["date"] = "xsd:date",
+                ["time"] = "xsd:time",
+                ["json"] = "xsd:string",
+                ["binary"] = "xsd:base64Binary",
+                ["uuid"] = "xsd:string",
+                ["geometry"] = "gml:PointPropertyType"
+            };
+
+            servedTypes.Should().Contain(expected);
+            servedTypes.Values.Should().NotContain("xsd:anyType");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // WFS local name BuildTypeLocalName derives from the resource title; "Geometry Only Layer"
     // collapses to this slug, which the geometry-from-type regression tests request by TYPENAMES.
     private const string GeometryFromTypeTypeName = "geometry_only_layer";
