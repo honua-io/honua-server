@@ -381,6 +381,24 @@
       "measured_delta": null,
       "notes": "ListStoredQueries advertises 1 queries including the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById; invoking it through OWSLib's storedQueryID/storedQueryParams returned the requested feature test_layer.1.",
       "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-100-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": 0.0,
+      "notes": "OWSLib WebFeatureService negotiated WFS 1.0.0, parsed capabilities, discovered honua:test_layer, and executed GetFeature; EPSG:4326 coordinate (-122.49, 37.71) obeyed that version's axis-order contract.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-110-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": 0.0,
+      "notes": "OWSLib WebFeatureService negotiated WFS 1.1.0, parsed capabilities, discovered honua:test_layer, and executed GetFeature; urn:ogc:def:crs:EPSG::4326 coordinate (37.71, -122.49) obeyed that version's axis-order contract.",
+      "evidence_ref": ""
     }
   ]
 }

@@ -387,12 +387,11 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
-        // PropertyName wildcard: "*" selects every property. OWSLib — the
-        // reference Python OGC client — sends PROPERTYNAME=* by default on
-        // WFS 1.0.0 and 1.1.0 (owslib/feature/wfs110.py), so rejecting the
-        // wildcard made a bare WebFeatureService(...).getfeature() unusable on
-        // those versions. A wildcard anywhere in the list widens the projection
-        // to everything, which is exactly what the wildcard asks for.
+        // OWSLib emits PROPERTYNAME=* for an unprojected GetFeature request on
+        // every supported WFS generation. The wildcard means all properties;
+        // treating it as a literal field makes a standards-capable maintained
+        // client fail before the canonical query pipeline is reached. A wildcard
+        // anywhere in the list widens the projection to all properties.
         if (requestedProperties.Any(static requested => requested is "*"))
         {
             return null;
