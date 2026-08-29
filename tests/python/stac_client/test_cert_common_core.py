@@ -251,7 +251,7 @@ def test_cert_conn_02_transport_scheme(
 
     cert_collector.record(
         "CERT-CONN-02",
-        "pass",
+        "pass" if scheme == "https" else "not-applicable",
         duration_ms=_elapsed_ms(started),
         notes=note,
         evidence_ref=base_url,
@@ -304,6 +304,7 @@ def test_cert_auth_01_admin_probe_rejects_anonymous(
             "Raw httpx used because the control plane is not a STAC endpoint."
         ),
         evidence_ref=url,
+        client_identity="httpx",
     )
 
 
@@ -344,6 +345,7 @@ def test_cert_auth_02_admin_probe_accepts_api_key(
             "there is no bearer/login flow for this surface."
         ),
         evidence_ref=url,
+        client_identity="httpx",
     )
 
 
@@ -2260,6 +2262,7 @@ def test_nb_err_05_wrong_api_key(
             f"{canonical_fixture.ADMIN_API_KEY_HEADER} -> 401. Raw httpx: the control "
             "plane is not a STAC endpoint."
         ),
+        client_identity="httpx",
     )
 
 

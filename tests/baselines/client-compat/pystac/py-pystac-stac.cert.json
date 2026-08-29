@@ -3,7 +3,7 @@
   "run_id": "20260823T211917Z",
   "run_date": "2026-08-23T21:19:17.960304+00:00",
   "server_version": "1.0.0",
-  "server_commit": "unknown",
+  "server_commit": "dbb368c5d06fb744e5289e4fd6ab30acc3973698",
   "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
   "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
   "client_lane": "py-pystac",
@@ -23,7 +23,7 @@
     },
     {
       "test_case_id": "CERT-CONN-02",
-      "status": "pass",
+      "status": "not-applicable",
       "duration_ms": 56,
       "measured_count": null,
       "measured_delta": null,
@@ -37,7 +37,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "Anonymous GET /api/v1/admin/services -> 401 with WWW-Authenticate='ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"'; pystac-client's StacApiIO surfaced the same status as APIError. Raw httpx used because the control plane is not a STAC endpoint.",
-      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+      "evidence_ref": "http://honua:5000/api/v1/admin/services",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-AUTH-02",
@@ -46,7 +47,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services with X-API-Key -> 200. Honua's control plane is API-key authenticated; HTTP Basic is an opt-in compatibility mode that also refuses non-HTTPS transport, and there is no bearer/login flow for this surface.",
-      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+      "evidence_ref": "http://honua:5000/api/v1/admin/services",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-DISC-01",
@@ -569,7 +571,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services with an incorrect X-API-Key -> 401. Raw httpx: the control plane is not a STAC endpoint.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "NB-STAC-ERR-06",
