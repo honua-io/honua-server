@@ -403,12 +403,30 @@ train_snapshot_gate_success() {
 # marker and dispatch another paid review pass. Direct dispatch also bypasses
 # the scheduled catch-up selector's intentional 30-minute age floor.
 train_dispatch_selected_reviews() {
-  local selected="$1" target pr head
+  local selected="$1" target pr head title prior_titles
   [[ "${TRAIN_APPLY:-0}" == "1" ]] || return 0
+  if [[ -n "${TRAIN_REVIEW_RUN_TITLES_CMD:-}" ]]; then
+    prior_titles="$("${TRAIN_REVIEW_RUN_TITLES_CMD}")" || {
+      train_warn 'exact-head review history unavailable; scheduled catch-up will retry safely'
+      return 0
+    }
+  else
+    prior_titles="$(gh api --paginate \
+      "repos/${GITHUB_REPOSITORY}/actions/workflows/claude-review.yml/runs?event=workflow_dispatch&per_page=100" \
+      --jq '.workflow_runs[].display_title')" || {
+      train_warn 'exact-head review history unavailable; scheduled catch-up will retry safely'
+      return 0
+    }
+  fi
   while IFS= read -r target; do
     [[ -n "${target}" ]] || continue
     pr="$(jq -r '.number' <<<"${target}")"
     head="$(jq -r '.headRefOid' <<<"${target}")"
+    title="Claude catch-up #${pr} @ ${head}"
+    if grep -Fqx -- "${title}" <<<"${prior_titles}"; then
+      train_log "exact-head review already dispatched for #${pr}@${head}"
+      continue
+    fi
     train_side_effect gh workflow run claude-review.yml \
       --repo "${GITHUB_REPOSITORY}" --ref "${TRAIN_BASE_BRANCH:-trunk}" \
       -f pr="${pr}" -f head="${head}" >/dev/null \

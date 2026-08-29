@@ -1024,7 +1024,10 @@ assert_eq "admission: selection marks exact head for trailing review" \
 
 review_dispatch_record="${SCRATCH}/exact-review-dispatch"; : >"${review_dispatch_record}"
 gh() { printf '%s\n' "$*" >>"${review_dispatch_record}"; }
-export TRAIN_APPLY=1 GITHUB_REPOSITORY=honua-io/honua-server
+__no_prior_review_runs() { :; }
+export -f __no_prior_review_runs
+export TRAIN_APPLY=1 GITHUB_REPOSITORY=honua-io/honua-server \
+  TRAIN_REVIEW_RUN_TITLES_CMD=__no_prior_review_runs
 train_dispatch_selected_reviews "[$(jq -c '.' <<<"${dry_run_candidate}")]"
 assert_eq "admission: parent dispatches one exact PR/head review" \
   "$(wc -l <"${review_dispatch_record}" | tr -d ' ')" "1"
@@ -1032,9 +1035,16 @@ assert_contains "admission: exact review dispatch includes PR" \
   "$(cat "${review_dispatch_record}")" '-f pr=11'
 assert_contains "admission: exact review dispatch includes head" \
   "$(cat "${review_dispatch_record}")" '-f head=bbb'
+__prior_review_run() { printf '%s\n' 'Claude catch-up #11 @ bbb'; }
+export -f __prior_review_run
+export TRAIN_REVIEW_RUN_TITLES_CMD=__prior_review_run
+train_dispatch_selected_reviews "[$(jq -c '.' <<<"${dry_run_candidate}")]"
+assert_eq "admission: exact PR/head review dispatch is deduplicated" \
+  "$(wc -l <"${review_dispatch_record}" | tr -d ' ')" "1"
 unset -f gh
 export TRAIN_APPLY=0
-unset ADMISSION_CASE GITHUB_REPOSITORY
+unset -f __no_prior_review_runs __prior_review_run
+unset ADMISSION_CASE GITHUB_REPOSITORY TRAIN_REVIEW_RUN_TITLES_CMD
 
 ( train_select() { :; }; train_has_selectable_pr ) \
   && bad "self-chain: all-inadmissible queue must not redispatch" \
