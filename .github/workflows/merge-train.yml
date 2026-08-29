@@ -1,17 +1,20 @@
 name: Merge Train
 run-name: Merge Train [${{ inputs.recovery_key || 'ordinary' }}]
 
-# Optimistic batch merge train (Phase 1). DRY-RUN BY DEFAULT.
+# Optimistic batch merge train. DRY-RUN unless dispatched with train_apply=true.
 #
 # This workflow assembles a batch of ready PRs, smart-CIs the batch, and (only
-# when explicitly told to act) lands it onto trunk. The default for every
-# automatic trigger is TRAIN_APPLY=0 — it computes and reports decisions but
-# performs NO pushes/merges/comments/issue writes. A human flips it live by
-# dispatching with train_apply=true.
+# when dispatched with train_apply=true) lands it onto trunk. Scheduled runs
+# and the bare dispatch default stay dry-run.
 #
-# SAFETY: merging the PR that ADDS this workflow cannot make the train act,
-# because scheduled and workflow_run invocations hard-code TRAIN_APPLY=0 and the
-# workflow_dispatch input defaults to false.
+# DISPATCH POLICY (operator decision, 2026-08-28): automation MAY dispatch live
+# trains. The train's own self-chain, the fleet stall restart, disposition
+# actions, and the clean-review nudge in claude-review.yml all dispatch with
+# train_apply=true. The safety boundary is NOT who dispatches; it is the
+# per-PR admission ladder in select.sh (unresolved findings and standing
+# objections block) plus the train:escalated label, which is the sole manual
+# brake under immediate admission. The original "a human flips it live" text
+# predated that decision; do not cite it to make automated dispatch dry-run.
 
 on:
   # Cadence: dry-run report every 15 minutes (never acts).
@@ -22,8 +25,9 @@ on:
   # thrashed the concurrency group so badly that runs were cancelled mid-batch-CI
   # wait before they could land. The 15-minute schedule is the SOLE automatic
   # driver — one clean run at a time, which always survives to land.
-  # Manual control. This is the ONLY path that can act, and only when the
-  # operator explicitly sets train_apply=true.
+  # Dispatch control. This is the ONLY path that can act, and only with
+  # train_apply=true — set by the operator or by approved automation (see
+  # DISPATCH POLICY above).
   workflow_dispatch:
     inputs:
       train_apply:

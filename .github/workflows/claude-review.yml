@@ -670,5 +670,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}
         run: |
+          # train_apply=true is deliberate: a dry-run nudge starts a train that
+          # can land nothing, which defeats this step's purpose (prompt landing
+          # once clean exact-head evidence exists). Automated live dispatch is
+          # the operator-decided posture (2026-08-28) already practiced by the
+          # train's own self-chain and the fleet stall restart; the per-PR
+          # admission ladder and the train:escalated label remain the brakes.
           gh workflow run merge-train.yml --repo "${GITHUB_REPOSITORY}" --ref trunk \
-            -f train_apply=false -f max_batch=10 >/dev/null 2>&1 || true
+            -f train_apply=true -f max_batch=10 >/dev/null 2>&1 || true
