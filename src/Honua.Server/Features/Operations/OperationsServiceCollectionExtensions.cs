@@ -66,9 +66,20 @@ internal static class OperationsServiceCollectionExtensions
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
+        // Legacy adapters are FACTORY descriptors (each closes over its operation
+        // class), and TryAddEnumerable REJECTS factory descriptors at registration
+        // time — their implementation type is indistinguishable from the service
+        // type (ArgumentException). That throw only fires in hosts that register a
+        // control-plane executor, so PR Gate's unit smoke stayed green while every
+        // full-host integration suite failed at boot (trunk red 2026-08-29,
+        // run 33237378473). Plain AddScoped accepts factories; the marker restores
+        // the idempotence TryAddEnumerable was providing across repeated
+        // AddOperationsToolset calls.
         if (services.Any(descriptor => descriptor.ServiceType ==
-                typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor)))
+                typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor))
+            && !services.Any(descriptor => descriptor.ServiceType == typeof(LegacyAdapterRegistrationMarker)))
         {
+            services.AddSingleton<LegacyAdapterRegistrationMarker>();
             AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.Deploy);
             AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange);
             AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.MetadataRelease);
@@ -103,8 +114,15 @@ internal static class OperationsServiceCollectionExtensions
     private static void AddLegacyAdapter(
         IServiceCollection services,
         Honua.Core.Features.Guardrails.Domain.OperationClass operationClass)
-        => services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor>(sp =>
+        => services.AddScoped<IOperationExecutor>(sp =>
             new LegacyGatewayOperationAdapter(
                 sp.GetServices<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>()
-                    .Single(actuator => actuator.OperationClass == operationClass))));
+                    .Single(actuator => actuator.OperationClass == operationClass)));
+
+    /// <summary>
+    /// Registration sentinel proving the legacy gateway adapters were already added, so
+    /// repeated <see cref="AddOperationsToolset"/> calls stay idempotent without
+    /// <c>TryAddEnumerable</c> (which cannot hold factory descriptors).
+    /// </summary>
+    internal sealed class LegacyAdapterRegistrationMarker;
 }

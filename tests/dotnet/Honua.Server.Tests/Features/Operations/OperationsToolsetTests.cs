@@ -100,6 +100,37 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public void AddOperationsToolset_WithControlPlaneExecutors_RegistersLegacyAdaptersWithoutThrowing()
+    {
+        // Regression: the legacy adapters are factory descriptors, and registering
+        // them via TryAddEnumerable threw ArgumentException ("indistinguishable
+        // from other services") the moment a control-plane executor was present —
+        // i.e. in every full host, but in no unit-scoped test host, which is how
+        // it reached trunk (run 33237378473).
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        var controlPlaneExecutor =
+            Substitute.For<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>();
+        services.AddScoped(_ => controlPlaneExecutor);
+
+        var register = () => services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        register.Should().NotThrow();
+        services.Count(descriptor =>
+                descriptor.ServiceType == typeof(IOperationExecutor) &&
+                descriptor.ImplementationFactory != null)
+            .Should().Be(4, "each legacy operation class gets one factory-registered adapter");
+
+        // Idempotence across repeated composition, previously TryAddEnumerable's job.
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        services.Count(descriptor =>
+                descriptor.ServiceType == typeof(IOperationExecutor) &&
+                descriptor.ImplementationFactory != null)
+            .Should().Be(4, "re-registration must not duplicate the legacy adapters");
+    }
+
+    [UnitTest]
     public async Task Catalog_Lists_ServicePublish_Descriptor_With_ExecutionKind_ApprovalModel_And_Policy()
     {
         var catalog = new OperationCatalog(
