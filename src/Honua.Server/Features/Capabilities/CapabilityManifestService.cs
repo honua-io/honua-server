@@ -16,6 +16,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Observability.Abstractions;
 using Honua.Server.Features.Capabilities.Models;
 using Honua.Import;
 using Honua.Migration;
@@ -58,6 +59,7 @@ internal sealed class CapabilityManifestService(
     IEnumerable<IBatchComputeBackend> batchBackends,
     IEnumerable<IDeployBackend> deployBackends,
     IEnumerable<IWorkflowOperationStore> workflowOperationStores,
+    IEnumerable<IOpsAutonomyPolicyStore> opsAutonomyPolicyStores,
     IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
     IWebHostEnvironment hostEnvironment,
     ICapabilityRegistry capabilityRegistry,
@@ -67,6 +69,7 @@ internal sealed class CapabilityManifestService(
         batchBackends,
         deployBackends,
         workflowOperationStores,
+        opsAutonomyPolicyStores,
         fieldCollectionSyncStores,
         hostEnvironment);
 
@@ -108,7 +111,8 @@ internal sealed class CapabilityManifestService(
             workspaceAvailable,
             request.WorkspaceId);
         var batchCapabilities = await ResolveBatchCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
-        var operationCapabilities = await ResolveOperationCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        var operationCapabilities = await ResolveOperationCapabilitiesAsync(request.Environment, cancellationToken)
+            .ConfigureAwait(false);
 
         // #2335 (B3): the registry-derived composition resolves each descriptor through
         // the shared gate resolver (edition/experimental precedence). All descriptors
@@ -514,10 +518,11 @@ internal sealed class CapabilityManifestService(
         [
             Capability("ops.findings", "operate", context, requiresAuthentication: true),
             Capability("ops.autonomy", "operate", context,
-                configured: operationCapabilities.HasDurableOperationStore,
+                configured: operationCapabilities.HasAutonomyPolicyStore,
                 requiresAuthentication: true),
             Capability("deploy.rollback", "deploy", context,
-                configured: operationCapabilities.AnyConfiguredTargetSupportsRollback,
+                configured: operationCapabilities.HasDurableOperationStore
+                    && operationCapabilities.AnyConfiguredTargetSupportsRollback,
                 requiresAuthentication: true),
         ];
 
@@ -583,12 +588,13 @@ internal sealed class CapabilityManifestService(
             ["ops.findings"] = new() { RequiresAuthentication = true },
             ["ops.autonomy"] = new()
             {
-                Configured = operationCapabilities.HasDurableOperationStore,
+                Configured = operationCapabilities.HasAutonomyPolicyStore,
                 RequiresAuthentication = true,
             },
             ["deploy.rollback"] = new()
             {
-                Configured = operationCapabilities.AnyConfiguredTargetSupportsRollback,
+                Configured = operationCapabilities.HasDurableOperationStore
+                    && operationCapabilities.AnyConfiguredTargetSupportsRollback,
                 RequiresAuthentication = true,
             },
         };
@@ -957,6 +963,7 @@ internal sealed class CapabilityManifestService(
     }
 
     private async Task<OperationCapabilitySummary> ResolveOperationCapabilitiesAsync(
+        string? environment,
         CancellationToken cancellationToken)
     {
         var configuredTargets = options.ControlPlane.DeployTargets;
@@ -964,6 +971,7 @@ internal sealed class CapabilityManifestService(
         {
             return new OperationCapabilitySummary(
                 HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
+                HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
                 AnyConfiguredTargetSupportsRollback: false);
         }
 
@@ -974,6 +982,12 @@ internal sealed class CapabilityManifestService(
 
         foreach (var target in configuredTargets)
         {
+            if (!string.IsNullOrWhiteSpace(environment)
+                && !string.Equals(target.Environment, environment, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             if (!backends.TryGetValue((target.Backend, target.TargetKind), out var backend))
             {
                 continue;
@@ -986,6 +1000,7 @@ internal sealed class CapabilityManifestService(
                 {
                     return new OperationCapabilitySummary(
                         HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
+                        HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
                         AnyConfiguredTargetSupportsRollback: true);
                 }
             }
@@ -1001,6 +1016,7 @@ internal sealed class CapabilityManifestService(
 
         return new OperationCapabilitySummary(
             HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
+            HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
             AnyConfiguredTargetSupportsRollback: false);
     }
 
@@ -1196,6 +1212,7 @@ internal sealed class CapabilityManifestService(
 
     private readonly record struct OperationCapabilitySummary(
         bool HasDurableOperationStore,
+        bool HasAutonomyPolicyStore,
         bool AnyConfiguredTargetSupportsRollback);
 }
 

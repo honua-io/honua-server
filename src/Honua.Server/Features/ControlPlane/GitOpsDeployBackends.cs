@@ -919,7 +919,7 @@ internal abstract partial class GitOpsDeployBackendBase(ILogger logger) : IDeplo
     public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(new DeployBackendCapabilities
         {
-            SupportsRollback = true,
+            SupportsRollback = false,
             SupportsCancellation = false,
             SupportsTrafficShifting = TargetKind is DeployTargetKind.AwsEcs or DeployTargetKind.AzureContainerApps or DeployTargetKind.AwsLambda or DeployTargetKind.AzureFunctions,
             RequiresOutOfBandMigrations = TargetKind is DeployTargetKind.AwsLambda or DeployTargetKind.AzureFunctions,
