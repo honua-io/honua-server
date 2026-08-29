@@ -392,6 +392,7 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch --no-tags origin "${{ github.base_ref }}"
             echo "range=origin/${{ github.base_ref }}...${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "trailing_selective=false" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
                [[ "${SELECTIVE_BASE}" =~ ^[0-9a-f]{40}$ ]] &&
                [ "${FULL_CI_INPUT}" != "true" ]; then
@@ -402,13 +403,16 @@ jobs:
             git fetch --no-tags origin trunk
             if git cat-file -e "${SELECTIVE_BASE}^{commit}" 2>/dev/null; then
               echo "range=${SELECTIVE_BASE}...${{ github.sha }}" >> "$GITHUB_OUTPUT"
+              echo "trailing_selective=true" >> "$GITHUB_OUTPUT"
             else
-              echo "::warning::selective_base ${SELECTIVE_BASE} not found in history; using the full trunk range."
+              echo "::warning::selective_base ${SELECTIVE_BASE} not found in history; forcing full CI."
               echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
+              echo "trailing_selective=false" >> "$GITHUB_OUTPUT"
             fi
           else
             git fetch --no-tags origin trunk
             echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "trailing_selective=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check for non-test changes
@@ -456,7 +460,7 @@ jobs:
           # Trailing-verification dispatch (selective_base input): same selective
           # gating as a batch — lanes/shards the diff touches, nightly stays full.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
-             [[ "${TRAILING_SELECTIVE_BASE:-}" =~ ^[0-9a-f]{40}$ ]] &&
+             [ "${{ steps.diff.outputs.trailing_selective }}" = "true" ] &&
              [ "${{ inputs.full_ci }}" != "true" ]; then
             SELECTIVE_BATCH=true
           fi
@@ -498,6 +502,16 @@ jobs:
                 | grep -Ev '^($|docs/|README\.md$|\.github/(actions/setup-dotnet-ci/|workflows/[^/]+\.yml$|ci-shards\.json$)|scripts/ci/|NuGet\.config$|src/Honua\.Core/Honua\.Core\.csproj$)' \
                 | sed '/^$/d' || true
             )
+
+            # A trailing run is selective across a range of already-landed commits,
+            # but the compatibility jobs below are currently routed by full_ci rather
+            # than by individual path selectors. Keep docs/CI-only ranges cheap; when
+            # the range contains runtime or test changes, run those compatibility
+            # lanes instead of silently suppressing them.
+            if [ "${{ steps.diff.outputs.trailing_selective }}" = "true" ] &&
+               [ -n "$INTEGRATION_FILES" ]; then
+              FULL_CI=true
+            fi
 
             if [ "${FULL_CI}" = "true" ]; then
               echo "build_changes=true" >> "$GITHUB_OUTPUT"
