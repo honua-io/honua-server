@@ -225,7 +225,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var invoker = scope.ServiceProvider.GetRequiredService<ICanonicalOperationInvoker>();
-            var operationId = LegacyOperationIds.For(proposal.Kind);
+            var operationId = request.TypedOperationId ?? LegacyOperationIds.For(proposal.Kind);
             var mapper = scope.ServiceProvider
                 .GetServices<IOperationApprovalRequestMapper>()
                 .SingleOrDefault(candidate => string.Equals(candidate.OperationId, operationId, StringComparison.Ordinal));

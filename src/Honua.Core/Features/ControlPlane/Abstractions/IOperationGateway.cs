@@ -68,6 +68,11 @@ public enum OperationGatewayOutcome
 public sealed record OperationGatewayRequest
 {
     /// <summary>
+    /// Typed operation descriptor identity used to select the sealed replay mapper.
+    /// </summary>
+    public string? TypedOperationId { get; init; }
+
+    /// <summary>
     /// Canonical typed-operation invocation identity, when the request originated from the
     /// operation catalog runtime. This is never the descriptor or proposal identity.
     /// </summary>
