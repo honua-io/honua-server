@@ -1829,7 +1829,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 3,
-      "provingTestCount": 31,
+      "provingTestCount": 32,
       "maturity": {
         "implemented": 3
       },
