@@ -201,7 +201,8 @@ PREPULL_TEXT = PREPULL_SCRIPT.read_text(encoding="utf-8")
 # Testcontainers-backed test. The helper must pull the tag it resolved from the
 # shared fixture rather than introducing a second image pin in CI.
 require(
-    r"steps:\n\s+#(?:.*\n)*?\s+- name: Pre-pull Testcontainers PostGIS image \(background\)\n"
+    r"steps:\n(?:\s*(?:#.*)?\n)*"
+    r"\s+- name: Pre-pull Testcontainers PostGIS image \(background\)\n"
     r"\s+shell: bash\n\s+run: scripts/ci/prepull-testcontainers-postgis\.sh",
     "start the Testcontainers PostGIS pre-pull as its first composite step",
 )
@@ -213,13 +214,11 @@ require(
     "await the PostGIS pre-pull immediately before Server Governance/Drift",
 )
 require(
-    r'FIXTURE="tests/dotnet/Honua\.TestKit/PostgresFixture\.cs"',
-    "resolve the pre-pull image from the Testcontainers fixture",
-    text=PREPULL_TEXT,
-)
-require(
-    r'nohup docker pull "\$\{image\}"',
-    "pull the exact PostGIS image resolved from the fixture",
+    r'FIXTURE="tests/dotnet/Honua\.TestKit/PostgresFixture\.cs"[\s\S]*?'
+    r'resolve_image\(\) \{[\s\S]*?grep[^\n]+"\$\{FIXTURE\}"[\s\S]*?\}[\s\S]*?'
+    r'image="\$\(resolve_image \|\| true\)"[\s\S]*?'
+    r'nohup docker pull "\$\{image\}" > "\$\{LOG_FILE\}" 2>&1 &$',
+    "resolve the PostGIS image from the Testcontainers fixture and pull it asynchronously",
     text=PREPULL_TEXT,
 )
 if not FORMAT_SCOPE_SCRIPT.is_file():
