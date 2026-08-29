@@ -573,10 +573,13 @@ def discover(
     native_artifacts: Path,
     policy_value: object,
     now: datetime | None = None,
+    cutoff: datetime | None = None,
 ) -> dict[str, Any]:
     policy = load_policy(policy_value)
     current = now or datetime.now(timezone.utc)
-    cutoff = receipt_cutoff(policy, current)
+    bound_cutoff = cutoff or receipt_cutoff(policy, current)
+    if bound_cutoff.tzinfo is None:
+        raise ValueError("receipt cutoff must include a timezone")
     grace = timedelta(minutes=policy["receipt_index_grace_minutes"])
     streams = (
         (
@@ -601,7 +604,7 @@ def discover(
             flatten_artifact_catalogs(artifacts_root),
             workflow,
             artifact_pattern,
-            cutoff,
+            bound_cutoff,
             skip_pattern,
             current,
             grace,
@@ -616,7 +619,7 @@ def discover(
     return {
         "contract": INDEX_CONTRACT,
         "repository": REPOSITORY,
-        "cutoff": cutoff.isoformat().replace("+00:00", "Z"),
+        "cutoff": bound_cutoff.isoformat().replace("+00:00", "Z"),
         "generated_at": current.isoformat().replace("+00:00", "Z"),
         "artifacts": entries,
         "exclusions": exclusions,
@@ -1649,6 +1652,7 @@ def main() -> int:
     discover_parser.add_argument("--native-runs", type=Path, required=True)
     discover_parser.add_argument("--pr-gate-artifacts", type=Path, required=True)
     discover_parser.add_argument("--native-artifacts", type=Path, required=True)
+    discover_parser.add_argument("--receipt-cutoff", required=True)
     discover_parser.add_argument("--output", type=Path, required=True)
 
     summary_parser = subparsers.add_parser("summarize")
@@ -1700,6 +1704,7 @@ def main() -> int:
             args.pr_gate_artifacts,
             args.native_artifacts,
             policy,
+            cutoff=parse_time(args.receipt_cutoff, "receipt cutoff"),
         )
         write_json(args.output, result)
         return 1 if result["integrity_failures"] else 0
