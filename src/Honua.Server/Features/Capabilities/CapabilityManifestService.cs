@@ -56,23 +56,10 @@ internal sealed class CapabilityManifestService(
     ILicenseEntitlementService entitlementService,
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
-    IEnumerable<IBatchComputeBackend> batchBackends,
-    IEnumerable<IDeployBackend> deployBackends,
-    IEnumerable<IWorkflowOperationStore> workflowOperationStores,
-    IEnumerable<IOpsAutonomyPolicyStore> opsAutonomyPolicyStores,
-    IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
-    IWebHostEnvironment hostEnvironment,
+    CapabilityManifestRuntimeInventory runtimeInventory,
     ICapabilityRegistry capabilityRegistry,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
-    private readonly CapabilityManifestRuntimeInventory runtimeInventory = new(
-        batchBackends,
-        deployBackends,
-        workflowOperationStores,
-        opsAutonomyPolicyStores,
-        fieldCollectionSyncStores,
-        hostEnvironment);
-
     private const string AuthorizationNotice =
         "Manifest availability is informational only; operation endpoints remain the source of truth for authorization, tenant, environment, license, and resource checks.";
 
