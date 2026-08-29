@@ -35,6 +35,7 @@ DEFAULT_SEED_PATH = TESTS_ROOT / "seed" / "client-compat-v1.sql"
 DEFAULT_SERVICE_ID = "test_service"
 DEFAULT_COLLECTION_ID = "0"
 DEFAULT_PORT = 5565
+DEFAULT_AUTH_PORT = 6565
 DEFAULT_TIMEOUT_SECONDS = 120
 
 
@@ -53,6 +54,7 @@ class StacCompatibilityRuntime:
     """Runtime metadata for the STAC compatibility lane."""
 
     base_url: str
+    auth_base_url: str
     stac_url: str
     mode: str
     service_id: str
@@ -311,6 +313,7 @@ def _read_server_commit(project_root: Path) -> str:
 def _build_runtime(
     *,
     base_url: str,
+    auth_base_url: str | None = None,
     mode: str,
     service_id: str,
     collection_id: str,
@@ -323,6 +326,7 @@ def _build_runtime(
     )
     return StacCompatibilityRuntime(
         base_url=normalized_base_url,
+        auth_base_url=(auth_base_url or normalized_base_url).rstrip("/"),
         stac_url=f"{normalized_base_url}/stac",
         mode=mode,
         service_id=service_id,
@@ -373,19 +377,26 @@ def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
         connection_string=fixture.get_npgsql_connection_string(),
         port=port,
         project_root=PROJECT_ROOT,
+    )
+    server.start(timeout=float(os.getenv("HONUA_STAC_COMPAT_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS))))
+
+    auth_server = HonuaServer(
+        connection_string=fixture.get_npgsql_connection_string(),
+        port=DEFAULT_AUTH_PORT + _get_worker_index(worker_id),
+        project_root=PROJECT_ROOT,
         environment={
-            # This certification lane includes anonymous and invalid-key admin
-            # probes, so it must inspect credentials instead of using the shared
-            # protocol harness's full-admin development bypass.
             "HONUA_DEV_AUTH": "false",
             "HONUA_DEV_AUTH_ALLOW_BYPASS": "false",
         },
     )
-    server.start(timeout=float(os.getenv("HONUA_STAC_COMPAT_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS))))
+    auth_server.start(
+        timeout=float(os.getenv("HONUA_STAC_COMPAT_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS)))
+    )
 
     try:
         yield _build_runtime(
             base_url=server.base_url,
+            auth_base_url=auth_server.base_url,
             mode="local",
             service_id=service_id,
             collection_id=collection_id,
@@ -393,6 +404,7 @@ def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
             seed_snapshot_path=str(seed_path),
         )
     finally:
+        auth_server.stop()
         server.stop()
         fixture.stop()
 
@@ -401,6 +413,12 @@ def stac_runtime() -> Generator[StacCompatibilityRuntime, None, None]:
 def base_url(stac_runtime: StacCompatibilityRuntime) -> str:
     """Expose the dedicated STAC compatibility base URL."""
     return stac_runtime.base_url
+
+
+@pytest.fixture(scope="session")
+def auth_base_url(stac_runtime: StacCompatibilityRuntime) -> str:
+    """Return the auth-enforcing endpoint used only by control-plane probes."""
+    return stac_runtime.auth_base_url
 
 
 @pytest.fixture(scope="session")

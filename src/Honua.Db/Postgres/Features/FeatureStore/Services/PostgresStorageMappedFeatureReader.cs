@@ -502,9 +502,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var maskedFields = query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } fields
             ? fields.ToHashSet(StringComparer.OrdinalIgnoreCase)
             : [];
+        var readsFromAttributesDocument = !string.IsNullOrWhiteSpace(_mapping.AttributesColumn);
         var declaredFields = _resource.SchemaFields
             .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
-                && IsSafeIdentifier(field.Name)
+                // JSON object keys are SQL string literals, not identifiers. Namespaced
+                // properties such as the standard STAC `eo:cloud_cover` key are therefore
+                // safe when the binding reads from an attributes document. Column-per-field
+                // mappings still require identifier validation.
+                && (readsFromAttributesDocument || IsSafeIdentifier(field.Name))
                 && !maskedFields.Contains(field.Name))
             .ToArray();
 

@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:d7c9c28fbfeea766d3d40768637d46452541355fd5e5817ed94ce4e4f9c172fc",
+  "fixtureRevision": "sha256:12b24e763397dbb1a0c8bc9adbb1f9d28b06d6bcb9320255181321d28556861d",
   "serverConfigRevision": "sha256:071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6",
   "authPolicyRevision": "sha256:bad3a57ccb2e67488680da7fc8722f1dc98cafd8a32ffb7ff808f29dfe5e7210",
   "digestAlgorithms": {
@@ -41,7 +41,7 @@
     {
       "path": "tests/seed/client-compat-v1.sql",
       "role": "fixture",
-      "sha256": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+      "sha256": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
       "purpose": "Canonical vector seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, layer 0, and the ten seeded features."
     },
     {
@@ -3966,7 +3966,7 @@
     "producer": "tests/python/shared/cert_envelope.py::build_lane_runtime",
     "currentValues": {
       "fixture_revision": {
-        "value": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+        "value": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
         "boundTo": "inputs[tests/seed/client-compat-v1.sql].sha256",
         "convergenceTarget": "fixtureRevision",
         "gapId": "receipt-binding-uses-per-file-digests"
