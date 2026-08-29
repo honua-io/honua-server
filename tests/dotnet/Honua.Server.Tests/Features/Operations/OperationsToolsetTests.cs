@@ -100,6 +100,62 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public void AddOperationsToolset_WithoutProposalStore_UsesFailClosedReplayVerifierAndBoots()
+    {
+        // Regression: the real replay verifier requires IOperationProposalStore in its
+        // constructor and the dispatcher requires a verifier, so no-store hosts failed
+        // ValidateOnBuild at boot (trunk red, run 33241561197). Degraded hosts must
+        // compose, and replay verification must refuse without the durable authority.
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var verifier = scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>();
+        verifier.Should().BeOfType<UnavailableOperationApprovalReplayVerifier>();
+        verifier.VerifyAsync("proposal", "instance", "hash").Result.Should().BeFalse(
+            "replay can never verify without the durable proposal authority");
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_WithProposalStore_UsesDurableReplayVerifier()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>()
+            .Should().BeOfType<OperationApprovalReplayVerifier>();
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_StoreRegisteredAfterComposition_UsesDurableReplayVerifier()
+    {
+        // The reviewer's exact scenario: fixtures add the proposal store AFTER
+        // AddOperationsToolset (post-Program ConfigureServices). Resolution-time
+        // selection must honor the final composition, not a registration snapshot.
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>()
+            .Should().BeOfType<OperationApprovalReplayVerifier>();
+    }
+
+    [UnitTest]
     public void AddOperationsToolset_WithControlPlaneExecutors_RegistersLegacyAdaptersWithoutThrowing()
     {
         // Regression: the legacy adapters are factory descriptors, and registering
