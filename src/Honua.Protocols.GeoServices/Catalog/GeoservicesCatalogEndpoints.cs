@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -550,10 +551,7 @@ internal static class GeoservicesCatalogEndpoints
         }
         if (projection.AccessError is not null)
         {
-            throw new SoapCatalogAccessException(
-                context.User.Identity?.IsAuthenticated == true
-                    ? StatusCodes.Status403Forbidden
-                    : StatusCodes.Status401Unauthorized);
+            throw new SoapCatalogAccessException(projection.AccessStatusCode!.Value);
         }
 
         // Honua currently exposes a root-only catalog. IServiceCatalog2 defines
@@ -586,7 +584,7 @@ internal static class GeoservicesCatalogEndpoints
                 new XElement(operationNamespace + "Url", soapUrl),
                 new XElement(operationNamespace + "RestUrl", entry.Url),
                 new XElement(operationNamespace + "ParentType", string.Empty),
-                new XElement(operationNamespace + "Capabilities", CapabilitiesFor(entry.Type)),
+                new XElement(operationNamespace + "Capabilities", entry.SoapCapabilities ?? CapabilitiesFor(entry.Type)),
                 new XElement(operationNamespace + "Description", string.Empty));
         }).ToArray();
     }
@@ -660,8 +658,8 @@ internal static class GeoservicesCatalogEndpoints
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var entries = new List<ServiceDirectoryEntry>();
-        var deniedPublications = new List<MetadataV2Resource>();
-        var imageServerServices = new List<MetadataV2Service>();
+        var deniedDecisions = new List<AccessDecision>();
+        var imageServerServices = new List<ImageServerProbeCandidate>();
         var successfulImageServerProbes = 0;
         var failedImageServerProbes = 0;
 
@@ -684,13 +682,15 @@ internal static class GeoservicesCatalogEndpoints
                 .Select(snapshot.ResolveResource)
                 .OfType<MetadataV2Resource>())
             {
-                if (AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+                    context, resource, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+                if (decision.IsAllowed)
                 {
                     visibleResources.Add(resource);
                 }
                 else
                 {
-                    deniedPublications.Add(resource);
+                    deniedDecisions.Add(decision);
                 }
             }
 
@@ -719,7 +719,7 @@ internal static class GeoservicesCatalogEndpoints
             {
                 if (string.Equals(directoryType, ImageServerProtocolName, StringComparison.Ordinal))
                 {
-                    imageServerServices.Add(service);
+                    imageServerServices.Add(new ImageServerProbeCandidate(service, visibleResources));
                     continue;
                 }
 
@@ -727,7 +727,10 @@ internal static class GeoservicesCatalogEndpoints
                 {
                     Name = service.Metadata.Name,
                     Type = directoryType,
-                    Url = $"{baseUrl}/rest/services/{escapedName}/{directoryType}"
+                    Url = $"{baseUrl}/rest/services/{escapedName}/{directoryType}",
+                    SoapCapabilities = string.Equals(directoryType, FeatureServerProtocolName, StringComparison.Ordinal)
+                        ? FeatureServer.FeatureServerEndpoints.BuildServiceCapabilitiesV2(service)
+                        : null
                 });
             }
         }
@@ -740,12 +743,21 @@ internal static class GeoservicesCatalogEndpoints
                 new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
                 async (index, ct) =>
                 {
-                    var service = imageServerServices[index];
+                    var candidate = imageServerServices[index];
+                    var service = candidate.Service;
                     try
                     {
-                        var layerId = await GetImageServerLayerIdAsync(snapshot, service, rasterStore, ct).ConfigureAwait(false);
-                        Interlocked.Increment(ref successfulImageServerProbes);
-                        if (layerId is not null)
+                        var probe = await GetImageServerLayerIdAsync(
+                            snapshot, service, candidate.VisibleResources, rasterStore, logger, ct).ConfigureAwait(false);
+                        if (probe.AllLookupsFailed)
+                        {
+                            Interlocked.Increment(ref failedImageServerProbes);
+                        }
+                        else
+                        {
+                            Interlocked.Increment(ref successfulImageServerProbes);
+                        }
+                        if (probe.LayerId is not null)
                         {
                             var escapedName = Uri.EscapeDataString(service.Metadata.Name);
                             imageServerEntries[index] = new ServiceDirectoryEntry
@@ -778,14 +790,22 @@ internal static class GeoservicesCatalogEndpoints
         }
 
         IResult? accessError = null;
-        if (entries.Count == 0 && deniedPublications.Count > 0)
+        int? accessStatusCode = null;
+        if (entries.Count == 0 && deniedDecisions.Count > 0)
         {
-            accessError = AccessPolicyHelpers.RequireAnyResourceAccess(context, deniedPublications);
+            var requiresAuthentication = deniedDecisions.Any(static decision => decision.RequiresAuthentication);
+            accessStatusCode = requiresAuthentication
+                ? StatusCodes.Status401Unauthorized
+                : StatusCodes.Status403Forbidden;
+            accessError = requiresAuthentication
+                ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
+                : StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
         }
 
         return new ServiceDirectoryProjection(
             entries,
             accessError,
+            accessStatusCode,
             imageServerServices.Count > 0 && successfulImageServerProbes == 0 && failedImageServerProbes > 0);
     }
 
@@ -958,29 +978,48 @@ internal static class GeoservicesCatalogEndpoints
     /// the layer index (not the service name) as the route segment for
     /// ImageServer entries.
     /// </summary>
-    private static async Task<int?> GetImageServerLayerIdAsync(
+    private static async Task<ImageServerProbeResult> GetImageServerLayerIdAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
+        IReadOnlyCollection<MetadataV2Resource> visibleResources,
         IRasterStore rasterStore,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
+        var visibleResourceIds = visibleResources
+            .Select(static resource => resource.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var successfulLookups = 0;
+        var failedLookups = 0;
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
             if (!snapshot.IsRoutable(publication)
+                || !visibleResourceIds.Contains(publication.ResourceId)
                 || publication.LayerIndex is not { } layerIndex
                 || snapshot.ResolveStorageLayerId(publication) is not { } storageLayerId)
             {
                 continue;
             }
 
-            var raster = await rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-            if (raster is not null)
+            try
             {
-                return layerIndex;
+                var raster = await rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+                successfulLookups++;
+                if (raster is not null)
+                {
+                    return new ImageServerProbeResult(layerIndex, AllLookupsFailed: false);
+                }
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
+            {
+                failedLookups++;
+                GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, service.Metadata.Name, exception);
             }
         }
 
-        return null;
+        return new ImageServerProbeResult(
+            LayerId: null,
+            AllLookupsFailed: failedLookups > 0 && successfulLookups == 0);
     }
 
     private static bool IsSupportedFormat(string? format)
@@ -998,7 +1037,14 @@ internal static class GeoservicesCatalogEndpoints
     private sealed record ServiceDirectoryProjection(
         IReadOnlyList<ServiceDirectoryEntry> Entries,
         IResult? AccessError,
+        int? AccessStatusCode,
         bool AllImageServerProbesFailed);
+
+    private sealed record ImageServerProbeCandidate(
+        MetadataV2Service Service,
+        IReadOnlyCollection<MetadataV2Resource> VisibleResources);
+
+    private sealed record ImageServerProbeResult(int? LayerId, bool AllLookupsFailed);
 
     private sealed class SoapCatalogAccessException(int statusCode) : Exception
     {

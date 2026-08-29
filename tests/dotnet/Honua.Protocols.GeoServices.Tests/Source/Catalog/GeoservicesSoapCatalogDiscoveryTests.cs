@@ -150,6 +150,10 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         soapEntries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal)
             .Should().BeEquivalentTo(expectedNames);
 
+        ReadSoapEntries(XDocument.Parse(await soapResponse.Content.ReadAsStringAsync()))
+            .Where(entry => entry.Type == "FeatureServer")
+            .Should().OnlyContain(entry => entry.Capabilities == "Query");
+
         foreach (var entry in soapEntries)
         {
             using var handoff = await client.GetAsync(new Uri(entry.Url).PathAndQuery);
@@ -206,7 +210,8 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
                 ChildValue(description, "Name"),
                 ChildValue(description, "Type"),
                 ChildValue(description, "Url"),
-                ChildValue(description, "RestUrl")))
+                ChildValue(description, "RestUrl"),
+                ChildValue(description, "Capabilities")))
             .ToArray();
 
     private static string ChildValue(XElement parent, string localName)
@@ -219,5 +224,10 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
 
     private sealed record CatalogEntry(string Name, string Type, string Url);
 
-    private sealed record SoapCatalogEntry(string Name, string Type, string SoapUrl, string RestUrl);
+    private sealed record SoapCatalogEntry(
+        string Name,
+        string Type,
+        string SoapUrl,
+        string RestUrl,
+        string Capabilities);
 }
