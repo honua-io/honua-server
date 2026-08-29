@@ -23,7 +23,7 @@ six==1.17.0
 # pytest is held on 8.x: tests/python/pytest.ini (the ini this lane inherits)
 # declares asyncio_mode/timeout options owned by pytest-asyncio and
 # pytest-timeout, and the lane conftest uses the `hookwrapper=True` hook form.
-pytest==8.4.2
+pytest==9.0.3
 pytest-asyncio==1.4.0
 pytest-timeout==2.4.0
 
