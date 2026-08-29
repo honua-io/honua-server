@@ -227,7 +227,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var invoker = scope.ServiceProvider.GetRequiredService<ICanonicalOperationInvoker>();
-            var operationId = LegacyOperationIds.For(proposal.Kind);
+            var operationId = proposal.OperationId ?? LegacyOperationIds.For(proposal.Kind);
             var mapper = scope.ServiceProvider
                 .GetServices<IOperationApprovalRequestMapper>()
                 .SingleOrDefault(candidate => string.Equals(candidate.OperationId, operationId, StringComparison.Ordinal));
@@ -459,7 +459,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         var hasIdempotencyKey = !string.IsNullOrWhiteSpace(request.IdempotencyKey);
         if (hasIdempotencyKey)
         {
-            var existing = await FindActiveByIdempotencyKeyAsync(request.Kind, request.IdempotencyKey!, cancellationToken)
+            var existing = await FindActiveByIdempotencyKeyAsync(request.Kind, request.OperationId, request.IdempotencyKey!, cancellationToken)
                 .ConfigureAwait(false);
             if (existing != null)
             {
@@ -516,8 +516,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         var proposal = new OperationProposal
         {
             ProposalId = hasIdempotencyKey
-                ? DeriveProposalId(request.Kind, request.IdempotencyKey!)
+                ? DeriveProposalId(request.Kind, request.OperationId, request.IdempotencyKey!)
                 : $"proposal-{Guid.NewGuid():N}",
+            OperationId = request.OperationId,
             Kind = request.Kind,
             // Planned is deliberately non-actionable. The proposal transitions to
             // AwaitingApproval only after the durable audit sink assigns its identity.
@@ -688,12 +689,14 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     private async Task<OperationProposal?> FindActiveByIdempotencyKeyAsync(
         OperationClass kind,
+        string? operationId,
         string idempotencyKey,
         CancellationToken cancellationToken)
     {
         var active = await _proposalStore.ListActiveAsync(kind, cancellationToken).ConfigureAwait(false);
         return active.FirstOrDefault(
-            proposal => string.Equals(proposal.Audit.IdempotencyKey, idempotencyKey, StringComparison.Ordinal));
+            proposal => string.Equals(proposal.OperationId, operationId, StringComparison.Ordinal)
+                && string.Equals(proposal.Audit.IdempotencyKey, idempotencyKey, StringComparison.Ordinal));
     }
 
     private static OperationGatewayResult ExistingProposalResult(
@@ -722,12 +725,12 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
-    // Derive a stable proposal id from (kind, idempotency key) so a repeated proposal
+    // Derive a stable proposal id from (kind, descriptor, idempotency key) so a repeated proposal
     // maps to the same durable record. This makes TryCreate collide on a duplicate,
     // giving the gateway a race-safe fetch-and-return instead of a second proposal.
-    private static string DeriveProposalId(OperationClass kind, string idempotencyKey)
+    private static string DeriveProposalId(OperationClass kind, string? operationId, string idempotencyKey)
     {
-        var material = System.Text.Encoding.UTF8.GetBytes($"{kind}:{idempotencyKey}");
+        var material = System.Text.Encoding.UTF8.GetBytes($"{kind}:{operationId}:{idempotencyKey}");
         var hash = System.Security.Cryptography.SHA256.HashData(material);
         return $"proposal-{Convert.ToHexString(hash)[..32].ToLowerInvariant()}";
     }
@@ -880,6 +883,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     private static OperationGatewayRequest RebuildRequest(OperationProposal proposal) => new()
     {
+        OperationId = proposal.OperationId,
         OperationInstanceId = proposal.Audit.OperationInstanceId,
         Kind = proposal.Kind,
         RequestedBy = proposal.RequestedBy,

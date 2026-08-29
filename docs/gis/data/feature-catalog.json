@@ -16843,6 +16843,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.FormFamily_LifecycleCreatedPackageIsVisibleThroughNativeApi",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AdminReadOnlyKey_CanReadButNotMutateStudio",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateDraft_IdempotencyKey_ReturnsOriginalDurableInvocationAndDraft",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.CreateDraft_WithNullCollections_Returns201WithEmptyCollections",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback"

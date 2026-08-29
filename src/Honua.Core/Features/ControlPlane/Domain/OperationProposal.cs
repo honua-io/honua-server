@@ -175,6 +175,9 @@ public sealed record OperationProposal
     /// </summary>
     public required string ProposalId { get; init; }
 
+    /// <summary>Exact typed descriptor identity accepted into this proposal.</summary>
+    public string? OperationId { get; init; }
+
     /// <summary>
     /// Operation class this proposal represents.
     /// </summary>

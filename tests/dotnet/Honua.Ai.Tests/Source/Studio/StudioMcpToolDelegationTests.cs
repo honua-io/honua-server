@@ -53,6 +53,8 @@ public sealed class StudioMcpToolDelegationTests
         createResult.IsError.Should().BeFalse();
         var createContent = createResult.StructuredContent
             ?? throw new InvalidOperationException("Expected structured MCP content.");
+        createContent.GetProperty("operation").GetProperty("operationInstanceId").GetString()
+            .Should().StartWith("opinst-");
         var draftId = createContent.GetProperty("draftId").GetGuid();
         var itemId = createContent.GetProperty("itemId").GetGuid();
         createContent.GetProperty("generation").GetInt64().Should().Be(1);

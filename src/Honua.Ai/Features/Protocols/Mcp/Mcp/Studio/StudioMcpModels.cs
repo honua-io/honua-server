@@ -3,6 +3,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
@@ -45,6 +47,78 @@ internal sealed class McpStudioCreateDraftArgument
     /// <summary>Immutable version this draft was reopened from, when applicable.</summary>
     [JsonPropertyName("baseVersionId")]
     public Guid? BaseVersionId { get; set; }
+}
+
+/// <summary>
+/// Backward-compatible completed draft projection with its canonical durable operation envelope.
+/// Approval/non-terminal outcomes carry the operation while draft fields remain absent.
+/// </summary>
+internal sealed record McpStudioDraftMutationOutput
+{
+    [JsonPropertyName("operation")]
+    public required OperationHandle Operation { get; init; }
+
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; init; }
+
+    [JsonPropertyName("itemId")]
+    public Guid? ItemId { get; init; }
+
+    [JsonPropertyName("packageKey")]
+    public string? PackageKey { get; init; }
+
+    [JsonPropertyName("workspaceId")]
+    public string? WorkspaceId { get; init; }
+
+    [JsonPropertyName("ownerId")]
+    public string? OwnerId { get; init; }
+
+    [JsonPropertyName("family")]
+    public StudioPackageFamily? Family { get; init; }
+
+    [JsonPropertyName("envelope")]
+    public StudioPackageEnvelope? Envelope { get; init; }
+
+    [JsonPropertyName("validation")]
+    public StudioValidationSummary? Validation { get; init; }
+
+    [JsonPropertyName("baseVersionId")]
+    public Guid? BaseVersionId { get; init; }
+
+    [JsonPropertyName("generation")]
+    public long? Generation { get; init; }
+
+    [JsonPropertyName("createdBy")]
+    public string? CreatedBy { get; init; }
+
+    [JsonPropertyName("updatedBy")]
+    public string? UpdatedBy { get; init; }
+
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset? CreatedAt { get; init; }
+
+    [JsonPropertyName("updatedAt")]
+    public DateTimeOffset? UpdatedAt { get; init; }
+
+    public static McpStudioDraftMutationOutput From(
+        StudioDraftMutationReceipt<StudioPackageDraft> receipt) => new()
+        {
+            Operation = receipt.Operation,
+            DraftId = receipt.Value?.DraftId,
+            ItemId = receipt.Value?.ItemId,
+            PackageKey = receipt.Value?.PackageKey,
+            WorkspaceId = receipt.Value?.WorkspaceId,
+            OwnerId = receipt.Value?.OwnerId,
+            Family = receipt.Value?.Family,
+            Envelope = receipt.Value?.Envelope,
+            Validation = receipt.Value?.Validation,
+            BaseVersionId = receipt.Value?.BaseVersionId,
+            Generation = receipt.Value?.Generation,
+            CreatedBy = receipt.Value?.CreatedBy,
+            UpdatedBy = receipt.Value?.UpdatedBy,
+            CreatedAt = receipt.Value?.CreatedAt,
+            UpdatedAt = receipt.Value?.UpdatedAt,
+        };
 }
 
 // -----------------------------------------------------------------------
