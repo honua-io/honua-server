@@ -331,7 +331,8 @@ public sealed class OperationsToolsetTests
     public async Task LaneD_Executor_WritesAotSafeBody_WithoutRouteOrAbsentOptionalParameters()
     {
         var handler = new CapturingHandler(HttpStatusCode.OK, "{\"ok\":true}");
-        var executor = BuildAdminExecutor("admin.metadata.coordinated-releases.rollback", handler);
+        using var client = new HttpClient(handler);
+        var executor = BuildAdminExecutor("admin.metadata.coordinated-releases.rollback", client);
         var request = new OperationRequest
         {
             OperationId = executor.OperationId,
@@ -359,7 +360,8 @@ public sealed class OperationsToolsetTests
     public async Task LaneD_Executor_MapsExpectedAdminFailureToStructuredHandle()
     {
         var handler = new CapturingHandler(HttpStatusCode.BadRequest, "{\"detail\":\"invalid scope\"}");
-        var executor = BuildAdminExecutor("admin.cache.invalidate", handler);
+        using var client = new HttpClient(handler);
+        var executor = BuildAdminExecutor("admin.cache.invalidate", client);
         var request = new OperationRequest
         {
             OperationId = executor.OperationId,
@@ -832,12 +834,12 @@ public sealed class OperationsToolsetTests
             notifications);
     }
 
-    private static AdminOperateOperationExecutor BuildAdminExecutor(string operationId, HttpMessageHandler handler)
+    private static AdminOperateOperationExecutor BuildAdminExecutor(string operationId, HttpClient client)
     {
         var definition = AdminOperateOperationCatalog.Definitions.Should()
             .ContainSingle(item => item.OperationId == operationId).Subject;
         var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(new HttpClient(handler));
+        factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
         var context = new DefaultHttpContext();
         context.Request.Scheme = "https";
         context.Request.Host = new HostString("localhost");

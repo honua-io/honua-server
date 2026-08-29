@@ -127,9 +127,9 @@ internal static class AdminOperateOperationCatalog
     {
         foreach (var method in root.GetProperty("paths").EnumerateObject()
                      .SelectMany(static path => path.Value.EnumerateObject())
-                     .Where(static method => method.Value.ValueKind == JsonValueKind.Object))
-            if (method.Value.TryGetProperty("operationId", out var id) && id.GetString() == operationId)
-                return method.Value;
+                     .Where(method => method.Value.ValueKind == JsonValueKind.Object &&
+                         method.Value.TryGetProperty("operationId", out var id) && id.GetString() == operationId))
+            return method.Value;
         throw new InvalidOperationException($"Admin OpenAPI operation '{operationId}' was not found.");
     }
 
@@ -137,9 +137,12 @@ internal static class AdminOperateOperationCatalog
     {
         foreach (var response in operation.GetProperty("responses").EnumerateObject()
                      .Where(static response => response.Name[0] == '2')
-                     .OrderBy(static item => item.Name, StringComparer.Ordinal))
-            if (TryGetContentSchema(response.Value, "content", out var schema))
-                return [Parameter("response", "Admin API response", true, ConvertSchema(root, schema))];
+                     .OrderBy(static item => item.Name, StringComparer.Ordinal)
+                     .Where(static response => TryGetContentSchema(response.Value, "content", out _)))
+        {
+            _ = TryGetContentSchema(response.Value, "content", out var schema);
+            return [Parameter("response", "Admin API response", true, ConvertSchema(root, schema))];
+        }
         return [];
     }
 
