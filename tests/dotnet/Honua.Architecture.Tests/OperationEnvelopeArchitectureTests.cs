@@ -305,7 +305,7 @@ public sealed class OperationEnvelopeArchitectureTests
     [ArchitectureTest]
     public void RestStatusEndpoint_DependsOnDurableInstanceStoreNotHandleCache()
     {
-        var source = File.ReadAllText(Path.Combine(
+        var source = File.ReadAllText(Path.Join(
             FindRepositoryRoot(),
             "src/Honua.Server/Features/Operations/OperationsEndpoints.cs"));
         Assert.Contains("IOperationInstanceStore instanceStore", source, StringComparison.Ordinal);
@@ -315,7 +315,7 @@ public sealed class OperationEnvelopeArchitectureTests
     [ArchitectureTest]
     public void CacheHitProjection_UsesCanonicalEnvelopeFactory()
     {
-        var source = File.ReadAllText(Path.Combine(
+        var source = File.ReadAllText(Path.Join(
             FindRepositoryRoot(),
             "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Tools/PublishedOperationTool.cs"));
         Assert.Contains("CompleteCacheHitAsync", source, StringComparison.Ordinal);
@@ -324,7 +324,7 @@ public sealed class OperationEnvelopeArchitectureTests
     [ArchitectureTest]
     public void PlannedJanitor_DoesNotCaptureScopedAuditSink()
     {
-        var source = File.ReadAllText(Path.Combine(
+        var source = File.ReadAllText(Path.Join(
             FindRepositoryRoot(),
             "src/Honua.Server/Features/Operations/PlannedProposalReconciler.cs"));
         Assert.Contains("IServiceScopeFactory scopeFactory", source, StringComparison.Ordinal);
@@ -636,7 +636,7 @@ public sealed class OperationEnvelopeArchitectureTests
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }

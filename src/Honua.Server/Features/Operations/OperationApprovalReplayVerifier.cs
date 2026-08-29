@@ -18,10 +18,10 @@ internal sealed class OperationApprovalReplayVerifier(IOperationProposalStore pr
     {
         var proposal = await proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
         return proposal is
-            {
-                Status: OperationProposalStatus.Executing,
-                SealedPlanHash: not null,
-            }
+        {
+            Status: OperationProposalStatus.Executing,
+            SealedPlanHash: not null,
+        }
             && string.Equals(
                 proposal.Audit.OperationInstanceId,
                 operationInstanceId,
