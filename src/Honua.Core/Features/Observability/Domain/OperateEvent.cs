@@ -302,6 +302,14 @@ public sealed record OperateEventPage
     public bool PartialResult { get; init; }
 
     /// <summary>
+    /// Set to true when the merged timeline discarded events that matched the filter, either
+    /// because the post-merge page bound trimmed them or because an upstream source returned a
+    /// full bounded page and may hold more. Consumers must treat the page as truncated coverage
+    /// rather than a complete view of the requested window.
+    /// </summary>
+    public bool Truncated { get; init; }
+
+    /// <summary>
     /// Per-source diagnostic messages produced while assembling the page.
     /// </summary>
     public IReadOnlyDictionary<OperateEventKind, string>? SourceErrors { get; init; }
