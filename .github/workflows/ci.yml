@@ -89,10 +89,15 @@ on:
         required: false
         default: ''
       full_ci:
-        description: 'Force the FULL matrix even on a train/batch/* dispatch (overrides the selective-vs-trunk batch gate). No effect off a train/batch ref.'
+        description: 'Force the FULL matrix even on a train/batch/* dispatch (overrides the selective-vs-trunk batch gate). Also overrides selective_base.'
         required: false
         type: boolean
         default: false
+      selective_base:
+        description: 'Trailing-verification mode: full SHA of a trunk ancestor (typically the last matrix-green head). The run diffs selective_base...HEAD and gates only the shards/lanes that diff touches. Empty = full lane. Overridden by full_ci=true.'
+        required: false
+        type: string
+        default: ''
       console_image:
         description: 'Optional honua-console image tag for the quickstart Console compose smoke. Defaults to repository variable HONUA_CONSOLE_IMAGE when set.'
         required: false
@@ -374,6 +379,9 @@ jobs:
 
       - name: Determine diff range
         id: diff
+        env:
+          SELECTIVE_BASE: ${{ inputs.selective_base }}
+          FULL_CI_INPUT: ${{ inputs.full_ci }}
         run: |
           # Fetch the base branch with FULL history (NOT --depth=1). The filter below
           # uses a three-dot range (base...head) that needs a merge-base; a shallow
@@ -384,6 +392,20 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch --no-tags origin "${{ github.base_ref }}"
             echo "range=origin/${{ github.base_ref }}...${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
+               [[ "${SELECTIVE_BASE}" =~ ^[0-9a-f]{40}$ ]] &&
+               [ "${FULL_CI_INPUT}" != "true" ]; then
+            # Trailing-verification dispatch: diff against the last verified
+            # trunk head so only landings since then gate lanes/shards. The
+            # SHA regex is the injection guard; an unknown SHA fails safe to
+            # the full trunk range below.
+            git fetch --no-tags origin trunk
+            if git cat-file -e "${SELECTIVE_BASE}^{commit}" 2>/dev/null; then
+              echo "range=${SELECTIVE_BASE}...${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning::selective_base ${SELECTIVE_BASE} not found in history; using the full trunk range."
+              echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            fi
           else
             git fetch --no-tags origin trunk
             echo "range=origin/trunk...${{ github.sha }}" >> "$GITHUB_OUTPUT"
@@ -393,6 +415,7 @@ jobs:
         id: filter
         env:
           PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          TRAILING_SELECTIVE_BASE: ${{ inputs.selective_base }}
         run: |
           set -euo pipefail
           # PRs and selective batches run the complete compatibility suite without
@@ -427,6 +450,13 @@ jobs:
           SELECTIVE_BATCH=false
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
              [[ "${GITHUB_REF_NAME}" == train/batch/* ]] &&
+             [ "${{ inputs.full_ci }}" != "true" ]; then
+            SELECTIVE_BATCH=true
+          fi
+          # Trailing-verification dispatch (selective_base input): same selective
+          # gating as a batch — lanes/shards the diff touches, nightly stays full.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
+             [[ "${TRAILING_SELECTIVE_BASE:-}" =~ ^[0-9a-f]{40}$ ]] &&
              [ "${{ inputs.full_ci }}" != "true" ]; then
             SELECTIVE_BATCH=true
           fi
@@ -535,6 +565,8 @@ jobs:
 
       - name: Compute shard descriptor and matrix include
         id: compute
+        env:
+          TRAILING_SELECTIVE_BASE: ${{ inputs.selective_base }}
         run: |
           set -euo pipefail
           all_shards_json=$(jq -c '[.shards[].name]' .github/ci-shards.json)
@@ -547,11 +579,20 @@ jobs:
             selective_base="origin/${{ github.base_ref }}"
           elif [ "${{ github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/train/batch/') && inputs.full_ci != true }}" = "true" ]; then
             selective_base="origin/trunk"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] &&
+               [[ "${TRAILING_SELECTIVE_BASE:-}" =~ ^[0-9a-f]{40}$ ]] &&
+               [ "${{ inputs.full_ci }}" != "true" ]; then
+            # Trailing-verification dispatch: shard-select against the last
+            # verified trunk head. Unknown SHA falls through to the script's
+            # own run_all fail-safe below.
+            selective_base="${TRAILING_SELECTIVE_BASE}"
           fi
 
           if [ -n "${selective_base}" ]; then
-            # Full base history (not --depth=1) so the targeted-tests diff has a merge-base.
-            git fetch --no-tags origin "${selective_base#origin/}"
+            # Full base history (not --depth=1) so the targeted-tests diff has a
+            # merge-base. A raw-SHA base needs no ref fetch (fetch-depth: 0
+            # checkout already has trunk history).
+            [[ "${selective_base}" == origin/* ]] && git fetch --no-tags origin "${selective_base#origin/}"
             # Fail SAFE to run_all if the diff/script cannot be computed, so a
             # batch is never under-tested by a silent selection failure.
             if ! descriptor=$(scripts/ci/honua-server-targeted-tests.sh --base "${selective_base}"); then
