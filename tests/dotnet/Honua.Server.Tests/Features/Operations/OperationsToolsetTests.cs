@@ -6,9 +6,9 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -24,12 +24,13 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
+using Honua.TestKit;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -193,6 +194,31 @@ public sealed class OperationsToolsetTests
         using var scope = provider.CreateScope();
         scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>()
             .Should().BeOfType<OperationApprovalReplayVerifier>();
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_RegistersLaneAOnlyWithDurableProposalStore_AndIsIdempotent()
+    {
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        var degraded = new ServiceCollection();
+
+        degraded.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        degraded.Should().NotContain(descriptor =>
+            descriptor.ImplementationType == typeof(AdminConnectImportOperationDescriptorProvider));
+        degraded.Should().NotContain(descriptor => descriptor.ServiceType ==
+            typeof(OperationsServiceCollectionExtensions.AdminConnectImportRegistrationMarker));
+
+        var composed = new ServiceCollection();
+        composed.AddSingleton(Substitute.For<IOperationProposalStore>());
+        composed.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        composed.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        composed.Count(descriptor => descriptor.ImplementationType ==
+            typeof(AdminConnectImportOperationDescriptorProvider)).Should().Be(1);
+        composed.Count(descriptor => descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationFactory != null).Should().Be(AdminConnectImportOperationCatalog.Definitions.Count);
     }
 
     [UnitTest]
@@ -417,6 +443,49 @@ public sealed class OperationsToolsetTests
         handle.Reason.Should().Contain("HTTP 400");
         handle.Result!.Details.Should().Contain("statusCode", "400")
             .And.Contain("response", "{\"detail\":\"invalid scope\"}");
+    }
+
+    [UnitTest]
+    public async Task LaneA_AdminOperations_RoundTrip_FromCatalog_ToPublishedTools_WhenEnabled()
+    {
+        var catalog = new OperationCatalog([new AdminConnectImportOperationDescriptorProvider()], TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: AdminConnectImportOperationCatalog.Definitions
+                .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
+                .Select(static definition => new AdminConnectImportApprovalRequestMapper(definition)));
+
+        var descriptors = (await catalog.GetSnapshotAsync(CancellationToken.None)).Operations;
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+
+        descriptors.Should().HaveCount(AdminConnectImportOperationCatalog.Definitions.Count);
+        tools.Select(static tool => tool.Name).Should().BeEquivalentTo(
+            descriptors.Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId)));
+        descriptors.Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
+            .Should().OnlyContain(static descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+    }
+
+    [UnitTest]
+    public void LaneA_DescriptorSchemas_AreProjectedFromAdminApiContract()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+
+        foreach (var definition in AdminConnectImportOperationCatalog.Definitions)
+        {
+            var operation = AdminConnectImportOperationCatalog.FindOperation(document.RootElement, definition.OpenApiOperationId);
+            operation.GetProperty("operationId").GetString().Should().Be(definition.OpenApiOperationId);
+            AdminConnectImportOperationCatalog.Descriptors.Should().ContainSingle(
+                descriptor => descriptor.OperationId == definition.OperationId);
+        }
+
+        var create = AdminConnectImportOperationCatalog.Descriptors.Single(
+            descriptor => descriptor.OperationId == "admin.connections.create");
+        create.InputSchema.Select(static parameter => parameter.Name).Should().Contain("secretReference");
+        create.InputSchema.Single(static parameter => parameter.Name == "secretReference").Schema.Type
+            .Should().Be(Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Text);
     }
 
     [UnitTest]
