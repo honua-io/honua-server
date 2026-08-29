@@ -233,7 +233,8 @@ The full contract — run-scoped keys and the same-SHA TTL poisoning they preven
 writer selection, the single kill-switch rule, the three fail-open levels, the
 trust boundary, and the accepted limitations — lives in
 [`docs/internal/ci/server-test-binary-artifacts.md`](../../ci/server-test-binary-artifacts.md).
-Rollback is `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false`.
+Rollback is `gh variable set HONUA_SERVER_TEST_PREBUILD_CONSUME --body false`;
+the absent variable is also off.
 
 This promotion is deliberately narrower than the shadowed producer designs. It
 does not authorize a shared producer job, PR Gate payload consumption, or any
