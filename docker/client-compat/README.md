@@ -131,6 +131,29 @@ between `postgres` becoming healthy and `honua` starting. It applies:
 services that depend on `honua: service_healthy` always observe a populated
 database with a current Metadata v2 snapshot.
 
+## Real multidimensional raster fixture
+
+The `multidim-fixture` profile proves the production multidimensional path,
+not a metadata-only catalog projection. It creates a two-time-slice CF NetCDF
+artifact, uploads it to the pinned LocalStack S3 emulator, registers it through
+the admin API, dispatches `coverage.multidim.metadata` through Redis to the
+native GDAL worker, and verifies the derived Zarr store plus an ImageServer PNG
+render for a selected time slice.
+
+Run it from the repository root:
+
+```bash
+docker/client-compat/multidim-fixture/run.sh
+```
+
+The script opts this profile into the development Pro grant and S3 provider;
+the ordinary client-compat lanes retain their Production and local-storage
+defaults. Remove the disposable stack afterward with:
+
+```bash
+docker compose -f docker/client-compat/compose.yml --profile multidim-fixture down --remove-orphans
+```
+
 ## Adding a new client lane
 
 1. Add `docker/client-compat/<lane>/Dockerfile`.

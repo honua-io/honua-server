@@ -52,12 +52,12 @@ public sealed class GdalMultidimCoverageExecutorTests
         result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
 
         // gdalmdiminfo (structure) runs first, then best-effort gdalinfo (extent)
-        // and gdal_translate -of Zarr (convert, so pixel slices resolve).
+        // and gdalmdimtranslate -of Zarr (convert, so pixel slices resolve).
         var mdim = runner.Invocations[0];
         mdim.Tool.Should().Be("gdalmdiminfo");
         mdim.Arguments.Should().ContainSingle().Which.Should().Be("/vsis3/honua-cubes/maui/sst.nc");
         runner.Invocations.Should().Contain(i => i.Tool == "gdalinfo");
-        var convert = runner.Invocations.Should().ContainSingle(i => i.Tool == "gdal_translate").Subject;
+        var convert = runner.Invocations.Should().ContainSingle(i => i.Tool == "gdalmdimtranslate").Subject;
         convert.Arguments.Should().ContainInOrder("-of", "Zarr", "/vsis3/honua-cubes/maui/sst.nc", "/vsis3/honua-cubes/maui/sst.zarr");
 
         context.Artifacts.Should().ContainSingle()
@@ -67,7 +67,7 @@ public sealed class GdalMultidimCoverageExecutorTests
     [UnitTest]
     public async Task Execute_GribSource_ConvertsToZarr_FormatAgnostic()
     {
-        // The executor passes the source straight to gdalmdiminfo + gdal_translate
+        // The executor passes the source straight to gdalmdiminfo + gdalmdimtranslate
         // -of Zarr, so a .grib2 object is converted exactly like NetCDF — proving
         // GRIB needs no executor change (#1795).
         var runner = new FakeGdalCommandRunner((_, _, _) =>
@@ -85,7 +85,7 @@ public sealed class GdalMultidimCoverageExecutorTests
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
 
-        var convert = runner.Invocations.Should().ContainSingle(i => i.Tool == "gdal_translate").Subject;
+        var convert = runner.Invocations.Should().ContainSingle(i => i.Tool == "gdalmdimtranslate").Subject;
         convert.Arguments.Should().ContainInOrder(
             "-of", "Zarr", "/vsis3/noaa-gfs/gfs/wind.grib2", "/vsis3/noaa-gfs/gfs/wind.zarr");
 
