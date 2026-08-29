@@ -190,14 +190,18 @@ public sealed class OperationsToolsetTests
         services.Count(descriptor =>
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
-            .Should().Be(4, "each legacy operation class gets one factory-registered adapter");
+            .Should().Be(
+                AdminOperateOperationCatalog.Definitions.Count + 4,
+                "each admin operation and legacy operation class gets one factory-registered executor");
 
         // Idempotence across repeated composition, previously TryAddEnumerable's job.
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         services.Count(descriptor =>
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
-            .Should().Be(4, "re-registration must not duplicate the legacy adapters");
+            .Should().Be(
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4,
+                "re-registration must not duplicate the legacy adapters even though admin executors are added again");
     }
 
     [UnitTest]
@@ -262,7 +266,13 @@ public sealed class OperationsToolsetTests
 
         descriptors.Should().HaveCount(AdminOperateOperationCatalog.Definitions.Count);
         foreach (var descriptor in descriptors)
-            publishedNames.Should().Contain(PublishedOperationTool.ProjectName(descriptor.OperationId));
+        {
+            var projectedName = PublishedOperationTool.ProjectName(descriptor.OperationId);
+            if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+                publishedNames.Should().NotContain(projectedName);
+            else
+                publishedNames.Should().Contain(projectedName);
+        }
     }
 
     [UnitTest]
@@ -287,7 +297,8 @@ public sealed class OperationsToolsetTests
     {
         var destructive = AdminOperateOperationCatalog.Descriptors
             .Where(descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly).ToArray();
-        destructive.Should().OnlyContain(descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+        destructive.Where(descriptor => descriptor.OperationId != "admin.metadata.prevalidate")
+            .Should().OnlyContain(descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
 
         var rollback = destructive.Should().ContainSingle(
             descriptor => descriptor.OperationId == "admin.metadata.coordinated-releases.rollback").Subject;
@@ -302,7 +313,9 @@ public sealed class OperationsToolsetTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddOperationsToolset(new ConfigurationBuilder().Build());
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         using var provider = services.BuildServiceProvider();
         var executorIds = services
             .Where(static descriptor => descriptor.ServiceType == typeof(IOperationExecutor) && descriptor.ImplementationFactory is not null)
@@ -325,6 +338,10 @@ public sealed class OperationsToolsetTests
         schema.GetProperty("properties").GetProperty("dataScripts").GetProperty("items")
             .GetProperty("required").EnumerateArray().Select(static item => item.GetString())
             .Should().Contain("scriptId");
+        descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.CreatesMetadata,
+            "the loopback POST requires an admin write credential, so semantic authorization must refuse admin:read before execution");
+        descriptor.ApprovalModel.Should().Be(OperationApprovalModel.None,
+            "prevalidation does not require operator approval; its write classification mirrors the transport credential only");
     }
 
     [UnitTest]

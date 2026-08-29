@@ -156,6 +156,15 @@ internal sealed class PublishedOperationTool : IMcpTool
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
 
+        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        {
+            // Fail closed until #3586 replaces this refusal with the unified runtime's
+            // transport-neutral approval proof. The MCP adapter must not implement an
+            // approval lane or invoke an operation that requires one.
+            return McpToolHelpers.ErrorResult(new GeoprocessingApprovalRequiredException(
+                $"operations/{_descriptor.OperationId}"));
+        }
+
         // The policy context is resolved BEFORE the cache is consulted because it is
         // part of the cache key: the cache-hit fast path skips the policy decision
         // point, so a hit may only ever serve a result to the identical principal

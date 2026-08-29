@@ -21,7 +21,8 @@ internal static class AdminOperateOperationCatalog
         bool SupportsDryRun = false,
         string? DryRunPath = null,
         HttpMethod? DryRunMethod = null,
-        string? ContentType = null);
+        string? ContentType = null,
+        OperationApprovalModel? ApprovalModel = null);
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
@@ -29,7 +30,7 @@ internal static class AdminOperateOperationCatalog
         Read("admin.metadata.release-packages.get", "Get metadata release package", "/metadata/release-packages/{packageId}", "getMetadataReleasePackage"),
         Read("admin.metadata.release-packages.gitops-manifest", "Get metadata release GitOps manifest", "/metadata/release-packages/{packageId}/gitops-manifest", "getMetadataReleaseGitOpsManifest"),
         Write("admin.metadata.release-packages.create", "Create metadata release package", HttpMethod.Post, "/metadata/release-packages", "createMetadataReleasePackage", OperationSideEffectClass.CreatesMetadata),
-        new("admin.metadata.prevalidate", "Prevalidate metadata release", HttpMethod.Post, "/metadata/prevalidate", "prevalidateMetadataReleasePackageCompatibility", OperationSideEffectClass.ReadOnly, OperationBlastRadiusClass.ResourceScope, true, "/metadata/prevalidate", HttpMethod.Post),
+        new("admin.metadata.prevalidate", "Prevalidate metadata release", HttpMethod.Post, "/metadata/prevalidate", "prevalidateMetadataReleasePackageCompatibility", OperationSideEffectClass.CreatesMetadata, OperationBlastRadiusClass.ResourceScope, true, "/metadata/prevalidate", HttpMethod.Post, ApprovalModel: OperationApprovalModel.None),
         Write("admin.metadata.releases.activate", "Activate metadata release", HttpMethod.Post, "/metadata/releases/operations", "createMetadataReleaseOperation", OperationSideEffectClass.MutatesMetadata, OperationBlastRadiusClass.DeploymentScope),
         Read("admin.metadata.releases.status", "Get metadata release status", "/metadata/releases/{packageId}/operation", "getMetadataReleaseOperationByPackageId"),
         Write("admin.metadata.coordinated-releases.rollback", "Roll back coordinated release", HttpMethod.Post, "/metadata/coordinated-releases/operations/{operationId}/rollback", "rollbackCoordinatedReleaseOperation", OperationSideEffectClass.DestroysState, OperationBlastRadiusClass.DeploymentScope),
@@ -73,7 +74,8 @@ internal static class AdminOperateOperationCatalog
             Description = operation.TryGetProperty("description", out var description) ? description.GetString()! : definition.Title,
             Category = "admin",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = definition.SideEffect == OperationSideEffectClass.ReadOnly ? OperationApprovalModel.None : OperationApprovalModel.OperatorGate,
+            ApprovalModel = definition.ApprovalModel
+                ?? (definition.SideEffect == OperationSideEffectClass.ReadOnly ? OperationApprovalModel.None : OperationApprovalModel.OperatorGate),
             Policy = new OperationPolicyMetadata
             {
                 BlastRadiusClass = definition.BlastRadius,
