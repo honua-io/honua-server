@@ -23,7 +23,7 @@
     },
     {
       "test_case_id": "CERT-CONN-02",
-      "status": "pass",
+      "status": "not-applicable",
       "duration_ms": 56,
       "measured_count": null,
       "measured_delta": null,
@@ -37,7 +37,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "Anonymous GET /api/v1/admin/services -> 401 with WWW-Authenticate='ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"'; pystac-client's StacApiIO surfaced the same status as APIError. Raw httpx used because the control plane is not a STAC endpoint.",
-      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+      "evidence_ref": "http://honua:5000/api/v1/admin/services",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-AUTH-02",
@@ -46,7 +47,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services with X-API-Key -> 200. Honua's control plane is API-key authenticated; HTTP Basic is an opt-in compatibility mode that also refuses non-HTTPS transport, and there is no bearer/login flow for this surface.",
-      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+      "evidence_ref": "http://honua:5000/api/v1/admin/services",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-DISC-01",
@@ -569,7 +571,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services with an incorrect X-API-Key -> 401. Raw httpx: the control plane is not a STAC endpoint.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "NB-STAC-ERR-06",

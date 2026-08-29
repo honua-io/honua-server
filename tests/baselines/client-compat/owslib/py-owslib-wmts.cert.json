@@ -23,7 +23,7 @@
     },
     {
       "test_case_id": "CERT-CONN-02",
-      "status": "pass",
+      "status": "not-applicable",
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,

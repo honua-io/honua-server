@@ -23,12 +23,13 @@
     },
     {
       "test_case_id": "CERT-CONN-02",
-      "status": "pass",
+      "status": "not-applicable",
       "duration_ms": 0,
       "measured_count": null,
       "measured_delta": null,
       "notes": "Transport scheme observed via httr/curl: 'http'. The client-compat compose network is plain HTTP by design, so no TLS handshake is available here; TLS is exercised in the release tier against the HTTPS candidate deployment.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "client_identity": "httr"
     },
     {
       "test_case_id": "CERT-AUTH-01",
@@ -37,7 +38,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "Anonymous httr GET /api/v1/admin/services returned 401 (expected 401/403). Control-plane probe uses httr because both feature protocols are anonymous in the client-compat fixture.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "client_identity": "httr"
     },
     {
       "test_case_id": "CERT-AUTH-02",
@@ -46,7 +48,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "httr GET /api/v1/admin/services with header X-API-Key: <admin key> returned 200 (expected 2xx). Honua's control plane authenticates with an API key header, not HTTP Basic and not a bearer login flow.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "client_identity": "httr"
     },
     {
       "test_case_id": "CERT-DISC-01",

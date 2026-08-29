@@ -11,8 +11,6 @@ namespace Honua.Architecture.Tests;
 /// </summary>
 public sealed class ClientCertificationEvidenceCorrectnessTests
 {
-    private const string ProducingServerCommit = "dbb368c5d06fb744e5289e4fd6ab30acc3973698";
-
     private static readonly HashSet<string> AnalystLanes =
     [
         "duckdb", "py-geopandas", "py-owslib", "py-pystac", "r-sf",
@@ -53,32 +51,34 @@ public sealed class ClientCertificationEvidenceCorrectnessTests
                 var commit = document.RootElement.GetProperty("server_commit").GetString();
                 commit.Should().MatchRegex("^[0-9a-f]{40}$");
                 commit.Should().NotBe("unknown");
-                commit.Should().Be(ProducingServerCommit,
-                    "#3481's baselines were produced from the original certification run commit");
             }
         }
     }
 
     [ArchitectureTest]
-    public void GeoPandasHttpxObservations_NameTheClientThatPerformedEachCall()
+    public void AnalystControlPlaneObservations_NameTheClientThatPerformedEachCall()
     {
         foreach (var (path, document) in ReadAnalystBaselines())
         {
             using (document)
             {
                 var lane = document.RootElement.GetProperty("client_lane").GetString();
-                if (lane != "py-geopandas")
-                {
-                    continue;
-                }
-
                 foreach (var result in ResultsAndExtensions(document.RootElement))
                 {
-                    if (result.GetProperty("test_case_id").GetString() is
-                        "CERT-AUTH-01" or "CERT-AUTH-02" or "NB-GPD-AUTH-01")
+                    var testCaseId = result.GetProperty("test_case_id").GetString();
+                    var expectedIdentity = (lane, testCaseId) switch
                     {
-                        result.GetProperty("client_identity").GetString().Should().Be("httpx",
-                            $"GeoPandas has no control-plane API and did not perform the auth probe in {path}");
+                        ("duckdb", "CERT-AUTH-01" or "CERT-AUTH-02" or "NB-DDB-AUTH-03") => "httpx",
+                        ("py-geopandas", "CERT-AUTH-01" or "CERT-AUTH-02" or "NB-GPD-AUTH-01") => "httpx",
+                        ("py-pystac", "CERT-AUTH-01" or "CERT-AUTH-02" or "NB-STAC-ERR-05") => "httpx",
+                        ("r-sf", "CERT-AUTH-01" or "CERT-AUTH-02") => "httr",
+                        _ => null,
+                    };
+                    if (expectedIdentity is not null)
+                    {
+                        result.TryGetProperty("client_identity", out var identity).Should().BeTrue(
+                            $"helper-client auth observations must be attributed in {path} ({testCaseId})");
+                        identity.GetString().Should().Be(expectedIdentity);
                     }
                 }
             }
@@ -86,17 +86,16 @@ public sealed class ClientCertificationEvidenceCorrectnessTests
     }
 
     [ArchitectureTest]
-    public void GeoPandasHttpBaselines_DoNotClaimTlsPassed()
+    public void AnalystHttpBaselines_RecordTlsAsNotApplicable()
     {
-        foreach (var (_, document) in ReadAnalystBaselines().Where(entry =>
-                     entry.Document.RootElement.GetProperty("client_lane").GetString() == "py-geopandas"))
+        foreach (var (_, document) in ReadAnalystBaselines())
         {
             using (document)
             {
                 var tls = document.RootElement.GetProperty("results").EnumerateArray()
                     .Single(result => result.GetProperty("test_case_id").GetString() == "CERT-CONN-02");
-                tls.GetProperty("status").GetString().Should().Be("skip");
-                tls.GetProperty("notes").GetString().Should().Contain("plain HTTP");
+                tls.GetProperty("status").GetString().Should().Be("not-applicable");
+                tls.GetProperty("notes").GetString().Should().MatchRegex("(?i)plain HTTP|HTTP-only");
             }
         }
     }

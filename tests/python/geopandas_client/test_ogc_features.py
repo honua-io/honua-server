@@ -125,7 +125,7 @@ def test_conn02_transport_scheme(
 
     ogc_features_evidence.record(
         "CERT-CONN-02",
-        "pass" if scheme == "https" else "skip",
+        "pass" if scheme == "https" else "not-applicable",
         duration_ms=timer.elapsed_ms,
         client_identity="py-geopandas",
         notes=(

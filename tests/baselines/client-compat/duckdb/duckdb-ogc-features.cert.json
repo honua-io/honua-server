@@ -23,7 +23,7 @@
     },
     {
       "test_case_id": "CERT-CONN-02",
-      "status": "pass",
+      "status": "not-applicable",
       "duration_ms": 0,
       "measured_count": null,
       "measured_delta": null,
@@ -37,7 +37,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "Anonymous GET /api/v1/admin/services -> 401 with WWW-Authenticate: ApiKey realm=\"Honua Admin\", header=\"X-API-Key\". Measured with httpx: DuckDB surfaces no HTTP status code or challenge header.",
-      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+      "evidence_ref": "http://honua:5000/api/v1/admin/services",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-AUTH-02",
@@ -46,7 +47,8 @@
       "measured_count": 6,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services with X-API-Key -> 200, 6 services. Honua's control plane uses an API key, not HTTP Basic and not a bearer login flow; HTTP Basic against the same path returns 401 on this deployment. DuckDB httpfs could not range-read the admin document (IO Error: Short read for HTTP GET to 'http://honua:5000/api/v1/admin/services': requested range bytes=0-1514 (1515 bytes), but received 1514 bytes); authenticated access proven over httpx instead.",
-      "evidence_ref": "http://honua:5000/api/v1/admin/services"
+      "evidence_ref": "http://honua:5000/api/v1/admin/services",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-DISC-01",
@@ -254,7 +256,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services with an invalid X-API-Key -> 401 (not 403, not 500). Measured with httpx.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "NB-DDB-ERR-01",
