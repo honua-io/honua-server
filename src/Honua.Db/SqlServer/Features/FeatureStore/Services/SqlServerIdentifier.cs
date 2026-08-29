@@ -61,6 +61,6 @@ internal static partial class SqlServerIdentifier
         return "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
     }
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex IdentifierPattern();
 }
