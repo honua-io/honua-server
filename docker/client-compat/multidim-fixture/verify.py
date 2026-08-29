@@ -98,18 +98,24 @@ def main() -> None:
     if not any(variable.get("name") == "sea_surface_temperature" for variable in variables):
         raise RuntimeError(f"scanned variable missing from ImageServer metadata: {variables}")
 
-    definition = json.dumps([{
-        "variableName": "sea_surface_temperature", "dimensionName": "time", "values": [1704067200000]
-    }], separators=(",", ":"))
-    query = urllib.parse.urlencode({
-        "f": "image", "format": "png", "bbox": "-122.5,37.7,-122.35,37.85",
-        "bboxSR": "4326", "imageSR": "4326", "size": "4,4",
-        "multidimensionalDefinition": definition,
-    })
-    _, image, content_type = request(f"/rest/services/browser_compat/ImageServer/exportImage?{query}")
-    if content_type != "image/png" or not image.startswith(b"\x89PNG\r\n\x1a\n"):
-        detail = image.decode(errors="replace") if content_type == "application/json" else f"{len(image)} bytes"
-        raise RuntimeError(f"selected slice was not rendered as PNG ({content_type}): {detail}")
+    images = []
+    for timestamp in (1704067200000, 1704153600000):
+        definition = json.dumps([{
+            "variableName": "sea_surface_temperature", "dimensionName": "time", "values": [timestamp]
+        }], separators=(",", ":"))
+        query = urllib.parse.urlencode({
+            "f": "image", "format": "png", "bbox": "-122.5,37.7,-122.35,37.85",
+            "bboxSR": "4326", "imageSR": "4326", "size": "4,4",
+            "multidimensionalDefinition": definition,
+        })
+        _, image, content_type = request(f"/rest/services/browser_compat/ImageServer/exportImage?{query}")
+        if content_type != "image/png" or not image.startswith(b"\x89PNG\r\n\x1a\n"):
+            detail = image.decode(errors="replace") if content_type == "application/json" else f"{len(image)} bytes"
+            raise RuntimeError(f"slice {timestamp} was not rendered as PNG ({content_type}): {detail}")
+        images.append(image)
+
+    if images[0] == images[1]:
+        raise RuntimeError("distinct time slices rendered identical PNG content; time selection was ignored")
 
     print("real multidimensional fixture verified: NetCDF -> native scan -> Zarr -> ImageServer slice")
 

@@ -10,6 +10,11 @@ export HONUA_CLIENT_COMPAT_STORAGE_PROVIDER=AwsS3
 
 docker compose -f "$compose_file" --profile multidim-fixture up \
   --build \
-  --abort-on-container-exit \
-  --exit-code-from multidim-fixture \
+  --wait \
+  honua gdal-worker
+
+docker compose -f "$compose_file" --profile multidim-fixture run \
+  --build \
+  --rm \
+  --no-deps \
   multidim-fixture
