@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Domain;
@@ -12,6 +13,31 @@ namespace Honua.Core.Tests.Raster.ZarrParser;
 
 public class ZarrMetadataExtractorTests
 {
+    [Fact]
+    public async Task ReadMetadataAsync_ConsolidatedGroupWithoutVariablesManifest_DiscoversArrays()
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedZlib(
+            root: "stores/gdal",
+            rows: 4,
+            cols: 4,
+            chunkRows: 4,
+            chunkCols: 4,
+            sample: (r, c) => r + c,
+            srid: 4326,
+            xMin: -180,
+            yMin: -90,
+            xMax: 180,
+            yMax: 90);
+        objects["stores/gdal/.zattrs"] = "{}"u8.ToArray();
+        objects["stores/gdal/.zmetadata"] = Encoding.UTF8.GetBytes(
+            "{\"zarr_consolidated_format\":1,\"metadata\":{\"temperature/.zarray\":{}}}");
+
+        var metadata = await new ZarrMetadataExtractor()
+            .ReadMetadataAsync(new InMemoryZarrRangeReader(objects), "bucket", "stores/gdal");
+
+        metadata.Arrays.Should().ContainSingle().Which.Name.Should().Be("temperature");
+    }
+
     [Fact]
     public async Task ReadMetadataAsync_SingleArrayUncompressed_DiscoversShapeAndDtype()
     {
