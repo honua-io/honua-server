@@ -165,6 +165,7 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
     /// </summary>
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
     public async Task ApproveAndRejectProposal_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis()
     {
         var fixture = new WebAppFixture()
