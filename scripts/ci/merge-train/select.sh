@@ -378,28 +378,6 @@ train_refresh_review_gate() {
     TRAIN_REVIEW_CATCHUP_NEEDED=1
   fi
 
-  # Feed ourselves when admission has no review evidence: the train dispatches
-  # the bounded catch-up pass (#3562) instead of waiting for a
-  # schedule GitHub does not reliably fire (claude-review.yml has never had a
-  # schedule-event run; merge-train's own cron fires at ~a third of nominal).
-  # The pass carries its own per-head dedup and selection caps. One dispatch per
-  # controller run; failure is non-fatal because review trails the merge.
-  if [[ -n "${TRAIN_REVIEW_CATCHUP_NEEDED:-}" \
-        && -z "${TRAIN_REVIEW_CATCHUP_DISPATCHED:-}" && "${TRAIN_APPLY:-0}" == "1" \
-        && "${TRAIN_REVIEW_CATCHUP_DISPATCH_DISABLED:-0}" != "1" ]]; then
-    TRAIN_REVIEW_CATCHUP_DISPATCHED=1
-    # >/dev/null is LOAD-BEARING: `gh workflow run` prints the run URL on
-    # STDOUT, and this dispatch executes inside the selection path whose stdout
-    # is captured into the selected-candidates JSON. Without the redirect the
-    # URL lands inside that capture and the post-loop `jq 'length'` dies on
-    # "Invalid numeric literal at line 2, column 6" -- the colon in https: --
-    # crashing the whole train run (observed live, run 33135946439-era,
-    # 2026-08-28T02:15Z). stderr stays visible for the failure warn below.
-    train_side_effect gh workflow run claude-review.yml \
-      --repo "${GITHUB_REPOSITORY}" --ref "${TRAIN_BASE_BRANCH:-trunk}" >/dev/null \
-      || train_warn "review catch-up dispatch failed; heads attest via schedule or manual request"
-  fi
-
   if [[ "${TRAIN_APPLY:-0}" == "1" ]]; then
     train_publish_review_gate_status "${pr}" "${head}" "${state}" "${description}" || return 1
   fi
@@ -419,11 +397,49 @@ train_snapshot_gate_success() {
     | length > 0' <<<"${snapshot}" >/dev/null
 }
 
+# Dispatch the exact selected PR/head pairs that were admitted without review
+# evidence. The parent controller calls this after the selector's captured
+# pipeline has completed, so pre-land re-attestation cannot lose a subshell
+# marker and dispatch another paid review pass. Direct dispatch also bypasses
+# the scheduled catch-up selector's intentional 30-minute age floor.
+train_dispatch_selected_reviews() {
+  local selected="$1" target pr head title prior_titles
+  [[ "${TRAIN_APPLY:-0}" == "1" ]] || return 0
+  if [[ -n "${TRAIN_REVIEW_RUN_TITLES_CMD:-}" ]]; then
+    prior_titles="$("${TRAIN_REVIEW_RUN_TITLES_CMD}")" || {
+      train_warn 'exact-head review history unavailable; scheduled catch-up will retry safely'
+      return 0
+    }
+  else
+    prior_titles="$(gh api --paginate \
+      "repos/${GITHUB_REPOSITORY}/actions/workflows/claude-review.yml/runs?event=workflow_dispatch&per_page=100" \
+      --jq '.workflow_runs[].display_title')" || {
+      train_warn 'exact-head review history unavailable; scheduled catch-up will retry safely'
+      return 0
+    }
+  fi
+  while IFS= read -r target; do
+    [[ -n "${target}" ]] || continue
+    pr="$(jq -r '.number' <<<"${target}")"
+    head="$(jq -r '.headRefOid' <<<"${target}")"
+    title="Claude catch-up #${pr} @ ${head}"
+    if grep -Fqx -- "${title}" <<<"${prior_titles}"; then
+      train_log "exact-head review already dispatched for #${pr}@${head}"
+      continue
+    fi
+    train_side_effect gh workflow run claude-review.yml \
+      --repo "${GITHUB_REPOSITORY}" --ref "${TRAIN_BASE_BRANCH:-trunk}" \
+      -f pr="${pr}" -f head="${head}" >/dev/null \
+      || train_warn "exact-head review dispatch failed for #${pr}@${head}; heads attest via schedule or manual request"
+  done < <(jq -c '.[] | select(.reviewCatchupNeeded == true)' <<<"${selected}")
+}
+
 # Re-fetch all mutable PR state. The rollup belongs to headRefOid, so comparing
 # expected_head binds both gate results to the exact admitted SHA.
 train_pr_admission() {
   local pr="$1" expected_head="$2" snapshot labels
   TRAIN_LAST_ADMISSION_SNAPSHOT=""
+  TRAIN_REVIEW_CATCHUP_NEEDED=""
   snapshot="$(train_pr_admission_snapshot "${pr}" 2>/dev/null)" || {
     train_warn "reject #${pr}: admission snapshot unavailable"; return 1;
   }
@@ -436,9 +452,6 @@ train_pr_admission() {
   train_pr_has_hold_label "${labels}" && { train_warn "reject #${pr}: held/escalated"; return 1; }
   train_refresh_review_gate "${pr}" "${expected_head}" "${snapshot}" || { train_warn "reject #${pr}: review admission refused (finding open, objection standing, or courtesy hold)"; return 1; }
   train_snapshot_gate_success "${snapshot}" "PR Gate" || { train_warn "reject #${pr}: PR Gate not successful on head"; return 1; }
-  if [[ "${TRAIN_APPLY:-0}" != "1" ]]; then
-    train_snapshot_gate_success "${snapshot}" "Review Gate" || { train_warn "reject #${pr}: Review Gate not successful on head"; return 1; }
-  fi
   TRAIN_LAST_ADMISSION_SNAPSHOT="${snapshot}"
 }
 
@@ -533,7 +546,7 @@ train_select() {
 
     # Exact-head admission is mandatory. Batch CI remains the integration
     # authority, but cannot substitute for PR and Codex-review readiness.
-    local gate expected_head reuse_metadata
+    local gate expected_head reuse_metadata review_catchup_needed
     expected_head="$(jq -r '.headRefOid' <<<"${line}")"
     if ! train_pr_admission "${number}" "${expected_head}"; then
       train_log "skip #${number}: exact-head admission failed"; continue
@@ -542,14 +555,18 @@ train_select() {
     # Gate state for observability; it may legitimately be MISSING.
     gate="$(train_select_ci_gate_state "$(jq -c '.statusCheckRollup' <<<"${TRAIN_LAST_ADMISSION_SNAPSHOT}")")"
     reuse_metadata="$(train_select_pr_gate_reuse_metadata "${TRAIN_LAST_ADMISSION_SNAPSHOT}" "${expected_head}")"
+    review_catchup_needed=false
+    [[ -n "${TRAIN_REVIEW_CATCHUP_NEEDED:-}" ]] && review_catchup_needed=true
 
     jq -nc --argjson n "${number}" \
            --arg oid "${expected_head}" \
            --arg created "$(jq -r '.createdAt' <<<"${line}")" \
            --arg gate "${gate}" \
            --arg author "$(jq -r '.author.login // .author.name // "?"' <<<"${line}")" \
+           --argjson review_catchup_needed "${review_catchup_needed}" \
            --argjson reuse "${reuse_metadata}" \
-      '{number:$n, headRefOid:$oid, createdAt:$created, gate:$gate, author:$author} + $reuse'
+      '{number:$n, headRefOid:$oid, createdAt:$created, gate:$gate, author:$author,
+        reviewCatchupNeeded:$review_catchup_needed} + $reuse'
 
     count=$((count + 1))
     if [[ "${count}" -ge "${MAX_BATCH}" ]]; then
