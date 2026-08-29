@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -142,8 +143,13 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         }
 
         // Validate field exists in the resource schema
+        // UnknownFilterFieldException (an ArgumentException) rather than the base type, so a
+        // caller evaluating one filter across several resources can tell an undeclared property
+        // apart from an invalid expression. Normalisation only resolves properties in
+        // comparison-to-literal position, so for every other shape -- IS NULL, spatial
+        // predicates, BETWEEN -- this is the first place an unknown field is detected at all.
         var field = context.TryGetField(property.PropertyName) ??
-            throw new ArgumentException(ErrorMessages.NotFound.FormatField(property.PropertyName, context.ResourceName));
+            throw new UnknownFilterFieldException(ErrorMessages.NotFound.FormatField(property.PropertyName, context.ResourceName));
 
         if (field.IsGeometry)
         {
@@ -305,7 +311,7 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
                             return GetGeometryColumnExpression(context);
                         }
 
-                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                        throw UnknownFilterFieldException.ForProperty(property.PropertyName);
                     }
 
                     if (!field.Value.IsGeometry)
@@ -838,7 +844,7 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
                     var field = context.TryGetField(property.PropertyName);
                     if (field is null && !IsGeometryAlias(property.PropertyName))
                     {
-                        throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field");
+                        throw UnknownFilterFieldException.ForProperty(property.PropertyName);
                     }
 
                     if (field is not null && !field.Value.IsGeometry)
@@ -1043,7 +1049,12 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
         if (expression is PropertyReference propertyReference)
         {
             var field = context.TryGetField(propertyReference.PropertyName);
-            if (field is null || field.Value.Type != MetadataV2FieldType.Json)
+            if (field is null)
+            {
+                throw UnknownFilterFieldException.ForProperty(propertyReference.PropertyName);
+            }
+
+            if (field.Value.Type != MetadataV2FieldType.Json)
             {
                 throw new ArgumentException($"Array predicates require JSON array fields. '{propertyReference.PropertyName}' is not JSON.");
             }

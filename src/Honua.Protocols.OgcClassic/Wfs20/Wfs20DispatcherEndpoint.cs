@@ -90,6 +90,14 @@ internal static class Wfs20DispatcherEndpoint
     internal static readonly IReadOnlySet<string> ImplementedOperations =
         new HashSet<string>(_operationHandlers.Keys, StringComparer.OrdinalIgnoreCase);
 
+    private static readonly HashSet<string> HeadRejectedKvpOperations =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Transaction",
+            "CreateStoredQuery",
+            "DropStoredQuery",
+        };
+
     private static readonly string[] SupportedHttpMethods = new[] { "GET", "POST" };
     /// <summary>
     /// Maps the single WFS 2.0 dispatcher endpoint
@@ -108,6 +116,7 @@ internal static class Wfs20DispatcherEndpoint
         // so disabling caching for the whole dispatcher keeps reads correct without a measurable cost.
         // Mirrors the WMTS and WCS classic endpoints, which opt out the same way.
         endpoints.MapMethods("/wfs", SupportedHttpMethods, HandleWfsRequest)
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata(SupportedHttpMethods, ShouldRejectHead))
             .WithDisplayName("WFS 2.0 Service")
             .WithName("Wfs20Service")
             .WithSummary("OGC Web Feature Service 2.0")
@@ -120,6 +129,19 @@ internal static class Wfs20DispatcherEndpoint
             .Produces(405);
 
         return endpoints;
+    }
+
+    /// <summary>
+    /// Rejects HEAD only for the KVP operations that mutate features or stored-query state.
+    /// Discovery and query operations on the same route retain normal GET-equivalent HEAD
+    /// behavior.
+    /// </summary>
+    private static bool ShouldRejectHead(HttpContext context)
+    {
+        var operation = context.Request.Query[Wfs20Utilities.ParameterNames.Request]
+            .FirstOrDefault()
+            ?.Trim();
+        return operation is not null && HeadRejectedKvpOperations.Contains(operation);
     }
 
     /// <summary>
@@ -1467,7 +1489,8 @@ internal static class Wfs20DispatcherEndpoint
     /// Builds the WFS 2.0 GetCapabilities XML by hand from the typed <see cref="WfsCapabilities"/>
     /// model. Replaces XmlSerializer for this path, which fails under PublishAot=true (no runtime
     /// code generation). The output mirrors the XmlSerializer rendering: the default (wfs/2.0)
-    /// namespace plus ows/fes/gml/honua/xlink/xsd/xsi declarations, version, updateSequence and
+    /// namespace plus an explicit wfs prefix bound to the same URI and ows/fes/gml/honua/xlink/xsd/xsi
+    /// declarations, version, updateSequence and
     /// xsi:schemaLocation attributes, and the same ServiceIdentification / ServiceProvider /
     /// OperationsMetadata / FeatureTypeList / Filter_Capabilities content the model carries
     /// (including SECTIONS filtering, already applied upstream by leaving properties null).
@@ -1487,8 +1510,20 @@ internal static class Wfs20DispatcherEndpoint
         using (var writer = XmlWriter.Create(stringWriter, settings))
         {
             writer.WriteStartDocument();
-            writer.WriteStartElement("WFS_Capabilities", Wfs20Utilities.WfsNamespace);
+            // WFS-namespace elements are written with an explicit empty prefix so the
+            // document keeps the default-namespace shape (<FeatureTypeList>, not
+            // <wfs:FeatureTypeList>) even though a "wfs" prefix is also bound below.
+            writer.WriteStartElement(string.Empty, "WFS_Capabilities", Wfs20Utilities.WfsNamespace);
 
+            // Bind "wfs" explicitly, and bind it BEFORE any other declaration whose URI
+            // contains "wfs" (notably xmlns:honua="http://honua.io/wfs"). Real WFS clients
+            // resolve the service namespace by prefix and fall back to a substring match on
+            // the declared URIs: ows4R (the R OGC client) does exactly that, so with only a
+            // default-namespace binding it resolved "wfs" to http://honua.io/wfs and parsed
+            // ZERO feature types out of an otherwise valid capabilities document. Declaring
+            // the conventional prefix (as GeoServer/MapServer do) is a pure addition: element
+            // names, schema validity and every namespace-correct client are unaffected.
+            writer.WriteAttributeString("xmlns", "wfs", null, Wfs20Utilities.WfsNamespace);
             writer.WriteAttributeString("xmlns", "ows", null, Wfs20Utilities.OwsNamespace);
             writer.WriteAttributeString("xmlns", "fes", null, Wfs20Utilities.FesNamespace);
             writer.WriteAttributeString("xmlns", "gml", null, Wfs20Utilities.GmlNamespace);
@@ -1735,15 +1770,15 @@ internal static class Wfs20DispatcherEndpoint
             return;
         }
 
-        writer.WriteStartElement("FeatureTypeList", Wfs20Utilities.WfsNamespace);
+        writer.WriteStartElement(string.Empty, "FeatureTypeList", Wfs20Utilities.WfsNamespace);
         foreach (var featureType in featureTypeList.FeatureTypes)
         {
-            writer.WriteStartElement("FeatureType", Wfs20Utilities.WfsNamespace);
-            writer.WriteElementString("Name", Wfs20Utilities.WfsNamespace, featureType.Name);
-            writer.WriteElementString("Title", Wfs20Utilities.WfsNamespace, featureType.Title);
+            writer.WriteStartElement(string.Empty, "FeatureType", Wfs20Utilities.WfsNamespace);
+            writer.WriteElementString(string.Empty, "Name", Wfs20Utilities.WfsNamespace, featureType.Name);
+            writer.WriteElementString(string.Empty, "Title", Wfs20Utilities.WfsNamespace, featureType.Title);
             if (featureType.Abstract is not null)
             {
-                writer.WriteElementString("Abstract", Wfs20Utilities.WfsNamespace, featureType.Abstract);
+                writer.WriteElementString(string.Empty, "Abstract", Wfs20Utilities.WfsNamespace, featureType.Abstract);
             }
 
             if (featureType.Keywords is { Length: > 0 })
@@ -1757,21 +1792,21 @@ internal static class Wfs20DispatcherEndpoint
                 writer.WriteEndElement();
             }
 
-            writer.WriteElementString("DefaultCRS", Wfs20Utilities.WfsNamespace, featureType.DefaultCRS);
+            writer.WriteElementString(string.Empty, "DefaultCRS", Wfs20Utilities.WfsNamespace, featureType.DefaultCRS);
             if (featureType.OtherCRS is not null)
             {
                 foreach (var otherCrs in featureType.OtherCRS)
                 {
-                    writer.WriteElementString("OtherCRS", Wfs20Utilities.WfsNamespace, otherCrs);
+                    writer.WriteElementString(string.Empty, "OtherCRS", Wfs20Utilities.WfsNamespace, otherCrs);
                 }
             }
 
             if (featureType.OutputFormats is { } outputFormats)
             {
-                writer.WriteStartElement("OutputFormats", Wfs20Utilities.WfsNamespace);
+                writer.WriteStartElement(string.Empty, "OutputFormats", Wfs20Utilities.WfsNamespace);
                 foreach (var format in outputFormats.Formats)
                 {
-                    writer.WriteElementString("Format", Wfs20Utilities.WfsNamespace, format);
+                    writer.WriteElementString(string.Empty, "Format", Wfs20Utilities.WfsNamespace, format);
                 }
 
                 writer.WriteEndElement();
@@ -1790,7 +1825,7 @@ internal static class Wfs20DispatcherEndpoint
             {
                 foreach (var metadataUrl in featureType.MetadataURLs)
                 {
-                    writer.WriteStartElement("MetadataURL", Wfs20Utilities.WfsNamespace);
+                    writer.WriteStartElement(string.Empty, "MetadataURL", Wfs20Utilities.WfsNamespace);
                     if (metadataUrl.Type is not null)
                     {
                         writer.WriteAttributeString("type", metadataUrl.Type);

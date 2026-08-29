@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.GeoServicesSql;
@@ -16,6 +17,43 @@ public class PostgresSqlFilterTranslatorTests
     public PostgresSqlFilterTranslatorTests()
     {
         _resource = CreateResource();
+    }
+
+    [Fact]
+    public void Translate_UnknownPropertyInIsNull_ThrowsUnknownFilterFieldException()
+    {
+        // Normalisation only resolves properties that appear in comparison-to-literal position,
+        // so for an IS NULL (and every other non-comparison shape) translation is the first place
+        // an undeclared property is detected at all. Throwing the plain base type made
+        // FilterExpressionService report an untyped failure, and a multi-collection STAC search
+        // answered 400 instead of skipping the collection that lacks the field
+        // (review finding on honua-server#3489).
+        var isNull = new UnaryExpression(UnaryOperator.IsNull, new PropertyReference("collection_specific_field"));
+
+        var translate = () => _translator.Translate(isNull, _resource);
+
+        translate.Should().Throw<UnknownFilterFieldException>()
+            .Which.Should().BeAssignableTo<ArgumentException>(
+                "existing catch sites filter on ArgumentException and must keep working");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Translate_UnknownPropertyInSpatialPredicate_ThrowsUnknownFilterFieldException(bool geodesic)
+    {
+        var spatial = new SpatialPredicate(
+            SpatialOperator.Intersects,
+            new PropertyReference("collection_specific_field"),
+            new PropertyReference("geometry"))
+        {
+            Geodesic = geodesic,
+        };
+
+        var translate = () => _translator.Translate(spatial, _resource);
+
+        translate.Should().Throw<UnknownFilterFieldException>()
+            .Which.PropertyName.Should().Be("collection_specific_field");
     }
 
     [Fact]
@@ -45,6 +83,19 @@ public class PostgresSqlFilterTranslatorTests
         result.Sql.Should().Be("@p0");
         result.Parameters.Should().HaveCount(1);
         result.Parameters[0].Should().Be("John");
+    }
+
+    [Fact]
+    public void Translate_NullLiteral_EmitsSqlNullWithoutUntypedParameter()
+    {
+        var expression = new UnaryExpression(
+            UnaryOperator.IsNull,
+            new Literal(null, LiteralType.Null));
+
+        var result = _translator.Translate(expression, _resource);
+
+        result.Sql.Should().Be("NULL IS NULL");
+        result.Parameters.Should().BeEmpty();
     }
 
     [Fact]
@@ -595,6 +646,34 @@ public class PostgresSqlFilterTranslatorTests
 
         // Assert
         result.Sql.Should().Be("\"attributes\" -> 'tags' @> @p0::jsonb");
+    }
+
+    [Fact]
+    public void Translate_ArrayPredicateOnUnknownField_ThrowsUnknownFilterFieldException()
+    {
+        var predicate = new ArrayPredicate(
+            ArrayOperator.Contains,
+            new PropertyReference("collection_specific_tags"),
+            new ArrayLiteral([new Literal("x", LiteralType.Text)]));
+
+        var translate = () => _translator.Translate(predicate, _resource);
+
+        translate.Should().Throw<UnknownFilterFieldException>()
+            .Which.PropertyName.Should().Be("collection_specific_tags");
+    }
+
+    [Fact]
+    public void Translate_ArrayPredicateOnKnownNonJsonField_ThrowsArgumentException()
+    {
+        var predicate = new ArrayPredicate(
+            ArrayOperator.Contains,
+            new PropertyReference("name"),
+            new ArrayLiteral([new Literal("x", LiteralType.Text)]));
+
+        var translate = () => _translator.Translate(predicate, _resource);
+
+        translate.Should().ThrowExactly<ArgumentException>()
+            .WithMessage("*name*not JSON*");
     }
 
     [Fact]

@@ -387,6 +387,17 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
+        // PropertyName wildcard: "*" selects every property. OWSLib — the
+        // reference Python OGC client — sends PROPERTYNAME=* by default on
+        // WFS 1.0.0 and 1.1.0 (owslib/feature/wfs110.py), so rejecting the
+        // wildcard made a bare WebFeatureService(...).getfeature() unusable on
+        // those versions. A wildcard anywhere in the list widens the projection
+        // to everything, which is exactly what the wildcard asks for.
+        if (requestedProperties.Any(static requested => requested is "*"))
+        {
+            return null;
+        }
+
         var resolved = ImmutableArray.CreateBuilder<string>();
         foreach (var requestedProperty in requestedProperties)
         {
@@ -715,8 +726,7 @@ internal sealed partial class Wfs20Handler
         int outputSrid,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(srsName) &&
-            srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (IsCrs84Request(srsName))
         {
             return AxisOrder.EastNorth;
         }
@@ -731,6 +741,27 @@ internal sealed partial class Wfs20Handler
             ? AxisOrder.NorthEast
             : AxisOrder.EastNorth;
     }
+
+    /// <summary>
+    /// Determines whether a requested <c>srsName</c> names CRS84 (WGS 84 with an
+    /// explicit longitude/latitude axis order) in any of its accepted spellings.
+    /// </summary>
+    /// <remarks>
+    /// The original <c>Contains("CRS84")</c> substring test silently missed the
+    /// <c>CRS:84</c> spelling that <see cref="SpatialReferenceHelpers"/> accepts
+    /// everywhere else, so a client asking for <c>SRSNAME=CRS:84</c> was served
+    /// latitude/longitude ordinates under a longitude/latitude CRS. The shared
+    /// CRS parser closes that gap: CRS84 is the only CRS it maps to WGS 84 with
+    /// an EastNorth axis order, so the pair uniquely identifies it. The substring
+    /// test is retained as the first arm so the result is a strict superset of
+    /// the previous behaviour for spellings the parser does not recognise.
+    /// </remarks>
+    private static bool IsCrs84Request(string? srsName)
+        => !string.IsNullOrWhiteSpace(srsName) &&
+           (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase) ||
+            (SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
+             definition.Srid == SpatialReference.WGS84.Wkid &&
+             definition.AxisOrder == AxisOrder.EastNorth));
 
     private static Parameter CreateParameter(string name, bool allowAnyValue)
     {
@@ -1190,6 +1221,36 @@ internal sealed partial class Wfs20Handler
         return (Results.Content(csv.ToString(), MediaTypes.Csv, Encoding.UTF8), rows.Count);
     }
 
+    /// <summary>
+    /// Relabels the CRS identifier stamped on a serialized GML geometry when the
+    /// client asked for CRS84.
+    /// </summary>
+    /// <remarks>
+    /// PostGIS <c>ST_AsGML</c> can only emit the EPSG spelling of a CRS URN, so a
+    /// CRS84 request came back with longitude/latitude ordinates labelled
+    /// <c>urn:ogc:def:crs:EPSG::4326</c> -- a URN that declares latitude first.
+    /// A conforming GML reader decodes that document's longitude as a latitude and
+    /// puts the feature in the wrong hemisphere. Which CRS identifier the client
+    /// sees is a protocol-presentation concern, so the substitution belongs in the
+    /// adapter rather than in the storage layer's GML expression. Only the WFS 2.0
+    /// GML path routes through here; WFS 1.0.0/1.1.0 serialize geometry themselves
+    /// and are labelled at that writer.
+    /// </remarks>
+    private static string RelabelCrs84SrsName(string geometryGml, FeatureQuery query)
+    {
+        var outputSrid = query.OutputSrid ?? query.SpatialReferenceSrid;
+        if (query.OutputAxisOrder != AxisOrder.EastNorth ||
+            outputSrid != SpatialReference.WGS84.Wkid)
+        {
+            return geometryGml;
+        }
+
+        return geometryGml.Replace(
+            $"srsName=\"{FormatCrs(SpatialReference.WGS84.Wkid)}\"",
+            $"srsName=\"{Crs84Urn}\"",
+            StringComparison.Ordinal);
+    }
+
     private static void WriteFeature(XmlWriter writer, LayerQueryPlan plan, GmlFeature feature, bool includeMemberWrapper)
     {
         if (includeMemberWrapper)
@@ -1242,7 +1303,7 @@ internal sealed partial class Wfs20Handler
                 FeatureNamespacePrefix,
                 XmlConvert.EncodeLocalName(geometryPropertyName),
                 FeatureNamespaceUri);
-            writer.WriteRaw(feature.GeometryGml);
+            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query));
             writer.WriteEndElement();
         }
 
