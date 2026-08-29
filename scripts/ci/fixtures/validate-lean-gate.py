@@ -193,6 +193,35 @@ require(
 PREPULL_SCRIPT = ROOT / "scripts" / "ci" / "prepull-testcontainers-postgis.sh"
 if not PREPULL_SCRIPT.is_file():
     raise AssertionError(f"lean gate must ship {PREPULL_SCRIPT.relative_to(ROOT)}")
+PREPULL_TEXT = PREPULL_SCRIPT.read_text(encoding="utf-8")
+
+# The pre-pull only removes the cold-runner stall when it overlaps all of the
+# work ahead of Governance/Drift. Pin both ends of that concurrency contract:
+# start it as the composite's first step, then await it immediately before the
+# Testcontainers-backed test. The helper must pull the tag it resolved from the
+# shared fixture rather than introducing a second image pin in CI.
+require(
+    r"steps:\n\s+#(?:.*\n)*?\s+- name: Pre-pull Testcontainers PostGIS image \(background\)\n"
+    r"\s+shell: bash\n\s+run: scripts/ci/prepull-testcontainers-postgis\.sh",
+    "start the Testcontainers PostGIS pre-pull as its first composite step",
+)
+require(
+    r"- name: Await Testcontainers PostGIS pre-pull\n"
+    r"\s+shell: bash\n"
+    r"\s+run: scripts/ci/prepull-testcontainers-postgis\.sh --await\n\n"
+    r"\s+- name: Run \.NET Tests \(Server Governance/Drift\)",
+    "await the PostGIS pre-pull immediately before Server Governance/Drift",
+)
+require(
+    r'FIXTURE="tests/dotnet/Honua\.TestKit/PostgresFixture\.cs"',
+    "resolve the pre-pull image from the Testcontainers fixture",
+    text=PREPULL_TEXT,
+)
+require(
+    r'nohup docker pull "\$\{image\}"',
+    "pull the exact PostGIS image resolved from the fixture",
+    text=PREPULL_TEXT,
+)
 if not FORMAT_SCOPE_SCRIPT.is_file():
     raise AssertionError(
         f"lean gate must ship {FORMAT_SCOPE_SCRIPT.relative_to(ROOT)}"
