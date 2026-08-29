@@ -150,6 +150,7 @@ public static class StudioAiChatRequestMapper
 
         var request = new StudioAiChatRequest
         {
+            Certification = http.Certification,
             Provider = http.Provider,
             Model = allowCallerOverrides ? http.Model : null,
             System = http.System,

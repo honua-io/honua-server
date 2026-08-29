@@ -116,6 +116,8 @@ public sealed class StudioAiToolChoice
 /// </summary>
 public sealed class StudioAiChatRequest
 {
+    /// <summary>Release-certification bindings that require a signed transcript.</summary>
+    public StudioAiTranscriptCertification? Certification { get; init; }
     /// <summary>
     /// Name of the configured provider to route to (a key under <c>StudioAiProxy:Providers</c>).
     /// When omitted, the configured default provider is used.
@@ -147,6 +149,8 @@ public sealed class StudioAiChatRequest
 /// <summary>Wire (endpoint) request body for <c>POST /api/v1/studio/ai/chat</c>.</summary>
 public sealed class StudioAiChatHttpRequest
 {
+    [JsonPropertyName("certification")]
+    public StudioAiTranscriptCertification? Certification { get; init; }
     [JsonPropertyName("provider")]
     public string? Provider { get; init; }
 

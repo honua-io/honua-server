@@ -327,6 +327,34 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         audit.Details.Should().Contain("\"kind\":\"openai\"");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task PostChat_CertificationWithoutSigningKey_FailsClosedWithTypedSseError()
+    {
+        using var client = _fixture.CreateAdminClient();
+
+        using var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        {
+            certification = new
+            {
+                candidateId = "candidate-7",
+                releaseId = "release-9",
+                endpointIdentity = "honua.example/api/v1/studio/ai/chat",
+                actionId = "compose-map",
+                runNonce = "unique-run-nonce"
+            },
+            messages = new[] { new { role = "user", content = "must be signed" } }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("event: error");
+        body.Should().Contain("studio_ai/provenance_signing_unavailable");
+        body.Should().NotContain("event: message_start",
+            "a certification call must refuse before dispatch when no signing key is available");
+        body.Should().NotContain("event: transcript_provenance");
+    }
+
     private static void ConfigureHost(IWebHostBuilder builder, bool endUserAuthorizationEnabled)
     {
         // WebAppFixture's common host settings enable a dev-auth bypass

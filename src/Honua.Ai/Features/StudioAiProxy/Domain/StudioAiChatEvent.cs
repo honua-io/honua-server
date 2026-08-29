@@ -32,6 +32,10 @@ public enum StudioAiChatEventType
 
     /// <summary>A provider- or proxy-side failure ended the call before <see cref="MessageStop"/> could be produced normally.</summary>
     Error
+    ,
+
+    /// <summary>Detached signature and canonical transcript emitted after a successful terminal event.</summary>
+    TranscriptProvenance
 }
 
 /// <summary>
@@ -102,4 +106,10 @@ public sealed class StudioAiChatEvent
 
     /// <summary>Human-readable failure detail, set on <see cref="StudioAiChatEventType.Error"/>.</summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>Stable machine-readable failure code. Never contains prompt or key material.</summary>
+    public string? ErrorCode { get; init; }
+
+    /// <summary>Signed provenance emitted only for certification-bound calls.</summary>
+    public StudioAiSignedTranscript? Provenance { get; init; }
 }

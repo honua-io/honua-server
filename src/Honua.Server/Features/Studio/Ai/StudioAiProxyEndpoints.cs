@@ -144,6 +144,7 @@ internal static class StudioAiProxyEndpoints
         StudioAiChatEventType.ToolCallStop => "tool_call_stop",
         StudioAiChatEventType.MessageStop => "message_stop",
         StudioAiChatEventType.Error => "error",
+        StudioAiChatEventType.TranscriptProvenance => "transcript_provenance",
         _ => "message"
     };
 

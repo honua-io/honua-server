@@ -327,7 +327,11 @@ public sealed class StudioAiProxyServiceTests
     }
 
     private static StudioAiProxyService CreateService(StudioAiProxyConfiguration configuration, params IStudioAiProxyAdapter[] adapters)
-        => new(Options.Create(configuration), adapters, NullLogger<StudioAiProxyService>.Instance);
+        => new(
+            Options.Create(configuration),
+            adapters,
+            new StudioAiTranscriptSigner(Options.Create(configuration), TimeProvider.System),
+            NullLogger<StudioAiProxyService>.Instance);
 
     private static StudioAiProxyConfiguration ConfigWithOneAnthropicProvider(string name, bool isDefault) => new()
     {
