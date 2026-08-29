@@ -112,15 +112,12 @@ public sealed class OperationsToolsetTests
 
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
 
-        services.Should().Contain(descriptor =>
-            descriptor.ServiceType == typeof(IOperationApprovalReplayVerifier) &&
-            descriptor.ImplementationType == typeof(UnavailableOperationApprovalReplayVerifier));
-        services.Should().NotContain(descriptor =>
-            descriptor.ServiceType == typeof(IOperationApprovalReplayVerifier) &&
-            descriptor.ImplementationType == typeof(OperationApprovalReplayVerifier));
-        new UnavailableOperationApprovalReplayVerifier()
-            .VerifyAsync("proposal", "instance", "hash").Result.Should().BeFalse(
-                "replay can never verify without the durable proposal authority");
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var verifier = scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>();
+        verifier.Should().BeOfType<UnavailableOperationApprovalReplayVerifier>();
+        verifier.VerifyAsync("proposal", "instance", "hash").Result.Should().BeFalse(
+            "replay can never verify without the durable proposal authority");
     }
 
     [UnitTest]
@@ -133,9 +130,29 @@ public sealed class OperationsToolsetTests
 
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
 
-        services.Should().Contain(descriptor =>
-            descriptor.ServiceType == typeof(IOperationApprovalReplayVerifier) &&
-            descriptor.ImplementationType == typeof(OperationApprovalReplayVerifier));
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>()
+            .Should().BeOfType<OperationApprovalReplayVerifier>();
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_StoreRegisteredAfterComposition_UsesDurableReplayVerifier()
+    {
+        // The reviewer's exact scenario: fixtures add the proposal store AFTER
+        // AddOperationsToolset (post-Program ConfigureServices). Resolution-time
+        // selection must honor the final composition, not a registration snapshot.
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>()
+            .Should().BeOfType<OperationApprovalReplayVerifier>();
     }
 
     [UnitTest]

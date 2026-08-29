@@ -32,17 +32,16 @@ internal static class OperationsServiceCollectionExtensions
         // The real verifier's constructor requires the durable proposal store, and the
         // dispatcher requires a verifier, so hosts composed without the store failed
         // ValidateOnBuild at boot (trunk red 2026-08-29, run 33241561197 — third of
-        // the family after #3614/#3617). Degraded hosts get the fail-closed verifier:
-        // replay can never verify without the durable authority (ruling 4).
-        if (services.Any(descriptor => descriptor.ServiceType ==
-                typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore)))
-        {
-            services.TryAddScoped<IOperationApprovalReplayVerifier, OperationApprovalReplayVerifier>();
-        }
-        else
-        {
-            services.TryAddScoped<IOperationApprovalReplayVerifier, UnavailableOperationApprovalReplayVerifier>();
-        }
+        // the family after #3614/#3617). Selection happens at RESOLUTION time, not
+        // registration time: test fixtures legitimately add the store after this
+        // method runs (post-Program ConfigureServices), and a registration-time
+        // snapshot would lock them onto the refusing verifier forever. Hosts whose
+        // final composition lacks the store get the fail-closed verifier: replay can
+        // never verify without the durable authority (ruling 4).
+        services.TryAddScoped<IOperationApprovalReplayVerifier>(sp =>
+            sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is { } proposalStore
+                ? new OperationApprovalReplayVerifier(proposalStore)
+                : new UnavailableOperationApprovalReplayVerifier());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
         if (environment.IsDevelopment() || environment.IsEnvironment("Test"))
