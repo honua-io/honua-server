@@ -123,6 +123,29 @@ The response lists the nine `honua_*` tools above with JSON Schema input definit
 
 Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`) and a `structuredContentSchema` describing the tool's structured result, so schema-driven clients can reason about safety and validate responses.
 
+## Workflow views (bounded discovery)
+
+The complete catalog is intentionally broad — it exists for parity and as the expert escape hatch — but handing every descriptor to a model in one turn hurts tool-selection reliability. The server therefore publishes **named, server-authored workflow views**: bounded subsets of the *same* canonical catalog, selected by server-owned stage rules.
+
+Discover the published views with `honua_list_capabilities`; each entry carries the view `name`, `title`, `description`, `revision`, its deterministic `revisionDigest` / `membershipDigest` / `descriptorDigest`, its `toolCount`, and the measured `descriptorBytes` / `estimatedTokens`. Clients must not keep their own list of view names or tool names.
+
+Select a view three ways, highest precedence first:
+
+1. **Per request** — `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"view":"setup"}}` (or `params._meta["honua.io/workflow-view"]`).
+2. **Per session** — send `_meta: {"honua.io/workflow-view": "setup"}` in `initialize.params`; the negotiated name binds to the issued `Mcp-Session-Id` and applies to every later `tools/list` on that session.
+3. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. Unset by default, so an existing host's `tools/list` is unchanged until an operator opts in.
+
+The shipped view is `setup`: the bounded terminal path of readiness → connect/import → publish service and layer → verify access → canonical style and render → bounded geoprocessing → Studio map/dashboard composition and lifecycle → publication submit and status. It is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
+
+A view is **discovery, not authority**:
+
+- Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.
+- Every `tools/call` is independently reauthenticated and reauthorized against the current actor, tenant, roles/grants, OAuth scope, and policy — whether or not the tool was discovered through a view.
+- The complete paginated catalog stays available: omit the view, or pass the reserved name `full`, which also overrides a session or profile default. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
+- Members carry the **exact** canonical description, annotations, and input/output schemas the full catalog serves; nothing is truncated or re-described.
+
+Membership is derived from the live catalog, so an eligible server operation that appears (or disappears) at runtime joins or leaves the view with no client or SDK source-list edit. Runtime-published members are appended after the static ones so a mid-conversation `notifications/tools/list_changed` refresh does not re-sort the `tools` array and invalidate a host's prompt cache.
+
 ## Pagination
 
 The list methods (`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`) are paginated per MCP 2025-03-26: when more entries remain the result carries an opaque `nextCursor`; pass it back as `params.cursor` to fetch the next page. A single-page result omits `nextCursor`. Treat cursors as opaque and echo them verbatim; an invalid or expired cursor returns JSON-RPC `-32602` invalid-params. Large `resources/read` documents (job results, catalogs) are chunked the same way — each page's `text` concatenates per `uri` to rebuild the full document, with `nextCursor` pointing at the next chunk.

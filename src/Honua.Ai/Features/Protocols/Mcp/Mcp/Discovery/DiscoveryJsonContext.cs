@@ -18,6 +18,7 @@ namespace Honua.Ai.Protocols.Mcp.Discovery;
 [JsonSerializable(typeof(McpListCapabilitiesOutput))]
 [JsonSerializable(typeof(McpCapabilityTool))]
 [JsonSerializable(typeof(McpCapabilityResource))]
+[JsonSerializable(typeof(Views.McpWorkflowViewSummary))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

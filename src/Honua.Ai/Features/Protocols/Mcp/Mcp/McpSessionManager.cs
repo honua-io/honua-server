@@ -167,7 +167,22 @@ internal sealed class McpSessionManager
     /// later read by <see cref="SupportsElicitation"/> so clarification-emitting
     /// tools can choose the elicitation projection over the proprietary envelope.
     /// </summary>
-    public bool TryCreateSession(string? principalKey, bool elicitationSupported, out string sessionId)
+    public bool TryCreateSession(string? principalKey, bool elicitationSupported, out string sessionId) =>
+        TryCreateSession(principalKey, elicitationSupported, workflowView: null, out sessionId);
+
+    /// <summary>
+    /// Creates and registers a new session, additionally recording the workflow
+    /// discovery view the client negotiated at <c>initialize</c>
+    /// (honua-server#3428) — the session leg of the view negotiation contract.
+    /// The bound name narrows <c>tools/list</c> discovery for the life of the
+    /// session; it confers no authority, and every <c>tools/call</c> is still
+    /// independently reauthenticated and reauthorized.
+    /// </summary>
+    public bool TryCreateSession(
+        string? principalKey,
+        bool elicitationSupported,
+        string? workflowView,
+        out string sessionId)
     {
         var now = _timeProvider.GetUtcNow();
         lock (_capacityGate)
@@ -186,10 +201,31 @@ internal sealed class McpSessionManager
             }
 
             var id = GenerateSessionId();
-            _sessions[id] = new McpSession(principalKey ?? AnonymousPrincipalKey, now, elicitationSupported);
+            _sessions[id] = new McpSession(
+                principalKey ?? AnonymousPrincipalKey,
+                now,
+                elicitationSupported,
+                workflowView);
             sessionId = id;
             return true;
         }
+    }
+
+    /// <summary>
+    /// Returns the workflow discovery view negotiated for the session at
+    /// <c>initialize</c> (honua-server#3428), or <c>null</c> when the session is
+    /// unknown, terminated, idle-expired, or negotiated no view. Does not refresh
+    /// the sliding idle window: this is a read of handshake state, not client
+    /// activity.
+    /// </summary>
+    public string? GetWorkflowView(string sessionId)
+    {
+        if (string.IsNullOrEmpty(sessionId) || !_sessions.TryGetValue(sessionId, out var session))
+        {
+            return null;
+        }
+
+        return IsExpired(session, _timeProvider.GetUtcNow()) ? null : session.WorkflowView;
     }
 
     /// <summary>
@@ -427,11 +463,16 @@ internal sealed class McpSessionManager
 
     private sealed class McpSession
     {
-        public McpSession(string principalKey, DateTimeOffset createdUtc, bool elicitationSupported = false)
+        public McpSession(
+            string principalKey,
+            DateTimeOffset createdUtc,
+            bool elicitationSupported = false,
+            string? workflowView = null)
         {
             PrincipalKey = principalKey;
             LastAccessUtc = createdUtc;
             ElicitationSupported = elicitationSupported;
+            WorkflowView = workflowView;
         }
 
         /// <summary>
@@ -446,6 +487,14 @@ internal sealed class McpSessionManager
         /// lifetime — capabilities are negotiated once at handshake.
         /// </summary>
         public bool ElicitationSupported { get; }
+
+        /// <summary>
+        /// The workflow discovery view the client negotiated at <c>initialize</c>
+        /// (honua-server#3428), or <c>null</c> for the complete catalog. Immutable
+        /// for the session lifetime — the view is negotiated once at handshake and
+        /// can still be overridden per <c>tools/list</c> call.
+        /// </summary>
+        public string? WorkflowView { get; }
 
         /// <summary>
         /// Last time a client request touched this session; drives the sliding idle
