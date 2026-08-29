@@ -7,6 +7,8 @@ using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
@@ -101,7 +103,63 @@ internal static class McpTestFactory
             .AddSingleton<ILicenseEntitlementService>(license)
             .AddSingleton<ILicenseStatusProvider>(license);
         configureServices?.Invoke(services);
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(IStudioPackageLifecycleService))
+            && !services.Any(descriptor => descriptor.ServiceType == typeof(IStudioDraftMutationRuntime)))
+        {
+            services.AddSingleton<IStudioDraftMutationRuntime>(provider =>
+                new DirectStudioDraftMutationTestRuntime(
+                    provider.GetRequiredService<IStudioPackageLifecycleService>()));
+        }
         return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Explicit test-only adapter for legacy MCP unit fixtures. Production composition registers
+    /// the durable operation runtime and can never reach this direct lifecycle adapter.
+    /// </summary>
+    private sealed class DirectStudioDraftMutationTestRuntime(IStudioPackageLifecycleService lifecycle)
+        : IStudioDraftMutationRuntime
+    {
+        public async Task<StudioDraftMutationReceipt<StudioPackageDraft>> CreateAsync(
+            CreateStudioPackageDraftCommand command,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.CreateDraftAsync(command, cancellationToken).ConfigureAwait(false),
+                "studio.draft.create");
+
+        public async Task<StudioDraftMutationReceipt<StudioPackageDraft>> UpdateAsync(
+            Guid draftId,
+            UpdateStudioPackageDraftCommand command,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.UpdateDraftAsync(draftId, command, cancellationToken).ConfigureAwait(false),
+                "studio.draft.update");
+
+        public async Task<StudioDraftMutationReceipt<bool>> DeleteAsync(
+            Guid draftId,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.DeleteDraftAsync(draftId, cancellationToken).ConfigureAwait(false),
+                "studio.draft.delete");
+
+        private static StudioDraftMutationReceipt<T> Receipt<T>(T? value, string operationId)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return new StudioDraftMutationReceipt<T>
+            {
+                Operation = new OperationHandle
+                {
+                    OperationInstanceId = $"opinst-test-{Guid.NewGuid():N}",
+                    OperationId = operationId,
+                    CorrelationId = $"corr-test-{Guid.NewGuid():N}",
+                    AuditId = $"audit-test-{Guid.NewGuid():N}",
+                    Status = OperationHandleStatus.Completed,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                },
+                Value = value,
+            };
+        }
     }
 
     private sealed class AllowingStudioAuthorizationService : IStudioAuthorizationService

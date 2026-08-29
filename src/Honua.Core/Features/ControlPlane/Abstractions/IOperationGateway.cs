@@ -68,6 +68,12 @@ public enum OperationGatewayOutcome
 public sealed record OperationGatewayRequest
 {
     /// <summary>
+    /// Typed descriptor identity for requests entering through the canonical operation runtime.
+    /// Persisting it prevents approval replay from guessing a descriptor from a broad legacy class.
+    /// </summary>
+    public string? OperationId { get; init; }
+
+    /// <summary>
     /// Canonical typed-operation invocation identity, when the request originated from the
     /// operation catalog runtime. This is never the descriptor or proposal identity.
     /// </summary>

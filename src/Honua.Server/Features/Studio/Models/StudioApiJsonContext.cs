@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Studio.Models;
@@ -27,6 +28,7 @@ namespace Honua.Server.Features.Studio.Models;
 [JsonSerializable(typeof(ApiResponse<StudioRollbackRequest>))]
 [JsonSerializable(typeof(ApiResponse<StudioDeliverableExportResponse>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
+[JsonSerializable(typeof(ApiResponse<OperationHandle>))]
 [JsonSerializable(typeof(CreateStudioPackageDraftRequest))]
 [JsonSerializable(typeof(UpdateStudioPackageDraftRequest))]
 [JsonSerializable(typeof(SaveStudioContentVersionRequest))]

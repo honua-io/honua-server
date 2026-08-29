@@ -24,6 +24,7 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// serializable type is supported by the source generator.
 /// </summary>
 [JsonSerializable(typeof(McpStudioCreateDraftArgument))]
+[JsonSerializable(typeof(McpStudioDraftMutationOutput))]
 [JsonSerializable(typeof(McpStudioDraftIdArgument))]
 [JsonSerializable(typeof(McpStudioUpdateDraftArgument))]
 [JsonSerializable(typeof(McpStudioLayerInput))]

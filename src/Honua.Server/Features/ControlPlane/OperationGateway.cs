@@ -227,7 +227,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var invoker = scope.ServiceProvider.GetRequiredService<ICanonicalOperationInvoker>();
-            var operationId = LegacyOperationIds.For(proposal.Kind);
+            var operationId = proposal.OperationId ?? LegacyOperationIds.For(proposal.Kind);
             var mapper = scope.ServiceProvider
                 .GetServices<IOperationApprovalRequestMapper>()
                 .SingleOrDefault(candidate => string.Equals(candidate.OperationId, operationId, StringComparison.Ordinal));
@@ -518,6 +518,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             ProposalId = hasIdempotencyKey
                 ? DeriveProposalId(request.Kind, request.IdempotencyKey!)
                 : $"proposal-{Guid.NewGuid():N}",
+            OperationId = request.OperationId,
             Kind = request.Kind,
             // Planned is deliberately non-actionable. The proposal transitions to
             // AwaitingApproval only after the durable audit sink assigns its identity.
@@ -880,6 +881,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     private static OperationGatewayRequest RebuildRequest(OperationProposal proposal) => new()
     {
+        OperationId = proposal.OperationId,
         OperationInstanceId = proposal.Audit.OperationInstanceId,
         Kind = proposal.Kind,
         RequestedBy = proposal.RequestedBy,
