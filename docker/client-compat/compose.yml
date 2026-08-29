@@ -95,6 +95,11 @@ services:
       # this fixture. docker/client-compat/compose.yml is deliberately excluded from
       # `serverConfigRevision`, so this does not churn the frozen fixture digests.
       RateLimiting__Enabled: "false"
+      # Production startup validates that the canonical operation runtime is
+      # fail-closed. Client lanes do not exercise operations, so deny unmatched
+      # operations while keeping the protocol surfaces under test available.
+      Operations__Policy__Enabled: "true"
+      Operations__Policy__DefaultDecision: Deny
       ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__Redis: redis:6379

@@ -1,5 +1,8 @@
 # Cross-Client Certification Evidence Specification
 
+Maintained-client protocol-version and advertised-profile witnesses are tracked
+in [Maintained-client OGC version coverage](MAINTAINED_CLIENT_OGC_VERSION_COVERAGE.md).
+
 This document defines the standardized evidence output format for cross-client certification results. All client lanes produce evidence in this format so results are directly comparable.
 
 For the test case definitions and client lane mappings, see [Cross-Client Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md).

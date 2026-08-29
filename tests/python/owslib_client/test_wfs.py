@@ -838,6 +838,55 @@ def test_ext_error_surface(wfs: WebFeatureService, typename: str, base_url: str,
 # Cross-version and cross-protocol
 # ---------------------------------------------------------------------------
 
+def _legacy_version_witness(
+    lane_config: LaneConfig, typename: str,
+    wfs_collector: CertificationEvidenceCollector, version: str, case_id: str,
+    expected_srs: str, expected_coordinate: tuple[float, float],
+) -> None:
+    """Emit one independently-failing maintained-client witness per legacy WFS version."""
+    local = typename.split(":")[-1]
+    client = WebFeatureService(lane_config.wfs_url, version=version)
+    assert client.identification.version == version
+    matches = [name for name in client.contents if name.split(":")[-1] == local]
+    assert matches, f"WFS {version} does not advertise {local!r}: {list(client.contents)}"
+    body = client.getfeature(typename=[matches[0]]).read().decode()
+    assert "ExceptionReport" not in body and "ServiceException" not in body, body[:300]
+    srs_names = sorted(set(re.findall(r'srsName="([^"]+)"', body)))
+    raw = re.findall(r"<gml:(?:pos|coordinates)[^>]*>([^<]+)<", body)
+    assert raw, f"WFS {version} returned no GML coordinate"
+    coordinate = tuple(float(value) for value in re.split(r"[,\s]+", raw[0].strip())[:2])
+    assert srs_names == [expected_srs], srs_names
+    delta = geographic_delta(coordinate, expected_coordinate)
+    assert delta <= GEOGRAPHIC_TOLERANCE_DEGREES
+    wfs_collector.record(
+        case_id, "pass", measured_count=1, measured_delta=delta,
+        notes=(f"OWSLib WebFeatureService negotiated WFS {version}, parsed capabilities, "
+               f"discovered {matches[0]}, and executed GetFeature; {expected_srs} coordinate "
+               f"{coordinate} obeyed that version's axis-order contract."),
+    )
+
+
+@pytest.mark.cert("NB-OWS-WFS-100-01")
+def test_ext_wfs100_maintained_client_witness(
+    lane_config: LaneConfig, typename: str,
+    wfs_collector: CertificationEvidenceCollector,
+) -> None:
+    _legacy_version_witness(
+        lane_config, typename, wfs_collector, "1.0.0", "NB-OWS-WFS-100-01",
+        "EPSG:4326", (fx.ANCHOR_LON, fx.ANCHOR_LAT),
+    )
+
+
+@pytest.mark.cert("NB-OWS-WFS-110-01")
+def test_ext_wfs110_maintained_client_witness(
+    lane_config: LaneConfig, typename: str,
+    wfs_collector: CertificationEvidenceCollector,
+) -> None:
+    _legacy_version_witness(
+        lane_config, typename, wfs_collector, "1.1.0", "NB-OWS-WFS-110-01",
+        EPSG4326_URN, (fx.ANCHOR_LAT, fx.ANCHOR_LON),
+    )
+
 @pytest.mark.cert("NB-OWS-WFS-VER-01")
 def test_ext_legacy_versions(lane_config: LaneConfig, typename: str,
                              wfs_collector: CertificationEvidenceCollector) -> None:

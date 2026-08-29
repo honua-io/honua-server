@@ -390,6 +390,15 @@
       "measured_delta": null,
       "notes": "Layer 'Browser Points' has the same title and the same WGS84 extent (-122.44, 37.76, -122.4, 37.79) through WMS capabilities and the OGC API - Features collection, so the two adapters read one catalogue.",
       "evidence_ref": ""
+    },
+    {
+      "test_case_id": "NB-OWS-WMS-111-WITNESS-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 123,
+      "measured_delta": null,
+      "notes": "OWSLib WebMapService negotiated WMS 1.1.1, parsed capabilities, discovered layer Browser Points, and executed a non-empty GetMap using the 1.1.1 SRS shape.",
+      "evidence_ref": ""
     }
   ]
 }

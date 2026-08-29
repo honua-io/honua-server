@@ -387,6 +387,15 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
+        // OWSLib emits PROPERTYNAME=* for an unprojected GetFeature request on
+        // every supported WFS generation. The wildcard means all properties;
+        // treating it as a literal field makes a standards-capable maintained
+        // client fail before the canonical query pipeline is reached.
+        if (requestedProperties.Length == 1 && requestedProperties[0] == "*")
+        {
+            return null;
+        }
+
         var resolved = ImmutableArray.CreateBuilder<string>();
         foreach (var requestedProperty in requestedProperties)
         {
