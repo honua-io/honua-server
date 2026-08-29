@@ -90,8 +90,8 @@ grep -Fq 'Make one non-blocking exact-artifact download attempt' "${benchmark}"
 grep -Fq 'try-server-test-prebuild.sh' "${benchmark}"
 grep -Fq 'vars.HONUA_SERVER_TEST_PREBUILD_CONSUME' .github/workflows/ci.yml
 grep -Fq -- '--prebuild-consume "${PREBUILD_CONSUME}"' .github/workflows/ci.yml
-grep -Fq 'HONUA_SERVER_TEST_PREBUILD_CONSUME=`${CONSUME_SWITCH:-unset}`' .github/workflows/ci.yml
-grep -Fq 'Fallback: `${REASON:-consumer_disabled}`' .github/workflows/ci.yml
+grep -Fq 'HONUA_SERVER_TEST_PREBUILD_CONSUME=\`${CONSUME_SWITCH:-unset}\`' .github/workflows/ci.yml
+grep -Fq 'Fallback: \`${REASON:-consumer_disabled}\`' .github/workflows/ci.yml
 if grep -Fq 'HONUA_SERVER_TEST_ATTEMPT1_REUSE' .github/workflows/ci.yml; then
   echo '::error::The retired default-on attempt-1 switch is still wired into live shards.' >&2
   exit 1
