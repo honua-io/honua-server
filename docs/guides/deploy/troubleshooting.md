@@ -46,6 +46,20 @@ Connectivity check: `psql -h db.example.com -U honua -d honua -c "SELECT 1;"` an
 | OIDC 403 | Token lacks an admin role | Map the role claim with `Oidc:ClaimsMapping:RoleClaimType` and set `Oidc:AdminRoles` |
 | Browser calls blocked (CORS error in console) | Dev permissive CORS is force-disabled inside containers/Kubernetes unless origins are configured explicitly | Set `Cors__AllowedOrigins__0` to the page's exact origin (scheme + host + port); the repo-root dev compose wires `HONUA_DEV_CORS_ORIGIN` to that setting |
 
+## Rate limiting
+
+Rate limiting belongs at the edge (WAF, API gateway, ingress, or load balancer) for the default MVP posture. Honua also has an opt-in application limiter (`RateLimiting__Enabled=true`), but it is off by default and supplements rather than replaces edge enforcement. The `HonuaRateLimitViolationsHigh` example alert is currently **inert** because Honua does not yet emit `honua_rate_limit_violations_total`; if a deployment supplies that metric, investigate it at the component that emits it.
+
+When violations spike:
+
+1. Break the metric down by route, tenant, API key, source, and edge rule where those labels or logs are available. Confirm that the increase is actual throttling (`429` responses), not retries or a dashboard query change.
+2. Check for one abusive caller, a client retry loop, credential sharing, or a broad rule affecting healthy traffic. Correlate the spike with request rate, error rate, and latency before changing a limit.
+3. Block or isolate abusive sources and fix clients that ignore `429` and `Retry-After`. Rotate a compromised API key rather than raising a global ceiling.
+4. If legitimate sustained traffic is affected, add capacity first, then adjust the narrowest edge or application policy. Keep separate limits for expensive query, tile, import, and admin routes.
+5. Verify the change with a bounded request test and watch `429`, latency, saturation, and error rates through at least one complete limit window. Record the temporary change and its rollback value.
+
+Do not disable rate limiting during an attack or raise every caller's limit to accommodate one workload. Application policies can be inspected and changed through the admin rate-limit API, but edge policy remains the production control; see the [production checklist](../secure/production-checklist.md#transport-and-edge).
+
 ## Imports
 
 | Symptom | Diagnosis | Fix |
@@ -77,6 +91,19 @@ Recent jobs: `GET /api/v1/admin/import/jobs`; durable job detail and logs: `GET 
 | High latency, healthy DB | Cold or missing shared cache | Check `GET /api/v1/metrics/cache` hit rates; configure Redis so replicas share caches |
 | Slow queries after bulk load | Stale planner statistics | `ANALYZE` the affected tables |
 | Throughput drops as replicas are added | Database admission ceiling | Re-run pool sizing: `max_connections >= pool_size × replicas + headroom` |
+
+## Emergency procedures
+
+Use these steps when `HonuaServiceDown` fires or normal triage cannot restore readiness. Preserve logs and the failing instance when possible; a restart can erase the best evidence.
+
+1. Confirm scope from outside the cluster or host. Check `/healthz/live` and `/healthz/ready` on each instance, the load balancer target state, recent deploys, and the database and Redis health. If only one replica is unhealthy, remove that replica from service while healthy replicas continue serving.
+2. Stop new traffic and let in-flight requests drain, then perform a graceful restart with the deployment platform (`docker compose restart honua`, `kubectl rollout restart deployment/honua-server`, or the equivalent managed-service action). Watch rollout status and both health probes before restoring traffic.
+3. If an instance does not terminate within the platform's grace period, capture its logs and diagnostics, then force-delete only that stuck container or pod. Do not force-restart every replica at once; keep a healthy replica serving whenever possible.
+4. If database sessions from dead instances exhaust the pool, identify them in `pg_stat_activity` by application name, client address, state, and age. Terminate only sessions proven to belong to the failed instance with `SELECT pg_terminate_backend(pid);`; never terminate all sessions or migration activity indiscriminately.
+5. Honua has no application-wide maintenance/read-only switch. To prevent writes, use an authenticated edge maintenance rule that rejects mutation methods and admin mutation routes while preserving health and approved read endpoints. Database-level read-only settings are a last-resort DBA action because migrations, jobs, and control-plane writes will also fail.
+6. Escalate when no healthy replica can start, data integrity may be affected, credentials may be compromised, or recovery would require a database failover or restore. Give the incident owner the alert start time, affected routes and tenants, last known good deploy, health responses, relevant logs/traces, and every mitigation already attempted.
+
+After recovery, restore traffic gradually, confirm readiness on every replica, verify queued jobs and imports, and revert any temporary edge, capacity, or database changes.
 
 ## Next steps
 

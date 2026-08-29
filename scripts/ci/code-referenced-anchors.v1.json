@@ -91,13 +91,21 @@
       "sources": [
         "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
-      "why": "runbook_url for the error-rate alerts and for HonuaServiceDown. Quick triage names the liveness/readiness probes and GET /api/v1/admin/observability/errors, which is the first real step for both. Retargeted from /operations/runbook#general-troubleshooting and #emergency-procedures (#3592).",
+      "why": "runbook_url for the error-rate alerts. Quick triage names the liveness/readiness probes and GET /api/v1/admin/observability/errors, which is the first real step. Retargeted from /operations/runbook#general-troubleshooting (#3592).",
       "alerts": [
         "HonuaErrorRateHigh",
-        "HonuaErrorRateCritical",
-        "HonuaServiceDown"
+        "HonuaErrorRateCritical"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/troubleshooting#emergency-procedures",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
-      "partialGap": "HonuaServiceDown gets a correct first step but not the archived runbook's emergency procedures (graceful/forced restart, connection termination, read-only maintenance). Tracked in #3592."
+      "why": "runbook_url for HonuaServiceDown. Covers scope confirmation, graceful and forced restart, targeted connection termination, maintenance posture, and escalation (#3592).",
+      "alerts": [
+        "HonuaServiceDown"
+      ]
     },
     {
       "url": "https://docs.honua.io/guides/deploy/troubleshooting#imports",
@@ -111,15 +119,14 @@
       ]
     },
     {
-      "url": "https://docs.honua.io/guides/deploy/troubleshooting",
+      "url": "https://docs.honua.io/guides/deploy/troubleshooting#rate-limiting",
       "sources": [
         "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
-      "why": "runbook_url for HonuaRateLimitViolationsHigh. Deliberately fragment-less: no live operate or deploy page documents rate-limit incident response, and inventing a heading here would be worse than landing on the troubleshooting index. Gap tracked in #3592.",
+      "why": "runbook_url for HonuaRateLimitViolationsHigh. Documents the default edge-enforcement posture, the opt-in application limiter, incident triage, and safe policy changes (#3592).",
       "alerts": [
         "HonuaRateLimitViolationsHigh"
-      ],
-      "gap": "No 'Rate limiting' heading exists. The only live statements are that application-level rate limiting is deferred and must be enforced at the edge (guides/secure/production-checklist.md, reference/configuration/environment-variables.md). See #3592."
+      ]
     },
     {
       "url": "https://docs.honua.io/guides/deploy/scaling-and-performance#caching-layers",
@@ -153,16 +160,15 @@
       ]
     },
     {
-      "url": "https://docs.honua.io/guides/deploy/scaling-and-performance",
+      "url": "https://docs.honua.io/guides/deploy/scaling-and-performance#redis-capacity-and-latency",
       "sources": [
         "docs/guides/deploy/examples/prometheus-alerts.yml"
       ],
-      "why": "runbook_url for the Redis memory and latency alerts. Deliberately fragment-less: nothing in the live docs covers Redis memory sizing, eviction policy, or latency budgets. Gap tracked in #3592.",
+      "why": "runbook_url for the Redis memory and latency alerts. Covers sizing, durable-job noeviction policy, pressure response, latency budgets, and degradation order (#3592).",
       "alerts": [
         "RedisMemoryHigh",
         "RedisLatencyHigh"
-      ],
-      "gap": "No 'Redis capacity and latency' heading exists. guides/deploy/backup-and-restore.md documents the durable-job loss contract, which is about Redis loss rather than Redis pressure. See #3592."
+      ]
     }
   ]
 }
