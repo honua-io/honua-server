@@ -11705,7 +11705,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int",
@@ -11723,7 +11723,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodepages-pageid-int",
@@ -11738,7 +11738,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-attributes-fieldkey-attributeid-int",
@@ -11752,7 +11752,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-nodes-nodeid-int-geometries-geometryid-int",
@@ -11766,7 +11766,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-sceneserver-layers-layerid-int-statistics-fieldkey-0",
@@ -11780,7 +11780,7 @@
       ],
       "proof_ledger_surface": "scenes-3dtiles",
       "maturity": "implemented",
-      "capability": "serve.3d-tiles-scene"
+      "capability": "serve.i3s-scene"
     },
     {
       "id": "get-scenes-sceneid-exports-openusd-stage-usda",

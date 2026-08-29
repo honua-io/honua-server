@@ -76,32 +76,36 @@ class DeploymentCapabilityProfileTests(unittest.TestCase):
 
     def test_descriptive_keys_cannot_enter_a_deployment_profile(self):
         catalog = dict(self.catalog)
-        catalog["provider.example"] = {
-            "key": "provider.example", "edition": "Enterprise",
+        catalog["provider.redshift"] = {
+            "key": "provider.redshift", "edition": "Enterprise",
             "status": MODULE.EXPERIMENTAL_STATUS,
         }
 
         # No route resolves to a descriptive key, so a profile enabling one serves nothing while
         # still deriving requiredEdition -- and therefore a price band -- from its edition.
         with self.assertRaisesRegex(MODULE.ProfileError, "descriptive-only capability"):
-            MODULE.parse_capabilities(["provider.example"], catalog)
+            MODULE.parse_capabilities(["provider.redshift"], catalog)
         with self.assertRaisesRegex(MODULE.ProfileError, "descriptive-only capability"):
-            MODULE.parse_capabilities(["serve.wfs,provider.example"], catalog)
+            MODULE.parse_capabilities(["serve.wfs,provider.redshift"], catalog)
 
         self.assertEqual(MODULE.parse_capabilities(["serve.wfs"], catalog), ["serve.wfs"])
 
     def test_committed_catalog_descriptive_keys_are_rejected(self):
-        # Contract test against the shipped artifact: whatever CapabilityKeyCatalog marks
-        # descriptive must stay un-deployable, so the two cannot drift apart.
+        # Contract test against the shipped artifact: the explicitly descriptive catalog keys
+        # stay un-deployable without conflating that property with experimental maturity.
         catalog = MODULE.load_catalog()
-        descriptive = sorted(
-            key for key, item in catalog.items()
-            if item.get("status") == MODULE.EXPERIMENTAL_STATUS
-        )
-        self.assertTrue(descriptive, "committed catalog carries no descriptive keys to exercise")
-        for key in descriptive:
+        for key in MODULE.DESCRIPTIVE_ONLY_KEYS:
+            self.assertIn(key, catalog)
             with self.assertRaisesRegex(MODULE.ProfileError, "descriptive-only capability"):
                 MODULE.parse_capabilities([key], catalog)
+
+    def test_routed_experimental_capability_is_deployable(self):
+        catalog = MODULE.load_catalog()
+
+        self.assertEqual(
+            MODULE.parse_capabilities(["serve.i3s-scene"], catalog),
+            ["serve.i3s-scene"],
+        )
 
 
 if __name__ == "__main__":

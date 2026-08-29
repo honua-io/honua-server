@@ -40,12 +40,21 @@ public sealed record CapabilityKeyDefinition(
 public static class CapabilityKeyCatalog
 {
     /// <summary>
-    /// Release-posture value marking a key as descriptive-only: it names a surface in the
-    /// public vocabulary but no runtime gate resolves it, so it is not deployable. This is the
-    /// contract shared with the generated <c>capability-keys.v1.json</c> artifact and every
-    /// consumer that reads it, including <c>scripts/deployment/generate-capability-profile.py</c>.
+    /// Release-posture value marking a capability as experimental. Experimental maturity is
+    /// independent of deployability: routed keys remain valid deployment-profile inputs, while
+    /// descriptive-only keys are excluded because no runtime route resolves them.
     /// </summary>
     public const string ExperimentalStatus = "experimental";
+
+    /// <summary>
+    /// Edition-qualified, routed capabilities that remain deployable while their public release
+    /// posture is experimental.
+    /// </summary>
+    public static IReadOnlyList<CapabilityKeyDefinition> RoutedExperimentalKeys { get; } =
+    [
+        new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
+            HonuaEdition.Enterprise, "Serve published I3S scene layers through Enterprise-gated SceneServer handlers; unlicensed requests currently return HTTP 403.", Status: ExperimentalStatus),
+    ];
 
     /// <summary>
     /// Capability categories introduced alongside the existing
@@ -227,8 +236,6 @@ public static class CapabilityKeyCatalog
     /// </summary>
     public static IReadOnlyList<CapabilityKeyDefinition> DescriptiveKeys { get; } =
     [
-        new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
-            HonuaEdition.Enterprise, "Serve published I3S scene layers through Enterprise-gated SceneServer handlers; unlicensed requests currently return HTTP 403.", Status: ExperimentalStatus),
         new("provider.redshift", "Amazon Redshift Provider", Categories.DataProviders,
             HonuaEdition.Enterprise, "Experimental, off-by-default Amazon Redshift feature provider; enabling the capability key alone does not enable the provider.", Status: ExperimentalStatus),
         new("provider.snowflake", "Snowflake Provider", Categories.DataProviders,
@@ -248,6 +255,7 @@ public static class CapabilityKeyCatalog
     public static IReadOnlyList<CapabilityKeyDefinition> All { get; } =
     [
         .. CommunityKeys,
+        .. RoutedExperimentalKeys,
         .. DescriptiveKeys,
         .. FeatureCatalog.All.Select(static feature => new CapabilityKeyDefinition(
             feature.Key,
@@ -260,8 +268,8 @@ public static class CapabilityKeyCatalog
 
     /// <summary>
     /// The deployable subset of <see cref="All"/> — every key a deployment profile may enable.
-    /// Keys carrying <see cref="ExperimentalStatus"/> are excluded: no route resolves to them,
-    /// so enabling one narrows a deployment to nothing served (every request 404s at
+    /// Descriptive keys are excluded because no route resolves to them, so enabling one narrows
+    /// a deployment to nothing served (every request 404s at
     /// <c>UseDeploymentCapabilityProfile</c>) while still deriving a paid <c>requiredEdition</c>
     /// from the key's edition qualifier. They stay in <see cref="All"/> because the vocabulary
     /// is what the crosswalk artifact and honua-evidence resolve against; they are kept out of
@@ -269,7 +277,6 @@ public static class CapabilityKeyCatalog
     /// </summary>
     public static IReadOnlyList<CapabilityKeyDefinition> DeployableKeys { get; } =
     [
-        .. All.Where(static capability =>
-            !string.Equals(capability.Status, ExperimentalStatus, StringComparison.Ordinal)),
+        .. All.Except(DescriptiveKeys),
     ];
 }

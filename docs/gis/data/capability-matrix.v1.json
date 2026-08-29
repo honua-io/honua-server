@@ -1577,10 +1577,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 12,
-      "provingTestCount": 76,
+      "entryCount": 6,
+      "provingTestCount": 60,
       "maturity": {
-        "implemented": 12
+        "implemented": 6
       },
       "noSurface": null,
       "cite": [],
@@ -1878,10 +1878,10 @@
       "category": "Serve",
       "edition": "Enterprise",
       "status": "experimental",
-      "entryCount": 6,
-      "provingTestCount": 25,
+      "entryCount": 12,
+      "provingTestCount": 41,
       "maturity": {
-        "implemented": 6
+        "implemented": 12
       },
       "noSurface": null,
       "cite": [],
