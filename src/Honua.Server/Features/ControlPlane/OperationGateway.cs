@@ -17,6 +17,8 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using ICanonicalOperationInvoker = Honua.Core.Features.Operations.Abstractions.IOperationInvoker;
+using IOperationEnvelopeFactory = Honua.Core.Features.Operations.Abstractions.IOperationEnvelopeFactory;
+using IOperationInstanceStore = Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore;
 using IOperationApprovalRequestMapper = Honua.Core.Features.Operations.Abstractions.IOperationApprovalRequestMapper;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -371,6 +373,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
 
         await PersistResolutionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await PersistCanonicalRejectionAsync(resolved, cancellationToken).ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Rejected,
@@ -380,6 +383,33 @@ internal sealed partial class OperationGateway : IOperationGateway
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
         return resolved;
+    }
+
+    private async Task PersistCanonicalRejectionAsync(
+        OperationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(proposal.Audit.OperationInstanceId))
+        {
+            return;
+        }
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var instanceStore = scope.ServiceProvider.GetRequiredService<IOperationInstanceStore>();
+        var current = await instanceStore.GetAsync(proposal.Audit.OperationInstanceId, cancellationToken)
+            .ConfigureAwait(false);
+        if (current is null)
+        {
+            return;
+        }
+
+        await instanceStore.SetAsync(current with
+        {
+            Status = OperationHandleStatus.Rejected,
+            ProposalId = proposal.ProposalId,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Reason = proposal.ResolutionReason,
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<OperationGatewayResult> ExecuteDirectAsync(
@@ -426,17 +456,6 @@ internal sealed partial class OperationGateway : IOperationGateway
         GuardrailDecision decision,
         CancellationToken cancellationToken)
     {
-        var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
-        if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
-        {
-            plan = plan with { ExecutionPayload = request.ExecutionPayload };
-        }
-
-        // Honor the idempotency key on the approval path: a repeated proposal (e.g.
-        // propose → refresh → propose) must fold onto the existing active proposal
-        // rather than minting a duplicate AwaitingApproval record (#1693). The
-        // proposal id is derived deterministically from the key so a concurrent
-        // duplicate TryCreate collides and we fetch-and-return the winner (race-safe).
         var hasIdempotencyKey = !string.IsNullOrWhiteSpace(request.IdempotencyKey);
         if (hasIdempotencyKey)
         {
@@ -448,6 +467,51 @@ internal sealed partial class OperationGateway : IOperationGateway
             }
         }
 
+        if (string.IsNullOrWhiteSpace(request.OperationInstanceId))
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var envelope = await scope.ServiceProvider.GetRequiredService<IOperationEnvelopeFactory>()
+                .CreateAcceptedAsync(
+                    LegacyOperationIds.For(request.Kind),
+                    new OperationPolicyContext
+                    {
+                        CorrelationId = request.CorrelationId,
+                        IdempotencyKey = request.IdempotencyKey,
+                        PrincipalId = request.RequestedBy ?? request.RequestedByAgent,
+                        AuthorizationOutcome = "gateway-authorized",
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (envelope.Status == OperationHandleStatus.Failed)
+            {
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = decision,
+                    Message = envelope.Reason,
+                };
+            }
+
+            // Ruling 4: every approval must join the sealed proposal to the original
+            // durable invocation before it can later be replayed.
+            request = request with
+            {
+                OperationInstanceId = envelope.OperationInstanceId,
+                CorrelationId = envelope.CorrelationId,
+            };
+        }
+
+        var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
+        if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
+        {
+            plan = plan with { ExecutionPayload = request.ExecutionPayload };
+        }
+
+        // Honor the idempotency key on the approval path: a repeated proposal (e.g.
+        // propose → refresh → propose) must fold onto the existing active proposal
+        // rather than minting a duplicate AwaitingApproval record (#1693). The
+        // proposal id is derived deterministically from the key so a concurrent
+        // duplicate TryCreate collides and we fetch-and-return the winner (race-safe).
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
         {
@@ -535,6 +599,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                     Message = "The proposal was not accepted because its durable audit identity could not be joined to the proposal.",
                 };
             }
+
+            await PersistCanonicalApprovalAsync(proposal, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -559,6 +625,25 @@ internal sealed partial class OperationGateway : IOperationGateway
             AuditId = auditId,
             Message = "Proposal created and awaiting approval."
         };
+    }
+
+    private async Task PersistCanonicalApprovalAsync(
+        OperationProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        var operationInstanceId = proposal.Audit.OperationInstanceId
+            ?? throw new InvalidOperationException("The proposal has no canonical operation instance identity.");
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var instanceStore = scope.ServiceProvider.GetRequiredService<IOperationInstanceStore>();
+        var current = await instanceStore.GetAsync(operationInstanceId, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The accepted operation instance disappeared before approval persistence.");
+        await instanceStore.SetAsync(current with
+        {
+            Status = OperationHandleStatus.RequiresApproval,
+            ProposalId = proposal.ProposalId,
+            PolicyDecision = PolicyDecisionKind.RequireApproval,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task TryFailPlannedProposalAsync(

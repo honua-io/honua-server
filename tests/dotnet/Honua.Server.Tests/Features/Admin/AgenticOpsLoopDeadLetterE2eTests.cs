@@ -136,7 +136,11 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         firstProposal.GetProperty("status").GetString().Should().Be("ProposalCreated");
         var proposalId = firstProposal.GetProperty("proposalId").GetString();
         proposalId.Should().NotBeNullOrWhiteSpace();
-        var proposalAuditCount = await CountAuditRowsAsync(fixture, "operation.proposed", proposalId!);
+        // Ruling 4: proposal audit evidence is joined to the original durable
+        // invocation correlation, not a proposal-local fallback identity.
+        var proposalStore = fixture.GetService<IOperationProposalStore>();
+        var proposalCorrelationId = (await proposalStore.GetAsync(proposalId!))!.Audit.CorrelationId!;
+        var proposalAuditCount = await CountAuditRowsAsync(fixture, "operation.proposed", proposalCorrelationId);
         proposalAuditCount.Should().BeGreaterThan(0,
             "the first proposal must emit durable audit evidence");
 
@@ -144,12 +148,14 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         repeatedProposal.GetProperty("proposalId").GetString().Should().Be(
             proposalId,
             "re-proposing the same live finding must fold onto the same idempotent gateway proposal");
-        (await CountAuditRowsAsync(fixture, "operation.proposed", proposalId!)).Should().Be(
+        (await CountAuditRowsAsync(fixture, "operation.proposed", proposalCorrelationId)).Should().Be(
             proposalAuditCount,
             "an idempotent proposal replay must not append another proposal audit event");
 
         var approved = await ApproveProposalAsync(client, proposalId!);
-        approved.GetProperty("status").GetString().Should().Be("Submitted");
+        // Ruling 1: only queued/running work awaits reconciler finalization; the
+        // synchronous redrive replay is terminal when approval returns.
+        approved.GetProperty("status").GetString().Should().Be("Succeeded", approved.GetRawText());
         approved.GetProperty("requestedByAgent").GetString().Should().Be("ops-findings");
         approved.GetProperty("resolvedBy").GetString().Should().Be("admin");
 
@@ -166,10 +172,10 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         await ReadFindingThroughRestAsync(client, expectPresent: false);
         (await ReadFindingsThroughMcpAsync(fixture)).Should().BeEmpty();
 
-        await AssertAuditRowAsync(fixture, "operation.applied", proposalId!);
+        await AssertAuditRowAsync(fixture, "operation.applied", proposalCorrelationId);
         await AssertAuditRowAsync(fixture, RedriveAction, changeId!);
 
-        var proposalTimeline = await ReadTimelineAsync(client, proposalId!);
+        var proposalTimeline = await ReadTimelineAsync(client, proposalCorrelationId);
         proposalTimeline.Should().Contain(item => item.GetProperty("title").GetString() == "operation.proposed");
         proposalTimeline.Should().Contain(item => item.GetProperty("title").GetString() == "operation.applied");
 

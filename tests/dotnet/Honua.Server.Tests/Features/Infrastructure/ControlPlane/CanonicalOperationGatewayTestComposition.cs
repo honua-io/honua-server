@@ -43,6 +43,7 @@ internal static class CanonicalOperationGatewayTestComposition
         // continue exercising gateway state transitions; production replay remains
         // fail-closed when the original durable instance is absent.
         var instanceStore = new LegacyProposalTestOperationInstanceStore();
+        services.AddSingleton<IOperationInstanceStore>(instanceStore);
         var typedActuators = actuatorArray
             .Select(actuator => (TypedExecutor)new LegacyGatewayOperationAdapter(actuator))
             .ToArray();

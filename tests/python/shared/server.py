@@ -96,10 +96,11 @@ class HonuaServer:
             "ASPNETCORE_ENVIRONMENT": "Test",
             "ConnectionStrings__DefaultConnection": connection_string,
             "ConnectionStrings__honua": connection_string,
-            # Keep the Python/GDAL harness anonymous so protocol clients can exercise the full surface.
-            # As of #1144 the bypass requires an explicit operator acknowledgement.
-            "HONUA_DEV_AUTH": "true",
-            "HONUA_DEV_AUTH_ALLOW_BYPASS": "true",
+            # Public protocol routes remain anonymous; admin certification probes must
+            # still prove that missing and invalid credentials are rejected.
+            "HONUA_DEV_AUTH": "false",
+            "HONUA_DEV_AUTH_ALLOW_BYPASS": "false",
+            "HONUA_ADMIN_PASSWORD": "ClientCompatAdmin123!",
             "HONUA_REGISTER_TEST_INFRASTRUCTURE": "true",
             "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests

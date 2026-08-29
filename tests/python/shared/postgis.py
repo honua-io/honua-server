@@ -674,6 +674,7 @@ class PostGISFixture:
                         geometry_type,
                         srid,
                         extent,
+                        temporal_column,
                         default_visibility
                     )
                     VALUES (
@@ -685,6 +686,7 @@ class PostGISFixture:
                         'Mixed',
                         4326,
                         ST_MakeEnvelope(-180, -90, 180, 90, 4326),
+                        'created_at',
                         true
                     )
                     ON CONFLICT (layer_id) DO NOTHING;
@@ -736,10 +738,12 @@ class PostGISFixture:
                         (%s, 'event_time', 'Time', 10, NULL, true, NULL, 'Event time'),
                         (%s, 'uid', 'Uuid', 11, NULL, true, NULL, 'Unique identifier'),
                         (%s, 'tags', 'Json', 12, NULL, true, NULL, 'Tag array'),
-                        (%s, 'numbers', 'Json', 13, NULL, true, NULL, 'Number array')
+                        (%s, 'numbers', 'Json', 13, NULL, true, NULL, 'Number array'),
+                        (%s, 'eo:cloud_cover', 'Double', 14, NULL, true, NULL, 'Cloud cover percentage')
                     ON CONFLICT (layer_id, field_name) DO NOTHING;
                     """,
                     (
+                        layer_id,
                         layer_id,
                         layer_id,
                         layer_id,
@@ -932,7 +936,8 @@ class PostGISFixture:
                 ST_XMin(l.extent)::double precision,
                 ST_YMin(l.extent)::double precision,
                 ST_XMax(l.extent)::double precision,
-                ST_YMax(l.extent)::double precision
+                ST_YMax(l.extent)::double precision,
+                l.temporal_column
             FROM honua.service_layers sl
             JOIN honua.services s ON s.service_name = sl.service_name
             JOIN honua.layers l ON l.layer_id = sl.layer_id
@@ -1053,6 +1058,7 @@ class PostGISFixture:
             south,
             east,
             north,
+            temporal_column,
         ) in layer_rows:
             service_part = self._metadata_id_part(row_service_name)
             layer_part = self._metadata_id_part(row_layer_id)
@@ -1095,6 +1101,10 @@ class PostGISFixture:
                 "primaryStorageBindingId": feature_storage_id,
                 "schemaFields": fields_by_layer.get(row_layer_id, []),
                 "spatial": feature_spatial,
+                "temporal": {
+                    "startTimeField": temporal_column,
+                    "endTimeField": temporal_column,
+                } if temporal_column else None,
                 "status": status,
                 "extensions": {},
             })
@@ -1388,6 +1398,7 @@ class PostGISFixture:
                     "uid": str(uuid.uuid4()),
                     "tags": ["red", "blue"] if index % 2 == 0 else ["green"],
                     "numbers": [index, index + 1, index + 2],
+                    "eo:cloud_cover": 6.5 + index,
                     "description": None if index % 3 == 0 else f"description_{index}",
                 }
 
