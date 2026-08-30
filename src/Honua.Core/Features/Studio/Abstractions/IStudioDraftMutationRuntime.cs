@@ -38,7 +38,7 @@ public interface IStudioDraftMutationRuntime
         CancellationToken cancellationToken = default);
 
     Task<StudioDraftMutationReceipt<StudioContentVersion>> SaveVersionAsync(
-        Guid draftId, string? changeNote, string? actorId, StudioDraftMutationContext context,
+        Guid draftId, long expectedGeneration, string? changeNote, string? actorId, StudioDraftMutationContext context,
         CancellationToken cancellationToken = default);
 }
 

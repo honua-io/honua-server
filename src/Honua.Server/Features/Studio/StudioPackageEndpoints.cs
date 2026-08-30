@@ -1011,6 +1011,7 @@ internal static class StudioPackageEndpoints
             var actor = ConsolePrincipal.ResolveActorId(context.User);
             var receipt = await mutationRuntime.SaveVersionAsync(
                 draftId,
+                existing.Generation,
                 request.ChangeNote,
                 actor,
                 BuildMutationContext(context, actor),

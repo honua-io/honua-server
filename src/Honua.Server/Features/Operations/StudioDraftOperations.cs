@@ -44,7 +44,11 @@ internal static class StudioDraftOperations
             "Preview Studio draft plan",
             OperationSideEffectClass.MutatesMetadata,
             OperationDeterminism.RuntimeDynamic),
-        Build(SaveVersion, "Save Studio draft version", OperationSideEffectClass.CreatesMetadata),
+        Build(
+            SaveVersion,
+            "Save Studio draft version",
+            OperationSideEffectClass.CreatesMetadata,
+            OperationDeterminism.RuntimeDynamic),
     ];
 
     private static OperationDescriptor Build(
@@ -123,6 +127,7 @@ internal sealed record StudioDraftActorPayload
 internal sealed record StudioSaveVersionPayload
 {
     public required Guid DraftId { get; init; }
+    public required long ExpectedGeneration { get; init; }
     public string? ChangeNote { get; init; }
     public string? ActorId { get; init; }
     public string? TenantId { get; init; }
@@ -348,7 +353,12 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
     protected override async Task<StudioContentVersion> ActuateAsync(
         StudioSaveVersionPayload payload,
         CancellationToken cancellationToken) => await Lifecycle
-            .SaveDraftAsVersionAsync(payload.DraftId, payload.ChangeNote, payload.ActorId, cancellationToken: cancellationToken)
+            .SaveDraftAsVersionAsync(
+                payload.DraftId,
+                payload.ChangeNote,
+                payload.ActorId,
+                payload.ExpectedGeneration,
+                cancellationToken)
             .ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Studio draft '{payload.DraftId:D}' was not found.");
 }
@@ -416,10 +426,16 @@ internal sealed class StudioDraftMutationRuntime(
             cancellationToken);
 
     public Task<StudioDraftMutationReceipt<StudioContentVersion>> SaveVersionAsync(
-        Guid draftId, string? changeNote, string? actorId, StudioDraftMutationContext context,
+        Guid draftId, long expectedGeneration, string? changeNote, string? actorId, StudioDraftMutationContext context,
         CancellationToken cancellationToken = default) => InvokeAsync(
             StudioDraftOperations.SaveVersion,
-            new StudioSaveVersionPayload { DraftId = draftId, ChangeNote = changeNote, ActorId = actorId },
+            new StudioSaveVersionPayload
+            {
+                DraftId = draftId,
+                ExpectedGeneration = expectedGeneration,
+                ChangeNote = changeNote,
+                ActorId = actorId,
+            },
             StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload,
             StudioDraftOperationJsonContext.Default.StudioContentVersion,
             context,
