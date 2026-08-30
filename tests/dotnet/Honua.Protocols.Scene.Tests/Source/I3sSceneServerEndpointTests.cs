@@ -742,6 +742,28 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
 public sealed class I3sProductionRouteRegistrationTests
 {
     [Fact]
+    public void ScopedProvider_WithScopeValidation_MapsGeometryRoutesWithoutResolvingProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddRouting();
+        services.AddScoped<ISceneNodeGeometryProvider>(_ =>
+            throw new InvalidOperationException("Endpoint mapping must not instantiate the provider."));
+        using var serviceProvider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
+
+        var endpoints = new TestEndpointRouteBuilder(serviceProvider);
+        var map = () => endpoints.MapI3sSceneServerEndpoints();
+
+        map.Should().NotThrow();
+        endpoints.DataSources
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .Should().Contain(pattern =>
+                pattern!.Contains("/geometries/", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ProviderFreeContainer_AdvertisesMetadataPreviewOnly()
     {
         var services = new ServiceCollection();

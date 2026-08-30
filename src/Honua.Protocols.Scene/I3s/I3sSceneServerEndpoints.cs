@@ -193,7 +193,8 @@ internal static partial class I3sSceneServerEndpoints
         // advertised endpoints that deterministically 404. The protocol-shape
         // test host supplies a transcoder-backed stub and therefore exercises
         // the deferred wire contract without turning it into a shipping claim.
-        if (endpoints.ServiceProvider.GetService<ISceneNodeGeometryProvider>() is not null)
+        var serviceInspector = endpoints.ServiceProvider.GetService<IServiceProviderIsService>();
+        if (serviceInspector?.IsService(typeof(ISceneNodeGeometryProvider)) == true)
         {
             // Node geometry binary resource (#1810): the first slice that serves
             // RENDERABLE geometry (not just the descriptor). The transcoder
