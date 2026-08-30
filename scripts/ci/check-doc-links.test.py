@@ -331,6 +331,10 @@ def test_live_runbook_annotations_all_resolve() -> None:
         not any("/operations/runbook" in url for url in urls),
         "docs.honua.io/operations/ does not exist; no runbook_url may point at it",
     )
+    assert_that(
+        all("#" in url and url.rsplit("#", 1)[1] for url in urls),
+        "every runbook_url must target a specific runbook heading",
+    )
 
     payload = json.loads((REPO_ROOT / MODULE.DEFAULT_MANIFEST).read_text(encoding="utf-8"))
     listed = {entry["url"] for entry in payload["references"]}
