@@ -3,6 +3,7 @@
 
 using Amazon.S3;
 using Amazon.S3.Model;
+using System.Net;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 
@@ -61,10 +62,22 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
             EtagToMatch = expectedETag,
         };
 
-        using var response = await _client.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);
-        using var ms = new MemoryStream(length);
-        await response.ResponseStream.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
-        return ms.ToArray();
+        GetObjectResponse response;
+        try
+        {
+            response = await _client.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AmazonS3Exception ex) when (IsNotFound(ex))
+        {
+            throw new FileNotFoundException($"S3 object '{key}' was not found in bucket '{bucket}'.", ex);
+        }
+
+        using (response)
+        {
+            using var ms = new MemoryStream(length);
+            await response.ResponseStream.CopyToAsync(ms, cancellationToken).ConfigureAwait(false);
+            return ms.ToArray();
+        }
     }
 
     /// <inheritdoc />
@@ -114,4 +127,8 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
         => string.IsNullOrWhiteSpace(sha256)
             ? null
             : Convert.ToHexString(Convert.FromBase64String(sha256));
+
+    private static bool IsNotFound(AmazonS3Exception exception)
+        => exception.StatusCode == HttpStatusCode.NotFound
+           || string.Equals(exception.ErrorCode, "NoSuchKey", StringComparison.Ordinal);
 }

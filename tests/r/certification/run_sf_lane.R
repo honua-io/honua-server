@@ -311,7 +311,7 @@ record_control_plane_results <- function(collector, base_url, probe) {
   scheme <- tolower(sub("://.*$", "", base_url))
   collector_record(
     collector, "CERT-CONN-02",
-    status = if (identical(scheme, "http")) "pass" else "fail",
+    status = if (identical(scheme, "https")) "pass" else "not-applicable",
     duration_ms = 0,
     notes = if (identical(scheme, "http")) {
       paste0("Transport scheme observed via httr/curl: 'http'. The client-compat compose ",
@@ -319,7 +319,8 @@ record_control_plane_results <- function(collector, base_url, probe) {
              "exercised in the release tier against the HTTPS candidate deployment.")
     } else {
       paste0("Expected the compose lane to be plain http; observed '", scheme, "'.")
-    }
+    },
+    client_identity = "httr"
   )
 
   anon_ok <- !is.na(probe$anon_status) && probe$anon_status %in% c(401L, 403L)
@@ -332,7 +333,8 @@ record_control_plane_results <- function(collector, base_url, probe) {
       if (is.na(probe$anon_status)) "a transport error" else probe$anon_status,
       " (expected 401/403). Control-plane probe uses httr because both feature protocols ",
       "are anonymous in the client-compat fixture."
-    )
+    ),
+    client_identity = "httr"
   )
 
   auth_ok <- !is.na(probe$auth_status) && probe$auth_status >= 200 && probe$auth_status < 300
@@ -346,7 +348,8 @@ record_control_plane_results <- function(collector, base_url, probe) {
       if (is.na(probe$auth_status)) "a transport error" else probe$auth_status,
       " (expected 2xx). Honua's control plane authenticates with an API key header, not HTTP ",
       "Basic and not a bearer login flow."
-    )
+    ),
+    client_identity = "httr"
   )
 }
 

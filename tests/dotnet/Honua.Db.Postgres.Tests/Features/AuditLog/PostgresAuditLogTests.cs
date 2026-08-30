@@ -49,11 +49,12 @@ public sealed class PostgresAuditLogTests(PostgresFixture fixture)
                 Details = "{\"scheme\":\"api-key\"}",
             };
 
-            await sink.RecordAsync(evt);
+            var auditId = await sink.RecordAsync(evt);
 
             var rows = await ReadAllAsync(schema);
             rows.Should().HaveCount(1);
             var row = rows[0];
+            auditId.Should().Be(row.AuditId.ToString(System.Globalization.CultureInfo.InvariantCulture));
             row.EventType.Should().Be("Authentication");
             row.Actor.Should().Be("user-abc");
             row.ActorType.Should().Be("UserId");
@@ -252,7 +253,7 @@ public sealed class PostgresAuditLogTests(PostgresFixture fixture)
         await using var conn = await fixture.GetConnectionAsync(schema);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"""
-            SELECT timestamp, event_type, actor, actor_type, resource_type, resource_id,
+            SELECT audit_id, timestamp, event_type, actor, actor_type, resource_type, resource_id,
                    action, outcome, correlation_id, remote_ip, user_agent, details
             FROM "{schema}".audit_log
             ORDER BY audit_id ASC;
@@ -262,23 +263,25 @@ public sealed class PostgresAuditLogTests(PostgresFixture fixture)
         while (await reader.ReadAsync())
         {
             results.Add(new AuditRow(
-                Timestamp: reader.GetDateTime(0),
-                EventType: reader.GetString(1),
-                Actor: reader.GetString(2),
-                ActorType: reader.GetString(3),
-                ResourceType: reader.GetString(4),
-                ResourceId: reader.IsDBNull(5) ? null : reader.GetString(5),
-                Action: reader.GetString(6),
-                Outcome: reader.GetString(7),
-                CorrelationId: reader.GetString(8),
-                RemoteIp: reader.IsDBNull(9) ? null : reader.GetString(9),
-                UserAgent: reader.IsDBNull(10) ? null : reader.GetString(10),
-                Details: reader.GetString(11)));
+                AuditId: reader.GetInt64(0),
+                Timestamp: reader.GetDateTime(1),
+                EventType: reader.GetString(2),
+                Actor: reader.GetString(3),
+                ActorType: reader.GetString(4),
+                ResourceType: reader.GetString(5),
+                ResourceId: reader.IsDBNull(6) ? null : reader.GetString(6),
+                Action: reader.GetString(7),
+                Outcome: reader.GetString(8),
+                CorrelationId: reader.GetString(9),
+                RemoteIp: reader.IsDBNull(10) ? null : reader.GetString(10),
+                UserAgent: reader.IsDBNull(11) ? null : reader.GetString(11),
+                Details: reader.GetString(12)));
         }
         return results;
     }
 
     private sealed record AuditRow(
+        long AuditId,
         DateTime Timestamp,
         string EventType,
         string Actor,

@@ -10,7 +10,7 @@ namespace Honua.Core.Features.Scene.Conversion;
 /// scene-layer descriptor, OGC Community Standard 19-008). Only the fields the
 /// Honua converter needs to emit a 3D Tiles <c>tileset.json</c> are modeled;
 /// unknown members are ignored. Field names match the I3S spec verbatim so a
-/// document parsed from a public <c>.slpk</c> or SceneServer response binds
+/// document parsed from a SceneServer response binds
 /// directly.
 /// </summary>
 public sealed class I3sSceneLayerDocument

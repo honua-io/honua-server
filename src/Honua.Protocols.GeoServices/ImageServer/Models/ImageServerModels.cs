@@ -96,6 +96,9 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("capabilities")]
     public required string Capabilities { get; init; } = "Catalog,Image,Metadata,Pixels";
 
+    [JsonPropertyName("supportsStatistics")]
+    public bool SupportsStatistics { get; init; } = true;
+
     [JsonPropertyName("defaultMosaicMethod")]
     public string DefaultMosaicMethod { get; init; } = "esriMosaicNorthwest";
 

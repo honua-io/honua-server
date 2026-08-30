@@ -220,7 +220,7 @@ public sealed class TenantLifecycleService
         return new TenantLifecycleResult(TenantLifecycleOutcome.Updated, updated, null);
     }
 
-    private Task RecordAsync(
+    private Task<string?> RecordAsync(
         TenantLifecycleActor actor,
         TenantRecord tenant,
         string action,

@@ -718,6 +718,7 @@ main() {
   local prs
   prs="$(jq -r '.[].number' <<<"${selected}")"
   local n_selected; n_selected="$(jq 'length' <<<"${selected}")"
+  train_dispatch_selected_reviews "${selected}"
   train_metric_set selected "${n_selected}"
   # candidates = total open PRs the selector evaluated (selected ones surface in
   # the batch; the rest were skipped at select for draft/hold/conflict/CI-gate).

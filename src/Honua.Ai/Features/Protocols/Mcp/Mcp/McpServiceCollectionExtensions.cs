@@ -384,6 +384,16 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, McpRegistryBindingStartupCheck>());
 
+        // honua-server#3428: server-authored workflow discovery views. The options
+        // carry only the server/profile leg of the negotiation contract (the
+        // default view for a session that negotiates none); the views themselves
+        // are derived from the canonical live catalog, never configured. With the
+        // default (no default view) tools/list is byte-for-byte unchanged.
+        services.AddOptions<Views.McpWorkflowViewOptions>()
+            .Bind(configuration.GetSection(Views.McpWorkflowViewOptions.SectionName));
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, Views.McpWorkflowViewChangeNotifier>());
+
         return services;
     }
 

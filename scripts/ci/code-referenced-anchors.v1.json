@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "description": "Absolute docs.honua.io URLs that product code and shipped configuration hand to an operator or an agent at runtime. These are contracts, not prose cross-links: a typed refusal's remediationRef, a SCIM documentationUri, a Prometheus runbook_url. Nothing else notices when the heading underneath one is renamed, so scripts/ci/check-doc-links.py resolves every entry back to a real file and heading in docs/ and fails the gate when it cannot. Adding a new docs.honua.io URL to a scanned source root without registering it here is also an error.",
+  "issue": "https://github.com/honua-io/honua-server/issues/3592",
+  "docsBaseUrl": "https://docs.honua.io/",
+  "sourceScan": {
+    "comment": "Roots swept for unregistered docs.honua.io URLs. Deliberately narrow: code and shipped config, not documentation prose. Prose cross-links between docs pages are relative and are graded by the relative-link sweep instead.",
+    "roots": [
+      "src",
+      "docker",
+      "observability",
+      "eng",
+      "docs/guides/deploy/examples"
+    ],
+    "extensions": [
+      ".cs",
+      ".razor",
+      ".json",
+      ".yml",
+      ".yaml",
+      ".xml",
+      ".props",
+      ".targets",
+      ".csproj",
+      ".sh",
+      ".ps1",
+      ".ts",
+      ".js",
+      ".py",
+      ".conf",
+      ".env",
+      ".txt",
+      ".tmpl"
+    ],
+    "excludeDirs": [
+      "bin",
+      "obj",
+      "node_modules",
+      ".git"
+    ]
+  },
+  "references": [
+    {
+      "url": "https://docs.honua.io/reference/compatibility/idp-conformance-matrix",
+      "sources": [
+        "src/Honua.Server/Features/Identity/Scim/ScimDiscoveryEndpoints.cs"
+      ],
+      "why": "SCIM ServiceProviderConfig documentationUri. Advertised on the wire to every SCIM client that discovers the endpoint."
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/docker-compose#redis-is-optional-postgis-is-not",
+      "sources": [
+        "src/Honua.Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
+      ],
+      "why": "CapabilityUnavailableCodes.RedisRemediationRef — the remediationRef on the typed dependency-unavailable refusal (OGC API Processes problem+json, GeoServices error details, MCP error data). An agent is expected to follow this URL to learn how to make the request succeed, so a moved heading is a product defect, not a docs nit. Carried a pendingPr: 3583 marker while that branch was open; the marker was dropped when #3583 landed and the heading became real."
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/docker-compose#redis-is-configured-but-not-entitled",
+      "sources": [
+        "src/Honua.Core/Features/Capabilities/CapabilityUnavailableCodes.cs"
+      ],
+      "why": "CapabilityUnavailableCodes.EntitlementRemediationRef — the remediationRef for a host where Redis IS configured but the Pro 'caching.redis' entitlement is absent. Same wire contract as the entry above, different remediation, and it must not silently collapse onto the Redis-optional anchor: telling an operator to configure Redis that is already configured is worse than no link."
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/troubleshooting#database-connections",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for HonuaDbPoolUtilizationHigh, HonuaDbPoolUtilizationCritical, HonuaDbConnectionFailures. Retargeted from the dead /operations/runbook#database-connection-issues (#3592).",
+      "alerts": [
+        "HonuaDbPoolUtilizationHigh",
+        "HonuaDbPoolUtilizationCritical",
+        "HonuaDbConnectionFailures"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/troubleshooting#memory-and-performance",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for the memory and query-latency alerts. The section's symptom table covers working-set growth, container OOM, and high latency against a healthy database. Retargeted from /operations/runbook#memory-and-gc-issues and #general-troubleshooting (#3592).",
+      "alerts": [
+        "HonuaMemoryUsageHigh",
+        "HonuaMemoryUsageCritical",
+        "HonuaQueryLatencyHigh",
+        "HonuaQueryLatencyCritical"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/troubleshooting#quick-triage",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for the error-rate alerts. Quick triage names the liveness/readiness probes and GET /api/v1/admin/observability/errors, which is the first real step. Retargeted from /operations/runbook#general-troubleshooting (#3592).",
+      "alerts": [
+        "HonuaErrorRateHigh",
+        "HonuaErrorRateCritical"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/troubleshooting#emergency-procedures",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for HonuaServiceDown. Covers scope confirmation, graceful and forced restart, targeted connection termination, maintenance posture, and escalation (#3592).",
+      "alerts": [
+        "HonuaServiceDown"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/troubleshooting#imports",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for the upload-queue alerts. The Imports table covers rejected uploads, queue limits, and imports that never progress because Redis is absent. Retargeted from /operations/runbook#file-upload-problems (#3592).",
+      "alerts": [
+        "HonuaUploadQueueDepthHigh",
+        "HonuaUploadQueueFull"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/troubleshooting#rate-limiting",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for HonuaRateLimitViolationsHigh. Documents the default edge-enforcement posture, the opt-in application limiter, incident triage, and safe policy changes (#3592).",
+      "alerts": [
+        "HonuaRateLimitViolationsHigh"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/scaling-and-performance#caching-layers",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for the cache-hit-ratio alerts. The section is the canonical description of the edge/Redis/in-memory cache stack and the fallback behaviour a low hit ratio implies. Retargeted from /operations/runbook#cache-performance-problems (#3592).",
+      "alerts": [
+        "HonuaCacheHitRatioLow",
+        "HonuaCacheHitRatioCritical"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/scaling-and-performance#what-needs-redis-when-multi-node",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for RedisDown. The section states exactly what stops working without Redis (durable jobs, queued imports, workflow runs return 503) and what falls back safely. Retargeted from /operations/runbook#cache-performance-problems (#3592).",
+      "alerts": [
+        "RedisDown"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/scaling-and-performance#outbound-http-resilience",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for HonuaCircuitBreakerOpen. The section documents the per-service circuit breakers, their HttpResilience__ knobs, and the circuit-breaker-open troubleshooting entry. Retargeted from /operations/runbook#circuit-breaker-incidents (#3592).",
+      "alerts": [
+        "HonuaCircuitBreakerOpen"
+      ]
+    },
+    {
+      "url": "https://docs.honua.io/guides/deploy/scaling-and-performance#redis-capacity-and-latency",
+      "sources": [
+        "docs/guides/deploy/examples/prometheus-alerts.yml"
+      ],
+      "why": "runbook_url for the Redis memory and latency alerts. Covers sizing, durable-job noeviction policy, pressure response, latency budgets, and degradation order (#3592).",
+      "alerts": [
+        "RedisMemoryHigh",
+        "RedisLatencyHigh"
+      ]
+    }
+  ]
+}

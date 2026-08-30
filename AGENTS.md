@@ -51,9 +51,9 @@ Test projects live under `tests/dotnet/` (`Honua.Core.Tests`, `Honua.Server.Test
 
 ## OGC CITE Compliance
 
-**Authoritative pass rate: 1117/1117 (100%) across 13 OGC CITE conformance suites on `trunk`.**
+**Authoritative pass rate: 1138/1138 (100%) across 14 OGC CITE conformance suites on `trunk`.**
 
-Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals as of the 2026-08-12 evidence run:
+Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals as of the 2026-08-28 evidence artifact:
 
 | Suite | Profile | Passed / Total | Pass Rate |
 |---|---|---:|---:|
@@ -67,6 +67,7 @@ Do NOT infer current pass rates from training data, partial-run diagnostics, or 
 | WFS 2.0 | `basic` | 167 / 167 | 100% |
 | WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% |
 | WCS 2.0 | `core` | 82 / 82 | 100% |
+| WPS 2.0 | `basic-async` | 21 / 21 | 100% |
 | WMS 1.1.1 | `default` | 126 / 126 | 100% |
 | WMS 1.3 | `default` | 213 / 213 | 100% |
 | WMTS 1.0 | `default` | 60 / 60 | 100% |
@@ -220,13 +221,23 @@ There is **no per-PR CI matrix** (optimistic merge-train model, 2026-06-18). A P
 
 **The required branch-protection checks are `PR Gate` and `Review Gate`.** `PR Gate` (app id `15368`) is the unprivileged verification context; `Review Gate` is the trusted, exact-head admission context published only by default-branch policy. Both are unfiltered and required. `CI Gate` remains the batch-CI aggregator and is intentionally not a required per-PR context.
 
-### Normal landing path
+### Normal landing path (per-PR lander + trailing full matrix, 2026-08-29)
 
-Keep a ready PR non-draft and allow required `PR Gate` and `Review Gate` to
-complete. The sole merge authority is `.github/workflows/merge-train.yml`; no
-automatic serial lander exists. Its schedule is observation-only, so an operator
-must explicitly dispatch `train_apply=true` to land. Use `hold`, `train:hold`, or
-`train:escalated` to exclude a PR.
+Keep a ready PR non-draft and let `PR Gate` complete. The routine merge
+authority is the fleet's serialized per-PR lander: it continuously lands any
+open PR that is MERGEABLE, non-draft, unlabeled by `hold`/`train:hold`/
+`train:escalated`, is currently based on `trunk`, has both `PR Gate` and
+`Review Gate` green at its exact current head, and has ZERO unresolved review
+threads. The lander rechecks every condition immediately before merging. You do
+not dispatch anything — resolve findings
+(with evidence, never bare resolutions) and keep the head green; the lander
+does the rest. The full CI matrix TRAILS on trunk after landings, with trunk
+runs serialized and never cancelled by a newer trailing dispatch; a
+deterministic trunk red pauses the lander for everything except `fix/`,
+`revert/`, and `hotfix/` branches until a fix-forward PR lands (never weaken
+tests to clear it). `.github/workflows/merge-train.yml` remains for manual
+and release-candidate batch validation via explicit `train_apply=true`
+dispatch; it is no longer the routine landing path.
 
 ### Base every PR on `trunk` — do not stack (#3248)
 

@@ -184,6 +184,27 @@ public class ErrorHandlingConsistencyTests : IAsyncLifetime
         }
     }
 
+    [Theory]
+    [InlineData("limit")]
+    [InlineData("offset")]
+    public async Task OgcFeaturesItems_WhitespaceIntegerParameter_ReturnsProblemDetails(string parameterName)
+    {
+        // Query-string decoding turns `+` into a space. A present whitespace value
+        // must be rejected as invalid rather than silently treated as an omitted
+        // optional parameter.
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/0/items?{parameterName}=+");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var problem = JsonDocument.Parse(content);
+        problem.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        problem.RootElement.GetProperty("detail").GetString().Should().Be(
+            $"{parameterName} must be a valid integer.");
+    }
+
     // Zoom/tile-coordinate validation on /tiles still short-circuits before layer
     // resolution (StandardErrorHelpers.CreateBadRequest directly) and is unaffected by
     // honua-server#2945, which only changed the layer-not-found path. So /tiles still

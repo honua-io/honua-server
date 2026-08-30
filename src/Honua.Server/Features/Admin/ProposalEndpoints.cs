@@ -9,10 +9,12 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using CanonicalOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 
 namespace Honua.Server.Features.Admin;
 
@@ -33,16 +35,17 @@ internal static class ProposalEndpoints
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/proposals")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
-            .WithTags("Admin", "Proposals")
-            .RequireAdminAuthorization();
+            .WithTags("Admin", "Proposals");
 
         group.MapGet("/", HandleListProposals)
+            .RequireAdminAuthorization()
             .WithDisplayName("List Operation Proposals")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ProposalListResponse>()
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/{id}", HandleGetProposal)
+            .RequireAdminAuthorization()
             .WithDisplayName("Get Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
             .Produces<ProposalDetailResponse>()
@@ -50,15 +53,18 @@ internal static class ProposalEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/{id}/approve", HandleApproveProposal)
+            .RequireAdminApproveAuthorization()
             .WithDisplayName("Approve Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ProposalDetailResponse>()
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/{id}/reject", HandleRejectProposal)
+            .RequireAdminApproveAuthorization()
             .WithDisplayName("Reject Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ProposalDetailResponse>()
@@ -169,7 +175,8 @@ internal static class ProposalEndpoints
         [FromServices] IPermissionResolver permissionResolver,
         HttpContext context,
         [FromServices] IOperationGateway? gateway = null,
-        [FromServices] IOperationProposalStore? proposalStore = null)
+        [FromServices] IOperationProposalStore? proposalStore = null,
+        [FromServices] IEnumerable<CanonicalOperationExecutor>? operationExecutors = null)
     {
         if (gateway is null || proposalStore is null)
         {
@@ -181,6 +188,26 @@ internal static class ProposalEndpoints
         if (denied != null)
         {
             return denied;
+        }
+
+        var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+        var operationId = proposal?.OperationId ?? (proposal is null ? null : LegacyOperationIds.For(proposal.Kind));
+        if (proposal != null &&
+            (operationExecutors is null || !operationExecutors.Any(executor =>
+                string.Equals(executor.OperationId, operationId, StringComparison.Ordinal))))
+        {
+            return Results.Problem(
+                title: "Operation executor unavailable",
+                detail: $"No operation executor is registered for proposal type '{proposal.Kind}' " +
+                    $"(operation '{operationId}'). " +
+                    "Register an executor for this operation before approving the proposal.",
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "operation-executor-unavailable",
+                    ["operationType"] = proposal.Kind.ToString(),
+                    ["operationId"] = operationId,
+                });
         }
 
         try

@@ -28,6 +28,9 @@ public sealed class EndpointAuthorizationGuardTests
     {
         "RequireAuthorization",
         "RequireAdminAuthorization",
+        // Narrow operation-approval policy (honua-server#3365): admits only full administrators
+        // or scoped admin API keys carrying the explicit admin:approve grant.
+        "RequireAdminApproveAuthorization",
         "RequireAdminApiKey",
         "RequirePermission",
         "RequireRole",

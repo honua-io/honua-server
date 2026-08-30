@@ -2407,7 +2407,10 @@
         "ImageServer::GetServiceInfo",
         "ImageServer::GetFields",
         "ImageServer::GetKeyProperties",
+        "ImageServer::GetKeyPropertiesX",
         "ImageServer::GetMetadata",
+        "ImageServer::GetMultidimensionalInfo",
+        "ImageServer::ExecuteAISRequest",
         "ImageServer::ExportImage",
         "ImageServer::GetImage"
       ],
@@ -3950,7 +3953,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Read-only I3S SceneServer service descriptor and 3D Object scene-layer descriptor rooted at the scene extent, Enterprise edition gating (sub-Enterprise -> 403), unknown layer id -> 404, missing scene -> 404, and protected-scene access-policy enforcement exercised by endpoint integration tests; per-node geometry/attribute/texture binary streaming is a tracked follow-up (#1202)",
+          "proofMechanism": "Read-only I3S SceneServer service descriptor and 3D Object scene-layer descriptor rooted at the scene extent, Enterprise entitlement gating (unlicensed -> 402), unknown layer id -> 404, missing scene -> 404, and protected-scene access-policy enforcement exercised by endpoint integration tests; production geometry remains deferred (#1202)",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sSceneServerEndpointTests.cs",
@@ -3963,7 +3966,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Parse 3dSceneLayer.json (raw and gzip-compressed) out of an .slpk zip package, map a 3D Object / Integrated Mesh layer extent to a spec-valid 3D Tiles tileset.json via the shared TilesetDocumentWriter, and reject unsupported layer types, missing/degenerate extents, non-WGS84 spatial references, and malformed/invalid archives with stable I3sConversionErrorReason codes; full per-node geometry decode (node pages -> glTF/b3dm) is a tracked follow-up (#1268)",
+          "proofMechanism": "Parse raw 3dSceneLayer.json descriptors, map a 3D Object / Integrated Mesh layer extent to a spec-valid 3D Tiles tileset.json via the shared TilesetDocumentWriter, and reject unsupported layer types, missing/degenerate extents, non-WGS84 spatial references, and malformed descriptors with stable I3sConversionErrorReason codes; SLPK archive import is intentionally unclaimed (#1268)",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Scene/Conversion/I3sToTilesetConverter.cs",

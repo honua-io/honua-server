@@ -316,6 +316,7 @@ def record_pass(
     measured_delta: float | None = None,
     notes: str = "",
     evidence_ref: str = "",
+    client_identity: str = "",
 ) -> None:
     """Record a passing observation with its measurement and timing."""
     collector.record(
@@ -326,6 +327,7 @@ def record_pass(
         measured_delta=measured_delta,
         notes=notes,
         evidence_ref=evidence_ref,
+        client_identity=client_identity,
     )
 
 
@@ -451,6 +453,13 @@ def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | N
         return _ogc_features_evidence
     if "wfs" in module:
         return _wfs_evidence
+    if module == "test_auth_breadth":
+        suite = getattr(item, "callspec", None)
+        suite_name = suite.params.get("suite") if suite is not None else None
+        if suite_name == OGC_FEATURES_PROTOCOL:
+            return _ogc_features_evidence
+        if suite_name == WFS_PROTOCOL:
+            return _wfs_evidence
     return None
 
 

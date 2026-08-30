@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import json
+import shutil
 import tempfile
 import zipfile
 from datetime import datetime, timezone
@@ -335,6 +336,35 @@ def test_policy_and_discovery() -> None:
         assert [item["artifact_id"] for item in result["artifacts"]] == [12, 11]
         assert result["integrity_failures"] == []
 
+        # The workflow catalogs with the policy step's cutoff, then discovers
+        # several minutes later. The reader must keep that bound instead of
+        # moving the window forward and rejecting runs already admitted by the
+        # catalog query.
+        boundary = run(3, MODULE.PR_GATE_WORKFLOW)
+        boundary["created_at"] = "2026-08-08T11:00:30Z"
+        boundary["updated_at"] = "2026-08-08T11:00:31Z"
+        pages(root / "pr-runs", "workflow_runs", [boundary])
+        artifact_catalog(root / "pr-artifacts", boundary, [])
+        fixed_cutoff = datetime(2026, 8, 8, 12, tzinfo=timezone.utc)
+        clock_drift = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(),
+            datetime(2026, 8, 16, 12, 3, tzinfo=timezone.utc),
+            fixed_cutoff,
+        )
+        assert not any(
+            item.get("reason") == "observer workflow run is invalid"
+            for item in clock_drift["integrity_failures"]
+        )
+
+        pages(root / "pr-runs", "workflow_runs", [pr_run])
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, artifact_name(MODULE.PR_GATE_STREAM))
+        ])
+
         artifact_catalog(root / "pr-artifacts", pr_run, [
             artifact(11, pr_run, "pr-gate-impact-observation-10-old-dynamic-name")
         ])
@@ -449,6 +479,63 @@ def test_policy_and_discovery() -> None:
         assert current_attempt["integrity_failures"] == []
 
 
+def test_policy_generation_ignores_routing_irrelevant_workflow_edits() -> None:
+    paths = (
+        MODULE.PR_GATE_WORKFLOW,
+        "scripts/ci/classify-pr-gate-impact.py",
+        ".github/workflows/pr-gate.yml",
+        MODULE.NATIVE_WORKFLOW,
+        "scripts/ci/native-image-impact.py",
+        ".github/native-image-impact.json",
+        MODULE.SERVING_WORKFLOW,
+        MODULE.WORKER_WORKFLOW,
+        "scripts/ci/trusted-pr-workflow-run.js",
+    )
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        for relative in paths:
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(REPOSITORY_ROOT / relative, target)
+        original = MODULE.current_blobs(root)
+
+        workflow = root / MODULE.SERVING_WORKFLOW
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                "actions/checkout@v7.0.1", "actions/checkout@v7.0.2", 1
+            ),
+            encoding="utf-8",
+        )
+        irrelevant = MODULE.current_blobs(root)
+        assert irrelevant["serving_workflow"] != original["serving_workflow"]
+        assert irrelevant["policy_generation_sha256"] == original["policy_generation_sha256"]
+
+        observer = root / MODULE.NATIVE_WORKFLOW
+        observer.write_text(
+            observer.read_text(encoding="utf-8") + "\n# collection semantics revision\n",
+            encoding="utf-8",
+        )
+        changed_observer = MODULE.current_blobs(root)
+        assert changed_observer["policy_generation_sha256"] != original["policy_generation_sha256"]
+        observer.write_bytes((REPOSITORY_ROOT / MODULE.NATIVE_WORKFLOW).read_bytes())
+
+        classifier = root / "scripts/ci/native-image-impact.py"
+        classifier.write_text(
+            classifier.read_text(encoding="utf-8") + "\n# routing policy revision\n",
+            encoding="utf-8",
+        )
+        changed_classifier = MODULE.current_blobs(root)
+        assert changed_classifier["policy_generation_sha256"] != original["policy_generation_sha256"]
+
+        classifier.write_bytes((REPOSITORY_ROOT / "scripts/ci/native-image-impact.py").read_bytes())
+        routing_policy = root / ".github/native-image-impact.json"
+        routing_policy.write_text(
+            routing_policy.read_text(encoding="utf-8") + " ", encoding="utf-8"
+        )
+        changed_policy = MODULE.current_blobs(root)
+        assert changed_policy["policy_generation_sha256"] != original["policy_generation_sha256"]
+
+
 def test_summary_requires_real_candidate_and_image_evidence() -> None:
     blobs = MODULE.current_blobs(REPOSITORY_ROOT)
     with tempfile.TemporaryDirectory() as temporary:
@@ -520,6 +607,51 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         assert ledger["counts"]["worker_impacted_heads"] == 1
         assert ledger["counts"]["worker_avoided_heads"] == 1
         assert all(ledger["gates"].values())
+
+        # A candidate-only route is still report-only. The authoritative
+        # legacy workflow therefore has no exact-head run by design, and the
+        # ledger must not manufacture a missing authoritative outcome for it.
+        candidate_only = native_receipt(
+            blobs,
+            pr=13,
+            head=HEAD_D,
+            worker=False,
+            serving=lambda_only,
+            legacy_serving={name: False for name in MODULE.SERVING_VARIANTS},
+            legacy_worker=False,
+        )
+        candidate_only["comparison"]["serving_candidate_only"] = True
+        archive(archives, 104, MODULE.NATIVE_STREAM, candidate_only)
+        pages(root / "serving", "workflow_runs", serving[:2])
+        candidate_shadow = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert candidate_shadow["counts"]["authoritative_image_outcome_failures"] == 0
+        assert candidate_shadow["counts"]["native_countable_heads"] == 2
+        assert candidate_shadow["counts"]["candidate_only_shadow_heads"] == 1
+        assert candidate_shadow["candidate_only_shadow_heads"][0][
+            "candidate_only_classes"
+        ] == ["serving_lambda"]
+        archive(
+            archives,
+            104,
+            MODULE.NATIVE_STREAM,
+            native_receipt(
+                blobs,
+                pr=13,
+                head=HEAD_D,
+                worker=False,
+                serving=lambda_only,
+                legacy_serving=lambda_only,
+                legacy_worker=False,
+            ),
+        )
+        pages(root / "serving", "workflow_runs", serving)
 
         # #3343: `pull_requests` on a workflow run is a LIVE view of the pull
         # request. Once a later push moves the PR, every earlier head's run
@@ -704,6 +836,33 @@ def test_integrity_failures_do_not_count() -> None:
         }
         pages(root / "serving", "workflow_runs", [])
         pages(root / "worker", "workflow_runs", [])
+        # Full-gate classifier exits that happen before file normalization have
+        # no file-list claim to digest. The producer contract uses an empty
+        # digest for those explicitly fail-closed reasons; accepting exactly
+        # that shape does not weaken docs-only receipt integrity.
+        undigested = pr_gate_receipt(blobs)
+        undigested.update({
+            "mode": "full",
+            "reason": "unbounded-file-count",
+            "changed_file_count": 0,
+            "files_sha256": "",
+        })
+        index["artifacts"][0]["artifact_name"] = "pr-gate-impact-full-v3-attempt-1"
+        archive(archives, 301, MODULE.PR_GATE_STREAM, undigested)
+        accepted = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT,
+        )
+        assert accepted["counts"]["validated_pr_gate_receipts"] == 1
+        undigested["reason"] = "path-requires-full-gate"
+        archive(archives, 301, MODULE.PR_GATE_STREAM, undigested)
+        rejected_digest = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT,
+        )
+        assert rejected_digest["counts"]["integrity_failures"] == 1
+        index["artifacts"][0]["artifact_name"] = artifact_name(MODULE.PR_GATE_STREAM)
+
         # #3343: a stale policy input is COHORT DRIFT, not an integrity
         # violation. Any commit touching one of the nine pinned inputs — the
         # `actions/checkout` bump 741f0d7b5 did exactly this — moves the policy
@@ -711,11 +870,7 @@ def test_integrity_failures_do_not_count() -> None:
         # describes the previous one. Treating that as an integrity failure is
         # what made all 209 native receipts fail at once and left the ledger
         # permanently red on routine repository maintenance.
-        for field in (
-            "observer_workflow_blob_sha",
-            "resolver_blob_sha",
-            "gate_workflow_blob_sha",
-        ):
+        for field in ("policy_blob_sha",):
             bad = pr_gate_receipt(blobs)
             bad[field] = "f" * 40
             archive(archives, 301, MODULE.PR_GATE_STREAM, bad)
@@ -748,6 +903,63 @@ def test_integrity_failures_do_not_count() -> None:
             assert "contradicts its own declared policy head" in (
                 contradiction["integrity_failures"][0]["reason"]
             ), field
+
+        # Whole-file workflow/resolver pins are provenance rather than the
+        # semantic generation. An old action/version edit stays countable, but
+        # a mismatch against the receipt's exact checked-out policy head is a
+        # real contradiction and still fails closed.
+        for field in (
+            "observer_workflow_blob_sha",
+            "resolver_blob_sha",
+            "gate_workflow_blob_sha",
+        ):
+            old_provenance = pr_gate_receipt(blobs)
+            old_provenance[field] = "f" * 40
+            archive(archives, 301, MODULE.PR_GATE_STREAM, old_provenance)
+            retained = MODULE.summarize(
+                index, archives, root / "serving", root / "worker",
+                policy(), REPOSITORY_ROOT,
+            )
+            assert retained["counts"]["validated_pr_gate_receipts"] == 1, field
+            assert retained["counts"]["receipts_superseded_policy_generation"] == 0, field
+            contradiction = MODULE.summarize(
+                index, archives, root / "serving", root / "worker",
+                policy(), REPOSITORY_ROOT,
+                policy_head_sha=old_provenance["policy_sha"],
+            )
+            assert contradiction["counts"]["integrity_failures"] == 1, field
+
+            malformed = pr_gate_receipt(blobs)
+            malformed[field] = "short"
+            archive(archives, 301, MODULE.PR_GATE_STREAM, malformed)
+            rejected = MODULE.summarize(
+                index, archives, root / "serving", root / "worker",
+                policy(), REPOSITORY_ROOT,
+            )
+            assert rejected["counts"]["integrity_failures"] == 1, field
+
+        for field in (
+            "gate_workflow_blob_sha",
+            "serving_workflow_blob_sha",
+            "worker_workflow_blob_sha",
+            "resolver_blob_sha",
+            "observer_workflow_blob_sha",
+            "policy_inputs_sha256",
+        ):
+            malformed_native = native_receipt(
+                blobs, pr=11, head=HEAD_B, worker=True
+            )
+            malformed_native[field] = "short"
+            archive(archives, 301, MODULE.NATIVE_STREAM, malformed_native)
+            native_index = {
+                **index,
+                "artifacts": [entry(MODULE.NATIVE_STREAM, 301, 1)],
+            }
+            rejected = MODULE.summarize(
+                native_index, archives, root / "serving", root / "worker",
+                policy(), REPOSITORY_ROOT,
+            )
+            assert rejected["counts"]["integrity_failures"] == 1, field
 
         # A trust-boundary violation is never drift, whatever its policy head.
         for field, value in (
@@ -793,6 +1005,7 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     assert "actions/runs/${run_id}/artifacts?per_page=100" in ledger
     assert "producer_count > MAXIMUM_CATALOGS" in ledger
     assert "serving-image-boundary.yml/runs" in ledger
+    assert '--receipt-cutoff "${RECEIPT_CUTOFF}"' in ledger
     assert "worker-gdal-image.yml/runs" in ledger
     assert "actions: write" not in ledger
     assert "contents: write" not in ledger
@@ -1452,7 +1665,12 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
                 "integrity_clean": green,
                 "receipt_loss_within_budget": green,
             },
-            "counts": {"integrity_failures": 0 if green else 3},
+            "policy_generation_sha256": ("a" if day < 23 else "b") * 64,
+            "counts": {
+                "integrity_failures": 0 if green else 3,
+                "docs_only_success_heads": day - 18,
+                "native_countable_heads": day - 17,
+            },
             "receipt_emission": {"all": {"loss_ratio": loss, "measured": True}},
         }
 
@@ -1463,6 +1681,44 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
     assert ready["consecutive_green_days"] == 7
     assert ready["promotion_gate_ready"] is True
     assert ready["maximum_loss_ratio_in_streak"] == 0.01
+    assert ready["policy_generation_resets"] == 1
+    assert ready["policy_generation_resets_per_week"] == 1.167
+    assert ready["largest_sample_within_generation"] == {
+        "docs_only_heads": 7,
+        "native_heads": 8,
+    }
+
+    # v3 ledgers could count candidate-only routes that had never executed.
+    # Retained artifacts using those semantics must not seed a v4 sample.
+    legacy = daily(18)
+    legacy["contract"] = "honua.impact-routing-evidence-ledger/v3"
+    legacy["counts"]["docs_only_success_heads"] = 100
+    legacy["counts"]["native_countable_heads"] = 100
+    current_only = MODULE.trend([legacy, daily(19)], policy(), now)
+    assert current_only["largest_sample_within_generation"] == {
+        "docs_only_heads": 1,
+        "native_heads": 2,
+    }
+
+    independent_maxima = MODULE.trend([
+        {**daily(19), "counts": {
+            "integrity_failures": 0, "docs_only_success_heads": 20,
+            "native_countable_heads": 1,
+        }},
+        {**daily(20), "counts": {
+            "integrity_failures": 0, "docs_only_success_heads": 1,
+            "native_countable_heads": 20,
+        }},
+    ], policy(), now)
+    assert independent_maxima["largest_sample_within_generation"] in (
+        {"docs_only_heads": 20, "native_heads": 1},
+        {"docs_only_heads": 1, "native_heads": 20},
+    )
+
+    next_generation = daily(20)
+    next_generation["policy_generation_sha256"] = "b" * 64
+    one_day = MODULE.trend([daily(19), next_generation], policy(), now)
+    assert one_day["policy_generation_resets_per_week"] == 7.0
 
     # A red day breaks the streak rather than being averaged away.
     broken = MODULE.trend(
@@ -1490,6 +1746,7 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
     )
 
 test_policy_and_discovery()
+test_policy_generation_ignores_routing_irrelevant_workflow_edits()
 test_summary_requires_real_candidate_and_image_evidence()
 test_integrity_failures_do_not_count()
 test_workflows_are_read_only_and_attempt_bound()

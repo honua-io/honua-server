@@ -5,6 +5,8 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -75,40 +77,20 @@ internal sealed class PublishServiceTool : IMcpTool
         var invoker = httpContext.RequestServices.GetService<IOperationInvoker>();
         if (invoker is null)
         {
-            return McpToolHelpers.SuccessResult(
-                new McpPublishServiceOutput
-                {
-                    Status = OperationHandleStatus.Failed.ToString(),
-                    RequiresApproval = false,
-                    OperationId = PublishOperationId,
-                    Message = "The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."
-                },
-                McpJsonContext.Default.McpPublishServiceOutput);
+            return McpToolHelpers.ErrorResult(
+                new InvalidOperationException("The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."));
         }
 
         var request = BuildRequest(argument);
         var context = new OperationPolicyContext
         {
-            PrincipalId = principal.Identity?.Name
+            PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
+            TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+            SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+            AuthorizationOutcome = "authorized",
         };
 
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
-
-        // honua-server#1954: a completed publish mutates the promotion-resource
-        // catalog (a new honua://published-services/{id} appears) and the
-        // capability surface, so fire the listChanged notifications to every
-        // active streamable-HTTP session. Queued/RequiresApproval/Denied did not
-        // change the catalog yet, so they emit nothing. Resolved leniently so a
-        // host without the session services keeps working.
-        if (handle.Status == OperationHandleStatus.Completed)
-        {
-            var publisher = httpContext.RequestServices.GetService<IMcpNotificationPublisher>();
-            if (publisher is not null)
-            {
-                publisher.BroadcastResourcesListChanged();
-                publisher.BroadcastToolsListChanged();
-            }
-        }
 
         return McpToolHelpers.SuccessResult(Project(handle), McpJsonContext.Default.McpPublishServiceOutput);
     }
@@ -148,12 +130,23 @@ internal sealed class PublishServiceTool : IMcpTool
             Status = handle.Status.ToString(),
             RequiresApproval = handle.Status == OperationHandleStatus.RequiresApproval,
             OperationId = handle.OperationId,
+            OperationInstanceId = handle.OperationInstanceId,
             HandleId = handle.HandleId,
+            ProposalId = handle.ProposalId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyOutcome = handle.PolicyDecision?.ToString(),
             JobId = handle.JobId,
             ApprovalLane = handle.ApprovalLane,
             MetadataRevision = handle.MetadataRevision,
             Summary = handle.Result?.Summary,
             Message = handle.Reason,
+            Details = handle.Result?.Details ?? new Dictionary<string, string>(StringComparer.Ordinal),
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
         };
 
         if (handle.Result is { } result)

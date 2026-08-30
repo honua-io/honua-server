@@ -2,12 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using Honua.Core.Features.Licensing.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
 using Honua.Scene;
@@ -27,15 +26,16 @@ namespace Honua.Protocols.Scene.I3s;
 /// Enterprise-gated — I3S serving is an enterprise migration/parity feature.
 /// </para>
 /// <para>
-/// This slice serves the service and layer descriptor JSON so a client can
-/// discover the layer; per-node geometry/attribute/texture binary streaming is
-/// a tracked follow-up.
+/// This metadata-preview surface serves descriptors, node pages, statistics,
+/// and available attribute metadata. Geometry-backed resources return an honest
+/// 404 when no production geometry provider is registered.
 /// </para>
 /// </remarks>
 internal static partial class I3sSceneServerEndpoints
 {
     private const string ScenesTag = "Scenes";
     private const string I3sContentType = "application/json";
+    private const string I3sEntitlement = "serve.i3s-scene";
 
     /// <summary>
     /// Content type for the I3S Default geometry binary buffer
@@ -73,7 +73,7 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces<I3sSceneServiceDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
@@ -87,7 +87,7 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces<I3sSceneLayerDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
@@ -106,7 +106,7 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces<I3sNodePageDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
@@ -123,7 +123,7 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces<I3sAttributeStatisticsDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
@@ -140,7 +140,7 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces<I3sSceneServiceDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
@@ -154,7 +154,7 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces<I3sSceneLayerDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
@@ -168,7 +168,7 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces<I3sNodePageDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
@@ -182,79 +182,90 @@ internal static partial class I3sSceneServerEndpoints
             .WithTags(ScenesTag)
             .Produces<I3sAttributeStatisticsDocument>(StatusCodes.Status200OK, contentType: I3sContentType)
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status402PaymentRequired)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status500InternalServerError);
 
-        // Node geometry binary resource (#1810): the first slice that serves
-        // RENDERABLE geometry (not just the descriptor). The transcoder
-        // (I3sGeometryTranscoder) converts the scene's polygon/extruded geometry
-        // into an I3S Default interleaved buffer; this route streams it so an
-        // ArcGIS SceneLayer / I3S client can draw the layer. Mapped at both the
-        // GeoServices and the legacy /scenes alias for path parity with the
-        // descriptor routes above.
-        endpoints.MapGet(
-                "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
-                HandleGetNodeGeometry)
-            .WithName("GetGeoServicesSceneNodeGeometry")
-            .WithDisplayName("Get GeoServices SceneServer Node Geometry")
-            .WithSummary("Get the Esri I3S node geometry buffer at the GeoServices path")
-            .WithDescription("Returns the I3S Default interleaved node geometry binary (position/normal/uv0/color + feature section) transcoded from the scene's geometry so an ArcGIS / I3S client can render the layer. Enterprise edition.")
-            .WithTags(ScenesTag)
-            .Produces(StatusCodes.Status200OK, contentType: I3sGeometryContentType)
-            .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
-            .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status500InternalServerError);
+        // ADR-0078 keeps 2026.1 at descriptor/node-metadata preview. Register
+        // geometry-backed routes only when the host deliberately supplies an
+        // ISceneNodeGeometryProvider. Production does not register one today,
+        // so these routes are absent from its endpoint inventory rather than
+        // advertised endpoints that deterministically 404. The protocol-shape
+        // test host supplies a transcoder-backed stub and therefore exercises
+        // the deferred wire contract without turning it into a shipping claim.
+        var serviceInspector = endpoints.ServiceProvider.GetService<IServiceProviderIsService>();
+        if (serviceInspector?.IsService(typeof(ISceneNodeGeometryProvider)) == true)
+        {
+            // Node geometry binary resource (#1810): the first slice that serves
+            // RENDERABLE geometry (not just the descriptor). The transcoder
+            // (I3sGeometryTranscoder) converts the scene's polygon/extruded geometry
+            // into an I3S Default interleaved buffer; this route streams it so an
+            // ArcGIS SceneLayer / I3S client can draw the layer. Mapped at both the
+            // GeoServices and the legacy /scenes alias for path parity with the
+            // descriptor routes above.
+            endpoints.MapGet(
+                    "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
+                    HandleGetNodeGeometry)
+                .WithName("GetGeoServicesSceneNodeGeometry")
+                .WithDisplayName("Get GeoServices SceneServer Node Geometry")
+                .WithSummary("Get the Esri I3S node geometry buffer at the GeoServices path")
+                .WithDescription("Returns the I3S Default interleaved node geometry binary when a production geometry provider is registered; otherwise returns 404. Enterprise entitlement required.")
+                .WithTags(ScenesTag)
+                .Produces(StatusCodes.Status200OK, contentType: I3sGeometryContentType)
+                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status402PaymentRequired)
+                .Produces(StatusCodes.Status404NotFound)
+                .Produces(StatusCodes.Status500InternalServerError);
 
-        endpoints.MapGet(
-                "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
-                HandleGetNodeGeometry)
-            .WithName("GetI3sSceneNodeGeometry")
-            .WithDisplayName("Get I3S Scene Node Geometry")
-            .WithSummary("Get the Esri I3S node geometry buffer for a hosted scene")
-            .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}/nodes/{nodeId}/geometries/{geometryId}. Returns the transcoded I3S Default node geometry binary. Enterprise edition.")
-            .WithTags(ScenesTag)
-            .Produces(StatusCodes.Status200OK, contentType: I3sGeometryContentType)
-            .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
-            .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status500InternalServerError);
+            endpoints.MapGet(
+                    "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}",
+                    HandleGetNodeGeometry)
+                .WithName("GetI3sSceneNodeGeometry")
+                .WithDisplayName("Get I3S Scene Node Geometry")
+                .WithSummary("Get the Esri I3S node geometry buffer for a hosted scene")
+                .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}/nodes/{nodeId}/geometries/{geometryId}. Returns geometry only when a production provider is registered; otherwise returns 404. Enterprise entitlement required.")
+                .WithTags(ScenesTag)
+                .Produces(StatusCodes.Status200OK, contentType: I3sGeometryContentType)
+                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status402PaymentRequired)
+                .Produces(StatusCodes.Status404NotFound)
+                .Produces(StatusCodes.Status500InternalServerError);
 
-        // Node attribute binary resource (#1811): the per-field attribute file an
-        // ArcGIS SceneLayer client reads to satisfy identify. The OBJECTID field
-        // (f_0/Oid32) is materialised from the served node geometry's feature
-        // section so attribute order matches geometry order; user-attribute value
-        // decode (EXT_structural_metadata property tables) stays deferred and its
-        // fields answer a deterministic 404. Mapped at both the GeoServices and
-        // legacy /scenes paths for parity with the geometry route.
-        endpoints.MapGet(
-                "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
-                HandleGetNodeAttribute)
-            .WithName("GetGeoServicesSceneNodeAttribute")
-            .WithDisplayName("Get GeoServices SceneServer Node Attribute")
-            .WithSummary("Get the Esri I3S node attribute binary file at the GeoServices path")
-            .WithDescription("Returns the I3S per-field attribute binary file (count header + value array) for one attributeStorageInfo field of a served scene node, keyed on the node geometry's feature ids so an ArcGIS / I3S client can identify a picked feature. Enterprise edition.")
-            .WithTags(ScenesTag)
-            .Produces(StatusCodes.Status200OK, contentType: I3sAttributeContentType)
-            .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
-            .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status500InternalServerError);
+            // Node attribute binary resource (#1811): the per-field attribute file an
+            // ArcGIS SceneLayer client reads to satisfy identify. The OBJECTID field
+            // (f_0/Oid32) is materialised from the served node geometry's feature
+            // section so attribute order matches geometry order; user-attribute value
+            // decode (EXT_structural_metadata property tables) stays deferred and its
+            // fields answer a deterministic 404. Mapped at both the GeoServices and
+            // legacy /scenes paths for parity with the geometry route.
+            endpoints.MapGet(
+                    "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
+                    HandleGetNodeAttribute)
+                .WithName("GetGeoServicesSceneNodeAttribute")
+                .WithDisplayName("Get GeoServices SceneServer Node Attribute")
+                .WithSummary("Get the Esri I3S node attribute binary file at the GeoServices path")
+                .WithDescription("Returns an I3S per-field attribute binary file when geometry-backed values are available; otherwise returns 404. Enterprise entitlement required.")
+                .WithTags(ScenesTag)
+                .Produces(StatusCodes.Status200OK, contentType: I3sAttributeContentType)
+                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status402PaymentRequired)
+                .Produces(StatusCodes.Status404NotFound)
+                .Produces(StatusCodes.Status500InternalServerError);
 
-        endpoints.MapGet(
-                "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
-                HandleGetNodeAttribute)
-            .WithName("GetI3sSceneNodeAttribute")
-            .WithDisplayName("Get I3S Scene Node Attribute")
-            .WithSummary("Get the Esri I3S node attribute binary file for a hosted scene")
-            .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}/nodes/{nodeId}/attributes/{fieldKey}/{attributeId}. Returns the I3S per-field attribute binary file used by ArcGIS identify. Enterprise edition.")
-            .WithTags(ScenesTag)
-            .Produces(StatusCodes.Status200OK, contentType: I3sAttributeContentType)
-            .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status403Forbidden)
-            .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status500InternalServerError);
+            endpoints.MapGet(
+                    "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}",
+                    HandleGetNodeAttribute)
+                .WithName("GetI3sSceneNodeAttribute")
+                .WithDisplayName("Get I3S Scene Node Attribute")
+                .WithSummary("Get the Esri I3S node attribute binary file for a hosted scene")
+                .WithDescription("Alias of /rest/services/{sceneId}/SceneServer/layers/{layerId}/nodes/{nodeId}/attributes/{fieldKey}/{attributeId}. Returns geometry-backed values only when available; otherwise returns 404. Enterprise entitlement required.")
+                .WithTags(ScenesTag)
+                .Produces(StatusCodes.Status200OK, contentType: I3sAttributeContentType)
+                .Produces(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status402PaymentRequired)
+                .Produces(StatusCodes.Status404NotFound)
+                .Produces(StatusCodes.Status500InternalServerError);
+        }
 
         return endpoints;
     }
@@ -263,18 +274,16 @@ internal static partial class I3sSceneServerEndpoints
         string sceneId,
         HttpContext context,
         [FromServices] ISceneDatasetRegistry registry,
-        [FromServices] ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
-        => HandleAsync(sceneId, layerId: null, context, registry, licenseStatusProvider, cancellationToken);
+        => HandleAsync(sceneId, layerId: null, context, registry, cancellationToken);
 
     private static Task<IResult> HandleGetLayer(
         string sceneId,
         int layerId,
         HttpContext context,
         [FromServices] ISceneDatasetRegistry registry,
-        [FromServices] ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
-        => HandleAsync(sceneId, layerId, context, registry, licenseStatusProvider, cancellationToken);
+        => HandleAsync(sceneId, layerId, context, registry, cancellationToken);
 
     private static Task<IResult> HandleGetNodePage(
         string sceneId,
@@ -282,9 +291,8 @@ internal static partial class I3sSceneServerEndpoints
         int pageId,
         HttpContext context,
         [FromServices] ISceneDatasetRegistry registry,
-        [FromServices] ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
-        => HandleNodePageAsync(sceneId, layerId, pageId, context, registry, licenseStatusProvider, cancellationToken);
+        => HandleNodePageAsync(sceneId, layerId, pageId, context, registry, cancellationToken);
 
     private static Task<IResult> HandleGetStatistics(
         string sceneId,
@@ -292,9 +300,8 @@ internal static partial class I3sSceneServerEndpoints
         string fieldKey,
         HttpContext context,
         [FromServices] ISceneDatasetRegistry registry,
-        [FromServices] ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
-        => HandleStatisticsAsync(sceneId, layerId, fieldKey, context, registry, licenseStatusProvider, cancellationToken);
+        => HandleStatisticsAsync(sceneId, layerId, fieldKey, context, registry, cancellationToken);
 
     private static async Task<IResult> HandleGetNodeGeometry(
         string sceneId,
@@ -303,7 +310,6 @@ internal static partial class I3sSceneServerEndpoints
         int geometryId,
         HttpContext context,
         [FromServices] ISceneDatasetRegistry registry,
-        [FromServices] ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(sceneId))
@@ -311,12 +317,11 @@ internal static partial class I3sSceneServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Scene identifier is required.");
         }
 
-        var edition = licenseStatusProvider.GetCurrentStatus().Edition;
-        if (edition < HonuaEdition.Enterprise)
+        var entitlementError = LicenseGate.RequireEntitlement(
+            context, I3sEntitlement, "I3S Scene Serving");
+        if (entitlementError is not null)
         {
-            return StandardErrorHelpers.CreateForbidden(
-                context,
-                $"I3S scene serving requires the Enterprise edition. Current edition: {edition}.");
+            return entitlementError;
         }
 
         if (layerId != I3sSceneServiceBuilder.LayerId)
@@ -381,7 +386,6 @@ internal static partial class I3sSceneServerEndpoints
         int attributeId,
         HttpContext context,
         [FromServices] ISceneDatasetRegistry registry,
-        [FromServices] ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(sceneId))
@@ -389,12 +393,11 @@ internal static partial class I3sSceneServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Scene identifier is required.");
         }
 
-        var edition = licenseStatusProvider.GetCurrentStatus().Edition;
-        if (edition < HonuaEdition.Enterprise)
+        var entitlementError = LicenseGate.RequireEntitlement(
+            context, I3sEntitlement, "I3S Scene Serving");
+        if (entitlementError is not null)
         {
-            return StandardErrorHelpers.CreateForbidden(
-                context,
-                $"I3S scene serving requires the Enterprise edition. Current edition: {edition}.");
+            return entitlementError;
         }
 
         if (layerId != I3sSceneServiceBuilder.LayerId)
@@ -473,10 +476,9 @@ internal static partial class I3sSceneServerEndpoints
         int? layerId,
         HttpContext context,
         ISceneDatasetRegistry registry,
-        ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
     {
-        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, licenseStatusProvider, cancellationToken)
+        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, cancellationToken)
             .ConfigureAwait(false);
         if (gate.Failure is { } failure)
         {
@@ -510,10 +512,9 @@ internal static partial class I3sSceneServerEndpoints
         int pageId,
         HttpContext context,
         ISceneDatasetRegistry registry,
-        ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
     {
-        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, licenseStatusProvider, cancellationToken)
+        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, cancellationToken)
             .ConfigureAwait(false);
         if (gate.Failure is { } failure)
         {
@@ -544,10 +545,9 @@ internal static partial class I3sSceneServerEndpoints
         string fieldKey,
         HttpContext context,
         ISceneDatasetRegistry registry,
-        ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
     {
-        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, licenseStatusProvider, cancellationToken)
+        var gate = await ResolveSceneAsync(sceneId, layerId, context, registry, cancellationToken)
             .ConfigureAwait(false);
         if (gate.Failure is { } failure)
         {
@@ -577,7 +577,7 @@ internal static partial class I3sSceneServerEndpoints
 
     /// <summary>
     /// Shared gate for every I3S SceneServer resource: validates the scene id,
-    /// enforces the Enterprise edition, rejects any non-zero layer id, resolves
+    /// enforces the Enterprise entitlement, rejects any non-zero layer id, resolves
     /// the scene, and enforces its access policy. Returns the resolved scene on
     /// success or the failing <see cref="IResult"/> to short-circuit with.
     /// </summary>
@@ -586,7 +586,6 @@ internal static partial class I3sSceneServerEndpoints
         int? layerId,
         HttpContext context,
         ISceneDatasetRegistry registry,
-        ILicenseStatusProvider licenseStatusProvider,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(sceneId))
@@ -594,12 +593,11 @@ internal static partial class I3sSceneServerEndpoints
             return new SceneGateResult(null, StandardErrorHelpers.CreateBadRequest(context, "Scene identifier is required."));
         }
 
-        var edition = licenseStatusProvider.GetCurrentStatus().Edition;
-        if (edition < HonuaEdition.Enterprise)
+        var entitlementError = LicenseGate.RequireEntitlement(
+            context, I3sEntitlement, "I3S Scene Serving");
+        if (entitlementError is not null)
         {
-            return new SceneGateResult(null, StandardErrorHelpers.CreateForbidden(
-                context,
-                $"I3S scene serving requires the Enterprise edition. Current edition: {edition}."));
+            return new SceneGateResult(null, entitlementError);
         }
 
         // Only layer 0 exists per scene; reject any other index explicitly so a

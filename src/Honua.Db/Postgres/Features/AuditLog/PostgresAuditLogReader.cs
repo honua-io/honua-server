@@ -37,6 +37,10 @@ internal sealed class PostgresAuditLogReader : IAuditLogReader
 
         var pageSize = ClampPageSize(filter.PageSize);
         var cursor = AuditLogCursor.TryDecode(filter.Cursor);
+        if (!string.IsNullOrWhiteSpace(filter.Cursor) && cursor is null)
+        {
+            throw new InvalidAuditLogCursorException();
+        }
 
         var sql = new StringBuilder();
         sql.Append("SELECT audit_id, timestamp, event_type, actor, actor_type, resource_type, resource_id, ");
@@ -226,7 +230,8 @@ internal sealed record AuditLogCursor(DateTimeOffset Timestamp, long AuditId)
     public static AuditLogCursor? TryDecode(string? cursor)
     {
         if (!PostgresCursorCodec.TryDecodeTimestampAndSuffix(cursor, out var timestamp, out var suffix) ||
-            !long.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out var auditId))
+            !long.TryParse(suffix, NumberStyles.None, CultureInfo.InvariantCulture, out var auditId) ||
+            auditId <= 0)
         {
             return null;
         }

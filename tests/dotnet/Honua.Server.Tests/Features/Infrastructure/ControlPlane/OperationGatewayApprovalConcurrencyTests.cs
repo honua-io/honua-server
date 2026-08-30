@@ -9,6 +9,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Server.Features.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -134,13 +135,20 @@ public sealed class OperationGatewayApprovalConcurrencyTests
     private static OperationProposal CreateProposal(string proposalId, OperationProposalStatus status)
     {
         var now = DateTimeOffset.UtcNow;
+        var plan = new OperationProposalPlan { Summary = "test proposal" };
         return new OperationProposal
         {
             ProposalId = proposalId,
             Kind = OperationClass.Deploy,
             Status = status,
-            Plan = new OperationProposalPlan { Summary = "test proposal" },
-            Audit = new OperationAuditInfo { Reason = "test" },
+            Plan = plan,
+            SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
+            Audit = new OperationAuditInfo
+            {
+                OperationInstanceId = $"opinst-{proposalId}",
+                CorrelationId = $"corr-{proposalId}",
+                Reason = "test",
+            },
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -150,23 +158,11 @@ public sealed class OperationGatewayApprovalConcurrencyTests
         IOperationProposalStore store,
         IOperationExecutor? executor = null)
     {
-        var services = new ServiceCollection();
-        services.AddScoped<IAuditLog>(_ => NullAuditLog.Instance);
-        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
-
         var ladder = Substitute.For<IGuardrailLadder>();
-        var notifier = Substitute.For<IProposalNotifier>();
         IEnumerable<IOperationExecutor> executors = executor != null
             ? [executor]
             : [];
-
-        return new OperationGateway(
-            ladder,
-            store,
-            executors,
-            scopeFactory,
-            notifier,
-            NullLogger<OperationGateway>.Instance);
+        return CanonicalOperationGatewayTestComposition.Build(store, ladder, executors);
     }
 
     /// <summary>

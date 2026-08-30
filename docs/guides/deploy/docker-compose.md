@@ -48,7 +48,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz/live"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -130,7 +130,7 @@ For headless deployments, keep Redis unless every durable control-plane feature 
       honua:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/operate"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/operate"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -189,12 +189,12 @@ The 2026.1 install topology is deliberate and applies to every deployment shape:
 |---|---|
 | Multi-layer cache | Falls back to the in-memory provider. Reads still serve correctly; the cache is process-local and not shared across replicas. |
 | Durable geoprocessing jobs (GPServer, OGC API Processes, WPS, MCP, gRPC) | **Unavailable.** No durable job store or queue is composed and no worker loop runs, so submission is refused up front on every one of those surfaces. |
-| Workflows / orchestration | **Unavailable.** The orchestration engine is not registered; workflow definitions and runs are not persisted. |
+| Workflows / orchestration | **Unavailable.** The orchestration engine is not registered; workflow definitions and runs are not persisted. Publishing a workflow package to a `Schedule` target is refused up front, because the compiled workflow definition has nowhere durable to land. `Job` and `ProcessEndpoint` publications still succeed; their *runs* are refused by the durable job store instead. |
 | Operation proposals and the Console approval flow | **Unavailable.** Proposal state has no PostGIS path — it is Redis-only. |
 | Queued imports | Development/Test fall back to an in-process queue (non-durable). Outside those environments the import routes refuse with `503`. |
 | Multi-replica coordination | Not available. Cross-replica cache invalidation, feature-change event durability, and shared streaming fan-out all degrade to node-local behaviour, so run **one** server instance. |
 
-Every surface in that list refuses with a typed error instead of accepting work it cannot finish, with one known exception: publishing a workflow package to a `Schedule` target reports success while silently skipping definition persistence and run creation, because the stores it needs are absent. Treat workflow authoring as unavailable on a no-Redis install rather than relying on that response.
+Nothing in that list fails silently: every affected surface refuses with a typed error instead of accepting work it cannot finish.
 
 ### The typed refusal
 
@@ -241,25 +241,27 @@ Redis-backed services are gated on the Pro `caching.redis` entitlement as well a
 
 **This is the default for the repository quickstart**: the root `docker-compose.yml` leaves `HONUA_DEV_GRANT_EDITION` empty, so the stack starts Redis but runs as Community and durable jobs stay unavailable. Set `HONUA_DEV_GRANT_EDITION=Pro` (a development-only grant, honoured outside Production) or install a licence that includes `caching.redis`.
 
-Because "add Redis" is not the fix here, this case reports itself differently. The refusal carries `"code": "license-required"` with `"missingEntitlement": "caching.redis"` and **no** `missingDependency`, and the capabilities manifest reports `jobs.runner` with `"reasonCode": "license-required"` rather than `dependency-unavailable`.
+Because "add Redis" is not the fix here, this case reports itself differently. The refusal carries `"code": "license-required"` with `"missingEntitlement": "caching.redis"` and **no** `missingDependency`, and the capabilities manifest reports `jobs.runner` with `"reasonCode": "license-required"` rather than `dependency-unavailable`. Workflow-package `Schedule` publication splits the same way: it is refused on both hosts, but names the entitlement here and the missing Redis dependency there, so the remediation you are handed is one that can actually work.
 
 ### Running the no-Redis variant
 
-The repository ships an override that composes the root quickstart stack as PostGIS + Honua Server only, with `ConnectionStrings__Redis` unset:
+For the repository quickstart, the repository ships an override that composes the root stack as PostGIS + Honua Server only, with `ConnectionStrings__Redis` unset:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.no-redis.yml up -d
 ```
 
+The production flow on this page creates its Compose file directly in `/opt/honua`; it does not copy that repository override. To run that inline stack without Redis, remove `ConnectionStrings__Redis` from `honua.environment`, remove the `redis` entry from `honua.depends_on`, remove the entire `redis` service, and remove `redis_data` from the top-level `volumes` list before running `docker compose up -d`.
+
 ### Adding Redis later
 
-Drop the override and start again:
+For the repository quickstart, drop the override and start again with the Pro development grant (or install a licence that includes `caching.redis`):
 
 ```bash
-docker compose up -d
+HONUA_DEV_GRANT_EDITION=Pro docker compose up -d
 ```
 
-Redis holds only job, workflow, proposal, and cache state, none of which is durable across an install that never had it — so nothing is lost by adding it. PostGIS-backed metadata state is untouched by the change, and durable jobs and workflows become available on the next boot.
+For the inline production stack, restore the four Redis entries removed above and install a licence that includes `caching.redis` before restarting. Redis holds only job, workflow, proposal, and cache state, none of which is durable across an install that never had it — so nothing is lost by adding it. PostGIS-backed metadata state is untouched by the change, and durable jobs and workflows become available on the next boot.
 
 ## Troubleshoot
 

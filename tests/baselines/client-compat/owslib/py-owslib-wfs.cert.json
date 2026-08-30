@@ -1,10 +1,10 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260823T211850Z",
-  "run_date": "2026-08-23T21:18:50.647794+00:00",
-  "server_version": "1.0.0",
-  "server_commit": "unknown",
-  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
+  "run_id": "20260829T205535Z",
+  "run_date": "2026-08-29T20:55:35.537029+00:00",
+  "server_version": "1.0.0+e358ef1b50961de6fe6e4fae172e544418b7fe0c",
+  "server_commit": "e358ef1b50961de6fe6e4fae172e544418b7fe0c",
+  "fixture_revision": "sha256:80c852414b96585cd98772d29098764946b0fb5c7404fcc9e336e35eaf6839b6",
   "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
   "client_lane": "py-owslib",
   "client_version": "0.36.0",
@@ -16,19 +16,21 @@
       "test_case_id": "CERT-CONN-01",
       "status": "pass",
       "duration_ms": 0,
-      "measured_count": 5,
+      "measured_count": 8,
       "measured_delta": null,
-      "notes": "owslib.wfs.WebFeatureService parsed a live WFS 2.0.0 capabilities document titled 'Honua WFS 2.0' with 5 feature types.",
-      "evidence_ref": "http://honua:5000/wfs"
+      "notes": "owslib.wfs.WebFeatureService parsed a live WFS 2.0.0 capabilities document titled 'Honua WFS 2.0' with 8 feature types.",
+      "evidence_ref": "http://honua:5000/wfs",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-CONN-02",
-      "status": "pass",
+      "status": "not-applicable",
       "duration_ms": null,
       "measured_count": null,
       "measured_delta": null,
       "notes": "Transport verified as plain http on the compose client-compat network, which terminates no TLS. TLS handshake behaviour is exercised in the release tier, where the same lane runs against the HTTPS candidate.",
-      "evidence_ref": "http://honua:5000"
+      "evidence_ref": "http://honua:5000",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-AUTH-01",
@@ -37,7 +39,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "Anonymous GET /api/v1/admin/services -> 401, WWW-Authenticate: ApiKey realm=\"Honua Admin\", header=\"X-API-Key\". The WFS data surface is anonymous in this fixture, so the control plane substantiates the AUTH facets.",
-      "evidence_ref": "/api/v1/admin/services"
+      "evidence_ref": "/api/v1/admin/services",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-AUTH-02",
@@ -46,16 +49,18 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "Accepted scheme x-api-key -> 200; ladder: x-api-key=200",
-      "evidence_ref": "/api/v1/admin/services"
+      "evidence_ref": "/api/v1/admin/services",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 0,
-      "measured_count": 5,
+      "measured_count": 8,
       "measured_delta": null,
-      "notes": "WebFeatureService.contents listed 5 namespace-qualified feature types: ['honua:test_layer', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
-      "evidence_ref": ""
+      "notes": "WebFeatureService.contents listed 8 namespace-qualified feature types: ['honua:test_layer', 'honua:wfs_t_insert_scratch', 'honua:wfs_t_update_scratch', 'honua:wfs_t_delete_scratch', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-DISC-02",
@@ -64,16 +69,18 @@
       "measured_count": 2,
       "measured_delta": null,
       "notes": "honua:test_layer: title='Test Layer', CRS options ['EPSG:4326', 'EPSG:3857'], WGS84BoundingBox (-122.5, 37.7, -122.35, 37.84) encloses the seeded feature envelope [-122.49, 37.71, -122.37, 37.79].",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-SCHM-01",
       "status": "pass",
-      "duration_ms": 5,
+      "duration_ms": 9,
       "measured_count": 14,
       "measured_delta": null,
       "notes": "owslib.feature.schema.get_schema parsed DescribeFeatureType into 14 typed properties; every seeded attribute is present with its XSD type (int/double/boolean/dateTime/date/time), and objectid is non-nillable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-SCHM-02",
@@ -82,79 +89,88 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "The XSD types the 'shape' element as a GML PointPropertyType, which OWSLib maps to the fiona geometry 'Point' -- matching the seeded Point layer.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-QFLT-01",
       "status": "pass",
-      "duration_ms": 30,
+      "duration_ms": 38,
       "measured_count": 5,
       "measured_delta": null,
       "notes": "An owslib.fes2 PropertyIsEqualTo Filter Encoding 2.0 document posted as XML matched 5 of 10 features (status='active'); every returned feature carries the value.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-QFLT-02",
       "status": "pass",
-      "duration_ms": 16,
+      "duration_ms": 17,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "A 5-element BBOX carrying an explicit urn:ogc:def:crs:OGC:1.3:CRS84 selected 3 features (['alpha', 'beta', 'gamma']); OWSLib formats the ordinates in the CRS's declared axis order and the server honours it.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-PAGE-01",
       "status": "pass",
-      "duration_ms": 14,
+      "duration_ms": 15,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "OWSLib maps maxfeatures=3 to the WFS 2.0 COUNT parameter; the server returned 3 members while reporting the full numberMatched=10.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-PAGE-02",
       "status": "pass",
-      "duration_ms": 25,
+      "duration_ms": 26,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "STARTINDEX=3 returned ['delta', 'epsilon', 'zeta'] after ['alpha', 'beta', 'gamma'].",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-GEOM-01",
       "status": "pass",
-      "duration_ms": 17,
+      "duration_ms": 13,
       "measured_count": null,
       "measured_delta": 0.0,
       "notes": "Anchor 'alpha' returned (-122.49, 37.71) in the GeoJSON output format (RFC 7946 longitude/latitude, so no axis ambiguity) against seeded (-122.49, 37.71); deviation 0.0 degrees, threshold 1e-06.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-GEOM-02",
       "status": "pass",
-      "duration_ms": 15,
+      "duration_ms": 13,
       "measured_count": null,
       "measured_delta": 0.0,
       "notes": "SRSNAME=urn:ogc:def:crs:EPSG::4326 is echoed verbatim on every gml geometry and the ordinates follow that CRS's declared latitude/longitude order (gml:pos=[37.71, -122.49]).",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-ERRH-01",
       "status": "pass",
-      "duration_ms": 5,
+      "duration_ms": 7,
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib raised owslib.util.ServiceException from a spec-shaped ows:ExceptionReport with exceptionCode=InvalidParameterValue, locator=typeNames and the offending type name in the text.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-ERRH-02",
       "status": "pass",
-      "duration_ms": 7,
+      "duration_ms": 8,
       "measured_count": null,
       "measured_delta": null,
       "notes": "A syntactically valid Filter Encoding 2.0 document referencing an unknown ValueReference is rejected with an ows:ExceptionReport carrying exceptionCode=InvalidParameterValue rather than silently returning every feature.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-01",
@@ -163,7 +179,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-02",
@@ -172,7 +189,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-SYM-01",
@@ -181,7 +199,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-LIN-01",
@@ -190,7 +209,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-FIL-01",
@@ -199,7 +219,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-LBL-01",
@@ -208,7 +229,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-SPR-01",
@@ -217,7 +239,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "CERT-RNDR-URL-01",
@@ -226,7 +249,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib returns parsed feature data for this protocol and has no drawing surface; rendering facets are structurally not applicable.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     }
   ],
   "summary": {
@@ -245,7 +269,8 @@
       "measured_count": 27,
       "measured_delta": null,
       "notes": "OperationsMetadata advertises 27 entries covering every mandatory WFS 2.0 operation, and GetFeature offers both ['get', 'post'] DCP bindings.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-CAP-02",
@@ -254,7 +279,8 @@
       "measured_count": 27,
       "measured_delta": null,
       "notes": "Capabilities declare the WFS 2.0 conformance constraint set including ImplementsBasicWFS, ImplementsResultPaging, KVPEncoding and XMLEncoding; the paging and encoding claims are exercised by the paging and POST-filter cases.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-CAP-03",
@@ -263,7 +289,8 @@
       "measured_count": 5,
       "measured_delta": null,
       "notes": "All 5 advertised GetFeature output formats returned real payloads: application/gml+xml; version=3.2=1707B, GML3.2=1671B, application/geo+json=518B, text/csv=375B, application/json=518B. An advertised-but-unservable format is a capabilities lie.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-DFT-01",
@@ -272,7 +299,8 @@
       "measured_count": 1,
       "measured_delta": null,
       "notes": "DescribeFeatureType returned a well-formed XSD declaring 'test_layer' in the gml:AbstractFeature substitution group and importing GML 3.2.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-BBOX-01",
@@ -281,7 +309,8 @@
       "measured_count": 3,
       "measured_delta": null,
       "notes": "The 4-element BBOX (default CRS, longitude/latitude) and the 5-element CRS84 BBOX select the identical feature set ['alpha', 'beta', 'gamma'], so the server's bbox axis-order handling matches OWSLib's.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-FILT-02",
@@ -290,7 +319,8 @@
       "measured_count": 3,
       "measured_delta": null,
       "notes": "fes:PropertyIsGreaterThan on the integer `count` column returns exactly the three rows above 7; a lexical comparison would mis-order 10.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-PROP-01",
@@ -299,7 +329,8 @@
       "measured_count": 13,
       "measured_delta": null,
       "notes": "propertyname=['name','status'] narrowed the payload to exactly those two columns, and the PROPERTYNAME=* wildcard widened it back to all 13 properties.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-SORT-01",
@@ -308,7 +339,8 @@
       "measured_count": 10,
       "measured_delta": null,
       "notes": "SORTBY=name returned all 10 features in ascending name order.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-HITS-01",
@@ -317,7 +349,8 @@
       "measured_count": 10,
       "measured_delta": null,
       "notes": "RESULTTYPE=hits reported numberMatched=10 with numberReturned=0 and no wfs:member elements, which is what a client uses to size a query before fetching.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-PAGE-03",
@@ -326,7 +359,8 @@
       "measured_count": 10,
       "measured_delta": null,
       "notes": "A COUNT=3 walk produced 10 distinct gml:id values summing exactly to numberMatched: no gaps, no repeats, stable ordering across pages.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-CRS-02",
@@ -335,16 +369,18 @@
       "measured_count": 4,
       "measured_delta": null,
       "notes": "4 (CRS, spelling) combinations from the advertised crsOptions were served, each labelled with a matching srsName and reprojected within tolerance.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-CRS-03",
-      "status": "pass",
+      "status": "fail",
       "duration_ms": null,
       "measured_count": null,
-      "measured_delta": 0.0,
-      "notes": "All three CRS84 spellings (URN, CRS:84, OGC URI) return longitude/latitude ordinates labelled with the CRS84 URN, so srsName and axis order agree. Note: CRS84 is honoured but is still absent from the feature type's advertised OtherCRS list, so OWSLib warns before issuing the request -- capabilities under-advertisement, filed separately.",
-      "evidence_ref": ""
+      "measured_delta": null,
+      "notes": "tests/python/owslib_client/test_wfs.py:721: in test_ext_crs84_label_matches_axis_order\n    assert \"CRS84\" in srs_names[0].upper(), (\nE   AssertionError: srsname='urn:ogc:def:crs:OGC:1.3:CRS84' produced longitude/latitude ordinates [-122.49, 37.71] but labelled them 'urn:ogc:def:crs:EPSG::4326', which declares latitude first\nE   assert 'CRS84' in 'URN:OGC:DEF:CRS:EPSG::4326'\nE    +  where 'URN:OGC:DEF:CRS:EPSG::4326' = <built-in method upper of str object at 0x755a80cda2e0>()\nE    +    where <bui",
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-ERR-02",
@@ -353,7 +389,28 @@
       "measured_count": 4,
       "measured_delta": null,
       "notes": "Every deliberate client error produced an ows:ExceptionReport OWSLib could parse: bad-srsname=InvalidParameterValue, structurally-invalid-filter=InvalidParameterValue, unknown-property-projection=InvalidParameterValue, unsupported-output-format=InvalidParameterValue. None returned a 500 or a silently empty FeatureCollection.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-100-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": 0.0,
+      "notes": "OWSLib WebFeatureService negotiated WFS 1.0.0, parsed capabilities, discovered honua:test_layer, and executed GetFeature; EPSG:4326 coordinate (-122.49, 37.71) obeyed that version's axis-order contract.",
+      "evidence_ref": "",
+      "protocol_version": "1.0.0"
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-110-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": 0.0,
+      "notes": "OWSLib WebFeatureService negotiated WFS 1.1.0, parsed capabilities, discovered honua:test_layer, and executed GetFeature; urn:ogc:def:crs:EPSG::4326 coordinate (37.71, -122.49) obeyed that version's axis-order contract.",
+      "evidence_ref": "",
+      "protocol_version": "1.1.0"
     },
     {
       "test_case_id": "NB-OWS-WFS-VER-01",
@@ -362,7 +419,8 @@
       "measured_count": 2,
       "measured_delta": null,
       "notes": "OWSLib's bare getfeature() (which sends PROPERTYNAME=*) works on both legacy versions. WFS 1.0.0 -> srsName EPSG:4326 with longitude/latitude [-122.49, 37.71]; WFS 1.1.0 -> srsName urn:ogc:def:crs:EPSG::4326 with latitude/longitude [37.71, -122.49]. The per-version axis-order rule is honoured in both directions.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-XPRO-01",
@@ -371,7 +429,8 @@
       "measured_count": 10,
       "measured_delta": null,
       "notes": "WFS and OGC API - Features agree on the same layer: extent (-122.5, 37.7, -122.35, 37.84), numberMatched 10, and every WFS-advertised EPSG code [3857, 4326] is also offered by the OGC API collection [3857, 4326].",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
     },
     {
       "test_case_id": "NB-OWS-WFS-STQ-01",
@@ -380,7 +439,38 @@
       "measured_count": 1,
       "measured_delta": null,
       "notes": "ListStoredQueries advertises 1 queries including the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById; invoking it through OWSLib's storedQueryID/storedQueryParams returned the requested feature test_layer.1.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "protocol_version": null
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-T-INS-01",
+      "status": "pass",
+      "duration_ms": 286,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "OWSLib openURL posted a WFS 2.0 Insert to its dedicated scratch layer; TransactionResponse reported totalInserted=1 and an OWSLib GetFeature read observed exactly the inserted feature.",
+      "evidence_ref": "",
+      "protocol_version": null
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-T-UPD-01",
+      "status": "pass",
+      "duration_ms": 85,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "OWSLib openURL posted a WFS 2.0 Update to its dedicated seeded scratch layer; TransactionResponse reported totalUpdated=1 and a follow-up OWSLib GetFeature read observed only the new value.",
+      "evidence_ref": "",
+      "protocol_version": null
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-T-DEL-01",
+      "status": "pass",
+      "duration_ms": 69,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "OWSLib openURL posted a WFS 2.0 Delete to its dedicated seeded scratch layer; TransactionResponse reported totalDeleted=1 and a follow-up OWSLib GetFeature read observed an empty layer.",
+      "evidence_ref": "",
+      "protocol_version": null
     }
   ]
 }

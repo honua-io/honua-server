@@ -1,12 +1,15 @@
 # Merge coordination runbook
 
-Merging on `honua-server` has exactly one authority: `merge-train.yml`. Nothing
-else merges, reruns, or triages on a PR's behalf, and no live Claude/Codex
-session needs to babysit a queue.
+Routine merging on `honua-server` is performed by the fleet's serialized per-PR
+lander. It rechecks that the PR is open, non-draft, MERGEABLE, based on `trunk`,
+not held or escalated, has exact-head successful `PR Gate` and `Review Gate`
+contexts, and has no unresolved review threads immediately before merging. No
+live Claude/Codex session needs to babysit a queue.
 
 | Workflow | Trigger | Job |
 |---|---|---|
-| `merge-train.yml` | 15-minute schedule (dry-run) or an explicit `train_apply=true` dispatch | Sole merge authority: exact-head `PR Gate` + `Review Gate` admission, batch assembly, batch CI dispatch, failure attribution, and compare-and-swap landing. |
+| Fleet serialized per-PR lander | External serialized service | Routine merge authority: rechecks trunk base, exact-head `PR Gate` + `Review Gate`, review-thread, mergeability, draft, and hold/escalation admission immediately before landing. A deterministic trailing trunk CI failure pauses routine landings except fix-forward branches. |
+| `merge-train.yml` | 15-minute schedule (dry-run) or an explicit `train_apply=true` dispatch | Manual/release-candidate batch authority: exact-head `PR Gate` + `Review Gate` admission, batch assembly, batch CI dispatch, failure attribution, and compare-and-swap landing. Not the routine landing path. |
 | `merge-train-rerun-recovery.yml` | `workflow_run` (CI) completed successfully on a `train/batch/*` branch | Resumes the active immutable batch when a failed batch CI is rerun green: clears stale `train:escalated`/`train:landing` labels, lands or re-queues the recorded batch, then dispatches one live continuation run of `merge-train.yml`. |
 
 Flake reruns, timeout classification, and failure attribution live **inside**
@@ -22,23 +25,27 @@ the failure). The former standalone `auto-rerun-flaky.yml` and
 
 ## Recovery concurrency
 
-`merge-train.yml` holds `concurrency: {group: merge-train,
-cancel-in-progress: false}` so one batch is in flight at a time.
-`merge-train-rerun-recovery.yml` used to share that exact group. GitHub keeps
-only **one pending run per group**, so the 15-minute train schedule repeatedly
-evicted queued recovery runs — 12 of 15 consecutive recovery runs were
-`cancelled` before their job ever evaluated.
+Every controller that can write the durable train state uses
+`concurrency: merge-train-state-writers` with `cancel-in-progress: false`.
+This makes live train dispatch and rerun recovery single-flight before either
+can read the issue body. Scheduled and bare-dispatch trains are provably
+read-only and use a unique `merge-train-read-only-<run id>` group instead.
 
-Recovery now uses its own per-source-run group
-(`merge-train-recovery-<workflow_run id>`), so distinct recoveries queue
-independently instead of cancelling each other.
+The split matters because GitHub keeps only **one pending run per group**. When
+the 15-minute read-only schedule shared the writer group, it evicted queued
+recoveries: 12 of 15 consecutive recovery runs were cancelled before their job
+evaluated. Unique observer groups remove that starvation source. GitHub can
+still replace one queued writer with a newer queued writer; an operator may
+have to rerun a superseded recovery. The running writer is never cancelled,
+and preserving state integrity takes precedence over retaining every queued
+invocation.
 
-### What makes concurrent execution safe
+### What makes execution safe
 
-The shared Actions concurrency group was never the safety mechanism, and the
-idle-wait that replaced it is **best-effort contention avoidance only**. Recovery
-lands directly (`recovery.sh` calls `train_land`), so it is worth being precise
-about what actually holds:
+The shared writer group is the state journal's atomic admission boundary: two
+controllers cannot interleave read→edit sequences, so the issue body's
+non-atomic API cannot lose an update. Recovery lands directly (`recovery.sh`
+calls `train_land`), and the landing path retains independent safeguards:
 
 | Guarantee | Where |
 |---|---|
@@ -49,23 +56,13 @@ about what actually holds:
 | Recovery refuses to act unless the state issue still names this exact batch branch, this exact CI run id, and a recoverable phase (`ci-incomplete`, `land`, `requeue`). A train that has moved on fails it closed. | `recovery.sh:211-214` |
 | Post-land reconciliation is driven by trunk ancestry, not by the journal, and terminal recovery refuses to overwrite a land-family phase rather than clearing it. | `land.sh:119-139`, `train.sh:464,470` |
 
-### Residual risk (larger than a lost journal entry)
+### State issue compare check
 
-The idle wait narrows a window; it does not close one. A live train can still be
-dispatched between the wait passing and recovery finishing. **Nothing can
-double-land or merge an unreviewed head** — that is settled by the fast-forward
-push and `--match-head-commit` above — but the green rerun this workflow exists
-to rescue *can still be discarded*, because a concurrently starting train runs
-its own startup recovery over the same state:
-
-- a `ci-incomplete` batch is classified `escalate` (`train.sh:380`), which labels
-  every member `train:escalated` and clears the batch; or
-- a land-family phase is taken over by `train_restore_post_land`
-  (`land.sh:91-140`), which reconciles against trunk and reselects.
-
-Either outcome loses the rescue and needs an operator to clear the escalation
-and re-dispatch. Separately, the state issue is a plain `gh issue edit` with **no
-compare-and-swap** (`state.sh:168`), so interleaved writers are last-writer-wins.
+The state issue remains a plain `gh issue edit`, whose API has no atomic version
+precondition. `state.sh` still compares the exact prior and verifies the result
+as defense in depth, but correctness no longer relies on that shell check:
+single-flight admission prevents a second live controller from entering the
+read→edit window.
 
 **Why not fence the train out with an early `land` phase?** Considered and
 rejected. `land` is durable land intent: `train_state_salvage` refuses to reset
@@ -75,12 +72,6 @@ it (`state.sh:232`) and `train_recover_terminal_batch` refuses to clear it
 repo-wide merge deadlock #3045 exists to prevent. Recovery-side land intent
 therefore stays where it is: written immediately before `train_land`, with
 immutable member heads and a batch SHA.
-
-**What the wait does buy.** It waits only on `workflow_dispatch` runs, because a
-scheduled train is provably dry-run and blocking on the 15-minute cadence would
-be pure delay. A failed API read counts as "busy, keep polling" rather than
-aborting the job, and on expiry the job fails loudly with the state untouched —
-so a dropped recovery is visible and rerunnable rather than silently cancelled.
 
 **The relevance precheck comes first.** This workflow fires on *every* green
 `train/batch/*` CI run, and a live drain self-chains, so most invocations concern

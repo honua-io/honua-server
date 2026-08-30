@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Queries.Filters.Fes20;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;
@@ -107,6 +108,23 @@ internal sealed partial class Wfs20Handler
             var unknownTypes = GetUnknownRequestedFeatureTypes(publishedTypes, requestedTypes);
             if (unknownTypes.Length > 0)
             {
+                var allPublishedTypes = await GetPublishedFeatureTypesAsync(
+                    context,
+                    cancellationToken,
+                    enforceAccess: false);
+                var protectedTypes = unknownTypes
+                    .Where(name => GetUnknownRequestedFeatureTypes(allPublishedTypes, [name]).Length == 0)
+                    .ToArray();
+                if (protectedTypes.Length > 0 && context.User.Identity?.IsAuthenticated != true)
+                {
+                    AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+                    return Wfs20ErrorResults.CreateUnauthorized(
+                        context,
+                        "AccessDenied",
+                        AccessPolicyHelpers.AuthRequiredMessage,
+                        "typeNames");
+                }
+
                 var requestedTypeMessage = unknownTypes.Length == 1
                     ? $"Unknown feature type '{unknownTypes[0]}'."
                     : $"Unknown feature types: {string.Join(", ", unknownTypes.Select(type => $"'{type}'"))}.";

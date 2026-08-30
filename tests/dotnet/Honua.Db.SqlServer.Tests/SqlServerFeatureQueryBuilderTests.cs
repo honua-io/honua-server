@@ -119,6 +119,37 @@ public class SqlServerFeatureQueryBuilderTests
         Assert.Contains("FETCH NEXT @p1 ROWS ONLY", result.Sql, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("eo:cloud_cover")]
+    [InlineData("owner.name")]
+    [InlineData("cloud-cover")]
+    public void BuildSelectQuery_OrderByExtendedFieldName_QuotesSingleIdentifier(string fieldName)
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc(fieldName))
+        };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, [fieldName]);
+
+        Assert.Contains($"ORDER BY [{fieldName}] ASC", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("name;DROP")]
+    [InlineData("owner name")]
+    [InlineData("name/name")]
+    public void BuildSelectQuery_OrderByUnsafeFieldName_Throws(string fieldName)
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc(fieldName))
+        };
+
+        Assert.Throws<ArgumentException>(() =>
+            SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns));
+    }
+
     [Fact]
     public void BuildSelectQuery_WhereWithLiteralAndNullCheck_ProducesParameterizedSql()
     {
@@ -430,6 +461,15 @@ public class SqlServerFeatureQueryBuilderTests
             StorageSrid: 4326);
 
         Assert.Throws<ArgumentException>(() => SqlServerLayerMapping.FromStorage(TestLayerId, storage));
+    }
+
+    [Theory]
+    [InlineData("parcels", true)]
+    [InlineData("parcels\n", false)]
+    [InlineData("parcels\r\n", false)]
+    public void Identifier_IsValid_RequiresExactMatch(string value, bool expected)
+    {
+        Assert.Equal(expected, SqlServerIdentifier.IsValid(value));
     }
 
     // BH2-D01 regression: SRID resolves to 0 when both filter and mapping SRID are absent ->

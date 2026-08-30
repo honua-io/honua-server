@@ -311,7 +311,7 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["status", "requiresApproval", "operationId", "handleId"],
+          "required": ["status", "requiresApproval", "operationId", "operationInstanceId", "handleId", "correlationId", "createdAt", "updatedAt"],
           "properties": {
             "status": {
               "type": "string",
@@ -319,7 +319,15 @@ internal static class McpToolOutputSchemas
             },
             "requiresApproval": { "type": "boolean" },
             "operationId": { "type": "string" },
+            "operationInstanceId": { "type": "string" },
             "handleId": { "type": "string" },
+            "proposalId": { "type": ["string", "null"] },
+            "correlationId": { "type": "string" },
+            "auditId": { "type": ["string", "null"] },
+            "createdAt": { "type": "string", "format": "date-time" },
+            "updatedAt": { "type": "string", "format": "date-time" },
+            "authorizationOutcome": { "type": ["string", "null"] },
+            "policyOutcome": { "type": ["string", "null"] },
             "serviceUri": {
               "type": ["string", "null"],
               "description": "honua://published-services/{serviceName} URI of the published service when the publish completed."
@@ -339,7 +347,10 @@ internal static class McpToolOutputSchemas
               "description": "Approval lane to wait on when the publish requires human approval."
             },
             "summary": { "type": ["string", "null"] },
-            "message": { "type": ["string", "null"] }
+            "message": { "type": ["string", "null"] },
+            "details": { "type": "object", "additionalProperties": { "type": "string" } },
+            "resourceIds": { "type": "object", "additionalProperties": { "type": "string" } },
+            "evidenceRefs": { "type": "array", "items": { "type": "string" } }
           }
         }
         """);
@@ -357,7 +368,7 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["status", "requiresApproval", "operationId", "handleId"],
+          "required": ["status", "requiresApproval", "operationId", "operationInstanceId", "handleId", "correlationId", "createdAt", "updatedAt"],
           "properties": {
             "status": {
               "type": "string",
@@ -365,7 +376,15 @@ internal static class McpToolOutputSchemas
             },
             "requiresApproval": { "type": "boolean" },
             "operationId": { "type": "string" },
+            "operationInstanceId": { "type": "string" },
             "handleId": { "type": "string" },
+            "proposalId": { "type": ["string", "null"] },
+            "correlationId": { "type": "string" },
+            "auditId": { "type": ["string", "null"] },
+            "createdAt": { "type": "string", "format": "date-time" },
+            "updatedAt": { "type": "string", "format": "date-time" },
+            "authorizationOutcome": { "type": ["string", "null"] },
+            "policyOutcome": { "type": ["string", "null"] },
             "sourceJobId": {
               "type": ["string", "null"],
               "description": "The completed analysis job id whose artifact was promoted."
@@ -399,7 +418,10 @@ internal static class McpToolOutputSchemas
               "description": "Approval lane to wait on when the promotion requires human approval."
             },
             "summary": { "type": ["string", "null"] },
-            "message": { "type": ["string", "null"] }
+            "message": { "type": ["string", "null"] },
+            "details": { "type": "object", "additionalProperties": { "type": "string" } },
+            "resourceIds": { "type": "object", "additionalProperties": { "type": "string" } },
+            "evidenceRefs": { "type": "array", "items": { "type": "string" } }
           }
         }
         """);
@@ -936,7 +958,7 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["status", "requiresApproval", "deterministic", "cacheHit", "operationId", "handleId"],
+          "required": ["status", "requiresApproval", "deterministic", "cacheHit", "operationId", "operationInstanceId", "handleId", "correlationId", "createdAt", "updatedAt"],
           "properties": {
             "status": {
               "type": "string",
@@ -956,7 +978,15 @@ internal static class McpToolOutputSchemas
               "description": "Param-keyed cache key (operation id + catalog version + normalized parameters) for a deterministic, read-only invocation; null when not cacheable."
             },
             "operationId": { "type": "string" },
+            "operationInstanceId": { "type": "string" },
             "handleId": { "type": "string" },
+            "proposalId": { "type": ["string", "null"] },
+            "correlationId": { "type": "string" },
+            "auditId": { "type": ["string", "null"] },
+            "createdAt": { "type": "string", "format": "date-time" },
+            "updatedAt": { "type": "string", "format": "date-time" },
+            "authorizationOutcome": { "type": ["string", "null"] },
+            "policyOutcome": { "type": ["string", "null"] },
             "jobId": {
               "type": ["string", "null"],
               "description": "Durable job id when the operation was queued."
@@ -975,7 +1005,9 @@ internal static class McpToolOutputSchemas
               "type": "object",
               "additionalProperties": { "type": "string" },
               "description": "Operation-specific result detail values keyed by name."
-            }
+            },
+            "resourceIds": { "type": "object", "additionalProperties": { "type": "string" } },
+            "evidenceRefs": { "type": "array", "items": { "type": "string" } }
           }
         }
         """);
@@ -1010,6 +1042,49 @@ internal static class McpToolOutputSchemas
             "updatedBy": { "type": ["string", "null"] },
             "createdAt": { "type": "string" },
             "updatedAt": { "type": "string" }
+          }
+        }
+        """);
+
+    /// <summary>Canonical durable envelope and Studio draft projection for converted mutations.</summary>
+    public static readonly JsonElement StudioDraftMutationOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["operation"],
+          "properties": {
+            "operation": {
+              "type": "object",
+              "required": ["operationInstanceId", "operationId", "status", "correlationId", "createdAt", "updatedAt"],
+              "properties": {
+                "operationInstanceId": { "type": "string" },
+                "operationId": { "type": "string" },
+                "status": { "type": "string" },
+                "correlationId": { "type": "string" },
+                "auditId": { "type": ["string", "null"] },
+                "proposalId": { "type": ["string", "null"] },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" }
+              }
+            },
+            "draftId": { "type": ["string", "null"] },
+            "itemId": { "type": ["string", "null"] },
+            "packageKey": { "type": ["string", "null"] },
+            "workspaceId": { "type": ["string", "null"] },
+            "ownerId": { "type": ["string", "null"] },
+            "family": { "type": ["string", "null"] },
+            "envelope": { "type": ["object", "null"] },
+            "validation": { "type": ["object", "null"] },
+            "baseVersionId": { "type": ["string", "null"] },
+            "generation": { "type": ["integer", "null"] },
+            "createdBy": { "type": ["string", "null"] },
+            "updatedBy": { "type": ["string", "null"] },
+            "createdAt": { "type": ["string", "null"] },
+            "updatedAt": { "type": ["string", "null"] },
+            "studioAuthorizationCode": {
+              "type": ["string", "null"],
+              "description": "Stable Studio authorization denial code on an error branch."
+            }
           }
         }
         """);

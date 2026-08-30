@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
@@ -87,6 +88,7 @@ internal static class McpEndpointExtensions
             .AddEndpointFilter(McpBearerAuthenticationEndpointExtensions.AuthenticateBearerAsync)
             .WithDisplayName("MCP Operator Surface (SSE stream)")
             .WithName("McpDataAccessSurfaceStream")
+            .WithMetadata(LongLivedStreamEndpointMetadata.Instance)
             .WithSummary("Opens the MCP server-to-client Server-Sent-Events stream.")
             .WithDescription("Streamable-HTTP transport GET endpoint. Opens a text/event-stream the server uses to push notifications (e.g. progress, listChanged). Requires a valid Mcp-Session-Id.")
             .WithTags("Mcp");
@@ -209,6 +211,14 @@ internal static class McpEndpointExtensions
                 }
             }
 
+            // honua-server#3428: rehydrate the session-negotiated workflow view onto
+            // the request so tools/list observes the same bounded surface for the
+            // life of the session. Read after session validation and only from a
+            // session this principal is bound to, so a view can never ride a session
+            // belonging to another identity. A stateless-fallback request (the
+            // header was stripped above) simply observes no session view.
+            HydrateSessionWorkflowView(context, sessions);
+
             if (root.ValueKind == JsonValueKind.Array)
             {
                 await HandleBatchAsync(context, surface, root, cancellationToken).ConfigureAwait(false);
@@ -250,7 +260,17 @@ internal static class McpEndpointExtensions
                 var elicitationSupported =
                     context.Items.TryGetValue(McpDataAccessSurface.ElicitationCapabilityItemKey, out var flag)
                     && flag is true;
-                if (sessions.TryCreateSession(principalKey, elicitationSupported, out var sessionId))
+
+                // honua-server#3428: bind the workflow discovery view the client
+                // negotiated at initialize (recorded on HttpContext.Items during
+                // initialize) to the session, so later tools/list calls on this
+                // session receive the same bounded surface without repeating the
+                // selector. Discovery only — it grants no authority.
+                var negotiatedView =
+                    context.Items.TryGetValue(Views.McpWorkflowViewNegotiation.HttpContextItemKey, out var view)
+                        ? view as string
+                        : null;
+                if (sessions.TryCreateSession(principalKey, elicitationSupported, negotiatedView, out var sessionId))
                 {
                     context.Response.Headers[McpSessionManager.SessionHeaderName] = sessionId;
                     McpLog.SessionIssued(logger, sessionId);
@@ -664,6 +684,33 @@ internal static class McpEndpointExtensions
         Id = id,
         Error = error
     };
+
+    /// <summary>
+    /// Copies the workflow discovery view bound to the presented session onto
+    /// <see cref="HttpContext.Items"/> (honua-server#3428), so
+    /// <c>McpDataAccessSurface</c> can resolve the session leg of the view
+    /// negotiation contract without reaching into the transport. A request with no
+    /// session, or a session that negotiated no view, records nothing.
+    /// </summary>
+    private static void HydrateSessionWorkflowView(HttpContext context, McpSessionManager sessions)
+    {
+        if (!context.Request.Headers.TryGetValue(McpSessionManager.SessionHeaderName, out var presented))
+        {
+            return;
+        }
+
+        var sessionId = presented.ToString();
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            return;
+        }
+
+        var view = sessions.GetWorkflowView(sessionId);
+        if (view is not null)
+        {
+            context.Items[Views.McpWorkflowViewNegotiation.HttpContextItemKey] = view;
+        }
+    }
 
     /// <summary>
     /// Maximum length accepted for a presented <c>Mcp-Session-Id</c> before the

@@ -54,8 +54,11 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             .ConfigureAwait(false);
         var attrsDoc = await TryReadJsonDocumentAsync(reader, bucket, JoinKey(normalizedRoot, ".zattrs"), cancellationToken)
             .ConfigureAwait(false);
+        using var consolidatedDoc = await TryReadJsonDocumentAsync(
+                reader, bucket, JoinKey(normalizedRoot, ".zmetadata"), cancellationToken)
+            .ConfigureAwait(false);
 
-        var variables = ResolveVariables(groupDoc, attrsDoc, reader, bucket, normalizedRoot);
+        var variables = ResolveVariables(groupDoc, attrsDoc, consolidatedDoc);
 
         var arrays = new List<ZarrArrayMetadata>();
         if (variables.Count == 0)
@@ -134,14 +137,8 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
     private static List<string> ResolveVariables(
         JsonDocument? groupDoc,
         JsonDocument? attrsDoc,
-        ICloudRangeReader reader,
-        string bucket,
-        string rootPath)
+        JsonDocument? consolidatedDoc)
     {
-        _ = reader;
-        _ = bucket;
-        _ = rootPath;
-
         var variables = new List<string>();
         if (groupDoc is null)
         {
@@ -173,6 +170,33 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
                     throw new InvalidDataException($"Variable name '{name}' contains path traversal characters.");
                 }
                 variables.Add(name!);
+            }
+        }
+
+        if (variables.Count == 0 &&
+            consolidatedDoc?.RootElement.TryGetProperty("metadata", out var metadata) == true &&
+            metadata.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in metadata.EnumerateObject())
+            {
+                const string suffix = "/.zarray";
+                if (!property.Name.EndsWith(suffix, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var name = property.Name[..^suffix.Length];
+                if (string.IsNullOrWhiteSpace(name) || name.Contains('/') || ContainsUnsafeSegment(name))
+                {
+                    continue;
+                }
+
+                if (variables.Count >= MaxVariables)
+                {
+                    throw new InvalidDataException($"Zarr store exposes more than {MaxVariables} variables; reduce the manifest or split the store.");
+                }
+
+                variables.Add(name);
             }
         }
 

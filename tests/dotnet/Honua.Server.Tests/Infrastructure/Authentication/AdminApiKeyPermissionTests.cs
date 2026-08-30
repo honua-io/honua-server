@@ -48,6 +48,17 @@ public sealed class AdminApiKeyPermissionTests
     }
 
     [Fact]
+    public void ResolveAccessLevel_ApproveGrant_IsReadAndDistinct()
+    {
+        var principal = AdminPrincipal("admin:read", "admin:approve");
+
+        AdminApiKeyPermission.ResolveAccessLevel(principal)
+            .Should().Be(AdminApiKeyPermission.AdminAccessLevel.Read);
+        AdminApiKeyPermission.HasApproveGrant(principal).Should().BeTrue();
+        AdminApiKeyPermission.IsAuthorized(principal, "PUT").Should().BeFalse();
+    }
+
+    [Fact]
     public void ResolveAccessLevel_NoPermissionClaimsButAdminRole_IsWrite()
     {
         // Bootstrap password / client certificate / dev-bypass: admin role, no
@@ -106,5 +117,24 @@ public sealed class AdminApiKeyPermissionTests
     public void IsAuthorized_KeyWithoutAdminGrant_DeniesEvenSafeMethods()
     {
         AdminApiKeyPermission.IsAuthorized(AdminPrincipal("write:roads"), "GET").Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsAuthorized_ApprovedOperationGrant_AllowsOnlyExactMethodAndPath()
+    {
+        var grant = AdminApiKeyPermission.CreateApprovedOperationGrant(
+            "POST", "/api/v1/admin/connections");
+        var principal = AdminPrincipal(grant);
+
+        AdminApiKeyPermission.ResolveAccessLevel(principal)
+            .Should().Be(AdminApiKeyPermission.AdminAccessLevel.None);
+        AdminApiKeyPermission.IsAuthorized(
+            principal, "POST", "/api/v1/admin/connections").Should().BeTrue();
+        AdminApiKeyPermission.IsAuthorized(
+            principal, "PUT", "/api/v1/admin/connections").Should().BeFalse();
+        AdminApiKeyPermission.IsAuthorized(
+            principal, "POST", "/api/v1/admin/users").Should().BeFalse();
+        AdminApiKeyPermission.IsAuthorized(
+            principal, "GET", "/api/v1/admin/connections").Should().BeFalse();
     }
 }

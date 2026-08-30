@@ -50,6 +50,53 @@ public sealed class LicenseGateTests
     }
 
     [UnitTest]
+    public async Task RequireEntitlement_EntitlementStrictKeyAtEdition_HonorsProviderDenial()
+    {
+        // A FeatureCatalog key can be entitlement-strict: holding the required
+        // edition without the explicit entitlement must stay 402. The routed-
+        // experimental edition fallback must not widen to these keys.
+        var context = BuildContext(HonuaEdition.Pro, entitlements: []);
+
+        var result = LicenseGate.RequireEntitlement(
+            context,
+            "ai.spec-apply",
+            "Spec Apply",
+            NullLogger.Instance);
+
+        result.Should().NotBeNull();
+        (await GetStatusCodeAsync(result!)).Should().Be(StatusCodes.Status402PaymentRequired);
+    }
+
+    [UnitTest]
+    public async Task RequireEntitlement_RoutedExperimentalCapabilityBelowEdition_ReturnsPaymentRequired()
+    {
+        var context = BuildContext(HonuaEdition.Community);
+
+        var result = LicenseGate.RequireEntitlement(
+            context,
+            "serve.i3s-scene",
+            "I3S Scene Serving",
+            NullLogger.Instance);
+
+        result.Should().NotBeNull();
+        (await GetStatusCodeAsync(result!)).Should().Be(StatusCodes.Status402PaymentRequired);
+    }
+
+    [UnitTest]
+    public void RequireEntitlement_RoutedExperimentalCapabilityAtEdition_ReturnsNull()
+    {
+        var context = BuildContext(HonuaEdition.Enterprise);
+
+        var result = LicenseGate.RequireEntitlement(
+            context,
+            "serve.i3s-scene",
+            "I3S Scene Serving",
+            NullLogger.Instance);
+
+        result.Should().BeNull();
+    }
+
+    [UnitTest]
     public void CreateFailedPreconditionRpcException_MissingPaidEntitlement_ReturnsFailedPrecondition()
     {
         var context = BuildContext(HonuaEdition.Community);
@@ -62,10 +109,11 @@ public sealed class LicenseGateTests
         exception.Status.Detail.Should().Contain("analytics.clustering");
     }
 
-    private static DefaultHttpContext BuildContext(HonuaEdition edition)
+    private static DefaultHttpContext BuildContext(HonuaEdition edition, string[]? entitlements = null)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(edition));
+        services.AddSingleton<ILicenseEntitlementService>(
+            new TestLicenseEntitlementService(edition, entitlements: entitlements));
         return new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider()

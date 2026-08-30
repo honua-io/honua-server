@@ -117,8 +117,6 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         await using var stream = await successResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         using var reader = new StreamReader(stream, Encoding.UTF8);
 
-        yield return new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = model };
-
         string? toolCallId = null;
         StringBuilder? toolArgsBuffer = null;
         int? promptTokens = null;
@@ -183,6 +181,11 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
             {
                 case "message_start":
                     promptTokens = frame.Message?.Usage?.InputTokens ?? promptTokens;
+                    yield return new StudioAiChatEvent
+                    {
+                        Type = StudioAiChatEventType.MessageStart,
+                        Model = frame.Message?.Model
+                    };
                     break;
 
                 case "content_block_start" when frame.ContentBlock?.Type == "tool_use":

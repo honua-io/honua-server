@@ -1,9 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Core.Features.AuditLog;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Health;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -12,8 +22,16 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
+using Honua.Infrastructure.Authentication;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
+using Honua.TestKit;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -27,6 +45,235 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class OperationsToolsetTests
 {
     private const string TestConnectionId = "11111111-1111-1111-1111-111111111111";
+
+    [UnitTest]
+    public void AddOperationsToolset_RegistersServicePublishApprovalMapperAndCanonicalActuator()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+            descriptor.ImplementationType == typeof(ServicePublishApprovalRequestMapper));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(DeferredServicePublishExecutor));
+        services
+            .Where(descriptor =>
+                descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+                descriptor.ImplementationInstance is StudioDraftApprovalRequestMapper)
+            .Select(descriptor =>
+                ((StudioDraftApprovalRequestMapper)descriptor.ImplementationInstance!).OperationId)
+            .Should().BeEquivalentTo(
+                StudioDraftOperations.Create,
+                StudioDraftOperations.Update,
+                StudioDraftOperations.Delete,
+                StudioDraftOperations.Validate,
+                StudioDraftOperations.PreviewPlan);
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(StudioDraftDeleteExecutor));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationEnvelopeFactory) &&
+            descriptor.Lifetime == ServiceLifetime.Singleton);
+        services.Should().NotContain(descriptor =>
+            descriptor.ServiceType == typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor) &&
+            descriptor.ImplementationType != null &&
+            descriptor.ImplementationType.Name.Contains("ServicePublish", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task AddOperationsToolset_WithoutPublishGraph_ResolvesStudioRuntimeAndRefusesPublishActionably()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddSingleton(Substitute.For<Honua.Core.Features.Studio.Abstractions.IStudioPackageLifecycleService>());
+        services.AddSingleton(Substitute.For<IReadinessCheckService>());
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var executors = scope.ServiceProvider.GetServices<IOperationExecutor>().ToArray();
+        executors.Should().Contain(executor => executor.OperationId == StudioDraftOperations.Create);
+
+        var publish = executors.Should().ContainSingle(executor =>
+            executor.OperationId == ServicePublishOperation.OperationId).Subject;
+        var validation = await publish.ValidateAsync(BuildRequest());
+        validation.IsValid.Should().BeFalse();
+        validation.Status.Should().Be("unavailable");
+        validation.Messages.Should().ContainSingle(message =>
+            message.Contains(nameof(IMetadataV2GraphProvider), StringComparison.Ordinal) &&
+            message.Contains("not registered", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_ProductionWithoutProposalStore_DoesNotRegisterDurableRuntimeHostedServices()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        services.Should().NotContain(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) &&
+            descriptor.ImplementationType != null &&
+            (descriptor.ImplementationType == typeof(OperationRuntimeStartupValidator) ||
+             descriptor.ImplementationType == typeof(PlannedProposalReconciler) ||
+             descriptor.ImplementationType == typeof(QueuedOperationReconciler)));
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_ProductionWithProposalStore_RegistersDurableRuntimeHostedServices()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) &&
+            descriptor.ImplementationType == typeof(OperationRuntimeStartupValidator));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) &&
+            descriptor.ImplementationType == typeof(PlannedProposalReconciler));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService) &&
+            descriptor.ImplementationType == typeof(QueuedOperationReconciler));
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_WithoutProposalStore_UsesFailClosedReplayVerifierAndBoots()
+    {
+        // Regression: the real replay verifier requires IOperationProposalStore in its
+        // constructor and the dispatcher requires a verifier, so no-store hosts failed
+        // ValidateOnBuild at boot (trunk red, run 33241561197). Degraded hosts must
+        // compose, and replay verification must refuse without the durable authority.
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var verifier = scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>();
+        verifier.Should().BeOfType<UnavailableOperationApprovalReplayVerifier>();
+        verifier.VerifyAsync("proposal", "instance", "hash").Result.Should().BeFalse(
+            "replay can never verify without the durable proposal authority");
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_WithProposalStore_UsesDurableReplayVerifier()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>()
+            .Should().BeOfType<OperationApprovalReplayVerifier>();
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_StoreRegisteredAfterComposition_UsesDurableReplayVerifier()
+    {
+        // The reviewer's exact scenario: fixtures add the proposal store AFTER
+        // AddOperationsToolset (post-Program ConfigureServices). Resolution-time
+        // selection must honor the final composition, not a registration snapshot.
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>()
+            .Should().BeOfType<OperationApprovalReplayVerifier>();
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_RegistersLaneAAndLaneBOnlyWithDurableProposalStore_AndIsIdempotent()
+    {
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        var degraded = new ServiceCollection();
+
+        degraded.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        degraded.Should().NotContain(descriptor =>
+            descriptor.ImplementationType == typeof(AdminConnectImportOperationDescriptorProvider));
+        degraded.Should().NotContain(descriptor => descriptor.ServiceType ==
+            typeof(OperationsServiceCollectionExtensions.AdminConnectImportRegistrationMarker));
+        degraded.Should().NotContain(descriptor =>
+            descriptor.ImplementationType == typeof(AdminApiOperationDescriptorProvider));
+        degraded.Should().NotContain(descriptor => descriptor.ServiceType ==
+            typeof(OperationsServiceCollectionExtensions.AdminApiOperationRegistrationMarker));
+
+        var composed = new ServiceCollection();
+        composed.AddSingleton(Substitute.For<IOperationProposalStore>());
+        composed.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        composed.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        composed.Count(descriptor => descriptor.ImplementationType ==
+            typeof(AdminConnectImportOperationDescriptorProvider)).Should().Be(1);
+        composed.Count(descriptor => descriptor.ImplementationType ==
+            typeof(AdminApiOperationDescriptorProvider)).Should().Be(1);
+        composed.Count(descriptor => descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationFactory != null).Should().Be(
+                AdminConnectImportOperationCatalog.Definitions.Count +
+                AdminApiOperationCatalog.Definitions.Count +
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4,
+                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters remain unique");
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_WithControlPlaneExecutors_RegistersLegacyAdaptersWithoutThrowing()
+    {
+        // Regression: the legacy adapters are factory descriptors, and registering
+        // them via TryAddEnumerable threw ArgumentException ("indistinguishable
+        // from other services") the moment a control-plane executor was present —
+        // i.e. in every full host, but in no unit-scoped test host, which is how
+        // it reached trunk (run 33237378473).
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        var controlPlaneExecutor =
+            Substitute.For<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>();
+        services.AddScoped(_ => controlPlaneExecutor);
+
+        var register = () => services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        register.Should().NotThrow();
+        services.Count(descriptor =>
+                descriptor.ServiceType == typeof(IOperationExecutor) &&
+                descriptor.ImplementationFactory != null)
+            .Should().Be(
+                AdminOperateOperationCatalog.Definitions.Count + 4,
+                "each admin operation and legacy operation class gets one factory-registered executor");
+
+        // Idempotence across repeated composition, previously TryAddEnumerable's job.
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        services.Count(descriptor =>
+                descriptor.ServiceType == typeof(IOperationExecutor) &&
+                descriptor.ImplementationFactory != null)
+            .Should().Be(
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4,
+                "re-registration must not duplicate the legacy adapters even though admin executors are added again");
+    }
 
     [UnitTest]
     public async Task Catalog_Lists_ServicePublish_Descriptor_With_ExecutionKind_ApprovalModel_And_Policy()
@@ -70,6 +317,493 @@ public sealed class OperationsToolsetTests
         descriptor.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.None);
         descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
         descriptor.Policy.Determinism.Should().Be(OperationDeterminism.RuntimeDynamic);
+    }
+
+    [UnitTest]
+    public async Task LaneD_AdminOperations_RoundTrip_FromCatalog_ToPublishedTools_WhenEnabled()
+    {
+        var catalog = new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance);
+
+        var snapshot = await catalog.GetSnapshotAsync(CancellationToken.None);
+        var descriptors = snapshot.Operations
+            .Where(operation => AdminOperateOperationCatalog.Definitions.Any(definition => definition.OperationId == operation.OperationId))
+            .ToArray();
+        var publishedNames = (await source.GetToolsAsync(CancellationToken.None))
+            .Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal);
+
+        descriptors.Should().HaveCount(AdminOperateOperationCatalog.Definitions.Count);
+        foreach (var descriptor in descriptors)
+        {
+            var projectedName = PublishedOperationTool.ProjectName(descriptor.OperationId);
+            if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+                publishedNames.Should().NotContain(projectedName);
+            else
+                publishedNames.Should().Contain(projectedName);
+        }
+    }
+
+    [UnitTest]
+    public async Task LaneB_AdminOperations_RoundTrip_FromCatalog_ToPublishedTools_WhenEnabled()
+    {
+        var catalog = new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: AdminApiOperationCatalog.Definitions
+                .Where(static definition => definition.Destructive)
+                .Select(static definition => new AdminApiOperationApprovalRequestMapper(definition)));
+
+        var snapshot = await catalog.GetSnapshotAsync(CancellationToken.None);
+        var laneBDescriptors = snapshot.Operations
+            .Where(operation => AdminApiOperationCatalog.Definitions.Any(definition => definition.OperationId == operation.OperationId))
+            .ToArray();
+        var publishedNames = (await source.GetToolsAsync(CancellationToken.None)).Select(static tool => tool.Name);
+
+        laneBDescriptors.Should().HaveCount(AdminApiOperationCatalog.Definitions.Count);
+        publishedNames.Should().BeEquivalentTo(
+            laneBDescriptors.Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId)));
+        laneBDescriptors.Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
+            .Should().OnlyContain(static descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+    }
+
+    [UnitTest]
+    public void LaneD_DescriptorSchemas_DiffCleanlyAgainstAdminApiComponents()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            Honua.TestKit.RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+
+        foreach (var definition in AdminOperateOperationCatalog.Definitions)
+        {
+            var operation = AdminOperateOperationCatalog.FindOperation(document.RootElement, definition.OpenApiOperationId);
+            operation.GetProperty("operationId").GetString().Should().Be(definition.OpenApiOperationId);
+            var descriptor = AdminOperateOperationCatalog.Descriptors.Should()
+                .ContainSingle(item => item.OperationId == definition.OperationId).Subject;
+            descriptor.InputSchema.Should().NotBeNull();
+            descriptor.OutputSchema.Should().NotBeNull();
+        }
+    }
+
+    [UnitTest]
+    public void LaneB_DescriptorSchemas_AreProjectedFromAdminApiComponents()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            Honua.TestKit.RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+
+        foreach (var definition in AdminApiOperationCatalog.Definitions)
+        {
+            var operation = AdminApiOperationCatalog.FindOperation(document.RootElement, definition.OpenApiOperationId);
+            operation.GetProperty("operationId").GetString().Should().Be(definition.OpenApiOperationId);
+            AdminApiOperationCatalog.Descriptors.Should().ContainSingle(
+                descriptor => descriptor.OperationId == definition.OperationId,
+                "every lane-B descriptor must be built from an operation in admin-api.json");
+        }
+    }
+
+    [UnitTest]
+    public void LaneB_ApprovalPayload_PersistsRequesterTenantAndSchema()
+    {
+        var definition = AdminApiOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.layer.set-enabled");
+        var mapper = new AdminApiOperationApprovalRequestMapper(definition);
+        var descriptor = AdminApiOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var request = new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            ConnectionId = "connection-1",
+            Parameters = new Dictionary<string, string?>
+            {
+                ["layerId"] = "7",
+                ["enabled"] = "true"
+            }
+        };
+
+        var mapped = mapper.Map(descriptor, request, new OperationPolicyContext
+        {
+            TenantId = "requester-tenant",
+            SchemaName = "tenant_schema"
+        }, new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var replay = mapper.MapReplay(mapped);
+
+        replay.TenantId.Should().Be("requester-tenant");
+        replay.SchemaName.Should().Be("tenant_schema");
+        replay.Request.ConnectionId.Should().Be("connection-1");
+        replay.Request.Parameters.Should().Contain("layerId", "7").And.Contain("enabled", "true");
+    }
+
+    [UnitTest]
+    public async Task LaneB_ApprovedReplay_MintsScopedCredential_AndUsesRequesterTenant()
+    {
+        var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var approver = await credentialStore.CreateAsync(
+            "approve-only", ["admin:approve"], null, "approver", CancellationToken.None);
+        AdminApiKeyValidationResult? executionAuthority = null;
+        var handler = new CapturingOperationHandler(async request =>
+        {
+            var executionKey = request.Headers.GetValues("X-API-Key").Single();
+            executionKey.Should().NotBe(approver.Key);
+            request.Headers.GetValues("X-Honua-Tenant").Should().Equal("requester-tenant");
+            executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}")
+            };
+        });
+        var factory = Substitute.For<IHttpClientFactory>();
+        using var httpClient = new HttpClient(handler);
+        factory.CreateClient(AdminApiOperationExecutor.HttpClientName).Returns(httpClient);
+        var current = new DefaultHttpContext();
+        current.Request.Scheme = "https";
+        current.Request.Host = new HostString("localhost");
+        current.Request.Headers["X-API-Key"] = approver.Key;
+        current.Request.Headers["X-Honua-Tenant"] = "approver-tenant";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(current);
+        var definition = AdminApiOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.layer.set-enabled");
+        var executor = new AdminApiOperationExecutor(
+            definition, factory, accessor, credentialStore, TimeProvider.System);
+
+        var handle = await executor.SubmitAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            ConnectionId = "connection-1",
+            Parameters = new Dictionary<string, string?>
+            {
+                ["layerId"] = "7",
+                ["enabled"] = "true"
+            }
+        }, new OperationPolicyContext
+        {
+            ApprovedProposalId = "proposal-1",
+            TenantId = "requester-tenant",
+            PrincipalId = "requester"
+        }, CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        executionAuthority.Should().NotBeNull();
+        executionAuthority!.Record.Permissions.Should().Equal("admin:write");
+        (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
+            .RevokedAt.Should().NotBeNull("operation credentials are single-use");
+    }
+
+    [UnitTest]
+    public void LaneD_DestructiveOperations_AreApprovalGated_AndRollbackIsTruthful()
+    {
+        var destructive = AdminOperateOperationCatalog.Descriptors
+            .Where(descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly).ToArray();
+        destructive.Where(descriptor => descriptor.OperationId != "admin.metadata.prevalidate")
+            .Should().OnlyContain(descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+
+        var rollback = destructive.Should().ContainSingle(
+            descriptor => descriptor.OperationId == "admin.metadata.coordinated-releases.rollback").Subject;
+        rollback.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.DestroysState);
+        rollback.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.DeploymentScope);
+        rollback.Policy.SupportsDryRun.Should().BeFalse(
+            "#3301 has not landed and the coordinated release endpoint exposes no rollback dry run");
+    }
+
+    [UnitTest]
+    public void LaneD_EachDescriptorHasARegisteredExecutor()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        using var provider = services.BuildServiceProvider();
+        var executorIds = services
+            .Where(static descriptor => descriptor.ServiceType == typeof(IOperationExecutor) && descriptor.ImplementationFactory is not null)
+            .Select(descriptor => (IOperationExecutor)descriptor.ImplementationFactory!(provider))
+            .Select(static executor => executor.OperationId).ToHashSet(StringComparer.Ordinal);
+
+        executorIds.Should().Contain(AdminOperateOperationCatalog.Definitions.Select(static definition => definition.OperationId));
+    }
+
+    [UnitTest]
+    public void LaneD_PublishedSchemas_PreserveNestedRequiredMembers_AndAdvertiseDryRun()
+    {
+        var descriptor = AdminOperateOperationCatalog.Descriptors.Should().ContainSingle(
+            item => item.OperationId == "admin.metadata.prevalidate").Subject;
+        var tool = new PublishedOperationTool(descriptor, "test", NullLogger.Instance);
+
+        var schema = tool.Describe().InputSchema;
+        schema.GetProperty("properties").GetProperty("dryRun").GetProperty("type").GetString()
+            .Should().Be("boolean");
+        schema.GetProperty("properties").GetProperty("dataScripts").GetProperty("items")
+            .GetProperty("required").EnumerateArray().Select(static item => item.GetString())
+            .Should().Contain("scriptId");
+        descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.CreatesMetadata,
+            "the loopback POST requires an admin write credential, so semantic authorization must refuse admin:read before execution");
+        descriptor.ApprovalModel.Should().Be(OperationApprovalModel.None,
+            "prevalidation does not require operator approval; its write classification mirrors the transport credential only");
+    }
+
+    [UnitTest]
+    public async Task LaneD_Executor_WritesAotSafeBody_WithoutRouteOrAbsentOptionalParameters()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.OK, "{\"ok\":true}");
+        using var client = new HttpClient(handler);
+        var executor = BuildAdminExecutor("admin.metadata.coordinated-releases.rollback", client);
+        var request = new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["operationId"] = "operation-1",
+                ["reason"] = null,
+                ["force"] = "true"
+            }
+        };
+
+        var handle = await executor.SubmitAsync(request, new OperationPolicyContext(), CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handler.RequestUri!.AbsolutePath.Should().EndWith("/operations/operation-1/rollback");
+        handler.Headers!.GetValues("X-API-Key").Should().Equal("secret");
+        handler.Headers.GetValues("X-Honua-Tenant").Should().Equal("tenant-a");
+        using var body = JsonDocument.Parse(handler.Body!);
+        body.RootElement.EnumerateObject().Select(static property => property.Name)
+            .Should().BeEquivalentTo("force");
+        body.RootElement.GetProperty("force").GetBoolean().Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task LaneD_ApprovedReplay_UsesExactOperationCredential_ThenRevokesIt()
+    {
+        var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        AdminApiKeyValidationResult? executionAuthority = null;
+        Uri? replayUri = null;
+        string? replayHost = null;
+        var handler = new CapturingOperationHandler(async request =>
+        {
+            replayUri = request.RequestUri;
+            replayHost = request.Headers.Host;
+            var executionKey = request.Headers.GetValues("X-API-Key").Single();
+            executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}")
+            };
+        });
+        using var client = new HttpClient(handler);
+        var executor = BuildAdminExecutor("admin.cache.invalidate", client, credentialStore);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = executor.OperationId,
+                Parameters = new Dictionary<string, string?> { ["scope"] = "catalog" }
+            },
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal-1",
+                PrincipalId = "requester",
+                TenantId = "requester-tenant",
+            },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        executionAuthority.Should().NotBeNull();
+        replayUri.Should().Be("http://127.0.0.1:8080/api/v1/admin/cache/invalidate");
+        replayHost.Should().Be("public.example.test");
+        executionAuthority!.Record.Permissions.Should().Equal(
+            "admin:operation:POST:/api/v1/admin/cache/invalidate");
+        (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
+            .RevokedAt.Should().NotBeNull("approved operation credentials are single-use");
+    }
+
+    [UnitTest]
+    public async Task LaneD_Executor_MapsExpectedAdminFailureToStructuredHandle()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.BadRequest, "{\"detail\":\"invalid scope\"}");
+        using var client = new HttpClient(handler);
+        var executor = BuildAdminExecutor("admin.cache.invalidate", client);
+        var request = new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["scope"] = "invalid" }
+        };
+
+        var handle = await executor.SubmitAsync(request, new OperationPolicyContext(), CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Reason.Should().Contain("HTTP 400");
+        handle.Result!.Details.Should().Contain("statusCode", "400")
+            .And.Contain("response", "{\"detail\":\"invalid scope\"}");
+    }
+
+    [UnitTest]
+    public async Task LaneA_AdminOperations_RoundTrip_FromCatalog_ToPublishedTools_WhenEnabled()
+    {
+        var catalog = new OperationCatalog([new AdminConnectImportOperationDescriptorProvider()], TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: AdminConnectImportOperationCatalog.Definitions
+                .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
+                .Select(static definition => new AdminConnectImportApprovalRequestMapper(definition)));
+
+        var descriptors = (await catalog.GetSnapshotAsync(CancellationToken.None)).Operations;
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+
+        descriptors.Should().HaveCount(AdminConnectImportOperationCatalog.Definitions.Count);
+        tools.Select(static tool => tool.Name).Should().BeEquivalentTo(
+            descriptors.Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId)));
+        descriptors.Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
+            .Should().OnlyContain(static descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+    }
+
+    [UnitTest]
+    public void LaneA_DescriptorSchemas_AreProjectedFromAdminApiContract()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+
+        foreach (var definition in AdminConnectImportOperationCatalog.Definitions)
+        {
+            var operation = AdminConnectImportOperationCatalog.FindOperation(document.RootElement, definition.OpenApiOperationId);
+            operation.GetProperty("operationId").GetString().Should().Be(definition.OpenApiOperationId);
+            AdminConnectImportOperationCatalog.Descriptors.Should().ContainSingle(
+                descriptor => descriptor.OperationId == definition.OperationId);
+        }
+
+        var create = AdminConnectImportOperationCatalog.Descriptors.Single(
+            descriptor => descriptor.OperationId == "admin.connections.create");
+        create.InputSchema.Select(static parameter => parameter.Name).Should().Contain("secretReference");
+        create.InputSchema.Single(static parameter => parameter.Name == "secretReference").Schema.Type
+            .Should().Be(Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Text);
+
+        var upload = AdminConnectImportOperationCatalog.Descriptors.Single(
+            descriptor => descriptor.OperationId == "admin.import.upload");
+        upload.InputSchema.Should().ContainSingle(parameter => parameter.Name == "fileName" && parameter.Required);
+    }
+
+    [UnitTest]
+    public void LaneA_ApprovalPayload_PreservesTypedIdentity_AndRejectsInlinePassword()
+    {
+        var definition = AdminConnectImportOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.connections.create");
+        var mapper = new AdminConnectImportApprovalRequestMapper(definition);
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var request = new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?> { ["password"] = "plaintext" }
+        };
+
+        var decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval };
+        var map = () => mapper.Map(descriptor, request, new OperationPolicyContext(), decision);
+
+        map.Should().Throw<InvalidOperationException>().WithMessage("*secretReference*");
+
+        var safe = mapper.Map(descriptor, request with
+        {
+            Parameters = new Dictionary<string, string?> { ["secretReference"] = "vault://connection" }
+        }, new OperationPolicyContext(), decision);
+        safe.OperationId.Should().Be(definition.OperationId);
+    }
+
+    [UnitTest]
+    public async Task LaneA_Transport_PreservesText_DecodesFiles_AndProjectsQueuedJob()
+    {
+        using var json = AdminConnectImportOperationExecutor.BuildJson(
+            new OperationRequest
+            {
+                OperationId = "admin.connections.create",
+                Parameters = new Dictionary<string, string?> { ["name"] = "true", ["sslRequired"] = "true" }
+            }, [], "admin.connections.create");
+        using var jsonDocument = JsonDocument.Parse(await json.ReadAsStringAsync());
+        jsonDocument.RootElement.GetProperty("name").GetString().Should().Be("true");
+        jsonDocument.RootElement.GetProperty("sslRequired").ValueKind.Should().Be(JsonValueKind.True);
+
+        using var multipart = AdminConnectImportOperationExecutor.BuildMultipart(
+            new OperationRequest
+            {
+                OperationId = "admin.import.upload",
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["file"] = Convert.ToBase64String([0x01, 0x02, 0x03]),
+                    ["fileName"] = "roads.geojson"
+                }
+            }, []);
+        var file = multipart.Single(part => part.Headers.ContentDisposition?.Name == "file");
+        (await file.ReadAsByteArrayAsync()).Should().Equal(0x01, 0x02, 0x03);
+        file.Headers.ContentDisposition!.FileName.Should().Be("roads.geojson");
+
+        var resources = AdminConnectImportOperationExecutor.ReadQueuedResources(
+            "{\"jobId\":\"job-1\",\"statusUrl\":\"/jobs/job-1\",\"cancelUrl\":\"/jobs/job-1/cancel\"}");
+        resources.Should().Contain(new KeyValuePair<string, string>("jobId", "job-1"));
+        resources.Should().ContainKey("statusUrl").And.ContainKey("cancelUrl");
+    }
+
+    [UnitTest]
+    public async Task LaneA_ApprovedReplay_DoesNotExecuteWithApproveOnlyKey_AndUsesRequesterTenant()
+    {
+        var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var approver = await credentialStore.CreateAsync(
+            "approve-only", ["admin:approve"], null, "approver", CancellationToken.None);
+        AdminApiKeyValidationResult? executionAuthority = null;
+        var handler = new CapturingOperationHandler(async request =>
+        {
+            var executionKey = request.Headers.GetValues("X-API-Key").Single();
+            executionKey.Should().NotBe(approver.Key,
+                "the approve-only transport credential must never become execution authority");
+            request.Headers.GetValues("X-Honua-Tenant").Should().Equal("requester-tenant");
+            executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}")
+            };
+        });
+        var factory = Substitute.For<IHttpClientFactory>();
+        using var httpClient = new HttpClient(handler);
+        factory.CreateClient(AdminConnectImportOperationExecutor.HttpClientName)
+            .Returns(httpClient);
+        var current = new DefaultHttpContext();
+        current.Request.Scheme = "https";
+        current.Request.Host = new HostString("localhost");
+        current.Request.Headers["X-API-Key"] = approver.Key;
+        current.Request.Headers["X-Honua-Tenant"] = "approver-tenant";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(current);
+        var definition = AdminConnectImportOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.connections.create");
+        var executor = new AdminConnectImportOperationExecutor(
+            definition, factory, accessor, credentialStore, TimeProvider.System);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = definition.OperationId,
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["name"] = "roads",
+                    ["provider"] = "postgis",
+                    ["connectionString"] = "Host=database",
+                }
+            },
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal-1",
+                TenantId = "requester-tenant",
+                PrincipalId = "requester",
+            },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        executionAuthority.Should().NotBeNull();
+        executionAuthority!.Record.Permissions.Should().Equal(
+            "admin:operation:POST:/api/v1/admin/connections");
+        (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
+            .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
 
     [UnitTest]
@@ -144,7 +878,8 @@ public sealed class OperationsToolsetTests
             .GetCurrentAsync(Arg.Any<CancellationToken>())
             .Returns(snapshot);
 
-        var executor = BuildExecutor(publishing, graphProvider);
+        var notifications = Substitute.For<IMcpNotificationPublisher>();
+        var executor = BuildExecutor(publishing, graphProvider, notifications);
         var dispatcher = BuildDispatcher(executor, new AllowAllPolicyDecisionPoint());
 
         var handle = await dispatcher.SubmitAsync(BuildRequest(), new OperationPolicyContext(), CancellationToken.None);
@@ -160,6 +895,164 @@ public sealed class OperationsToolsetTests
             Arg.Any<string>(),
             Arg.Is<LayerPublishRequest>(r => r.Schema == "public" && r.Table == "parcels" && r.LayerName == "Parcels"),
             Arg.Any<CancellationToken>());
+        notifications.Received(1).BroadcastResourcesListChanged();
+        notifications.Received(1).BroadcastToolsListChanged();
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_RequestCanceledAfterActuation_PersistsTerminalEnvelope()
+    {
+        using var requestCancellation = new CancellationTokenSource();
+        var store = new VolatileOperationInstanceStore();
+        var audit = new CancellationCheckingAuditLog();
+        var executor = new CancelingAfterActuationExecutor(requestCancellation);
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            instanceStore: store,
+            auditLog: audit);
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext(),
+            requestCancellation.Token);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        (await store.GetAsync(handle.OperationInstanceId)).Should().BeEquivalentTo(handle);
+        audit.CanceledWriteCount.Should().Be(0,
+            "terminal evidence must use a bounded token independent of the disconnected request");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ActuatorPropagatesCancellation_PersistsIndeterminateEnvelope()
+    {
+        using var requestCancellation = new CancellationTokenSource();
+        var store = new VolatileOperationInstanceStore();
+        var audit = new CancellationCheckingAuditLog();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [new CancelingDuringActuationExecutor(requestCancellation)],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            instanceStore: store,
+            auditLog: audit);
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext(),
+            requestCancellation.Token);
+
+        handle.Status.Should().Be(OperationHandleStatus.Indeterminate);
+        handle.Reason.Should().Contain("side effects may have committed");
+        (await store.GetAsync(handle.OperationInstanceId)).Should().BeEquivalentTo(handle);
+        audit.CanceledWriteCount.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_CanceledDuringValidation_PersistsCancelledWithoutActuation()
+    {
+        using var requestCancellation = new CancellationTokenSource();
+        var store = new VolatileOperationInstanceStore();
+        var audit = new CancellationCheckingAuditLog();
+        var executor = new CancelingDuringValidationExecutor(requestCancellation);
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [executor],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            instanceStore: store,
+            auditLog: audit);
+
+        var exception = await Assert.ThrowsAsync<OperationCanceledException>(() => dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext(),
+            requestCancellation.Token));
+
+        exception.Should().NotBeNull();
+        executor.SubmitCount.Should().Be(0);
+        var cancelled = audit.Events.Should().ContainSingle(entry => entry.Action == "operation.cancelled").Subject;
+        var envelope = await store.GetAsync(cancelled.ResourceId!);
+        envelope.Should().NotBeNull();
+        envelope!.Status.Should().Be(OperationHandleStatus.Cancelled);
+        envelope.Reason.Should().Contain("no side effect occurred");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_QueuedActuation_WritesSubmittedSuccessAudit()
+    {
+        var audit = new CancellationCheckingAuditLog();
+        var dispatcher = new OperationDispatcher(
+            new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+            [new QueuedExecutor()],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            auditLog: audit);
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Queued);
+        audit.Events.Should().ContainSingle(entry =>
+            entry.Action == "operation.submitted" && entry.Outcome == AuditOutcome.Success);
+        audit.Events.Should().NotContain(entry => entry.Action == "operation.completed");
+    }
+
+    [UnitTest]
+    public async Task EnvelopeFactory_IdempotentRetry_ReturnsOriginalInstanceAndAuditsTouch()
+    {
+        var store = new VolatileOperationInstanceStore();
+        var audit = new CancellationCheckingAuditLog();
+        var factory = new OperationEnvelopeFactory(store, audit, TimeProvider.System);
+        var context = new OperationPolicyContext
+        {
+            PrincipalId = "gp-caller",
+            IdempotencyKey = "gp-idem-1",
+        };
+
+        var first = await factory.CreateAcceptedAsync("control-plane.geoprocess", context);
+        var retry = await factory.CreateAcceptedAsync("control-plane.geoprocess", context);
+
+        retry.OperationInstanceId.Should().Be(first.OperationInstanceId);
+        retry.CorrelationId.Should().Be(first.CorrelationId);
+        retry.AuditId.Should().Be(first.AuditId);
+        retry.EvidenceRefs.Should().ContainSingle(reference => reference.StartsWith("retry-audit:", StringComparison.Ordinal));
+        audit.Events.Should().ContainSingle(entry =>
+            entry.Action == "operation.retry" && entry.ResourceId == first.OperationInstanceId);
+    }
+
+    [UnitTest]
+    public async Task LegacyAdapter_ExecutionIdentity_ReturnsQueuedEnvelope()
+    {
+        var actuator = Substitute.For<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>();
+        actuator.OperationClass.Returns(OperationClass.Deploy);
+        actuator.ExecuteAsync(
+                Arg.Any<Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns("workflow-queued");
+        var adapter = new LegacyGatewayOperationAdapter(actuator);
+
+        var handle = await adapter.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = adapter.OperationId,
+                GatewayRequest = new Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest
+                {
+                    Kind = OperationClass.Deploy,
+                },
+            },
+            new OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-queued",
+                CorrelationId = "corr-queued",
+            });
+
+        handle.Status.Should().Be(OperationHandleStatus.Queued);
+        handle.JobId.Should().Be("workflow-queued");
     }
 
     [UnitTest]
@@ -182,7 +1075,7 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
-    public async Task SubmitAsync_With_RequireApproval_Policy_ShortCircuits_Executor_And_Routes_To_Approval_Lane()
+    public async Task SubmitAsync_With_RequireApproval_And_No_Durable_Bridge_Fails_Closed()
     {
         var publishing = Substitute.For<ILayerPublishingService>();
         var executor = BuildExecutor(publishing);
@@ -200,9 +1093,57 @@ public sealed class OperationsToolsetTests
         // Guardrail seam: RequireApproval never reaches the executor.
         await publishing.DidNotReceive().PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
-        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.ProposalId.Should().BeNull();
+        handle.AuditId.Should().StartWith("audit-dev-");
         handle.ApprovalLane.Should().Be("studio-publish-requests");
+        handle.Reason.Should().Contain("durable proposal infrastructure is unavailable");
         handle.Result.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_With_Durable_Approval_Retains_Separate_Joined_Identities()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var executor = BuildExecutor(publishing);
+        var bridge = Substitute.For<IOperationApprovalBridge>();
+        bridge.CreateProposalAsync(
+                Arg.Any<IOperationDescriptor>(),
+                Arg.Any<OperationRequest>(),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<PolicyDecision>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationApprovalBridgeResult
+            {
+                IsDurable = true,
+                ProposalId = "proposal-123",
+                AuditId = "audit-456",
+                Reason = "Awaiting operator approval.",
+            });
+        var dispatcher = BuildDispatcher(
+            executor,
+            new StubPolicyDecisionPoint(new PolicyDecision
+            {
+                Kind = PolicyDecisionKind.RequireApproval,
+                ApprovalLane = "studio-publish-requests",
+            }),
+            bridge);
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext { CorrelationId = "corr-789" },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        handle.OperationInstanceId.Should().StartWith("opinst-");
+        handle.OperationInstanceId.Should().NotBe(handle.OperationId);
+        handle.OperationInstanceId.Should().NotBe(handle.ProposalId);
+        handle.HandleId.Should().Be(handle.OperationInstanceId);
+        handle.ProposalId.Should().Be("proposal-123");
+        handle.AuditId.Should().Be("audit-456");
+        handle.CorrelationId.Should().Be("corr-789");
+        await publishing.DidNotReceive().PublishLayerAsync(
+            Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -227,6 +1168,26 @@ public sealed class OperationsToolsetTests
         handle.ApprovalLane.Should().BeNull();
         handle.Result.Should().BeNull();
         handle.Reason.Should().Contain("preview required");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ApprovedDryRun_ValidatesWithoutActuation()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var dispatcher = BuildDispatcher(BuildExecutor(publishing), new AllowAllPolicyDecisionPoint());
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest() with { DryRun = true },
+            new OperationPolicyContext(),
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handle.Reason.Should().Contain("no actuator");
+        handle.Result!.Details["dryRun"].Should().Be(bool.TrueString);
+        await publishing.Received(1).ValidateTableForPublishAsync(
+            Arg.Any<string>(), Arg.Any<TablePublishValidationRequest>(), Arg.Any<CancellationToken>());
+        await publishing.DidNotReceiveWithAnyArgs()
+            .PublishLayerAsync(default!, default!, default);
     }
 
     [UnitTest]
@@ -265,12 +1226,30 @@ public sealed class OperationsToolsetTests
         capturing.Context.Should().NotBeNull();
         capturing.Context!.Tier.Should().Be("enterprise");
         capturing.Context.Roles.Should().BeEquivalentTo("operator", "publisher");
+        capturing.Context.OperationInstanceId.Should().StartWith("opinst-");
+        capturing.Context.OperationInstanceId.Should().NotBe(capturing.Descriptor.OperationId);
+        capturing.Context.CorrelationId.Should().StartWith("corr-");
+        capturing.Context.CorrelationId.Should().NotBe(capturing.Context.OperationInstanceId);
     }
 
     private static ServicePublishExecutor BuildExecutor(
         ILayerPublishingService publishing,
-        IMetadataV2GraphProvider? graphProvider = null)
+        IMetadataV2GraphProvider? graphProvider = null,
+        IMcpNotificationPublisher? notifications = null)
     {
+        publishing
+            .ValidateTableForPublishAsync(
+                Arg.Any<string>(),
+                Arg.Any<TablePublishValidationRequest>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new TablePublishValidationResult
+            {
+                IsValid = true,
+                Status = "valid",
+                Schema = "public",
+                Table = "parcels",
+                ServiceName = "default",
+            });
         var resolver = Substitute.For<ISecureConnectionResolver>();
         resolver.ResolveConnectionStringAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns("Host=localhost;Database=test");
@@ -281,15 +1260,42 @@ public sealed class OperationsToolsetTests
             publishing,
             resolver,
             graphProvider ?? Substitute.For<IMetadataV2GraphProvider>(),
+            TimeProvider.System,
+            notifications);
+    }
+
+    private static AdminOperateOperationExecutor BuildAdminExecutor(
+        string operationId,
+        HttpClient client,
+        IAdminApiKeyStore? credentialStore = null)
+    {
+        var definition = AdminOperateOperationCatalog.Definitions.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("public.example.test");
+        context.Connection.LocalPort = 8080;
+        context.Request.Headers["X-API-Key"] = "secret";
+        context.Request.Headers["X-Honua-Tenant"] = "tenant-a";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(context);
+        return new AdminOperateOperationExecutor(
+            definition,
+            factory,
+            accessor,
+            credentialStore ?? new InMemoryAdminApiKeyStore(TimeProvider.System),
             TimeProvider.System);
     }
 
     private static OperationDispatcher BuildDispatcher(
         IOperationExecutor executor,
-        IOperationPolicyDecisionPoint policy)
+        IOperationPolicyDecisionPoint policy,
+        IOperationApprovalBridge? approvalBridge = null)
     {
         var catalog = new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System);
-        return new OperationDispatcher(catalog, [executor], policy, TimeProvider.System);
+        return new OperationDispatcher(catalog, [executor], policy, TimeProvider.System, approvalBridge);
     }
 
     private static OperationRequest BuildRequest()
@@ -359,5 +1365,178 @@ public sealed class OperationsToolsetTests
             Context = context;
             return Task.FromResult(decision);
         }
+    }
+
+    private sealed class CancelingAfterActuationExecutor(CancellationTokenSource requestCancellation)
+        : IOperationExecutor
+    {
+        public string OperationId => "service.publish";
+
+        public Task<OperationValidation> ValidateAsync(
+            OperationRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            requestCancellation.Cancel();
+            var now = DateTimeOffset.UtcNow;
+            return Task.FromResult(new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId!,
+                OperationId = OperationId,
+                CorrelationId = context.CorrelationId!,
+                Status = OperationHandleStatus.Completed,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        public Task<OperationStatus> GetStatusAsync(
+            OperationHandle handle,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class CancelingDuringActuationExecutor(CancellationTokenSource requestCancellation)
+        : IOperationExecutor
+    {
+        public string OperationId => "service.publish";
+
+        public Task<OperationValidation> ValidateAsync(
+            OperationRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            requestCancellation.Cancel();
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        public Task<OperationStatus> GetStatusAsync(
+            OperationHandle handle,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class CancelingDuringValidationExecutor(CancellationTokenSource requestCancellation)
+        : IOperationExecutor
+    {
+        public string OperationId => "service.publish";
+
+        public int SubmitCount { get; private set; }
+
+        public Task<OperationValidation> ValidateAsync(
+            OperationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            requestCancellation.Cancel();
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            SubmitCount++;
+            throw new InvalidOperationException("Actuator must not run after canceled validation.");
+        }
+
+        public Task<OperationStatus> GetStatusAsync(
+            OperationHandle handle,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class QueuedExecutor : IOperationExecutor
+    {
+        public string OperationId => "service.publish";
+
+        public Task<OperationValidation> ValidateAsync(
+            OperationRequest request,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
+
+        public Task<OperationHandle> SubmitAsync(
+            OperationRequest request,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return Task.FromResult(new OperationHandle
+            {
+                OperationInstanceId = context.OperationInstanceId!,
+                OperationId = OperationId,
+                CorrelationId = context.CorrelationId!,
+                Status = OperationHandleStatus.Queued,
+                CreatedAt = now,
+                UpdatedAt = now,
+                JobId = "job-queued",
+            });
+        }
+
+        public Task<OperationStatus> GetStatusAsync(
+            OperationHandle handle,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class CancellationCheckingAuditLog : IAuditLog
+    {
+        public int CanceledWriteCount { get; private set; }
+
+        public List<AuditEvent> Events { get; } = [];
+
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            Events.Add(auditEvent);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                CanceledWriteCount++;
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            return Task.FromResult<string?>($"audit-test-{Guid.NewGuid():N}");
+        }
+    }
+
+    private sealed class CapturingHandler(HttpStatusCode statusCode, string responseBody) : HttpMessageHandler
+    {
+        public Uri? RequestUri { get; private set; }
+
+        public string? Body { get; private set; }
+
+        public HttpRequestHeaders? Headers { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestUri = request.RequestUri;
+            Headers = request.Headers;
+            Body = request.Content is null
+                ? null
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(responseBody, System.Text.Encoding.UTF8, "application/json")
+            };
+        }
+    }
+
+    private sealed class CapturingOperationHandler(
+        Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => respond(request);
     }
 }

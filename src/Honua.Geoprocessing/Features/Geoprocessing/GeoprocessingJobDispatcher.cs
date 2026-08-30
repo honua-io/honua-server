@@ -9,6 +9,8 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing.CustomCode;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Options;
@@ -67,6 +69,7 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly IReadOnlyList<IBatchComputeBackend> _backends;
     private readonly IExecutionAdmissionEvaluator? _admissionEvaluator;
     private readonly IOperationGateway? _operationGateway;
+    private readonly IOperationEnvelopeFactory? _operationEnvelopeFactory;
 
     /// <summary>
     /// Creates the dispatcher over the admission evaluator, workload registry, queue,
@@ -81,7 +84,8 @@ internal sealed class GeoprocessingJobDispatcher
         IExecutionJobDefinitionRegistry? workloadRegistry = null,
         IEnumerable<IBatchComputeBackend>? backends = null,
         IExecutionAdmissionEvaluator? admissionEvaluator = null,
-        IOperationGateway? operationGateway = null)
+        IOperationGateway? operationGateway = null,
+        IOperationEnvelopeFactory? operationEnvelopeFactory = null)
     {
         _logger = logger;
         _executorOptions = executorOptions;
@@ -91,6 +95,7 @@ internal sealed class GeoprocessingJobDispatcher
         _backends = backends?.ToArray() ?? Array.Empty<IBatchComputeBackend>();
         _admissionEvaluator = admissionEvaluator;
         _operationGateway = operationGateway;
+        _operationEnvelopeFactory = operationEnvelopeFactory;
     }
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
@@ -166,7 +171,7 @@ internal sealed class GeoprocessingJobDispatcher
         JobSecurityContext? submitterSecurityContext,
         CancellationToken cancellationToken)
     {
-        if (_operationGateway == null || isCustomCode)
+        if (_operationGateway == null || _operationEnvelopeFactory == null || isCustomCode)
         {
             throw new GeoprocessingApprovalRequiredException(policyRef);
         }
@@ -196,8 +201,29 @@ internal sealed class GeoprocessingJobDispatcher
             Plan = GeoprocessOperationExecutor.BuildPlanSummary(payload, executionPayload: null),
         };
 
+        var envelope = await _operationEnvelopeFactory.CreateAcceptedAsync(
+                "control-plane.geoprocess",
+                new OperationPolicyContext
+                {
+                    PrincipalId = requestedBy,
+                    AuthorizationOutcome = "approval-gate-authorized",
+                    IdempotencyKey = payload.IdempotencyKey,
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (envelope.Status == OperationHandleStatus.Failed || string.IsNullOrWhiteSpace(envelope.AuditId))
+        {
+            throw new GeoprocessingApprovalRequiredException(policyRef);
+        }
+
+        request = request with
+        {
+            OperationInstanceId = envelope.OperationInstanceId,
+            CorrelationId = envelope.CorrelationId,
+        };
+
         var result = await _operationGateway
-            .CreateApprovalProposalAsync(request, cancellationToken)
+            .CreateApprovalProposalAsync(envelope.OperationInstanceId, request, cancellationToken)
             .ConfigureAwait(false);
 
         throw new GeoprocessingApprovalRequiredException(policyRef, detail: null, proposalId: result.ProposalId);

@@ -264,6 +264,13 @@
     },
     {
       "family": "3D-Tiles",
+      "routeContains": [
+        "/SceneServer"
+      ],
+      "capability": "serve.i3s-scene"
+    },
+    {
+      "family": "3D-Tiles",
       "capability": "serve.3d-tiles-scene"
     },
     {

@@ -217,7 +217,7 @@ internal static class ObservabilityAlertEndpoints
             ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
     }
 
-    private static Task RecordAuditAsync(
+    private static Task<string?> RecordAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         string actor,

@@ -38,7 +38,7 @@ Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
 
 ## Why teams trust it
 
-- **1117/1117 OGC CITE tests passing** across 13 conformance suites — [see the evidence](reference/compatibility/ogc-conformance.md)
+- **1138/1138 OGC CITE tests passing** across 14 conformance suites — [see the evidence](reference/compatibility/ogc-conformance.md)
 - **Works with the clients you already use** — ArcGIS Pro, QGIS, Excel, Power BI, MapLibre, GDAL — [client compatibility](reference/compatibility/clients.md)
 
 ## Ecosystem

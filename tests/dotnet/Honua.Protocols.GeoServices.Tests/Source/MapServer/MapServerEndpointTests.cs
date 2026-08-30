@@ -20,15 +20,37 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-[Collection("Database")]
+[Collection("Database.GeoServicesMapServer")]
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
+    private string? _generateKmlServiceName;
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        try
+        {
+            if (_generateKmlServiceName is { } serviceName && _fixture.CurrentSchema is { } schema)
+            {
+                await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
+                    """
+                    DELETE FROM honua.layer_fields WHERE layer_id BETWEEN 110 AND 113;
+                    DELETE FROM honua.service_layers WHERE layer_id BETWEEN 110 AND 113;
+                    DELETE FROM honua.layers WHERE layer_id BETWEEN 110 AND 113;
+                    DELETE FROM honua.services WHERE service_name = @serviceName;
+                    """,
+                    command => command.Parameters.AddWithValue("serviceName", serviceName),
+                    schema);
+            }
+        }
+        finally
+        {
+            await _fixture.DisposeAsync();
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
@@ -2247,6 +2269,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Test schema not initialized.");
         var serviceName = $"kml_{Guid.NewGuid().ToString("N")[..8]}";
+        _generateKmlServiceName = serviceName;
 
         var sql = $$"""
             INSERT INTO honua.services (

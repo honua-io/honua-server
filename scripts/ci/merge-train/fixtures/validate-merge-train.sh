@@ -120,6 +120,7 @@ __fixture_admission() {
   case "${ADMISSION_CASE:-ok}" in
     gate-fail) gate=FAILURE ;;
     review-fail) review=FAILURE ;;
+    no-evidence) reviews='[]'; review=FAILURE ;;
     unresolved) threads="[{\"isResolved\":false,\"comments\":{\"nodes\":[{\"author\":{\"login\":\"chatgpt-codex-connector[bot]\"},\"commit\":{\"oid\":\"${head}\"}}]}}]" ;;
     negative-review) reviews="[{\"author\":{\"login\":\"chatgpt-codex-connector\"},\"body\":\"Codex Review\",\"submittedAt\":\"2026-01-02T00:00:00Z\",\"updatedAt\":\"2026-01-02T00:00:00Z\",\"state\":\"CHANGES_REQUESTED\",\"commit\":{\"oid\":\"${head}\"}}]" ;;
     clean-comment)
@@ -968,12 +969,16 @@ assert_eq "batch: every primary fresh CI dispatch journals its run id" \
 assert_contains "batch: journal failure bypasses CI classification" \
   "$(cat "${TRAIN_DIR}/train.sh")" 'if [[ "${gate}" == "JOURNAL_FAILURE" ]]'
 
-for admission_case in gate-fail review-fail unresolved negative-review held escalated draft closed advanced; do
+for admission_case in gate-fail unresolved negative-review held escalated draft closed advanced; do
   export ADMISSION_CASE="${admission_case}"
   train_pr_admission 10 aaa \
     && bad "admission: ${admission_case} must fail closed" \
     || ok "admission: ${admission_case} fails closed"
 done
+export ADMISSION_CASE=review-fail
+train_pr_admission 10 aaa \
+  && ok "admission: refreshed clean evidence overrides stale failed Review Gate in dry-run" \
+  || bad "admission: stale failed Review Gate hid a finding-free head in dry-run"
 export ADMISSION_CASE=clean-comment
 admission_pr_list="${TRAIN_PR_LIST_JSON}"
 clean_comment_head="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -1007,6 +1012,39 @@ train_pr_admission 10 aaa \
 assert_contains "admission: recovery refreshes exact-head Review Gate success" "$(cat "${status_record}")" $'10\taaa\tsuccess'
 export TRAIN_APPLY=0
 unset ADMISSION_CASE FIXTURE_REVIEW_STATUS_RECORD
+
+# Dry-run and live selection use the same refreshed evidence predicate. A stale
+# failed Review Gate cannot hide an otherwise finding-free head from preview.
+export ADMISSION_CASE=no-evidence TRAIN_APPLY=0
+dry_run_candidate="$(MAX_BATCH=1 train_select | jq -s -c '.[0]')"
+assert_eq "admission: dry-run previews finding-free head without stale Review Gate" \
+  "$(jq -r '.number' <<<"${dry_run_candidate}")" "11"
+assert_eq "admission: selection marks exact head for trailing review" \
+  "$(jq -r '.reviewCatchupNeeded' <<<"${dry_run_candidate}")" "true"
+
+review_dispatch_record="${SCRATCH}/exact-review-dispatch"; : >"${review_dispatch_record}"
+gh() { printf '%s\n' "$*" >>"${review_dispatch_record}"; }
+__no_prior_review_runs() { :; }
+export -f __no_prior_review_runs
+export TRAIN_APPLY=1 GITHUB_REPOSITORY=honua-io/honua-server \
+  TRAIN_REVIEW_RUN_TITLES_CMD=__no_prior_review_runs
+train_dispatch_selected_reviews "[$(jq -c '.' <<<"${dry_run_candidate}")]"
+assert_eq "admission: parent dispatches one exact PR/head review" \
+  "$(wc -l <"${review_dispatch_record}" | tr -d ' ')" "1"
+assert_contains "admission: exact review dispatch includes PR" \
+  "$(cat "${review_dispatch_record}")" '-f pr=11'
+assert_contains "admission: exact review dispatch includes head" \
+  "$(cat "${review_dispatch_record}")" '-f head=bbb'
+__prior_review_run() { printf '%s\n' 'Claude catch-up #11 @ bbb'; }
+export -f __prior_review_run
+export TRAIN_REVIEW_RUN_TITLES_CMD=__prior_review_run
+train_dispatch_selected_reviews "[$(jq -c '.' <<<"${dry_run_candidate}")]"
+assert_eq "admission: exact PR/head review dispatch is deduplicated" \
+  "$(wc -l <"${review_dispatch_record}" | tr -d ' ')" "1"
+unset -f gh
+export TRAIN_APPLY=0
+unset -f __no_prior_review_runs __prior_review_run
+unset ADMISSION_CASE GITHUB_REPOSITORY TRAIN_REVIEW_RUN_TITLES_CMD
 
 ( train_select() { :; }; train_has_selectable_pr ) \
   && bad "self-chain: all-inadmissible queue must not redispatch" \

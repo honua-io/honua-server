@@ -361,6 +361,18 @@ internal sealed class StudioLifecycleAuthorizationMiddlewareResultHandler : IAut
             return;
         }
 
+        if (authorizeResult.Forbidden &&
+            policy.Requirements.Any(static requirement => requirement is AdminApproveRequirement) &&
+            HasFailureReason(authorizeResult, AdminApproveAuthorizationHandler.MissingGrantCode))
+        {
+            await ProblemDetailsHelpers.CreateAdminProblem(
+                context,
+                StatusCodes.Status403Forbidden,
+                $"The '{AdminApiKeyPermission.ApproveGrant}' grant is required to approve or reject proposals.")
+                .ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
+
         await _fallback.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
     }
 

@@ -13,6 +13,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/docker/client-compat/compose.yml"
 OUTPUT_DIR="${ROOT_DIR}/docker/client-compat/output"
 BASELINE_DIR="${ROOT_DIR}/tests/baselines/client-compat"
+SERVER_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+export HONUA_SERVER_COMMIT="$SERVER_COMMIT"
 
 # Mirror the lane matrix in .github/workflows/client-interop-nightly.yml.
 DEFAULT_LANES=(gdal pyqgis openlayers cesium arcgis-stub geopandas owslib duckdb r-sf pystac)
@@ -43,6 +45,7 @@ cd "$ROOT_DIR"
 
 echo "Refreshing client-compat baselines via docker compose..."
 echo "  Lanes: ${LANES[*]}"
+echo "  Server commit: ${SERVER_COMMIT}"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 

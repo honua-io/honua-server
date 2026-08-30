@@ -23,14 +23,18 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
     private const int MaxMessageCount = 256;
     private const int MaxToolCallCount = 256;
     private const int MaxToolComponentCharacters = 64_000;
+    private const int MaxTranscriptEventCount = 4_096;
+    private const long MaxTranscriptCharacters = 1_000_000;
 
     private readonly StudioAiProxyConfiguration _configuration;
     private readonly Dictionary<string, IStudioAiProxyAdapter> _adaptersByKind;
     private readonly ILogger<StudioAiProxyService> _logger;
+    private readonly StudioAiTranscriptSigner _transcriptSigner;
 
     public StudioAiProxyService(
         IOptions<StudioAiProxyConfiguration> options,
         IEnumerable<IStudioAiProxyAdapter> adapters,
+        StudioAiTranscriptSigner transcriptSigner,
         ILogger<StudioAiProxyService> logger)
     {
         _configuration = options.Value;
@@ -38,15 +42,16 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             .GroupBy(a => a.Kind, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         _logger = logger;
+        _transcriptSigner = transcriptSigner;
     }
 
     public bool Enabled => _configuration.Enabled && _configuration.Providers.Count > 0;
 
-    public Task<StudioAiCapabilitiesResponse> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+    public async Task<StudioAiCapabilitiesResponse> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
     {
         if (!_configuration.Enabled)
         {
-            return Task.FromResult(new StudioAiCapabilitiesResponse { Enabled = false });
+            return new StudioAiCapabilitiesResponse { Enabled = false };
         }
 
         var providers = _configuration.Providers
@@ -54,12 +59,13 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             .OrderBy(p => p.Provider, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return Task.FromResult(new StudioAiCapabilitiesResponse
+        return new StudioAiCapabilitiesResponse
         {
             Enabled = true,
             DefaultProvider = _configuration.DefaultProvider,
-            Providers = providers
-        });
+            Providers = providers,
+            TranscriptSigning = await _transcriptSigner.GetManifestAsync(cancellationToken).ConfigureAwait(false)
+        };
     }
 
     public string? ValidateRequest(StudioAiChatRequest request)
@@ -84,6 +90,19 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         if (request.Messages.Any(static message => message is null || message.Content is null))
         {
             return "Message content must not be null.";
+        }
+
+        if (request.Certification is not null)
+        {
+            var certification = request.Certification;
+            if (string.IsNullOrWhiteSpace(certification.CandidateId)
+                || string.IsNullOrWhiteSpace(certification.ReleaseId)
+                || string.IsNullOrWhiteSpace(certification.EndpointIdentity)
+                || string.IsNullOrWhiteSpace(certification.ActionId)
+                || string.IsNullOrWhiteSpace(certification.RunNonce))
+            {
+                return "Certification requires candidateId, releaseId, endpointIdentity, actionId, and runNonce.";
+            }
         }
 
         if (request.Tools is { Count: > MaxToolCount })
@@ -206,8 +225,31 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
 
         StudioAiProxyLog.ChatRequested(_logger, providerName, providerOptions.Kind, model);
 
+        StudioAiTranscriptSigner.SigningKey? signingKey = null;
+        if (request.Certification is not null)
+        {
+            signingKey = await _transcriptSigner.ResolveKeyAsync(cancellationToken).ConfigureAwait(false);
+            if (signingKey is null)
+            {
+                summary.Succeeded = false;
+                summary.StopReason = StudioAiStopReason.Error;
+                summary.ErrorMessage = "Transcript provenance signing is unavailable.";
+                yield return new StudioAiChatEvent
+                {
+                    Type = StudioAiChatEventType.Error,
+                    Model = model,
+                    ErrorCode = StudioAiTranscriptSigner.UnavailableCode,
+                    ErrorMessage = "Transcript provenance signing is unavailable."
+                };
+                yield break;
+            }
+        }
+
         var enumerator = adapter.StreamAsync(providerOptions, request, cancellationToken).GetAsyncEnumerator(cancellationToken);
         var sawTerminalEvent = false;
+        var transcriptEvents = signingKey is null ? null : new List<StudioAiChatEvent>();
+        long transcriptCharacters = 0;
+        string? providerReportedModel = null;
 
         try
         {
@@ -236,6 +278,30 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 }
 
                 var evt = enumerator.Current;
+                if (transcriptEvents is not null)
+                {
+                    transcriptCharacters += EventCharacterCount(evt);
+                    if (transcriptEvents.Count >= MaxTranscriptEventCount || transcriptCharacters > MaxTranscriptCharacters)
+                    {
+                        summary.Succeeded = false;
+                        summary.StopReason = StudioAiStopReason.Error;
+                        summary.ErrorMessage = "Certification transcript exceeded the capture limit.";
+                        yield return new StudioAiChatEvent
+                        {
+                            Type = StudioAiChatEventType.Error,
+                            Model = model,
+                            ErrorCode = "studio_ai/provenance_transcript_too_large",
+                            ErrorMessage = "Certification transcript exceeded the capture limit."
+                        };
+                        yield break;
+                    }
+
+                    transcriptEvents.Add(evt);
+                    if (evt.Type == StudioAiChatEventType.MessageStart && !string.IsNullOrWhiteSpace(evt.Model))
+                    {
+                        providerReportedModel = evt.Model;
+                    }
+                }
                 if (evt.Type is StudioAiChatEventType.MessageStop or StudioAiChatEventType.Error)
                 {
                     sawTerminalEvent = true;
@@ -265,7 +331,40 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 ErrorMessage = "The provider adapter ended the stream unexpectedly."
             };
         }
+        else if (signingKey is not null && summary.Succeeded)
+        {
+            if (string.IsNullOrWhiteSpace(providerReportedModel))
+            {
+                summary.Succeeded = false;
+                summary.StopReason = StudioAiStopReason.Error;
+                summary.ErrorMessage = "The provider did not report the model used; certification is unavailable.";
+                yield return new StudioAiChatEvent
+                {
+                    Type = StudioAiChatEventType.Error,
+                    Model = model,
+                    ErrorCode = StudioAiTranscriptSigner.UnavailableCode,
+                    ErrorMessage = "The provider did not report the model used; certification is unavailable."
+                };
+                yield break;
+            }
+
+            yield return new StudioAiChatEvent
+            {
+                Type = StudioAiChatEventType.TranscriptProvenance,
+                Provenance = _transcriptSigner.Sign(signingKey, request, providerName, providerReportedModel, transcriptEvents!)
+            };
+        }
     }
+
+    private static long EventCharacterCount(StudioAiChatEvent evt)
+        => (evt.Model?.Length ?? 0L)
+            + (evt.Text?.Length ?? 0L)
+            + (evt.ToolCallId?.Length ?? 0L)
+            + (evt.ToolName?.Length ?? 0L)
+            + (evt.ToolArgumentsDelta?.Length ?? 0L)
+            + (evt.ToolArguments?.GetRawText().Length ?? 0L)
+            + (evt.ErrorMessage?.Length ?? 0L)
+            + (evt.ErrorCode?.Length ?? 0L);
 
     private void ApplySummary(StudioAiProxyCallSummary summary, string providerName, StudioAiChatEvent evt)
     {

@@ -114,7 +114,13 @@ def index_envelopes(root: Path) -> dict[tuple[str, str], dict]:
 
 
 def index_results(envelope: dict) -> dict[str, dict]:
-    return {r["test_case_id"]: r for r in envelope.get("results", [])}
+    return {
+        result["test_case_id"]: result
+        for result in [
+            *envelope.get("results", []),
+            *envelope.get("extensions", []),
+        ]
+    }
 
 
 def classify(baseline: str | None, current: str | None) -> str:

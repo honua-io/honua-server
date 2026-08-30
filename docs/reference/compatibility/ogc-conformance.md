@@ -36,7 +36,7 @@ the canonical passed/total counts and pass rate per suite, including the WFS
 Some OGC API surfaces have no official CITE executable test suite yet — Styles,
 Maps, Processes, Coverages, and Records. They are shipped as conformant adapters
 proven by targeted integration tests plus accurate `/conformance` declarations,
-and are not part of the 1117/1117 count. See the
+and are not part of the 1138/1138 count. See the
 [OGC API surfaces without an official CITE ETS](../../cite-status.md#ogc-api-surfaces-without-an-official-cite-ets)
 section of the CITE status page.
 

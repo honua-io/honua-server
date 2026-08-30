@@ -169,6 +169,31 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task StudioAiProxy_FlagOn_NonAdminCannotRequestCertifiedTranscript()
+    {
+        await using var fixture = await CreateEndUserFixtureAsync(new CapturingAuditLog());
+        using var client = CreateBearerClient(
+            fixture,
+            CreateToken("studio-user-enabled", tenantId: "studio-tenant"));
+
+        using var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        {
+            certification = new
+            {
+                candidateId = "candidate-7",
+                releaseId = "release-9",
+                endpointIdentity = "honua.example/api/v1/studio/ai/chat",
+                actionId = "compose-map",
+                runNonce = "unique-run-nonce"
+            },
+            messages = new[] { new { role = "user", content = "must not be signed" } }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/studio/ai/capabilities")]
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOn_ClientCredentialsBearerReturns403()
@@ -327,6 +352,34 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         audit.Details.Should().Contain("\"kind\":\"openai\"");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task PostChat_CertificationWithoutSigningKey_FailsClosedWithTypedSseError()
+    {
+        using var client = _fixture.CreateAdminClient();
+
+        using var response = await client.PostAsJsonAsync("/api/v1/studio/ai/chat", new
+        {
+            certification = new
+            {
+                candidateId = "candidate-7",
+                releaseId = "release-9",
+                endpointIdentity = "honua.example/api/v1/studio/ai/chat",
+                actionId = "compose-map",
+                runNonce = "unique-run-nonce"
+            },
+            messages = new[] { new { role = "user", content = "must be signed" } }
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("event: error");
+        body.Should().Contain("studio_ai/provenance_signing_unavailable");
+        body.Should().NotContain("event: message_start",
+            "a certification call must refuse before dispatch when no signing key is available");
+        body.Should().NotContain("event: transcript_provenance");
+    }
+
     private static void ConfigureHost(IWebHostBuilder builder, bool endUserAuthorizationEnabled)
     {
         // WebAppFixture's common host settings enable a dev-auth bypass
@@ -460,10 +513,10 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     {
         public List<AuditEvent> Recorded { get; } = [];
 
-        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             Recorded.Add(auditEvent);
-            return Task.CompletedTask;
+            return Task.FromResult<string?>("audit-test");
         }
     }
 }

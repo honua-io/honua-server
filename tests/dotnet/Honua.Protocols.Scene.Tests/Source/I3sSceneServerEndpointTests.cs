@@ -10,19 +10,25 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Scene.Abstractions;
 using Honua.Core.Features.Scene.Conversion;
 using Honua.Core.Features.Scene.Domain;
+using Honua.Protocols.Scene.I3s;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
 
 /// <summary>
-/// Integration tests for the read-only Esri I3S SceneServer serving endpoints
-/// (#1202). Verifies Enterprise gating and the service/layer descriptor JSON
-/// for a hosted fixture scene.
+/// Protocol-shape integration tests for the read-only Esri I3S SceneServer
+/// endpoints (#1202). The geometry-backed cases deliberately install a
+/// test-only provider to certify the deferred payload contract; they do not
+/// claim that production ships renderable I3S. Production-container coverage
+/// below verifies the ADR-0078 metadata-preview boundary separately.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Scene)]
@@ -94,12 +100,12 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
             })
             .ConfigureServices(services =>
             {
-                services.AddSingleton<ILicenseStatusProvider>(new StubLicenseStatusProvider(edition));
-                // Register a real-transcoder-backed node geometry provider so the
-                // #1810 geometries route serves actual transcoded bytes end to
-                // end. It transcodes a single fixture square for every scene/node
-                // except the dedicated "no geometry" scene, which it answers with
-                // null to exercise the honest 404 path.
+                var licenseService = new TestLicenseEntitlementService(edition);
+                services.AddSingleton<ILicenseEntitlementService>(licenseService);
+                services.AddSingleton<ILicenseStatusProvider>(licenseService);
+                // Test-only protocol-shape provider: this certifies the
+                // deferred #1810 binary contract and must not be read as
+                // evidence that a production host can render I3S.
                 services.AddSingleton<ISceneNodeGeometryProvider, StubSceneNodeGeometryProvider>();
             });
 
@@ -231,11 +237,11 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /scenes/{sceneId}/SceneServer")]
-    public async Task GetService_CommunityEdition_Returns403()
+    public async Task GetService_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync($"/scenes/{SceneId}/SceneServer");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
     }
 
     [IntegrationTest]
@@ -364,11 +370,11 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer")]
-    public async Task GetService_AtGeoServicesPath_CommunityEdition_Returns403()
+    public async Task GetService_AtGeoServicesPath_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync($"/rest/services/{SceneId}/SceneServer");
 
-        await response.AssertGeoServicesErrorAsync(403);
+        await response.AssertGeoServicesErrorAsync(402);
     }
 
     [IntegrationTest]
@@ -451,12 +457,12 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}")]
-    public async Task GetNodePage_ScenesAlias_CommunityEdition_Returns403()
+    public async Task GetNodePage_ScenesAlias_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync(
             $"/scenes/{SceneId}/SceneServer/layers/0/nodepages/0");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
     }
 
     [IntegrationTest]
@@ -531,12 +537,12 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}")]
-    public async Task GetNodeGeometry_CommunityEdition_Returns403()
+    public async Task GetNodeGeometry_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/geometries/0");
 
-        await response.AssertGeoServicesErrorAsync(403);
+        await response.AssertGeoServicesErrorAsync(402);
     }
 
     [IntegrationTest]
@@ -621,12 +627,12 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}")]
-    public async Task GetNodeAttribute_CommunityEdition_Returns403()
+    public async Task GetNodeAttribute_CommunityEdition_Returns402()
     {
         var response = await _communityFixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/nodes/0/attributes/f_0/0");
 
-        await response.AssertGeoServicesErrorAsync(403);
+        await response.AssertGeoServicesErrorAsync(402);
     }
 
     [IntegrationTest]
@@ -726,17 +732,70 @@ public sealed class I3sSceneServerEndpointTests : IAsyncLifetime
         }
     }
 
-    private sealed class StubLicenseStatusProvider : ILicenseStatusProvider
+}
+
+/// <summary>
+/// Production-profile registration tests kept separate from the protocol-shape
+/// fixture so no test-only geometry provider can leak into the assertion.
+/// </summary>
+[Protocol(TestProtocols.Scene)]
+public sealed class I3sProductionRouteRegistrationTests
+{
+    [Fact]
+    public void ScopedProvider_WithScopeValidation_MapsGeometryRoutesWithoutResolvingProvider()
     {
-        private readonly HonuaEdition _edition;
+        var services = new ServiceCollection();
+        services.AddRouting();
+        services.AddScoped<ISceneNodeGeometryProvider>(_ =>
+            throw new InvalidOperationException("Endpoint mapping must not instantiate the provider."));
+        using var serviceProvider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
 
-        public StubLicenseStatusProvider(HonuaEdition edition) => _edition = edition;
+        var endpoints = new TestEndpointRouteBuilder(serviceProvider);
+        var map = () => endpoints.MapI3sSceneServerEndpoints();
 
-        public LicenseStatus GetCurrentStatus() =>
-            new(_edition, IsValid: true, ExpiresAt: null, LicensedTo: "test");
+        map.Should().NotThrow();
+        endpoints.DataSources
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .Should().Contain(pattern =>
+                pattern!.Contains("/geometries/", StringComparison.Ordinal));
+    }
 
-        public Task<LicenseUploadResult> UploadLicenseAsync(
-            Stream licenseStream, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new LicenseUploadResult(false, "Stub does not support upload."));
+    [Fact]
+    public void ProviderFreeContainer_AdvertisesMetadataPreviewOnly()
+    {
+        var services = new ServiceCollection();
+        services.AddRouting();
+        using var serviceProvider = services.BuildServiceProvider();
+        serviceProvider.GetService<ISceneNodeGeometryProvider>().Should().BeNull();
+
+        var endpoints = new TestEndpointRouteBuilder(serviceProvider);
+        endpoints.MapI3sSceneServerEndpoints();
+
+        var routePatterns = endpoints.DataSources
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .Where(pattern => pattern is not null)
+            .ToArray();
+
+        routePatterns.Should().NotContain(pattern =>
+            pattern!.Contains("/geometries/", StringComparison.Ordinal));
+        routePatterns.Should().NotContain(pattern =>
+            pattern!.Contains("/attributes/", StringComparison.Ordinal));
+        routePatterns.Should().Contain(pattern =>
+            pattern!.Contains("/SceneServer/layers/{layerId:int}", StringComparison.Ordinal));
+    }
+
+    private sealed class TestEndpointRouteBuilder(IServiceProvider serviceProvider) : IEndpointRouteBuilder
+    {
+        public IServiceProvider ServiceProvider { get; } = serviceProvider;
+
+        public ICollection<EndpointDataSource> DataSources { get; } = [];
+
+        public IApplicationBuilder CreateApplicationBuilder()
+            => new ApplicationBuilder(ServiceProvider);
     }
 }

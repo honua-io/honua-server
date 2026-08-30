@@ -23,7 +23,7 @@ public sealed class StudioEndpointAuthorizationTests
         var auditLog = new Mock<IAuditLog>(MockBehavior.Strict);
         auditLog
             .Setup(log => log.RecordAsync(It.IsAny<AuditEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .Returns(Task.FromResult<string?>("audit-test"));
         var authorization = CreateAuthorization(auditLog.Object);
         var context = new DefaultHttpContext();
 
@@ -47,7 +47,7 @@ public sealed class StudioEndpointAuthorizationTests
         var auditLog = new Mock<IAuditLog>(MockBehavior.Strict);
         auditLog
             .Setup(log => log.RecordAsync(It.IsAny<AuditEvent>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.FromException(new InvalidOperationException("audit sink failed")));
+            .Returns(Task.FromException<string?>(new InvalidOperationException("audit sink failed")));
         var authorization = CreateAuthorization(auditLog.Object);
         var context = new DefaultHttpContext();
 

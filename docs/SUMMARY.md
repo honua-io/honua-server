@@ -57,6 +57,8 @@
   - [Excel & Power BI](guides/connect/excel-power-bi.md)
   - [MapLibre web maps](guides/connect/maplibre-web-maps.md)
   - [AI agents (MCP)](guides/connect/ai-agents-mcp.md)
+  - [Run the Studio AI proxy](guides/run-studio-ai-proxy.md)
+  - [Run Studio AI on Amazon Bedrock](guides/run-studio-ai-on-bedrock.md)
 - Edit data
   - [Edit features](guides/edit/edit-features.md)
   - [Attachments & related records](guides/edit/attachments-and-related-records.md)
@@ -114,6 +116,9 @@
     - [SQL Server](reference/configuration/data-sources/sql-server.md)
     - [Oracle](reference/configuration/data-sources/oracle.md)
     - [MySQL / MariaDB](reference/configuration/data-sources/mysql-mariadb.md)
+    - [Amazon Redshift](reference/configuration/data-sources/redshift.md)
+    - [Snowflake](reference/configuration/data-sources/snowflake.md)
+    - [Databricks](reference/configuration/data-sources/databricks.md)
 - [Data formats](reference/data-formats.md)
 - [CQL2 & filtering](reference/cql2-and-filtering.md)
 - [Geoprocessing operations](reference/geoprocessing-operations.md)

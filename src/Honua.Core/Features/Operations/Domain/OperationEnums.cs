@@ -146,6 +146,11 @@ public enum OperationDeterminism
 public enum OperationHandleStatus
 {
     /// <summary>
+    /// The durable envelope exists, but policy evaluation or actuation has not completed.
+    /// </summary>
+    Accepted,
+
+    /// <summary>
     /// The operation completed synchronously and its result is available on the handle.
     /// </summary>
     Completed,
@@ -180,7 +185,24 @@ public enum OperationHandleStatus
     Denied,
 
     /// <summary>
+    /// A human reviewer rejected the durable proposal. No actuator call occurred.
+    /// </summary>
+    Rejected,
+
+    /// <summary>
+    /// The invocation was canceled before actuation began. No side effect occurred and a
+    /// retry creates a new operation instance unless a domain idempotency key says otherwise.
+    /// </summary>
+    Cancelled,
+
+    /// <summary>
     /// The operation failed.
     /// </summary>
-    Failed
+    Failed,
+
+    /// <summary>
+    /// The operation may have changed state, but durable verification or evidence could not
+    /// establish a safe terminal outcome.
+    /// </summary>
+    Indeterminate
 }

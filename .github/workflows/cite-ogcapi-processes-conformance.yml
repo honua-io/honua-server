@@ -28,6 +28,7 @@ jobs:
   validate-image:
     name: Validate candidate image reference
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Reject mutable candidate image tags
         env:

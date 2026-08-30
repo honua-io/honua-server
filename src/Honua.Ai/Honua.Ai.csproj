@@ -66,6 +66,7 @@
          the provider-neutral chat surface the Studio AI proxy's Bedrock adapter bridges onto. -->
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
+    <PackageReference Include="BouncyCastle.Cryptography" />
   </ItemGroup>
 
   <ItemGroup>

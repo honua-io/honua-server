@@ -120,17 +120,19 @@ runner disk (#1899, #2943), so this needs its own disk-headroom measurement.
 
 #### Kill switch
 
-`ci.yml` forwards the repository variable `HONUA_SERVER_TEST_ATTEMPT1_REUSE`
+`ci.yml` forwards the repository variable `HONUA_SERVER_TEST_PREBUILD_CONSUME`
 verbatim. Exactly one rule interprets it, in `server-test-shard-cache.sh plan`:
-**attempt-1 reuse is on unless the value is exactly the string `false`.** Unset
-is on. The raw value is echoed back as `attempt1_switch` (sanitised to a bounded
+**attempt-1 consumption is on only when the value is exactly the string
+`true`.** Unset is off. The raw value is echoed back as `consume_switch` (sanitised to a bounded
 character set so it cannot forge extra output lines) and printed in the job
 summary, so a run states whether the switch was unset or set and to what.
 
 The switch governs attempt-1 reads only. It never withdraws the pre-existing
 #2735 failed-rerun read, which stays on regardless.
 
-Rollback therefore reverts reads to rerun-only. Nothing else changes: no branch
+Rollback is one variable update:
+`gh variable set HONUA_SERVER_TEST_PREBUILD_CONSUME --body false`. It reverts
+reads to rerun-only. Nothing else changes: no branch
 protection, required context, shard name, filter, timeout, service, result
 attribution, or merge authority depends on this switch.
 

@@ -104,7 +104,11 @@ def test_gpserver_python_client_submit_and_poll_workflow(
     if submit.status_code == 503 or "error" in submit_data:
         error = _assert_esri_error(submit, 503)
         details = " ".join(error["error"].get("details") or [])
-        assert "Redis-backed durable storage" in details
+        # Assert the stable machine-readable marker, not prose: the human wording
+        # changed once already ("durable storage" -> "job store") and red-failed
+        # trunk (matrix 2026-08-29) while behavior was correct.
+        assert "dependency-unavailable" in details
+        assert "missingDependency: redis" in details
         return
 
     assert submit_data["jobId"]

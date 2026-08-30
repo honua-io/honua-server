@@ -186,10 +186,9 @@ jobs:
 
               const unresolved = pr.reviewThreads.nodes.filter(thread =>
                 !thread.isResolved && thread.comments.nodes.some(comment =>
-                  isAttestingReviewer(comment.author?.login, comment.author?.__typename) &&
-                  comment.commit?.oid === head));
+                  isAttestingReviewer(comment.author?.login, comment.author?.__typename)));
               if (unresolved.length) {
-                reasons.push(`${unresolved.length} unresolved reviewer thread(s)`);
+                reasons.push(`${unresolved.length} unresolved reviewer finding(s) block admission`);
               }
 
               const cleanComments = await Promise.all(pr.comments.nodes.map(async comment => {
@@ -211,14 +210,21 @@ jobs:
                 }
               }));
 
-              const { exactReview, exactCleanComment } = evaluateCodexEvidence({
+              const { exactReview, exactCleanComment, hasOpenObjection } = evaluateCodexEvidence({
                 reviews: pr.reviews.nodes, cleanComments,
                 unresolvedCount: unresolved.length, head,
               });
-              if (!exactReview && !exactCleanComment) {
-                reasons.push('no exact-head review evidence from an attesting reviewer (Codex or Claude)');
+              if (hasOpenObjection) {
+                reasons.push('Open reviewer objection (negative review not withdrawn by its own identity)');
               }
-              return { head, reasons, snapshotTruncated };
+              const reviewDescription = unresolved.length > 0
+                ? `${unresolved.length} unresolved reviewer finding(s) block admission`
+                : hasOpenObjection
+                  ? 'Open reviewer objection (negative review not withdrawn by its own identity)'
+                  : exactReview || exactCleanComment
+                    ? 'Current exact-head review evidence is clean'
+                    : 'No reviewer objections; review trails this merge (fix-forward admission)';
+              return { head, reasons, reviewDescription, snapshotTruncated };
             };
 
             const initialReview = await evaluateCurrentReview();
@@ -226,10 +232,10 @@ jobs:
               core.setFailed(`PR #${prNumber} not found.`);
               return;
             }
-            const { head, reasons } = initialReview;
+            const { head, reasons, reviewDescription } = initialReview;
             const state = reasons.length === 0 ? 'success' : 'failure';
             const description = reasons.length === 0
-              ? 'An attesting reviewer reviewed this exact head'
+              ? reviewDescription
               : reasons.join('; ').slice(0, 140);
             await github.rest.repos.createCommitStatus({
               ...context.repo, sha: head, state, context: 'Review Gate', description,

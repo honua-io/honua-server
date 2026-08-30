@@ -578,6 +578,7 @@ public sealed class McpPlatformOpsReaderTests
         }
 
         public Task<OperationGatewayResult> CreateApprovalProposalAsync(
+            string operationInstanceId,
             OperationGatewayRequest request,
             CancellationToken cancellationToken = default)
         {

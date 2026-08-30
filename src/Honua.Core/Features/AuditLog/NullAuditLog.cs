@@ -26,9 +26,9 @@ public sealed class NullAuditLog : IAuditLog
     public bool IsPersisted => false;
 
     /// <inheritdoc />
-    public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+    public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(auditEvent);
-        return Task.CompletedTask;
+        return Task.FromResult<string?>(null);
     }
 }

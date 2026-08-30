@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Focused, offline regression tests for the inverted review-admission ladder in
 # train_refresh_review_gate: objections block, clean exact-head evidence admits,
-# a missing review holds only for the courtesy window (dispatching the catch-up
-# exactly once), then admission proceeds with review trailing.
+# a missing review admits with review trailing and marks the exact head for the
+# parent controller to dispatch.
 
 set -euo pipefail
 
@@ -25,11 +25,8 @@ train_attesting_logins_json() { printf '%s' '["chatgpt-codex-connector","chatgpt
 train_resolve_clean_comment_commits() { printf '%s' "$1"; }
 PUBLISHED_STATE=""; PUBLISHED_DESC=""
 train_publish_review_gate_status() { PUBLISHED_STATE="$3"; PUBLISHED_DESC="$4"; }
-DISPATCH_COUNT=0
 train_side_effect() {
-  if [[ "$*" == *"workflow run claude-review.yml"* ]]; then
-    DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
-  fi
+  fail "review admission must not dispatch from the selector subshell"
 }
 GH_COMMIT_DATE=""
 gh() {
@@ -78,15 +75,66 @@ printf 'PASS: %s\n' "clean exact-head evidence admits"
 
 # 3. No evidence, no objections: admits IMMEDIATELY (operator decision
 #    2026-08-28, "yes permanently" -- no courtesy window), and the catch-up is
-#    still dispatched exactly once so the trailing review happens.
-unset TRAIN_REVIEW_CATCHUP_NEEDED TRAIN_REVIEW_CATCHUP_DISPATCHED 2>/dev/null || true
-DISPATCH_COUNT=0
+#    marked so the parent controller can dispatch the exact PR/head.
+unset TRAIN_REVIEW_CATCHUP_NEEDED 2>/dev/null || true
 rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
 [[ "${rc}" == 0 ]] || fail "finding-free head was not admitted immediately (${PUBLISHED_DESC})"
 [[ "${PUBLISHED_DESC}" == *"review trails"* ]] || fail "wrong trailing reason: ${PUBLISHED_DESC}"
-[[ "${DISPATCH_COUNT}" == 1 ]] || fail "catch-up dispatch count ${DISPATCH_COUNT}, expected 1"
+[[ "${TRAIN_REVIEW_CATCHUP_NEEDED}" == 1 ]] || fail "exact-head review was not marked for dispatch"
 rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
-[[ "${DISPATCH_COUNT}" == 1 ]] || fail "catch-up re-dispatched within one controller run"
-printf 'PASS: %s\n' "finding-free head admits immediately; catch-up dispatched once"
+[[ "${TRAIN_REVIEW_CATCHUP_NEEDED}" == 1 ]] || fail "exact-head review dispatch marker was not stable"
+printf 'PASS: %s\n' "finding-free head admits immediately; exact head marked for dispatch"
+
+# 4. Readiness probes evaluate admission without dispatching another catch-up.
+unset TRAIN_REVIEW_CATCHUP_NEEDED TRAIN_REVIEW_CATCHUP_DISPATCHED 2>/dev/null || true
+TRAIN_REVIEW_CATCHUP_DISPATCH_DISABLED=1
+DISPATCH_COUNT=0
+rc=0; run_gate "$(snapshot "" '[]')" || rc=$?
+unset TRAIN_REVIEW_CATCHUP_DISPATCH_DISABLED
+[[ "${rc}" == 0 ]] || fail "side-effect-free readiness evaluation rejected finding-free head"
+[[ "${DISPATCH_COUNT}" == 0 ]] || fail "readiness evaluation dispatched ${DISPATCH_COUNT} catch-up run(s)"
+printf 'PASS: %s\n' "readiness evaluation suppresses catch-up dispatch side effects"
+# 5. The trusted Review Gate publishes the same inverted-admission vocabulary
+#    and counts unresolved findings at any commit. These static guards exercise
+#    the inline github-script evaluator without weakening its trusted workflow.
+REVIEW_GATE_WORKFLOW="${TRAIN_DIR}/../../../.github/workflows/review-gate.yml"
+grep -Fq 'const { exactReview, exactCleanComment, hasOpenObjection }' "${REVIEW_GATE_WORKFLOW}" \
+  || fail "Review Gate does not consume hasOpenObjection"
+grep -Fq 'isAttestingReviewer(comment.author?.login, comment.author?.__typename)))' "${REVIEW_GATE_WORKFLOW}" \
+  || fail "Review Gate does not count unresolved findings at any commit"
+if grep -Fq 'comment.commit?.oid === head' "${REVIEW_GATE_WORKFLOW}"; then
+  fail "Review Gate still head-scopes unresolved findings"
+fi
+for description in \
+  'unresolved reviewer finding(s) block admission' \
+  'Open reviewer objection (negative review not withdrawn by its own identity)' \
+  'Current exact-head review evidence is clean' \
+  'No reviewer objections; review trails this merge (fix-forward admission)'; do
+  grep -Fq "${description}" "${REVIEW_GATE_WORKFLOW}" \
+    || fail "Review Gate is missing status description: ${description}"
+done
+if grep -Fq 'no exact-head review evidence from an attesting reviewer' "${REVIEW_GATE_WORKFLOW}"; then
+  fail "Review Gate still fails finding-free unreviewed heads"
+fi
+printf 'PASS: %s\n' "trusted Review Gate matches inverted admission vocabulary"
+
+# 6. Every controller that can write the durable train-state issue shares one
+# single-flight key. Read-only train observers must not enter that key: GitHub
+# keeps only one pending run in a group, so the 15-minute observer cadence would
+# otherwise evict a queued writer. These guards make a two-writer lost-update
+# interleaving structurally impossible at the workflow admission boundary.
+TRAIN_WORKFLOW="${TRAIN_DIR}/../../../.github/workflows/merge-train.yml"
+RECOVERY_WORKFLOW="${TRAIN_DIR}/../../../.github/workflows/merge-train-rerun-recovery.yml"
+WRITER_GROUP='merge-train-state-writers'
+grep -Fq "inputs.train_apply && '${WRITER_GROUP}'" "${TRAIN_WORKFLOW}" \
+  || fail "live train dispatch does not enter the state-writer single-flight group"
+grep -Fq "format('merge-train-read-only-{0}', github.run_id)" "${TRAIN_WORKFLOW}" \
+  || fail "read-only train observers can contend with or evict a state writer"
+grep -Fq "group: ${WRITER_GROUP}" "${RECOVERY_WORKFLOW}" \
+  || fail "rerun recovery does not enter the state-writer single-flight group"
+if grep -Fq 'Wait out any live merge-train dispatch' "${RECOVERY_WORKFLOW}"; then
+  fail "best-effort polling remains in place of atomic writer admission"
+fi
+printf 'PASS: %s\n' "concurrent train-state writers are single-flight"
 
 printf 'ALL PASS\n'

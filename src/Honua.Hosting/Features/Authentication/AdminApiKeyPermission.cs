@@ -25,6 +25,7 @@ namespace Honua.Infrastructure.Authentication;
 ///   <item><c>admin</c>, <c>*</c>, <c>admin:*</c> — full admin (read and write).</item>
 ///   <item><c>admin:write</c>, <c>admin:manage</c> — admin write (implies read).</item>
 ///   <item><c>admin:read</c> — admin read only (safe HTTP methods).</item>
+///   <item><c>admin:approve</c> — admin read plus proposal approve/reject only.</item>
 /// </list>
 /// A principal that carries the <c>admin</c> role but no <c>permission</c> claims
 /// at all (the bootstrap <c>HONUA_ADMIN_PASSWORD</c> key, a client certificate, or
@@ -61,6 +62,9 @@ internal static class AdminApiKeyPermission
     /// Admin sub-grants that authorize mutating operations (each implies read).
     /// </summary>
     private static readonly string[] WriteSubGrants = ["write", "manage", "*"];
+
+    internal const string ApproveGrant = "admin:approve";
+    private const string ApprovedOperationGrantPrefix = "admin:operation:";
 
     /// <summary>
     /// Describes how much admin authority a principal's grants confer.
@@ -122,7 +126,26 @@ internal static class AdminApiKeyPermission
     /// <param name="httpMethod">The request HTTP method.</param>
     /// <returns><see langword="true"/> when the grants authorize the request.</returns>
     public static bool IsAuthorized(ClaimsPrincipal principal, string? httpMethod)
+        => IsAuthorized(principal, httpMethod, requestPath: null);
+
+    /// <summary>
+    /// Determines whether a principal is authorized for an admin request, including a
+    /// server-minted credential bound to one exact operation transport method and path.
+    /// </summary>
+    public static bool IsAuthorized(ClaimsPrincipal principal, string? httpMethod, string? requestPath)
     {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        if (!string.IsNullOrWhiteSpace(httpMethod) && !string.IsNullOrWhiteSpace(requestPath))
+        {
+            var expectedGrant = CreateApprovedOperationGrant(httpMethod, requestPath);
+            if (principal.FindAll(PermissionClaimType).Any(claim =>
+                    string.Equals(claim.Value, expectedGrant, StringComparison.Ordinal)))
+            {
+                return true;
+            }
+        }
+
         var level = ResolveAccessLevel(principal);
         if (level == AdminAccessLevel.None)
         {
@@ -136,6 +159,31 @@ internal static class AdminApiKeyPermission
 
         // Read-only admin: permit only safe, non-mutating HTTP methods.
         return IsSafeMethod(httpMethod);
+    }
+
+    /// <summary>Creates the internal grant carried by a short-lived approved-operation credential.</summary>
+    internal static string CreateApprovedOperationGrant(string httpMethod, string requestPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(httpMethod);
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestPath);
+        if (!requestPath.StartsWith("/api/v1/admin/", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Approved operation credentials must target an admin API path.", nameof(requestPath));
+        }
+
+        return $"{ApprovedOperationGrantPrefix}{httpMethod.ToUpperInvariant()}:{requestPath}";
+    }
+
+    /// <summary>Determines whether a grant belongs to the server-only approved-operation vocabulary.</summary>
+    internal static bool IsApprovedOperationGrant(string? grant)
+        => grant?.Trim().StartsWith(ApprovedOperationGrantPrefix, StringComparison.Ordinal) == true;
+
+    /// <summary>Determines whether the principal carries the narrow proposal-decision grant.</summary>
+    public static bool HasApproveGrant(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        return principal.FindAll(PermissionClaimType).Any(claim =>
+            string.Equals(claim.Value?.Trim(), ApproveGrant, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -253,6 +301,11 @@ internal static class AdminApiKeyPermission
         if (string.Equals(sub, "read", StringComparison.OrdinalIgnoreCase))
         {
             return AdminAccessLevel.Read;
+        }
+
+        if (IsApprovedOperationGrant(trimmed))
+        {
+            return AdminAccessLevel.None;
         }
 
         // An unrecognized admin sub-grant (e.g. admin:users) is conservatively

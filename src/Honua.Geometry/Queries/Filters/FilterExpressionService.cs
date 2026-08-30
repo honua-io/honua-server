@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters.Cql2;
 using Honua.Core.Queries.Filters.GeoServicesSql;
@@ -99,7 +100,7 @@ public sealed class FilterExpressionService : IFilterExpressionService
         }
         catch (ArgumentException ex)
         {
-            return FilterTranslationResult.Failure(ex.Message);
+            return FilterTranslationResult.Failure(ex.Message, ex is UnknownFilterFieldException);
         }
         catch (NotSupportedException ex)
         {

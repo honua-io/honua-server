@@ -107,7 +107,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
                 continue;
             }
 
-            sql.Append(CultureInfo.InvariantCulture, $", {BuildEncodedBinaryAttributeExpression(field)} AS {ValidateAndQuoteIdentifier(field.Name)}");
+            sql.Append(CultureInfo.InvariantCulture, $", {BuildEncodedBinaryAttributeExpression(field, sql)} AS {QuoteAttributeFieldAlias(field.Name)}");
         }
     }
 
@@ -117,9 +117,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
     // columns (an Integer field becomes int, not text), matching the native path's
     // BuildEncodedBinaryAttributeExpression. The NULLIF(..., '') guard mirrors the native
     // path so empty text from a JSONB accessor does not break a numeric/temporal cast.
-    private string BuildEncodedBinaryAttributeExpression(MetadataV2Field field)
+    private string BuildEncodedBinaryAttributeExpression(MetadataV2Field field, SqlBuilder sql)
     {
-        var column = ResolveColumnExpression(field.Name);
+        var column = ResolveColumnExpression(field.Name, sql);
         var nullableText = $"NULLIF(({column})::text, '')";
 
         return field.Type switch

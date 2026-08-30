@@ -5,6 +5,8 @@ using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -142,41 +144,20 @@ internal sealed class PublishResultTool : IMcpTool
         var invoker = httpContext.RequestServices.GetService<IOperationInvoker>();
         if (invoker is null)
         {
-            return McpToolHelpers.SuccessResult(
-                new McpPublishResultOutput
-                {
-                    Status = OperationHandleStatus.Failed.ToString(),
-                    RequiresApproval = false,
-                    OperationId = PublishOperationId,
-                    SourceJobId = sourceId,
-                    ArtifactId = artifact.ArtifactId,
-                    Message = "The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."
-                },
-                McpJsonContext.Default.McpPublishResultOutput);
+            return McpToolHelpers.ErrorResult(
+                new InvalidOperationException("The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."));
         }
 
         var request = BuildRequest(argument, artifact, connectionId, schema, table);
         var context = new OperationPolicyContext
         {
-            PrincipalId = principal.Identity?.Name
+            PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
+            TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+            SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+            AuthorizationOutcome = "authorized",
         };
 
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
-
-        // A completed promotion mutates the promotion-resource catalog (a new
-        // honua://published-services/{id} appears) and the capability surface, so
-        // fire listChanged to active sessions — mirrors PublishServiceTool
-        // (honua-server#1954). Queued/RequiresApproval/Denied did not change the
-        // catalog yet, so they emit nothing. Resolved leniently.
-        if (handle.Status == OperationHandleStatus.Completed)
-        {
-            var publisher = httpContext.RequestServices.GetService<IMcpNotificationPublisher>();
-            if (publisher is not null)
-            {
-                publisher.BroadcastResourcesListChanged();
-                publisher.BroadcastToolsListChanged();
-            }
-        }
 
         return McpToolHelpers.SuccessResult(
             Project(handle, sourceId, artifact.ArtifactId),
@@ -315,7 +296,15 @@ internal sealed class PublishResultTool : IMcpTool
             Status = handle.Status.ToString(),
             RequiresApproval = handle.Status == OperationHandleStatus.RequiresApproval,
             OperationId = handle.OperationId,
+            OperationInstanceId = handle.OperationInstanceId,
             HandleId = handle.HandleId,
+            ProposalId = handle.ProposalId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyOutcome = handle.PolicyDecision?.ToString(),
             SourceJobId = sourceJobId,
             ArtifactId = artifactId,
             JobId = handle.JobId,
@@ -323,6 +312,9 @@ internal sealed class PublishResultTool : IMcpTool
             MetadataRevision = handle.MetadataRevision,
             Summary = handle.Result?.Summary,
             Message = handle.Reason,
+            Details = handle.Result?.Details ?? new Dictionary<string, string>(StringComparer.Ordinal),
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
         };
 
         if (handle.Result is { } result)

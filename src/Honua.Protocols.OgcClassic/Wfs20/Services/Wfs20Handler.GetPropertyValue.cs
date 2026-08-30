@@ -327,7 +327,7 @@ internal sealed partial class Wfs20Handler
                         writer.WriteStartElement("wfs", "member", Wfs20Utilities.WfsNamespace);
                         if (!string.IsNullOrWhiteSpace(feature.GeometryGml))
                         {
-                            writer.WriteRaw(feature.GeometryGml);
+                            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, queryResult.Plan.Query));
                         }
                         writer.WriteEndElement();
                     }
@@ -402,7 +402,7 @@ internal sealed partial class Wfs20Handler
 
     private static ValueReferenceResolution ResolveValueReference(MetadataV2Resource resource, string valueReference)
     {
-        var resolvedName = FilterExpressionHelpers.ResolveFieldName(resource, valueReference, allowGeometryAlias: true)
+        var resolvedName = WfsPropertyNameResolver.Resolve(resource, valueReference, allowGeometryAlias: true)
             ?? throw new ArgumentException($"Unknown valueReference '{valueReference}' for feature type '{resource.Metadata.Name}'.");
 
         var geometryField = resource.FindPrimaryGeometryField();

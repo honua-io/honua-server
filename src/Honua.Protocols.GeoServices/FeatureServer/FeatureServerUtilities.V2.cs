@@ -324,6 +324,9 @@ internal static partial class FeatureServerEndpoints
     /// publication's backing resource declares attachment support and the runtime has
     /// attachment uploads enabled.
     /// </summary>
+    internal static string BuildServiceCapabilitiesV2(MetadataV2Service service)
+        => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false);
+
     private static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,

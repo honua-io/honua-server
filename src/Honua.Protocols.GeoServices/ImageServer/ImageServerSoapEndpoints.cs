@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -32,7 +33,6 @@ internal static class ImageServerSoapEndpoints
     private const string Soap12ContentType = "application/soap+xml; charset=utf-8";
     private const string Soap11EnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
-    private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
     private const string XmlSchemaNamespace = "http://www.w3.org/2001/XMLSchema";
     private const string XmlSchemaInstanceNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     private const int MaxRequestCharacters = 1_048_576;
@@ -93,7 +93,8 @@ internal static class ImageServerSoapEndpoints
         {
             "ExportImage" or "GetImage" => AuthorizationOperation.Export,
             "GetVersion" or "IsFixedScaleImage" or "GetServiceInfo" or "GetFields"
-                or "GetKeyProperties" or "GetMetadata" => AuthorizationOperation.Metadata,
+                or "GetKeyProperties" or "GetKeyPropertiesX" or "GetMetadata"
+                or "GetMultidimensionalInfo" or "ExecuteAISRequest" => AuthorizationOperation.Metadata,
             _ => (AuthorizationOperation?)null
         };
         if (authorizationOperation is null)
@@ -165,11 +166,31 @@ internal static class ImageServerSoapEndpoints
                     operationNamespace,
                     "GetKeyPropertiesResponse",
                     BuildKeyProperties()),
+                "GetKeyPropertiesX" => CreateSoapResponse(
+                    soapNamespace,
+                    operationNamespace,
+                    "GetKeyPropertiesXResponse",
+                    BuildKeyProperties()),
                 "GetMetadata" => CreateSoapResponse(
                     soapNamespace,
                     operationNamespace,
                     "GetMetadataResponse",
                     new XElement("Result", BuildMetadata(serviceId))),
+                // Deliberately keep the published SOAP result well-formed and nil until the
+                // canonical seed contains a registered, scanned multidimensional coverage.
+                // The REST multidimensionalInfo model is not itself an ArcGIS SOAP contract;
+                // its XML element shape must be captured and A/B verified with licensed Pro
+                // against genuine coverage metadata before replacing this compatibility-safe
+                // response. Track the missing fixture and licensed validation in #3558.
+                "GetMultidimensionalInfo" => CreateSoapResponse(
+                    soapNamespace,
+                    operationNamespace,
+                    "GetMultidimensionalInfoResponse",
+                    BuildNilResult()),
+                "ExecuteAISRequest" => HandleExecuteAisRequest(
+                    operation,
+                    soapNamespace,
+                    operationNamespace),
                 "ExportImage" => await HandleExportImageAsync(
                     operation,
                     rasterRequest,
@@ -283,6 +304,34 @@ internal static class ImageServerSoapEndpoints
         }
 
         var referenceRaster = SelectReferenceRaster(rasters);
+        var rasterIds = rasters.Select(static raster => raster.Id).ToArray();
+        var mergeStrategy = revalidation.Resolution.MergeStrategy;
+        var schemaName = request.HttpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
+        var statistics = await ImageServerStatisticsBudget.ResolveAsync(
+            request.HttpContext.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+            ImageServerStatisticsBudget.CreateStatisticsOperationKey(
+                schemaName,
+                revalidation.Resolution.LayerId,
+                rasterIds,
+                mergeStrategy),
+            schemaName,
+            (services, ct) =>
+            {
+                var scopedRasterStore = services.GetRequiredService<IRasterStore>();
+                return rasters.Length == 1
+                    ? scopedRasterStore.GetStatisticsAsync(
+                        revalidation.Resolution.LayerId,
+                        referenceRaster.Id,
+                        cancellationToken: ct)
+                    : scopedRasterStore.GetMosaicStatisticsAsync(
+                        revalidation.Resolution.LayerId,
+                        rasterIds,
+                        mergeStrategy,
+                        cancellationToken: ct);
+            },
+            onBudgetExceeded: () => request.HttpContext.Response.Headers.CacheControl = "no-store",
+            cancellationToken).ConfigureAwait(false);
+        statistics = statistics.OrderBy(static statistic => statistic.Band).ToArray();
 
         var referenceExtent = referenceRaster.Extent;
         var pixelSizeX = referenceRaster.Width > 0 && referenceExtent.HasValue
@@ -308,6 +357,10 @@ internal static class ImageServerSoapEndpoints
             new XElement("MaxPixelSize", "0"),
             new XElement("CopyrightText", string.Empty),
             new XElement("ServiceDataType", "esriImageServiceDataTypeGeneric"),
+            BuildDoubleArray("MinValues", statistics.Select(static value => value.MinValue ?? 0)),
+            BuildDoubleArray("MaxValues", statistics.Select(static value => value.MaxValue ?? 0)),
+            BuildDoubleArray("MeanValues", statistics.Select(static value => value.MeanValue ?? 0)),
+            BuildDoubleArray("StdvValues", statistics.Select(static value => value.StandardDeviation ?? 0)),
             new XElement("ServiceProperties", string.Empty),
             new XElement("MaxNCols", MaxImageDimension),
             new XElement("MaxNRows", MaxImageDimension),
@@ -919,6 +972,65 @@ internal static class ImageServerSoapEndpoints
                 BuildProperty("HighCellSize", "0", "xsd:double", xsi)));
     }
 
+    private static XElement? BuildDoubleArray(string name, IEnumerable<double> values)
+    {
+        var materialized = values.ToArray();
+        if (materialized.Length == 0)
+        {
+            return null;
+        }
+
+        XNamespace xsi = XmlSchemaInstanceNamespace;
+        return new XElement(
+            name,
+            new XAttribute(xsi + "type", "tns:ArrayOfDouble"),
+            materialized.Select(static value => new XElement("Double", FormatDouble(value))));
+    }
+
+    private static XElement BuildNilResult()
+    {
+        XNamespace xsi = XmlSchemaInstanceNamespace;
+        return new XElement("Result", new XAttribute(xsi + "nil", true));
+    }
+
+    private static XElement BuildClientExtensionDefinition()
+        => new(
+            "Result",
+            "<XADef><ImageServer><ImageServiceProperties>"
+            + "<MosaicMethod MosaicMethod_TYPE_=\"String\" MosaicMethod_REQUIRED_=\"No\" />"
+            + "<MosaicOperator MosaicOperator_TYPE_=\"String\" MosaicOperator_REQUIRED_=\"No\" />"
+            + "<CompressionMethod CompressionMethod_TYPE_=\"String\" CompressionMethod_REQUIRED_=\"No\" />"
+            + "<SamplingMethod SamplingMethod_TYPE_=\"String\" SamplingMethod_REQUIRED_=\"No\" />"
+            + "</ImageServiceProperties></ImageServer></XADef>");
+
+    private static IResult HandleExecuteAisRequest(
+        XElement operation,
+        XNamespace soapNamespace,
+        XNamespace operationNamespace)
+    {
+        var requestName = operation.Descendants()
+            .FirstOrDefault(static element => element.Name.LocalName == "Name")?.Value;
+        var arguments = operation.Descendants()
+            .Where(static element => element.Name.LocalName == "String")
+            .Select(static element => element.Value)
+            .ToArray();
+        if (!string.Equals(requestName, "GetProperty", StringComparison.Ordinal)
+            || arguments.Length != 1
+            || !string.Equals(arguments[0], "ClientXADef", StringComparison.Ordinal))
+        {
+            return CreateSoapFault(
+                "Only the ClientXADef image-service property is supported.",
+                StatusCodes.Status400BadRequest,
+                soapNamespace);
+        }
+
+        return CreateSoapResponse(
+            soapNamespace,
+            operationNamespace,
+            "ExecuteAISRequestResponse",
+            BuildClientExtensionDefinition());
+    }
+
     private static XElement BuildProperty(string key, string value, string type, XNamespace xsi)
         => new(
             "PropertySetProperty",
@@ -1037,7 +1149,7 @@ internal static class ImageServerSoapEndpoints
                     soap));
             }
 
-            if (operations[0].Name.Namespace != ArcGisSoapNamespace)
+            if (!ArcGisSoapNamespaces.IsSupported(operations[0].Name.Namespace))
             {
                 return (null, soap, CreateSoapFault(
                     "Unsupported ArcGIS SOAP operation namespace.",
@@ -1065,12 +1177,6 @@ internal static class ImageServerSoapEndpoints
     {
         XNamespace xsi = XmlSchemaInstanceNamespace;
         XNamespace xsd = XmlSchemaNamespace;
-        foreach (var element in result.DescendantsAndSelf()
-                     .Where(static element => element.Name.Namespace == XNamespace.None))
-        {
-            element.Name = operationNamespace + element.Name.LocalName;
-        }
-
         var response = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
             new XElement(
@@ -1084,7 +1190,7 @@ internal static class ImageServerSoapEndpoints
                     new XElement(operationNamespace + responseName, result))));
 
         return Results.Content(
-            response.ToString(SaveOptions.DisableFormatting),
+            ArcGisSoapNamespaces.SerializeResponse(response),
             contentType: SoapContentTypeFor(soap),
             contentEncoding: Encoding.UTF8);
     }
@@ -1124,7 +1230,7 @@ internal static class ImageServerSoapEndpoints
                     fault)));
 
         return Results.Content(
-            response.ToString(SaveOptions.DisableFormatting),
+            ArcGisSoapNamespaces.SerializeResponse(response),
             contentType: SoapContentTypeFor(soap),
             contentEncoding: Encoding.UTF8,
             statusCode: statusCode);

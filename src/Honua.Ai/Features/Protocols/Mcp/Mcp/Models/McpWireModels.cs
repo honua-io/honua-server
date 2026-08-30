@@ -348,6 +348,14 @@ internal sealed class McpToolDescriptor
     /// </summary>
     [JsonPropertyName("annotations")]
     public McpToolAnnotations? Annotations { get; set; }
+
+    /// <summary>
+    /// MCP's forward-compatible extension slot. Honua uses a namespaced entry
+    /// here for server-authored workflow classification; clients must treat all
+    /// unrecognized entries as opaque metadata.
+    /// </summary>
+    [JsonPropertyName("_meta")]
+    public JsonElement? Meta { get; set; }
 }
 
 /// <summary>

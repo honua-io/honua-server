@@ -63,56 +63,55 @@ odata_key="$(sed -n 's/^cache_key=//p' <<<"${odata}")"
 
 # Attempt-1 opportunistic reuse routing (#3213).
 #
-# One switch rule everywhere: reuse is ON unless the raw value is exactly
-# `false`. The workflow forwards the repository variable verbatim, so every
+# One switch rule everywhere: consume is ON only when the raw value is exactly
+# `true`. The workflow forwards the repository variable verbatim, so every
 # value the workflow can produce is exercised here.
 attempt1_unset="$(plan attempt1-unset --shard z-second --project "${SERVER_PROJECT}" \
   --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
   --run-attempt 1)"
-grep -qx 'restore_mode=opportunistic' <<<"${attempt1_unset}"
-grep -qx 'restore_enabled=true' <<<"${attempt1_unset}"
-grep -qx 'attempt1_switch=unset' <<<"${attempt1_unset}"
+grep -qx 'restore_mode=disabled' <<<"${attempt1_unset}"
+grep -qx 'restore_enabled=false' <<<"${attempt1_unset}"
+grep -qx 'consume_switch=unset' <<<"${attempt1_unset}"
 
 attempt1_empty="$(plan attempt1-empty --shard z-second --project "${SERVER_PROJECT}" \
   --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
-  --run-attempt 1 --attempt1-reuse '')"
-grep -qx 'restore_mode=opportunistic' <<<"${attempt1_empty}"
-grep -qx 'attempt1_switch=unset' <<<"${attempt1_empty}"
+  --run-attempt 1 --prebuild-consume '')"
+grep -qx 'restore_mode=disabled' <<<"${attempt1_empty}"
+grep -qx 'consume_switch=unset' <<<"${attempt1_empty}"
 
 attempt1_true="$(plan attempt1-true --shard z-second --project "${SERVER_PROJECT}" \
   --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
-  --run-attempt 1 --attempt1-reuse true)"
+  --run-attempt 1 --prebuild-consume true)"
 grep -qx 'restore_mode=opportunistic' <<<"${attempt1_true}"
-grep -qx 'attempt1_switch=true' <<<"${attempt1_true}"
+grep -qx 'consume_switch=true' <<<"${attempt1_true}"
 
-# Only the exact string `false` disables. Every other spelling stays ON, which
-# is what the workflow can actually forward.
+# Every value except the exact string `true` is off.
 attempt1_off="$(plan attempt1-off --shard z-second --project "${SERVER_PROJECT}" \
   --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
-  --run-attempt 1 --attempt1-reuse false)"
+  --run-attempt 1 --prebuild-consume false)"
 grep -qx 'restore_mode=disabled' <<<"${attempt1_off}"
 grep -qx 'restore_enabled=false' <<<"${attempt1_off}"
-grep -qx 'attempt1_switch=false' <<<"${attempt1_off}"
+grep -qx 'consume_switch=false' <<<"${attempt1_off}"
 
 attempt1_mixedcase="$(plan attempt1-mixedcase --shard z-second --project "${SERVER_PROJECT}" \
   --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
-  --run-attempt 1 --attempt1-reuse 'FALSE')"
-grep -qx 'restore_mode=opportunistic' <<<"${attempt1_mixedcase}"
-grep -qx 'attempt1_switch=FALSE' <<<"${attempt1_mixedcase}"
+  --run-attempt 1 --prebuild-consume 'FALSE')"
+grep -qx 'restore_mode=disabled' <<<"${attempt1_mixedcase}"
+grep -qx 'consume_switch=FALSE' <<<"${attempt1_mixedcase}"
 
 # A switch value must never be able to forge additional key=value output lines.
 attempt1_injection="$(plan attempt1-injection --shard z-second --project "${SERVER_PROJECT}" \
   --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
-  --run-attempt 1 --attempt1-reuse "$(printf 'x\nrestore_enabled=forged')")"
-grep -qx 'attempt1_switch=unprintable' <<<"${attempt1_injection}"
+  --run-attempt 1 --prebuild-consume "$(printf 'x\nrestore_enabled=forged')")"
+grep -qx 'consume_switch=unprintable' <<<"${attempt1_injection}"
 [[ "$(grep -c '^restore_enabled=' <<<"${attempt1_injection}")" == 1 ]]
-grep -qx 'restore_enabled=true' <<<"${attempt1_injection}"
+grep -qx 'restore_enabled=false' <<<"${attempt1_injection}"
 
 # A malformed attempt counter must be read as attempt 1, not as a rerun: a
 # non-writer must not inherit the rerun publishing right from a bad counter.
 attempt_garbage="$(plan attempt-garbage --shard a-writer --project "${SERVER_PROJECT}" \
   --matrix-json "${same_project_matrix}" --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
-  --run-attempt 'x9')"
+  --run-attempt 'x9' --prebuild-consume true)"
 grep -qx 'restore_mode=opportunistic' <<<"${attempt_garbage}"
 grep -qx 'package_enabled=false' <<<"${attempt_garbage}"
 
@@ -120,7 +119,7 @@ grep -qx 'package_enabled=false' <<<"${attempt_garbage}"
 rerun_off="$(plan rerun-off --shard writer-check --project "${SERVER_PROJECT}" \
   --matrix-json "$(jq -nc --arg p "${SERVER_PROJECT}" '[{shard_name:"lead",csproj:$p},{shard_name:"writer-check",csproj:$p}]')" \
   --source-sha "${SOURCE_SHA}" --runner-os Linux --sdk 10.0.301 \
-  --run-attempt 2 --attempt1-reuse false)"
+  --run-attempt 2 --prebuild-consume false)"
 grep -qx 'restore_mode=rerun' <<<"${rerun_off}"
 grep -qx 'restore_enabled=true' <<<"${rerun_off}"
 # On a rerun a non-writer that rebuilt may publish for the remaining attempts.
@@ -166,8 +165,8 @@ env_run="$(GITHUB_RUN_ID="${RUN_ID}" GITHUB_OUTPUT="${fixture}/env-run.out" "${H
 [[ "$(sed -n 's/^cache_key=//p' <<<"${env_run}")" == "${second_key}" ]]
 
 # Attempt-1 reads must not change WHO writes, or WHAT key is used.
-[[ "$(sed -n 's/^cache_writer=//p' <<<"${attempt1_unset}")" == "true" ]]
-[[ "$(sed -n 's/^cache_key=//p' <<<"${attempt1_unset}")" == "${writer_key}" ]]
+[[ "$(sed -n 's/^cache_writer=//p' <<<"${attempt1_true}")" == "true" ]]
+[[ "$(sed -n 's/^cache_key=//p' <<<"${attempt1_true}")" == "${writer_key}" ]]
 
 fallback_matrix='[{"shard_name":"fallback","csproj":""}]'
 fallback="$(plan fallback --shard fallback --project '' --matrix-json "${fallback_matrix}" \
@@ -180,6 +179,12 @@ GITHUB_OUTPUT="${miss_output}" "${HELPER}" restore --project "${SERVER_PROJECT}"
   --source-sha "${SOURCE_SHA}" --payload "${fixture}/missing" --cache-hit false
 grep -qx 'restored=false' "${miss_output}"
 grep -qx 'reason=exact_cache_miss' "${miss_output}"
+
+disabled_output="${fixture}/disabled.out"
+GITHUB_OUTPUT="${disabled_output}" "${HELPER}" restore --project "${SERVER_PROJECT}" \
+  --source-sha "${SOURCE_SHA}" --payload "${fixture}/missing" --cache-hit false --read-mode disabled
+grep -qx 'restored=false' "${disabled_output}"
+grep -qx 'reason=consumer_disabled' "${disabled_output}"
 
 mkdir -p "${fixture}/repo/tests/dotnet/Honua.Server.Tests/bin/Release" \
   "${fixture}/repo/tests/dotnet/Honua.Server.Tests/obj"
@@ -229,12 +234,12 @@ for required in ("shard-cache-plan", "shard-cache-download", "shard-cache-materi
         fail(f"Server-test shard is missing the '{required}' step.")
 
 plan_run = by_id["shard-cache-plan"]["run"]
-for flag in ("--run-id", "--run-attempt", "--attempt1-reuse"):
+for flag in ("--run-id", "--run-attempt", "--prebuild-consume"):
     if flag not in plan_run:
         fail(f"The shard cache plan step must pass {flag}.")
-if "vars.HONUA_SERVER_TEST_ATTEMPT1_REUSE" not in yaml.dump(by_id["shard-cache-plan"]):
-    fail("The attempt-1 reuse kill switch must be forwarded from the repository variable.")
-if "vars.HONUA_SERVER_TEST_ATTEMPT1_REUSE ==" in yaml.dump(by_id["shard-cache-plan"]):
+if "vars.HONUA_SERVER_TEST_PREBUILD_CONSUME" not in yaml.dump(by_id["shard-cache-plan"]):
+    fail("The prebuild consume switch must be forwarded from the repository variable.")
+if "vars.HONUA_SERVER_TEST_PREBUILD_CONSUME ==" in yaml.dump(by_id["shard-cache-plan"]):
     fail("Forward the raw switch value; the on/off rule belongs in the plan script.")
 
 # Reads are routed by the plan step only. No step may re-derive the decision
@@ -261,13 +266,16 @@ if "restore-keys" in with_block:
     fail("Shard cache restore must not use fallback keys.")
 if "${{ github.run_id }}" not in plan_run:
     fail("The cache key must be scoped to the workflow run id.")
+materialize_run = by_id["shard-cache-materialize"]["run"]
+if "--read-mode" not in materialize_run or "restore_mode" not in materialize_run:
+    fail("The materializer must receive the planned read mode for visible fallback reasons.")
 
 # The step summary must distinguish a real local-build fallback from a failed
 # or cancelled build, and must not attribute the restored writer's packaging
 # time to a consuming shard.
 summary = next(s for s in steps if s.get("name") == "Report shard cache decision")
 body = summary["run"]
-for marker in ("BUILD_OUTCOME", "PACKAGE_OUTCOME", "SAVE_OUTCOME", "ATTEMPT1_SWITCH"):
+for marker in ("BUILD_OUTCOME", "PACKAGE_OUTCOME", "SAVE_OUTCOME", "CONSUME_SWITCH"):
     if marker not in body or marker not in yaml.dump(summary.get("env", {})):
         fail(f"The shard cache summary must report {marker}.")
 print("Shard-cache workflow wiring assertions passed.")

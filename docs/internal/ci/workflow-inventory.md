@@ -1,11 +1,11 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (77 files). Other Honua repositories keep their own inventories;
+> repository (79 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-08-17.
+> Last updated: 2026-08-28.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -52,9 +52,10 @@ analysis.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `merge-train.yml` | Merge Train | `schedule` (`*/15`, dry-run), `workflow_dispatch` | **Sole merge authority** (ADR-0055). Requires exact-head `PR Gate` + `Review Gate` at selection and again immediately before the compare-and-swap land. Automatic triggers are dry-run-only; landing needs an explicit `train_apply=true` dispatch. With the build-reuse shadow enabled, only an exact one-member batch may carry the canonical successful PR Gate run/attempt/PR/head identity into Smart CI. `scripts/ci/validate-single-merge-authority.sh` proves no second workflow can merge. |
+| Fleet serialized per-PR lander | External service | **Routine merge authority.** Immediately before merge, requires an open, non-draft, MERGEABLE PR based on `trunk`, no hold/escalation label, exact-head successful `PR Gate` + `Review Gate`, and zero unresolved review threads. A deterministic trailing trunk CI failure pauses routine landings except fix-forward branches. |
+| `merge-train.yml` | Merge Train | `schedule` (`*/15`, dry-run), `workflow_dispatch` | Manual/release-candidate batch authority (ADR-0055), not the routine landing path. Requires exact-head `PR Gate` + `Review Gate` at selection and again immediately before the compare-and-swap land. Automatic triggers are dry-run-only; landing needs an explicit `train_apply=true` dispatch. With the build-reuse shadow enabled, only an exact one-member batch may carry the canonical successful PR Gate run/attempt/PR/head identity into Smart CI. `scripts/ci/validate-single-merge-authority.sh` proves no second repository workflow can merge. |
 | `merge-train-rerun-recovery.yml` | Merge Train Rerun Recovery | `workflow_run` [CI] | Resumes the active immutable batch when a failed batch CI is rerun green. Uses its **own** per-source-run concurrency group (sharing the train's group made GitHub evict queued recoveries — 12 of 15 consecutive runs were `cancelled`); exclusion against a live train is re-established by an explicit idle wait plus the durable Merge Train State issue. See `docs/internal/contributor/merge-coordination-runbook.md`. |
-| `ci.yml` | CI | `schedule` (09:00 UTC), `merge_group`, `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context is produced only by the train's `train/batch/*` dispatch, so it never appears on a PR head SHA (#2865). Core build, test, architecture gate, CI-router validation, JS typecheck, and Postgres compatibility. Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. Separately from that shadow, `server-tests` shards opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait), rolled back with the repository variable `HONUA_SERVER_TEST_ATTEMPT1_REUSE=false` — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. The `merge_group` event runs only the lean `Merge Queue Gate` (the queue itself is disabled, ruleset 17808547). `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
+| `ci.yml` | CI | `schedule` (09:00 UTC), `merge_group`, `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context is produced only by the train's `train/batch/*` dispatch, so it never appears on a PR head SHA (#2865). Core build, test, architecture gate, CI-router validation, JS typecheck, and Postgres compatibility. Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. Separately from that shadow, `server-tests` shards can opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait) when `HONUA_SERVER_TEST_PREBUILD_CONSUME=true`; absent/false is off and rollback is one variable update — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. The `merge_group` event runs only the lean `Merge Queue Gate` (the queue itself is disabled, ruleset 17808547). `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
 
 ## PR-triggered (advisory, not required)
 
@@ -69,6 +70,7 @@ analysis.
 | `serving-image-boundary.yml` | Serving Image Boundary | `pull_request` (base `trunk`, **image-defining paths only**), `workflow_dispatch` | Builds and boundary-verifies the generic, Lambda, and Azure Functions Native-AOT serving images for the exact head. Since #3204 the trigger carries only inputs that DEFINE the image (the three AOT Dockerfiles, `docker/cloud/azure-functions/**`, `.dockerignore`, the in-image restore helper, the boundary verifier and its fixture harness, this workflow); managed source (`src/**`, `eng/**`, solution, build props) is deliberately not a trigger and is placed on the lanes in the table below. The trigger paths and the in-workflow variant `case` arms are parsed and cross-checked by `scripts/ci/native-image-impact.py`, which fails closed on drift from `.github/native-image-impact.json`. Deliberately isolated from the required lean `PR Gate`. |
 | `worker-gdal-image.yml` | GDAL Worker Image | `pull_request` (base `trunk`, path-filtered), weekly `schedule`, `workflow_dispatch` | Builds the GDAL worker image, smokes the entrypoint, and enforces Trivy vulnerability policy for the exact head; publishes SARIF. Re-proved on the nightly security and release/deploy lanes. |
 | `geoarrow-interop-fixture.yml` | GeoArrow Interop Fixture | `pull_request`, `workflow_dispatch` | Produces the GeoArrow 0.2 interop fixture. |
+| `docs-link-gate.yml` | Docs Link Gate | `pull_request` (base `trunk`, path-filtered to `docs/**` and the checker), `workflow_dispatch` | Stdlib-Python `scripts/ci/check-doc-links.py`: relative links AND `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute `docs.honua.io` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). Warns when a URL survives only via a `.gitbook.yaml` redirect; errors on a `docs.honua.io` URL in a scanned source root that the manifest does not list; treats a `pendingPr` entry as warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot is carried in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Not folded into `PR Gate` (which must stay unfiltered) or `ci.yml` (no `pull_request` trigger). |
 | `normalize-derived-artifacts.yml` | Derived Artifact Normalization | `pull_request` | Untrusted producer: may execute PR code but can only read the repo/packages and upload a bounded data artifact (#3219). |
 | `release-bundle-tooling.yml` | Release Bundle Tooling | `pull_request`, `push` (trunk), `workflow_dispatch` | Verifies the deterministic, locally-runnable core of the release-bundle orchestrator (manifest generator, evidence collector, dispatch helper, suite registry). |
 | `issue-capability-check.yml` | Issue Capability Key Check | `issues` | Advisory comment when a bug/feature issue's capability key is missing or unrecognized (#2896). Never labels or fails. |
@@ -181,6 +183,53 @@ reusable. The observation receipt already carries per-image content digests over
 the merge tree the images are actually built from, so reuse eligibility is
 measured before anything is enforced; see `native-image-impact-routing.md`.
 
+#### Post-change Serving trigger measurement (2026-08-28)
+
+The AC#7 follow-up used the Actions **per-workflow** runs endpoint, not the
+repository-wide endpoint: the latter stops exposing history after 1,000 runs
+even when a wider `created` range was requested. Pages were fetched until empty,
+workflow elapsed times were `updated_at - run_started_at`, and rates use the
+**2.371-day observed span** from #3512 landing at `2026-08-26T11:11:42Z` through the newest
+post-change GDAL run at `2026-08-28T20:05:51Z`. This is the same observed-span
+normalisation as `honua-flow/tools/ci-baseline.py`; dividing by a nominal window
+would understate a capped or incomplete sample.
+
+The post-change cohort contains 60 GDAL Worker Image runs. Replaying the exact
+pre-#3512 Serving path filter against each run head's commit file list identifies
+48 counterfactual Serving-eligible heads and 12 that do not match. This is a
+conservative replay: a single head commit can omit an eligible path changed by
+an earlier commit in the same PR, so it can undercount but cannot invent an old
+trigger. The 48 positively classified heads satisfy the revised 30-observation
+contract in `evidence-driven-pipeline-baseline.md`. Only two Serving Image
+Boundary runs occurred in the same span, so the directly supported result is at
+least **46 avoided workflow invocations** (95.8% of the positive
+counterfactual), not a runner-minute or billed-cost saving.
+
+| Signal | Serving baseline (2026-08-13–17) | Serving after #3512 | Observed change | GDAL current baseline for #3553 |
+|---|---:|---:|---:|---:|
+| Observed span | 3.40 days | 2.371 days | — | 2.371 days |
+| Runs | 100 | 2 | — | 60 |
+| Runs/day | 29.4 | 0.8 | **-97.1%** | 25.3 |
+| Successful runs | 19 | 2 | — | 50 |
+| Cancelled runs | 80 | 0 | — | 9 |
+| Successful workflow elapsed minutes | 2667 | 101.8 | — | 803.9 |
+| Successful workflow elapsed minutes/day | 785 | 42.9 | — | 339.1 |
+
+The elapsed-minute rows describe workflow critical-path time only. They are not
+runner consumption or cost: after #3512 the three build variants run in parallel,
+so summing job `completed_at - started_at` durations would produce a different
+quantity. The historical 785 elapsed-minute/day figure therefore remains a
+ceiling observation, not a realised saving. The two remaining runs were the
+change's own image-defining workflow executions and completed in 49.1 and 52.8
+minutes; no cancelled Serving run occurred in the post-change span.
+
+The GDAL column is deliberately a baseline, not a claimed saving: #3553's
+narrowing had not landed at the cutoff. One run had another conclusion, so the
+60-run cohort is 50 successful, 9 cancelled, and 1 other. Its current 339.1
+successful workflow elapsed minutes/day replaces the earlier 119-minute/day snapshot for
+evaluating #3553; the difference reflects the much denser current PR activity,
+which is why both the run count and exact observed span are recorded.
+
 ## Trusted observers and evidence ledgers (read-only)
 
 | Workflow file | Name | Triggers | Notes |
@@ -269,7 +318,7 @@ measured before anything is enforced; see `native-image-impact-routing.md`.
 
 | Workflow file | Retired | Why |
 |---|---|---|
-| `pr-merge-train.yml` | 2026-07-21 (`d2afeb9d5`) | Second merge authority. `merge-train.yml` is the only lander; `scripts/ci/validate-single-merge-authority.sh` enforces it. |
+| `pr-merge-train.yml` | 2026-07-21 (`d2afeb9d5`) | Repository-workflow second merge authority. `scripts/ci/validate-single-merge-authority.sh` still enforces that `merge-train.yml` is the only repository workflow that can land; routine landings now use the external fleet lander described above. |
 | `auto-rerun-flaky.yml` | 2026-08-16 | Job guarded on `workflow_run.event == 'pull_request'`, which `ci.yml` has not emitted since #2865 removed its `pull_request` trigger. Every run for months was `skipped`. Bounded flake reruns live in the train (`scripts/ci/merge-train/classify-flake.sh`). |
 | `ci-failure-triage.yml` | 2026-08-16 | Same dead guard. Its deterministic classifier (`scripts/ci/ci-failure-classifier.js`) and Bedrock helper (`scripts/ci/bedrock-triage.js`) had no other consumer and were removed with it; the train owns attribution (`attribute.sh`) and timeout classification (`classify-timeout.sh`). |
 | `server-test-shard-cache-proof.yml` | 2026-08-16 | One-off hosted proof for the #2735 shard-local cache, triggered only by pushes to a merged experiment branch. The shipped cache lives in `ci.yml` and is still guarded by `scripts/ci/validate-server-test-shard-cache.sh`; the recorded proof stays in `server-test-binary-artifacts.md`. |

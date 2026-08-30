@@ -78,6 +78,7 @@ public static class SharingRestEndpoints
                 "default) this endpoint rejects plaintext HTTP requests that carry " +
                 "credentials in the URL.")
             .WithTags("GeoServices Sharing")
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .AllowAnonymous()
             .Produces<GenerateTokenResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest)

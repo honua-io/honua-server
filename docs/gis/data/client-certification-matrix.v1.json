@@ -652,6 +652,14 @@
       "category": "NB-OWS"
     },
     {
+      "id": "NB-OWS-WFS-100-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-110-01",
+      "category": "NB-OWS"
+    },
+    {
       "id": "NB-OWS-WFS-BBOX-01",
       "category": "NB-OWS"
     },
@@ -716,7 +724,23 @@
       "category": "NB-OWS"
     },
     {
+      "id": "NB-OWS-WFS-T-DEL-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-T-INS-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-T-UPD-01",
+      "category": "NB-OWS"
+    },
+    {
       "id": "NB-OWS-WMS-111-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WMS-111-WITNESS-01",
       "category": "NB-OWS"
     },
     {
@@ -1472,6 +1496,8 @@
         "NB-OWS-OAF-SCHM-03",
         "NB-OWS-OAF-SORT-01",
         "NB-OWS-WFS-BBOX-01",
+        "NB-OWS-WFS-100-01",
+        "NB-OWS-WFS-110-01",
         "NB-OWS-WFS-CAP-01",
         "NB-OWS-WFS-CAP-02",
         "NB-OWS-WFS-CAP-03",
@@ -1485,9 +1511,13 @@
         "NB-OWS-WFS-PROP-01",
         "NB-OWS-WFS-SORT-01",
         "NB-OWS-WFS-STQ-01",
+        "NB-OWS-WFS-T-DEL-01",
+        "NB-OWS-WFS-T-INS-01",
+        "NB-OWS-WFS-T-UPD-01",
         "NB-OWS-WFS-VER-01",
         "NB-OWS-WFS-XPRO-01",
         "NB-OWS-WMS-111-01",
+        "NB-OWS-WMS-111-WITNESS-01",
         "NB-OWS-WMS-CAP-01",
         "NB-OWS-WMS-CAP-02",
         "NB-OWS-WMS-CAP-03",

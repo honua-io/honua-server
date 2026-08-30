@@ -990,9 +990,13 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var clauses = new List<string>();
         foreach (var orderBy in query.OrderBy.Value)
         {
-            ValidateFieldName(orderBy.Field);
+            if (!FeatureFieldNameSyntax.IsValid(orderBy.Field))
+            {
+                throw new ArgumentException($"Invalid order-by field name: {orderBy.Field}");
+            }
+
             var direction = orderBy.Ascending ? "ASC" : "DESC";
-            clauses.Add($"\"{orderBy.Field}\" {direction}");
+            clauses.Add($"{DuckDBExternalSourceSql.QuoteIdentifier(orderBy.Field)} {direction}");
         }
 
         sb.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");

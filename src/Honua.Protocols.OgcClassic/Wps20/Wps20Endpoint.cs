@@ -13,6 +13,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.Ogc.Classic.Wps20;
@@ -33,6 +34,7 @@ internal static partial class Wps20Endpoint
     internal static IEndpointRouteBuilder MapWps20Endpoint(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapMethods("/wps", Methods, DispatchAsync)
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata(Methods, ShouldRejectHead))
             .WithDisplayName("WPS 2.0.2 Service")
             .WithName("Wps20Service")
             .WithSummary("OGC Web Processing Service 2.0.2")
@@ -53,6 +55,17 @@ internal static partial class Wps20Endpoint
             .AllowAnonymous();
 
         return endpoints;
+    }
+
+    /// <summary>
+    /// Execute is the only WPS KVP operation that creates durable work. The other dispatcher
+    /// operations are discovery or job-result reads and retain ordinary GET-equivalent HEAD
+    /// behavior.
+    /// </summary>
+    private static bool ShouldRejectHead(HttpContext context)
+    {
+        var operation = context.Request.Query["request"].ToString().Trim();
+        return string.Equals(operation, "Execute", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<IResult> DispatchAsync(

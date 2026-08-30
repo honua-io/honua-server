@@ -248,7 +248,7 @@ test_distributed_caching() {
     # Test cache consistency across instances
     log_info "Testing cache consistency across instances..."
     for i in {1..10}; do
-        etag=$(curl -s -I "${test_url}" | grep -i etag | cut -d' ' -f2 | tr -d '\r\n' || echo "none")
+        etag=$(curl -sS -D - -o /dev/null "${test_url}" | grep -i etag | cut -d' ' -f2 | tr -d '\r\n' || echo "none")
         if [ "$etag" != "none" ] && [ -n "$etag" ]; then
             log_info "Request $i: ETag = $etag"
         else

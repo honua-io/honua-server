@@ -2,11 +2,11 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua OGC API Tiles",
-    "description": "OGC API Tiles implementation for vector tiles\n\nCompliance: OGC CITE 1117/1117 across 13 conformance suites — see docs/cite-status.md.",
+    "description": "OGC API Tiles implementation for vector tiles\n\nCompliance: OGC CITE 1138/1138 across 14 conformance suites — see docs/cite-status.md.",
     "version": "1.0.0",
     "x-honua-cite-compliance": {
-      "summary": "OGC API Tiles ETS passes 16/16 on trunk; full Honua suite is 1117/1117.",
-      "lastEvidenceRun": "2026-07-27",
+      "summary": "OGC API Tiles ETS passes 16/16 on trunk; full Honua suite is 1138/1138.",
+      "lastEvidenceRun": "2026-08-28",
       "authoritativeSource": "docs/cite-status.md",
       "suites": [
         { "suite": "OGC API Tiles 1.0", "profile": "default", "passed": 16, "total": 16, "passRate": "100%" },

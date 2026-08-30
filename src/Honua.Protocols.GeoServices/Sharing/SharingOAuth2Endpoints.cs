@@ -36,6 +36,7 @@ internal static class SharingOAuth2Endpoints
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
         oauthGroup.MapGet(PortalOAuthRoutes.AuthorizePath, HandleAuthorizeAsync)
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
             .WithDisplayName("ArcGIS Portal OAuth2 Authorize")
             .WithName("SharingRestOAuth2Authorize")
             .WithSummary("Initiate the ArcGIS named-user authorization-code flow")
@@ -47,6 +48,7 @@ internal static class SharingOAuth2Endpoints
             .Produces(StatusCodes.Status404NotFound);
 
         oauthGroup.MapGet(PortalOAuthRoutes.CallbackPath, HandleCallbackAsync)
+            .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))
             .WithDisplayName("ArcGIS Portal OAuth2 Callback")
             .WithName("SharingRestOAuth2Callback")
             .WithSummary("OIDC provider return endpoint for the ArcGIS named-user flow")

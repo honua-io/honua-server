@@ -85,6 +85,8 @@ class CertResult:
     measured_delta: float | None = None
     notes: str = ""
     evidence_ref: str = ""
+    client_identity: str = ""
+    protocol_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -147,6 +149,8 @@ class CertificationEvidenceCollector:
         measured_delta: float | None = None,
         notes: str = "",
         evidence_ref: str = "",
+        client_identity: str = "",
+        protocol_version: str | None = None,
     ) -> None:
         """Record one observation, worst-status-wins.
 
@@ -169,6 +173,8 @@ class CertificationEvidenceCollector:
             measured_delta=measured_delta,
             notes=notes,
             evidence_ref=evidence_ref,
+            client_identity=client_identity,
+            protocol_version=protocol_version,
         )
         bucket = self._results if test_case_id in COMMON_CORE_IDS else self._extensions
         existing = bucket.get(test_case_id)
@@ -275,7 +281,7 @@ def _richness(result: CertResult) -> int:
 
 
 def _as_dict(result: CertResult) -> dict:
-    return {
+    value = {
         "test_case_id": result.test_case_id,
         "status": result.status,
         "duration_ms": result.duration_ms,
@@ -283,7 +289,11 @@ def _as_dict(result: CertResult) -> dict:
         "measured_delta": result.measured_delta,
         "notes": result.notes,
         "evidence_ref": result.evidence_ref,
+        "protocol_version": result.protocol_version,
     }
+    if result.client_identity:
+        value["client_identity"] = result.client_identity
+    return value
 
 
 # ---------------------------------------------------------------------------

@@ -383,7 +383,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var geometrySelect = _geometryColumn == null
             ? "NULL"
             : $"{geometryEncoder}({BuildGeometryExpression(query)})";
-        var attributesSelect = BuildAttributesExpression(query);
+        var attributesSelect = BuildAttributesExpression(query, sql);
         var distanceSelect = BuildDistanceSelectExpression(query, sql);
 
         sql.Append(CultureInfo.InvariantCulture, $"""
@@ -415,7 +415,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return geometryExpression;
     }
 
-    private string BuildAttributesExpression(FeatureQuery query)
+    private string BuildAttributesExpression(FeatureQuery query, SqlBuilder sql)
     {
         if (query.ExcludeAttributes)
         {
@@ -428,30 +428,31 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return "'{}'::jsonb::text";
         }
 
-        return BuildAttributesExpressionText(fields, useMapping: true);
+        return BuildAttributesExpressionText(fields, useMapping: true, sql.AddParameter);
     }
 
-    // Kept as a static single-arg overload so the existing reflection-driven unit test
-    // (PostgresStorageMappedFeatureReaderSqlTests.BuildAttributesExpressionText_With...)
-    // continues to invoke the column-per-field shape directly; the production caller goes
-    // through the instance overload to pick up an attributes JSONB column when the resource
-    // binding declared one.
-    private static string BuildAttributesExpressionText(MetadataV2Field[] fields)
-        => BuildAttributesExpressionText(fields, attributesColumn: null);
+    private string BuildAttributesExpressionText(
+        MetadataV2Field[] fields,
+        bool useMapping,
+        Func<object?, string> addParameter)
+        => BuildAttributesExpressionText(fields, useMapping ? _mapping.AttributesColumn : null, addParameter);
 
-    private string BuildAttributesExpressionText(MetadataV2Field[] fields, bool useMapping)
-        => BuildAttributesExpressionText(fields, useMapping ? _mapping.AttributesColumn : null);
-
-    private static string BuildAttributesExpressionText(MetadataV2Field[] fields, string? attributesColumn)
+    private static string BuildAttributesExpressionText(
+        MetadataV2Field[] fields,
+        string? attributesColumn,
+        Func<object?, string> addParameter)
     {
         var chunks = fields
             .Chunk(MaxJsonbBuildObjectPairs)
-            .Select(chunk => BuildAttributesExpressionChunk(chunk, attributesColumn));
+            .Select(chunk => BuildAttributesExpressionChunk(chunk, attributesColumn, addParameter));
 
         return $"({string.Join(" || ", chunks)})::text";
     }
 
-    private static string BuildAttributesExpressionChunk(IEnumerable<MetadataV2Field> fields, string? attributesColumn)
+    private static string BuildAttributesExpressionChunk(
+        IEnumerable<MetadataV2Field> fields,
+        string? attributesColumn,
+        Func<object?, string> addParameter)
     {
         var parts = new List<string>();
         var jsonbAccessor = string.IsNullOrWhiteSpace(attributesColumn)
@@ -459,7 +460,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             : ValidateAndQuoteIdentifier(attributesColumn);
         foreach (var field in fields)
         {
-            parts.Add($"'{EscapeSqlLiteral(field.Name)}'");
+            var keyExpression = $"{addParameter(field.Name)}::text";
+            parts.Add(keyExpression);
             // When the resource declares an attributes JSONB column (a single column holding
             // the per-field values), pull the field from that column instead of expecting a
             // column-per-field on the table — the seed-driven test fixture's shared 'features'
@@ -473,7 +475,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             if (jsonbAccessor is not null)
             {
                 var accessor = PreservesJsonType(field.Type) ? "->" : "->>";
-                parts.Add($"{jsonbAccessor} {accessor} '{EscapeSqlLiteral(field.Name)}'");
+                parts.Add($"{jsonbAccessor} {accessor} {keyExpression}");
             }
             else
             {
@@ -502,9 +504,25 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var maskedFields = query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } fields
             ? fields.ToHashSet(StringComparer.OrdinalIgnoreCase)
             : [];
+        // A field name only has to be a safe SQL identifier when the resource maps
+        // each field to its own column — that is the branch in
+        // BuildAttributesExpressionChunk which emits ValidateAndQuoteIdentifier.
+        // When the resource declares an attributes JSONB column the name is used
+        // solely as a JSON key and an escaped string literal, so requiring
+        // identifier safety there silently dropped legitimate field names from
+        // every protocol's projection. STAC extension properties are the concrete
+        // case: `eo:cloud_cover` is a declared, filterable queryable, yet it was
+        // absent from FeatureServer/OGC API Features/STAC responses because the
+        // colon failed the identifier check (honua-server#3392). The JSONB branch is not
+        // ungated, though: it keeps the jsonb-key allow-list (which admits the prefixed
+        // shapes but no quote, whitespace or control character), so nothing that could
+        // break out of the escaped string literal reaches the emitted SQL either way.
+        var requiresIdentifierSafeNames = string.IsNullOrWhiteSpace(_mapping.AttributesColumn);
         var declaredFields = _resource.SchemaFields
-            .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
-                && IsSafeIdentifier(field.Name)
+             .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
+                 && (requiresIdentifierSafeNames
+                     ? IsSafeIdentifier(field.Name)
+                     : FeatureQueryBuilder.IsValidJsonAttributeKey(field.Name))
                 && !maskedFields.Contains(field.Name))
             .ToArray();
 
@@ -628,10 +646,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     // it must intersect the query interval [Start, End].
     private string BuildTemporalFilter(TemporalFilter filter, SqlBuilder sql)
     {
-        var startColumn = WrapEpochAwareTimestamp(ResolveColumnExpression(filter.PropertyName));
+        var startColumn = WrapEpochAwareTimestamp(ResolveColumnExpression(filter.PropertyName, sql));
         var endColumn = string.IsNullOrWhiteSpace(filter.EndPropertyName)
             ? startColumn
-            : WrapEpochAwareTimestamp(ResolveColumnExpression(filter.EndPropertyName!));
+            : WrapEpochAwareTimestamp(ResolveColumnExpression(filter.EndPropertyName!, sql));
         var rowEnd = $"COALESCE({endColumn}, {startColumn})";
 
         var clauses = new List<string>();
@@ -675,7 +693,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         {
             foreach (var groupByField in query.GroupByFields.Value)
             {
-                var groupByExpression = ResolveColumnExpression(groupByField);
+                var groupByExpression = ResolveColumnExpression(groupByField, sql);
                 selectParts.Add($"{groupByExpression} AS {ValidateAndQuoteIdentifier(groupByField)}");
                 groupByExpressions.Add(groupByExpression);
             }
@@ -684,7 +702,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         foreach (var statistic in query.OutStatistics!.Value)
         {
             var field = ResolveFieldDefinition(statistic.OnStatisticField);
-            var fieldExpression = ResolveColumnExpression(statistic.OnStatisticField);
+            var fieldExpression = ResolveColumnExpression(statistic.OnStatisticField, sql);
             var aggregateExpression = BuildStatisticsAggregateExpression(
                 statistic.StatisticType,
                 fieldExpression,
@@ -771,14 +789,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 return sql.AddParameter(sqlFilter.Parameters[index]);
             });
 
-        converted = RewriteAttributeTextAccessExpressions(converted, ResolveColumnExpression, TryResolveFieldType);
+        converted = RewriteAttributeTextAccessExpressions(
+            converted,
+            fieldName => ResolveColumnExpression(fieldName, sql),
+            TryResolveFieldType);
 
         return QuotedIdentifierRegex().Replace(
             converted,
             match =>
             {
                 var identifier = match.Groups["identifier"].Value.Replace("\"\"", "\"", StringComparison.Ordinal);
-                return ResolveColumnExpression(identifier);
+                return ResolveColumnExpression(identifier, sql);
             });
     }
 
@@ -949,7 +970,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             var clauses = new List<string>();
             foreach (var clause in query.OrderBy.Value)
             {
-                var column = ResolveSortColumnExpression(clause.Field);
+                var column = ResolveSortColumnExpression(clause.Field, sql);
                 clauses.Add(
                     $"{column} {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
             }
@@ -1009,7 +1030,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             var nullMatch = NullCheckRegex().Match(part);
             if (nullMatch.Success)
             {
-                var nullColumn = ResolveColumnExpression(nullMatch.Groups["field"].Value);
+                var nullColumn = ResolveColumnExpression(nullMatch.Groups["field"].Value, sql);
                 var notClause = string.IsNullOrWhiteSpace(nullMatch.Groups["not"].Value) ? string.Empty : "NOT ";
                 parameterizedExpressions.Add($"{nullColumn} IS {notClause}NULL");
                 continue;
@@ -1018,7 +1039,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             var inMatch = InRegex().Match(part);
             if (inMatch.Success)
             {
-                var inColumn = ResolveColumnExpression(inMatch.Groups["field"].Value);
+                var inColumn = ResolveColumnExpression(inMatch.Groups["field"].Value, sql);
                 var placeholders = SplitValueTokens(inMatch.Groups["values"].Value)
                     .Select(valueToken => sql.AddParameter(ParseValueToken(valueToken, forceText: false)));
                 parameterizedExpressions.Add($"{inColumn} IN ({string.Join(", ", placeholders)})");
@@ -1031,7 +1052,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 throw new ArgumentException(UnsupportedWhereClauseMessage);
             }
 
-            var column = ResolveColumnExpression(comparisonMatch.Groups["field"].Value);
+            var column = ResolveColumnExpression(comparisonMatch.Groups["field"].Value, sql);
             var normalizedOperator = NormalizeOperator(comparisonMatch.Groups["op"].Value);
             var value = ParseValueToken(
                 comparisonMatch.Groups["value"].Value,
@@ -1042,7 +1063,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return string.Join(" AND ", parameterizedExpressions);
     }
 
-    private string ResolveColumnExpression(string fieldName)
+    private string ResolveColumnExpression(string fieldName, SqlBuilder sql)
     {
         if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
             fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase))
@@ -1099,7 +1120,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         if (!string.IsNullOrWhiteSpace(_mapping.AttributesColumn))
         {
             var jsonbAccessor = ValidateAndQuoteIdentifier(_mapping.AttributesColumn!);
-            return $"({jsonbAccessor} ->> '{EscapeSqlLiteral(field.Name)}')";
+            return $"({jsonbAccessor} ->> {sql.AddParameter(field.Name)}::text)";
         }
 
         return ValidateAndQuoteIdentifier(field.Name);
@@ -1112,9 +1133,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     /// (e.g. "10" before "9"). Cast those fields to their declared SQL type so sorting matches
     /// the field's semantics; text/uuid fields keep the plain text accessor.
     /// </summary>
-    private string ResolveSortColumnExpression(string fieldName)
+    private string ResolveSortColumnExpression(string fieldName, SqlBuilder sql)
     {
-        var column = ResolveColumnExpression(fieldName);
+        var column = ResolveColumnExpression(fieldName, sql);
 
         // Only attributes-JSONB scalar accessors need a typed cast. The primary key and
         // physical (non-JSONB) columns are already correctly typed, and geometry columns
@@ -1427,6 +1448,40 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return $"{ValidateAndQuoteIdentifier(mapping.SchemaName!)}.{table}";
     }
 
+    /// <summary>
+    /// Quotes a SELECT alias for a schema field that <see cref="ResolveAttributeFields"/> has
+    /// already admitted, accepting either shape that method admits.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ValidateAndQuoteIdentifier"/> is the wrong guard for an alias derived from a
+    /// declared field name. It enforces <c>SchemaSearchPath.IsValidIdentifier</c>
+    /// (<c>^[A-Za-z_][A-Za-z0-9_]*$</c>), which rejects the colon in a STAC extension queryable
+    /// such as <c>eo:cloud_cover</c>. Before those names were admitted to the projection the
+    /// field was silently dropped; admitting them turned the same request into an
+    /// <see cref="InvalidOperationException"/> and an HTTP 500 on the FlatGeobuf/Geobuf path,
+    /// because the encoded-binary builder aliases every resolved field unconditionally
+    /// (review finding on honua-server#3489).
+    ///
+    /// The alias is safe to emit with doubling-only quoting, exactly as the native
+    /// <c>FeatureQueryBuilder</c> path does: the JSONB branch admits a name only through
+    /// <c>IsValidEncodedColumnAlias</c>, which contains no quote, whitespace, backslash
+    /// or control character and enforces PostgreSQL's 63-byte identifier boundary.
+    /// The guard is re-asserted here rather than assumed, so this stays correct if the
+    /// caller's field filter ever widens.
+    /// </remarks>
+    private static string QuoteAttributeFieldAlias(string fieldName)
+    {
+        var sanitized = fieldName.Trim();
+        if (!FeatureQueryBuilder.IsValidEncodedColumnAlias(sanitized))
+        {
+            // FeatureServerQueryExecutor maps provider ArgumentException failures to
+            // its client-safe invalid-query response instead of leaking a provider 500.
+            throw new ArgumentException($"Invalid PostGIS encoded projection alias '{fieldName}'.");
+        }
+
+        return $"\"{sanitized.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
+
     private static string ValidateAndQuoteIdentifier(string identifier)
     {
         var sanitized = identifier.Trim();
@@ -1478,9 +1533,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var content = valueToken[1..^1];
         return content.Replace("''", "'", StringComparison.Ordinal);
     }
-
-    private static string EscapeSqlLiteral(string value)
-        => value.Replace("'", "''", StringComparison.Ordinal);
 
     private string BuildDistanceSelectExpression(FeatureQuery query, SqlBuilder sql)
     {

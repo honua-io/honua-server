@@ -41,6 +41,15 @@ internal static class McpAuthorizationHelper
     }
 
     /// <summary>
+    /// Resolves the framework's scheme-qualified immutable actor id for audit and
+    /// deferred approval ownership. Display names are never used when a durable
+    /// subject or API-key identity is present.
+    /// </summary>
+    public static string ResolveActorId(ClaimsPrincipal principal)
+        => CanonicalSecurityActor.Resolve(principal)?.ActorId
+            ?? throw new InvalidOperationException("The authenticated MCP actor has no canonical identity.");
+
+    /// <summary>
     /// Resolves the stable principal key an MCP session is bound to at
     /// <c>initialize</c> and re-checked on every subsequent request (A3 session
     /// binding; honua-server#2537). Returns

@@ -17,7 +17,10 @@ from typing import Any
 
 POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v3"
 INDEX_CONTRACT = "honua.impact-routing-evidence-index/v2"
-LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v3"
+# v4 resets retained trend samples after candidate-only, unexecuted routes
+# stopped being promotion-countable.  trend() accepts only the current contract,
+# so a v3 ledger cannot preserve the earlier countability semantics.
+LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v4"
 TOMBSTONE_CONTRACT = "honua.impact-routing-evidence-tombstones/v1"
 TREND_CONTRACT = "honua.impact-routing-evidence-trend/v1"
 PR_GATE_CONTRACT = "honua.pr-gate-impact-observation/v3"
@@ -42,6 +45,13 @@ WORKER_WORKFLOW = ".github/workflows/worker-gdal-image.yml"
 # emitted and retained, the reader could not see them. Both modes are indexed;
 # only docs-only heads feed the docs-only promotion sample.
 PR_GATE_MODES = ("docs-only", "full")
+PR_GATE_UNDIGESTED_REASONS = frozenset({
+    "unbounded-file-count",
+    "truncated-file-list",
+    "invalid-file-record",
+    "unsafe-file-record",
+    "duplicate-file-record",
+})
 PR_GATE_ARTIFACT = re.compile(
     r"^pr-gate-impact-(?P<mode>docs-only|full)-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
@@ -75,10 +85,11 @@ TERMINAL_CONCLUSIONS = {
 class CohortDrift(Exception):
     """The receipt is well formed but describes a superseded policy generation.
 
-    Every receipt pins the blob SHAs of the nine files that define routing
-    behaviour. Any commit that touches one of them — including a mechanical
-    `actions/checkout` version bump — moves the policy generation, and every
-    receipt already in the retention window then describes the previous one.
+    Every receipt pins the classifier, routing-policy, evidence-routing workflow,
+    and resolver blob SHAs that define routing and collection behaviour. The
+    serving/worker workflow blobs remain receipt provenance: their routing-relevant
+    declarations are fail-closed against the classifier-owned policy before
+    evidence is emitted.
 
     That is cohort drift, not a receipt-integrity violation: the receipt is
     intact, attributable and internally consistent, it simply attests to a
@@ -301,13 +312,23 @@ def current_blobs(root: Path) -> dict[str, str]:
     blobs["native_policy_inputs_sha256"] = hashlib.sha256(
         json.dumps(manifest, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    # One name for "which generation of the routing policy is current". A
-    # receipt either belongs to it or it does not; the ledger reports the
-    # difference as cohort drift instead of integrity loss.
+    # The semantic manifest contains only inputs that can change a routing
+    # decision or alter evidence collection. The native policy owns the legacy
+    # serving/worker workflow path/variant rules; native-image-impact.py validates
+    # those declarations against the live workflows and fails closed before
+    # emitting evidence. Those serving/worker blobs remain provenance, so their
+    # operational edits (for example an actions/checkout bump) do not reset the cohort.
+    semantic_manifest = [
+        ["native_classifier", blobs["native_classifier"]],
+        ["native_routing_policy", blobs["native_routing_policy"]],
+        ["pr_gate_classifier", blobs["pr_gate_classifier"]],
+        ["pr_gate_observer", blobs["pr_gate_observer"]],
+        ["pr_gate_workflow", blobs["pr_gate_workflow"]],
+        ["native_observer", blobs["native_observer"]],
+        ["trusted_run_resolver", blobs["trusted_run_resolver"]],
+    ]
     blobs["policy_generation_sha256"] = hashlib.sha256(
-        json.dumps(
-            [[key, blobs[key]] for key in sorted(paths)], separators=(",", ":")
-        ).encode("utf-8")
+        json.dumps(semantic_manifest, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     return blobs
 
@@ -573,10 +594,13 @@ def discover(
     native_artifacts: Path,
     policy_value: object,
     now: datetime | None = None,
+    cutoff: datetime | None = None,
 ) -> dict[str, Any]:
     policy = load_policy(policy_value)
     current = now or datetime.now(timezone.utc)
-    cutoff = receipt_cutoff(policy, current)
+    bound_cutoff = cutoff or receipt_cutoff(policy, current)
+    if bound_cutoff.tzinfo is None:
+        raise ValueError("receipt cutoff must include a timezone")
     grace = timedelta(minutes=policy["receipt_index_grace_minutes"])
     streams = (
         (
@@ -601,7 +625,7 @@ def discover(
             flatten_artifact_catalogs(artifacts_root),
             workflow,
             artifact_pattern,
-            cutoff,
+            bound_cutoff,
             skip_pattern,
             current,
             grace,
@@ -616,7 +640,7 @@ def discover(
     return {
         "contract": INDEX_CONTRACT,
         "repository": REPOSITORY,
-        "cutoff": cutoff.isoformat().replace("+00:00", "Z"),
+        "cutoff": bound_cutoff.isoformat().replace("+00:00", "Z"),
         "generated_at": current.isoformat().replace("+00:00", "Z"),
         "artifacts": entries,
         "exclusions": exclusions,
@@ -754,7 +778,6 @@ def _validate_pr_gate(
     pull_request = positive_int(value.get("pull_request"), "PR Gate pull request")
     head = exact_sha(value.get("head_sha"), "PR Gate head")
     exact_sha(value.get("base_sha"), "PR Gate base")
-    exact_digest(value.get("files_sha256"), "PR Gate files digest")
     positive_int(value.get("gate_run_id"), "PR Gate run id")
     positive_int(value.get("gate_run_attempt"), "PR Gate run attempt")
     if value.get("gate_run_head_sha") != head or value.get("gate_run_conclusion") not in TERMINAL_CONCLUSIONS:
@@ -770,15 +793,35 @@ def _validate_pr_gate(
         raise ValueError("PR Gate receipt reason is invalid")
     if mode == "docs-only" and reason != "internal-markdown-only":
         raise ValueError("PR Gate docs-only reason is invalid")
+    files_digest = value.get("files_sha256")
+    if files_digest == "":
+        # The classifier deliberately fails closed before it can normalize a
+        # file list for these full-gate reasons. Such a receipt contains no
+        # claim about file-list content, so an empty digest is the producer's
+        # current contract rather than a malformed integrity assertion.
+        if mode != "full" or reason not in PR_GATE_UNDIGESTED_REASONS:
+            raise ValueError("PR Gate files digest is missing without a fail-closed reason")
+    else:
+        exact_digest(files_digest, "PR Gate files digest")
+    for field in (
+        "policy_blob_sha",
+        "gate_workflow_blob_sha",
+        "resolver_blob_sha",
+        "observer_workflow_blob_sha",
+    ):
+        exact_sha(value.get(field), f"PR Gate {field}")
     # Currency is checked last: everything above is what makes the receipt
     # trustworthy, and all of it must hold before drift can be the verdict.
-    if (
-        value.get("policy_blob_sha") != blobs["pr_gate_classifier"]
-        or value.get("gate_workflow_blob_sha") != blobs["pr_gate_workflow"]
-        or value.get("resolver_blob_sha") != blobs["trusted_run_resolver"]
-        or value.get("observer_workflow_blob_sha") != blobs["pr_gate_observer"]
-    ):
+    semantic_drift = value.get("policy_blob_sha") != blobs["pr_gate_classifier"]
+    provenance_drift = any((
+        value.get("gate_workflow_blob_sha") != blobs["pr_gate_workflow"],
+        value.get("resolver_blob_sha") != blobs["trusted_run_resolver"],
+        value.get("observer_workflow_blob_sha") != blobs["pr_gate_observer"],
+    ))
+    if semantic_drift:
         _drift("PR Gate", value, policy_head_sha)
+    if provenance_drift and policy_head_sha is not None and value.get("policy_sha") == policy_head_sha:
+        raise ValueError("PR Gate receipt contradicts its own declared policy head")
     return {
         "stream": PR_GATE_STREAM,
         "pull_request": pull_request,
@@ -818,8 +861,20 @@ def _validate_native(
         "resolver_blob_sha": blobs["trusted_run_resolver"],
         "observer_workflow_blob_sha": blobs["native_observer"],
     }
+    for field in expected_blobs:
+        exact_sha(value.get(field), f"native-image {field}")
+    exact_digest(value.get("policy_inputs_sha256"), "native-image policy inputs digest")
+    # Whole-file pins above remain attributable provenance. Currency is based
+    # only on semantic routing inputs; workflow routing declarations are
+    # validated fail-closed against native_routing_policy by the classifier.
     drifted = any(
-        value.get(field) != expected for field, expected in expected_blobs.items()
+        value.get(field) != expected_blobs[field]
+        for field in ("policy_blob_sha", "routing_policy_blob_sha")
+    )
+    provenance_drift = any(
+        value.get(field) != expected
+        for field, expected in expected_blobs.items()
+        if field not in ("policy_blob_sha", "routing_policy_blob_sha")
     ) or value.get("policy_inputs_sha256") != blobs["native_policy_inputs_sha256"]
     pull_request = positive_int(value.get("pull_request"), "native-image pull request")
     head = exact_sha(value.get("head_sha"), "native-image head")
@@ -899,6 +954,8 @@ def _validate_native(
     # first, then decide whether it belongs to the current cohort.
     if drifted:
         _drift("native-image", value, policy_head_sha)
+    if provenance_drift and policy_head_sha is not None and value.get("policy_sha") == policy_head_sha:
+        raise ValueError("native-image receipt contradicts its own declared policy head")
     return {
         "stream": NATIVE_STREAM,
         "pull_request": pull_request,
@@ -1243,13 +1300,18 @@ def summarize(
     image_failures: list[dict[str, Any]] = []
     superseded_heads: list[dict[str, Any]] = []
     pending_heads: list[dict[str, Any]] = []
+    shadow_only_heads: list[dict[str, Any]] = []
     for item in native:
         if item["gate_conclusion"] != "success":
             continue
         serving = _image_outcome(serving_catalog, item, SERVING_WORKFLOW)
         worker = _image_outcome(worker_catalog, item, WORKER_WORKFLOW)
-        serving_required = item["legacy_serving"] or item["candidate_serving"]
-        worker_required = item["legacy_worker"] or item["candidate_worker"]
+        # These workflows are the AUTHORITATIVE legacy route while the
+        # candidate remains report-only. Candidate-only heads intentionally do
+        # not trigger them, so requiring an impossible exact-head run converts
+        # a shadow-routing difference into a fabricated native-outcome failure.
+        serving_required = item["legacy_serving"]
+        worker_required = item["legacy_worker"]
         missing: list[str] = []
         if serving_required and not serving["success"]:
             missing.append("serving")
@@ -1301,6 +1363,25 @@ def summarize(
                 quarantined.append({**record, "tombstone": tombstone})
             else:
                 image_failures.append(record)
+            continue
+        candidate_only_classes = [
+            f"serving_{name}"
+            for name in SERVING_VARIANTS
+            if item["candidate_serving_variants"][name]
+            and not item["legacy_serving_variants"][name]
+        ]
+        if item["candidate_worker"] and not item["legacy_worker"]:
+            candidate_only_classes.append("worker")
+        if candidate_only_classes:
+            # No workflow executes candidate-only routes in observe mode. They
+            # are valid shadow decisions, but cannot contribute to promotion
+            # readiness until candidate execution evidence exists.
+            shadow_only_heads.append({
+                "pull_request": item["pull_request"],
+                "head_sha": item["head_sha"],
+                "candidate_only_classes": candidate_only_classes,
+                "reason": "candidate-route-not-executed-in-observe-mode",
+            })
             continue
         native_countable.append({**item, "serving_outcome": serving, "worker_outcome": worker})
 
@@ -1411,6 +1492,7 @@ def summarize(
             "authoritative_image_outcome_failures": len(image_failures),
             "image_outcome_superseded_heads": len(superseded_heads),
             "image_outcome_pending_heads": len(pending_heads),
+            "candidate_only_shadow_heads": len(shadow_only_heads),
             "integrity_failures": len(failures),
             "quarantined_by_tombstone": len(quarantined),
             "stale_tombstones": len(stale_tombstones),
@@ -1429,6 +1511,7 @@ def summarize(
         "image_outcome_failures": image_failures,
         "image_outcome_superseded_heads": superseded_heads,
         "image_outcome_pending_heads": pending_heads,
+        "candidate_only_shadow_heads": shadow_only_heads,
         "policy_generation_superseded_receipts": drifted,
         "quarantined": quarantined,
         "stale_tombstones": stale_tombstones,
@@ -1480,6 +1563,8 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`"
         f" (excluded: `{counts['image_outcome_superseded_heads']}` superseded, "
         f"`{counts['image_outcome_pending_heads']}` still building)",
+        "- Candidate-only heads awaiting execution evidence (not promotion-countable): "
+        f"`{counts['candidate_only_shadow_heads']}`",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",
         "- Receipt loss: "
         f"`{loss['receipts_missing']}` of `{loss['receipts_owed']}` owed = "
@@ -1515,9 +1600,9 @@ def markdown(ledger: dict[str, Any]) -> str:
         "|---|---|",
         rows,
         "",
-        "Cohort drift is not receipt loss: any commit touching one of the nine pinned policy "
-        "inputs — a dependency bump included — starts a new policy generation, and receipts "
-        "attesting to the previous one stay intact but stop being countable.",
+        "Cohort drift is not receipt loss: classifier, routing-policy, or evidence-routing "
+        + "workflow changes start a new semantic generation. Other workflow blob pins remain "
+        + "provenance, so routing-irrelevant maintenance does not reset the cohort.",
         "A successful observer shell without one exact stable-name receipt is never counted. ",
         "Reuse is *build* reuse only: the GDAL worker's Trivy scan is re-run on every head "
         "because its verdict depends on the vulnerability database at scan time, never on a "
@@ -1542,6 +1627,7 @@ def trend(ledgers: list[object], policy_value: object, now: datetime | None = No
     policy = load_policy(policy_value)
     current = now or datetime.now(timezone.utc)
     days: dict[str, dict[str, Any]] = {}
+    generations: list[tuple[datetime, str, int, int]] = []
     for value in ledgers:
         if not isinstance(value, dict) or value.get("contract") != LEDGER_CONTRACT:
             continue
@@ -1557,6 +1643,20 @@ def trend(ledgers: list[object], policy_value: object, now: datetime | None = No
             stamp = parse_time(generated, "ledger generation")
         except ValueError:
             continue
+        generation = value.get("policy_generation_sha256")
+        docs_heads = counts.get("docs_only_success_heads")
+        native_heads = counts.get("native_countable_heads")
+        if (
+            isinstance(generation, str)
+            and DIGEST.fullmatch(generation) is not None
+            and isinstance(docs_heads, int)
+            and not isinstance(docs_heads, bool)
+            and isinstance(native_heads, int)
+            and not isinstance(native_heads, bool)
+            and docs_heads >= 0
+            and native_heads >= 0
+        ):
+            generations.append((stamp, generation, docs_heads, native_heads))
         day = stamp.date().isoformat()
         # Re-derive green from each ledger's OWN measurements against TODAY's
         # policy, never from the gate it recorded at the time. Trusting the
@@ -1600,6 +1700,21 @@ def trend(ledgers: list[object], policy_value: object, now: datetime | None = No
         maximum_loss = max(maximum_loss, float(day["loss_ratio"]))
         cursor -= timedelta(days=1)
     required = policy["promotion_green_days"]
+    generations.sort(key=lambda item: item[0])
+    resets = sum(
+        previous[1] != following[1]
+        for previous, following in zip(generations, generations[1:])
+    )
+    observation_weeks = (
+        (generations[-1][0] - generations[0][0]).total_seconds() / 604800
+        if len(generations) > 1 else 0.0
+    )
+    resets_per_week = resets / observation_weeks if observation_weeks > 0 else 0.0
+    largest_sample = max(
+        generations,
+        key=lambda item: (min(item[2], item[3]), item[2] + item[3], item[0]),
+        default=None,
+    )
     return {
         "contract": TREND_CONTRACT,
         "generated_at": current.isoformat().replace("+00:00", "Z"),
@@ -1608,6 +1723,12 @@ def trend(ledgers: list[object], policy_value: object, now: datetime | None = No
         "consecutive_green_days": streak,
         "maximum_loss_ratio_in_streak": round(maximum_loss, 6),
         "promotion_gate_ready": streak >= required,
+        "policy_generation_resets": resets,
+        "policy_generation_resets_per_week": round(resets_per_week, 3),
+        "largest_sample_within_generation": {
+            "docs_only_heads": largest_sample[2] if largest_sample else 0,
+            "native_heads": largest_sample[3] if largest_sample else 0,
+        },
         "days": [days[key] for key in sorted(days, reverse=True)],
     }
 
@@ -1625,6 +1746,11 @@ def trend_markdown(value: dict[str, Any]) -> str:
         f"{value['required_green_days']} "
         f"(worst receipt loss in streak `{value['maximum_loss_ratio_in_streak'] * 100:.2f}%`, "
         f"budget `{value['maximum_receipt_loss_ratio'] * 100:.2f}%`)",
+        f"Policy-generation resets: `{value['policy_generation_resets']}` "
+        f"(`{value['policy_generation_resets_per_week']:.3f}` per week)",
+        "Largest sample reached within one generation (docs-only/native): "
+        f"`{value['largest_sample_within_generation']['docs_only_heads']}` / "
+        f"`{value['largest_sample_within_generation']['native_heads']}`",
         "",
         f"Promotion gate ready: **{str(value['promotion_gate_ready']).lower()}** — no shadow "
         "optimisation may be promoted until this is true.",
@@ -1649,6 +1775,7 @@ def main() -> int:
     discover_parser.add_argument("--native-runs", type=Path, required=True)
     discover_parser.add_argument("--pr-gate-artifacts", type=Path, required=True)
     discover_parser.add_argument("--native-artifacts", type=Path, required=True)
+    discover_parser.add_argument("--receipt-cutoff", required=True)
     discover_parser.add_argument("--output", type=Path, required=True)
 
     summary_parser = subparsers.add_parser("summarize")
@@ -1700,6 +1827,7 @@ def main() -> int:
             args.pr_gate_artifacts,
             args.native_artifacts,
             policy,
+            cutoff=parse_time(args.receipt_cutoff, "receipt cutoff"),
         )
         write_json(args.output, result)
         return 1 if result["integrity_failures"] else 0

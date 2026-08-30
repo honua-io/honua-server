@@ -41,6 +41,39 @@ services:
       timeout: 5s
       retries: 5
 
+  localstack:
+    profiles: ["multidim-fixture"]
+    image: localstack/localstack:3.6.0
+    environment:
+      SERVICES: s3
+      DEFAULT_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    networks:
+      - compat
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health | grep -Eq '\"s3\"[[:space:]]*:[[:space:]]*\"(available|running)\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  multidim-object-seed:
+    profiles: ["multidim-fixture"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/multidim-fixture/Dockerfile
+    command: ["python", "/fixture/seed.py"]
+    environment:
+      HONUA_S3_ENDPOINT: http://localstack:4566
+      HONUA_MULTIDIM_BUCKET: honua-multidim-fixtures
+      HONUA_MULTIDIM_KEY: imageserver/sea-surface-temperature.nc
+    depends_on:
+      localstack:
+        condition: service_healthy
+    networks:
+      - compat
+
   seed:
     # One-shot job: applies tests/seed/client-compat-v1.sql (schema +
     # test_service/layer 0 used by both the pyqgis and gdal lanes — the gdal
@@ -72,7 +105,7 @@ services:
       context: ../..
       dockerfile: Dockerfile
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_ENVIRONMENT: ${HONUA_CLIENT_COMPAT_ENVIRONMENT:-Production}
       ASPNETCORE_URLS: http://+:5000
       Kestrel__Endpoints__Http__Url: http://+:5000
       Kestrel__Endpoints__Http__Protocols: Http1
@@ -82,6 +115,17 @@ services:
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      # Deterministic local OIDC verifier for certification auth breadth. No
+      # external IdP is contacted: client lanes mint short-lived HS256 tokens
+      # against this test-only issuer/audience/signing-key tuple.
+      Oidc__Enabled: "true"
+      Oidc__Generic__Enabled: "true"
+      Oidc__Generic__Authority: https://cert-auth.honua.test
+      Oidc__Generic__ClientId: honua-client-compat
+      Oidc__AdminRoles__0: admin
+      Oidc__TokenValidation__SymmetricSigningKey: client-compat-certification-signing-key-2026-wave-1
+      Oidc__TokenValidation__EnableTokenReplayProtection: "false"
+      Licensing__DevGrantEdition: ${HONUA_CLIENT_COMPAT_DEV_GRANT_EDITION:-Enterprise}
       # Portal/Sharing facade token issuance (epic #1240). The client-compat docker
       # network is HTTP-only, so relax the HTTPS-only guard on generateToken /
       # oauth2 so the arcgis-stub Portal lane can mint and exercise a named-user
@@ -95,9 +139,21 @@ services:
       # this fixture. docker/client-compat/compose.yml is deliberately excluded from
       # `serverConfigRevision`, so this does not churn the frozen fixture digests.
       RateLimiting__Enabled: "false"
+      # Production startup validates that the canonical operation runtime is
+      # fail-closed. Client lanes do not exercise operations, so deny unmatched
+      # operations while keeping the protocol surfaces under test available.
+      Operations__Policy__Enabled: "true"
+      Operations__Policy__DefaultDecision: Deny
       ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua_compat;User Id=postgres;Password=compat_password;
       ConnectionStrings__Redis: redis:6379
+      FileStorage__Provider: ${HONUA_CLIENT_COMPAT_STORAGE_PROVIDER:-Local}
+      FileStorage__AwsS3__BucketName: honua-multidim-fixtures
+      FileStorage__AwsS3__Region: us-east-1
+      FileStorage__AwsS3__ServiceUrl: http://localstack:4566
+      FileStorage__AwsS3__ForcePathStyle: "true"
+      FileStorage__AwsS3__AccessKeyId: test
+      FileStorage__AwsS3__SecretAccessKey: test
       Security__ConnectionEncryption__MasterKey: test-master-key-that-is-at-least-32-characters-long-for-security
       Security__ConnectionEncryption__Salt: dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:
@@ -124,6 +180,54 @@ services:
       # which previously flipped the container to `unhealthy` before it had
       # a chance to answer /healthz/ready.
       start_period: 60s
+
+  gdal-worker:
+    profiles: ["multidim-fixture"]
+    build:
+      context: ../..
+      dockerfile: docker/worker-gdal/Dockerfile
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__Redis: redis:6379
+      GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
+      FileStorage__AwsS3__BucketName: honua-multidim-fixtures
+      FileStorage__AwsS3__Region: us-east-1
+      FileStorage__AwsS3__ServiceUrl: http://localstack:4566
+      FileStorage__AwsS3__ForcePathStyle: "true"
+      FileStorage__AwsS3__AccessKeyId: test
+      FileStorage__AwsS3__SecretAccessKey: test
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+    depends_on:
+      redis:
+        condition: service_healthy
+      multidim-object-seed:
+        condition: service_completed_successfully
+    networks:
+      - compat
+
+  multidim-fixture:
+    profiles: ["multidim-fixture"]
+    build:
+      context: ../..
+      dockerfile: docker/client-compat/multidim-fixture/Dockerfile
+    command: ["python", "/fixture/verify.py"]
+    environment:
+      HONUA_BASE_URL: http://honua:5000
+      HONUA_ADMIN_API_KEY: ClientCompatAdmin123!
+      HONUA_S3_ENDPOINT: http://localstack:4566
+      HONUA_MULTIDIM_BUCKET: honua-multidim-fixtures
+      HONUA_MULTIDIM_KEY: imageserver/sea-surface-temperature.nc
+    depends_on:
+      honua:
+        condition: service_healthy
+      gdal-worker:
+        condition: service_started
+      multidim-object-seed:
+        condition: service_completed_successfully
+    networks:
+      - compat
 
   gdal:
     profiles: ["matrix", "gdal"]
@@ -243,6 +347,11 @@ services:
       HONUA_BASE_URL: http://honua:5000
       HONUA_GEOPANDAS_SERVICE_ID: test_service
       HONUA_GEOPANDAS_COLLECTION_ID: "0"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_API_KEY: ClientCompatAdmin123!
+      HONUA_CERT_OIDC_ISSUER: https://cert-auth.honua.test
+      HONUA_CERT_OIDC_AUDIENCE: honua-client-compat
+      HONUA_CERT_OIDC_SIGNING_KEY: client-compat-certification-signing-key-2026-wave-1
       # Binds the receipt to the exact source revision under test. Compose has no
       # view of git, so CI exports HONUA_SERVER_COMMIT (github.sha); a bare local
       # run leaves it empty and the envelope records "unknown" rather than lying.
@@ -273,6 +382,13 @@ services:
       # consumes, so the two lanes certify the same rendered surface.
       HONUA_OWSLIB_RASTER_SERVICE_ID: browser_compat
       HONUA_OWSLIB_RASTER_LAYER_ID: "2000"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_RASTER_SERVICE_ID: cert_auth_raster
+      HONUA_CERT_RASTER_LAYER_ID: "2010"
+      HONUA_CERT_API_KEY: ClientCompatAdmin123!
+      HONUA_CERT_OIDC_ISSUER: https://cert-auth.honua.test
+      HONUA_CERT_OIDC_AUDIENCE: honua-client-compat
+      HONUA_CERT_OIDC_SIGNING_KEY: client-compat-certification-signing-key-2026-wave-1
       # Binds the receipt to the exact source revision under test. Compose has no
       # view of git, so CI exports HONUA_SERVER_COMMIT (github.sha); a bare local
       # run leaves it empty and the envelope records "unknown" rather than lying.

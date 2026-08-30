@@ -16,9 +16,9 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:d7c9c28fbfeea766d3d40768637d46452541355fd5e5817ed94ce4e4f9c172fc` |
+| `fixtureRevision` | `sha256:cf41453e85cedd4dba536ae965aefc3b8d73f6bd23992aebeeb23fbe4aa131fb` |
 | `serverConfigRevision` | `sha256:071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6` |
-| `authPolicyRevision` | `sha256:bad3a57ccb2e67488680da7fc8722f1dc98cafd8a32ffb7ff808f29dfe5e7210` |
+| `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
 Any change to an input file changes at least one of these values. Publishing a changed input
 without republishing the manifest is a build failure, not a warning.
@@ -41,9 +41,10 @@ Because step 3 reproduces `sha256sum` output exactly, the whole algorithm is rep
 
 ```console
 $ LC_ALL=C sha256sum docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
-    tests/seed/browser-compat.yaml tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
+    tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
+    tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-d7c9c28fbfeea766d3d40768637d46452541355fd5e5817ed94ce4e4f9c172fc  -
+cf41453e85cedd4dba536ae965aefc3b8d73f6bd23992aebeeb23fbe4aa131fb  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6  -
 ```
@@ -123,7 +124,7 @@ Not covered, recorded as gaps rather than claimed:
 | `polygon-hole-geometry-absent` | No polygon with an interior ring is seeded. |
 | `unicode-attribute-values-absent` | Every seeded attribute value is ASCII; the only non-ASCII byte in the seed is inside a SQL comment. |
 | `line-and-polygon-not-on-canonical-service` | Line and polygon coverage lives on `browser_compat`, whose layers carry only `objectid`, `name`, and `shape`. |
-| `edit-path-uncertified` | The service advertises Create/Update/Delete/Sync, but the frozen case vocabulary has no edit case and no lane writes to the fixture. |
+| `edit-path-uncertified` | The OWSLib lane certifies WFS-T insert/update/delete on scratch layers 10-12, but no lane mutates canonical layer 0 and the other advertised Create/Update/Delete/Sync protocol surfaces remain uncertified. |
 
 Supporting fixtures: the deterministic raster (64×64, single 8BUI band, every pixel 180) and the
 render geometry layers are realized on `browser_compat`; STAC is realized on the canonical service
@@ -366,6 +367,8 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | `NB-OWS-OAF-QRYB-01` | `SF-EXT-CLIENT-IDIOM` | Queryables is a 2020-12 JSON Schema with $id, every property typed, and the non-queryable JSON array columns correctly excluded. |
 | `NB-OWS-OAF-SCHM-03` | `SF-EXT-CLIENT-IDIOM` | All 12 seeded attributes round-trip with their JSON types preserved (bool/int/double/array), not stringified. |
 | `NB-OWS-OAF-SORT-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib's (property, direction) sortby tuple maps to the server's `-name` convention; desc is the exact reverse of asc over all 10 features. |
+| `NB-OWS-WFS-100-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib negotiated WFS 1.0.0, parsed capabilities, discovered the canonical layer, and executed GetFeature with longitude/latitude axis order. |
+| `NB-OWS-WFS-110-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib negotiated WFS 1.1.0, parsed capabilities, discovered the canonical layer, and executed GetFeature with latitude/longitude axis order. |
 | `NB-OWS-WFS-BBOX-01` | `SF-EXT-CLIENT-IDIOM` | The 4-element BBOX (default CRS, longitude/latitude) and the 5-element CRS84 BBOX select the identical feature set ['alpha', 'beta', 'gamma'], so the server's bbox axis-order handling.... |
 | `NB-OWS-WFS-CAP-01` | `SF-EXT-CLIENT-IDIOM` | OperationsMetadata advertises 27 entries covering every mandatory WFS 2.0 operation, and GetFeature offers both ['get', 'post'] DCP bindings. |
 | `NB-OWS-WFS-CAP-02` | `SF-EXT-CLIENT-IDIOM` | Capabilities declare the WFS 2.0 conformance constraint set including ImplementsBasicWFS, ImplementsResultPaging, KVPEncoding and XMLEncoding; the paging and encoding claims are.... |
@@ -380,9 +383,13 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | `NB-OWS-WFS-PROP-01` | `SF-EXT-CLIENT-IDIOM` | propertyname=['name','status'] narrowed the payload to exactly those two columns, and the PROPERTYNAME=* wildcard widened it back to all 13 properties. |
 | `NB-OWS-WFS-SORT-01` | `SF-EXT-CLIENT-IDIOM` | SORTBY=name returned all 10 features in ascending name order. |
 | `NB-OWS-WFS-STQ-01` | `SF-EXT-CLIENT-IDIOM` | ListStoredQueries advertises 1 queries including the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById; invoking it through OWSLib's storedQueryID/storedQueryParams returned the.... |
+| `NB-OWS-WFS-T-DEL-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib posts a WFS 2.0 Delete to a dedicated scratch layer; the transaction summary reports one deletion and a follow-up OWSLib GetFeature query observes an empty layer. |
+| `NB-OWS-WFS-T-INS-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib posts a WFS 2.0 Insert to a dedicated scratch layer; the transaction summary reports one insertion and a follow-up OWSLib GetFeature query observes the new feature. |
+| `NB-OWS-WFS-T-UPD-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib posts a WFS 2.0 Update to a dedicated scratch layer; the transaction summary reports one update and a follow-up OWSLib GetFeature query observes only the new value. |
 | `NB-OWS-WFS-VER-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib's bare getfeature() (which sends PROPERTYNAME=*) works on both legacy versions. |
 | `NB-OWS-WFS-XPRO-01` | `SF-EXT-CLIENT-IDIOM` | WFS and OGC API - Features agree on the same layer: extent (-122.5, 37.7, -122.35, 37.84), numberMatched 10, and every WFS-advertised EPSG code [3857, 4326] is also offered by the OGC.... |
 | `NB-OWS-WMS-111-01` | `SF-RNDR-IMAGE` | WMS 1.1.1 identifies as OGC:WMS, advertises SRS (not CRS:84) and the 1.1.1 exception MIME type, and its longitude-first EPSG:4326 GetMap is pixel-identical to the 1.3.0 CRS:84 render of.... |
+| `NB-OWS-WMS-111-WITNESS-01` | `SF-RNDR-IMAGE` | OWSLib negotiated WMS 1.1.1, parsed capabilities, discovered the canonical raster layer, and executed a non-empty GetMap using the 1.1.1 SRS request shape. |
 | `NB-OWS-WMS-CAP-01` | `SF-RNDR-IMAGE` | Service block: Name=WMS, Title='browser_compat', Abstract='Honua WMS service', 3 keywords ['WMS', 'OGC', 'browser_compat'], OnlineResource.... |
 | `NB-OWS-WMS-CAP-02` | `SF-RNDR-IMAGE` | OWSLib parsed 8 ContactInformation fields: {'name': 'Honua Support', 'organization': 'Honua', 'position': 'Support Engineer', 'address': '1 Honua Way', 'city': 'Honolulu', 'region':.... |
 | `NB-OWS-WMS-CAP-03` | `SF-RNDR-IMAGE` | EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79); on the wire the BoundingBox for CRS:84 is (-122.44, 37.76, -122.4, 37.79) (longitude first) and for EPSG:4326 is (37.76,.... |

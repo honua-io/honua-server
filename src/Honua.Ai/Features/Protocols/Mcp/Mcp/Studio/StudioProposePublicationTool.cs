@@ -123,7 +123,8 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         var envelope = draft.Envelope with { PublicationIntent = intent, Provenance = provenance };
 
         var updated = await ApplyUpdateAsync(
-            lifecycleService,
+            httpContext,
+            principal,
             draftId,
             EnvelopeOnlyUpdate(draft, envelope, generation, actorId),
             cancellationToken).ConfigureAwait(false);

@@ -292,10 +292,12 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | NB-GPD-WFS-TYP-01 | NB-GPD | objectid dtype=int32, count=int32, ratio=float64, active=bool; xsd:int/xsd:double/xsd:boolean from DescribeFeatureType survived into pandas dtypes | wfs | pass/fail |
 | NB-GPD-WFS-TYP-02 | NB-GPD | created_at='2024-01-01T12:00:00+00:00', event_date='2024-02-01', event_time='12:34:56.0000000' - all parse to the seeded instants | wfs | pass/fail |
 
-#### `py-owslib` — OWSLib (65 cases)
+#### `py-owslib` — OWSLib (68 cases)
 
 | Test Case ID | Category | Description | Protocol(s) | Evidence |
 |---|---|---|---|---|
+| NB-OWS-WFS-100-01 | NB-OWS | OWSLib negotiated WFS 1.0.0, parsed capabilities, discovered the canonical layer, and executed GetFeature with longitude/latitude axis order | wfs | pass/fail |
+| NB-OWS-WFS-110-01 | NB-OWS | OWSLib negotiated WFS 1.1.0, parsed capabilities, discovered the canonical layer, and executed GetFeature with latitude/longitude axis order | wfs | pass/fail |
 | NB-OWS-OAF-AUTH-03 | NB-OWS | A syntactically valid but incorrect X-API-Key returns 401, not 403 or 500 | ogc-features | pass/fail |
 | NB-OWS-OAF-COLL-01 | NB-OWS | collection.extent.spatial.bbox=[-122.5, 37.7, -122.35, 37.84] encloses the seeded feature envelope [-122.49, 37.71, -122.37, 37.79] and is declared in CRS84; temporal interval... | ogc-features | pass/fail |
 | NB-OWS-OAF-COLL-02 | NB-OWS | Features.feature_collections() -> ['2000', '2001', '2002', '3000', '0']; every collection declares itemType=feature | ogc-features | pass/fail |
@@ -329,9 +331,13 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | NB-OWS-WFS-PROP-01 | NB-OWS | propertyname=['name','status'] narrowed the payload to exactly those two columns, and the PROPERTYNAME=* wildcard widened it back to all 13 properties | wfs | pass/fail |
 | NB-OWS-WFS-SORT-01 | NB-OWS | SORTBY=name returned all 10 features in ascending name order | wfs | pass/fail |
 | NB-OWS-WFS-STQ-01 | NB-OWS | ListStoredQueries advertises 1 queries including the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById; invoking it through OWSLib's storedQueryID/storedQueryParams returned the... | wfs | pass/fail |
+| NB-OWS-WFS-T-DEL-01 | NB-OWS | OWSLib posts a WFS 2.0 Delete to a dedicated scratch layer; the transaction summary reports one deletion and a follow-up OWSLib GetFeature query observes an empty layer | wfs | pass/fail |
+| NB-OWS-WFS-T-INS-01 | NB-OWS | OWSLib posts a WFS 2.0 Insert to a dedicated scratch layer; the transaction summary reports one insertion and a follow-up OWSLib GetFeature query observes the new feature | wfs | pass/fail |
+| NB-OWS-WFS-T-UPD-01 | NB-OWS | OWSLib posts a WFS 2.0 Update to a dedicated scratch layer; the transaction summary reports one update and a follow-up OWSLib GetFeature query observes only the new value | wfs | pass/fail |
 | NB-OWS-WFS-VER-01 | NB-OWS | OWSLib's bare getfeature() (which sends PROPERTYNAME=*) works on both legacy versions | wfs | pass/fail |
 | NB-OWS-WFS-XPRO-01 | NB-OWS | WFS and OGC API - Features agree on the same layer: extent (-122.5, 37.7, -122.35, 37.84), numberMatched 10, and every WFS-advertised EPSG code [3857, 4326] is also offered by the OGC... | wfs | pass/fail |
 | NB-OWS-WMS-111-01 | NB-OWS | WMS 1.1.1 identifies as OGC:WMS, advertises SRS (not CRS:84) and the 1.1.1 exception MIME type, and its longitude-first EPSG:4326 GetMap is pixel-identical to the 1.3.0 CRS:84 render of... | wms | pass/fail |
+| NB-OWS-WMS-111-WITNESS-01 | NB-OWS | OWSLib negotiated WMS 1.1.1, parsed capabilities, discovered the canonical raster layer, and executed a non-empty GetMap using the 1.1.1 SRS request shape | wms | pass/fail |
 | NB-OWS-WMS-CAP-01 | NB-OWS | Service block: Name=WMS, Title='browser_compat', Abstract='Honua WMS service', 3 keywords ['WMS', 'OGC', 'browser_compat'], OnlineResource... | wms | pass/fail |
 | NB-OWS-WMS-CAP-02 | NB-OWS | OWSLib parsed 8 ContactInformation fields: {'name': 'Honua Support', 'organization': 'Honua', 'position': 'Support Engineer', 'address': '1 Honua Way', 'city': 'Honolulu', 'region':... | wms | pass/fail |
 | NB-OWS-WMS-CAP-03 | NB-OWS | EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79); on the wire the BoundingBox for CRS:84 is (-122.44, 37.76, -122.4, 37.79) (longitude first) and for EPSG:4326 is (37.76,... | wms | pass/fail |

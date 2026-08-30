@@ -4,8 +4,11 @@
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
@@ -77,6 +80,41 @@ public sealed class PublishedOperationToolTests
 
         descriptor.Name.Should().Be("honua_op_geo_export");
         descriptor.Annotations!.ReadOnlyHint.Should().BeFalse("a data-mutating operation is not read-only");
+    }
+
+    [UnitTest]
+    public void PublishedOperationSchemas_AdvertiseCanonicalEnvelope()
+    {
+        var schemas = new[]
+        {
+            McpToolOutputSchemas.PublishServiceOutputSchema,
+            McpToolOutputSchemas.PublishResultOutputSchema,
+            McpToolOutputSchemas.OperationToolOutputSchema
+        };
+        var envelopeFields = new[]
+        {
+            "operationId",
+            "operationInstanceId",
+            "handleId",
+            "proposalId",
+            "correlationId",
+            "auditId",
+            "createdAt",
+            "updatedAt",
+            "authorizationOutcome",
+            "policyOutcome",
+            "resourceIds",
+            "evidenceRefs"
+        };
+
+        foreach (var schema in schemas)
+        {
+            var properties = schema.GetProperty("properties");
+            foreach (var field in envelopeFields)
+            {
+                properties.TryGetProperty(field, out _).Should().BeTrue($"{field} is part of the canonical operation envelope");
+            }
+        }
     }
 
     [UnitTest]
@@ -172,6 +210,30 @@ public sealed class PublishedOperationToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
+    public async Task Invoke_OperatorGate_FailsClosedWithoutExecuting()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
+        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+
+        var result = await tool.InvokeAsync(
+            Context(
+                invoker,
+                gateApproval: ApprovalRequirement.Required(
+                    "operator.publish",
+                    "publish-requires-approval")),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        var body = result.StructuredContent!.Value;
+        result.IsError.Should().BeTrue();
+        body.GetProperty("status").GetString().Should().Be("error");
+        body.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        body.GetProperty("policyRef").GetString().Should().Be($"operations/{MutatingOpId}");
+        invoker.SubmitCount.Should().Be(0, "operator-gated MCP operations must fail closed before dispatch");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_op_geo_export")]
     public async Task Invoke_PolicyDenies_ReturnsDeniedWithoutExecuting()
     {
         var executor = new RecordingExecutor(MutatingOpId);
@@ -185,7 +247,7 @@ public sealed class PublishedOperationToolTests
                 DefaultReason = "Denied by policy on this tier.",
             });
 
-        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+        var tool = new PublishedOperationTool(ApprovalFreeMutatingDescriptor(), "cat-v1", NullLogger.Instance);
         var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
@@ -196,26 +258,34 @@ public sealed class PublishedOperationToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
-    public async Task Invoke_PolicyRequiresApproval_SurfacesApprovalLane()
+    public async Task Invoke_ApprovalGatedInstallation_FailsClosedBeforeInvoker()
     {
-        var invoker = Dispatcher(
-            MutatingDescriptor(),
-            new RecordingExecutor(MutatingOpId),
-            new OperationPolicyOptions
-            {
-                Enabled = true,
-                DefaultDecision = PolicyDecisionKind.RequireApproval,
-                DefaultApprovalLane = "operator-gate",
-                DefaultReason = "Requires operator approval.",
-            });
+        var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
 
         var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
         var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
-        body.GetProperty("status").GetString().Should().Be("RequiresApproval");
-        body.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
-        body.GetProperty("approvalLane").GetString().Should().Be("operator-gate");
+        result.IsError.Should().BeTrue();
+        body.GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.FailedPrecondition);
+        body.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        body.GetProperty("policyRef").GetString().Should().Be("operations/geo.export");
+        invoker.SubmitCount.Should().Be(0, "approval-gated MCP calls must not reach IOperationInvoker");
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_op_geo_export")]
+    public async Task Invoke_ApprovalFreeInstallation_Executes()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
+
+        var body = result.StructuredContent!.Value;
+        result.IsError.Should().BeFalse();
+        body.GetProperty("status").GetString().Should().Be("Completed");
+        invoker.SubmitCount.Should().Be(1);
     }
 
     [UnitTest]
@@ -228,7 +298,7 @@ public sealed class PublishedOperationToolTests
             return CompletedHandle(MutatingOpId);
         });
 
-        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+        var tool = new PublishedOperationTool(ApprovalFreeMutatingDescriptor(), "cat-v1", NullLogger.Instance);
         var context = Context(invoker, license: ProEdition(), roles: ["operator", "publisher"]);
 
         await tool.InvokeAsync(context, Args("""{"layerId":"7"}"""), CancellationToken.None);
@@ -236,7 +306,7 @@ public sealed class PublishedOperationToolTests
         captured.Should().NotBeNull();
         captured!.Tier.Should().Be("pro", "tier is resolved from the running edition for tier-aware policy");
         captured.Roles.Should().BeEquivalentTo("operator", "publisher");
-        captured.PrincipalId.Should().Be("agent-x");
+        captured.PrincipalId.Should().Be("test:subject:-:subject-agent-x");
     }
 
     // ---- Deterministic, param-keyed caching ------------------------------------
@@ -244,7 +314,10 @@ public sealed class PublishedOperationToolTests
     [UnitTest]
     public async Task Invoke_DeterministicReadOnly_CachesOnParams()
     {
-        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId) with
+        {
+            AuditId = "audit-original",
+        });
         var cache = new PublishedOperationCache();
         var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
 
@@ -254,9 +327,25 @@ public sealed class PublishedOperationToolTests
             Context(invoker, cache), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         invoker.SubmitCount.Should().Be(1, "identical inputs must be served from the param-keyed cache");
-        first.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
-        second.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
-        second.StructuredContent!.Value.GetProperty("deterministic").GetBoolean().Should().BeTrue();
+        var firstBody = first.StructuredContent!.Value;
+        var secondBody = second.StructuredContent!.Value;
+        firstBody.GetProperty("cacheHit").GetBoolean().Should().BeFalse();
+        secondBody.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
+        secondBody.GetProperty("deterministic").GetBoolean().Should().BeTrue();
+        secondBody.GetProperty("operationInstanceId").GetString().Should()
+            .NotBe(firstBody.GetProperty("operationInstanceId").GetString());
+        secondBody.GetProperty("handleId").GetString().Should()
+            .Be(secondBody.GetProperty("operationInstanceId").GetString());
+        secondBody.GetProperty("correlationId").GetString().Should()
+            .NotBe(firstBody.GetProperty("correlationId").GetString());
+        secondBody.GetProperty("createdAt").GetDateTimeOffset().Should()
+            .BeOnOrAfter(firstBody.GetProperty("createdAt").GetDateTimeOffset());
+        secondBody.GetProperty("auditId").GetString().Should().StartWith("audit-dev-");
+        secondBody.GetProperty("auditId").GetString().Should().NotBe("audit-original",
+            "the cached payload audit identity is evidence, not the new invocation audit identity");
+        secondBody.GetProperty("evidenceRefs").EnumerateArray().Select(item => item.GetString()).Should()
+            .Contain("cached-operation-instance:op-done")
+            .And.Contain("cached-audit:audit-original");
 
         // A different parameter is a cache miss → re-executes.
         await tool.InvokeAsync(Context(invoker, cache), Args("""{"layerId":"9"}"""), CancellationToken.None);
@@ -339,11 +428,120 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
+    public async Task Invoke_SameParamsSamePrincipalDifferentTenant_MissesCache()
+    {
+        // Security regression (#3430): the deterministic result cache is a process-wide
+        // singleton and OperationPolicyContext.PrincipalId is the canonical actor id,
+        // which is deliberately NOT tenant-qualified. Before the tenant component was
+        // added to the cache key, one caller with an identical actor/tier/role set and
+        // identical parameters moving between two tenants was served the FIRST tenant's
+        // cached result — a cross-tenant read that never reaches the policy decision
+        // point. Each tenant must take its own round-trip.
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var cache = new PublishedOperationCache();
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
+
+        var first = await tool.InvokeAsync(
+            Context(invoker, cache, principalName: "agent-a", tenantId: "tenant-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        var second = await tool.InvokeAsync(
+            Context(invoker, cache, principalName: "agent-a", tenantId: "tenant-b"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        invoker.SubmitCount.Should().Be(
+            2, "the same actor in a different tenant is a distinct cache key and must re-execute");
+        second.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeFalse(
+            "serving tenant-a's cached result to tenant-b would be a cross-tenant read");
+        first.StructuredContent!.Value.GetProperty("cacheKey").GetString().Should()
+            .NotBe(second.StructuredContent!.Value.GetProperty("cacheKey").GetString());
+
+        // The first tenant's own entry still hits: tenant scoping isolates, it does not
+        // disable caching.
+        var third = await tool.InvokeAsync(
+            Context(invoker, cache, principalName: "agent-a", tenantId: "tenant-a"),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+        third.StructuredContent!.Value.GetProperty("cacheHit").GetBoolean().Should().BeTrue();
+        invoker.SubmitCount.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void BuildKey_DelimiterBearingComponents_AreCollisionFree()
+    {
+        // The pre-image is assembled from caller-influenced values (tenant, schema,
+        // roles, parameter names/values). Without per-component escaping, a value
+        // carrying the component delimiter could be re-parsed into another caller's
+        // key — the same injectivity requirement #3430 places on the MCP session
+        // binding key.
+        var left = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext { PrincipalId = "actor", TenantId = "a|b", SchemaName = "s" });
+        var right = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext { PrincipalId = "actor", TenantId = "a", SchemaName = "b|s" });
+
+        left.Should().NotBe(right);
+
+        // An absent tenant is distinct from a tenant literally named like the reserved
+        // absent tag, so "no tenant" can never collide with a concrete tenant.
+        var absentTenant = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext { PrincipalId = "actor", TenantId = null });
+        var literalTenant = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext { PrincipalId = "actor", TenantId = "none" });
+
+        absentTenant.Should().NotBe(literalTenant);
+
+        // The key is returned to the caller, so it must not carry the routed schema or
+        // the role set in plaintext.
+        var disclosing = IPublishedOperationCache.BuildKey(
+            "op",
+            "cat-v1",
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            new OperationPolicyContext
+            {
+                PrincipalId = "actor",
+                TenantId = "tenant-secret",
+                SchemaName = "schema-secret",
+                Roles = ["role-secret"],
+            });
+
+        disclosing.Should().StartWith("sha256:");
+        disclosing.Should().NotContain("schema-secret").And.NotContain("role-secret");
+    }
+
+    [UnitTest]
+    public void BuildKey_NullEmptyAndWhitespaceParameters_AreDistinct()
+    {
+        var context = new OperationPolicyContext { PrincipalId = "actor" };
+        var keys = new string?[] { null, string.Empty, " " }
+            .Select(value => IPublishedOperationCache.BuildKey(
+                "op",
+                "cat-v1",
+                new Dictionary<string, string?>(StringComparer.Ordinal) { ["value"] = value },
+                context));
+
+        keys.Should().OnlyHaveUniqueItems(
+            "null, empty, and whitespace parameter values are distinct executor inputs");
+    }
+
+    [UnitTest]
     public async Task Invoke_MutatingOperation_IsNeverCached()
     {
         var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
         var cache = new PublishedOperationCache();
-        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+        var tool = new PublishedOperationTool(ApprovalFreeMutatingDescriptor(), "cat-v1", NullLogger.Instance);
 
         await tool.InvokeAsync(Context(invoker, cache), Args("""{"layerId":"7"}"""), CancellationToken.None);
         var second = await tool.InvokeAsync(
@@ -356,17 +554,18 @@ public sealed class PublishedOperationToolTests
     }
 
     [UnitTest]
-    public async Task Invoke_WhenInvokerUnavailable_ReturnsFailedWithoutThrowing()
+    public async Task Invoke_WhenInvokerUnavailable_ReturnsProtocolErrorWithoutSyntheticEnvelope()
     {
         var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
 
         var result = await tool.InvokeAsync(
             Context(invoker: null), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
-        result.IsError.Should().BeFalse();
-        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("Failed");
+        result.IsError.Should().BeTrue();
+        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("error");
+        result.StructuredContent!.Value.TryGetProperty("operationInstanceId", out _).Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("message").GetString()
-            .Should().Contain("operations toolset is unavailable");
+            .Should().Be("An internal MCP operation failed.");
     }
 
     // ---- Tool source: publish / deterministic mode -----------------------------
@@ -388,7 +587,8 @@ public sealed class PublishedOperationToolTests
         var source = new PublishedOperationToolSource(
             Catalog(DeterministicReadOnlyDescriptor(), MutatingDescriptor(), ServicePublishDescriptor()),
             Options.Create(new McpPublishedOperationOptions { Enabled = true }),
-            NullLogger<PublishedOperationToolSource>.Instance);
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: [new TestApprovalMapper(MutatingOpId)]);
 
         var names = (await source.GetToolsAsync(CancellationToken.None)).Select(t => t.Name).ToArray();
 
@@ -403,7 +603,8 @@ public sealed class PublishedOperationToolTests
         var source = new PublishedOperationToolSource(
             Catalog(DeterministicReadOnlyDescriptor(), MutatingDescriptor()),
             Options.Create(new McpPublishedOperationOptions { Enabled = true, DeterministicOnly = true }),
-            NullLogger<PublishedOperationToolSource>.Instance);
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: [new TestApprovalMapper(MutatingOpId)]);
 
         var names = (await source.GetToolsAsync(CancellationToken.None)).Select(t => t.Name).ToArray();
 
@@ -518,7 +719,9 @@ public sealed class PublishedOperationToolTests
         ILicenseEntitlementService? license = null,
         IAuthorizationService? authorization = null,
         string[]? roles = null,
-        string principalName = "agent-x")
+        string principalName = "agent-x",
+        string? tenantId = null,
+        ApprovalRequirement? gateApproval = null)
     {
         var services = new ServiceCollection();
         if (invoker is not null)
@@ -526,7 +729,18 @@ public sealed class PublishedOperationToolTests
             services.AddSingleton(invoker);
         }
 
+        if (tenantId is not null)
+        {
+            var tenantContext = Substitute.For<ITenantContext>();
+            tenantContext.TenantId.Returns(tenantId);
+            services.AddSingleton(tenantContext);
+        }
+
         services.AddSingleton<IPublishedOperationCache>(cache ?? new PublishedOperationCache());
+        services.AddSingleton<IOperationEnvelopeFactory>(new OperationEnvelopeFactory(
+            new VolatileOperationInstanceStore(),
+            new VolatileOperationAuditLog(),
+            TimeProvider.System));
         if (license is not null)
         {
             services.AddSingleton(license);
@@ -537,7 +751,20 @@ public sealed class PublishedOperationToolTests
             services.AddSingleton(authorization);
         }
 
-        var claims = new List<Claim> { new(ClaimTypes.Name, principalName) };
+        var authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
+        var approvalEvaluator = Substitute.For<IOperatorApprovalEvaluator>();
+        approvalEvaluator.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(gateApproval ?? ApprovalRequirement.NotRequired());
+        services.AddSingleton(new OperatorApprovalGate(
+            authEvaluator,
+            approvalEvaluator,
+            NullLogger<OperatorApprovalGate>.Instance));
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, principalName),
+            new(ClaimTypes.NameIdentifier, $"subject-{principalName}"),
+        };
         claims.AddRange((roles ?? []).Select(r => new Claim(ClaimTypes.Role, r)));
 
         return new DefaultHttpContext
@@ -575,7 +802,10 @@ public sealed class PublishedOperationToolTests
     private static OperationHandle CompletedHandle(string operationId) => new()
     {
         OperationId = operationId,
-        HandleId = "op-done",
+        OperationInstanceId = "op-done",
+        CorrelationId = "corr-done",
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
         Status = OperationHandleStatus.Completed,
         Result = new OperationResultSummary
         {
@@ -622,6 +852,11 @@ public sealed class PublishedOperationToolTests
             Determinism = OperationDeterminism.AiAssisted,
             SupportsDryRun = true,
         },
+    };
+
+    private static OperationDescriptor ApprovalFreeMutatingDescriptor() => MutatingDescriptor() with
+    {
+        ApprovalModel = OperationApprovalModel.None,
     };
 
     private static OperationDescriptor ServicePublishDescriptor() => DeterministicReadOnlyDescriptor() with
@@ -674,6 +909,22 @@ public sealed class PublishedOperationToolTests
             => Task.FromResult(handler(request, context));
     }
 
+    private sealed class TestApprovalMapper(string operationId) : IOperationApprovalRequestMapper
+    {
+        public string OperationId => operationId;
+
+        public Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest Map(
+            IOperationDescriptor descriptor,
+            OperationRequest request,
+            OperationPolicyContext context,
+            PolicyDecision decision)
+            => new() { Kind = Honua.Core.Features.Guardrails.Domain.OperationClass.AdminConfigChange };
+
+        public OperationApprovalReplayMapping MapReplay(
+            Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest request)
+            => new() { Request = new OperationRequest { OperationId = OperationId } };
+    }
+
     private sealed class CountingInvoker(Func<OperationRequest, OperationHandle> handler) : IOperationInvoker
     {
         public int SubmitCount { get; private set; }
@@ -705,7 +956,10 @@ public sealed class PublishedOperationToolTests
             return Task.FromResult(new OperationHandle
             {
                 OperationId = operationId,
-                HandleId = "op-run",
+                OperationInstanceId = "op-run",
+                CorrelationId = "corr-run",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
                 Status = OperationHandleStatus.Completed,
             });
         }
@@ -714,7 +968,10 @@ public sealed class PublishedOperationToolTests
             => Task.FromResult(new OperationStatus
             {
                 OperationId = operationId,
-                HandleId = handle.HandleId,
+                OperationInstanceId = handle.OperationInstanceId,
+                CorrelationId = handle.CorrelationId,
+                CreatedAt = handle.CreatedAt,
+                UpdatedAt = handle.UpdatedAt,
                 Status = handle.Status,
             });
     }

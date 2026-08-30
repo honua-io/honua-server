@@ -255,7 +255,7 @@ internal static partial class EmbedPolicyEndpoints
         return analytics.IngestAsync(analyticsEvent, cancellationToken);
     }
 
-    private static Task EmitDenialAuditAsync(
+    private static Task<string?> EmitDenialAuditAsync(
         IAuditLog auditLog,
         HttpContext context,
         Guid keyId,

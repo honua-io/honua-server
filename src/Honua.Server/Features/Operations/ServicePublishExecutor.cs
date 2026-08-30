@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Ai.Protocols.Mcp;
 
 namespace Honua.Server.Features.Operations;
 
@@ -25,6 +26,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
     private readonly ISecureConnectionResolver _connectionResolver;
     private readonly IMetadataV2GraphProvider _metadataGraphProvider;
     private readonly TimeProvider _clock;
+    private readonly IMcpNotificationPublisher? _notifications;
 
     /// <summary>
     /// Initializes a new instance of <see cref="ServicePublishExecutor"/>.
@@ -33,11 +35,13 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
     /// <param name="connectionResolver">Resolves the target connection string from the request connection id.</param>
     /// <param name="metadataGraphProvider">Read access to the Metadata v2 graph for revision surfacing.</param>
     /// <param name="clock">Time provider for handle id generation.</param>
+    /// <param name="notifications">Optional catalog-change broadcaster resolved by production composition.</param>
     public ServicePublishExecutor(
         ILayerPublishingService publishingService,
         ISecureConnectionResolver connectionResolver,
         IMetadataV2GraphProvider metadataGraphProvider,
-        TimeProvider clock)
+        TimeProvider clock,
+        IMcpNotificationPublisher? notifications = null)
     {
         ArgumentNullException.ThrowIfNull(publishingService);
         ArgumentNullException.ThrowIfNull(connectionResolver);
@@ -47,6 +51,7 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         _connectionResolver = connectionResolver;
         _metadataGraphProvider = metadataGraphProvider;
         _clock = clock;
+        _notifications = notifications;
     }
 
     /// <inheritdoc />
@@ -122,13 +127,24 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         // The canonical source is the graph snapshot the publish just saved; surfacing it here is
         // the cheapest read-after-write that keeps the executor a thin wrapper over the service.
         var graph = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        _notifications?.BroadcastResourcesListChanged();
+        _notifications?.BroadcastToolsListChanged();
+        var now = _clock.GetUtcNow();
 
         return new OperationHandle
         {
+            OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
             OperationId = OperationId,
-            HandleId = NewHandleId(),
+            CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
             Status = OperationHandleStatus.Completed,
+            CreatedAt = now,
+            UpdatedAt = now,
             MetadataRevision = graph.Revision,
+            ResourceIds = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+                ["serviceName"] = summary.ServiceName,
+            },
             Result = new OperationResultSummary
             {
                 Summary = $"Published layer '{summary.LayerName}' (id {summary.LayerId}) to service '{summary.ServiceName}'.",
@@ -152,12 +168,23 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
         // service.publish is synchronous: the submit handle is terminal. Status mirrors it.
         return Task.FromResult(new OperationStatus
         {
+            OperationInstanceId = handle.OperationInstanceId,
             OperationId = OperationId,
-            HandleId = handle.HandleId,
+            CorrelationId = handle.CorrelationId,
+            AuditId = handle.AuditId,
+            ProposalId = handle.ProposalId,
+            CreatedAt = handle.CreatedAt,
+            UpdatedAt = handle.UpdatedAt,
+            AuthorizationOutcome = handle.AuthorizationOutcome,
+            PolicyDecision = handle.PolicyDecision,
             Status = handle.Status,
             Result = handle.Result,
             JobId = handle.JobId,
-            MetadataRevision = handle.MetadataRevision
+            MetadataRevision = handle.MetadataRevision,
+            ApprovalLane = handle.ApprovalLane,
+            Reason = handle.Reason,
+            ResourceIds = handle.ResourceIds,
+            EvidenceRefs = handle.EvidenceRefs,
         });
     }
 
@@ -189,6 +216,4 @@ internal sealed class ServicePublishExecutor : IOperationExecutor
             ? parsed
             : null;
 
-    private string NewHandleId()
-        => $"op-{_clock.GetUtcNow().ToUnixTimeMilliseconds():x}-{Guid.NewGuid():N}"[..32];
 }

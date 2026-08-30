@@ -139,8 +139,8 @@ public sealed class NullAuditLogTests
             CorrelationId = "any",
         };
 
-        var act = async () => await NullAuditLog.Instance.RecordAsync(evt);
-        await act.Should().NotThrowAsync();
+        var auditId = await NullAuditLog.Instance.RecordAsync(evt);
+        auditId.Should().BeNull("a no-op sink cannot claim a durable audit identity");
     }
 
     [Fact]

@@ -225,6 +225,44 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /api/v1/studio/package-drafts")]
+    public async Task CreateDraft_IdempotencyKey_ReturnsOriginalDurableInvocationAndDraft()
+    {
+        var body = new CreateStudioPackageDraftRequest
+        {
+            PackageKey = "idempotent-draft",
+            Envelope = BuildEnvelope("1=1"),
+        };
+
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/studio/package-drafts")
+        {
+            Content = JsonContent(body, StudioApiJsonContext.Default.CreateStudioPackageDraftRequest),
+        };
+        firstRequest.Headers.TryAddWithoutValidation("Idempotency-Key", "studio-create-idempotency-1");
+        using var firstResponse = await _client.SendAsync(firstRequest);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var firstDraft = await ReadAsync<StudioPackageDraft>(
+            firstResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        var firstInstance = firstResponse.Headers.GetValues("X-Honua-Operation-Instance-Id").Single();
+
+        using var retryRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/studio/package-drafts")
+        {
+            Content = JsonContent(body, StudioApiJsonContext.Default.CreateStudioPackageDraftRequest),
+        };
+        retryRequest.Headers.TryAddWithoutValidation("Idempotency-Key", "studio-create-idempotency-1");
+        using var retryResponse = await _client.SendAsync(retryRequest);
+        retryResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var retryDraft = await ReadAsync<StudioPackageDraft>(
+            retryResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+
+        retryDraft.DraftId.Should().Be(firstDraft.DraftId);
+        retryResponse.Headers.GetValues("X-Honua-Operation-Instance-Id").Single().Should().Be(firstInstance);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/studio/content-items")]
     [Endpoint("GET /api/v1/studio/package-drafts")]
     public async Task ListContentItemsAndDrafts_FiltersByFamilyOwnerAndState_JoinsPublicationBadge()
@@ -1850,10 +1888,10 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     {
         public List<AuditEvent> Events { get; } = [];
 
-        public Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             Events.Add(auditEvent);
-            return Task.CompletedTask;
+            return Task.FromResult<string?>("audit-test");
         }
     }
 }

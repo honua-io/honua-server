@@ -40,6 +40,19 @@ public enum OperationClass
     /// dead-ending at submission (ADR-0064, #2814).
     /// </summary>
     Geoprocess = 4,
+
+    /// <summary>
+    /// Publishes a validated source table through the canonical service-publish actuator.
+    /// This class is distinct from administrative configuration and deployment so an
+    /// approval replay can never be routed to an unrelated legacy actuator.
+    /// </summary>
+    ServicePublish = 5,
+
+    /// <summary>
+    /// Creates, updates, or deletes a Studio draft through a typed descriptor. The persisted
+    /// descriptor id selects the exact actuator during approval replay.
+    /// </summary>
+    StudioDraftMutation = 6,
 }
 
 /// <summary>

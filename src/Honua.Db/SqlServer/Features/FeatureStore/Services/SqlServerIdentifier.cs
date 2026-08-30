@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Db.SqlServer.Features.FeatureStore.Services;
 
@@ -46,6 +47,20 @@ internal static partial class SqlServerIdentifier
         return "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
     }
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    /// <summary>
+    /// Bracket-quotes an attribute name accepted by the shared feature-field contract.
+    /// Structural identifiers remain restricted to <see cref="Quote"/>.
+    /// </summary>
+    public static string QuoteAttribute(string identifier)
+    {
+        if (!FeatureFieldNameSyntax.IsValid(identifier))
+        {
+            throw new ArgumentException($"Invalid SQL Server attribute column '{identifier}'.");
+        }
+
+        return "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
+    }
+
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.CultureInvariant)]
     private static partial Regex IdentifierPattern();
 }

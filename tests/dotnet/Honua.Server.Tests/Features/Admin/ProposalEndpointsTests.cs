@@ -4,14 +4,19 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Domain;
+using IOperationInstanceStore = Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -27,6 +32,12 @@ namespace Honua.Server.Tests.Features.Admin;
 [Operation(Operations.ApprovalManagement)]
 public sealed class ProposalEndpointsTests : IAsyncLifetime
 {
+    private const string AdminPassword = "proposal-admin-bootstrap-key";
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
     private readonly TestProposalStore _proposalStore = new();
     private readonly StubGuardrailLadder _ladder = new();
     private readonly RecordingProposalNotifier _notifier = new();
@@ -37,6 +48,12 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     public ProposalEndpointsTests()
     {
         _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IOperationProposalStore>();
@@ -44,11 +61,14 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IProposalNotifier>();
                 services.RemoveAll<IOperationGateway>();
                 services.RemoveAll<IOperationExecutor>();
+                services.RemoveAll<IOperationExecutorCatalog>();
 
                 services.AddSingleton<IOperationProposalStore>(_proposalStore);
                 services.AddSingleton<IGuardrailLadder>(_ladder);
                 services.AddSingleton<IProposalNotifier>(_notifier);
                 services.AddSingleton<IOperationExecutor>(_executor);
+                services.AddSingleton<IOperationExecutorCatalog>(
+                    new TestExecutorCatalog([OperationClass.AdminConfigChange]));
                 services.AddSingleton<IOperationGateway, Honua.ControlPlane.OperationGateway>();
             });
     }
@@ -56,7 +76,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _client = _fixture.CreateAdminClient();
+        _client = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -65,13 +85,36 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         OperationProposalStatus status = OperationProposalStatus.AwaitingApproval,
         string? requestedBy = "agent:test",
         OperationProposalAutonomyMetadata? autonomyMetadata = null,
-        string? executionPayload = null)
+        string? executionPayload = null,
+        OperationClass kind = OperationClass.AdminConfigChange)
     {
+        if (status == OperationProposalStatus.AwaitingApproval &&
+            autonomyMetadata is null &&
+            kind == OperationClass.AdminConfigChange)
+        {
+            // Ruling 4: approval fixtures must enter through canonical acceptance so
+            // replay can prove the original instance identity and sealed plan hash.
+            var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
+            var routed = await gateway.RouteAsync(new OperationGatewayRequest
+            {
+                Kind = kind,
+                RequestedBy = requestedBy,
+                ExecutionPayload = executionPayload,
+                Plan = new OperationProposalPlan
+                {
+                    Summary = "Change setting X",
+                    RiskLevel = ProposalRiskLevel.Medium,
+                    ExecutionPayload = executionPayload,
+                },
+            });
+            return (await _proposalStore.GetAsync(routed.ProposalId!))!;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var proposal = new OperationProposal
         {
             ProposalId = $"proposal-{Guid.NewGuid():N}",
-            Kind = OperationClass.AdminConfigChange,
+            Kind = kind,
             Status = status,
             RequestedBy = requestedBy,
             AutonomyMetadata = autonomyMetadata,
@@ -153,7 +196,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
-    public async Task ApproveProposal_HappyPath_ExecutesAndMarksSubmitted()
+    public async Task ApproveProposal_HappyPath_ExecutesAndMarksSucceeded()
     {
         // Requester differs from the admin approver so separation-of-duties passes.
         var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
@@ -161,11 +204,97 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        document.RootElement.GetProperty("status").GetString().Should().Be("Submitted");
+        var responseJson = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(responseJson);
+        // Ruling 1: only queued/running work awaits reconciler finalization; this
+        // synchronous approved replay is already terminal.
+        document.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", responseJson);
         _executor.Executed.Should().BeTrue();
         _notifier.ResolvedCount.Should().BeGreaterThan(0);
     }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_UnregisteredOperationType_ReturnsActionableProblem()
+    {
+        var proposal = await SeedProposalAsync(
+            requestedBy: "agent:proposer",
+            kind: OperationClass.Seed);
+
+        var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("code").GetString().Should().Be("operation-executor-unavailable");
+        document.RootElement.GetProperty("operationType").GetString().Should().Be("Seed");
+        document.RootElement.GetProperty("detail").GetString().Should().Contain("Seed");
+        _executor.Executed.Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
+    [Endpoint("PUT /api/v1/admin/services/{serviceId}/access-policy")]
+    public async Task ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces()
+    {
+        var key = await CreateApiKeyAsync("console-read-approve", ["admin:read", "admin:approve"]);
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        using var client = CreateApiKeyClient(key.Key);
+
+        (await client.GetAsync("/api/v1/admin/api-keys")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var effective = await client.GetAsync($"/api/v1/admin/api-keys/{key.ApiKey.Id}/effective-permissions");
+        effective.StatusCode.Should().Be(HttpStatusCode.OK);
+        var effectiveBody = await effective.Content.ReadAsStringAsync();
+        effectiveBody.Should().Contain("admin:read").And.Contain("admin:approve");
+
+        var approve = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        approve.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var rejectedProposal = await SeedProposalAsync(requestedBy: "agent:other-proposer");
+        var reject = await client.PostAsJsonAsync(
+            $"/api/v1/admin/proposals/{rejectedProposal.ProposalId}/reject",
+            new { reason = "Not approved for release." });
+        reject.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var forbidden = await client.PutAsJsonAsync(
+            "/api/v1/admin/services/x/access-policy",
+            new { allowAnonymous = true });
+        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ReadOnlyScopedKey_ApproveNamesMissingGrant()
+    {
+        var key = await CreateApiKeyAsync("console-read-only", ["admin:read"]);
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer");
+        using var client = CreateApiKeyClient(key.Key);
+
+        var response = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("admin:approve");
+    }
+
+    private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(string name, IReadOnlyList<string> permissions)
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = name, Permissions = permissions },
+            JsonOptions);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var result = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await response.Content.ReadAsStringAsync(), JsonOptions);
+        return result!.Data!;
+    }
+
+    private HttpClient CreateApiKeyClient(string apiKey)
+        => _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", apiKey));
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
@@ -205,6 +334,11 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("status").GetString().Should().Be("Rejected");
         document.RootElement.GetProperty("resolutionReason").GetString().Should().Be("not safe right now");
+        var instanceStore = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
+        var instance = await instanceStore.GetAsync(proposal.Audit.OperationInstanceId!);
+        instance.Should().NotBeNull();
+        instance!.Status.Should().Be(OperationHandleStatus.Rejected);
+        instance.ProposalId.Should().Be(proposal.ProposalId);
     }
 
     [IntegrationTest]
@@ -237,7 +371,38 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         result.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         result.ProposalId.Should().NotBeNullOrEmpty();
         _notifier.PendingCount.Should().BeGreaterThan(0);
-        (await _proposalStore.GetAsync(result.ProposalId!)).Should().NotBeNull();
+        var proposal = await _proposalStore.GetAsync(result.ProposalId!);
+        proposal.Should().NotBeNull();
+        var instanceStore = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
+        var instance = await instanceStore.GetAsync(proposal!.Audit.OperationInstanceId!);
+        instance.Should().NotBeNull();
+        instance!.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        instance.ProposalId.Should().Be(result.ProposalId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task Gateway_IdempotentApprovalRetry_ReusesCanonicalInstance()
+    {
+        _ladder.Tier = GuardrailTier.RequiresApproval;
+        var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
+        var request = new OperationGatewayRequest
+        {
+            Kind = OperationClass.AdminConfigChange,
+            RequestedBy = "agent:proposer",
+            IdempotencyKey = $"approval-{Guid.NewGuid():N}",
+        };
+
+        var first = await gateway.RouteAsync(request);
+        var second = await gateway.RouteAsync(request);
+
+        second.ProposalId.Should().Be(first.ProposalId);
+        var proposal = await _proposalStore.GetAsync(first.ProposalId!);
+        var instanceStore = _fixture.Services.GetRequiredService<IOperationInstanceStore>();
+        var active = await instanceStore.ListActiveAsync();
+        active.Should().ContainSingle(instance =>
+            instance.OperationInstanceId == proposal!.Audit.OperationInstanceId &&
+            instance.Status == OperationHandleStatus.RequiresApproval);
     }
 
     [IntegrationTest]
@@ -293,6 +458,12 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             string? actionDiscriminator,
             Honua.Core.Features.Licensing.Domain.HonuaEdition edition)
             => new(Tier, operationClass, edition, "test-stub");
+    }
+
+    private sealed class TestExecutorCatalog(IReadOnlyCollection<OperationClass> supportedKinds)
+        : IOperationExecutorCatalog
+    {
+        public IReadOnlyCollection<OperationClass> SupportedKinds { get; } = supportedKinds;
     }
 
     private sealed class RecordingExecutor : IOperationExecutor

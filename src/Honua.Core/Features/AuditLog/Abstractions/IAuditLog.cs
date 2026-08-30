@@ -9,11 +9,9 @@ namespace Honua.Core.Features.AuditLog.Abstractions;
 /// <remarks>
 /// <para>
 /// Implementations MUST treat the sink as append-only: there is no API for
-/// update or delete. Implementations SHOULD swallow transient failures and log
-/// them via <c>ILogger</c> rather than propagating to the caller, because an
-/// audit failure must never block a security-relevant action — but they MUST
-/// surface configuration errors (missing table, schema mismatch) so the
-/// platform fails closed at startup.
+/// update or delete. Implementations may swallow transient failures and return
+/// <see langword="null"/> after logging them. Callers whose security contract requires
+/// durable evidence must treat a missing assigned identity as a fail-closed failure.
 /// </para>
 /// <para>
 /// A <see cref="NullAuditLog"/> fallback is provided for environments where no
@@ -33,10 +31,13 @@ public interface IAuditLog
     bool IsPersisted => true;
 
     /// <summary>
-    /// Record an audit event. Implementations should be best-effort and
-    /// non-blocking with respect to the caller's critical path.
+    /// Record an audit event and return the identity assigned by the durable sink.
     /// </summary>
     /// <param name="auditEvent">The event to persist.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// The assigned durable audit identity, or <see langword="null"/> when the sink is
+    /// non-persisted or could not durably accept the event.
+    /// </returns>
+    Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default);
 }

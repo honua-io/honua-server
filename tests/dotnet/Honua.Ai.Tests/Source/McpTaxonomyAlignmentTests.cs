@@ -828,7 +828,12 @@ public sealed partial class McpTaxonomyAlignmentTests
             .ToArray();
     }
 
-    private static IMcpTool[] BuildTools()
+    /// <summary>
+    /// The full static tool roster this host composes. Exposed to the assembly so
+    /// the workflow-view tests (honua-server#3428) derive their view from the same
+    /// canonical roster instead of restating one.
+    /// </summary>
+    internal static IMcpTool[] BuildTools()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
         var groundingService = Substitute.For<IGroundingService>();

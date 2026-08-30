@@ -907,13 +907,21 @@ WHERE service_name = 'test_service';
 
 INSERT INTO honua.layers (
     layer_id, layer_name, description, table_name,
-    geometry_type, srid, extent, default_visibility
+    geometry_type, srid, extent, temporal_column, default_visibility
 )
-VALUES (
-    0, 'Test Layer', 'Client compatibility certification layer',
-    'features', 'Point', 4326,
-    ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), true
-)
+VALUES
+    (0, 'Test Layer', 'Client compatibility certification layer',
+     'features', 'Point', 4326,
+     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), 'created_at', true),
+    (10, 'WFS-T Insert Scratch', 'Per-test OWSLib Insert certification layer',
+     'features', 'Point', 4326,
+     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), NULL, true),
+    (11, 'WFS-T Update Scratch', 'Per-test OWSLib Update certification layer',
+     'features', 'Point', 4326,
+     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), NULL, true),
+    (12, 'WFS-T Delete Scratch', 'Per-test OWSLib Delete certification layer',
+     'features', 'Point', 4326,
+     ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326), NULL, true)
 ON CONFLICT (layer_id) DO UPDATE SET
     layer_name = EXCLUDED.layer_name,
     description = EXCLUDED.description,
@@ -921,6 +929,7 @@ ON CONFLICT (layer_id) DO UPDATE SET
     geometry_type = EXCLUDED.geometry_type,
     srid = EXCLUDED.srid,
     extent = EXCLUDED.extent,
+    temporal_column = EXCLUDED.temporal_column,
     default_visibility = EXCLUDED.default_visibility;
 
 UPDATE honua.layers
@@ -929,6 +938,12 @@ SET metadata = jsonb_build_object(
     'timeInfo', jsonb_build_object('startTimeField', 'created_at')
 )
 WHERE layer_id = 0;
+
+UPDATE honua.layers
+SET metadata = jsonb_build_object(
+    'accessPolicy', jsonb_build_object('allowAnonymous', true, 'allowAnonymousWrite', true)
+)
+WHERE layer_id IN (10, 11, 12);
 
 INSERT INTO honua.layer_fields (
     layer_id, field_name, field_type, field_order,
@@ -939,6 +954,20 @@ VALUES
     (0, 'name', 'String', 1, 255, true, NULL, 'Name'),
     (0, 'description', 'String', 2, 1024, true, NULL, 'Description'),
     (0, 'shape', 'Geometry', 3, NULL, true, NULL, 'Geometry')
+ON CONFLICT (layer_id, field_name) DO NOTHING;
+
+INSERT INTO honua.layer_fields (
+    layer_id, field_name, field_type, field_order,
+    max_length, nullable, default_value, description
+)
+SELECT scratch.layer_id, field.field_name, field.field_type, field.field_order,
+       field.max_length, field.nullable, NULL, field.description
+FROM (VALUES (10), (11), (12)) AS scratch(layer_id)
+CROSS JOIN (VALUES
+    ('objectid', 'Integer', 0, NULL::integer, false, 'Object ID'),
+    ('name', 'String', 1, 255, true, 'Name'),
+    ('shape', 'Geometry', 2, NULL::integer, true, 'Geometry')
+) AS field(field_name, field_type, field_order, max_length, nullable, description)
 ON CONFLICT (layer_id, field_name) DO NOTHING;
 
 INSERT INTO honua.layer_fields (
@@ -964,7 +993,11 @@ VALUES
 ON CONFLICT (layer_id, field_name) DO NOTHING;
 
 INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
-VALUES ('test_service', 0, 0)
+VALUES
+    ('test_service', 0, 0),
+    ('test_service', 10, 10),
+    ('test_service', 11, 11),
+    ('test_service', 12, 12)
 ON CONFLICT (service_name, layer_id) DO NOTHING;
 
 WITH seeded_features AS (
@@ -1026,5 +1059,15 @@ WHERE NOT EXISTS (
     FROM features
     WHERE layer_id = 0
 );
+
+INSERT INTO features (layer_id, geometry, attributes)
+SELECT layer_id,
+       ST_SetSRID(ST_MakePoint(-122.42, 37.76), 4326),
+       jsonb_build_object('name', feature_name)
+FROM (VALUES
+    (11, 'owslib-update-before'),
+    (12, 'owslib-delete-target')
+) AS scratch(layer_id, feature_name)
+WHERE NOT EXISTS (SELECT 1 FROM features existing WHERE existing.layer_id = scratch.layer_id);
 
 SELECT honua.seed_metadata_v2_compat_snapshot();

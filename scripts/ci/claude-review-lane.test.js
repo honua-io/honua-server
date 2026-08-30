@@ -139,3 +139,13 @@ test('an `@claude review` re-request requires a human with write access', () => 
   assert.match(source, /OWNER","MEMBER","COLLABORATOR/);
   assert.match(source, /comment\.user\.type == 'User'/);
 });
+
+test('clean, green, eligible exact-head evidence does not dispatch the merge train', () => {
+  assert.match(source, /echo "clean=false" >> "\$\{GITHUB_OUTPUT\}"/);
+  assert.match(source, /if \[ "\$\{verdict\}" != "clean" \]; then\n\s+exit 0/);
+  assert.match(source, /\.name == "PR Gate" and \.app\.id == 15368/);
+  assert.match(source, /sort_by\(\.started_at\) \| last \| \.conclusion == "success"/);
+  assert.match(source, /\. == "hold" or \. == "train:hold" or \. == "train:escalated"/);
+  assert.doesNotMatch(source, /gh workflow run merge-train\.yml/);
+  assert.doesNotMatch(source, /train_apply=true/);
+});

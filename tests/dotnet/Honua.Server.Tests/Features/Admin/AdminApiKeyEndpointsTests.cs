@@ -249,6 +249,26 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithReservedApprovedOperationGrant_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest
+            {
+                Name = "forged-operation-key",
+                Permissions = ["admin:operation:POST:/api/v1/admin/connections"],
+            },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "minted internally",
+            await response.Content.ReadAsStringAsync(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/api-keys")]
     public async Task GenuinelyScopedApiKey_IsDeniedAdminEndpoint()
     {

@@ -4,6 +4,9 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -137,6 +140,16 @@ internal abstract class StudioDraftToolBase
     protected static IStudioPackageLifecycleService RequireLifecycleService(HttpContext httpContext) =>
         httpContext.RequestServices.GetService<IStudioPackageLifecycleService>()
         ?? throw new GeoprocessingStoreUnavailableException("The Studio package lifecycle service is not available on this server.");
+
+    /// <summary>
+    /// Resolves the canonical durable mutation runtime from the current request scope.
+    /// Studio tools are advertised by the modular MCP composition even when a host has
+    /// not composed the server-only operations toolset, so absence must remain a typed,
+    /// retryable capability error rather than masquerading as optimistic concurrency.
+    /// </summary>
+    protected static IStudioDraftMutationRuntime RequireMutationRuntime(HttpContext httpContext) =>
+        httpContext.RequestServices.GetService<IStudioDraftMutationRuntime>()
+        ?? throw new GeoprocessingStoreUnavailableException("The Studio draft mutation runtime is not available on this server.");
 
     /// <summary>
     /// Resolves the canonical Studio ownership-policy service from the current
@@ -317,8 +330,8 @@ internal abstract class StudioDraftToolBase
     }
 
     /// <summary>
-    /// Applies a mutation to a loaded draft through
-    /// <see cref="IStudioPackageLifecycleService.UpdateDraftAsync"/>. Callers
+    /// Applies a mutation to a loaded draft through the canonical durable
+    /// <see cref="IStudioDraftMutationRuntime"/>. Callers
     /// build <paramref name="command"/> from the draft's current
     /// packageKey/workspaceId/ownerId (composition tools, which never change
     /// them) or from caller-supplied overrides
@@ -330,17 +343,36 @@ internal abstract class StudioDraftToolBase
     /// disappeared between load and update into <see cref="GeoprocessingNotFoundException"/>.
     /// </summary>
     protected static async Task<StudioPackageDraft> ApplyUpdateAsync(
-        IStudioPackageLifecycleService lifecycleService,
+        HttpContext httpContext,
+        ClaimsPrincipal principal,
         Guid draftId,
         UpdateStudioPackageDraftCommand command,
         CancellationToken cancellationToken)
     {
+        var runtime = RequireMutationRuntime(httpContext);
         try
         {
-            var updated = await lifecycleService.UpdateDraftAsync(draftId, command, cancellationToken)
+            var receipt = await runtime.UpdateAsync(
+                draftId,
+                command,
+                new StudioDraftMutationContext
+                {
+                    PrincipalId = command.ActorId,
+                    TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+                    SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+                    CorrelationId = httpContext.TraceIdentifier,
+                    AuthorizationOutcome = "authorized",
+                    Roles = principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
+                },
+                cancellationToken)
                 .ConfigureAwait(false);
 
-            return updated
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                ThrowMutationOutcome(receipt.Operation);
+            }
+
+            return receipt.Value
                 ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
         }
         catch (InvalidOperationException ex)
@@ -354,6 +386,40 @@ internal abstract class StudioDraftToolBase
             // failed_precondition errors instead of an opaque internal error.
             throw new GeoprocessingPreconditionFailedException(ex.Message);
         }
+    }
+
+    private static void ThrowMutationOutcome(OperationHandle operation)
+    {
+        var message = operation.Reason ?? $"Studio draft update ended as '{operation.Status}'.";
+        if (operation.Status == OperationHandleStatus.RequiresApproval)
+        {
+            throw new GeoprocessingApprovalRequiredException(
+                operation.ApprovalLane ?? operation.PolicyDecision?.ToString() ?? operation.OperationId,
+                message,
+                operation.ProposalId);
+        }
+
+        if (operation.Result?.Details.TryGetValue("errorKind", out var errorKind) == true)
+        {
+            switch (errorKind)
+            {
+                case "argument":
+                    throw new GeoprocessingValidationException(message);
+                case "not-found":
+                    throw new GeoprocessingNotFoundException(message);
+            }
+        }
+
+        if (operation.Status == OperationHandleStatus.Denied)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: message,
+                resourceType: OperatorResourceType.StudioDraft,
+                operation: OperatorOperation.Create);
+        }
+
+        throw new GeoprocessingPreconditionFailedException(message);
     }
 
     /// <summary>

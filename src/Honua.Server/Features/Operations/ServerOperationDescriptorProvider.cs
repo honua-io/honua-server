@@ -15,6 +15,17 @@ namespace Honua.Server.Features.Operations;
 /// </summary>
 internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorProvider
 {
+    private readonly IReadOnlyList<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor> _legacyActuators;
+
+    public ServerOperationDescriptorProvider()
+        : this([])
+    {
+    }
+
+    public ServerOperationDescriptorProvider(
+        IEnumerable<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor> legacyActuators)
+        => _legacyActuators = legacyActuators.ToArray();
+
     /// <inheritdoc />
     public string ProviderId => ServicePublishOperation.ProviderId;
 
@@ -24,8 +35,33 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
         => Task.FromResult<IReadOnlyList<IOperationDescriptor>>(
         [
             ServicePublishOperation.BuildDescriptor(),
-            BuildAdminServerStatusDescriptor()
+            .. StudioDraftOperations.BuildDescriptors(),
+            BuildAdminServerStatusDescriptor(),
+            .. _legacyActuators.Select(actuator => BuildLegacyDescriptor(actuator.OperationClass)),
+            .. AdminOperateOperationCatalog.Descriptors
         ]);
+
+    private static OperationDescriptor BuildLegacyDescriptor(
+        Honua.Core.Features.Guardrails.Domain.OperationClass operationClass) => new()
+        {
+            OperationId = LegacyOperationIds.For(operationClass),
+            ProviderId = ServicePublishOperation.ProviderId,
+            Title = $"Control-plane {operationClass}",
+            Description = "Compatibility descriptor routed through the canonical durable operation runtime.",
+            Category = "control-plane",
+            ExecutionKind = OperationExecutionKind.Job,
+            ApprovalModel = OperationApprovalModel.OperatorGate,
+            IsCompatibilityOnly = true,
+            Policy = new OperationPolicyMetadata
+            {
+                BlastRadiusClass = OperationBlastRadiusClass.DeploymentScope,
+                SideEffectClass = OperationSideEffectClass.MutatesMetadata,
+                Determinism = OperationDeterminism.RuntimeDynamic,
+                SupportsDryRun = true,
+            },
+            InputSchema = [],
+            OutputSchema = [],
+        };
 
     private static OperationDescriptor BuildAdminServerStatusDescriptor() => new()
     {

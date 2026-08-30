@@ -251,7 +251,7 @@ def test_cert_conn_02_transport_scheme(
 
     cert_collector.record(
         "CERT-CONN-02",
-        "pass",
+        "pass" if scheme == "https" else "not-applicable",
         duration_ms=_elapsed_ms(started),
         notes=note,
         evidence_ref=base_url,
@@ -264,12 +264,12 @@ def test_cert_conn_02_transport_scheme(
 
 @pytest.mark.cert("CERT-AUTH-01")
 def test_cert_auth_01_admin_probe_rejects_anonymous(
-    base_url: str,
+    auth_base_url: str,
     cert_collector: CertificationEvidenceCollector,
 ) -> None:
     """An anonymous control-plane request is rejected."""
     started = time.perf_counter()
-    url = cert_lane.admin_probe_url(base_url)
+    url = cert_lane.admin_probe_url(auth_base_url)
 
     # Raw httpx: the admin surface is not a STAC endpoint, and the WWW-Authenticate
     # challenge - the substantive evidence here - is not reachable through any
@@ -304,17 +304,18 @@ def test_cert_auth_01_admin_probe_rejects_anonymous(
             "Raw httpx used because the control plane is not a STAC endpoint."
         ),
         evidence_ref=url,
+        client_identity="httpx",
     )
 
 
 @pytest.mark.cert("CERT-AUTH-02")
 def test_cert_auth_02_admin_probe_accepts_api_key(
-    base_url: str,
+    auth_base_url: str,
     cert_collector: CertificationEvidenceCollector,
 ) -> None:
     """The control plane admits the canonical admin credential."""
     started = time.perf_counter()
-    url = cert_lane.admin_probe_url(base_url)
+    url = cert_lane.admin_probe_url(auth_base_url)
     headers = cert_lane.admin_auth_headers()
 
     # Driven through pystac-client's StacApiIO (which accepts per-session
@@ -344,6 +345,7 @@ def test_cert_auth_02_admin_probe_accepts_api_key(
             "there is no bearer/login flow for this surface."
         ),
         evidence_ref=url,
+        client_identity="httpx",
     )
 
 
@@ -2237,12 +2239,12 @@ def test_nb_err_04_unsupported_filter_lang(
 
 @pytest.mark.cert("NB-STAC-ERR-05")
 def test_nb_err_05_wrong_api_key(
-    base_url: str,
+    auth_base_url: str,
     cert_collector: CertificationEvidenceCollector,
 ) -> None:
     """A wrong admin API key is a 401 - not 403, not 500, and never a 200."""
     started = time.perf_counter()
-    url = cert_lane.admin_probe_url(base_url)
+    url = cert_lane.admin_probe_url(auth_base_url)
 
     response = cert_lane.get_json(
         url, headers={canonical_fixture.ADMIN_API_KEY_HEADER: "definitely-not-the-admin-key"}
@@ -2260,6 +2262,7 @@ def test_nb_err_05_wrong_api_key(
             f"{canonical_fixture.ADMIN_API_KEY_HEADER} -> 401. Raw httpx: the control "
             "plane is not a STAC endpoint."
         ),
+        client_identity="httpx",
     )
 
 

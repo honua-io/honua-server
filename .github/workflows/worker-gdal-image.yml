@@ -1,28 +1,43 @@
 name: GDAL Worker Image
 
+# The heavyweight GDAL worker image is intentionally isolated from the required,
+# lean PR Gate. This path-filtered PR workflow supplies earlier image feedback
+# for changes to the image definition without charging nearly every server edit
+# for a native-tool image build and scan.
+#
+# ROUTING CONTRACT (#3553). The `pull_request` trigger below is deliberately
+# limited to inputs that DEFINE the image: the worker Docker context, worker-owned
+# managed source, the build context filter, the in-image restore helper, the
+# boundary verifier, and this workflow. Shared managed-source and build-graph
+# inputs (`src/Honua.Core/**`, `src/Honua.Core.Abstractions/**`,
+# `src/Honua.Analyzers/**`, `src/Honua.Geoprocessing/**`, `src/Honua.Jobs/**`,
+# `src/Honua.Geometry/**`, `src/Honua.Hosting/**`,
+# `src/Honua.ServiceDefaults/**`, `eng/**`, the solution, build props/targets,
+# package configuration, and `.editorconfig`) are NOT PR triggers, because they
+# change across ordinary server work and made nearly every such pull request pay
+# for the GDAL image even when it did not change the worker-owned boundary.
+# Their evidence is placed elsewhere, and each risk still has a named owner:
+#
+#   * Managed compile risk -> the required PR Gate and the merge train's batch
+#     CI, pre-merge, on the exact source and build graph that lands.
+#   * Worker image/runtime integration risk from excluded shared inputs -> this
+#     workflow's retained Monday schedule (`45 7 * * 1`) on trunk, including the
+#     real worker entrypoint smoke and vulnerability scan. A defect introduced
+#     by a broad `src/**` or build-graph change is therefore caught within seven
+#     days rather than left uncovered.
+#   * Direct image-boundary risk -> this workflow, per PR, whenever the Docker
+#     context, worker-owned source, restore helper, verifier, or routing changes.
+#
+# As with #3204, deleting the boundary lane would trade cost for unbounded
+# defects, so nothing is deleted here: the weekly schedule remains unchanged,
+# and excluded shared-input risk moves from "every push" to "within seven days."
 on:
   pull_request:
     branches: [trunk]
     paths:
       - 'docker/worker-gdal/**'
       - 'src/Honua.Worker.Gdal/**'
-      - 'src/Honua.Analyzers/**'
-      - 'src/Honua.Geoprocessing/**'
-      - 'src/Honua.Jobs/**'
-      - 'src/Honua.Core/**'
-      - 'src/Honua.Core.Abstractions/**'
-      - 'src/Honua.Geometry/**'
-      - 'src/Honua.Hosting/**'
-      - 'src/Honua.ServiceDefaults/**'
-      - 'Honua.sln'
-      - 'global.json'
-      - 'Directory.Build.props'
-      - 'Directory.Build.targets'
-      - 'Directory.Packages.props'
-      - 'NuGet.config'
-      - '.editorconfig'
       - '.dockerignore'
-      - 'eng/**'
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
       - '.github/workflows/worker-gdal-image.yml'

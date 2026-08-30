@@ -52,3 +52,12 @@ public class DatabaseCoreEndpointsCollection : ICollectionFixture<DatabaseFixtur
 public class DatabaseCoreSpatialCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
+
+/// <summary>
+/// Database-backed collection for admin authorization endpoint tests.
+/// </summary>
+[CollectionDefinition("Database.AdminAuthorization")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
+public class DatabaseAdminAuthorizationCollection : ICollectionFixture<DatabaseFixtureAdapter>
+{
+}
