@@ -1879,10 +1879,10 @@
       "category": "Serve",
       "edition": "Enterprise",
       "status": "experimental",
-      "entryCount": 12,
-      "provingTestCount": 41,
+      "entryCount": 8,
+      "provingTestCount": 26,
       "maturity": {
-        "implemented": 12
+        "implemented": 8
       },
       "noSurface": null,
       "cite": [],
