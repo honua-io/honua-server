@@ -10,6 +10,10 @@ inputs:
     description: 'Restore/save per-project bin/obj across jobs (opt-in; broad binary caches can exhaust hosted runner disk)'
     required: false
     default: 'false'
+  nuget-cache-read-only:
+    description: 'Restore NuGet packages without saving a cache (required when the source checkout does not match github.ref)'
+    required: false
+    default: 'false'
 
 runs:
   using: composite
@@ -42,9 +46,11 @@ runs:
     # one later participates in the key automatically.)
     # GitHub makes default-branch caches available to other refs. PRs therefore
     # restore this exact/fallback lineage from trunk, but must not save a second
-    # branch-scoped copy of the ~1.7 GB package archive.
+    # branch-scoped copy of the ~1.7 GB package archive. workflow_run and manual
+    # jobs that build a PR from a secondary checkout must opt into read-only mode
+    # because github.ref still identifies the workflow's default-branch policy.
     - name: Cache NuGet packages (trunk read/write)
-      if: github.ref == 'refs/heads/trunk'
+      if: github.ref == 'refs/heads/trunk' && inputs.nuget-cache-read-only != 'true'
       uses: actions/cache@v5
       with:
         path: ~/.nuget/packages
@@ -54,7 +60,7 @@ runs:
           ${{ github.repository }}-${{ runner.os }}-nuget-
 
     - name: Restore NuGet packages (non-trunk read-only)
-      if: github.ref != 'refs/heads/trunk'
+      if: github.ref != 'refs/heads/trunk' || inputs.nuget-cache-read-only == 'true'
       uses: actions/cache/restore@v5
       with:
         path: ~/.nuget/packages
