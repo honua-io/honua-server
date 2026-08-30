@@ -48,6 +48,8 @@ GML32_NS = "http://www.opengis.net/gml/3.2"
 GEOJSON_FORMAT = "application/json"
 CRS84_URN = "urn:ogc:def:crs:OGC:1.3:CRS84"
 EPSG4326_URN = "urn:ogc:def:crs:EPSG::4326"
+FES20_NS = "http://www.opengis.net/fes/2.0"
+HONUA_WFS_NS = "http://honua.io/wfs"
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +102,41 @@ def _names(payload: dict) -> list[str]:
 def _fes_filter(constraint) -> str:
     document = FilterRequest().setConstraint(constraint, tostring=True)
     return document.decode() if isinstance(document, bytes) else document
+
+
+def _typename_for_title(wfs: WebFeatureService, title: str) -> str:
+    matches = [name for name, feature_type in wfs.contents.items() if feature_type.title == title]
+    assert len(matches) == 1, f"expected one WFS type titled {title!r}, got {matches}"
+    return matches[0]
+
+
+def _transaction(wfs: WebFeatureService, body: str) -> ET.Element:
+    """Send a WFS-T document through OWSLib's authenticated HTTP transport."""
+    response = openURL(
+        wfs.url,
+        body.encode("utf-8"),
+        method="Post",
+        cookies=getattr(wfs, "cookies", None),
+        auth=wfs.auth,
+        timeout=30,
+        headers={
+            **(getattr(wfs, "headers", None) or {}),
+            fx.ADMIN_API_KEY_HEADER: fx.ADMIN_API_KEY,
+            "Content-Type": "application/xml",
+        },
+    )
+    return ET.fromstring(response.read())
+
+
+def _summary_count(response: ET.Element, element: str) -> int:
+    value = response.findtext(f".//{{{WFS_NS}}}{element}")
+    assert value is not None, f"TransactionResponse omitted wfs:{element}"
+    return int(value)
+
+
+def _query_layer(wfs: WebFeatureService, typename: str) -> dict:
+    """Read the full dedicated scratch layer through OWSLib GetFeature."""
+    return _geojson(wfs, typename=[typename])
 
 
 # ---------------------------------------------------------------------------
@@ -1014,4 +1051,100 @@ def test_ext_stored_query_get_feature_by_id(wfs: WebFeatureService, typename: st
             f"{by_id}; invoking it through OWSLib's storedQueryID/storedQueryParams returned the "
             f"requested feature {identifier}."
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Real-client WFS-T mutations (isolated fixture layers)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.cert("NB-OWS-WFS-T-INS-01")
+def test_ext_transaction_insert(wfs: WebFeatureService,
+                                wfs_collector: CertificationEvidenceCollector,
+                                timer: Timer) -> None:
+    typename = _typename_for_title(wfs, "WFS-T Insert Scratch")
+    local_name = typename.split(":", 1)[-1]
+    response = _transaction(wfs, f"""
+        <wfs:Transaction service="WFS" version="2.0.0"
+            xmlns:wfs="{WFS_NS}" xmlns:gml="{GML32_NS}" xmlns:honua="{HONUA_WFS_NS}">
+          <wfs:Insert handle="owslib-cert-insert">
+            <honua:{local_name}>
+              <honua:name>owslib-inserted</honua:name>
+              <honua:shape><gml:Point srsName="{EPSG4326_URN}">
+                <gml:pos>37.755 -122.425</gml:pos>
+              </gml:Point></honua:shape>
+            </honua:{local_name}>
+          </wfs:Insert>
+        </wfs:Transaction>
+    """)
+    assert response.tag == f"{{{WFS_NS}}}TransactionResponse"
+    assert _summary_count(response, "totalInserted") == 1
+    post_state = _query_layer(wfs, typename)
+    assert post_state["numberMatched"] == 1
+    assert _names(post_state) == ["owslib-inserted"]
+    wfs_collector.record(
+        "NB-OWS-WFS-T-INS-01", "pass", duration_ms=timer.ms, measured_count=1,
+        notes=("OWSLib openURL posted a WFS 2.0 Insert to its dedicated scratch layer; "
+               "TransactionResponse reported totalInserted=1 and an OWSLib GetFeature "
+               "read observed exactly the inserted feature."),
+    )
+
+
+@pytest.mark.cert("NB-OWS-WFS-T-UPD-01")
+def test_ext_transaction_update(wfs: WebFeatureService,
+                                wfs_collector: CertificationEvidenceCollector,
+                                timer: Timer) -> None:
+    typename = _typename_for_title(wfs, "WFS-T Update Scratch")
+    response = _transaction(wfs, f"""
+        <wfs:Transaction service="WFS" version="2.0.0"
+            xmlns:wfs="{WFS_NS}" xmlns:fes="{FES20_NS}">
+          <wfs:Update typeName="{typename}">
+            <wfs:Property><wfs:ValueReference>name</wfs:ValueReference>
+              <wfs:Value>owslib-update-after</wfs:Value></wfs:Property>
+            <fes:Filter><fes:PropertyIsEqualTo>
+              <fes:ValueReference>name</fes:ValueReference>
+              <fes:Literal>owslib-update-before</fes:Literal>
+            </fes:PropertyIsEqualTo></fes:Filter>
+          </wfs:Update>
+        </wfs:Transaction>
+    """)
+    assert response.tag == f"{{{WFS_NS}}}TransactionResponse"
+    assert _summary_count(response, "totalUpdated") == 1
+    post_state = _query_layer(wfs, typename)
+    assert post_state["numberMatched"] == 1
+    assert _names(post_state) == ["owslib-update-after"]
+    wfs_collector.record(
+        "NB-OWS-WFS-T-UPD-01", "pass", duration_ms=timer.ms, measured_count=1,
+        notes=("OWSLib openURL posted a WFS 2.0 Update to its dedicated seeded scratch "
+               "layer; TransactionResponse reported totalUpdated=1 and a follow-up "
+               "OWSLib GetFeature read observed only the new value."),
+    )
+
+
+@pytest.mark.cert("NB-OWS-WFS-T-DEL-01")
+def test_ext_transaction_delete(wfs: WebFeatureService,
+                                wfs_collector: CertificationEvidenceCollector,
+                                timer: Timer) -> None:
+    typename = _typename_for_title(wfs, "WFS-T Delete Scratch")
+    response = _transaction(wfs, f"""
+        <wfs:Transaction service="WFS" version="2.0.0"
+            xmlns:wfs="{WFS_NS}" xmlns:fes="{FES20_NS}">
+          <wfs:Delete typeName="{typename}">
+            <fes:Filter><fes:PropertyIsEqualTo>
+              <fes:ValueReference>name</fes:ValueReference>
+              <fes:Literal>owslib-delete-target</fes:Literal>
+            </fes:PropertyIsEqualTo></fes:Filter>
+          </wfs:Delete>
+        </wfs:Transaction>
+    """)
+    assert response.tag == f"{{{WFS_NS}}}TransactionResponse"
+    assert _summary_count(response, "totalDeleted") == 1
+    post_state = _query_layer(wfs, typename)
+    assert post_state["numberMatched"] == 0
+    assert post_state["features"] == []
+    wfs_collector.record(
+        "NB-OWS-WFS-T-DEL-01", "pass", duration_ms=timer.ms, measured_count=1,
+        notes=("OWSLib openURL posted a WFS 2.0 Delete to its dedicated seeded scratch "
+               "layer; TransactionResponse reported totalDeleted=1 and a follow-up OWSLib "
+               "GetFeature read observed an empty layer."),
     )

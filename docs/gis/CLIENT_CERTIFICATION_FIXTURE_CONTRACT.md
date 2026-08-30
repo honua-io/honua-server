@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:7e8daba54a625607f1f1a1730794f3743200afc986d03cf9d4db46e4218bfb84` |
+| `fixtureRevision` | `sha256:cf41453e85cedd4dba536ae965aefc3b8d73f6bd23992aebeeb23fbe4aa131fb` |
 | `serverConfigRevision` | `sha256:071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -41,9 +41,10 @@ Because step 3 reproduces `sha256sum` output exactly, the whole algorithm is rep
 
 ```console
 $ LC_ALL=C sha256sum docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
-    tests/seed/browser-compat.yaml tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
+    tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
+    tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-12b24e763397dbb1a0c8bc9adbb1f9d28b06d6bcb9320255181321d28556861d  -
+cf41453e85cedd4dba536ae965aefc3b8d73f6bd23992aebeeb23fbe4aa131fb  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6  -
 ```
@@ -382,6 +383,9 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | `NB-OWS-WFS-PROP-01` | `SF-EXT-CLIENT-IDIOM` | propertyname=['name','status'] narrowed the payload to exactly those two columns, and the PROPERTYNAME=* wildcard widened it back to all 13 properties. |
 | `NB-OWS-WFS-SORT-01` | `SF-EXT-CLIENT-IDIOM` | SORTBY=name returned all 10 features in ascending name order. |
 | `NB-OWS-WFS-STQ-01` | `SF-EXT-CLIENT-IDIOM` | ListStoredQueries advertises 1 queries including the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById; invoking it through OWSLib's storedQueryID/storedQueryParams returned the.... |
+| `NB-OWS-WFS-T-DEL-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib posts a WFS 2.0 Delete to a dedicated scratch layer; the transaction summary reports one deletion and a follow-up OWSLib GetFeature query observes an empty layer. |
+| `NB-OWS-WFS-T-INS-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib posts a WFS 2.0 Insert to a dedicated scratch layer; the transaction summary reports one insertion and a follow-up OWSLib GetFeature query observes the new feature. |
+| `NB-OWS-WFS-T-UPD-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib posts a WFS 2.0 Update to a dedicated scratch layer; the transaction summary reports one update and a follow-up OWSLib GetFeature query observes only the new value. |
 | `NB-OWS-WFS-VER-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib's bare getfeature() (which sends PROPERTYNAME=*) works on both legacy versions. |
 | `NB-OWS-WFS-XPRO-01` | `SF-EXT-CLIENT-IDIOM` | WFS and OGC API - Features agree on the same layer: extent (-122.5, 37.7, -122.35, 37.84), numberMatched 10, and every WFS-advertised EPSG code [3857, 4326] is also offered by the OGC.... |
 | `NB-OWS-WMS-111-01` | `SF-RNDR-IMAGE` | WMS 1.1.1 identifies as OGC:WMS, advertises SRS (not CRS:84) and the 1.1.1 exception MIME type, and its longitude-first EPSG:4326 GetMap is pixel-identical to the 1.3.0 CRS:84 render of.... |

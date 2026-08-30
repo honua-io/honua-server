@@ -724,6 +724,18 @@
       "category": "NB-OWS"
     },
     {
+      "id": "NB-OWS-WFS-T-DEL-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-T-INS-01",
+      "category": "NB-OWS"
+    },
+    {
+      "id": "NB-OWS-WFS-T-UPD-01",
+      "category": "NB-OWS"
+    },
+    {
       "id": "NB-OWS-WMS-111-01",
       "category": "NB-OWS"
     },
@@ -1499,6 +1511,9 @@
         "NB-OWS-WFS-PROP-01",
         "NB-OWS-WFS-SORT-01",
         "NB-OWS-WFS-STQ-01",
+        "NB-OWS-WFS-T-DEL-01",
+        "NB-OWS-WFS-T-INS-01",
+        "NB-OWS-WFS-T-UPD-01",
         "NB-OWS-WFS-VER-01",
         "NB-OWS-WFS-XPRO-01",
         "NB-OWS-WMS-111-01",

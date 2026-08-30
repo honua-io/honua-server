@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:7e8daba54a625607f1f1a1730794f3743200afc986d03cf9d4db46e4218bfb84",
+  "fixtureRevision": "sha256:cf41453e85cedd4dba536ae965aefc3b8d73f6bd23992aebeeb23fbe4aa131fb",
   "serverConfigRevision": "sha256:071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -41,8 +41,8 @@
     {
       "path": "tests/seed/client-compat-v1.sql",
       "role": "fixture",
-      "sha256": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
-      "purpose": "Canonical vector seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, layer 0, and the ten seeded features."
+      "sha256": "sha256:80c852414b96585cd98772d29098764946b0fb5c7404fcc9e336e35eaf6839b6",
+      "purpose": "Canonical vector seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical layer 0, ten read fixtures, and isolated WFS-T mutation layers 10-12."
     },
     {
       "path": "tests/seed/browser-compat.yaml",
@@ -1709,6 +1709,21 @@
       "id": "NB-OWS-WFS-STQ-01",
       "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
       "description": "ListStoredQueries advertises 1 queries including the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById; invoking it through OWSLib's storedQueryID/storedQueryParams returned the...."
+    },
+    {
+      "id": "NB-OWS-WFS-T-DEL-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OWSLib posts a WFS 2.0 Delete to a dedicated scratch layer; the transaction summary reports one deletion and a follow-up OWSLib GetFeature query observes an empty layer."
+    },
+    {
+      "id": "NB-OWS-WFS-T-INS-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OWSLib posts a WFS 2.0 Insert to a dedicated scratch layer; the transaction summary reports one insertion and a follow-up OWSLib GetFeature query observes the new feature."
+    },
+    {
+      "id": "NB-OWS-WFS-T-UPD-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OWSLib posts a WFS 2.0 Update to a dedicated scratch layer; the transaction summary reports one update and a follow-up OWSLib GetFeature query observes only the new value."
     },
     {
       "id": "NB-OWS-WFS-VER-01",
@@ -3432,6 +3447,9 @@
             "NB-OWS-WFS-PROP-01",
             "NB-OWS-WFS-SORT-01",
             "NB-OWS-WFS-STQ-01",
+            "NB-OWS-WFS-T-DEL-01",
+            "NB-OWS-WFS-T-INS-01",
+            "NB-OWS-WFS-T-UPD-01",
             "NB-OWS-WFS-VER-01",
             "NB-OWS-WFS-XPRO-01"
           ],
@@ -4006,7 +4024,7 @@
     "producer": "tests/python/shared/cert_envelope.py::build_lane_runtime",
     "currentValues": {
       "fixture_revision": {
-        "value": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
+        "value": "sha256:80c852414b96585cd98772d29098764946b0fb5c7404fcc9e336e35eaf6839b6",
         "boundTo": "inputs[tests/seed/client-compat-v1.sql].sha256",
         "convergenceTarget": "fixtureRevision",
         "gapId": "receipt-binding-uses-per-file-digests"

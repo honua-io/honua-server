@@ -331,6 +331,9 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | NB-OWS-WFS-PROP-01 | NB-OWS | propertyname=['name','status'] narrowed the payload to exactly those two columns, and the PROPERTYNAME=* wildcard widened it back to all 13 properties | wfs | pass/fail |
 | NB-OWS-WFS-SORT-01 | NB-OWS | SORTBY=name returned all 10 features in ascending name order | wfs | pass/fail |
 | NB-OWS-WFS-STQ-01 | NB-OWS | ListStoredQueries advertises 1 queries including the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById; invoking it through OWSLib's storedQueryID/storedQueryParams returned the... | wfs | pass/fail |
+| NB-OWS-WFS-T-DEL-01 | NB-OWS | OWSLib posts a WFS 2.0 Delete to a dedicated scratch layer; the transaction summary reports one deletion and a follow-up OWSLib GetFeature query observes an empty layer | wfs | pass/fail |
+| NB-OWS-WFS-T-INS-01 | NB-OWS | OWSLib posts a WFS 2.0 Insert to a dedicated scratch layer; the transaction summary reports one insertion and a follow-up OWSLib GetFeature query observes the new feature | wfs | pass/fail |
+| NB-OWS-WFS-T-UPD-01 | NB-OWS | OWSLib posts a WFS 2.0 Update to a dedicated scratch layer; the transaction summary reports one update and a follow-up OWSLib GetFeature query observes only the new value | wfs | pass/fail |
 | NB-OWS-WFS-VER-01 | NB-OWS | OWSLib's bare getfeature() (which sends PROPERTYNAME=*) works on both legacy versions | wfs | pass/fail |
 | NB-OWS-WFS-XPRO-01 | NB-OWS | WFS and OGC API - Features agree on the same layer: extent (-122.5, 37.7, -122.35, 37.84), numberMatched 10, and every WFS-advertised EPSG code [3857, 4326] is also offered by the OGC... | wfs | pass/fail |
 | NB-OWS-WMS-111-01 | NB-OWS | WMS 1.1.1 identifies as OGC:WMS, advertises SRS (not CRS:84) and the 1.1.1 exception MIME type, and its longitude-first EPSG:4326 GetMap is pixel-identical to the 1.3.0 CRS:84 render of... | wms | pass/fail |
