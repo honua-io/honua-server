@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Db.Databricks.Features.FeatureStore;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Db.Databricks.Tests;
@@ -14,21 +15,21 @@ namespace Honua.Db.Databricks.Tests;
 /// <summary>
 /// Live, opt-in integration tests against a real Databricks SQL Warehouse. These are
 /// gated behind <c>HONUA_TEST_DATABRICKS=1</c> plus host/warehouse/token/table env vars
-/// and are skipped (treated as a no-op pass) in normal CI where no workspace is available.
+/// and report an explicit credential skip in normal CI where no workspace is available.
 /// </summary>
 [Trait("Category", "Databricks")]
 public sealed class DatabricksLiveIntegrationTests
 {
     private const string EnableVar = "HONUA_TEST_DATABRICKS";
+    private const string HostVar = "HONUA_TEST_DATABRICKS_HOST";
+    private const string WarehouseVar = "HONUA_TEST_DATABRICKS_WAREHOUSE";
+    private const string TokenVar = "HONUA_TEST_DATABRICKS_TOKEN";
+    private const string TableVar = "HONUA_TEST_DATABRICKS_TABLE";
 
-    [Fact]
+    [RequiredEnvironmentVariablesFact(EnableVar, "1", HostVar, WarehouseVar, TokenVar, TableVar)]
     public async Task QueryAsync_LiveWarehouse_ReturnsFeatures()
     {
-        if (!IsEnabled(out var options, out var layer))
-        {
-            // No live workspace configured; nothing to assert in standard CI.
-            return;
-        }
+        var (options, layer) = GetLiveConfiguration();
 
         using var httpClient = new HttpClient { BaseAddress = new Uri(options.Host) };
         var statementClient = new DatabricksStatementClient(httpClient, Options.Create(options));
@@ -40,31 +41,18 @@ public sealed class DatabricksLiveIntegrationTests
 
         var result = await store.QueryAsync(layer.LayerId, new FeatureQuery { Limit = 5 }, CancellationToken.None);
 
-        Assert.True(result.TotalCount >= 0);
+        Assert.NotEmpty(result.Items);
+        Assert.All(result.Items, feature => Assert.NotNull(feature.Geometry));
     }
 
-    private static bool IsEnabled(out DatabricksOptions options, out DatabricksLayerMapping layer)
+    private static (DatabricksOptions Options, DatabricksLayerMapping Layer) GetLiveConfiguration()
     {
-        options = new DatabricksOptions();
-        layer = default!;
+        var host = Environment.GetEnvironmentVariable(HostVar)!;
+        var warehouse = Environment.GetEnvironmentVariable(WarehouseVar)!;
+        var token = Environment.GetEnvironmentVariable(TokenVar)!;
+        var table = Environment.GetEnvironmentVariable(TableVar)!;
 
-        if (!string.Equals(Environment.GetEnvironmentVariable(EnableVar), "1", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var host = Environment.GetEnvironmentVariable("HONUA_TEST_DATABRICKS_HOST");
-        var warehouse = Environment.GetEnvironmentVariable("HONUA_TEST_DATABRICKS_WAREHOUSE");
-        var token = Environment.GetEnvironmentVariable("HONUA_TEST_DATABRICKS_TOKEN");
-        var table = Environment.GetEnvironmentVariable("HONUA_TEST_DATABRICKS_TABLE");
-
-        if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(warehouse)
-            || string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(table))
-        {
-            return false;
-        }
-
-        options = new DatabricksOptions
+        var options = new DatabricksOptions
         {
             Host = host,
             WarehouseId = warehouse,
@@ -73,7 +61,7 @@ public sealed class DatabricksLiveIntegrationTests
             Schema = Environment.GetEnvironmentVariable("HONUA_TEST_DATABRICKS_SCHEMA"),
         };
 
-        layer = new DatabricksLayerMapping
+        var layer = new DatabricksLayerMapping
         {
             LayerId = 1,
             Table = table,
@@ -86,6 +74,6 @@ public sealed class DatabricksLiveIntegrationTests
             AttributeColumns = [],
         };
 
-        return true;
+        return (options, layer);
     }
 }
