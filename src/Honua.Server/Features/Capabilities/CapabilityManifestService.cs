@@ -9,12 +9,14 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Observability.Abstractions;
 using Honua.Server.Features.Capabilities.Models;
 using Honua.Import;
 using Honua.Migration;
@@ -54,9 +56,7 @@ internal sealed class CapabilityManifestService(
     ILicenseEntitlementService entitlementService,
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
-    IEnumerable<IBatchComputeBackend> batchBackends,
-    IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
-    IWebHostEnvironment hostEnvironment,
+    CapabilityManifestRuntimeInventory runtimeInventory,
     ICapabilityRegistry capabilityRegistry,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
@@ -98,6 +98,8 @@ internal sealed class CapabilityManifestService(
             workspaceAvailable,
             request.WorkspaceId);
         var batchCapabilities = await ResolveBatchCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        var operationCapabilities = await ResolveOperationCapabilitiesAsync(request.Environment, cancellationToken)
+            .ConfigureAwait(false);
 
         // #2335 (B3): the registry-derived composition resolves each descriptor through
         // the shared gate resolver (edition/experimental precedence). All descriptors
@@ -106,8 +108,8 @@ internal sealed class CapabilityManifestService(
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
         var capabilities = options.ManifestFromRegistry
-            ? BuildCapabilitiesFromRegistry(policyContext, gateContext)
-            : BuildCapabilities(policyContext);
+            ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
+            : BuildCapabilities(policyContext, operationCapabilities);
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
             : BuildPackages();
@@ -235,7 +237,7 @@ internal sealed class CapabilityManifestService(
             ApiVersion = "v1",
             MetadataApiVersion = MetadataV2Constants.ApiVersion,
             MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-            DeploymentEnvironment = hostEnvironment.EnvironmentName,
+            DeploymentEnvironment = runtimeInventory.EnvironmentName,
             DeploymentRevision = identity.Revision,
             DeploymentRevisionSource = identity.RevisionSource,
             ServerRevision = identity.Revision
@@ -373,7 +375,9 @@ internal sealed class CapabilityManifestService(
             ["package.app"] = ("app-package", "app"),
         };
 
-    private CapabilityManifestCapability[] BuildCapabilities(CapabilityPolicyContext context)
+    private CapabilityManifestCapability[] BuildCapabilities(
+        CapabilityPolicyContext context,
+        OperationCapabilitySummary operationCapabilities)
     {
         var alertOptionsValue = options.Alerts;
         var mtlsOptions = options.ClientCertificate;
@@ -400,7 +404,7 @@ internal sealed class CapabilityManifestService(
             Capability("alerts.geofence", "alerts", context, entitlementKey: "alerts.enter-exit", configured: alertOptionsValue.Enabled),
             // A compute backend is always registered, so `supported` alone over-claims: without
             // the Redis-backed durable job store nothing can be submitted (honua-release#202).
-            Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || batchBackends.Any(), requiresAuthentication: true, requiresDurableJobStore: true),
+            Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || runtimeInventory.BatchBackends.Count > 0, requiresAuthentication: true, requiresDurableJobStore: true),
             Capability("ai.spec-apply", "ai", context, entitlementKey: FeatureCatalog.AiSpecApplyKey),
             Capability("ai.grounding", "ai", context, entitlementKey: FeatureCatalog.AiGroundingKey),
             Capability("gitops.release-manifest", "gitops", context, configured: deployTargetCount > 0, policyCapability: "catalog.publish", requiresEnvironment: true),
@@ -430,7 +434,8 @@ internal sealed class CapabilityManifestService(
             Capability("versioning.branch", "versioning", context, entitlementKey: FeatureCatalog.BranchVersioningKey),
             // Aggregated operate status (A12) — the server-authoritative operate/status surface. Ungated
             // GA; read-authorized (ops:read) at the HTTP layer. Kept last to mirror the registry order.
-            Capability("operate.status", "operate", context, requiresAuthentication: true)
+            Capability("operate.status", "operate", context, requiresAuthentication: true),
+            .. BuildOperationCapabilities(context, operationCapabilities)
         ];
     }
 
@@ -448,9 +453,10 @@ internal sealed class CapabilityManifestService(
     /// </summary>
     private CapabilityManifestCapability[] BuildCapabilitiesFromRegistry(
         CapabilityPolicyContext context,
-        CapabilityGateContext gateContext)
+        CapabilityGateContext gateContext,
+        OperationCapabilitySummary operationCapabilities)
     {
-        var specs = BuildManifestCapabilitySpecs();
+        var specs = BuildManifestCapabilitySpecs(operationCapabilities);
         var capabilities = new List<CapabilityManifestCapability>(specs.Count);
         foreach (var descriptor in capabilityRegistry.All)
         {
@@ -481,8 +487,31 @@ internal sealed class CapabilityManifestService(
                 requiresDurableJobStore: spec.RequiresDurableJobStore));
         }
 
+        foreach (var capability in BuildOperationCapabilities(context, operationCapabilities))
+        {
+            if (capabilities.All(existing => !string.Equals(existing.Id, capability.Id, StringComparison.Ordinal)))
+            {
+                capabilities.Add(capability);
+            }
+        }
+
         return capabilities.ToArray();
     }
+
+    private CapabilityManifestCapability[] BuildOperationCapabilities(
+        CapabilityPolicyContext context,
+        OperationCapabilitySummary operationCapabilities)
+        =>
+        [
+            Capability("ops.findings", "operate", context, requiresAuthentication: true),
+            Capability("ops.autonomy", "operate", context,
+                configured: operationCapabilities.HasAutonomyPolicyStore,
+                requiresAuthentication: true),
+            Capability("deploy.rollback", "deploy", context,
+                configured: operationCapabilities.HasDurableOperationStore
+                    && operationCapabilities.AnyConfiguredTargetSupportsRollback,
+                requiresAuthentication: true),
+        ];
 
     /// <summary>
     /// The per-capability config knobs the registry descriptor does not carry, keyed by
@@ -490,10 +519,11 @@ internal sealed class CapabilityManifestService(
     /// Mirrors the hand-curated arguments in <see cref="BuildCapabilities"/> exactly so the
     /// two composition paths stay wire-identical.
     /// </summary>
-    private Dictionary<string, ManifestCapabilitySpec> BuildManifestCapabilitySpecs()
+    private Dictionary<string, ManifestCapabilitySpec> BuildManifestCapabilitySpecs(
+        OperationCapabilitySummary operationCapabilities)
     {
         var syncSupported = IsFieldCollectionSyncSupported();
-        var jobsSupported = options.ControlPlane.ExecutionWorkloads.Count > 0 || batchBackends.Any();
+        var jobsSupported = options.ControlPlane.ExecutionWorkloads.Count > 0 || runtimeInventory.BatchBackends.Count > 0;
         var alertsConfigured = options.Alerts.Enabled;
         var gitopsConfigured = options.ControlPlane.DeployTargets.Count > 0;
         var mtlsConfigured = options.ClientCertificate.Mode != ClientCertificateAuthenticationMode.Disabled;
@@ -542,6 +572,18 @@ internal sealed class CapabilityManifestService(
             ["edit.features"] = new() { EntitlementKey = FeatureCatalog.FeatureServerEditsKey, PolicyCapability = "features.edit" },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
+            ["ops.findings"] = new() { RequiresAuthentication = true },
+            ["ops.autonomy"] = new()
+            {
+                Configured = operationCapabilities.HasAutonomyPolicyStore,
+                RequiresAuthentication = true,
+            },
+            ["deploy.rollback"] = new()
+            {
+                Configured = operationCapabilities.HasDurableOperationStore
+                    && operationCapabilities.AnyConfiguredTargetSupportsRollback,
+                RequiresAuthentication = true,
+            },
         };
     }
 
@@ -874,8 +916,8 @@ internal sealed class CapabilityManifestService(
 
     private async Task<BatchCapabilitySummary> ResolveBatchCapabilitiesAsync(CancellationToken cancellationToken)
     {
-        var backends = batchBackends.ToArray();
-        if (backends.Length == 0)
+        var backends = runtimeInventory.BatchBackends;
+        if (backends.Count == 0)
         {
             return new BatchCapabilitySummary(0, false, false);
         }
@@ -907,8 +949,66 @@ internal sealed class CapabilityManifestService(
         return new BatchCapabilitySummary(available, supportsCancellation, supportsProgressPolling);
     }
 
+    private async Task<OperationCapabilitySummary> ResolveOperationCapabilitiesAsync(
+        string? environment,
+        CancellationToken cancellationToken)
+    {
+        var configuredTargets = options.ControlPlane.DeployTargets;
+        if (configuredTargets.Count == 0)
+        {
+            return new OperationCapabilitySummary(
+                HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
+                HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
+                AnyConfiguredTargetSupportsRollback: false);
+        }
+
+        var backends = runtimeInventory.DeployBackends.ToDictionary(
+            backend => (backend.BackendName, backend.TargetKind),
+            backend => backend,
+            EqualityComparer<(string Backend, DeployTargetKind TargetKind)>.Default);
+
+        foreach (var target in configuredTargets)
+        {
+            if (!string.IsNullOrWhiteSpace(environment)
+                && !string.Equals(target.Environment, environment, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!backends.TryGetValue((target.Backend, target.TargetKind), out var backend))
+            {
+                continue;
+            }
+
+            try
+            {
+                var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+                if (capabilities.SupportsRollback)
+                {
+                    return new OperationCapabilitySummary(
+                        HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
+                        HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
+                        AnyConfiguredTargetSupportsRollback: true);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                CapabilityManifestLog.DeployCapabilityProbeFailed(logger, backend.BackendName, ex);
+            }
+        }
+
+        return new OperationCapabilitySummary(
+            HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
+            HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
+            AnyConfiguredTargetSupportsRollback: false);
+    }
+
     private bool IsFieldCollectionSyncSupported()
-        => fieldCollectionSyncStores.Any();
+        => runtimeInventory.HasFieldCollectionSyncStore;
 
     private bool ResolveWorkspaceAvailability(
         ClaimsPrincipal principal,
@@ -1096,6 +1196,11 @@ internal sealed class CapabilityManifestService(
         int AvailableBackendCount,
         bool SupportsCancellation,
         bool SupportsProgressPolling);
+
+    private readonly record struct OperationCapabilitySummary(
+        bool HasDurableOperationStore,
+        bool HasAutonomyPolicyStore,
+        bool AnyConfiguredTargetSupportsRollback);
 }
 
 internal static class CapabilityReasonCodes
@@ -1147,6 +1252,15 @@ internal static partial class CapabilityManifestLog
         Level = LogLevel.Warning,
         Message = "Capability manifest batch backend capability probe failed. Backend={Backend}")]
     public static partial void BatchCapabilityProbeFailed(
+        ILogger logger,
+        string backend,
+        Exception exception);
+
+    [LoggerMessage(
+        EventId = 8723,
+        Level = LogLevel.Warning,
+        Message = "Capability manifest deploy backend capability probe failed. Backend={Backend}")]
+    public static partial void DeployCapabilityProbeFailed(
         ILogger logger,
         string backend,
         Exception exception);

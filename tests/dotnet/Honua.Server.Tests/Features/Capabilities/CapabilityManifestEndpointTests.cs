@@ -11,8 +11,11 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Observability.Abstractions;
+using Honua.Core.Features.Observability.Services;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
@@ -24,6 +27,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Honua.ControlPlane;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -31,6 +35,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Capabilities;
 
@@ -397,6 +402,118 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         var publication = GetCapability(root, "publication.metadata-release");
         publication.GetProperty("available").GetBoolean().Should().BeFalse();
         publication.GetProperty("reasonCode").GetString().Should().Be("environment-unavailable");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_RollbackIgnoresTargetsFromOtherEnvironments()
+    {
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns("test-rollback");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(
+            new DeployBackendCapabilities { SupportsRollback = true });
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDeployBackend>();
+                services.AddSingleton(backend);
+                services.AddSingleton(Substitute.For<IWorkflowOperationStore>());
+                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.AddRange(
+                [
+                    new DeployTargetOptions
+                    {
+                        TargetId = "rollback-prod",
+                        Backend = backend.BackendName,
+                        TargetKind = backend.TargetKind,
+                        Environment = "prod"
+                    }
+                ]));
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync(
+                "/api/v1/capabilities/manifest?environment=test");
+            using var document = await ReadDocumentAsync(response);
+
+            GetCapability(document.RootElement, "deploy.rollback")
+                .GetProperty("available").GetBoolean().Should().BeFalse(
+                    "the durable store is present but the only rollback target belongs to prod");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_RollbackRequiresDurableOperationStore()
+    {
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns("test-rollback");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(
+            new DeployBackendCapabilities { SupportsRollback = true });
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDeployBackend>();
+                services.AddSingleton(backend);
+                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
+                    new DeployTargetOptions
+                    {
+                        TargetId = "rollback-test",
+                        Backend = backend.BackendName,
+                        TargetKind = backend.TargetKind,
+                        Environment = "test"
+                    }));
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync(
+                "/api/v1/capabilities/manifest?environment=test");
+            using var document = await ReadDocumentAsync(response);
+
+            GetCapability(document.RootElement, "deploy.rollback")
+                .GetProperty("available").GetBoolean().Should().BeFalse(
+                    "the matching backend supports rollback but no durable operation store is composed");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_AutonomyTracksPolicyStoreInsteadOfWorkflowStore()
+    {
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services => services.AddSingleton<IOpsAutonomyPolicyStore>(
+                new InMemoryOpsAutonomyPolicyStore()));
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            using var document = await ReadDocumentAsync(response);
+
+            GetCapability(document.RootElement, "ops.autonomy")
+                .GetProperty("available").GetBoolean().Should().BeTrue(
+                    "the autonomy policy store is the endpoint's actual runtime dependency");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
