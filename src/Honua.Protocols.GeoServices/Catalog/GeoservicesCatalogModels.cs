@@ -28,6 +28,9 @@ internal sealed record ServiceDirectoryEntry
 
     [JsonPropertyName("url")]
     public required string Url { get; init; }
+
+    [JsonIgnore]
+    public string? SoapCapabilities { get; init; }
 }
 
 internal sealed record RestInfoResponse

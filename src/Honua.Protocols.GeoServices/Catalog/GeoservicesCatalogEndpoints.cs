@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Scene.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -69,8 +70,8 @@ internal static class GeoservicesCatalogEndpoints
         endpoints.MapPost("/services", HandlePostSoapCatalog)
             .WithDisplayName("ArcGIS SOAP Services Catalog")
             .WithName("ArcGisSoapServicesCatalog")
-            .WithSummary("Discover SOAP-compatible ImageServer services")
-            .WithDescription("Implements ArcGIS Server SOAP catalog negotiation for raster-backed ImageServer services.")
+            .WithSummary("Discover supported ArcGIS services through SOAP")
+            .WithDescription("Implements the protocol-wide ArcGIS Server SOAP catalog using the same principal-filtered projection as the REST services directory.")
             .WithTags("GeoServices Catalog")
             .AddOpenApiOperationTransformer((operation, _, _) =>
             {
@@ -87,17 +88,206 @@ internal static class GeoservicesCatalogEndpoints
             })
             .Produces(StatusCodes.Status200OK, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status400BadRequest, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status401Unauthorized, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .Produces(StatusCodes.Status403Forbidden, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status415UnsupportedMediaType, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
             .Produces(StatusCodes.Status503ServiceUnavailable, contentType: "text/xml", additionalContentTypes: ["application/soap+xml"])
+            .AllowAnonymous();
+
+        endpoints.MapGet("/services", HandleGetSoapCatalogWsdl)
+            .WithDisplayName("ArcGIS SOAP Services Catalog WSDL")
+            .WithName("ArcGisSoapServicesCatalogWsdl")
+            .WithSummary("Get the ArcGIS SOAP services catalog WSDL")
+            .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract when the wsdl query flag is present.")
+            .WithTags("GeoServices Catalog")
+            .Produces(StatusCodes.Status200OK, contentType: "text/xml")
+            .Produces(StatusCodes.Status404NotFound, contentType: "text/xml")
             .AllowAnonymous();
 
         return endpoints;
     }
 
+    private static IResult HandleGetSoapCatalogWsdl(HttpContext context)
+    {
+        if (!context.Request.Query.ContainsKey("wsdl"))
+        {
+            return Results.NotFound();
+        }
+
+        XNamespace wsdl = "http://schemas.xmlsoap.org/wsdl/";
+        XNamespace xs = "http://www.w3.org/2001/XMLSchema";
+        XNamespace soap11 = "http://schemas.xmlsoap.org/wsdl/soap/";
+        XNamespace soap12 = "http://schemas.xmlsoap.org/wsdl/soap12/";
+        XNamespace esri = ArcGisSoapNamespace;
+        var operations = new[]
+        {
+            "GetServiceDescriptions",
+            "GetServiceDescriptionsEx",
+            "GetFolders",
+            "GetMessageVersion",
+            "GetMessageFormats",
+            "GetTokenServiceURL",
+            "RequiresTokens"
+        };
+
+        var schema = new XElement(
+            xs + "schema",
+            new XAttribute("targetNamespace", esri.NamespaceName),
+            new XAttribute("elementFormDefault", "qualified"),
+            new XElement(
+                xs + "complexType",
+                new XAttribute("name", "ServiceDescription"),
+                new XElement(
+                    xs + "sequence",
+                    SoapCatalogSchemaElement(xs, "Name", "xs:string"),
+                    SoapCatalogSchemaElement(xs, "Type", "xs:string"),
+                    SoapCatalogSchemaElement(xs, "Url", "xs:anyURI"),
+                    new XElement(
+                        xs + "element",
+                        new XAttribute("name", "RestUrl"),
+                        new XAttribute("type", "xs:anyURI"),
+                        new XAttribute("minOccurs", "0")),
+                    SoapCatalogSchemaElement(xs, "ParentType", "xs:string"),
+                    SoapCatalogSchemaElement(xs, "Capabilities", "xs:string"),
+                    SoapCatalogSchemaElement(xs, "Description", "xs:string"))),
+            new XElement(
+                xs + "complexType",
+                new XAttribute("name", "ArrayOfServiceDescription"),
+                new XElement(
+                    xs + "sequence",
+                    new XElement(
+                        xs + "element",
+                        new XAttribute("name", "ServiceDescription"),
+                        new XAttribute("type", "e:ServiceDescription"),
+                        new XAttribute("minOccurs", "0"),
+                        new XAttribute("maxOccurs", "unbounded")))));
+
+        foreach (var operation in operations)
+        {
+            var requestSequence = operation == "GetServiceDescriptionsEx"
+                ? new XElement(
+                    xs + "sequence",
+                    new XElement(
+                        xs + "element",
+                        new XAttribute("name", "folderName"),
+                        new XAttribute("type", "xs:string"),
+                        new XAttribute("minOccurs", "0")))
+                : new XElement(xs + "sequence");
+            var responseType = operation is "GetServiceDescriptions" or "GetServiceDescriptionsEx"
+                ? "e:ArrayOfServiceDescription"
+                : operation == "RequiresTokens" ? "xs:boolean" : "xs:string";
+            schema.Add(
+                new XElement(
+                    xs + "element",
+                    new XAttribute("name", operation),
+                    new XElement(xs + "complexType", requestSequence)),
+                new XElement(
+                    xs + "element",
+                    new XAttribute("name", operation + "Response"),
+                    new XElement(
+                        xs + "complexType",
+                        new XElement(
+                            xs + "sequence",
+                            new XElement(
+                                xs + "element",
+                                new XAttribute("name", operation + "Result"),
+                                new XAttribute("type", responseType))))));
+        }
+
+        var definitions = new XElement(
+            wsdl + "definitions",
+            new XAttribute(XNamespace.Xmlns + "wsdl", wsdl.NamespaceName),
+            new XAttribute(XNamespace.Xmlns + "xs", xs.NamespaceName),
+            new XAttribute(XNamespace.Xmlns + "soap", soap11.NamespaceName),
+            new XAttribute(XNamespace.Xmlns + "soap12", soap12.NamespaceName),
+            new XAttribute(XNamespace.Xmlns + "e", esri.NamespaceName),
+            new XAttribute(XNamespace.Xmlns + "tns", esri.NamespaceName),
+            new XAttribute("targetNamespace", esri.NamespaceName),
+            new XElement(wsdl + "types", schema));
+
+        foreach (var operation in operations)
+        {
+            definitions.Add(
+                SoapCatalogWsdlMessage(wsdl, operation, operation),
+                SoapCatalogWsdlMessage(wsdl, operation + "Response", operation + "Response"));
+        }
+
+        definitions.Add(SoapCatalogPortType(wsdl, operations));
+        definitions.Add(SoapCatalogBinding(wsdl, soap11, operations, "ServiceCatalogSoap", "binding"));
+        definitions.Add(SoapCatalogBinding(wsdl, soap12, operations, "ServiceCatalogSoap12", "binding"));
+
+        var address = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/') + "/services";
+        definitions.Add(
+            new XElement(
+                wsdl + "service",
+                new XAttribute("name", "ServiceCatalog"),
+                SoapCatalogPort(wsdl, soap11, "ServiceCatalogSoap", "tns:ServiceCatalogSoap", address),
+                SoapCatalogPort(wsdl, soap12, "ServiceCatalogSoap12", "tns:ServiceCatalogSoap12", address)));
+
+        var document = new XDocument(new XDeclaration("1.0", "utf-8", null), definitions);
+        return Results.Content(
+            document.ToString(SaveOptions.DisableFormatting),
+            contentType: Soap11ContentType,
+            contentEncoding: Encoding.UTF8);
+    }
+
+    private static XElement SoapCatalogSchemaElement(XNamespace xs, string name, string type)
+        => new(xs + "element", new XAttribute("name", name), new XAttribute("type", type));
+
+    private static XElement SoapCatalogWsdlMessage(XNamespace wsdl, string messageName, string elementName)
+        => new(
+            wsdl + "message",
+            new XAttribute("name", messageName),
+            new XElement(
+                wsdl + "part",
+                new XAttribute("name", "parameters"),
+                new XAttribute("element", "e:" + elementName)));
+
+    private static XElement SoapCatalogPortType(XNamespace wsdl, IEnumerable<string> operations)
+        => new(
+            wsdl + "portType",
+            new XAttribute("name", "ServiceCatalogPortType"),
+            operations.Select(operation => new XElement(
+                wsdl + "operation",
+                new XAttribute("name", operation),
+                new XElement(wsdl + "input", new XAttribute("message", "tns:" + operation)),
+                new XElement(wsdl + "output", new XAttribute("message", "tns:" + operation + "Response")))));
+
+    private static XElement SoapCatalogBinding(
+        XNamespace wsdl,
+        XNamespace soap,
+        IEnumerable<string> operations,
+        string name,
+        string bindingElementName)
+        => new(
+            wsdl + "binding",
+            new XAttribute("name", name),
+            new XAttribute("type", "tns:ServiceCatalogPortType"),
+            new XElement(soap + bindingElementName, new XAttribute("style", "document"), new XAttribute("transport", "http://schemas.xmlsoap.org/soap/http")),
+            operations.Select(operation => new XElement(
+                wsdl + "operation",
+                new XAttribute("name", operation),
+                new XElement(soap + "operation", new XAttribute("soapAction", $"{ArcGisSoapNamespace}/{operation}")),
+                new XElement(wsdl + "input", new XElement(soap + "body", new XAttribute("use", "literal"))),
+                new XElement(wsdl + "output", new XElement(soap + "body", new XAttribute("use", "literal"))))));
+
+    private static XElement SoapCatalogPort(
+        XNamespace wsdl,
+        XNamespace soap,
+        string name,
+        string binding,
+        string address)
+        => new(
+            wsdl + "port",
+            new XAttribute("name", name),
+            new XAttribute("binding", binding),
+            new XElement(soap + "address", new XAttribute("location", address)));
+
     private static async Task<IResult> HandlePostSoapCatalog(
         HttpContext context,
         [FromServices] IMetadataV2GraphProvider graphProvider,
         [FromServices] IRasterStore rasterStore,
+        [FromServices] ILicenseStatusProvider licenseStatusProvider,
         [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions,
         [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
@@ -207,11 +397,12 @@ internal static class GeoservicesCatalogEndpoints
                 case "GetServiceDescriptions":
                     payload = new XElement(
                         operationNamespace + "GetServiceDescriptionsResult",
-                        await BuildSoapImageServerDescriptionsAsync(
+                        await BuildSoapServiceDescriptionsAsync(
                             context,
                             operationNamespace,
                             graphProvider,
                             rasterStore,
+                            licenseStatusProvider,
                             logger,
                             folderName: null).ConfigureAwait(false));
                     break;
@@ -231,11 +422,12 @@ internal static class GeoservicesCatalogEndpoints
                     var folderName = arguments.SingleOrDefault()?.Value.Trim();
                     payload = new XElement(
                         operationNamespace + "GetServiceDescriptionsExResult",
-                        await BuildSoapImageServerDescriptionsAsync(
+                        await BuildSoapServiceDescriptionsAsync(
                             context,
                             operationNamespace,
                             graphProvider,
                             rasterStore,
+                            licenseStatusProvider,
                             logger,
                             folderName).ConfigureAwait(false));
                     break;
@@ -283,6 +475,15 @@ internal static class GeoservicesCatalogEndpoints
                 contentType: SoapContentTypeFor(soap),
                 contentEncoding: Encoding.UTF8));
         }
+        catch (SoapCatalogAccessException exception)
+        {
+            return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                exception.StatusCode == StatusCodes.Status401Unauthorized
+                    ? "Authentication is required to discover these services."
+                    : "The calling principal is not authorized to discover these services.",
+                exception.StatusCode,
+                soap));
+        }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             throw;
@@ -329,132 +530,76 @@ internal static class GeoservicesCatalogEndpoints
         return result;
     }
 
-    private static async Task<IReadOnlyList<XElement>> BuildSoapImageServerDescriptionsAsync(
+    private static async Task<IReadOnlyList<XElement>> BuildSoapServiceDescriptionsAsync(
         HttpContext context,
         XNamespace operationNamespace,
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
+        ILicenseStatusProvider licenseStatusProvider,
         ILogger logger,
         string? folderName)
     {
+        var projection = await BuildServiceDirectoryProjectionAsync(
+            context,
+            graphProvider,
+            rasterStore,
+            licenseStatusProvider,
+            logger).ConfigureAwait(false);
+        if (projection.AllImageServerProbesFailed)
+        {
+            throw new InvalidOperationException("All eligible ImageServer raster catalog probes failed.");
+        }
+        if (projection.AccessError is not null)
+        {
+            throw new SoapCatalogAccessException(projection.AccessStatusCode!.Value);
+        }
+
         // Honua currently exposes a root-only catalog. IServiceCatalog2 defines
         // ServiceDescriptionsEx(folderName), so a named folder has no entries.
+        // Apply this only after authorization so a folder argument cannot bypass
+        // the principal-filtered discovery decision.
         if (!string.IsNullOrWhiteSpace(folderName))
         {
             return [];
         }
 
-        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var requestedServiceName = context.Request.RouteValues["serviceName"] as string;
-        var services = new List<MetadataV2Service>();
-        var probes = new List<(int ServiceIndex, int LayerIndex)>();
-
-        foreach (var service in snapshot.Graph.Services.OrderBy(static service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase))
+        // Preserve the established ImageServer-first record when one service name
+        // publishes several protocol types; protocol-wide discovery adds siblings
+        // without changing the existing SOAP catalog's primary description.
+        return projection.Entries
+            .OrderBy(static entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static entry => string.Equals(entry.Type, ImageServerProtocolName, StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(static entry => entry.Type, StringComparer.Ordinal)
+            .Select(entry =>
         {
-            if (!service.IsRoutable() ||
-                !service.Protocols.Contains(ImageServerProtocolName, StringComparer.Ordinal) ||
-                (requestedServiceName is not null &&
-                 !string.Equals(service.Metadata.Name, requestedServiceName, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            var layerIndexes = new List<int>();
-            foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id).Where(snapshot.IsRoutable))
-            {
-                var resource = snapshot.ResolveResource(publication) as MetadataV2Resource;
-                var storageLayerId = snapshot.ResolveStorageLayerId(publication);
-                if (resource is null || storageLayerId is not { } layerIndex)
-                {
-                    continue;
-                }
-
-                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                    context,
-                    resource,
-                    AuthorizationOperation.Metadata,
-                    service,
-                    cancellationToken).ConfigureAwait(false);
-                if (accessError is not null)
-                {
-                    continue;
-                }
-
-                layerIndexes.Add(layerIndex);
-            }
-
-            if (layerIndexes.Count == 0)
-            {
-                continue;
-            }
-
-            var serviceIndex = services.Count;
-            services.Add(service);
-            probes.AddRange(layerIndexes.Select(layerIndex => (serviceIndex, layerIndex)));
-        }
-
-        var advertised = new bool[services.Count];
-        var successfulProbes = 0;
-        var failedProbes = 0;
-        await Parallel.ForEachAsync(
-            probes,
-            new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
-            async (probe, ct) =>
-            {
-                if (advertised[probe.ServiceIndex])
-                {
-                    return;
-                }
-
-                try
-                {
-                    var raster = await rasterStore.GetPrimaryRasterInfoAsync(probe.LayerIndex, ct).ConfigureAwait(false);
-                    Interlocked.Increment(ref successfulProbes);
-                    if (raster is not null)
-                    {
-                        advertised[probe.ServiceIndex] = true;
-                    }
-                }
-                catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
-                {
-                    Interlocked.Increment(ref failedProbes);
-                    GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(
-                        logger,
-                        services[probe.ServiceIndex].Metadata.Name,
-                        exception);
-                }
-            }).ConfigureAwait(false);
-
-        if (probes.Count > 0 && successfulProbes == 0 && failedProbes > 0)
-        {
-            throw new InvalidOperationException("All eligible ImageServer raster catalog probes failed.");
-        }
-
-        var descriptions = new List<XElement>();
-        for (var index = 0; index < services.Count; index++)
-        {
-            if (!advertised[index])
-            {
-                continue;
-            }
-
-            var service = services[index];
-            descriptions.Add(new XElement(
+            var escapedName = Uri.EscapeDataString(entry.Name);
+            var soapUrl = string.Equals(entry.Type, ImageServerProtocolName, StringComparison.Ordinal)
+                ? $"{baseUrl}/services/{escapedName}/{ImageServerProtocolName}"
+                : entry.Url;
+            return new XElement(
                 operationNamespace + "ServiceDescription",
-                new XElement(operationNamespace + "Name", service.Metadata.Name),
-                new XElement(operationNamespace + "Type", ImageServerProtocolName),
-                new XElement(
-                    operationNamespace + "Url",
-                    $"{baseUrl}/services/{Uri.EscapeDataString(service.Metadata.Name)}/{ImageServerProtocolName}"),
+                new XElement(operationNamespace + "Name", entry.Name),
+                new XElement(operationNamespace + "Type", entry.Type),
+                new XElement(operationNamespace + "Url", soapUrl),
+                new XElement(operationNamespace + "RestUrl", entry.Url),
                 new XElement(operationNamespace + "ParentType", string.Empty),
-                new XElement(operationNamespace + "Capabilities", "Image,Metadata"),
-                new XElement(operationNamespace + "Description", string.Empty)));
-        }
-
-        return descriptions;
+                new XElement(operationNamespace + "Capabilities", entry.SoapCapabilities ?? CapabilitiesFor(entry.Type)),
+                new XElement(operationNamespace + "Description", string.Empty));
+        }).ToArray();
     }
+
+    private static string CapabilitiesFor(string serviceType)
+        => serviceType switch
+        {
+            FeatureServerProtocolName => "Query,Create,Update,Delete,Uploads,Editing",
+            MapServerProtocolName => "Map,Query,Data",
+            ImageServerProtocolName => "Image,Metadata",
+            GPServerProtocolName => "SubmitJob,Execute",
+            VectorTileServerProtocolName => "Tiles",
+            SceneServerProtocolName => "Scene,Query",
+            _ => string.Empty
+        };
 
     private static IResult CreateSoapFault(string message, int statusCode, XNamespace soap)
     {
@@ -502,28 +647,21 @@ internal static class GeoservicesCatalogEndpoints
     private static string SoapContentTypeFor(XNamespace soap)
         => soap == Soap12EnvelopeNamespace ? Soap12ContentType : Soap11ContentType;
 
-    private static async Task<IResult> HandleGetServicesDirectory(
+    private static async Task<ServiceDirectoryProjection> BuildServiceDirectoryProjectionAsync(
         HttpContext context,
-        string? f,
-        [FromServices] IMetadataV2GraphProvider graphProvider,
-        [FromServices] IRasterStore rasterStore,
-        [FromServices] ILicenseStatusProvider licenseStatusProvider,
-        [FromServices] ILogger<GeoservicesCatalogLog> logger)
+        IMetadataV2GraphProvider graphProvider,
+        IRasterStore rasterStore,
+        ILicenseStatusProvider licenseStatusProvider,
+        ILogger logger)
     {
-        if (!IsSupportedFormat(f))
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
-        }
-
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-
         var entries = new List<ServiceDirectoryEntry>();
-        var deniedPublications = new List<MetadataV2Resource>();
-        // ImageServer entries require a raster-store probe to determine availability.
-        // Collect them separately so all probes can run concurrently instead of serially.
-        var imageServerServices = new List<MetadataV2Service>();
+        var deniedDecisions = new List<AccessDecision>();
+        var imageServerServices = new List<ImageServerProbeCandidate>();
+        var successfulImageServerProbes = 0;
+        var failedImageServerProbes = 0;
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
@@ -532,41 +670,30 @@ internal static class GeoservicesCatalogEndpoints
                 continue;
             }
 
-            // Derive the catalog "type" from every Esri-family protocol the service
-            // exposes, not just the primary one. A service reachable under multiple
-            // Esri types (e.g. both FeatureServer and MapServer, or a vector layer that
-            // is also rendered as a MapServer) is listed once per type, mirroring how a
-            // real ArcGIS Services Directory enumerates it (#1853). Raster/coverage
-            // services that expose ImageServer/MapServer therefore type as
-            // ImageServer/MapServer instead of being flattened to FeatureServer.
             var directoryTypes = MapEsriDirectoryTypes(service);
             if (directoryTypes.Count == 0)
             {
                 continue;
             }
 
-            // Project publications -> resources, filtering by access.
             var visibleResources = new List<MetadataV2Resource>();
             foreach (var resource in snapshot.PublicationsForService(service.Metadata.Id)
                 .Where(snapshot.IsRoutable)
                 .Select(snapshot.ResolveResource)
                 .OfType<MetadataV2Resource>())
             {
-                if (AccessPolicyHelpers.IsResourceAccessible(context, resource, service))
+                var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+                    context, resource, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+                if (decision.IsAllowed)
                 {
                     visibleResources.Add(resource);
                 }
                 else
                 {
-                    deniedPublications.Add(resource);
+                    deniedDecisions.Add(decision);
                 }
             }
 
-            // GPServer is service-scoped: its built-in process catalog is usable even when
-            // a service has no layer publications (including the default layerless
-            // `geoprocessing` service). Other directory types remain publication-backed.
-            // Evaluate the service policy before exposing this layerless entry so catalog
-            // discovery matches the GPServer endpoints' own service-level authorization.
             var advertiseLayerlessGp = false;
             if (visibleResources.Count == 0
                 && directoryTypes.Contains(GPServerProtocolName, StringComparer.Ordinal))
@@ -590,12 +717,9 @@ internal static class GeoservicesCatalogEndpoints
             var escapedName = Uri.EscapeDataString(service.Metadata.Name);
             foreach (var directoryType in directoryTypes)
             {
-                // ImageServer availability additionally depends on a raster-store probe,
-                // so those entries are collected and probed concurrently below rather
-                // than emitted unconditionally here.
                 if (string.Equals(directoryType, ImageServerProtocolName, StringComparison.Ordinal))
                 {
-                    imageServerServices.Add(service);
+                    imageServerServices.Add(new ImageServerProbeCandidate(service, visibleResources));
                     continue;
                 }
 
@@ -603,88 +727,123 @@ internal static class GeoservicesCatalogEndpoints
                 {
                     Name = service.Metadata.Name,
                     Type = directoryType,
-                    Url = $"{baseUrl}/rest/services/{escapedName}/{directoryType}"
+                    Url = $"{baseUrl}/rest/services/{escapedName}/{directoryType}",
+                    SoapCapabilities = string.Equals(directoryType, FeatureServerProtocolName, StringComparison.Ordinal)
+                        ? FeatureServer.FeatureServerEndpoints.BuildServiceCapabilitiesV2(service)
+                        : null
                 });
             }
         }
 
-        // Probe all ImageServer services concurrently (bounded to 4 in-flight at once)
-        // rather than serially, to avoid an N+1 raster-store round-trip per service.
         if (imageServerServices.Count > 0)
         {
             var imageServerEntries = new ServiceDirectoryEntry?[imageServerServices.Count];
             await Parallel.ForEachAsync(
                 Enumerable.Range(0, imageServerServices.Count),
                 new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
-                async (i, ct) =>
+                async (index, ct) =>
                 {
-                    var svc = imageServerServices[i];
+                    var candidate = imageServerServices[index];
+                    var service = candidate.Service;
                     try
                     {
-                        var imageServerLayerId = await GetImageServerLayerIdAsync(
-                            snapshot,
-                            svc,
-                            rasterStore,
-                            ct).ConfigureAwait(false);
-                        if (imageServerLayerId.HasValue)
+                        var probe = await GetImageServerLayerIdAsync(
+                            snapshot, service, candidate.VisibleResources, rasterStore, logger, ct).ConfigureAwait(false);
+                        if (probe.AllLookupsFailed)
                         {
-                            // The URL uses the service NAME as the route segment (matching every
-                            // other service type and the canonical ArcGIS addressing), not the
-                            // numeric layer id. The probe above only decides whether to advertise.
-                            var escapedImageServerName = Uri.EscapeDataString(svc.Metadata.Name);
-                            imageServerEntries[i] = new ServiceDirectoryEntry
+                            Interlocked.Increment(ref failedImageServerProbes);
+                        }
+                        else
+                        {
+                            Interlocked.Increment(ref successfulImageServerProbes);
+                        }
+                        if (probe.LayerId is not null)
+                        {
+                            var escapedName = Uri.EscapeDataString(service.Metadata.Name);
+                            imageServerEntries[index] = new ServiceDirectoryEntry
                             {
-                                Name = svc.Metadata.Name,
-                                Type = "ImageServer",
-                                Url = $"{baseUrl}/rest/services/{escapedImageServerName}/ImageServer"
+                                Name = service.Metadata.Name,
+                                Type = ImageServerProtocolName,
+                                Url = $"{baseUrl}/rest/services/{escapedName}/{ImageServerProtocolName}"
                             };
                         }
                     }
-                    catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+                    catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
                     {
-                        // Intentional catch-all: one service's raster-store probe failing must not
-                        // abort the whole concurrent Parallel.ForEachAsync batch or the directory
-                        // response; the failure is logged and the entry is simply omitted.
-                        GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, svc.Metadata.Name, ex);
+                        Interlocked.Increment(ref failedImageServerProbes);
+                        GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, service.Metadata.Name, exception);
                     }
                 }).ConfigureAwait(false);
 
-            // Merge ImageServer entries back; re-sort by name to restore alphabetical order.
             entries.AddRange(imageServerEntries.OfType<ServiceDirectoryEntry>());
-
-            entries.Sort(static (a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
+            entries.Sort(ServiceDirectoryEntryComparer);
         }
 
-        // Esri I3S SceneServer entries (#1807). Hosted scenes live in the scene
-        // registry, not the MetadataV2 graph, so they are appended here rather
-        // than discovered in the service loop above. They are Enterprise-gated:
-        // open-core (< Enterprise) omits them from the catalog entirely, matching
-        // the SceneServer serving endpoints' 403 behaviour. No 402 is introduced.
-        var sceneEntriesAdded = await AppendSceneServerEntriesAsync(
-            context,
+        if (await AppendSceneServerEntriesAsync(
+                context,
+                entries,
+                licenseStatusProvider,
+                baseUrl,
+                cancellationToken).ConfigureAwait(false))
+        {
+            entries.Sort(ServiceDirectoryEntryComparer);
+        }
+
+        IResult? accessError = null;
+        int? accessStatusCode = null;
+        if (entries.Count == 0 && deniedDecisions.Count > 0)
+        {
+            var requiresAuthentication = deniedDecisions.Any(static decision => decision.RequiresAuthentication);
+            accessStatusCode = requiresAuthentication
+                ? StatusCodes.Status401Unauthorized
+                : StatusCodes.Status403Forbidden;
+            accessError = requiresAuthentication
+                ? StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage)
+                : StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
+        }
+
+        return new ServiceDirectoryProjection(
             entries,
-            licenseStatusProvider,
-            baseUrl,
-            cancellationToken).ConfigureAwait(false);
-        if (sceneEntriesAdded)
+            accessError,
+            accessStatusCode,
+            imageServerServices.Count > 0 && successfulImageServerProbes == 0 && failedImageServerProbes > 0);
+    }
+
+    private static int ServiceDirectoryEntryComparer(ServiceDirectoryEntry left, ServiceDirectoryEntry right)
+    {
+        var nameComparison = StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name);
+        return nameComparison != 0
+            ? nameComparison
+            : StringComparer.Ordinal.Compare(left.Type, right.Type);
+    }
+
+    private static async Task<IResult> HandleGetServicesDirectory(
+        HttpContext context,
+        string? f,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
+        [FromServices] IRasterStore rasterStore,
+        [FromServices] ILicenseStatusProvider licenseStatusProvider,
+        [FromServices] ILogger<GeoservicesCatalogLog> logger)
+    {
+        if (!IsSupportedFormat(f))
         {
-            entries.Sort(static (a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
+            return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        // If nothing was emitted but there were publications the caller could not see,
-        // surface the standard 401/403 access decision instead of an empty directory.
-        if (entries.Count == 0 && deniedPublications.Count > 0)
+        var projection = await BuildServiceDirectoryProjectionAsync(
+            context,
+            graphProvider,
+            rasterStore,
+            licenseStatusProvider,
+            logger).ConfigureAwait(false);
+        if (projection.AccessError is not null)
         {
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(context, deniedPublications);
-            if (accessError != null)
-            {
-                return accessError;
-            }
+            return projection.AccessError;
         }
 
         var response = new ServicesDirectoryResponse
         {
-            Services = [.. entries]
+            Services = [.. projection.Entries]
         };
 
         GeoservicesCatalogEndpointLogging.LogServicesDirectoryReturned(logger, response.Services.Length);
@@ -819,29 +978,48 @@ internal static class GeoservicesCatalogEndpoints
     /// the layer index (not the service name) as the route segment for
     /// ImageServer entries.
     /// </summary>
-    private static async Task<int?> GetImageServerLayerIdAsync(
+    private static async Task<ImageServerProbeResult> GetImageServerLayerIdAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
+        IReadOnlyCollection<MetadataV2Resource> visibleResources,
         IRasterStore rasterStore,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
+        var visibleResourceIds = visibleResources
+            .Select(static resource => resource.Metadata.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var successfulLookups = 0;
+        var failedLookups = 0;
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
             if (!snapshot.IsRoutable(publication)
+                || !visibleResourceIds.Contains(publication.ResourceId)
                 || publication.LayerIndex is not { } layerIndex
                 || snapshot.ResolveStorageLayerId(publication) is not { } storageLayerId)
             {
                 continue;
             }
 
-            var raster = await rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-            if (raster is not null)
+            try
             {
-                return layerIndex;
+                var raster = await rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+                successfulLookups++;
+                if (raster is not null)
+                {
+                    return new ImageServerProbeResult(layerIndex, AllLookupsFailed: false);
+                }
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)
+            {
+                failedLookups++;
+                GeoservicesCatalogEndpointLogging.LogRasterProbeFailed(logger, service.Metadata.Name, exception);
             }
         }
 
-        return null;
+        return new ImageServerProbeResult(
+            LayerId: null,
+            AllLookupsFailed: failedLookups > 0 && successfulLookups == 0);
     }
 
     private static bool IsSupportedFormat(string? format)
@@ -854,6 +1032,23 @@ internal static class GeoservicesCatalogEndpoints
         var mediaType = contentType?.Split(';', 2)[0].Trim();
         return string.Equals(mediaType, "text/xml", StringComparison.OrdinalIgnoreCase)
             || string.Equals(mediaType, "application/soap+xml", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record ServiceDirectoryProjection(
+        IReadOnlyList<ServiceDirectoryEntry> Entries,
+        IResult? AccessError,
+        int? AccessStatusCode,
+        bool AllImageServerProbesFailed);
+
+    private sealed record ImageServerProbeCandidate(
+        MetadataV2Service Service,
+        IReadOnlyCollection<MetadataV2Resource> VisibleResources);
+
+    private sealed record ImageServerProbeResult(int? LayerId, bool AllLookupsFailed);
+
+    private sealed class SoapCatalogAccessException(int statusCode) : Exception
+    {
+        public int StatusCode { get; } = statusCode;
     }
 }
 
