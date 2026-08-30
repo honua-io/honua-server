@@ -483,7 +483,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.DeleteRole_BuiltInRole_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.DeleteRole_CustomRole_ReturnsSuccess"
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.DeleteRole_CustomRole_ReturnsSuccess",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminRoleDelete_AssignedConsoleRoleAlsoReservesName"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -617,6 +618,22 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "raster.multidim-coverage"
+    },
+    {
+      "id": "delete-api-v1-console-access-workspaceid-roles-roleid",
+      "route": "/api/v1/console/access/{workspaceId}/roles/{roleId}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_DeleteAssignedRole_TombstonesNameAndRemovesPermissions",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossWorkspaceBoundary"
+      ],
+      "proof_ledger_surface": "console-content-rbac",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "delete-api-v1-console-content-id",
@@ -2948,6 +2965,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ListAudit_MalformedCursor_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.ObservabilityEventEndpointsTests.ListAudit_ReturnsItemsAndPaginates"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -4426,6 +4444,52 @@
       "proof_ledger_surface": "capability-manifest",
       "maturity": "implemented",
       "capability": "discovery.capability-manifest"
+    },
+    {
+      "id": "get-api-v1-console-access-workspaceid-members",
+      "route": "/api/v1/console/access/{workspaceId}/members",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_Members_OnlyIncludeRolesAssignedInRequestedWorkspace"
+      ],
+      "proof_ledger_surface": "console-content-rbac",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-console-access-workspaceid-roles",
+      "route": "/api/v1/console/access/{workspaceId}/roles",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_WithoutAdminAuthentication_ReturnsUnauthorized"
+      ],
+      "proof_ledger_surface": "console-content-rbac",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-console-access-workspaceid-roles-audit",
+      "route": "/api/v1/console/access/{workspaceId}/roles/audit",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_LongWorkspaceId_RetainsMutationAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleAudit_MalformedCursorReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "console-content-rbac",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "get-api-v1-console-catalog-endpoints-workspaceid",
@@ -16159,6 +16223,24 @@
       "capability": "demo.showcase"
     },
     {
+      "id": "post-api-v1-console-access-workspaceid-roles",
+      "route": "/api/v1/console/access/{workspaceId}/roles",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminRoleDelete_AssignedConsoleRoleAlsoReservesName",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_ConcurrentDuplicateRoleCreates_ReturnOneCreatedAndOneConflict",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_DeleteAssignedRole_TombstonesNameAndRemovesPermissions",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate"
+      ],
+      "proof_ledger_surface": "console-content-rbac",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "post-api-v1-console-actions-check",
       "route": "/api/v1/console/actions/check",
       "method": "POST",
@@ -21387,7 +21469,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.UpdateRole_ValidRequest_ReturnsUpdated"
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.UpdateRole_ValidRequest_ReturnsUpdated",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminRoleUpdate_RenameAssignedConsoleRole_ReturnsBadRequestWithoutOrphaningMember"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -21401,7 +21484,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.SetPermissions_ValidRequest_ReturnsUpdatedPermissions"
+        "Honua.Server.Tests.Features.Admin.RoleEndpointsTests.SetPermissions_ValidRequest_ReturnsUpdatedPermissions",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.AdminPermissionReplacement_PreservesConsoleWorkspaceOwnership"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -21575,6 +21659,23 @@
         "Honua.Server.Tests.Features.Admin.UserManagementEndpointsTests.UpdateUserRoles_ValidRequest_ReturnsUpdatedUser"
       ],
       "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "put-api-v1-console-access-workspaceid-roles-roleid",
+      "route": "/api/v1/console/access/{workspaceId}/roles/{roleId}",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_AdminLifecycle_ProjectsRolesMembersAndAudit",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleMutations_CannotCrossWorkspaceBoundary",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleNames_AreGloballyUniqueOnCreate",
+        "Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests.ConsoleAccess_RoleRename_WithExistingAssignment_ReturnsBadRequestWithoutOrphaningMember"
+      ],
+      "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
