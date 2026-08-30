@@ -42,6 +42,13 @@ WORKER_WORKFLOW = ".github/workflows/worker-gdal-image.yml"
 # emitted and retained, the reader could not see them. Both modes are indexed;
 # only docs-only heads feed the docs-only promotion sample.
 PR_GATE_MODES = ("docs-only", "full")
+PR_GATE_UNDIGESTED_REASONS = frozenset({
+    "unbounded-file-count",
+    "truncated-file-list",
+    "invalid-file-record",
+    "unsafe-file-record",
+    "duplicate-file-record",
+})
 PR_GATE_ARTIFACT = re.compile(
     r"^pr-gate-impact-(?P<mode>docs-only|full)-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
@@ -768,7 +775,6 @@ def _validate_pr_gate(
     pull_request = positive_int(value.get("pull_request"), "PR Gate pull request")
     head = exact_sha(value.get("head_sha"), "PR Gate head")
     exact_sha(value.get("base_sha"), "PR Gate base")
-    exact_digest(value.get("files_sha256"), "PR Gate files digest")
     positive_int(value.get("gate_run_id"), "PR Gate run id")
     positive_int(value.get("gate_run_attempt"), "PR Gate run attempt")
     if value.get("gate_run_head_sha") != head or value.get("gate_run_conclusion") not in TERMINAL_CONCLUSIONS:
@@ -784,6 +790,16 @@ def _validate_pr_gate(
         raise ValueError("PR Gate receipt reason is invalid")
     if mode == "docs-only" and reason != "internal-markdown-only":
         raise ValueError("PR Gate docs-only reason is invalid")
+    files_digest = value.get("files_sha256")
+    if files_digest == "":
+        # The classifier deliberately fails closed before it can normalize a
+        # file list for these full-gate reasons. Such a receipt contains no
+        # claim about file-list content, so an empty digest is the producer's
+        # current contract rather than a malformed integrity assertion.
+        if mode != "full" or reason not in PR_GATE_UNDIGESTED_REASONS:
+            raise ValueError("PR Gate files digest is missing without a fail-closed reason")
+    else:
+        exact_digest(files_digest, "PR Gate files digest")
     for field in (
         "policy_blob_sha",
         "gate_workflow_blob_sha",
@@ -1286,8 +1302,12 @@ def summarize(
             continue
         serving = _image_outcome(serving_catalog, item, SERVING_WORKFLOW)
         worker = _image_outcome(worker_catalog, item, WORKER_WORKFLOW)
-        serving_required = item["legacy_serving"] or item["candidate_serving"]
-        worker_required = item["legacy_worker"] or item["candidate_worker"]
+        # These workflows are the AUTHORITATIVE legacy route while the
+        # candidate remains report-only. Candidate-only heads intentionally do
+        # not trigger them, so requiring an impossible exact-head run converts
+        # a shadow-routing difference into a fabricated native-outcome failure.
+        serving_required = item["legacy_serving"]
+        worker_required = item["legacy_worker"]
         missing: list[str] = []
         if serving_required and not serving["success"]:
             missing.append("serving")
