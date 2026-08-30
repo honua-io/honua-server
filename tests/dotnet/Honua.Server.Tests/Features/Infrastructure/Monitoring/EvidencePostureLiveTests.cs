@@ -31,7 +31,7 @@ public sealed class EvidencePostureLiveTests
         var sourceId = Required(SourceIdEnv);
         var findingId = Required(FindingIdEnv);
         using var honua = CreateAuthenticatedClient(RequiredUri(BaseUrlEnv));
-        using var controls = CreateAuthenticatedClient(baseAddress: null);
+        using var controls = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 
         var initial = await ReadFindingsViaMcpAsync(honua, findingId);
         AssertCompleteAndFresh(initial, sourceId);
@@ -40,8 +40,8 @@ public sealed class EvidencePostureLiveTests
         var outageRequested = false;
         try
         {
-            await InvokeControlAsync(controls, RequiredUri(OutageUrlEnv));
             outageRequested = true;
+            await InvokeControlAsync(controls, RequiredUri(OutageUrlEnv));
 
             var unavailable = await WaitForSourceAsync(
                 honua,
@@ -129,7 +129,6 @@ public sealed class EvidencePostureLiveTests
             Content = new StringContent(requestBody, Encoding.UTF8, "application/json"),
         };
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
         using var response = await client.SendAsync(request, cancellationToken);
         response.StatusCode.Should().Be(HttpStatusCode.OK, "MCP must remain reachable during telemetry failure");
