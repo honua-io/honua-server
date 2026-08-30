@@ -46,3 +46,18 @@ Durable proposal evidence stores bounded `evidence:<sourceId>:<observedAt>:<comp
 ## Compatibility
 
 `evidencePosture` is additive and nullable. Existing clients that do not read it are unaffected, and every legacy top-level field (`generatedAt`, `detectedAt`, `partialResult`, `sourceErrors`, `available`, `hasMore`, `nextCursor`, `clusterReplicaCount`) keeps its previous meaning and remains truthful during the transition.
+
+## Live outage/recovery proof
+
+`EvidencePostureLiveTests` is the opt-in deployed-environment contract. It reads a known actionable finding through the real MCP HTTP transport, asks an environment-owned harness to interrupt one telemetry backend, waits for that exact source to report `unavailable`, and verifies the finding proposal is blocked with `evidencePostureNotActionable`. It then restores the backend and waits for the MCP posture to return to complete and fresh. The recovery control is also invoked from test cleanup so a failed assertion does not intentionally leave the backend offline.
+
+The harness supplies these variables only in an isolated live-test environment:
+
+- `HONUA_LIVE_EVIDENCE_BASE_URL`: deployed Honua base URL.
+- `HONUA_LIVE_EVIDENCE_API_KEY`: admin API key, sent only as `X-API-Key` and never logged by the test.
+- `HONUA_LIVE_EVIDENCE_SOURCE_ID`: source envelope whose backend the harness controls.
+- `HONUA_LIVE_EVIDENCE_FINDING_ID`: stable active finding that requires that source.
+- `HONUA_LIVE_EVIDENCE_OUTAGE_URL`: idempotent harness-owned POST control that returns success after the backend is unavailable.
+- `HONUA_LIVE_EVIDENCE_RECOVERY_URL`: idempotent harness-owned POST control that returns success after the backend is restored.
+
+The outage and recovery controls are external test-harness endpoints, not Honua server routes. They must target only the isolated telemetry backend represented by `HONUA_LIVE_EVIDENCE_SOURCE_ID`; the Honua process and MCP transport remain online throughout the run.
