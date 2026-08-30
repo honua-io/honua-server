@@ -510,6 +510,15 @@ def test_policy_generation_ignores_routing_irrelevant_workflow_edits() -> None:
         assert irrelevant["serving_workflow"] != original["serving_workflow"]
         assert irrelevant["policy_generation_sha256"] == original["policy_generation_sha256"]
 
+        observer = root / MODULE.NATIVE_WORKFLOW
+        observer.write_text(
+            observer.read_text(encoding="utf-8") + "\n# collection semantics revision\n",
+            encoding="utf-8",
+        )
+        changed_observer = MODULE.current_blobs(root)
+        assert changed_observer["policy_generation_sha256"] != original["policy_generation_sha256"]
+        observer.write_bytes((REPOSITORY_ROOT / MODULE.NATIVE_WORKFLOW).read_bytes())
+
         classifier = root / "scripts/ci/native-image-impact.py"
         classifier.write_text(
             classifier.read_text(encoding="utf-8") + "\n# routing policy revision\n",
@@ -847,6 +856,38 @@ def test_integrity_failures_do_not_count() -> None:
                 policy_head_sha=old_provenance["policy_sha"],
             )
             assert contradiction["counts"]["integrity_failures"] == 1, field
+
+            malformed = pr_gate_receipt(blobs)
+            malformed[field] = "short"
+            archive(archives, 301, MODULE.PR_GATE_STREAM, malformed)
+            rejected = MODULE.summarize(
+                index, archives, root / "serving", root / "worker",
+                policy(), REPOSITORY_ROOT,
+            )
+            assert rejected["counts"]["integrity_failures"] == 1, field
+
+        for field in (
+            "gate_workflow_blob_sha",
+            "serving_workflow_blob_sha",
+            "worker_workflow_blob_sha",
+            "resolver_blob_sha",
+            "observer_workflow_blob_sha",
+            "policy_inputs_sha256",
+        ):
+            malformed_native = native_receipt(
+                blobs, pr=11, head=HEAD_B, worker=True
+            )
+            malformed_native[field] = "short"
+            archive(archives, 301, MODULE.NATIVE_STREAM, malformed_native)
+            native_index = {
+                **index,
+                "artifacts": [entry(MODULE.NATIVE_STREAM, 301, 1)],
+            }
+            rejected = MODULE.summarize(
+                native_index, archives, root / "serving", root / "worker",
+                policy(), REPOSITORY_ROOT,
+            )
+            assert rejected["counts"]["integrity_failures"] == 1, field
 
         # A trust-boundary violation is never drift, whatever its policy head.
         for field, value in (
@@ -1569,10 +1610,31 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
     assert ready["promotion_gate_ready"] is True
     assert ready["maximum_loss_ratio_in_streak"] == 0.01
     assert ready["policy_generation_resets"] == 1
+    assert ready["policy_generation_resets_per_week"] == 1.167
     assert ready["largest_sample_within_generation"] == {
         "docs_only_heads": 7,
         "native_heads": 8,
     }
+
+    independent_maxima = MODULE.trend([
+        {**daily(19), "counts": {
+            "integrity_failures": 0, "docs_only_success_heads": 20,
+            "native_countable_heads": 1,
+        }},
+        {**daily(20), "counts": {
+            "integrity_failures": 0, "docs_only_success_heads": 1,
+            "native_countable_heads": 20,
+        }},
+    ], policy(), now)
+    assert independent_maxima["largest_sample_within_generation"] in (
+        {"docs_only_heads": 20, "native_heads": 1},
+        {"docs_only_heads": 1, "native_heads": 20},
+    )
+
+    next_generation = daily(20)
+    next_generation["policy_generation_sha256"] = "b" * 64
+    one_day = MODULE.trend([daily(19), next_generation], policy(), now)
+    assert one_day["policy_generation_resets_per_week"] == 7.0
 
     # A red day breaks the streak rather than being averaged away.
     broken = MODULE.trend(

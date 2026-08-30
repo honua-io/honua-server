@@ -75,10 +75,11 @@ TERMINAL_CONCLUSIONS = {
 class CohortDrift(Exception):
     """The receipt is well formed but describes a superseded policy generation.
 
-    Every receipt pins the classifier and routing-policy blob SHAs that define
-    routing behaviour. Workflow and resolver blobs remain receipt provenance,
-    but do not move the generation: their routing-relevant declarations are
-    fail-closed against the classifier-owned policy before evidence is emitted.
+    Every receipt pins the classifier, routing-policy, evidence-routing workflow,
+    and resolver blob SHAs that define routing and collection behaviour. The
+    serving/worker workflow blobs remain receipt provenance: their routing-relevant
+    declarations are fail-closed against the classifier-owned policy before
+    evidence is emitted.
 
     That is cohort drift, not a receipt-integrity violation: the receipt is
     intact, attributable and internally consistent, it simply attests to a
@@ -302,15 +303,19 @@ def current_blobs(root: Path) -> dict[str, str]:
         json.dumps(manifest, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     # The semantic manifest contains only inputs that can change a routing
-    # decision. The native policy owns the legacy workflow path/variant rules;
-    # native-image-impact.py validates those declarations against the live
-    # workflows and fails closed before emitting evidence. Observer, resolver,
-    # and gate workflow blobs remain provenance, but operational edits to them
-    # (for example an actions/checkout bump) cannot reset the cohort.
+    # decision or alter evidence collection. The native policy owns the legacy
+    # serving/worker workflow path/variant rules; native-image-impact.py validates
+    # those declarations against the live workflows and fails closed before
+    # emitting evidence. Those serving/worker blobs remain provenance, so their
+    # operational edits (for example an actions/checkout bump) do not reset the cohort.
     semantic_manifest = [
         ["native_classifier", blobs["native_classifier"]],
         ["native_routing_policy", blobs["native_routing_policy"]],
         ["pr_gate_classifier", blobs["pr_gate_classifier"]],
+        ["pr_gate_observer", blobs["pr_gate_observer"]],
+        ["pr_gate_workflow", blobs["pr_gate_workflow"]],
+        ["native_observer", blobs["native_observer"]],
+        ["trusted_run_resolver", blobs["trusted_run_resolver"]],
     ]
     blobs["policy_generation_sha256"] = hashlib.sha256(
         json.dumps(semantic_manifest, separators=(",", ":")).encode("utf-8")
@@ -779,6 +784,13 @@ def _validate_pr_gate(
         raise ValueError("PR Gate receipt reason is invalid")
     if mode == "docs-only" and reason != "internal-markdown-only":
         raise ValueError("PR Gate docs-only reason is invalid")
+    for field in (
+        "policy_blob_sha",
+        "gate_workflow_blob_sha",
+        "resolver_blob_sha",
+        "observer_workflow_blob_sha",
+    ):
+        exact_sha(value.get(field), f"PR Gate {field}")
     # Currency is checked last: everything above is what makes the receipt
     # trustworthy, and all of it must hold before drift can be the verdict.
     semantic_drift = value.get("policy_blob_sha") != blobs["pr_gate_classifier"]
@@ -830,6 +842,9 @@ def _validate_native(
         "resolver_blob_sha": blobs["trusted_run_resolver"],
         "observer_workflow_blob_sha": blobs["native_observer"],
     }
+    for field in expected_blobs:
+        exact_sha(value.get(field), f"native-image {field}")
+    exact_digest(value.get("policy_inputs_sha256"), "native-image policy inputs digest")
     # Whole-file pins above remain attributable provenance. Currency is based
     # only on semantic routing inputs; workflow routing declarations are
     # validated fail-closed against native_routing_policy by the classifier.
@@ -1538,9 +1553,9 @@ def markdown(ledger: dict[str, Any]) -> str:
         "|---|---|",
         rows,
         "",
-        "Cohort drift is not receipt loss: classifier or routing-policy changes start a new "
-        "semantic generation. Workflow and resolver blob pins remain provenance, but "
-        "routing-irrelevant maintenance does not reset the cohort.",
+        "Cohort drift is not receipt loss: classifier, routing-policy, or evidence-routing "
+        + "workflow changes start a new semantic generation. Other workflow blob pins remain "
+        + "provenance, so routing-irrelevant maintenance does not reset the cohort.",
         "A successful observer shell without one exact stable-name receipt is never counted. ",
         "Reuse is *build* reuse only: the GDAL worker's Trivy scan is re-run on every head "
         "because its verdict depends on the vulnerability database at scan time, never on a "
@@ -1644,8 +1659,14 @@ def trend(ledgers: list[object], policy_value: object, now: datetime | None = No
         for previous, following in zip(generations, generations[1:])
     )
     observation_weeks = (
-        max(1.0, (generations[-1][0] - generations[0][0]).total_seconds() / 604800)
-        if len(generations) > 1 else 1.0
+        (generations[-1][0] - generations[0][0]).total_seconds() / 604800
+        if len(generations) > 1 else 0.0
+    )
+    resets_per_week = resets / observation_weeks if observation_weeks > 0 else 0.0
+    largest_sample = max(
+        generations,
+        key=lambda item: (min(item[2], item[3]), item[2] + item[3], item[0]),
+        default=None,
     )
     return {
         "contract": TREND_CONTRACT,
@@ -1656,10 +1677,10 @@ def trend(ledgers: list[object], policy_value: object, now: datetime | None = No
         "maximum_loss_ratio_in_streak": round(maximum_loss, 6),
         "promotion_gate_ready": streak >= required,
         "policy_generation_resets": resets,
-        "policy_generation_resets_per_week": round(resets / observation_weeks, 3),
+        "policy_generation_resets_per_week": round(resets_per_week, 3),
         "largest_sample_within_generation": {
-            "docs_only_heads": max((item[2] for item in generations), default=0),
-            "native_heads": max((item[3] for item in generations), default=0),
+            "docs_only_heads": largest_sample[2] if largest_sample else 0,
+            "native_heads": largest_sample[3] if largest_sample else 0,
         },
         "days": [days[key] for key in sorted(days, reverse=True)],
     }

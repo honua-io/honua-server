@@ -215,9 +215,10 @@ routing decision.
 
 That reset is **cohort drift, not receipt loss**, and the ledger says so (#3343).
 Workflow, observer, and trusted-resolver blob SHAs remain pinned in each receipt
-as provenance, but do not define its generation. Action-version, timeout,
-step-name, and comment edits therefore do not discard an otherwise valid cohort.
-This is fail-closed: the native classifier parses the authoritative
+as provenance. The PR Gate workflow, observers, and resolver define the generation
+because they can alter routing or collection semantics. Serving/worker workflow
+action-version, timeout, step-name, and comment edits do not discard an otherwise
+valid cohort. This is fail-closed: the native classifier parses the authoritative
 serving/worker workflow trigger paths and serving variant case arms and validates
 them against `.github/native-image-impact.json` before emitting evidence. A
 routing-relevant workflow edit requires a matching routing-policy edit, which

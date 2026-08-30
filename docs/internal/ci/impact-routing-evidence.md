@@ -186,12 +186,13 @@ now separate, counted, named facts:
 | `image_outcome_pending_heads` | The head's image run is still building. Undetermined, not absent — the next audit sees how it ended. | No |
 | `quarantined` | Named in `.github/impact-routing-tombstones.json` with an owning issue and an expiry. | No, until the expiry |
 
-Cohort drift is the important distinction. Only a classifier or native
-routing-policy change starts a semantic generation. Workflow action-version,
-timeout, name, and comment edits retain it; their whole-file SHAs remain receipt
-provenance. Authoritative workflow routing fragments are parsed and checked
-against the generation-pinned native policy, so an actual routing change cannot
-escape the digest. A semantic reset is by design (see "Changing the selector…"
+Cohort drift is the important distinction. A classifier, native routing-policy,
+PR Gate workflow, observer, or trusted-resolver change starts a semantic
+generation because each can alter routing or evidence collection. Serving and
+worker workflow action-version, timeout, name, and comment edits retain it; their
+whole-file SHAs remain receipt provenance. Authoritative serving/worker routing
+fragments are parsed and checked against the generation-pinned native policy, so
+an actual routing change cannot escape the digest. A semantic reset is by design (see "Changing the selector…"
 in `native-image-impact-routing.md`); it is not evidence loss and must never
 redden the integrity check. `policy_generation_sha256` names the current
 generation.
