@@ -6,9 +6,9 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -22,14 +22,16 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
+using Honua.Infrastructure.Authentication;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
+using Honua.TestKit;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -193,6 +195,34 @@ public sealed class OperationsToolsetTests
         using var scope = provider.CreateScope();
         scope.ServiceProvider.GetRequiredService<IOperationApprovalReplayVerifier>()
             .Should().BeOfType<OperationApprovalReplayVerifier>();
+    }
+
+    [UnitTest]
+    public void AddOperationsToolset_RegistersLaneAOnlyWithDurableProposalStore_AndIsIdempotent()
+    {
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        var degraded = new ServiceCollection();
+
+        degraded.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        degraded.Should().NotContain(descriptor =>
+            descriptor.ImplementationType == typeof(AdminConnectImportOperationDescriptorProvider));
+        degraded.Should().NotContain(descriptor => descriptor.ServiceType ==
+            typeof(OperationsServiceCollectionExtensions.AdminConnectImportRegistrationMarker));
+
+        var composed = new ServiceCollection();
+        composed.AddSingleton(Substitute.For<IOperationProposalStore>());
+        composed.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        composed.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        composed.Count(descriptor => descriptor.ImplementationType ==
+            typeof(AdminConnectImportOperationDescriptorProvider)).Should().Be(1);
+        composed.Count(descriptor => descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationFactory != null).Should().Be(
+                AdminConnectImportOperationCatalog.Definitions.Count +
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4,
+                "Lane A is idempotent, Lane D composes on each call, and the four legacy adapters remain unique");
     }
 
     [UnitTest]
@@ -417,6 +447,173 @@ public sealed class OperationsToolsetTests
         handle.Reason.Should().Contain("HTTP 400");
         handle.Result!.Details.Should().Contain("statusCode", "400")
             .And.Contain("response", "{\"detail\":\"invalid scope\"}");
+    }
+
+    [UnitTest]
+    public async Task LaneA_AdminOperations_RoundTrip_FromCatalog_ToPublishedTools_WhenEnabled()
+    {
+        var catalog = new OperationCatalog([new AdminConnectImportOperationDescriptorProvider()], TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: AdminConnectImportOperationCatalog.Definitions
+                .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
+                .Select(static definition => new AdminConnectImportApprovalRequestMapper(definition)));
+
+        var descriptors = (await catalog.GetSnapshotAsync(CancellationToken.None)).Operations;
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+
+        descriptors.Should().HaveCount(AdminConnectImportOperationCatalog.Definitions.Count);
+        tools.Select(static tool => tool.Name).Should().BeEquivalentTo(
+            descriptors.Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId)));
+        descriptors.Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
+            .Should().OnlyContain(static descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+    }
+
+    [UnitTest]
+    public void LaneA_DescriptorSchemas_AreProjectedFromAdminApiContract()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+
+        foreach (var definition in AdminConnectImportOperationCatalog.Definitions)
+        {
+            var operation = AdminConnectImportOperationCatalog.FindOperation(document.RootElement, definition.OpenApiOperationId);
+            operation.GetProperty("operationId").GetString().Should().Be(definition.OpenApiOperationId);
+            AdminConnectImportOperationCatalog.Descriptors.Should().ContainSingle(
+                descriptor => descriptor.OperationId == definition.OperationId);
+        }
+
+        var create = AdminConnectImportOperationCatalog.Descriptors.Single(
+            descriptor => descriptor.OperationId == "admin.connections.create");
+        create.InputSchema.Select(static parameter => parameter.Name).Should().Contain("secretReference");
+        create.InputSchema.Single(static parameter => parameter.Name == "secretReference").Schema.Type
+            .Should().Be(Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Text);
+
+        var upload = AdminConnectImportOperationCatalog.Descriptors.Single(
+            descriptor => descriptor.OperationId == "admin.import.upload");
+        upload.InputSchema.Should().ContainSingle(parameter => parameter.Name == "fileName" && parameter.Required);
+    }
+
+    [UnitTest]
+    public void LaneA_ApprovalPayload_PreservesTypedIdentity_AndRejectsInlinePassword()
+    {
+        var definition = AdminConnectImportOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.connections.create");
+        var mapper = new AdminConnectImportApprovalRequestMapper(definition);
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var request = new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?> { ["password"] = "plaintext" }
+        };
+
+        var decision = new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval };
+        var map = () => mapper.Map(descriptor, request, new OperationPolicyContext(), decision);
+
+        map.Should().Throw<InvalidOperationException>().WithMessage("*secretReference*");
+
+        var safe = mapper.Map(descriptor, request with
+        {
+            Parameters = new Dictionary<string, string?> { ["secretReference"] = "vault://connection" }
+        }, new OperationPolicyContext(), decision);
+        safe.OperationId.Should().Be(definition.OperationId);
+    }
+
+    [UnitTest]
+    public async Task LaneA_Transport_PreservesText_DecodesFiles_AndProjectsQueuedJob()
+    {
+        using var json = AdminConnectImportOperationExecutor.BuildJson(
+            new OperationRequest
+            {
+                OperationId = "admin.connections.create",
+                Parameters = new Dictionary<string, string?> { ["name"] = "true", ["sslRequired"] = "true" }
+            }, [], "admin.connections.create");
+        using var jsonDocument = JsonDocument.Parse(await json.ReadAsStringAsync());
+        jsonDocument.RootElement.GetProperty("name").GetString().Should().Be("true");
+        jsonDocument.RootElement.GetProperty("sslRequired").ValueKind.Should().Be(JsonValueKind.True);
+
+        using var multipart = AdminConnectImportOperationExecutor.BuildMultipart(
+            new OperationRequest
+            {
+                OperationId = "admin.import.upload",
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["file"] = Convert.ToBase64String([0x01, 0x02, 0x03]),
+                    ["fileName"] = "roads.geojson"
+                }
+            }, []);
+        var file = multipart.Single(part => part.Headers.ContentDisposition?.Name == "file");
+        (await file.ReadAsByteArrayAsync()).Should().Equal(0x01, 0x02, 0x03);
+        file.Headers.ContentDisposition!.FileName.Should().Be("roads.geojson");
+
+        var resources = AdminConnectImportOperationExecutor.ReadQueuedResources(
+            "{\"jobId\":\"job-1\",\"statusUrl\":\"/jobs/job-1\",\"cancelUrl\":\"/jobs/job-1/cancel\"}");
+        resources.Should().Contain(new KeyValuePair<string, string>("jobId", "job-1"));
+        resources.Should().ContainKey("statusUrl").And.ContainKey("cancelUrl");
+    }
+
+    [UnitTest]
+    public async Task LaneA_ApprovedReplay_DoesNotExecuteWithApproveOnlyKey_AndUsesRequesterTenant()
+    {
+        var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var approver = await credentialStore.CreateAsync(
+            "approve-only", ["admin:approve"], null, "approver", CancellationToken.None);
+        AdminApiKeyValidationResult? executionAuthority = null;
+        var handler = new CapturingOperationHandler(async request =>
+        {
+            var executionKey = request.Headers.GetValues("X-API-Key").Single();
+            executionKey.Should().NotBe(approver.Key,
+                "the approve-only transport credential must never become execution authority");
+            request.Headers.GetValues("X-Honua-Tenant").Should().Equal("requester-tenant");
+            executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}")
+            };
+        });
+        var factory = Substitute.For<IHttpClientFactory>();
+        using var httpClient = new HttpClient(handler);
+        factory.CreateClient(AdminConnectImportOperationExecutor.HttpClientName)
+            .Returns(httpClient);
+        var current = new DefaultHttpContext();
+        current.Request.Scheme = "https";
+        current.Request.Host = new HostString("localhost");
+        current.Request.Headers["X-API-Key"] = approver.Key;
+        current.Request.Headers["X-Honua-Tenant"] = "approver-tenant";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(current);
+        var definition = AdminConnectImportOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.connections.create");
+        var executor = new AdminConnectImportOperationExecutor(
+            definition, factory, accessor, credentialStore, TimeProvider.System);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = definition.OperationId,
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["name"] = "roads",
+                    ["provider"] = "postgis",
+                    ["connectionString"] = "Host=database",
+                }
+            },
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal-1",
+                TenantId = "requester-tenant",
+                PrincipalId = "requester",
+            },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        executionAuthority.Should().NotBeNull();
+        executionAuthority!.Record.Permissions.Should().Equal("admin:write");
+        (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
+            .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
 
     [UnitTest]
@@ -1134,5 +1331,13 @@ public sealed class OperationsToolsetTests
                 Content = new StringContent(responseBody, System.Text.Encoding.UTF8, "application/json")
             };
         }
+    }
+
+    private sealed class CapturingOperationHandler(
+        Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => respond(request);
     }
 }

@@ -94,6 +94,32 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftDeleteExecutor>());
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
 
+        var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==
+            typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore));
+        if (hasProposalStore &&
+            !services.Any(descriptor => descriptor.ServiceType == typeof(AdminConnectImportRegistrationMarker)))
+        {
+            services.AddSingleton<AdminConnectImportRegistrationMarker>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider,
+                AdminConnectImportOperationDescriptorProvider>());
+            foreach (var definition in AdminConnectImportOperationCatalog.Definitions)
+            {
+                if (definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
+                {
+                    services.AddSingleton<IOperationApprovalRequestMapper>(
+                        new AdminConnectImportApprovalRequestMapper(definition));
+                }
+                services.AddScoped<IOperationExecutor>(sp => new AdminConnectImportOperationExecutor(
+                    definition,
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetRequiredService<IHttpContextAccessor>(),
+                    sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
+                    sp.GetRequiredService<TimeProvider>()));
+            }
+            services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
+            services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+        }
+
         // Legacy adapters register UNCONDITIONALLY and resolve their control-plane
         // actuator at USE time. The former registration-time services.Any gate was
         // an ordering snapshot: hosts that register control-plane executors after
@@ -163,4 +189,6 @@ internal static class OperationsServiceCollectionExtensions
     /// <c>TryAddEnumerable</c> (which cannot hold factory descriptors).
     /// </summary>
     internal sealed class LegacyAdapterRegistrationMarker;
+
+    internal sealed class AdminConnectImportRegistrationMarker;
 }
