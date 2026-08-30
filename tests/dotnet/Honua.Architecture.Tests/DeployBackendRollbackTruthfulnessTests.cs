@@ -48,9 +48,15 @@ public sealed partial class DeployBackendRollbackTruthfulnessTests
         foreach (var backend in AutomaticRollbackBackends)
         {
             var body = FindTypeBody(sources, backend);
+            var observationPath = FindMethodBody(body, "ObserveAsync");
+            if (backend == "KubernetesArgoRolloutsDeployBackend")
+            {
+                observationPath += FindMethodBody(body, "ObserveRollback");
+            }
+
             Assert.Contains("SupportsRollback = true", body, StringComparison.Ordinal);
             Assert.Contains("RollbackAsync", body, StringComparison.Ordinal);
-            Assert.Contains("Status = WorkflowOperationStatus.RolledBack", body, StringComparison.Ordinal);
+            Assert.Contains("Status = WorkflowOperationStatus.RolledBack", observationPath, StringComparison.Ordinal);
         }
 
         var gitOpsBase = FindTypeBody(sources, "GitOpsDeployBackendBase");
@@ -107,6 +113,30 @@ public sealed partial class DeployBackendRollbackTruthfulnessTests
         }
 
         throw new Xunit.Sdk.XunitException($"Registered deploy backend type '{typeName}' was not found in src.");
+    }
+
+    private static string FindMethodBody(string typeBody, string methodName)
+    {
+        var declarationMatch = Regex.Match(
+            typeBody,
+            $@"(?:public|private|internal|protected)\s+(?:static\s+)?(?:async\s+)?[A-Za-z0-9_<>,?\[\]]+\s+{Regex.Escape(methodName)}\(",
+            RegexOptions.CultureInvariant);
+        Assert.True(declarationMatch.Success, $"Method '{methodName}' was not found in the backend type.");
+
+        var openingBrace = typeBody.IndexOf('{', declarationMatch.Index);
+        Assert.True(openingBrace >= 0, $"Method '{methodName}' has no body.");
+
+        var depth = 0;
+        for (var index = openingBrace; index < typeBody.Length; index++)
+        {
+            depth += typeBody[index] == '{' ? 1 : typeBody[index] == '}' ? -1 : 0;
+            if (depth == 0)
+            {
+                return typeBody[openingBrace..(index + 1)];
+            }
+        }
+
+        throw new Xunit.Sdk.XunitException($"Method '{methodName}' has an unterminated body.");
     }
 
     [GeneratedRegex(@"GetRequiredService<(?<type>[A-Za-z0-9_]+DeployBackend)>\(\)")]
