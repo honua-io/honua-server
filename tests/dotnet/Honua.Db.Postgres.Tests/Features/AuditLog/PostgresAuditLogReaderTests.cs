@@ -86,7 +86,7 @@ public sealed class PostgresAuditLogReaderTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
-    public async Task ListAsync_WithOutOfRangeCursor_DoesNotThrowAndIgnoresCursor()
+    public async Task ListAsync_WithValidCursorOutsideResultRange_ReturnsEmptyPage()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresAuditLogReaderTests));
         try
@@ -101,10 +101,12 @@ public sealed class PostgresAuditLogReaderTests(PostgresFixture fixture)
             var page = await reader.ListAsync(new AuditLogFilter
             {
                 PageSize = 10,
-                Cursor = BuildOutOfRangeCursor("1")
+                Cursor = AuditLogCursor.Encode(
+                    new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                    auditId: 1),
             });
 
-            page.Items.Should().HaveCount(1);
+            page.Items.Should().BeEmpty();
             page.NextCursor.Should().BeNull();
         }
         finally
@@ -112,6 +114,30 @@ public sealed class PostgresAuditLogReaderTests(PostgresFixture fixture)
             await fixture.DropSchemaAsync(schema);
         }
     }
+
+    [Theory]
+    [MemberData(nameof(MalformedCursors))]
+    public async Task ListAsync_WithMalformedCursor_ThrowsTypedException(string cursor)
+    {
+        var reader = new PostgresAuditLogReader(
+            new TestConnectionProvider(fixture.DataSource, "unused_for_invalid_cursor"),
+            schemaName: "unused_for_invalid_cursor");
+
+        var act = () => reader.ListAsync(new AuditLogFilter { Cursor = cursor });
+
+        await act.Should().ThrowAsync<InvalidAuditLogCursorException>()
+            .WithMessage("*cursor*malformed*");
+    }
+
+    public static TheoryData<string> MalformedCursors => new()
+    {
+        "not-base64",
+        Base64Url.Encode("9223372036854775807:1"),
+        Base64Url.Encode("0:not-a-number"),
+        Base64Url.Encode("0:0"),
+        Base64Url.Encode("0:-1"),
+        Base64Url.Encode("0:+1"),
+    };
 
     [IntegrationTest]
     public async Task ListAsync_FiltersByActorAndAction()
@@ -142,9 +168,6 @@ public sealed class PostgresAuditLogReaderTests(PostgresFixture fixture)
             await fixture.DropSchemaAsync(schema);
         }
     }
-
-    private static string BuildOutOfRangeCursor(string suffix)
-        => Base64Url.Encode("9223372036854775807:" + suffix);
 
     private static AuditEvent BuildEvent(DateTimeOffset timestamp, string correlation,
         string actor = "operator", string action = "test.action")
