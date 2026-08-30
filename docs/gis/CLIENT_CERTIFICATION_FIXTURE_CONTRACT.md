@@ -124,7 +124,7 @@ Not covered, recorded as gaps rather than claimed:
 | `polygon-hole-geometry-absent` | No polygon with an interior ring is seeded. |
 | `unicode-attribute-values-absent` | Every seeded attribute value is ASCII; the only non-ASCII byte in the seed is inside a SQL comment. |
 | `line-and-polygon-not-on-canonical-service` | Line and polygon coverage lives on `browser_compat`, whose layers carry only `objectid`, `name`, and `shape`. |
-| `edit-path-uncertified` | The service advertises Create/Update/Delete/Sync, but the frozen case vocabulary has no edit case and no lane writes to the fixture. |
+| `edit-path-uncertified` | The OWSLib lane certifies WFS-T insert/update/delete on scratch layers 10-12, but no lane mutates canonical layer 0 and the other advertised Create/Update/Delete/Sync protocol surfaces remain uncertified. |
 
 Supporting fixtures: the deterministic raster (64×64, single 8BUI band, every pixel 180) and the
 render geometry layers are realized on `browser_compat`; STAC is realized on the canonical service

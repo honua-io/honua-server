@@ -514,7 +514,8 @@
     },
     {
       "dimension": "edit-path",
-      "status": "gap",
+      "status": "partial",
+      "evidence": "The py-owslib lane certifies WFS-T insert, update, and delete against dedicated fixture-owned scratch layers 10-12; mutation of canonical layer 0 and Create/Update/Delete/Sync coverage through other advertised protocol surfaces remain uncertified.",
       "gapId": "edit-path-uncertified"
     }
   ],
@@ -4099,7 +4100,7 @@
     {
       "id": "edit-path-uncertified",
       "area": "vector-seed",
-      "reason": "test_service advertises Create/Update/Delete/Sync, but the frozen 2026.1 case vocabulary contains no edit case id and no active lane writes to the canonical fixture; the only write probe is the unauthenticated OData negative in the cli lane.",
+      "reason": "The py-owslib lane certifies WFS-T insert, update, and delete only on dedicated scratch layers 10-12. No active lane mutates canonical layer 0, and the other advertised Create/Update/Delete/Sync protocol surfaces remain uncertified.",
       "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
     },
     {

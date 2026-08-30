@@ -139,6 +139,54 @@ def _query_layer(wfs: WebFeatureService, typename: str) -> dict:
     return _geojson(wfs, typename=[typename])
 
 
+def _delete_named(wfs: WebFeatureService, typename: str, name: str) -> int:
+    response = _transaction(wfs, f"""
+        <wfs:Transaction service="WFS" version="2.0.0"
+            xmlns:wfs="{WFS_NS}" xmlns:fes="{FES20_NS}">
+          <wfs:Delete typeName="{typename}">
+            <fes:Filter><fes:PropertyIsEqualTo>
+              <fes:ValueReference>name</fes:ValueReference><fes:Literal>{name}</fes:Literal>
+            </fes:PropertyIsEqualTo></fes:Filter>
+          </wfs:Delete>
+        </wfs:Transaction>
+    """)
+    return _summary_count(response, "totalDeleted")
+
+
+def _insert_named(wfs: WebFeatureService, typename: str, name: str) -> int:
+    local_name = typename.split(":", 1)[-1]
+    response = _transaction(wfs, f"""
+        <wfs:Transaction service="WFS" version="2.0.0"
+            xmlns:wfs="{WFS_NS}" xmlns:gml="{GML32_NS}" xmlns:honua="{HONUA_WFS_NS}">
+          <wfs:Insert>
+            <honua:{local_name}>
+              <honua:name>{name}</honua:name>
+              <honua:shape><gml:Point srsName="{EPSG4326_URN}">
+                <gml:pos>37.755 -122.425</gml:pos>
+              </honua:shape>
+            </honua:{local_name}>
+          </wfs:Insert>
+        </wfs:Transaction>
+    """)
+    return _summary_count(response, "totalInserted")
+
+
+def _update_name(wfs: WebFeatureService, typename: str, old: str, new: str) -> int:
+    response = _transaction(wfs, f"""
+        <wfs:Transaction service="WFS" version="2.0.0"
+            xmlns:wfs="{WFS_NS}" xmlns:fes="{FES20_NS}">
+          <wfs:Update typeName="{typename}">
+            <wfs:Property><wfs:ValueReference>name</wfs:ValueReference>
+              <wfs:Value>{new}</wfs:Value></wfs:Property>
+            <fes:Filter><fes:PropertyIsEqualTo>
+              <fes:ValueReference>name</fes:ValueReference><fes:Literal>{old}</fes:Literal>
+            </fes:PropertyIsEqualTo></fes:Filter>
+          </wfs:Update>
+        </wfs:Transaction>
+    """)
+    return _summary_count(response, "totalUpdated")
+
+
 # ---------------------------------------------------------------------------
 # CONN / AUTH
 # ---------------------------------------------------------------------------
@@ -1063,6 +1111,8 @@ def test_ext_transaction_insert(wfs: WebFeatureService,
                                 wfs_collector: CertificationEvidenceCollector,
                                 timer: Timer) -> None:
     typename = _typename_for_title(wfs, "WFS-T Insert Scratch")
+    _delete_named(wfs, typename, "owslib-inserted")
+    assert _query_layer(wfs, typename)["numberMatched"] == 0
     local_name = typename.split(":", 1)[-1]
     response = _transaction(wfs, f"""
         <wfs:Transaction service="WFS" version="2.0.0"
@@ -1095,6 +1145,10 @@ def test_ext_transaction_update(wfs: WebFeatureService,
                                 wfs_collector: CertificationEvidenceCollector,
                                 timer: Timer) -> None:
     typename = _typename_for_title(wfs, "WFS-T Update Scratch")
+    _update_name(wfs, typename, "owslib-update-after", "owslib-update-before")
+    pre_state = _query_layer(wfs, typename)
+    assert pre_state["numberMatched"] == 1
+    assert _names(pre_state) == ["owslib-update-before"]
     response = _transaction(wfs, f"""
         <wfs:Transaction service="WFS" version="2.0.0"
             xmlns:wfs="{WFS_NS}" xmlns:fes="{FES20_NS}">
@@ -1126,6 +1180,12 @@ def test_ext_transaction_delete(wfs: WebFeatureService,
                                 wfs_collector: CertificationEvidenceCollector,
                                 timer: Timer) -> None:
     typename = _typename_for_title(wfs, "WFS-T Delete Scratch")
+    pre_state = _query_layer(wfs, typename)
+    if pre_state["numberMatched"] == 0:
+        assert _insert_named(wfs, typename, "owslib-delete-target") == 1
+    pre_state = _query_layer(wfs, typename)
+    assert pre_state["numberMatched"] == 1
+    assert _names(pre_state) == ["owslib-delete-target"]
     response = _transaction(wfs, f"""
         <wfs:Transaction service="WFS" version="2.0.0"
             xmlns:wfs="{WFS_NS}" xmlns:fes="{FES20_NS}">
