@@ -11,9 +11,9 @@
     "not-validated": "The example is inventoried, but wave 1 has not produced execution evidence for it."
   },
   "summary": {
-    "total": 998,
+    "total": 1052,
     "byStatus": {
-      "not-validated": 995,
+      "not-validated": 1049,
       "scheduled-nightly": 3
     }
   },
@@ -1891,6 +1891,18 @@
       "language": "csharp"
     },
     {
+      "id": "05245f086db87e45",
+      "kind": "docs-fence",
+      "path": "docs/archive/memory-management-guide.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 11,
+      "line": 237,
+      "language": "csharp"
+    },
+    {
       "id": "0dba729ffde2c188",
       "kind": "docs-fence",
       "path": "docs/archive/memory-management-guide.md",
@@ -1915,6 +1927,18 @@
       "language": "csharp"
     },
     {
+      "id": "21a05bc0da45dfd8",
+      "kind": "docs-fence",
+      "path": "docs/archive/memory-management-guide.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 8,
+      "line": 187,
+      "language": "csharp"
+    },
+    {
       "id": "4c64fe0d664a9f51",
       "kind": "docs-fence",
       "path": "docs/archive/memory-management-guide.md",
@@ -1927,6 +1951,18 @@
       "language": "csharp"
     },
     {
+      "id": "5dd110c3817455b0",
+      "kind": "docs-fence",
+      "path": "docs/archive/memory-management-guide.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 10,
+      "line": 227,
+      "language": "csharp"
+    },
+    {
       "id": "5f994613225d9b3c",
       "kind": "docs-fence",
       "path": "docs/archive/memory-management-guide.md",
@@ -1935,8 +1971,44 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 6,
-      "line": 227,
+      "line": 165,
       "language": "csharp"
+    },
+    {
+      "id": "7170967db8c41833",
+      "kind": "docs-fence",
+      "path": "docs/archive/memory-management-guide.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 9,
+      "line": 195,
+      "language": "csharp"
+    },
+    {
+      "id": "86ddd37326e66868",
+      "kind": "docs-fence",
+      "path": "docs/archive/memory-management-guide.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 13,
+      "line": 257,
+      "language": "csharp"
+    },
+    {
+      "id": "97a763d03ee1d199",
+      "kind": "docs-fence",
+      "path": "docs/archive/memory-management-guide.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 12,
+      "line": 252,
+      "language": "sql"
     },
     {
       "id": "b086ebbc73f66cf3",
@@ -1959,8 +2031,8 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 7,
-      "line": 237,
-      "language": "csharp"
+      "line": 170,
+      "language": "json"
     },
     {
       "id": "fe908da4db3e1e0e",
@@ -1975,6 +2047,90 @@
       "language": "bash"
     },
     {
+      "id": "0faed0f6e077ca47",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 26,
+      "line": 313,
+      "language": "bash"
+    },
+    {
+      "id": "1305a22798d53bfd",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 18,
+      "line": 230,
+      "language": "bash"
+    },
+    {
+      "id": "137d12e99f1a893f",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 32,
+      "line": 367,
+      "language": "sql"
+    },
+    {
+      "id": "1986dc0363458855",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 10,
+      "line": 144,
+      "language": "bash"
+    },
+    {
+      "id": "23d5f7b11518487b",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 23,
+      "line": 283,
+      "language": "bash"
+    },
+    {
+      "id": "284fdf7f8bd89ef1",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 17,
+      "line": 222,
+      "language": "bash"
+    },
+    {
+      "id": "2ccca790e5970b02",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 11,
+      "line": 150,
+      "language": "bash"
+    },
+    {
       "id": "4048477b6ff9cf67",
       "kind": "docs-fence",
       "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
@@ -1983,7 +2139,31 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 3,
-      "line": 354,
+      "line": 77,
+      "language": "sql"
+    },
+    {
+      "id": "41888bcb1ff71749",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 20,
+      "line": 261,
+      "language": "bash"
+    },
+    {
+      "id": "418ac515c54b1d7a",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 14,
+      "line": 187,
       "language": "bash"
     },
     {
@@ -1995,8 +2175,44 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 5,
-      "line": 377,
+      "line": 93,
       "language": "sql"
+    },
+    {
+      "id": "442e729a678f8e62",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 24,
+      "line": 288,
+      "language": "bash"
+    },
+    {
+      "id": "4b0630893a1acb8f",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 25,
+      "line": 302,
+      "language": "bash"
+    },
+    {
+      "id": "4cbead7e49a210b7",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 22,
+      "line": 276,
+      "language": "bash"
     },
     {
       "id": "62e35aba7c0d9aee",
@@ -2007,7 +2223,19 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 7,
-      "line": 398,
+      "line": 124,
+      "language": "bash"
+    },
+    {
+      "id": "6357df890bf735e7",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 12,
+      "line": 169,
       "language": "bash"
     },
     {
@@ -2019,8 +2247,32 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 2,
-      "line": 339,
+      "line": 71,
       "language": "bash"
+    },
+    {
+      "id": "6f5871222dfb6a79",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 27,
+      "line": 319,
+      "language": "bash"
+    },
+    {
+      "id": "838afc852b718ded",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 15,
+      "line": 195,
+      "language": "yaml"
     },
     {
       "id": "8705824f315c2ec9",
@@ -2031,7 +2283,31 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 6,
+      "line": 118,
+      "language": "bash"
+    },
+    {
+      "id": "880ae1ca34b8a47a",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 34,
       "line": 388,
+      "language": "bash"
+    },
+    {
+      "id": "8aea0c93604b1814",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 16,
+      "line": 216,
       "language": "bash"
     },
     {
@@ -2043,7 +2319,19 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 8,
-      "line": 428,
+      "line": 133,
+      "language": "bash"
+    },
+    {
+      "id": "a725eaeae076d51e",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 31,
+      "line": 354,
       "language": "bash"
     },
     {
@@ -2059,6 +2347,66 @@
       "language": "promql"
     },
     {
+      "id": "ae5820a7852a5047",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 9,
+      "line": 138,
+      "language": "bash"
+    },
+    {
+      "id": "afc736535679b0ac",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 33,
+      "line": 377,
+      "language": "sql"
+    },
+    {
+      "id": "b4c615549544fcaa",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 35,
+      "line": 398,
+      "language": "bash"
+    },
+    {
+      "id": "bd951a3cc6eb22e9",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 29,
+      "line": 330,
+      "language": "bash"
+    },
+    {
+      "id": "be9fb592b1d9d996",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 21,
+      "line": 270,
+      "language": "bash"
+    },
+    {
       "id": "c9f7d7d963e9f49c",
       "kind": "docs-fence",
       "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
@@ -2067,8 +2415,68 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 4,
-      "line": 367,
-      "language": "sql"
+      "line": 87,
+      "language": "bash"
+    },
+    {
+      "id": "caba3862227d663d",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 28,
+      "line": 325,
+      "language": "bash"
+    },
+    {
+      "id": "ea84a73467fff39b",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 13,
+      "line": 181,
+      "language": "bash"
+    },
+    {
+      "id": "f4811c298106c253",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 30,
+      "line": 339,
+      "language": "bash"
+    },
+    {
+      "id": "f74727b380df679c",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 19,
+      "line": 236,
+      "language": "bash"
+    },
+    {
+      "id": "fdfb52d9de1b1777",
+      "kind": "docs-fence",
+      "path": "docs/archive/operations/PRODUCTION_RUNBOOK.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 36,
+      "line": 428,
+      "language": "bash"
     },
     {
       "id": "0ec58301673a652f",
@@ -2403,7 +2811,7 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 8,
-      "line": 203,
+      "line": 198,
       "language": "plain"
     },
     {
@@ -2439,8 +2847,20 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 6,
-      "line": 153,
+      "line": 122,
       "language": "bash"
+    },
+    {
+      "id": "9c3ae2ce665c6859",
+      "kind": "docs-fence",
+      "path": "docs/archive/root/SECURITY_MIGRATION_GUIDE.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 11,
+      "line": 222,
+      "language": "plain"
     },
     {
       "id": "9fab76d92a019ac3",
@@ -2463,7 +2883,7 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 5,
-      "line": 122,
+      "line": 80,
       "language": "bash"
     },
     {
@@ -2475,8 +2895,8 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 7,
-      "line": 198,
-      "language": "plain"
+      "line": 153,
+      "language": "bash"
     },
     {
       "id": "ce1ec1fb093259f8",
@@ -2487,7 +2907,7 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 9,
-      "line": 208,
+      "line": 203,
       "language": "plain"
     },
     {
@@ -2499,7 +2919,7 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 10,
-      "line": 222,
+      "line": 208,
       "language": "plain"
     },
     {
@@ -3279,8 +3699,32 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 1,
+      "line": 43,
+      "language": "json"
+    },
+    {
+      "id": "5a0599a065fb0298",
+      "kind": "docs-fence",
+      "path": "docs/guides/connect/ai-agents-mcp.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 3,
       "line": 291,
       "language": "jsonc"
+    },
+    {
+      "id": "a61b6f21401128ab",
+      "kind": "docs-fence",
+      "path": "docs/guides/connect/ai-agents-mcp.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 2,
+      "line": 58,
+      "language": "json"
     },
     {
       "id": "63687bb6ab3d8c31",
@@ -3329,6 +3773,30 @@
       "fence": 1,
       "line": 30,
       "language": "text"
+    },
+    {
+      "id": "c4b9adc8e2e1e182",
+      "kind": "docs-fence",
+      "path": "docs/guides/connect/maplibre-web-maps.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 2,
+      "line": 63,
+      "language": "bash"
+    },
+    {
+      "id": "fc2041dc44a31092",
+      "kind": "docs-fence",
+      "path": "docs/guides/connect/maplibre-web-maps.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 1,
+      "line": 21,
+      "language": "html"
     },
     {
       "id": "20d593abd87e0bb0",
@@ -4045,6 +4513,18 @@
       "language": "bash"
     },
     {
+      "id": "6ac85ffaa4b141f5",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/troubleshooting.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 1,
+      "line": 104,
+      "language": "sql"
+    },
+    {
       "id": "010aee32ca40c72c",
       "kind": "docs-fence",
       "path": "docs/guides/deploy/upgrade-and-rollback.md",
@@ -4485,6 +4965,18 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 2,
+      "line": 213,
+      "language": "bash"
+    },
+    {
+      "id": "93396a51634e0244",
+      "kind": "docs-fence",
+      "path": "docs/guides/operate/README.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 3,
       "line": 253,
       "language": "bash"
     },
@@ -4821,6 +5313,30 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 1,
+      "line": 19,
+      "language": "json"
+    },
+    {
+      "id": "bc157c0de14fc2be",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/automate-workflows.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 2,
+      "line": 62,
+      "language": "json"
+    },
+    {
+      "id": "bf443a75244967fa",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/automate-workflows.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 3,
       "line": 93,
       "language": "json"
     },
@@ -4833,6 +5349,18 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 1,
+      "line": 23,
+      "language": "python"
+    },
+    {
+      "id": "e6ff741216ac67ab",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/export-data.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 2,
       "line": 45,
       "language": "bash"
     },
@@ -5077,6 +5605,18 @@
       "language": "bash"
     },
     {
+      "id": "19a4fe1b9a7b7ac2",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/query-features.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 5,
+      "line": 49,
+      "language": "bash"
+    },
+    {
       "id": "23028f7b2d382030",
       "kind": "docs-fence",
       "path": "docs/guides/query-analyze/query-features.md",
@@ -5085,8 +5625,32 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 3,
-      "line": 70,
-      "language": "json"
+      "line": 33,
+      "language": "bash"
+    },
+    {
+      "id": "3d43b83d28921ec9",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/query-features.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 6,
+      "line": 57,
+      "language": "bash"
+    },
+    {
+      "id": "3e8d2d78120eb1af",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/query-features.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 4,
+      "line": 41,
+      "language": "bash"
     },
     {
       "id": "5c7f8dbf0a788c5a",
@@ -5109,8 +5673,32 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 2,
+      "line": 24,
+      "language": "bash"
+    },
+    {
+      "id": "bf11a274152b0a3f",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/query-features.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 7,
       "line": 64,
       "language": "bash"
+    },
+    {
+      "id": "d8d6aea095b7b98a",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/query-features.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 8,
+      "line": 70,
+      "language": "json"
     },
     {
       "id": "4979ae010e9d45cf",
@@ -5121,6 +5709,18 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 1,
+      "line": 25,
+      "language": "json"
+    },
+    {
+      "id": "a363d7e206674824",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/run-geoprocessing.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 2,
       "line": 57,
       "language": "json"
     },
@@ -5133,6 +5733,18 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 1,
+      "line": 15,
+      "language": "json"
+    },
+    {
+      "id": "ef46ce0a96d00038",
+      "kind": "docs-fence",
+      "path": "docs/guides/query-analyze/work-with-time.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 2,
       "line": 54,
       "language": "json"
     },
@@ -5437,6 +6049,18 @@
       "language": "json"
     },
     {
+      "id": "0449ec8d8f8faa29",
+      "kind": "docs-fence",
+      "path": "docs/guides/style/style-maps.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 2,
+      "line": 70,
+      "language": "json"
+    },
+    {
       "id": "f26b810b5f058ea3",
       "kind": "docs-fence",
       "path": "docs/guides/style/style-maps.md",
@@ -5445,7 +6069,7 @@
         "reason": "Inventoried in wave 1; no execution evidence is claimed."
       },
       "fence": 1,
-      "line": 70,
+      "line": 19,
       "language": "json"
     },
     {
@@ -5879,6 +6503,18 @@
       "fence": 1,
       "line": 18,
       "language": "powershell"
+    },
+    {
+      "id": "f684096ac3c705ca",
+      "kind": "docs-fence",
+      "path": "docs/internal/ci/review-first-pr-gate.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 1,
+      "line": 135,
+      "language": "bash"
     },
     {
       "id": "1037d91da2461ac3",
@@ -7607,6 +8243,18 @@
       "fence": 1,
       "line": 64,
       "language": "jsonc"
+    },
+    {
+      "id": "c05e2950400315bf",
+      "kind": "docs-fence",
+      "path": "docs/internal/contributor/adr/0055-optimistic-batch-merge-train.md",
+      "validation": {
+        "status": "not-validated",
+        "reason": "Inventoried in wave 1; no execution evidence is claimed."
+      },
+      "fence": 1,
+      "line": 204,
+      "language": "json"
     },
     {
       "id": "13f4728870a9854b",

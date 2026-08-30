@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "examples" / "manifest.json"
-FENCE = re.compile(r"^```(?P<language>[^\s`]*)")
+FENCE = re.compile(r"^ {0,3}```(?P<language>[^\s`]*)")
 CUSTOMER_PATHS = {
     "samples/gp-local-dev/submit-buffer.sh": "gp-local-dev",
     "scripts/demos/run-mobile-offline-demo.sh": "mobile-offline",
