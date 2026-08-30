@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Operations;
 
@@ -16,13 +17,16 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
     private readonly AdminApiOperationCatalog.Definition _definition;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IAdminApiKeyStore _adminApiKeyStore;
     private readonly TimeProvider _clock;
 
-    public AdminApiOperationExecutor(AdminApiOperationCatalog.Definition definition, IHttpClientFactory httpClientFactory, IHttpContextAccessor httpContextAccessor, TimeProvider clock)
+    public AdminApiOperationExecutor(AdminApiOperationCatalog.Definition definition, IHttpClientFactory httpClientFactory,
+        IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore adminApiKeyStore, TimeProvider clock)
     {
         _definition = definition;
         _httpClientFactory = httpClientFactory;
         _httpContextAccessor = httpContextAccessor;
+        _adminApiKeyStore = adminApiKeyStore;
         _clock = clock;
     }
 
@@ -61,10 +65,27 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         if (query is { Length: > 0 }) relativePath += "?" + string.Join("&", query);
         var uri = new Uri($"{current.Request.Scheme}://{current.Request.Host}/api/v1/admin{relativePath}");
         using var message = new HttpRequestMessage(_definition.Method, uri);
-        if (current.Request.Headers.Authorization is { Count: > 0 } authorization)
-            message.Headers.Authorization = AuthenticationHeaderValue.Parse(authorization.ToString());
-        if (current.Request.Headers.TryGetValue("X-API-Key", out var apiKey))
-            message.Headers.TryAddWithoutValidation("X-API-Key", apiKey.ToArray());
+        AdminApiKeyRecord? executionCredential = null;
+        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+        {
+            var issued = await _adminApiKeyStore.CreateAsync(
+                $"approved-operation:{context.ApprovedProposalId}",
+                ["admin:write"],
+                _clock.GetUtcNow().AddMinutes(5),
+                context.PrincipalId,
+                cancellationToken).ConfigureAwait(false);
+            executionCredential = issued.Record;
+            message.Headers.TryAddWithoutValidation("X-API-Key", issued.Key);
+            if (!string.IsNullOrWhiteSpace(context.TenantId))
+                message.Headers.TryAddWithoutValidation("X-Honua-Tenant", context.TenantId);
+        }
+        else
+        {
+            if (current.Request.Headers.Authorization is { Count: > 0 } authorization)
+                message.Headers.Authorization = AuthenticationHeaderValue.Parse(authorization.ToString());
+            CopyHeader(current, message, "X-API-Key");
+            CopyHeader(current, message, "X-Honua-Tenant");
+        }
 
         if (_definition.Method != HttpMethod.Get)
         {
@@ -89,7 +110,17 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
             }
         }
 
-        using var response = await _httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (executionCredential is not null)
+                _ = await _adminApiKeyStore.RevokeAsync(executionCredential.Id, CancellationToken.None).ConfigureAwait(false);
+        }
+        using var responseLease = response;
         var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
@@ -156,6 +187,11 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
     private string[] GetMissingRouteParameters(OperationRequest request) => RouteNames(_definition.Path).Where(name => string.IsNullOrWhiteSpace(name switch { "connectionId" => request.ConnectionId, "serviceName" => request.ServiceName, _ => request.Parameters.GetValueOrDefault(name) })).Select(name => $"Required route parameter '{name}' is missing.").ToArray();
     private HashSet<string> RouteNames() => RouteNames(_definition.Path);
     private static HashSet<string> RouteNames(string path) => path.Split('/').Where(static segment => segment.StartsWith('{') && segment.EndsWith('}')).Select(static segment => segment[1..^1]).ToHashSet(StringComparer.Ordinal);
+    private static void CopyHeader(HttpContext current, HttpRequestMessage message, string name)
+    {
+        if (current.Request.Headers.TryGetValue(name, out var values) && values.Count > 0)
+            message.Headers.TryAddWithoutValidation(name, values.ToArray());
+    }
     private string BuildBody(OperationRequest request, OperationDescriptor descriptor)
     {
         var routeNames = RouteNames();

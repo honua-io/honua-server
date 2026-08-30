@@ -3,6 +3,11 @@
 
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
 
@@ -47,6 +52,7 @@ internal static class AdminApiOperationCatalog
         new("admin.services.settings.get", "Get service settings", HttpMethod.Get, "/services/{serviceName}/settings", "getServiceSettings", false),
         new("admin.services.protocols.set", "Set service protocols", HttpMethod.Put, "/services/{serviceName}/protocols", "updateServiceProtocols", true),
         new("admin.services.access-policy.set", "Set service access policy", HttpMethod.Put, "/services/{serviceName}/access-policy", "updateServiceAccessPolicy", true),
+        new("admin.services.timeinfo.set", "Set service time info", HttpMethod.Put, "/services/{serviceName}/timeinfo", "updateServiceTimeInfo", true),
         new("admin.services.layer-metadata.set", "Set service layer metadata", HttpMethod.Put, "/services/{serviceName}/layers/{layerId}/metadata", "updateLayerMetadata", true)
     ];
 
@@ -203,3 +209,105 @@ internal static class AdminApiOperationCatalog
         };
     }
 }
+
+internal sealed class AdminApiOperationDescriptorProvider : IOperationDescriptorProvider
+{
+    public string ProviderId => ServicePublishOperation.ProviderId;
+
+    public Task<IReadOnlyList<IOperationDescriptor>> ListDescriptorsAsync(
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<IOperationDescriptor>>(AdminApiOperationCatalog.Descriptors);
+}
+
+internal sealed class AdminApiOperationApprovalRequestMapper(
+    AdminApiOperationCatalog.Definition definition) : IOperationApprovalRequestMapper
+{
+    public string OperationId => definition.OperationId;
+
+    public OperationGatewayRequest Map(IOperationDescriptor descriptor, OperationRequest request,
+        OperationPolicyContext context, PolicyDecision decision)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(decision);
+        if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
+            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
+        var payload = AdminApiOperationApprovalPayload.From(request, context);
+        var serialized = JsonSerializer.Serialize(payload,
+            AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
+        return new OperationGatewayRequest
+        {
+            OperationInstanceId = context.OperationInstanceId,
+            OperationId = OperationId,
+            Kind = OperationClass.AdminConfigChange,
+            RequestedBy = context.PrincipalId,
+            Reason = decision.Reason,
+            CorrelationId = context.CorrelationId,
+            ExecutionPayload = serialized,
+            Plan = new OperationProposalPlan
+            {
+                Summary = $"Execute {OperationId} through the canonical admin operation runtime.",
+                RiskLevel = ProposalRiskLevel.Medium,
+                ExecutionPayload = serialized
+            }
+        };
+    }
+
+    public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var payload = JsonSerializer.Deserialize(
+            request.Plan?.ExecutionPayload ?? request.ExecutionPayload
+                ?? throw new InvalidOperationException("The persisted admin operation replay payload is unavailable."),
+            AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+            ?? throw new InvalidOperationException("The persisted admin operation replay payload is invalid.");
+        if (payload.OperationId != OperationId)
+            throw new InvalidOperationException("The persisted admin operation replay identity does not match its mapper.");
+        return new OperationApprovalReplayMapping
+        {
+            Request = payload.ToOperationRequest(),
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName
+        };
+    }
+}
+
+internal sealed record AdminApiOperationApprovalPayload
+{
+    public required string OperationId { get; init; }
+    public required Dictionary<string, string?> Parameters { get; init; }
+    public string? ConnectionId { get; init; }
+    public string? ServiceName { get; init; }
+    public string[] Fields { get; init; } = [];
+    public bool DryRun { get; init; }
+    public string? TenantId { get; init; }
+    public string? SchemaName { get; init; }
+
+    public static AdminApiOperationApprovalPayload From(OperationRequest request, OperationPolicyContext context) => new()
+    {
+        OperationId = request.OperationId,
+        Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
+        ConnectionId = request.ConnectionId,
+        ServiceName = request.ServiceName,
+        Fields = request.Fields.ToArray(),
+        DryRun = request.DryRun,
+        TenantId = context.TenantId,
+        SchemaName = context.SchemaName
+    };
+
+    public OperationRequest ToOperationRequest() => new()
+    {
+        OperationId = OperationId,
+        Parameters = Parameters,
+        ConnectionId = ConnectionId,
+        ServiceName = ServiceName,
+        Fields = Fields,
+        DryRun = DryRun
+    };
+}
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(AdminApiOperationApprovalPayload))]
+internal sealed partial class AdminApiOperationApprovalJsonContext : JsonSerializerContext;
