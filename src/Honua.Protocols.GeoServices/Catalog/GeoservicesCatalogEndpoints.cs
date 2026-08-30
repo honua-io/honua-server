@@ -118,7 +118,7 @@ internal static class GeoservicesCatalogEndpoints
         XNamespace xs = "http://www.w3.org/2001/XMLSchema";
         XNamespace soap11 = "http://schemas.xmlsoap.org/wsdl/soap/";
         XNamespace soap12 = "http://schemas.xmlsoap.org/wsdl/soap12/";
-        XNamespace esri = ArcGisSoapNamespace;
+        XNamespace esri = ArcGisSoapNamespaces.Current;
         var operations = new[]
         {
             "GetServiceDescriptions",
@@ -267,7 +267,7 @@ internal static class GeoservicesCatalogEndpoints
             operations.Select(operation => new XElement(
                 wsdl + "operation",
                 new XAttribute("name", operation),
-                new XElement(soap + "operation", new XAttribute("soapAction", $"{ArcGisSoapNamespace}/{operation}")),
+                new XElement(soap + "operation", new XAttribute("soapAction", $"{ArcGisSoapNamespaces.Current}/{operation}")),
                 new XElement(wsdl + "input", new XElement(soap + "body", new XAttribute("use", "literal"))),
                 new XElement(wsdl + "output", new XElement(soap + "body", new XAttribute("use", "literal"))))));
 
@@ -397,10 +397,10 @@ internal static class GeoservicesCatalogEndpoints
             {
                 case "GetServiceDescriptions":
                     payload = new XElement(
-                        operationNamespace + "GetServiceDescriptionsResult",
+                        "ServiceDescriptions",
+                        new XAttribute(xsi + "type", "tns:ArrayOfServiceDescription"),
                         await BuildSoapServiceDescriptionsAsync(
                             context,
-                            operationNamespace,
                             graphProvider,
                             rasterStore,
                             licenseStatusProvider,
@@ -422,10 +422,10 @@ internal static class GeoservicesCatalogEndpoints
 
                     var folderName = arguments.SingleOrDefault()?.Value.Trim();
                     payload = new XElement(
-                        operationNamespace + "GetServiceDescriptionsExResult",
+                        "ServiceDescriptions",
+                        new XAttribute(xsi + "type", "tns:ArrayOfServiceDescription"),
                         await BuildSoapServiceDescriptionsAsync(
                             context,
-                            operationNamespace,
                             graphProvider,
                             rasterStore,
                             licenseStatusProvider,
@@ -538,7 +538,6 @@ internal static class GeoservicesCatalogEndpoints
 
     private static async Task<IReadOnlyList<XElement>> BuildSoapServiceDescriptionsAsync(
         HttpContext context,
-        XNamespace operationNamespace,
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILicenseStatusProvider licenseStatusProvider,
@@ -570,6 +569,7 @@ internal static class GeoservicesCatalogEndpoints
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
         // Preserve the established ImageServer-first record when one service name
         // publishes several protocol types; protocol-wide discovery adds siblings
         // without changing the existing SOAP catalog's primary description.
@@ -584,14 +584,15 @@ internal static class GeoservicesCatalogEndpoints
                 ? $"{baseUrl}/services/{escapedName}/{ImageServerProtocolName}"
                 : entry.Url;
             return new XElement(
-                operationNamespace + "ServiceDescription",
-                new XElement(operationNamespace + "Name", entry.Name),
-                new XElement(operationNamespace + "Type", entry.Type),
-                new XElement(operationNamespace + "Url", soapUrl),
-                new XElement(operationNamespace + "RestUrl", entry.Url),
-                new XElement(operationNamespace + "ParentType", string.Empty),
-                new XElement(operationNamespace + "Capabilities", entry.SoapCapabilities ?? CapabilitiesFor(entry.Type)),
-                new XElement(operationNamespace + "Description", string.Empty));
+                "ServiceDescription",
+                new XAttribute(xsi + "type", "tns:ServiceDescription"),
+                new XElement("Name", entry.Name),
+                new XElement("Type", entry.Type),
+                new XElement("Url", soapUrl),
+                new XElement("RestUrl", entry.Url),
+                new XElement("ParentType", string.Empty),
+                new XElement("Capabilities", entry.SoapCapabilities ?? CapabilitiesFor(entry.Type)),
+                new XElement("Description", string.Empty));
         }).ToArray();
     }
 
