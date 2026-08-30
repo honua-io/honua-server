@@ -366,6 +366,8 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | `NB-OWS-OAF-QRYB-01` | `SF-EXT-CLIENT-IDIOM` | Queryables is a 2020-12 JSON Schema with $id, every property typed, and the non-queryable JSON array columns correctly excluded. |
 | `NB-OWS-OAF-SCHM-03` | `SF-EXT-CLIENT-IDIOM` | All 12 seeded attributes round-trip with their JSON types preserved (bool/int/double/array), not stringified. |
 | `NB-OWS-OAF-SORT-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib's (property, direction) sortby tuple maps to the server's `-name` convention; desc is the exact reverse of asc over all 10 features. |
+| `NB-OWS-WFS-100-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib negotiated WFS 1.0.0, parsed capabilities, discovered the canonical layer, and executed GetFeature with longitude/latitude axis order. |
+| `NB-OWS-WFS-110-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib negotiated WFS 1.1.0, parsed capabilities, discovered the canonical layer, and executed GetFeature with latitude/longitude axis order. |
 | `NB-OWS-WFS-BBOX-01` | `SF-EXT-CLIENT-IDIOM` | The 4-element BBOX (default CRS, longitude/latitude) and the 5-element CRS84 BBOX select the identical feature set ['alpha', 'beta', 'gamma'], so the server's bbox axis-order handling.... |
 | `NB-OWS-WFS-CAP-01` | `SF-EXT-CLIENT-IDIOM` | OperationsMetadata advertises 27 entries covering every mandatory WFS 2.0 operation, and GetFeature offers both ['get', 'post'] DCP bindings. |
 | `NB-OWS-WFS-CAP-02` | `SF-EXT-CLIENT-IDIOM` | Capabilities declare the WFS 2.0 conformance constraint set including ImplementsBasicWFS, ImplementsResultPaging, KVPEncoding and XMLEncoding; the paging and encoding claims are.... |
@@ -383,6 +385,7 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | `NB-OWS-WFS-VER-01` | `SF-EXT-CLIENT-IDIOM` | OWSLib's bare getfeature() (which sends PROPERTYNAME=*) works on both legacy versions. |
 | `NB-OWS-WFS-XPRO-01` | `SF-EXT-CLIENT-IDIOM` | WFS and OGC API - Features agree on the same layer: extent (-122.5, 37.7, -122.35, 37.84), numberMatched 10, and every WFS-advertised EPSG code [3857, 4326] is also offered by the OGC.... |
 | `NB-OWS-WMS-111-01` | `SF-RNDR-IMAGE` | WMS 1.1.1 identifies as OGC:WMS, advertises SRS (not CRS:84) and the 1.1.1 exception MIME type, and its longitude-first EPSG:4326 GetMap is pixel-identical to the 1.3.0 CRS:84 render of.... |
+| `NB-OWS-WMS-111-WITNESS-01` | `SF-RNDR-IMAGE` | OWSLib negotiated WMS 1.1.1, parsed capabilities, discovered the canonical raster layer, and executed a non-empty GetMap using the 1.1.1 SRS request shape. |
 | `NB-OWS-WMS-CAP-01` | `SF-RNDR-IMAGE` | Service block: Name=WMS, Title='browser_compat', Abstract='Honua WMS service', 3 keywords ['WMS', 'OGC', 'browser_compat'], OnlineResource.... |
 | `NB-OWS-WMS-CAP-02` | `SF-RNDR-IMAGE` | OWSLib parsed 8 ContactInformation fields: {'name': 'Honua Support', 'organization': 'Honua', 'position': 'Support Engineer', 'address': '1 Honua Way', 'city': 'Honolulu', 'region':.... |
 | `NB-OWS-WMS-CAP-03` | `SF-RNDR-IMAGE` | EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79); on the wire the BoundingBox for CRS:84 is (-122.44, 37.76, -122.4, 37.79) (longitude first) and for EPSG:4326 is (37.76,.... |
