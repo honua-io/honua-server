@@ -212,6 +212,29 @@ public sealed class AwsLambdaGitOpsDeployBackendTests
     }
 
     [Fact]
+    public async Task ObserveAsync_WhenAliasPointsToPreviousVersionAfterRollback_ReturnsRolledBack()
+    {
+        var aliasClient = new StubAwsLambdaAliasClient
+        {
+            CurrentState = new AwsLambdaAliasState
+            {
+                AliasName = "live",
+                AliasArn = "arn:aws:lambda:us-east-1:123456789012:function:honua:live",
+                FunctionVersion = "41"
+            }
+        };
+        var backend = new AwsLambdaGitOpsDeployBackend(aliasClient, NullLogger<AwsLambdaGitOpsDeployBackend>.Instance);
+
+        var observation = await backend.ObserveAsync(CreateOperation(
+            desiredRevision: "42",
+            currentRevision: "41",
+            status: WorkflowOperationStatus.RollbackRequested));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        observation.ObservedRevision.Should().Be("41");
+    }
+
+    [Fact]
     public async Task RollbackAsync_WhenCurrentRevisionIsNull_ReturnsManualInterventionRequired()
     {
         var aliasClient = new StubAwsLambdaAliasClient
