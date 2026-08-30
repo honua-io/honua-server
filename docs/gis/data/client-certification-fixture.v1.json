@@ -8,9 +8,9 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:12b24e763397dbb1a0c8bc9adbb1f9d28b06d6bcb9320255181321d28556861d",
+  "fixtureRevision": "sha256:7e8daba54a625607f1f1a1730794f3743200afc986d03cf9d4db46e4218bfb84",
   "serverConfigRevision": "sha256:071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6",
-  "authPolicyRevision": "sha256:bad3a57ccb2e67488680da7fc8722f1dc98cafd8a32ffb7ff808f29dfe5e7210",
+  "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
     "fileDigest": {
       "id": "honua.file-digest/v1",
@@ -57,6 +57,12 @@
       "purpose": "Authorization seed: the public/org/private Portal tier ladder (services portal_public/portal_org/portal_private, layers 3000/3001/3002)."
     },
     {
+      "path": "tests/seed/client-compat-auth-wave1.yaml",
+      "role": "fixture",
+      "sha256": "sha256:18618d6c59ffc00652f60009b6fece8ba283872ce89e3db0525b3a3bef1bc7ea",
+      "purpose": "Certification auth breadth seed: protected vector and WMS mirrors used for API-key and OIDC bearer parity against the anonymous baselines."
+    },
+    {
       "path": "tests/seed/apply-yaml-seed.sh",
       "role": "fixture",
       "sha256": "sha256:85900c332c86e2cdc382a6188243eac51c7ca4d3ce7d058fa0e784739ae1049a",
@@ -65,7 +71,7 @@
     {
       "path": "docker/client-compat/seed/run.sh",
       "role": "fixture",
-      "sha256": "sha256:05b894d123b57076d8e221495905890f1629c414c7922a66192fdddce1779e03",
+      "sha256": "sha256:caadbabb9ec114561e05249ee9a115d1eaa0865c76c0af9f4b8951f3a5b5f654",
       "purpose": "Definition of which seed files are applied, and in which order, for the client-compat matrix. Adding or removing a fixture input changes this file and therefore fixtureRevision."
     },
     {
@@ -558,6 +564,17 @@
         "notes": "The bootstrap key carries no permission claims, so AdminApiKeyPermission treats it as full admin (read and write). Scoped keys (admin:read, admin:write, ops:read) are supported by the server but no scoped key is provisioned by this fixture."
       },
       {
+        "id": "cert-oidc-bearer",
+        "kind": "oidc-bearer",
+        "header": "Authorization: Bearer",
+        "issuer": "https://cert-auth.honua.test",
+        "audience": "honua-client-compat",
+        "signingKeySource": "HONUA_CERT_OIDC_SIGNING_KEY",
+        "challenge": "WWW-Authenticate: Bearer",
+        "implementation": "src/Honua.Hosting/Features/Authentication/OidcAuthenticationExtensions.cs",
+        "notes": "The local lane mints deterministic HS256 JWTs against the server's symmetric test-validation seam; no external identity provider is contacted."
+      },
+      {
         "id": "portal-named-user",
         "kind": "portal-token",
         "endpoint": "/sharing/rest/generateToken",
@@ -613,7 +630,8 @@
         "expectation": "allow",
         "status": "realized",
         "realizedByFixture": [
-          "tests/seed/portal-compat.yaml"
+          "tests/seed/portal-compat.yaml",
+          "tests/seed/client-compat-auth-wave1.yaml"
         ],
         "realizedByServerConfig": "tests/config/client-compat-server-v1.json",
         "mechanism": "admin-api-key",
@@ -624,14 +642,15 @@
           "CERT-PRTL-SELF-02",
           "CERT-PRTL-COMM-02"
         ],
-        "notes": "A data client presents X-API-Key on ADMIN_PROBE_PATH (/api/v1/admin/services); the Portal lane exchanges the same secret for a named-user token."
+        "notes": "The OWSLib and GeoPandas core reads present X-API-Key or an OIDC bearer to protected mirror services and assert semantic parity with the anonymous baselines; the Portal lane exchanges the bootstrap secret for a named-user token."
       },
       {
         "id": "invalid-credential",
         "expectation": "deny",
         "status": "realized",
         "realizedByFixture": [
-          "tests/seed/portal-compat.yaml"
+          "tests/seed/portal-compat.yaml",
+          "tests/seed/client-compat-auth-wave1.yaml"
         ],
         "realizedByServerConfig": "tests/config/client-compat-server-v1.json",
         "mechanism": "admin-api-key",
@@ -645,10 +664,13 @@
       {
         "id": "expired-credential",
         "expectation": "deny",
-        "status": "gap",
-        "gapId": "expired-credential-unrealized",
-        "mechanism": "portal-named-user",
-        "notes": "Only the oauth2 refresh_token invalid-grant arm (CERT-PRTL-OAUTH-02) approximates expiry; no fixture mints a token that is genuinely past its expiry window."
+        "status": "realized",
+        "realizedByFixture": [
+          "tests/seed/client-compat-auth-wave1.yaml"
+        ],
+        "realizedByServerConfig": "tests/config/client-compat-server-v1.json",
+        "mechanism": "cert-oidc-bearer",
+        "notes": "The Python certification helper mints a correctly signed JWT whose exp is in the past and asserts the protocol-specific denial status, challenge, and error body."
       },
       {
         "id": "insufficient-role-or-scope",
@@ -3996,7 +4018,7 @@
         "gapId": "receipt-binding-uses-per-file-digests"
       },
       "auth_policy_revision": {
-        "value": "sha256:bad3a57ccb2e67488680da7fc8722f1dc98cafd8a32ffb7ff808f29dfe5e7210",
+        "value": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
         "boundTo": "authPolicyRevision",
         "status": "not-yet-emitted",
         "gapId": "auth-policy-revision-not-in-receipts"

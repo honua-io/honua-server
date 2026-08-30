@@ -137,7 +137,8 @@ internal sealed partial class Wfs20Handler
 
     private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetPublishedFeatureTypesAsync(
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enforceAccess = true)
     {
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var candidates = new List<(int StorageLayerId, MetadataV2Resource Resource, MetadataV2Publication Publication, MetadataV2Service Service)>();
@@ -151,12 +152,12 @@ internal sealed partial class Wfs20Handler
 
             var resource = snapshot.ResolveResource(publication);
             if (!snapshot.IsRoutable(publication) ||
-                !await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                (enforceAccess && !await AccessPolicyHelpers.IsResourceAccessibleAsync(
                     context,
                     resource!,
                     service,
                     AuthorizationOperation.Query,
-                    cancellationToken).ConfigureAwait(false))
+                    cancellationToken).ConfigureAwait(false)))
             {
                 continue;
             }

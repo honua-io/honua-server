@@ -46,9 +46,28 @@ internal static class AccessPolicyHelpers
             return null;
         }
 
-        return decision.RequiresAuthentication
-            ? StandardErrorHelpers.CreateUnauthorized(context, AuthRequiredMessage)
-            : StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+        if (decision.RequiresAuthentication)
+        {
+            AppendAuthenticationChallenge(context);
+            return StandardErrorHelpers.CreateUnauthorized(context, AuthRequiredMessage);
+        }
+
+        return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+    }
+
+    /// <summary>
+    /// Adds the challenge for the credential family the caller attempted.
+    /// Protocol adapters still own their wire-format error body and status.
+    /// </summary>
+    internal static void AppendAuthenticationChallenge(HttpContext context)
+    {
+        var authorization = context.Request.Headers.Authorization.FirstOrDefault();
+        context.Response.Headers.Append(
+            "WWW-Authenticate",
+            !string.IsNullOrWhiteSpace(authorization) &&
+            authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? "Bearer"
+                : "ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"");
     }
 
     public static AccessDecision EvaluateAccess(
@@ -620,8 +639,12 @@ internal static class AccessPolicyHelpers
             return null;
         }
 
-        return requiresAuth
-            ? StandardErrorHelpers.CreateUnauthorized(context, AuthRequiredMessage)
-            : StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
+        if (requiresAuth)
+        {
+            AppendAuthenticationChallenge(context);
+            return StandardErrorHelpers.CreateUnauthorized(context, AuthRequiredMessage);
+        }
+
+        return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
     }
 }
