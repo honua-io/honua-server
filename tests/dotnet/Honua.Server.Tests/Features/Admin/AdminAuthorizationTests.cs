@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// Verifies that every admin endpoint group rejects unauthenticated requests with 401
 /// when dev-auth bypass is disabled.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.AdminAuthorization")]
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
