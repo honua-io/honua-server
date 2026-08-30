@@ -2712,6 +2712,9 @@ jobs:
     # time for the filesystem scan or endpoint proof. Keep the whole gate
     # bounded while allowing every release-evidence step to execute (#2634).
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -2749,6 +2752,13 @@ jobs:
         timeout-minutes: 3
         uses: docker/setup-buildx-action@v4
 
+      - name: Log in to GHCR for build cache
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Docker image
         id: docker_build
         timeout-minutes: 20
@@ -2767,8 +2777,8 @@ jobs:
           # produce identical layers; the only build-arg that differs between them is
           # HONUA_GIT_SHA, declared at Dockerfile:188 of 208 in the runtime stage,
           # after every expensive layer.
-          cache-from: type=gha,scope=honua-jit-amd64
-          cache-to: type=gha,mode=max,scope=honua-jit-amd64
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-amd64
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-amd64,mode=max
           # provenance/sbom must be false for `load: true` — the local docker exporter
           # can't load a manifest list. SBOM is generated separately via Anchore below.
           provenance: false
