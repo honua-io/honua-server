@@ -632,7 +632,11 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
             REPOSITORY_ROOT,
         )
         assert candidate_shadow["counts"]["authoritative_image_outcome_failures"] == 0
-        assert candidate_shadow["counts"]["native_countable_heads"] == 3
+        assert candidate_shadow["counts"]["native_countable_heads"] == 2
+        assert candidate_shadow["counts"]["candidate_only_shadow_heads"] == 1
+        assert candidate_shadow["candidate_only_shadow_heads"][0][
+            "candidate_only_classes"
+        ] == ["serving_lambda"]
         archive(
             archives,
             104,

@@ -1297,6 +1297,7 @@ def summarize(
     image_failures: list[dict[str, Any]] = []
     superseded_heads: list[dict[str, Any]] = []
     pending_heads: list[dict[str, Any]] = []
+    shadow_only_heads: list[dict[str, Any]] = []
     for item in native:
         if item["gate_conclusion"] != "success":
             continue
@@ -1359,6 +1360,25 @@ def summarize(
                 quarantined.append({**record, "tombstone": tombstone})
             else:
                 image_failures.append(record)
+            continue
+        candidate_only_classes = [
+            f"serving_{name}"
+            for name in SERVING_VARIANTS
+            if item["candidate_serving_variants"][name]
+            and not item["legacy_serving_variants"][name]
+        ]
+        if item["candidate_worker"] and not item["legacy_worker"]:
+            candidate_only_classes.append("worker")
+        if candidate_only_classes:
+            # No workflow executes candidate-only routes in observe mode. They
+            # are valid shadow decisions, but cannot contribute to promotion
+            # readiness until candidate execution evidence exists.
+            shadow_only_heads.append({
+                "pull_request": item["pull_request"],
+                "head_sha": item["head_sha"],
+                "candidate_only_classes": candidate_only_classes,
+                "reason": "candidate-route-not-executed-in-observe-mode",
+            })
             continue
         native_countable.append({**item, "serving_outcome": serving, "worker_outcome": worker})
 
@@ -1469,6 +1489,7 @@ def summarize(
             "authoritative_image_outcome_failures": len(image_failures),
             "image_outcome_superseded_heads": len(superseded_heads),
             "image_outcome_pending_heads": len(pending_heads),
+            "candidate_only_shadow_heads": len(shadow_only_heads),
             "integrity_failures": len(failures),
             "quarantined_by_tombstone": len(quarantined),
             "stale_tombstones": len(stale_tombstones),
@@ -1487,6 +1508,7 @@ def summarize(
         "image_outcome_failures": image_failures,
         "image_outcome_superseded_heads": superseded_heads,
         "image_outcome_pending_heads": pending_heads,
+        "candidate_only_shadow_heads": shadow_only_heads,
         "policy_generation_superseded_receipts": drifted,
         "quarantined": quarantined,
         "stale_tombstones": stale_tombstones,
@@ -1538,6 +1560,8 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`"
         f" (excluded: `{counts['image_outcome_superseded_heads']}` superseded, "
         f"`{counts['image_outcome_pending_heads']}` still building)",
+        "- Candidate-only heads awaiting execution evidence (not promotion-countable): "
+        f"`{counts['candidate_only_shadow_heads']}`",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",
         "- Receipt loss: "
         f"`{loss['receipts_missing']}` of `{loss['receipts_owed']}` owed = "
