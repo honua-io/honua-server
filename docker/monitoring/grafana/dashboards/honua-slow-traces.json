@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Slow span / slow trace investigation board. Per-ActivitySource span duration histograms are not natively exported to Prometheus by the OpenTelemetry SDK (spans flow over OTLP to a tracing backend, not as Prometheus histograms). The panels below use the closest equivalents already emitted: the honua_* duration histograms (HTTP, database, operation, geometry) and wfs20_* transaction/operation histograms, plus OTel's http.server.request.duration. ActivitySource-keyed panels are placeholders until a meter mirrors the activity duration; see #1144.",
+  "description": "Slow span / slow trace investigation board. Per-ActivitySource span duration histograms are not natively exported to Prometheus by the OpenTelemetry SDK (spans flow over OTLP to a tracing backend, not as Prometheus histograms). These panels use the closest equivalents already emitted: the honua_* duration histograms (HTTP, database, operation, geometry) and wfs20_* transaction/operation histograms, plus OTel's http.server.request.duration.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -308,114 +308,6 @@
       ],
       "title": "Slow Requests (> 1s) by Endpoint",
       "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Placeholder. Requires a per-ActivitySource span-duration histogram meter (e.g. honua_span_duration_ms{source=\"Honua.Server.Export\"}) to be added; the OTel SDK does not export span durations as Prometheus histograms. See #1144.",
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            {
-              "options": {
-                "match": "null",
-                "result": {
-                  "text": "n/a"
-                }
-              },
-              "type": "special"
-            }
-          ],
-          "unit": "ms"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 0,
-        "y": 32
-      },
-      "id": 8,
-      "options": {
-        "colorMode": "none",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(honua_span_duration_ms_bucket[5m])) by (le, source))",
-          "legendFormat": "{{source}} p95",
-          "refId": "A"
-        }
-      ],
-      "title": "p95 Span Duration by ActivitySource (placeholder - requires meter, see #1144)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Placeholder. Same dependency as the p95 panel: requires a per-ActivitySource span-duration histogram. Count of spans where duration > 1s would be computed as rate(*_count) - rate(*_bucket{le=\"1000\"}) once the meter exists. See #1144.",
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [
-            {
-              "options": {
-                "match": "null",
-                "result": {
-                  "text": "n/a"
-                }
-              },
-              "type": "special"
-            }
-          ],
-          "unit": "req/s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 32
-      },
-      "id": 9,
-      "options": {
-        "colorMode": "none",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "expr": "sum by (source) (rate(honua_span_duration_ms_count[5m]) - rate(honua_span_duration_ms_bucket{le=\"1000\"}[5m]))",
-          "legendFormat": "{{source}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Slow Span Count by ActivitySource (placeholder - requires meter, see #1144)",
-      "type": "stat"
     }
   ],
   "refresh": "30s",
