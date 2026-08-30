@@ -117,12 +117,14 @@ class NativeImageImpactTests(unittest.TestCase):
 
     def test_solution_and_test_fixture_changes_no_longer_trigger_serving_images(self) -> None:
         # #3204 narrowed the authoritative serving trigger to image-DEFINING
-        # inputs, so the solution file and test-only fixtures now agree with the
-        # graph-derived candidate: neither selects a serving image on the pull
-        # request. The worker trigger was not touched and still fires.
+        # inputs, and #3553 applied the same narrowing to the GDAL worker
+        # routing, so the solution file and test-only fixtures now agree with
+        # the graph-derived candidate: neither selects a serving OR worker
+        # image on the pull request; broad build-graph changes are caught by
+        # the post-merge/nightly lanes instead.
         solution = report("Honua.sln")
         self.assertFalse(solution["legacy"]["serving_trigger"])
-        self.assertTrue(solution["legacy"]["worker_trigger"])
+        self.assertFalse(solution["legacy"]["worker_trigger"])
         self.assertFalse(any(solution["candidate"]["serving_variants"].values()))
         self.assertFalse(solution["candidate"]["worker_build"])
         fixture = report("tests/fixtures/ai-builder/example.json")
