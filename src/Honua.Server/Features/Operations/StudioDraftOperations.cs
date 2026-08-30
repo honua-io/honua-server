@@ -33,14 +33,23 @@ internal static class StudioDraftOperations
         Build(Create, "Create Studio draft", OperationSideEffectClass.CreatesMetadata),
         Build(Update, "Update Studio draft", OperationSideEffectClass.MutatesMetadata),
         Build(Delete, "Delete Studio draft", OperationSideEffectClass.DestroysState),
-        Build(Validate, "Validate Studio draft", OperationSideEffectClass.MutatesMetadata),
-        Build(PreviewPlan, "Preview Studio draft plan", OperationSideEffectClass.MutatesMetadata),
+        Build(
+            Validate,
+            "Validate Studio draft",
+            OperationSideEffectClass.MutatesMetadata,
+            OperationDeterminism.RuntimeDynamic),
+        Build(
+            PreviewPlan,
+            "Preview Studio draft plan",
+            OperationSideEffectClass.MutatesMetadata,
+            OperationDeterminism.RuntimeDynamic),
     ];
 
     private static OperationDescriptor Build(
         string operationId,
         string title,
-        OperationSideEffectClass sideEffectClass) => new()
+        OperationSideEffectClass sideEffectClass,
+        OperationDeterminism determinism = OperationDeterminism.Deterministic) => new()
         {
             OperationId = operationId,
             ProviderId = ServicePublishOperation.ProviderId,
@@ -53,7 +62,7 @@ internal static class StudioDraftOperations
             {
                 BlastRadiusClass = OperationBlastRadiusClass.ResourceScope,
                 SideEffectClass = sideEffectClass,
-                Determinism = OperationDeterminism.Deterministic,
+                Determinism = determinism,
                 SupportsDryRun = false,
             },
             InputSchema =

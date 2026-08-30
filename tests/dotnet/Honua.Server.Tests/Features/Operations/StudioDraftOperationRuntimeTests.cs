@@ -17,6 +17,17 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 
 public sealed class StudioDraftOperationRuntimeTests
 {
+    [Theory]
+    [InlineData(StudioDraftOperations.Validate)]
+    [InlineData(StudioDraftOperations.PreviewPlan)]
+    public void LiveDraftOperations_AreRuntimeDynamic(string operationId)
+    {
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == operationId);
+
+        descriptor.Policy.Determinism.Should().Be(OperationDeterminism.RuntimeDynamic);
+    }
+
     [UnitTest]
     public async Task ValidateExecutor_InvokesLifecycleOnlyAfterCanonicalIdentityIsSupplied()
     {
