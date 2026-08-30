@@ -962,6 +962,7 @@ internal static class StudioPackageEndpoints
         Guid draftId,
         SaveStudioContentVersionRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1007,11 +1008,20 @@ internal static class StudioPackageEndpoints
                 return itemAuthResult;
             }
 
-            var version = await service.SaveDraftAsVersionAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.SaveVersionAsync(
                 draftId,
                 request.ChangeNote,
-                ConsolePrincipal.ResolveActorId(context.User),
-                cancellationToken: context.RequestAborted).ConfigureAwait(false);
+                actor,
+                BuildMutationContext(context, actor),
+                context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+
+            var version = receipt.Value;
             if (version is null)
             {
                 return NotFound(context, "Studio package draft was not found.");

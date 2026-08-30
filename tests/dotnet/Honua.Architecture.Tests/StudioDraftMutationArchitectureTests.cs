@@ -10,7 +10,6 @@ public sealed class StudioDraftMutationArchitectureTests
 {
     private static readonly string[] KnownRemainingDirectMutationSites =
     [
-        "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|SaveDraftAsVersionAsync",
         "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|CreatePublicationRequestAsync",
         "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|ReopenVersionAsync",
         "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|RollbackAsync",
@@ -28,10 +27,12 @@ public sealed class StudioDraftMutationArchitectureTests
         Assert.DoesNotContain("service.CreateDraftAsync(", endpoints, StringComparison.Ordinal);
         Assert.DoesNotContain("service.UpdateDraftAsync(", endpoints, StringComparison.Ordinal);
         Assert.DoesNotContain("service.DeleteDraftAsync(", endpoints, StringComparison.Ordinal);
+        Assert.DoesNotContain("service.SaveDraftAsVersionAsync(", endpoints, StringComparison.Ordinal);
         Assert.DoesNotContain("lifecycleService.CreateDraftAsync(", lifecycleTools, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.CreateAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.UpdateAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.DeleteAsync(", endpoints, StringComparison.Ordinal);
+        Assert.Contains("mutationRuntime.SaveVersionAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.CreateAsync(", lifecycleTools, StringComparison.Ordinal);
 
         var toolBase = File.ReadAllText(Path.Join(
