@@ -511,6 +511,159 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     [IntegrationTest]
+    public async Task NativeWorkerHandoff_WithRedis_ClaimsMaterializesAndSurfacesCompletedResult()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var operationId = $"job-native-handoff-{Guid.NewGuid():N}";
+        var callback = new RecordingTerminalCallback();
+        var executor = new DelegatingJobExecutor(
+            ExecutionJobKind.Geoprocessing,
+            async (_, context, cancellationToken) =>
+            {
+                await context.ReportProgressAsync(65, "Native raster processing", cancellationToken);
+                await context.PublishArtifactAsync("s3://integration/native-result.tif", cancellationToken);
+                return JobExecutionResult.Succeeded();
+            },
+            new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native });
+        var service = new JobExecutionService(
+            harness.Queue,
+            harness.JobStore,
+            [executor],
+            new ExecutionJobCancellationTokens(),
+            [callback],
+            harness.LogStore,
+            NullLogger<JobExecutionService>.Instance);
+
+        await harness.JobStore.TryCreateAsync(CreateQueuedJob(operationId) with
+        {
+            Spec = CreateQueuedJob(operationId).Spec with { RuntimeProfile = RuntimeProfiles.Native }
+        });
+        await harness.Queue.EnqueueAsync(operationId);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            var terminal = await callback.WhenCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+            terminal.OperationId.Should().Be(operationId);
+
+            var surfaced = await harness.JobStore.GetAsync(operationId);
+            surfaced.Should().NotBeNull();
+            surfaced!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            surfaced.CurrentPhase.Should().Be("Completed");
+            surfaced.PercentComplete.Should().Be(100);
+            surfaced.ArtifactReferences.Should().ContainSingle("s3://integration/native-result.tif");
+            (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task NativeWorkerHandoff_WhenWorkerHeartbeatExpires_SurfacesTerminalFailure()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var operationId = $"job-native-crash-{Guid.NewGuid():N}";
+        var callback = new RecordingTerminalCallback();
+        var heartbeatPolicy = new JobHeartbeatPolicy
+        {
+            Interval = TimeSpan.FromMilliseconds(50),
+            Timeout = TimeSpan.FromMilliseconds(50)
+        };
+        var retryPolicy = new JobRetryPolicy
+        {
+            MaxAttempts = 1,
+            Strategy = BackoffStrategy.Fixed,
+            BaseDelay = TimeSpan.Zero,
+            MaxDelay = TimeSpan.Zero
+        };
+        var queued = CreateQueuedJob(operationId, retryPolicy, heartbeatPolicy) with
+        {
+            Spec = CreateQueuedJob(operationId).Spec with { RuntimeProfile = RuntimeProfiles.Native }
+        };
+        await harness.JobStore.TryCreateAsync(queued);
+        await harness.Queue.EnqueueAsync(operationId);
+
+        var claimedId = await harness.Queue.TryClaimAsync(
+            "native-worker-that-crashed",
+            new HashSet<ExecutionJobKind> { ExecutionJobKind.Geoprocessing },
+            new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native });
+        claimedId.Should().Be(operationId);
+
+        var claimed = await harness.JobStore.GetAsync(operationId);
+        var staleTimestamp = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await harness.JobStore.SetAsync(claimed! with
+        {
+            Status = ExecutionJobStatus.Running,
+            UpdatedAt = staleTimestamp,
+            ClaimedAt = staleTimestamp,
+            LastHeartbeatAt = staleTimestamp,
+            CurrentPhase = "Running"
+        });
+
+        var reconciler = new JobReconciliationService(
+            harness.JobStore,
+            harness.Queue,
+            harness.Queue,
+            new ExecutionJobCancellationTokens(),
+            [callback],
+            harness.LogStore,
+            NullLogger<JobReconciliationService>.Instance);
+
+        await reconciler.SweepActiveJobsAsync(CancellationToken.None);
+
+        var surfaced = await harness.JobStore.GetAsync(operationId);
+        surfaced.Should().NotBeNull();
+        surfaced!.Status.Should().Be(ExecutionJobStatus.Failed);
+        surfaced.CurrentPhase.Should().Be("Failed (heartbeat expired)");
+        surfaced.ErrorMessage.Should().Contain("Worker heartbeat expired");
+        surfaced.CompletedAt.Should().NotBeNull();
+        (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+    }
+
+    [IntegrationTest]
+    public async Task NativeWorkerHandoff_WithMalformedQueuePayload_RejectsWithoutExecutionOrJobMutation()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var malformedPayload = $"{{not-an-operation-envelope:{Guid.NewGuid():N}";
+        var executorCalls = 0;
+        var executor = new DelegatingJobExecutor(
+            ExecutionJobKind.Geoprocessing,
+            (_, _, _) =>
+            {
+                Interlocked.Increment(ref executorCalls);
+                return Task.FromResult(JobExecutionResult.Succeeded());
+            },
+            new HashSet<string>(StringComparer.Ordinal) { RuntimeProfiles.Native });
+        var service = new JobExecutionService(
+            harness.Queue,
+            harness.JobStore,
+            [executor],
+            new ExecutionJobCancellationTokens(),
+            [],
+            harness.LogStore,
+            NullLogger<JobExecutionService>.Instance);
+
+        await harness.Database.SortedSetAddAsync(
+            "controlplane:jobqueue:pending",
+            malformedPayload,
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitForQueueDepthAsync(harness.Queue, depth => depth == 0, TimeSpan.FromSeconds(5));
+            executorCalls.Should().Be(0);
+            (await harness.JobStore.GetAsync(malformedPayload)).Should().BeNull();
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [IntegrationTest]
     [FlakyTest("10s wait on reconciliation callback intermittently times out under shared 'Redis' collection + Testcontainers load — tracked in #812")]
     public async Task JobReconciliationService_WithRedis_CancelsDurablyRequestedStaleJob()
     {
@@ -751,10 +904,14 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 
     private sealed class DelegatingJobExecutor(
         ExecutionJobKind kind,
-        Func<ExecutionJobRecord, IJobExecutionContext, CancellationToken, Task<JobExecutionResult>> executeAsync)
+        Func<ExecutionJobRecord, IJobExecutionContext, CancellationToken, Task<JobExecutionResult>> executeAsync,
+        IReadOnlySet<string>? acceptedRuntimeProfiles = null)
         : IJobExecutor
     {
         public ExecutionJobKind Kind { get; } = kind;
+
+        public IReadOnlySet<string> AcceptedRuntimeProfiles { get; } =
+            acceptedRuntimeProfiles ?? RuntimeProfiles.DefaultAccepted;
 
         public Task<JobExecutionResult> ExecuteAsync(
             ExecutionJobRecord job,
