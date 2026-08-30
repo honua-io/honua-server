@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -1089,6 +1090,43 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
 
         var rebuiltTileResponse = await _client.GetAsync(tilePath);
         rebuiltTileResponse.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task RefreshMaterializedFeaturesForSourceTable_WithoutSchema_RebuildsPublishedSnapshot()
+    {
+        var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = $"Layer {_tableName}",
+            Description = "Schemaless import snapshot refresh regression test",
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = _idNamePopulationFields,
+            ServiceName = _serviceName,
+            Enabled = true
+        });
+        var layerId = publishedLayer.LayerId;
+        _layerId = layerId;
+
+        await InsertPostGisFeatureAsync("Reimported Feature", 250, 1.001d, 1.001d);
+        (await GetCanonicalSnapshotCountAsync(layerId)).Should().Be(1);
+
+        await using var scope = _fixture.Services.CreateAsyncScope();
+        var publishingService = scope.ServiceProvider.GetRequiredService<ILayerPublishingService>();
+        var refreshed = await publishingService.RefreshMaterializedFeaturesForSourceTableAsync(
+            _fixture.Postgres.ConnectionString,
+            schema: null,
+            _tableName);
+
+        refreshed.Should().ContainSingle(result =>
+            result.LayerId == layerId && result.MaterializedFeatureCount == 2);
+        (await GetCanonicalSnapshotCountAsync(layerId)).Should().Be(2);
     }
 
     private async Task<int> GetCanonicalSnapshotCountAsync(int layerId)
