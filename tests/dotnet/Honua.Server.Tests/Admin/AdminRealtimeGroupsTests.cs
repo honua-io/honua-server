@@ -30,7 +30,8 @@ namespace Honua.Server.Tests.Admin;
 /// </summary>
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Streaming)]
-public sealed class AdminRealtimeGroupsTests : IClassFixture<RedisFixture>
+[Collection(RedisFixture.CollectionName)]
+public sealed class AdminRealtimeGroupsTests
 {
     private const string AdminPassword = "admin-realtime-groups-password";
     private static readonly TimeSpan ReceiveTimeout = TimeSpan.FromSeconds(20);

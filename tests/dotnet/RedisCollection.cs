@@ -3,17 +3,17 @@
 
 using Honua.TestKit;
 
-namespace Honua.Server.Tests;
+namespace Honua.Tests;
 
 /// <summary>
 /// Per-assembly collection definition for tests that share a Redis fixture.
 /// </summary>
 /// <remarks>
-/// xUnit discovers collection definitions per test assembly, so each consuming assembly
-/// requires this definition. Keep this canonical pattern aligned across test assemblies;
-/// the shared collection name and fixture live in <see cref="RedisFixture"/>.
+/// xUnit discovers collection definitions per test assembly, so each consuming project
+/// compiles this shared source file. Tests in the collection remain serialized with one
+/// another, while unrelated collections may run in parallel.
 /// </remarks>
-[CollectionDefinition(RedisFixture.CollectionName, DisableParallelization = true)]
+[CollectionDefinition(RedisFixture.CollectionName)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class RedisCollection : ICollectionFixture<RedisFixture>
 {
