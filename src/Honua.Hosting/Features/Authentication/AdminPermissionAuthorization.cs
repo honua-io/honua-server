@@ -45,7 +45,7 @@ internal sealed class AdminPermissionAuthorizationHandler(
         var httpContext = context.Resource as HttpContext ?? _httpContextAccessor.HttpContext;
         var method = httpContext?.Request.Method;
 
-        if (AdminApiKeyPermission.IsAuthorized(context.User, method))
+        if (AdminApiKeyPermission.IsAuthorized(context.User, method, httpContext?.Request.Path.Value))
         {
             context.Succeed(requirement);
         }

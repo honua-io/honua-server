@@ -619,7 +619,8 @@ public sealed class OperationsToolsetTests
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
-        executionAuthority!.Record.Permissions.Should().Equal("admin:write");
+        executionAuthority!.Record.Permissions.Should().Equal(
+            "admin:operation:POST:/api/v1/admin/connections");
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
@@ -1095,7 +1096,12 @@ public sealed class OperationsToolsetTests
         context.Request.Headers["X-Honua-Tenant"] = "tenant-a";
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns(context);
-        return new AdminOperateOperationExecutor(definition, factory, accessor, TimeProvider.System);
+        return new AdminOperateOperationExecutor(
+            definition,
+            factory,
+            accessor,
+            new InMemoryAdminApiKeyStore(TimeProvider.System),
+            TimeProvider.System);
     }
 
     private static OperationDispatcher BuildDispatcher(
