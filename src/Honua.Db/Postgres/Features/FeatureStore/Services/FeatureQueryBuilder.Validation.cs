@@ -92,7 +92,6 @@ internal sealed partial class FeatureQueryBuilder
     internal static bool IsValidEncodedColumnAlias(string fieldName)
         => IsValidJsonAttributeKey(fieldName)
             && Encoding.UTF8.GetByteCount(fieldName) <= PostgreSqlMaxIdentifierBytes;
-
     internal static string ConvertNamedParametersToPositional(string sql, ref int paramIndex)
     {
         var startingParamIndex = paramIndex;
