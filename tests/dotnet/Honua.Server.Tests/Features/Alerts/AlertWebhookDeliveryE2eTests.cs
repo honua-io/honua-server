@@ -15,6 +15,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -34,6 +35,8 @@ namespace Honua.Server.Tests.Features.Alerts;
 /// these tests run the production evaluator, outbox writer, dispatcher, retry policy, and webhook
 /// sink against a real HTTPS Kestrel socket.
 /// </summary>
+[Protocol(ProtocolNames.Infrastructure)]
+[Operation(Operations.ContractTesting)]
 public sealed class AlertWebhookDeliveryE2eTests
 {
     private const long RuleId = 3665;
