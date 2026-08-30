@@ -145,7 +145,8 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         CancellationToken cancellationToken)
     {
         var entries = await surface.GetCatalogEntriesAsync(cancellationToken).ConfigureAwait(false);
-        var catalog = entries.Select(e => (e.Tool.Describe(), e.IsDynamic)).ToArray();
+        var catalog = entries.Select(e =>
+            (Views.McpWorkflowViewDescriptorClassifier.Describe(e.Tool), e.IsDynamic)).ToArray();
 
         var summaries = new List<Views.McpWorkflowViewSummary>(Views.McpWorkflowViewCatalog.Names.Count);
         foreach (var name in Views.McpWorkflowViewCatalog.Names)

@@ -344,8 +344,8 @@ internal sealed class McpDataAccessSurface
 
             var projection = McpWorkflowViewProjector.Project(
                 definition,
-                _tools.Values.Select(t => (t.Describe(), IsDynamic: false))
-                    .Concat(dynamicTools.Select(t => (t.Describe(), IsDynamic: true))));
+                _tools.Values.Select(t => (McpWorkflowViewDescriptorClassifier.Describe(t), IsDynamic: false))
+                    .Concat(dynamicTools.Select(t => (McpWorkflowViewDescriptorClassifier.Describe(t), IsDynamic: true))));
 
             try
             {
@@ -367,10 +367,10 @@ internal sealed class McpDataAccessSurface
                 WorkflowViewJsonContext.Default.McpWorkflowViewToolsListResult);
         }
 
-        var describes = _tools.Values.Select(t => t.Describe());
+        var describes = _tools.Values.Select(McpWorkflowViewDescriptorClassifier.Describe);
         if (dynamicTools.Count > 0)
         {
-            describes = describes.Concat(dynamicTools.Select(t => t.Describe()));
+            describes = describes.Concat(dynamicTools.Select(McpWorkflowViewDescriptorClassifier.Describe));
         }
 
         var ordered = describes

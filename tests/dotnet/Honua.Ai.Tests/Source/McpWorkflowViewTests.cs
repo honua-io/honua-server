@@ -134,7 +134,7 @@ public sealed class McpWorkflowViewTests
         {
             var name = descriptor.GetProperty("name").GetString()!;
             var canonical = JsonSerializer.Serialize(
-                roster[name].Describe(),
+                McpWorkflowViewDescriptorClassifier.Describe(roster[name]),
                 McpJsonContext.Default.McpToolDescriptor);
 
             descriptor.GetRawText().Should().Be(
@@ -146,6 +146,36 @@ public sealed class McpWorkflowViewTests
         // Every published schema survives whole.
         view.Tools.Select(t => t.TryGetProperty("inputSchema", out var schema) ? schema.ValueKind : JsonValueKind.Undefined)
             .Should().OnlyContain(kind => kind == JsonValueKind.Object);
+    }
+
+    [UnitTest]
+    public async Task ToolsList_ClassifiesStudioDescriptorsFromTheServerAuthoredView()
+    {
+        var surface = BuildFullSurface();
+
+        var full = await ListToolsAsync(surface, view: null);
+        var view = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName);
+
+        var fullStudio = full.Tools.Single(t =>
+            t.GetProperty("name").GetString() == "honua_studio_add_layer");
+        var viewStudio = view.Tools.Single(t =>
+            t.GetProperty("name").GetString() == "honua_studio_add_layer");
+
+        fullStudio.GetRawText().Should().Be(
+            viewStudio.GetRawText(),
+            "full and narrowed discovery must expose one canonical descriptor contract");
+
+        var classification = fullStudio.GetProperty("_meta").GetProperty("honua.studio");
+        classification.GetProperty("family").GetString().Should().Be("honua.studio.composition");
+        classification.GetProperty("view").GetString().Should().Be(McpWorkflowViewCatalog.SetupViewName);
+        classification.GetProperty("revision").GetString().Should().Be(McpWorkflowViewCatalog.Setup.Revision);
+
+        fullStudio.GetProperty("annotations").ValueKind.Should().Be(JsonValueKind.Object);
+        fullStudio.GetProperty("outputSchema").ValueKind.Should().Be(JsonValueKind.Object);
+
+        full.Tools.Single(t => t.GetProperty("name").GetString() == "honua_query_features")
+            .TryGetProperty("_meta", out _)
+            .Should().BeFalse("unrelated tools must not be routed into the Studio family");
     }
 
     // ------------------------------------------------------------------
@@ -720,7 +750,7 @@ public sealed class McpWorkflowViewTests
 
     private static (McpToolDescriptor Descriptor, bool IsDynamic)[] BuildCatalogEntries() =>
         McpTaxonomyAlignmentTests.BuildTools()
-            .Select(t => (t.Describe(), false))
+            .Select(t => (McpWorkflowViewDescriptorClassifier.Describe(t), false))
             .ToArray();
 
     private static McpDataAccessSurface BuildFullSurface(params IMcpToolSource[] sources) =>
