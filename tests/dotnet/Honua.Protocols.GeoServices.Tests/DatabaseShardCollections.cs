@@ -42,6 +42,15 @@ public class DatabaseGeoServicesRasterCollection
 }
 
 /// <summary>
+/// Database-backed collection for MapServer endpoint tests.
+/// </summary>
+[CollectionDefinition("Database.GeoServicesMapServer")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
+public class DatabaseGeoServicesMapServerCollection
+{
+}
+
+/// <summary>
 /// Database-backed collection for GeoServices Catalog / NAServer tests.
 /// </summary>
 [CollectionDefinition("Database.GeoServicesCatalog")]

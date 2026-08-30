@@ -20,7 +20,7 @@ using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.MapServer;
 
-[Collection("Database")]
+[Collection("Database.GeoServicesMapServer")]
 [Protocol(TestProtocols.MapServer)]
 public sealed class MapServerEndpointTests : IAsyncLifetime
 {
