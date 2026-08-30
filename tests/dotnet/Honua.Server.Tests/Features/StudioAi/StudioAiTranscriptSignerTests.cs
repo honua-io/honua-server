@@ -71,6 +71,23 @@ public sealed class StudioAiTranscriptSignerTests
     }
 
     [Fact]
+    public async Task ResolveKey_SecretProviderFailure_ReturnsNullWithoutFallback()
+    {
+        var provider = Substitute.For<ISecretProvider>();
+        provider.IsSecretReference("secret://studio/transcript-signing-key").Returns(true);
+        provider.GetSecretOrDefaultAsync(
+                "secret://studio/transcript-signing-key",
+                null,
+                Arg.Any<CancellationToken>())
+            .Returns<Task<string?>>(_ => throw new InvalidOperationException("reference resolution failed"));
+        var signer = CreateSigner(provider);
+
+        var key = await signer.ResolveKeyAsync(CancellationToken.None);
+
+        key.Should().BeNull("a provider failure must never cause an in-process fallback key to be generated");
+    }
+
+    [Fact]
     public async Task GetManifest_PublishesActiveAndOverlapFingerprints_WithoutPrivateMaterial()
     {
         var activeSeed = new byte[Ed25519PrivateKeyParameters.KeySize];
