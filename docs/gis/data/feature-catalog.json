@@ -12031,6 +12031,21 @@
       "capability": "identity.scim"
     },
     {
+      "id": "get-services",
+      "route": "/services",
+      "method": "GET",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.GetSoapCatalog_WithoutWsdlFlag_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.SoapCatalog_PublicBaseUrlProjectsWsdlSoapAndRestUrls"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
       "id": "get-sharing-rest-community-groups-groupid",
       "route": "/sharing/rest/community/groups/{groupId}",
       "method": "GET",
