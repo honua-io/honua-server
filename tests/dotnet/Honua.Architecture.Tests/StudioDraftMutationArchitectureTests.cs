@@ -16,7 +16,6 @@ public sealed class StudioDraftMutationArchitectureTests
         "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|CreatePublicationRequestAsync",
         "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|ReopenVersionAsync",
         "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|RollbackAsync",
-        "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioDraftToolBase.cs|UpdateDraftAsync",
     ];
 
     [ArchitectureTest]
@@ -36,6 +35,11 @@ public sealed class StudioDraftMutationArchitectureTests
         Assert.Contains("mutationRuntime.UpdateAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.DeleteAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.CreateAsync(", lifecycleTools, StringComparison.Ordinal);
+
+        var toolBase = File.ReadAllText(Path.Join(
+            root, "src", "Honua.Ai", "Features", "Protocols", "Mcp", "Mcp", "Studio", "StudioDraftToolBase.cs"));
+        Assert.DoesNotContain("lifecycleService.UpdateDraftAsync(", toolBase, StringComparison.Ordinal);
+        Assert.Contains("runtime.UpdateAsync(", toolBase, StringComparison.Ordinal);
     }
 
     [ArchitectureTest]
