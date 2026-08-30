@@ -12833,6 +12833,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeStoredQueries_ReturnsGetFeatureByIdDefinition",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeStoredQueries_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DropStoredQuery_WithExistingQuery_ReturnsOk",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_AdvertisedCrs84IdentifiersAreAcceptedByGetFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_AdvertisesStoredQueryManagementWithoutVersioningConformance",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_InvalidAcceptVersions_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_SectionsFeatureTypeList_ReturnsRequestedSectionOnly",
