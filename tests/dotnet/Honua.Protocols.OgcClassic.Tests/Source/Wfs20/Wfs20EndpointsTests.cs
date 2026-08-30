@@ -866,6 +866,24 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         document.RootElement.GetProperty("numberReturned").GetInt32().Should().BeLessOrEqualTo(1);
     }
 
+    [Theory]
+    [InlineData("1.0.0")]
+    [InlineData("1.1.0")]
+    [InlineData("2.0.0")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_PropertyNameWildcard_ReturnsAllProperties(string version)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME=test_layer&PROPERTYNAME=%2A&MAXFEATURES=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain("ExceptionReport");
+        content.Should().Contain("name");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]

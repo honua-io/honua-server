@@ -733,6 +733,25 @@ def test_ext_error_surface(wms: WebMapService, wms_layer: str, lane_config: Lane
 # Version negotiation and WMS 1.1.1
 # ---------------------------------------------------------------------------
 
+@pytest.mark.cert("NB-OWS-WMS-111-WITNESS-01")
+def test_ext_wms111_maintained_client_witness(
+    wms111: WebMapService, wms_layer: str,
+    wms_collector: CertificationEvidenceCollector,
+) -> None:
+    """Record an independently-failing WMS 1.1.1 capabilities and GetMap witness."""
+    assert wms111.identification.version == "1.1.1"
+    assert wms_layer in wms111.contents
+    image = _image(wms111.getmap(layers=[wms_layer], srs="EPSG:4326", bbox=VIEW_BBOX,
+                                 size=(120, 100), format="image/png", transparent=True))
+    drawn = _drawn_pixels(image, TRANSPARENT)
+    assert drawn > 0
+    wms_collector.record(
+        "NB-OWS-WMS-111-WITNESS-01", "pass", measured_count=drawn,
+        protocol_version="1.1.1",
+        notes=("OWSLib WebMapService negotiated WMS 1.1.1, parsed capabilities, discovered "
+               f"layer {wms_layer}, and executed a non-empty GetMap using the 1.1.1 SRS shape."),
+    )
+
 @pytest.mark.cert("NB-OWS-WMS-VER-01")
 def test_ext_version_negotiation(lane_config: LaneConfig,
                                  wms_collector: CertificationEvidenceCollector) -> None:

@@ -1,5 +1,8 @@
 # Cross-Client Certification Evidence Specification
 
+Maintained-client protocol-version and advertised-profile witnesses are tracked
+in [Maintained-client OGC version coverage](MAINTAINED_CLIENT_OGC_VERSION_COVERAGE.md).
+
 This document defines the standardized evidence output format for cross-client certification results. All client lanes produce evidence in this format so results are directly comparable.
 
 For the test case definitions and client lane mappings, see [Cross-Client Certification Matrix](CROSS_CLIENT_CERTIFICATION_MATRIX.md).
@@ -30,6 +33,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
       "measured_count": null,
       "measured_delta": null,
       "client_identity": "<client that performed this observation>",
+      "protocol_version": null,
       "notes": "",
       "evidence_ref": ""
     }
@@ -69,6 +73,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `results[].measured_count` | number \| null | No | Observed item count for count-based evidence (CERT-DISC-01, CERT-QFLT-01, CERT-QFLT-02, CERT-PAGE-01). Null when not applicable to the test case. |
 | `results[].measured_delta` | number \| null | No | Maximum absolute coordinate deviation in the CRS's native unit — decimal degrees for geographic CRS, meters for projected CRS (CERT-GEOM-01). See the [Geometry Tolerance](CROSS_CLIENT_CERTIFICATION_MATRIX.md#geometry-tolerance-cert-geom-01) section for default pass thresholds. Null when not applicable to the test case. |
 | `results[].client_identity` | string | Conditional | Required when the client that performed an observation differs from `client_lane`; names the actual client (for example, `httpx`) instead of falsely inheriting the lane identity. Omitted when it is identical to `client_lane`. |
+| `results[].protocol_version` | string \| null | No | Negotiated protocol version for a result that intentionally differs from the envelope's primary `protocol_version`; null otherwise. |
 | `results[].notes` | string | No | Free-text notes (failure details, caveats) |
 | `results[].evidence_ref` | string | No | Path or URL to supporting evidence (screenshot, log) |
 | `summary` | object | Yes | Aggregated counts from the `results` array only; extension results are tracked separately in `extensions` |
@@ -84,6 +89,7 @@ Each certification run produces one JSON file per client lane per protocol. The 
 | `extensions[].duration_ms` | number \| null | No | Execution time in milliseconds |
 | `extensions[].measured_count` | number \| null | No | Observed item count for count-based extension evidence (e.g., BI-EXT-02). Null when not applicable. |
 | `extensions[].measured_delta` | number \| null | No | Measurement deviation for extension cases that require it. Null when not applicable. |
+| `extensions[].protocol_version` | string \| null | No | Negotiated protocol version for an extension witness that intentionally differs from the envelope's primary `protocol_version`; null otherwise. |
 | `extensions[].notes` | string | No | Free-text notes |
 | `extensions[].evidence_ref` | string | No | Path or URL to supporting evidence |
 

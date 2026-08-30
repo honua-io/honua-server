@@ -1609,6 +1609,16 @@
       "description": "OWSLib's (property, direction) sortby tuple maps to the server's `-name` convention; desc is the exact reverse of asc over all 10 features."
     },
     {
+      "id": "NB-OWS-WFS-100-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OWSLib negotiated WFS 1.0.0, parsed capabilities, discovered the canonical layer, and executed GetFeature with longitude/latitude axis order."
+    },
+    {
+      "id": "NB-OWS-WFS-110-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OWSLib negotiated WFS 1.1.0, parsed capabilities, discovered the canonical layer, and executed GetFeature with latitude/longitude axis order."
+    },
+    {
       "id": "NB-OWS-WFS-BBOX-01",
       "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
       "description": "The 4-element BBOX (default CRS, longitude/latitude) and the 5-element CRS84 BBOX select the identical feature set ['alpha', 'beta', 'gamma'], so the server's bbox axis-order handling...."
@@ -1692,6 +1702,11 @@
       "id": "NB-OWS-WMS-111-01",
       "scenarioFacetId": "SF-RNDR-IMAGE",
       "description": "WMS 1.1.1 identifies as OGC:WMS, advertises SRS (not CRS:84) and the 1.1.1 exception MIME type, and its longitude-first EPSG:4326 GetMap is pixel-identical to the 1.3.0 CRS:84 render of...."
+    },
+    {
+      "id": "NB-OWS-WMS-111-WITNESS-01",
+      "scenarioFacetId": "SF-RNDR-IMAGE",
+      "description": "OWSLib negotiated WMS 1.1.1, parsed capabilities, discovered the canonical raster layer, and executed a non-empty GetMap using the 1.1.1 SRS request shape."
     },
     {
       "id": "NB-OWS-WMS-CAP-01",
@@ -3379,6 +3394,8 @@
             "CERT-QFLT-02",
             "CERT-SCHM-01",
             "CERT-SCHM-02",
+            "NB-OWS-WFS-100-01",
+            "NB-OWS-WFS-110-01",
             "NB-OWS-WFS-BBOX-01",
             "NB-OWS-WFS-CAP-01",
             "NB-OWS-WFS-CAP-02",
@@ -3429,6 +3446,7 @@
             "CERT-ERRH-01",
             "CERT-RNDR-01",
             "NB-OWS-WMS-111-01",
+            "NB-OWS-WMS-111-WITNESS-01",
             "NB-OWS-WMS-CAP-01",
             "NB-OWS-WMS-CAP-02",
             "NB-OWS-WMS-CAP-03",
