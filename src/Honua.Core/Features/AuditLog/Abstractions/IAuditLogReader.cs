@@ -26,7 +26,25 @@ public interface IAuditLogReader
     /// </summary>
     /// <param name="filter">Query criteria.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="InvalidAuditLogCursorException">
+    /// Thrown when <see cref="AuditLogFilter.Cursor"/> is non-whitespace and malformed.
+    /// </exception>
     Task<AuditEventPage> ListAsync(AuditLogFilter filter, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Thrown when an audit-log pagination cursor cannot be decoded or contains
+/// values outside the supported cursor domain.
+/// </summary>
+public sealed class InvalidAuditLogCursorException : ArgumentException
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="InvalidAuditLogCursorException"/> class.
+    /// </summary>
+    public InvalidAuditLogCursorException()
+        : base("Audit-log cursor is malformed.", "cursor")
+    {
+    }
 }
 
 /// <summary>
