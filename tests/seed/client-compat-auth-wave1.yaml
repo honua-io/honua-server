@@ -1,0 +1,97 @@
+version: 1
+sql:
+  # Protected vector mirror for OGC API Features and WFS authenticated parity.
+  - |
+      INSERT INTO honua.services (
+          service_name, description, srid, max_record_count,
+          supported_formats, capabilities, service_extent, metadata
+      ) VALUES (
+          'cert_auth_vector', 'Authenticated client certification mirror', 4326, 1000,
+          ARRAY['JSON', 'GeoJSON'], ARRAY['Query', 'Extract'],
+          ST_MakeEnvelope(-122.5, 37.7, -122.35, 37.84, 4326),
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', false))
+      ) ON CONFLICT (service_name) DO UPDATE SET
+          description = EXCLUDED.description, metadata = EXCLUDED.metadata,
+          service_extent = EXCLUDED.service_extent, updated_at = NOW();
+
+      INSERT INTO honua.layers (
+          layer_id, layer_name, description, table_name, primary_key_column,
+          geometry_column, storage_srid, temporal_column, geometry_type, srid,
+          extent, default_visibility, metadata
+      ) SELECT
+          10, 'Authenticated Test Layer', 'Authenticated mirror of layer 0',
+          table_name, primary_key_column, geometry_column, storage_srid,
+          temporal_column, geometry_type, srid, extent, default_visibility,
+          jsonb_build_object(
+              'accessPolicy', jsonb_build_object('allowAnonymous', false),
+              'timeInfo', jsonb_build_object('startTimeField', 'created_at'))
+      FROM honua.layers WHERE layer_id = 0
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name, description = EXCLUDED.description,
+          metadata = EXCLUDED.metadata;
+
+      INSERT INTO honua.layer_fields (
+          layer_id, field_name, field_type, field_order,
+          max_length, nullable, default_value, description
+      ) SELECT
+          10, field_name, field_type, field_order,
+          max_length, nullable, default_value, description
+      FROM honua.layer_fields WHERE layer_id = 0
+      ON CONFLICT (layer_id, field_name) DO NOTHING;
+
+      INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+      VALUES ('cert_auth_vector', 10, 0)
+      ON CONFLICT (service_name, layer_id) DO NOTHING;
+
+      INSERT INTO features (layer_id, geometry, attributes, created_at, updated_at)
+      SELECT 10, geometry, attributes, created_at, updated_at
+      FROM features WHERE layer_id = 0
+        AND NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 10);
+
+  # Protected WMS mirror over the anonymous browser point fixture.
+  - |
+      INSERT INTO honua.services (
+          service_name, description, srid,
+          supported_formats, capabilities, service_extent, metadata
+      ) VALUES (
+          'cert_auth_raster', 'Authenticated WMS certification mirror', 4326,
+          ARRAY['JSON', 'GeoJSON'], ARRAY['Query', 'Extract'],
+          ST_MakeEnvelope(-122.45, 37.74, -122.38, 37.80, 4326),
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', false))
+      ) ON CONFLICT (service_name) DO UPDATE SET
+          description = EXCLUDED.description, metadata = EXCLUDED.metadata,
+          service_extent = EXCLUDED.service_extent, updated_at = NOW();
+
+      INSERT INTO honua.layers (
+          layer_id, layer_name, description, table_name,
+          geometry_type, srid, extent, default_visibility, metadata
+      ) SELECT
+          2010, 'Authenticated Browser Points',
+          'Authenticated mirror of browser point layer 2000', table_name,
+          geometry_type, srid, extent, default_visibility,
+          jsonb_build_object('accessPolicy', jsonb_build_object('allowAnonymous', false))
+      FROM honua.layers WHERE layer_id = 2000
+      ON CONFLICT (layer_id) DO UPDATE SET
+          layer_name = EXCLUDED.layer_name, description = EXCLUDED.description,
+          metadata = EXCLUDED.metadata;
+
+      INSERT INTO honua.layer_fields (
+          layer_id, field_name, field_type, field_order,
+          max_length, nullable, default_value, description
+      ) SELECT
+          2010, field_name, field_type, field_order,
+          max_length, nullable, default_value, description
+      FROM honua.layer_fields WHERE layer_id = 2000
+      ON CONFLICT (layer_id, field_name) DO NOTHING;
+
+      INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+      VALUES ('cert_auth_raster', 2010, 0)
+      ON CONFLICT (service_name, layer_id) DO NOTHING;
+
+      INSERT INTO features (layer_id, geometry, attributes, created_at, updated_at)
+      SELECT 2010, geometry, attributes, created_at, updated_at
+      FROM features WHERE layer_id = 2000
+        AND NOT EXISTS (SELECT 1 FROM features WHERE layer_id = 2010);
+
+  - |
+      SELECT honua.seed_metadata_v2_compat_snapshot();

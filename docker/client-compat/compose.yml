@@ -115,7 +115,17 @@ services:
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
-      Licensing__DevGrantEdition: ${HONUA_CLIENT_COMPAT_DEV_GRANT_EDITION:-}
+      # Deterministic local OIDC verifier for certification auth breadth. No
+      # external IdP is contacted: client lanes mint short-lived HS256 tokens
+      # against this test-only issuer/audience/signing-key tuple.
+      Oidc__Enabled: "true"
+      Oidc__Generic__Enabled: "true"
+      Oidc__Generic__Authority: https://cert-auth.honua.test
+      Oidc__Generic__ClientId: honua-client-compat
+      Oidc__AdminRoles__0: admin
+      Oidc__TokenValidation__SymmetricSigningKey: client-compat-certification-signing-key-2026-wave-1
+      Oidc__TokenValidation__EnableTokenReplayProtection: "false"
+      Licensing__DevGrantEdition: ${HONUA_CLIENT_COMPAT_DEV_GRANT_EDITION:-Enterprise}
       # Portal/Sharing facade token issuance (epic #1240). The client-compat docker
       # network is HTTP-only, so relax the HTTPS-only guard on generateToken /
       # oauth2 so the arcgis-stub Portal lane can mint and exercise a named-user
@@ -337,6 +347,11 @@ services:
       HONUA_BASE_URL: http://honua:5000
       HONUA_GEOPANDAS_SERVICE_ID: test_service
       HONUA_GEOPANDAS_COLLECTION_ID: "0"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_API_KEY: ClientCompatAdmin123!
+      HONUA_CERT_OIDC_ISSUER: https://cert-auth.honua.test
+      HONUA_CERT_OIDC_AUDIENCE: honua-client-compat
+      HONUA_CERT_OIDC_SIGNING_KEY: client-compat-certification-signing-key-2026-wave-1
       # Binds the receipt to the exact source revision under test. Compose has no
       # view of git, so CI exports HONUA_SERVER_COMMIT (github.sha); a bare local
       # run leaves it empty and the envelope records "unknown" rather than lying.
@@ -367,6 +382,13 @@ services:
       # consumes, so the two lanes certify the same rendered surface.
       HONUA_OWSLIB_RASTER_SERVICE_ID: browser_compat
       HONUA_OWSLIB_RASTER_LAYER_ID: "2000"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_RASTER_SERVICE_ID: cert_auth_raster
+      HONUA_CERT_RASTER_LAYER_ID: "2010"
+      HONUA_CERT_API_KEY: ClientCompatAdmin123!
+      HONUA_CERT_OIDC_ISSUER: https://cert-auth.honua.test
+      HONUA_CERT_OIDC_AUDIENCE: honua-client-compat
+      HONUA_CERT_OIDC_SIGNING_KEY: client-compat-certification-signing-key-2026-wave-1
       # Binds the receipt to the exact source revision under test. Compose has no
       # view of git, so CI exports HONUA_SERVER_COMMIT (github.sha); a bare local
       # run leaves it empty and the envelope records "unknown" rather than lying.

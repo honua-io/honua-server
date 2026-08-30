@@ -16,9 +16,9 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:12b24e763397dbb1a0c8bc9adbb1f9d28b06d6bcb9320255181321d28556861d` |
+| `fixtureRevision` | `sha256:7e8daba54a625607f1f1a1730794f3743200afc986d03cf9d4db46e4218bfb84` |
 | `serverConfigRevision` | `sha256:071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6` |
-| `authPolicyRevision` | `sha256:bad3a57ccb2e67488680da7fc8722f1dc98cafd8a32ffb7ff808f29dfe5e7210` |
+| `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
 Any change to an input file changes at least one of these values. Publishing a changed input
 without republishing the manifest is a build failure, not a warning.
