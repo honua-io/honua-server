@@ -22,6 +22,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Operations;
+using Honua.Infrastructure.Authentication;
 using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Honua.TestKit;
@@ -31,6 +32,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -551,6 +553,66 @@ public sealed class OperationsToolsetTests
             "{\"jobId\":\"job-1\",\"statusUrl\":\"/jobs/job-1\",\"cancelUrl\":\"/jobs/job-1/cancel\"}");
         resources.Should().Contain(new KeyValuePair<string, string>("jobId", "job-1"));
         resources.Should().ContainKey("statusUrl").And.ContainKey("cancelUrl");
+    }
+
+    [UnitTest]
+    public async Task LaneA_ApprovedReplay_DoesNotExecuteWithApproveOnlyKey_AndUsesRequesterTenant()
+    {
+        var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var approver = await credentialStore.CreateAsync(
+            "approve-only", ["admin:approve"], null, "approver", CancellationToken.None);
+        AdminApiKeyValidationResult? executionAuthority = null;
+        var handler = new CapturingOperationHandler(async request =>
+        {
+            var executionKey = request.Headers.GetValues("X-API-Key").Single();
+            executionKey.Should().NotBe(approver.Key,
+                "the approve-only transport credential must never become execution authority");
+            request.Headers.GetValues("X-Honua-Tenant").Should().Equal("requester-tenant");
+            executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}")
+            };
+        });
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AdminConnectImportOperationExecutor.HttpClientName)
+            .Returns(new HttpClient(handler));
+        var current = new DefaultHttpContext();
+        current.Request.Scheme = "https";
+        current.Request.Host = new HostString("localhost");
+        current.Request.Headers["X-API-Key"] = approver.Key;
+        current.Request.Headers["X-Honua-Tenant"] = "approver-tenant";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(current);
+        var definition = AdminConnectImportOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.connections.create");
+        var executor = new AdminConnectImportOperationExecutor(
+            definition, factory, accessor, credentialStore, TimeProvider.System);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = definition.OperationId,
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["name"] = "roads",
+                    ["provider"] = "postgis",
+                    ["connectionString"] = "Host=database",
+                }
+            },
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal-1",
+                TenantId = "requester-tenant",
+                PrincipalId = "requester",
+            },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        executionAuthority.Should().NotBeNull();
+        executionAuthority!.Record.Permissions.Should().Equal("admin:write");
+        (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
+            .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
 
     [UnitTest]
@@ -1268,5 +1330,13 @@ public sealed class OperationsToolsetTests
                 Content = new StringContent(responseBody, System.Text.Encoding.UTF8, "application/json")
             };
         }
+    }
+
+    private sealed class CapturingOperationHandler(
+        Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => respond(request);
     }
 }

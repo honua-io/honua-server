@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Operations;
 
@@ -14,6 +15,7 @@ internal sealed class AdminConnectImportOperationExecutor(
     AdminConnectImportOperationCatalog.Definition definition,
     IHttpClientFactory httpClientFactory,
     IHttpContextAccessor httpContextAccessor,
+    IAdminApiKeyStore adminApiKeyStore,
     TimeProvider clock) : IOperationExecutor
 {
     public const string HttpClientName = "admin-connect-import-operation-loopback";
@@ -53,36 +55,66 @@ internal sealed class AdminConnectImportOperationExecutor(
             : [];
         var uri = new Uri($"{current.Request.Scheme}://{current.Request.Host}/api/v1/admin{path}{(query.Length == 0 ? string.Empty : "?" + string.Join('&', query))}");
         using var message = new HttpRequestMessage(definition.Method, uri);
-        if (current.Request.Headers.Authorization is { Count: > 0 } authorization) message.Headers.Authorization = AuthenticationHeaderValue.Parse(authorization.ToString());
-        CopyHeader(current, message, "X-API-Key");
-        CopyHeader(current, message, "X-Honua-Tenant");
+        AdminApiKeyRecord? executionCredential = null;
+        if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+        {
+            var issued = await adminApiKeyStore.CreateAsync(
+                $"approved-operation:{context.ApprovedProposalId}",
+                ["admin:write"],
+                clock.GetUtcNow().AddMinutes(5),
+                context.PrincipalId,
+                cancellationToken).ConfigureAwait(false);
+            executionCredential = issued.Record;
+            message.Headers.TryAddWithoutValidation("X-API-Key", issued.Key);
+            if (!string.IsNullOrWhiteSpace(context.TenantId))
+                message.Headers.TryAddWithoutValidation("X-Honua-Tenant", context.TenantId);
+        }
+        else
+        {
+            if (current.Request.Headers.Authorization is { Count: > 0 } authorization)
+                message.Headers.Authorization = AuthenticationHeaderValue.Parse(authorization.ToString());
+            CopyHeader(current, message, "X-API-Key");
+            CopyHeader(current, message, "X-Honua-Tenant");
+        }
         if (definition.Method != HttpMethod.Get && definition.Method != HttpMethod.Delete)
             message.Content = definition.ContentType == "multipart/form-data" ? BuildMultipart(request, routeNames) : BuildJson(request, routeNames, OperationId);
 
-        using var response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);
-        var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var now = clock.GetUtcNow();
-        var instanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
-        var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
-        var queued = response.StatusCode == HttpStatusCode.Accepted;
-        var resources = queued ? ReadQueuedResources(payload) : new Dictionary<string, string>(StringComparer.Ordinal);
-        return new OperationHandle
+        HttpResponseMessage response;
+        try
         {
-            OperationInstanceId = instanceId,
-            OperationId = OperationId,
-            CorrelationId = correlationId,
-            Status = queued ? OperationHandleStatus.Queued : response.IsSuccessStatusCode ? OperationHandleStatus.Completed : OperationHandleStatus.Failed,
-            JobId = resources.GetValueOrDefault("jobId"),
-            ResourceIds = resources,
-            CreatedAt = now,
-            UpdatedAt = now,
-            Reason = response.IsSuccessStatusCode ? null : $"Admin API returned HTTP {(int)response.StatusCode} ({response.StatusCode}).",
-            Result = new OperationResultSummary
+            response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (executionCredential is not null)
+                _ = await adminApiKeyStore.RevokeAsync(executionCredential.Id, CancellationToken.None).ConfigureAwait(false);
+        }
+        using (response)
+        {
+            var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var now = clock.GetUtcNow();
+            var instanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
+            var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
+            var queued = response.StatusCode == HttpStatusCode.Accepted;
+            var resources = queued ? ReadQueuedResources(payload) : new Dictionary<string, string>(StringComparer.Ordinal);
+            return new OperationHandle
             {
-                Summary = $"{definition.Title} {(queued ? "queued" : response.IsSuccessStatusCode ? "completed" : "failed")}.",
-                Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), ["response"] = payload }
-            }
-        };
+                OperationInstanceId = instanceId,
+                OperationId = OperationId,
+                CorrelationId = correlationId,
+                Status = queued ? OperationHandleStatus.Queued : response.IsSuccessStatusCode ? OperationHandleStatus.Completed : OperationHandleStatus.Failed,
+                JobId = resources.GetValueOrDefault("jobId"),
+                ResourceIds = resources,
+                CreatedAt = now,
+                UpdatedAt = now,
+                Reason = response.IsSuccessStatusCode ? null : $"Admin API returned HTTP {(int)response.StatusCode} ({response.StatusCode}).",
+                Result = new OperationResultSummary
+                {
+                    Summary = $"{definition.Title} {(queued ? "queued" : response.IsSuccessStatusCode ? "completed" : "failed")}.",
+                    Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture), ["response"] = payload }
+                }
+            };
+        }
     }
 
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)

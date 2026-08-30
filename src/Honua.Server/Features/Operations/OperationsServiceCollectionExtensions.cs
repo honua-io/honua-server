@@ -113,6 +113,7 @@ internal static class OperationsServiceCollectionExtensions
                     definition,
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
+                    sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
                     sp.GetRequiredService<TimeProvider>()));
             }
             services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
