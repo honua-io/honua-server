@@ -48,7 +48,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz/live"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -130,7 +130,7 @@ For headless deployments, keep Redis unless every durable control-plane feature 
       honua:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/operate"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/operate"]
       interval: 30s
       timeout: 10s
       retries: 5

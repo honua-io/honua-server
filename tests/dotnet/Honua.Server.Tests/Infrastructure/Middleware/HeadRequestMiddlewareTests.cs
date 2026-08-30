@@ -106,6 +106,12 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
             await context.Response.WriteAsync("hello head");
         });
 
+        // Production health probes are GET-only endpoints. Keep their paths in this fast,
+        // middleware-isolated suite so a HEAD fallback regression is caught without waiting for
+        // a compose healthcheck or the integration-test fixture.
+        _app.MapGet("/healthz/live", () => Results.Text("Healthy"));
+        _app.MapGet("/healthz/ready", () => Results.Text("Ready"));
+
         // GET + HEAD, branching on the method: the PMTiles/scene shape, which must not regress
         // into fetching the whole payload for a HEAD.
         _app.MapMethods("/dual", ["GET", "HEAD"], async context =>
@@ -321,6 +327,27 @@ public sealed class HeadRequestMiddlewareTests : IAsyncLifetime
         (await headResponse.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
         headResponse.Content.Headers.ContentType?.ToString().Should().Be("text/plain; charset=utf-8");
         headResponse.Content.Headers.ContentLength.Should().Be(getBody.Length);
+    }
+
+    [UnitTest]
+    public async Task InvokeAsync_HeadOnHealthEndpoints_MatchesGetWithNoBody()
+    {
+        foreach (var (path, expectedGetBody) in new[]
+                 {
+                     ("/healthz/live", "Healthy"),
+                     ("/healthz/ready", "Ready")
+                 })
+        {
+            using var getResponse = await SendAsync(HttpMethod.Get, path);
+            using var headResponse = await SendAsync(HttpMethod.Head, path);
+
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await getResponse.Content.ReadAsStringAsync()).Should().Be(expectedGetBody);
+            headResponse.StatusCode.Should().Be(getResponse.StatusCode);
+            headResponse.Content.Headers.ContentType.Should().Be(getResponse.Content.Headers.ContentType);
+            headResponse.Content.Headers.ContentLength.Should().Be(expectedGetBody.Length);
+            (await headResponse.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+        }
     }
 
     [UnitTest]

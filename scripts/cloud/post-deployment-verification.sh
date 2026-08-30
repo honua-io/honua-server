@@ -186,7 +186,7 @@ security_checks() {
 
     # Check security headers
     echo "🔍 Checking security headers..."
-    local headers=$(curl -s -I --max-time $TIMEOUT "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/live")
+    local headers=$(curl -sS -D - -o /dev/null --max-time $TIMEOUT "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/live")
 
     # Security headers validation
     local required_headers=("x-frame-options" "x-content-type-options")
@@ -369,7 +369,7 @@ version_checks() {
     else
         echo "🔍 Checking application version..."
 
-        local version_header=$(curl -s -I --max-time $TIMEOUT "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/live" | grep -i "x-version" || echo "")
+        local version_header=$(curl -sS -D - -o /dev/null --max-time $TIMEOUT "${ROUTING_ARGS[@]}" "$BASE_URL/healthz/live" | grep -i "x-version" || echo "")
 
         if [[ -n "$version_header" ]]; then
             echo "✅ Version information: $version_header"
