@@ -17,7 +17,10 @@ from typing import Any
 
 POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v3"
 INDEX_CONTRACT = "honua.impact-routing-evidence-index/v2"
-LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v3"
+# v4 resets retained trend samples after candidate-only, unexecuted routes
+# stopped being promotion-countable.  trend() accepts only the current contract,
+# so a v3 ledger cannot preserve the earlier countability semantics.
+LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v4"
 TOMBSTONE_CONTRACT = "honua.impact-routing-evidence-tombstones/v1"
 TREND_CONTRACT = "honua.impact-routing-evidence-trend/v1"
 PR_GATE_CONTRACT = "honua.pr-gate-impact-observation/v3"
@@ -42,6 +45,13 @@ WORKER_WORKFLOW = ".github/workflows/worker-gdal-image.yml"
 # emitted and retained, the reader could not see them. Both modes are indexed;
 # only docs-only heads feed the docs-only promotion sample.
 PR_GATE_MODES = ("docs-only", "full")
+PR_GATE_UNDIGESTED_REASONS = frozenset({
+    "unbounded-file-count",
+    "truncated-file-list",
+    "invalid-file-record",
+    "unsafe-file-record",
+    "duplicate-file-record",
+})
 PR_GATE_ARTIFACT = re.compile(
     r"^pr-gate-impact-(?P<mode>docs-only|full)-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
@@ -768,7 +778,6 @@ def _validate_pr_gate(
     pull_request = positive_int(value.get("pull_request"), "PR Gate pull request")
     head = exact_sha(value.get("head_sha"), "PR Gate head")
     exact_sha(value.get("base_sha"), "PR Gate base")
-    exact_digest(value.get("files_sha256"), "PR Gate files digest")
     positive_int(value.get("gate_run_id"), "PR Gate run id")
     positive_int(value.get("gate_run_attempt"), "PR Gate run attempt")
     if value.get("gate_run_head_sha") != head or value.get("gate_run_conclusion") not in TERMINAL_CONCLUSIONS:
@@ -784,6 +793,16 @@ def _validate_pr_gate(
         raise ValueError("PR Gate receipt reason is invalid")
     if mode == "docs-only" and reason != "internal-markdown-only":
         raise ValueError("PR Gate docs-only reason is invalid")
+    files_digest = value.get("files_sha256")
+    if files_digest == "":
+        # The classifier deliberately fails closed before it can normalize a
+        # file list for these full-gate reasons. Such a receipt contains no
+        # claim about file-list content, so an empty digest is the producer's
+        # current contract rather than a malformed integrity assertion.
+        if mode != "full" or reason not in PR_GATE_UNDIGESTED_REASONS:
+            raise ValueError("PR Gate files digest is missing without a fail-closed reason")
+    else:
+        exact_digest(files_digest, "PR Gate files digest")
     for field in (
         "policy_blob_sha",
         "gate_workflow_blob_sha",
@@ -1281,13 +1300,18 @@ def summarize(
     image_failures: list[dict[str, Any]] = []
     superseded_heads: list[dict[str, Any]] = []
     pending_heads: list[dict[str, Any]] = []
+    shadow_only_heads: list[dict[str, Any]] = []
     for item in native:
         if item["gate_conclusion"] != "success":
             continue
         serving = _image_outcome(serving_catalog, item, SERVING_WORKFLOW)
         worker = _image_outcome(worker_catalog, item, WORKER_WORKFLOW)
-        serving_required = item["legacy_serving"] or item["candidate_serving"]
-        worker_required = item["legacy_worker"] or item["candidate_worker"]
+        # These workflows are the AUTHORITATIVE legacy route while the
+        # candidate remains report-only. Candidate-only heads intentionally do
+        # not trigger them, so requiring an impossible exact-head run converts
+        # a shadow-routing difference into a fabricated native-outcome failure.
+        serving_required = item["legacy_serving"]
+        worker_required = item["legacy_worker"]
         missing: list[str] = []
         if serving_required and not serving["success"]:
             missing.append("serving")
@@ -1339,6 +1363,25 @@ def summarize(
                 quarantined.append({**record, "tombstone": tombstone})
             else:
                 image_failures.append(record)
+            continue
+        candidate_only_classes = [
+            f"serving_{name}"
+            for name in SERVING_VARIANTS
+            if item["candidate_serving_variants"][name]
+            and not item["legacy_serving_variants"][name]
+        ]
+        if item["candidate_worker"] and not item["legacy_worker"]:
+            candidate_only_classes.append("worker")
+        if candidate_only_classes:
+            # No workflow executes candidate-only routes in observe mode. They
+            # are valid shadow decisions, but cannot contribute to promotion
+            # readiness until candidate execution evidence exists.
+            shadow_only_heads.append({
+                "pull_request": item["pull_request"],
+                "head_sha": item["head_sha"],
+                "candidate_only_classes": candidate_only_classes,
+                "reason": "candidate-route-not-executed-in-observe-mode",
+            })
             continue
         native_countable.append({**item, "serving_outcome": serving, "worker_outcome": worker})
 
@@ -1449,6 +1492,7 @@ def summarize(
             "authoritative_image_outcome_failures": len(image_failures),
             "image_outcome_superseded_heads": len(superseded_heads),
             "image_outcome_pending_heads": len(pending_heads),
+            "candidate_only_shadow_heads": len(shadow_only_heads),
             "integrity_failures": len(failures),
             "quarantined_by_tombstone": len(quarantined),
             "stale_tombstones": len(stale_tombstones),
@@ -1467,6 +1511,7 @@ def summarize(
         "image_outcome_failures": image_failures,
         "image_outcome_superseded_heads": superseded_heads,
         "image_outcome_pending_heads": pending_heads,
+        "candidate_only_shadow_heads": shadow_only_heads,
         "policy_generation_superseded_receipts": drifted,
         "quarantined": quarantined,
         "stale_tombstones": stale_tombstones,
@@ -1518,6 +1563,8 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`"
         f" (excluded: `{counts['image_outcome_superseded_heads']}` superseded, "
         f"`{counts['image_outcome_pending_heads']}` still building)",
+        "- Candidate-only heads awaiting execution evidence (not promotion-countable): "
+        f"`{counts['candidate_only_shadow_heads']}`",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",
         "- Receipt loss: "
         f"`{loss['receipts_missing']}` of `{loss['receipts_owed']}` owed = "

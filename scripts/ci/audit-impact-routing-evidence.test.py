@@ -608,6 +608,51 @@ def test_summary_requires_real_candidate_and_image_evidence() -> None:
         assert ledger["counts"]["worker_avoided_heads"] == 1
         assert all(ledger["gates"].values())
 
+        # A candidate-only route is still report-only. The authoritative
+        # legacy workflow therefore has no exact-head run by design, and the
+        # ledger must not manufacture a missing authoritative outcome for it.
+        candidate_only = native_receipt(
+            blobs,
+            pr=13,
+            head=HEAD_D,
+            worker=False,
+            serving=lambda_only,
+            legacy_serving={name: False for name in MODULE.SERVING_VARIANTS},
+            legacy_worker=False,
+        )
+        candidate_only["comparison"]["serving_candidate_only"] = True
+        archive(archives, 104, MODULE.NATIVE_STREAM, candidate_only)
+        pages(root / "serving", "workflow_runs", serving[:2])
+        candidate_shadow = MODULE.summarize(
+            index,
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        assert candidate_shadow["counts"]["authoritative_image_outcome_failures"] == 0
+        assert candidate_shadow["counts"]["native_countable_heads"] == 2
+        assert candidate_shadow["counts"]["candidate_only_shadow_heads"] == 1
+        assert candidate_shadow["candidate_only_shadow_heads"][0][
+            "candidate_only_classes"
+        ] == ["serving_lambda"]
+        archive(
+            archives,
+            104,
+            MODULE.NATIVE_STREAM,
+            native_receipt(
+                blobs,
+                pr=13,
+                head=HEAD_D,
+                worker=False,
+                serving=lambda_only,
+                legacy_serving=lambda_only,
+                legacy_worker=False,
+            ),
+        )
+        pages(root / "serving", "workflow_runs", serving)
+
         # #3343: `pull_requests` on a workflow run is a LIVE view of the pull
         # request. Once a later push moves the PR, every earlier head's run
         # reports the PR's CURRENT base/head — and GitHub often reports no
@@ -791,6 +836,33 @@ def test_integrity_failures_do_not_count() -> None:
         }
         pages(root / "serving", "workflow_runs", [])
         pages(root / "worker", "workflow_runs", [])
+        # Full-gate classifier exits that happen before file normalization have
+        # no file-list claim to digest. The producer contract uses an empty
+        # digest for those explicitly fail-closed reasons; accepting exactly
+        # that shape does not weaken docs-only receipt integrity.
+        undigested = pr_gate_receipt(blobs)
+        undigested.update({
+            "mode": "full",
+            "reason": "unbounded-file-count",
+            "changed_file_count": 0,
+            "files_sha256": "",
+        })
+        index["artifacts"][0]["artifact_name"] = "pr-gate-impact-full-v3-attempt-1"
+        archive(archives, 301, MODULE.PR_GATE_STREAM, undigested)
+        accepted = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT,
+        )
+        assert accepted["counts"]["validated_pr_gate_receipts"] == 1
+        undigested["reason"] = "path-requires-full-gate"
+        archive(archives, 301, MODULE.PR_GATE_STREAM, undigested)
+        rejected_digest = MODULE.summarize(
+            index, archives, root / "serving", root / "worker",
+            policy(), REPOSITORY_ROOT,
+        )
+        assert rejected_digest["counts"]["integrity_failures"] == 1
+        index["artifacts"][0]["artifact_name"] = artifact_name(MODULE.PR_GATE_STREAM)
+
         # #3343: a stale policy input is COHORT DRIFT, not an integrity
         # violation. Any commit touching one of the nine pinned inputs — the
         # `actions/checkout` bump 741f0d7b5 did exactly this — moves the policy
@@ -1614,6 +1686,18 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
     assert ready["largest_sample_within_generation"] == {
         "docs_only_heads": 7,
         "native_heads": 8,
+    }
+
+    # v3 ledgers could count candidate-only routes that had never executed.
+    # Retained artifacts using those semantics must not seed a v4 sample.
+    legacy = daily(18)
+    legacy["contract"] = "honua.impact-routing-evidence-ledger/v3"
+    legacy["counts"]["docs_only_success_heads"] = 100
+    legacy["counts"]["native_countable_heads"] = 100
+    current_only = MODULE.trend([legacy, daily(19)], policy(), now)
+    assert current_only["largest_sample_within_generation"] == {
+        "docs_only_heads": 1,
+        "native_heads": 2,
     }
 
     independent_maxima = MODULE.trend([
