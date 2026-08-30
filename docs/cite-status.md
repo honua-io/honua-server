@@ -33,9 +33,11 @@ directory — check the workflow.
 Snapshot copied from
 [CITE Evidence Report run 33205558805](https://github.com/honua-io/honua-server/actions/runs/33205558805)
 on `trunk@f5ac595ee5e3d4bce3df3c726ca1127ca4e2da0f`, completed
-2026-08-28T20:25:07Z. The fully green run's `cite-conformance-evidence-13`
-bundle reported `allPassed=true`: 1138 passed, 0
-failed, 0 skipped, 0 CantTell. (This run also validates the hermetic
+2026-08-28T20:25:07Z. The run failed only at its final snapshot-freshness
+check; the successfully generated `cite-conformance-evidence-13` bundle
+reported `allPassed=true`: 1138 passed, 0 failed, 0 skipped, 0 CantTell. This
+page records the artifact's conformance result, not a successful workflow-run
+conclusion. (The artifact also validates the hermetic
 OGC test-data stub from #3169 end-to-end on trunk; see #3156.)
 
 | Suite | Profile | Passed / Total | Pass Rate | Last Evidence Run |
