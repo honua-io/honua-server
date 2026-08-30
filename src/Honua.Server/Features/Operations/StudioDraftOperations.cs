@@ -23,6 +23,8 @@ internal static class StudioDraftOperations
     public const string Create = "studio.draft.create";
     public const string Update = "studio.draft.update";
     public const string Delete = "studio.draft.delete";
+    public const string Validate = "studio.draft.validate";
+    public const string PreviewPlan = "studio.draft.preview-plan";
     public const string PayloadParameter = "payload";
     public const string ResultParameter = "payload";
 
@@ -31,12 +33,23 @@ internal static class StudioDraftOperations
         Build(Create, "Create Studio draft", OperationSideEffectClass.CreatesMetadata),
         Build(Update, "Update Studio draft", OperationSideEffectClass.MutatesMetadata),
         Build(Delete, "Delete Studio draft", OperationSideEffectClass.DestroysState),
+        Build(
+            Validate,
+            "Validate Studio draft",
+            OperationSideEffectClass.MutatesMetadata,
+            OperationDeterminism.RuntimeDynamic),
+        Build(
+            PreviewPlan,
+            "Preview Studio draft plan",
+            OperationSideEffectClass.MutatesMetadata,
+            OperationDeterminism.RuntimeDynamic),
     ];
 
     private static OperationDescriptor Build(
         string operationId,
         string title,
-        OperationSideEffectClass sideEffectClass) => new()
+        OperationSideEffectClass sideEffectClass,
+        OperationDeterminism determinism = OperationDeterminism.Deterministic) => new()
         {
             OperationId = operationId,
             ProviderId = ServicePublishOperation.ProviderId,
@@ -49,7 +62,7 @@ internal static class StudioDraftOperations
             {
                 BlastRadiusClass = OperationBlastRadiusClass.ResourceScope,
                 SideEffectClass = sideEffectClass,
-                Determinism = OperationDeterminism.Deterministic,
+                Determinism = determinism,
                 SupportsDryRun = false,
             },
             InputSchema =
@@ -93,6 +106,14 @@ internal sealed record StudioDraftUpdatePayload
 internal sealed record StudioDraftDeletePayload
 {
     public required Guid DraftId { get; init; }
+    public string? TenantId { get; init; }
+    public string? SchemaName { get; init; }
+}
+
+internal sealed record StudioDraftActorPayload
+{
+    public required Guid DraftId { get; init; }
+    public string? ActorId { get; init; }
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
 }
@@ -276,6 +297,36 @@ internal sealed class StudioDraftDeleteExecutor(IStudioPackageLifecycleService l
         CancellationToken cancellationToken) => Lifecycle.DeleteDraftAsync(payload.DraftId, cancellationToken);
 }
 
+internal sealed class StudioDraftValidateExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
+    : StudioDraftMutationExecutor<StudioDraftActorPayload, StudioValidationSummary>(lifecycle, clock)
+{
+    public override string OperationId => StudioDraftOperations.Validate;
+    protected override JsonTypeInfo<StudioDraftActorPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioDraftActorPayload;
+    protected override JsonTypeInfo<StudioValidationSummary> ResultType => StudioDraftOperationJsonContext.Default.StudioValidationSummary;
+
+    protected override async Task<StudioValidationSummary> ActuateAsync(
+        StudioDraftActorPayload payload,
+        CancellationToken cancellationToken) => await Lifecycle
+            .ValidateDraftAsync(payload.DraftId, payload.ActorId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio draft '{payload.DraftId:D}' was not found.");
+}
+
+internal sealed class StudioDraftPreviewPlanExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
+    : StudioDraftMutationExecutor<StudioDraftActorPayload, StudioPreviewPlan>(lifecycle, clock)
+{
+    public override string OperationId => StudioDraftOperations.PreviewPlan;
+    protected override JsonTypeInfo<StudioDraftActorPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioDraftActorPayload;
+    protected override JsonTypeInfo<StudioPreviewPlan> ResultType => StudioDraftOperationJsonContext.Default.StudioPreviewPlan;
+
+    protected override async Task<StudioPreviewPlan> ActuateAsync(
+        StudioDraftActorPayload payload,
+        CancellationToken cancellationToken) => await Lifecycle
+            .PreviewPlanAsync(payload.DraftId, payload.ActorId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio draft '{payload.DraftId:D}' was not found.");
+}
+
 internal sealed class StudioDraftMutationRuntime(
     IOperationInvoker invoker,
     IOperationInstanceStore instanceStore) : IStudioDraftMutationRuntime
@@ -311,6 +362,30 @@ internal sealed class StudioDraftMutationRuntime(
             new StudioDraftDeletePayload { DraftId = draftId },
             StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload,
             StudioDraftOperationJsonContext.Default.Boolean,
+            context,
+            cancellationToken);
+
+    public Task<StudioDraftMutationReceipt<StudioValidationSummary>> ValidateAsync(
+        Guid draftId,
+        string? actorId,
+        StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default) => InvokeAsync(
+            StudioDraftOperations.Validate,
+            new StudioDraftActorPayload { DraftId = draftId, ActorId = actorId },
+            StudioDraftOperationJsonContext.Default.StudioDraftActorPayload,
+            StudioDraftOperationJsonContext.Default.StudioValidationSummary,
+            context,
+            cancellationToken);
+
+    public Task<StudioDraftMutationReceipt<StudioPreviewPlan>> PreviewAsync(
+        Guid draftId,
+        string? actorId,
+        StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default) => InvokeAsync(
+            StudioDraftOperations.PreviewPlan,
+            new StudioDraftActorPayload { DraftId = draftId, ActorId = actorId },
+            StudioDraftOperationJsonContext.Default.StudioDraftActorPayload,
+            StudioDraftOperationJsonContext.Default.StudioPreviewPlan,
             context,
             cancellationToken);
 
@@ -449,6 +524,10 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload)! with
             { TenantId = context.TenantId, SchemaName = context.SchemaName },
             StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload),
+        StudioDraftOperations.Validate or StudioDraftOperations.PreviewPlan => JsonSerializer.Serialize(
+            JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftActorPayload)! with
+            { TenantId = context.TenantId, SchemaName = context.SchemaName },
+            StudioDraftOperationJsonContext.Default.StudioDraftActorPayload),
         _ => throw new InvalidOperationException($"Unsupported Studio mutation descriptor '{OperationId}'."),
     };
 
@@ -457,12 +536,14 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
         StudioDraftOperations.Create => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftCreatePayload)!),
         StudioDraftOperations.Update => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftUpdatePayload)!),
         StudioDraftOperations.Delete => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload)!),
+        StudioDraftOperations.Validate or StudioDraftOperations.PreviewPlan => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftActorPayload)!),
         _ => throw new InvalidOperationException($"Unsupported Studio mutation descriptor '{OperationId}'."),
     };
 
     private static (string? TenantId, string? SchemaName) Read(StudioDraftCreatePayload payload) => (payload.TenantId, payload.SchemaName);
     private static (string? TenantId, string? SchemaName) Read(StudioDraftUpdatePayload payload) => (payload.TenantId, payload.SchemaName);
     private static (string? TenantId, string? SchemaName) Read(StudioDraftDeletePayload payload) => (payload.TenantId, payload.SchemaName);
+    private static (string? TenantId, string? SchemaName) Read(StudioDraftActorPayload payload) => (payload.TenantId, payload.SchemaName);
 
     private void ValidatePayload(string payload)
     {
@@ -471,6 +552,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             StudioDraftOperations.Create => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftCreatePayload),
             StudioDraftOperations.Update => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftUpdatePayload),
             StudioDraftOperations.Delete => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload),
+            StudioDraftOperations.Validate or StudioDraftOperations.PreviewPlan => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftActorPayload),
             _ => throw new InvalidOperationException($"Unsupported Studio mutation descriptor '{OperationId}'."),
         };
         if (parsed is null)
@@ -486,6 +568,9 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
 [JsonSerializable(typeof(StudioDraftCreatePayload))]
 [JsonSerializable(typeof(StudioDraftUpdatePayload))]
 [JsonSerializable(typeof(StudioDraftDeletePayload))]
+[JsonSerializable(typeof(StudioDraftActorPayload))]
 [JsonSerializable(typeof(StudioPackageDraft))]
+[JsonSerializable(typeof(StudioValidationSummary))]
+[JsonSerializable(typeof(StudioPreviewPlan))]
 [JsonSerializable(typeof(bool))]
 internal sealed partial class StudioDraftOperationJsonContext : JsonSerializerContext;

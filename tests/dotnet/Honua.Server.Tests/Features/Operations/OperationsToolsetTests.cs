@@ -61,10 +61,18 @@ public sealed class OperationsToolsetTests
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
             descriptor.ImplementationType == typeof(DeferredServicePublishExecutor));
-        services.Count(descriptor =>
+        services
+            .Where(descriptor =>
                 descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
                 descriptor.ImplementationInstance is StudioDraftApprovalRequestMapper)
-            .Should().Be(3);
+            .Select(descriptor =>
+                ((StudioDraftApprovalRequestMapper)descriptor.ImplementationInstance!).OperationId)
+            .Should().BeEquivalentTo(
+                StudioDraftOperations.Create,
+                StudioDraftOperations.Update,
+                StudioDraftOperations.Delete,
+                StudioDraftOperations.Validate,
+                StudioDraftOperations.PreviewPlan);
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
             descriptor.ImplementationType == typeof(StudioDraftDeleteExecutor));

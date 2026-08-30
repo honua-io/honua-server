@@ -10,8 +10,6 @@ public sealed class StudioDraftMutationArchitectureTests
 {
     private static readonly string[] KnownRemainingDirectMutationSites =
     [
-        "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|ValidateDraftAsync",
-        "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|PreviewPlanAsync",
         "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|SaveDraftAsVersionAsync",
         "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|CreatePublicationRequestAsync",
         "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|ReopenVersionAsync",
