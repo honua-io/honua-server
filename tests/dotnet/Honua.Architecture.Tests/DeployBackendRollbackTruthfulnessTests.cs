@@ -45,9 +45,9 @@ public sealed partial class DeployBackendRollbackTruthfulnessTests
             .Select(File.ReadAllText)
             .ToArray();
 
-        foreach (var backend in AutomaticRollbackBackends)
+        foreach (var (backend, body) in AutomaticRollbackBackends
+                     .Select(backend => (backend, FindTypeBody(sources, backend))))
         {
-            var body = FindTypeBody(sources, backend);
             var observationPath = FindMethodBody(body, "ObserveAsync");
             if (backend == "KubernetesArgoRolloutsDeployBackend")
             {
