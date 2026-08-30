@@ -9,10 +9,12 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using CanonicalOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 
 namespace Honua.Server.Features.Admin;
 
@@ -174,7 +176,7 @@ internal static class ProposalEndpoints
         HttpContext context,
         [FromServices] IOperationGateway? gateway = null,
         [FromServices] IOperationProposalStore? proposalStore = null,
-        [FromServices] IOperationExecutorCatalog? executorCatalog = null)
+        [FromServices] IEnumerable<CanonicalOperationExecutor>? operationExecutors = null)
     {
         if (gateway is null || proposalStore is null)
         {
@@ -189,18 +191,22 @@ internal static class ProposalEndpoints
         }
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+        var operationId = proposal?.OperationId ?? (proposal is null ? null : LegacyOperationIds.For(proposal.Kind));
         if (proposal != null &&
-            (executorCatalog is null || !executorCatalog.SupportedKinds.Contains(proposal.Kind)))
+            (operationExecutors is null || !operationExecutors.Any(executor =>
+                string.Equals(executor.OperationId, operationId, StringComparison.Ordinal))))
         {
             return Results.Problem(
                 title: "Operation executor unavailable",
-                detail: $"No operation executor is registered for proposal type '{proposal.Kind}'. " +
-                    "Register an executor for this operation type before approving the proposal.",
+                detail: $"No operation executor is registered for proposal type '{proposal.Kind}' " +
+                    $"(operation '{operationId}'). " +
+                    "Register an executor for this operation before approving the proposal.",
                 statusCode: StatusCodes.Status422UnprocessableEntity,
                 extensions: new Dictionary<string, object?>
                 {
                     ["code"] = "operation-executor-unavailable",
                     ["operationType"] = proposal.Kind.ToString(),
+                    ["operationId"] = operationId,
                 });
         }
 
