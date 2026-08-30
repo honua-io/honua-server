@@ -26,7 +26,7 @@ public sealed class SnowflakeFeatureStoreIntegrationTests
     private const string EnableEnvVar = "HONUA_TEST_SNOWFLAKE";
     private const string ConnectionEnvVar = "HONUA_SNOWFLAKE_TEST_CONNECTION";
 
-    [RequiredEnvironmentVariablesFact(EnableEnvVar, ConnectionEnvVar)]
+    [RequiredEnvironmentVariablesFact(EnableEnvVar, "1", ConnectionEnvVar)]
     public async Task Count_OnLiveSnowflakeTable_ReturnsRows()
     {
         var connectionString = Environment.GetEnvironmentVariable(ConnectionEnvVar)!;
@@ -37,7 +37,7 @@ public sealed class SnowflakeFeatureStoreIntegrationTests
         Assert.True(count > 0, "The configured live fixture must contain at least one row.");
     }
 
-    [RequiredEnvironmentVariablesFact(EnableEnvVar, ConnectionEnvVar)]
+    [RequiredEnvironmentVariablesFact(EnableEnvVar, "1", ConnectionEnvVar)]
     public async Task Query_OnLiveSnowflakeTable_ReturnsFeaturesWithGeometry()
     {
         var connectionString = Environment.GetEnvironmentVariable(ConnectionEnvVar)!;

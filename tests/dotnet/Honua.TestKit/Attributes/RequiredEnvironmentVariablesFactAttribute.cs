@@ -6,20 +6,33 @@ using Xunit;
 namespace Honua.TestKit.Attributes;
 
 /// <summary>
-/// Marks a fact that requires several non-empty environment variables.
+/// Marks a fact that requires an exact opt-in value and several non-empty environment variables.
 /// </summary>
 public sealed class RequiredEnvironmentVariablesFactAttribute : FactAttribute
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="RequiredEnvironmentVariablesFactAttribute"/> class.
     /// </summary>
-    /// <param name="environmentVariables">Environment variables that must all be non-empty.</param>
-    public RequiredEnvironmentVariablesFactAttribute(params string[] environmentVariables)
+    /// <param name="enableVariable">Environment variable that explicitly opts into the test.</param>
+    /// <param name="requiredValue">Exact value required to opt into the test.</param>
+    /// <param name="environmentVariables">Additional environment variables that must all be non-empty.</param>
+    public RequiredEnvironmentVariablesFactAttribute(
+        string enableVariable,
+        string requiredValue,
+        params string[] environmentVariables)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(enableVariable);
+        ArgumentException.ThrowIfNullOrWhiteSpace(requiredValue);
         ArgumentNullException.ThrowIfNull(environmentVariables);
-        if (environmentVariables.Length == 0 || environmentVariables.Any(string.IsNullOrWhiteSpace))
+        if (environmentVariables.Any(string.IsNullOrWhiteSpace))
         {
-            throw new ArgumentException("At least one valid environment variable is required.", nameof(environmentVariables));
+            throw new ArgumentException("Environment variable names must be non-empty.", nameof(environmentVariables));
+        }
+
+        if (!string.Equals(Environment.GetEnvironmentVariable(enableVariable), requiredValue, StringComparison.Ordinal))
+        {
+            Skip = $"opt-in-required:{enableVariable}={requiredValue}";
+            return;
         }
 
         var missing = environmentVariables

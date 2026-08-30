@@ -26,7 +26,7 @@ public sealed class DatabricksLiveIntegrationTests
     private const string TokenVar = "HONUA_TEST_DATABRICKS_TOKEN";
     private const string TableVar = "HONUA_TEST_DATABRICKS_TABLE";
 
-    [RequiredEnvironmentVariablesFact(EnableVar, HostVar, WarehouseVar, TokenVar, TableVar)]
+    [RequiredEnvironmentVariablesFact(EnableVar, "1", HostVar, WarehouseVar, TokenVar, TableVar)]
     public async Task QueryAsync_LiveWarehouse_ReturnsFeatures()
     {
         var (options, layer) = GetLiveConfiguration();

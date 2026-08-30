@@ -206,7 +206,7 @@ Redshift instance is required.
 ### Gated Integration Tests
 
 There is no official Amazon Redshift Testcontainer image. The integration suite is doubly gated —
-it is excluded from the default PR run by the `Category=Redshift` trait, and it additionally
+it is excluded from the default PR run by the `Category=RedshiftStandIn` trait, and it additionally
 requires `HONUA_TEST_REDSHIFT=1` so a stray category filter does not start Docker. Because Redshift
 is PostgreSQL-wire-compatible and the SQL emitted for non-spatial reads, COUNT, object-id listings,
 and extent is also valid against PostGIS, the suite uses a PostGIS Testcontainer purely as a
@@ -214,7 +214,7 @@ wire-compatible stand-in to exercise the Npgsql connection factory and data-acce
 It does **not** prove Redshift-specific spatial semantics — that requires a real Redshift cluster.
 
 ```bash
-HONUA_TEST_REDSHIFT=1 dotnet test tests/dotnet/Honua.Db.Redshift.Tests --filter Category=Redshift
+HONUA_TEST_REDSHIFT=1 dotnet test tests/dotnet/Honua.Db.Redshift.Tests --filter Category=RedshiftStandIn
 ```
 
 ## Limitations and Known Gaps

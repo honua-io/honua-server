@@ -21,9 +21,9 @@ namespace Honua.Db.Redshift.Tests;
 /// PostGIS Testcontainer purely as a wire-compatible stand-in to exercise the Npgsql connection
 /// factory and data-access materialization. It does NOT prove Redshift-specific spatial semantics
 /// — that requires a real Redshift cluster.</para>
-/// <para>The suite is doubly gated: the <c>Category=Redshift</c> trait keeps it out of the default
+/// <para>The suite is doubly gated: the <c>Category=RedshiftStandIn</c> trait keeps it out of the default
 /// PR run, and <c>HONUA_TEST_REDSHIFT=1</c> must be set so a stray category filter does not start
-/// Docker on machines without it. To run: <c>HONUA_TEST_REDSHIFT=1 dotnet test --filter Category=Redshift</c>.</para>
+/// Docker on machines without it. To run: <c>HONUA_TEST_REDSHIFT=1 dotnet test --filter Category=RedshiftStandIn</c>.</para>
 /// </remarks>
 [Trait("Category", "RedshiftStandIn")]
 [Trait("Evidence", "PostGISWireCompatibility")]
