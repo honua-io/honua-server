@@ -41,7 +41,6 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public sealed class Wfs20EnablementTests
 {
     [Theory]
-    [UnitTest]
     [InlineData("mysql")]
     [InlineData("mariadb")]
     public void BuildOtherCrsIdentifiers_ProviderWithoutOutputTransformation_AdvertisesNone(string provider)
