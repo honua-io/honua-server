@@ -59,6 +59,7 @@ def _semantics(frame: geopandas.GeoDataFrame) -> list[tuple[str, str, str]]:
 
 @pytest.mark.parametrize("auth_mode", AUTHENTICATED_MODES, ids=lambda mode: mode.value)
 @pytest.mark.parametrize("suite", CORE_READ_SUITES)
+@pytest.mark.cert("CERT-AUTH-01")
 def test_core_analyst_read_authenticated_matches_anonymous_baseline(
     suite: str,
     auth_mode: AuthMode,
@@ -97,6 +98,7 @@ def test_core_analyst_read_authenticated_matches_anonymous_baseline(
 
 @pytest.mark.parametrize("credential", NEGATIVE_MODES)
 @pytest.mark.parametrize("suite", CORE_READ_SUITES)
+@pytest.mark.cert("CERT-AUTH-02")
 def test_core_analyst_read_invalid_credential_returns_protocol_challenge(
     suite: str,
     credential: str,

@@ -93,16 +93,36 @@ public sealed class Wfs20EnablementTests
         descriptors.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task GetPublishedFeatureTypesAsync_WithoutAccessEnforcement_StillAppliesTenantVisibility()
+    {
+        var provider = CreateProvider(
+            serviceProtocols: [MetadataV2ServiceProtocols.Wfs20],
+            tenant: "tenant-a");
+        var handler = CreateHandler(provider);
+        using var serviceProvider = CreateServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = serviceProvider };
+
+        var descriptors = await InvokeGetPublishedFeatureTypesAsync(
+            handler,
+            context,
+            enforceAccess: false);
+
+        descriptors.Should().BeEmpty(
+            "bypassing authorization policy must not expose another tenant's feature types");
+    }
+
     private static async Task<object[]> InvokeGetPublishedFeatureTypesAsync(
         Wfs20Handler handler,
-        HttpContext context)
+        HttpContext context,
+        bool enforceAccess = true)
     {
         var method = typeof(Wfs20Handler).GetMethod(
             "GetPublishedFeatureTypesAsync",
             BindingFlags.NonPublic | BindingFlags.Instance);
         method.Should().NotBeNull();
 
-        var task = (Task)method!.Invoke(handler, [context, CancellationToken.None])!;
+        var task = (Task)method!.Invoke(handler, [context, CancellationToken.None, enforceAccess])!;
         await task.ConfigureAwait(false);
         var result = task.GetType().GetProperty("Result")!.GetValue(task)!;
         return ((IEnumerable)result).Cast<object>().ToArray();
@@ -124,7 +144,8 @@ public sealed class Wfs20EnablementTests
 
     private static TestMetadataV2GraphProvider CreateProvider(
         IReadOnlyList<string> serviceProtocols,
-        MetadataV2LifecycleStatus publicationLifecycle = MetadataV2LifecycleStatus.Active)
+        MetadataV2LifecycleStatus publicationLifecycle = MetadataV2LifecycleStatus.Active,
+        string? tenant = null)
     {
         const int storageLayerId = 1;
         const string resourceId = "res-layer-1";
@@ -156,9 +177,23 @@ public sealed class Wfs20EnablementTests
             .Build();
         graph = graph with
         {
+            Resources = graph.Resources
+                .Select(resource => resource with
+                {
+                    Metadata = resource.Metadata with { Tenant = tenant }
+                })
+                .ToArray(),
+            Services = graph.Services
+                .Select(service => service with
+                {
+                    Metadata = service.Metadata with { Tenant = tenant }
+                })
+                .ToArray(),
+
             Publications = graph.Publications
                 .Select(publication => publication with
                 {
+                    Metadata = publication.Metadata with { Tenant = tenant },
                     Status = publication.Status with { Lifecycle = publicationLifecycle }
                 })
                 .ToArray()

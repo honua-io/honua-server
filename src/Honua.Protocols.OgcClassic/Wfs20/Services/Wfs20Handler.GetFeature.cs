@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Queries.Filters.Fes20;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Common;

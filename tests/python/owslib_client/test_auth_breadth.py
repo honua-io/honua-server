@@ -112,7 +112,6 @@ def test_core_read_suite_authenticated_matches_anonymous_baseline(
     if suite == "wfs":
         anonymous = WebFeatureService(lane_config.wfs_url, version="2.0.0")
         public_title = Features(lane_config.oaf_url).collection(lane_config.collection_id)["title"]
-        protected_id = os.getenv("HONUA_CERT_VECTOR_COLLECTION_ID", "10")
         baseline = json.loads(
             anonymous.getfeature(
                 typename=[_wfs_typename(anonymous, public_title)],

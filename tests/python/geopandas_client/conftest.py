@@ -453,6 +453,13 @@ def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | N
         return _ogc_features_evidence
     if "wfs" in module:
         return _wfs_evidence
+    if module == "test_auth_breadth":
+        suite = getattr(item, "callspec", None)
+        suite_name = suite.params.get("suite") if suite is not None else None
+        if suite_name == OGC_FEATURES_PROTOCOL:
+            return _ogc_features_evidence
+        if suite_name == WFS_PROTOCOL:
+            return _wfs_evidence
     return None
 
 
