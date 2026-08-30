@@ -2,11 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -53,6 +56,8 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     private string _nonCanonicalIdTableName = string.Empty;
     private string _serviceName = string.Empty;
     private int? _layerId;
+    private string? _importedTableName;
+    private string? _importedTableSchema;
 
     public async Task InitializeAsync()
     {
@@ -72,7 +77,90 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         await CleanupPublishedLayerAsync();
         await DeleteSecureConnectionAsync();
         await DropPostGisTableAsync();
+        await DropImportedTableAsync();
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Import)]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
+    public async Task PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile()
+    {
+        var logicalTableName = $"quickstart_points_{Guid.NewGuid():N}";
+        const string geoJson = """
+            {
+              "type": "FeatureCollection",
+              "features": [
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [-122.4194, 37.7749] }, "properties": { "name": "San Francisco" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [-122.4089, 37.7837] }, "properties": { "name": "Union Square" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [-122.4783, 37.8199] }, "properties": { "name": "Golden Gate" } }
+              ]
+            }
+            """;
+
+        using var upload = new MultipartFormDataContent();
+        var file = new StringContent(geoJson, Encoding.UTF8, "application/geo+json");
+        file.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+        {
+            Name = "File",
+            FileName = "quickstart-points.geojson"
+        };
+        upload.Add(file);
+        upload.Add(new StringContent(logicalTableName), "TableName");
+        upload.Add(new StringContent("4326"), "TargetSrid");
+
+        var uploadResponse = await _client.PostAsync("/api/v1/admin/import/upload", upload);
+        var uploadPayload = await uploadResponse.Content.ReadAsStringAsync();
+        uploadResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {uploadPayload}");
+        var importResult = JsonSerializer.Deserialize<ImportResult>(uploadPayload, _jsonOptions);
+        importResult.Should().NotBeNull();
+        importResult!.Success.Should().BeTrue();
+        importResult.FeatureCount.Should().Be(3);
+        importResult.Schema.Should().NotBeNullOrWhiteSpace();
+        importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
+        _importedTableSchema = importResult.Schema;
+        _importedTableName = importResult.PhysicalTableName;
+
+        var discoveryResponse = await _client.GetAsync($"/api/v1/admin/connections/{_connectionId}/tables");
+        var discoveryPayload = await discoveryResponse.Content.ReadAsStringAsync();
+        discoveryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {discoveryPayload}");
+        using var discoveryDocument = JsonDocument.Parse(discoveryPayload);
+        var discoveredTable = discoveryDocument.RootElement.GetProperty("data").EnumerateArray().Single(table =>
+            table.GetProperty("schema").GetString() == _importedTableSchema &&
+            table.GetProperty("table").GetString() == _importedTableName);
+        discoveredTable.GetProperty("estimatedRows").GetInt64().Should().Be(3);
+
+        var published = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _importedTableSchema,
+            Table = _importedTableName,
+            LayerName = $"Uploaded GeoJSON {logicalTableName}",
+            GeometryColumn = discoveredTable.GetProperty("geometryColumn").GetString(),
+            GeometryType = discoveredTable.GetProperty("geometryType").GetString(),
+            Srid = discoveredTable.GetProperty("srid").GetInt32(),
+            PrimaryKey = "id",
+            Fields = ["id", "properties"],
+            ServiceName = _serviceName,
+            Enabled = true
+        }, _connectionName);
+        _layerId = published.LayerId;
+
+        var queryResponse = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true");
+        var queryPayload = await queryResponse.Content.ReadAsStringAsync();
+        queryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {queryPayload}");
+        using var queryDocument = JsonDocument.Parse(queryPayload);
+        queryDocument.RootElement.GetProperty("features").GetArrayLength().Should().Be(3);
+
+        var tileResponse = await _client.GetAsync($"/tiles/{_layerId}/10/163/395.mvt");
+        tileResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await tileResponse.Content.ReadAsByteArrayAsync()).Should().NotBeEmpty();
     }
 
     [IntegrationTest]
@@ -1893,10 +1981,12 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         return api.Data!;
     }
 
-    private async Task<PublishedLayerSummary> PublishLayerAsync(PublishLayerRequest request)
+    private async Task<PublishedLayerSummary> PublishLayerAsync(
+        PublishLayerRequest request,
+        string? connectionReference = null)
     {
         var response = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
+            $"/api/v1/admin/connections/{connectionReference ?? _connectionId.ToString()}/layers",
             JsonContent.Create(request, options: _jsonOptions));
 
         var payload = await response.Content.ReadAsStringAsync();
@@ -2411,6 +2501,17 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             DROP TABLE IF EXISTS public.{_nonCanonicalIdTableName};
             """;
         await _fixture.Postgres.ExecuteDdlUnderLockAsync(sql);
+    }
+
+    private async Task DropImportedTableAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_importedTableSchema) || string.IsNullOrWhiteSpace(_importedTableName))
+        {
+            return;
+        }
+
+        await _fixture.Postgres.ExecuteDdlUnderLockAsync(
+            $"DROP TABLE IF EXISTS {_importedTableSchema}.{_importedTableName};");
     }
 
     private async Task<Guid> CreateTransientSecureConnectionAsync(string connectionString, string name)
