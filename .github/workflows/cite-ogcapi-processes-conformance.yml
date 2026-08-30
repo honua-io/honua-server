@@ -18,7 +18,7 @@ on:
 # is owned by server#3405 after seven complete greens.
 permissions:
   contents: read
-  packages: read
+  packages: write
 
 concurrency:
   group: cite-ogcapi-processes-conformance-${{ github.ref }}
