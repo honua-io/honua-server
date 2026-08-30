@@ -160,12 +160,13 @@ internal static class McpTestFactory
 
         public async Task<StudioDraftMutationReceipt<StudioContentVersion>> SaveVersionAsync(
             Guid draftId,
+            long expectedGeneration,
             string? changeNote,
             string? actorId,
             StudioDraftMutationContext context,
             CancellationToken cancellationToken = default) => Receipt(
                 await lifecycle.SaveDraftAsVersionAsync(
-                    draftId, changeNote, actorId, cancellationToken: cancellationToken).ConfigureAwait(false),
+                    draftId, changeNote, actorId, expectedGeneration, cancellationToken).ConfigureAwait(false),
                 "studio.draft.save-version");
 
         private static StudioDraftMutationReceipt<T> Receipt<T>(T? value, string operationId)
