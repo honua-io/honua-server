@@ -1688,6 +1688,18 @@ def test_trend_measures_the_consecutive_green_promotion_gate() -> None:
         "native_heads": 8,
     }
 
+    # v3 ledgers could count candidate-only routes that had never executed.
+    # Retained artifacts using those semantics must not seed a v4 sample.
+    legacy = daily(18)
+    legacy["contract"] = "honua.impact-routing-evidence-ledger/v3"
+    legacy["counts"]["docs_only_success_heads"] = 100
+    legacy["counts"]["native_countable_heads"] = 100
+    current_only = MODULE.trend([legacy, daily(19)], policy(), now)
+    assert current_only["largest_sample_within_generation"] == {
+        "docs_only_heads": 1,
+        "native_heads": 2,
+    }
+
     independent_maxima = MODULE.trend([
         {**daily(19), "counts": {
             "integrity_failures": 0, "docs_only_success_heads": 20,

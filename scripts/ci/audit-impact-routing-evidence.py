@@ -17,7 +17,10 @@ from typing import Any
 
 POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v3"
 INDEX_CONTRACT = "honua.impact-routing-evidence-index/v2"
-LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v3"
+# v4 resets retained trend samples after candidate-only, unexecuted routes
+# stopped being promotion-countable.  trend() accepts only the current contract,
+# so a v3 ledger cannot preserve the earlier countability semantics.
+LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v4"
 TOMBSTONE_CONTRACT = "honua.impact-routing-evidence-tombstones/v1"
 TREND_CONTRACT = "honua.impact-routing-evidence-trend/v1"
 PR_GATE_CONTRACT = "honua.pr-gate-impact-observation/v3"
