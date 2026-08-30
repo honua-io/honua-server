@@ -26,16 +26,6 @@
       "series": "honua_circuit_breaker_state_changes_total",
       "referenced_by": "docs/guides/deploy/examples/prometheus-alerts.yml (HonuaCircuitBreakerOpen)",
       "reason": "No component declares this instrument. Resilience circuit-breaker state is surfaced through health-check data, not a metric."
-    },
-    {
-      "series": "honua_span_duration_ms_bucket",
-      "referenced_by": "docker/monitoring/grafana/dashboards/honua-slow-traces.json",
-      "reason": "The dashboard is explicitly a placeholder: it needs a per-ActivitySource span-duration histogram that no meter declares. Its panels render blank today."
-    },
-    {
-      "series": "honua_span_duration_ms_count",
-      "referenced_by": "docker/monitoring/grafana/dashboards/honua-slow-traces.json",
-      "reason": "As honua_span_duration_ms_bucket."
     }
   ],
   "instruments": [
