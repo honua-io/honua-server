@@ -78,6 +78,9 @@ services:
   honua:
     build:
       context: .
+      secrets:
+        - github_actor
+        - github_token
     ports:
       # Bind to localhost by default (dev admin password is a public placeholder).
       - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_HTTP_PORT:-8080}:8080"
@@ -181,3 +184,9 @@ volumes:
   gp_redis_data:
   gp_honua_logs:
   gp_honua_cache:
+
+secrets:
+  github_actor:
+    environment: GITHUB_ACTOR
+  github_token:
+    environment: GITHUB_TOKEN

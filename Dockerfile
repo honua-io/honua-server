@@ -47,7 +47,8 @@ ARG HONUA_INCLUDE_SNOWFLAKE=
 # SC2086 suppression rationale: EXTRA_MSBUILD_ARGS holds multiple MSBuild flags that must
 # word-split into separate `-p:` arguments. Quoting collapses them into a single (invalid) argument.
 # hadolint ignore=SC2086
-RUN --mount=type=secret,id=github_actor \
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
         amd64) RUNTIME_ID="linux-x64" ;; \

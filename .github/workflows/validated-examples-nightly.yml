@@ -1,0 +1,42 @@
+name: Validated examples (advisory)
+
+on:
+  schedule:
+    - cron: "37 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  customer-paths:
+    name: ${{ matrix.scenario }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [stac-ops, mobile-offline, gp-local-dev]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify inventory completeness
+        run: python3 scripts/examples/generate-manifest.py --check
+      - name: Execute shipped example against local candidate
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          bash scripts/examples/validate-customer-paths.sh "${{ matrix.scenario }}" 2>&1 \
+            | tee validated-examples-${{ matrix.scenario }}.txt
+      - name: Capture Compose evidence
+        if: always()
+        run: |
+          docker ps -a >> validated-examples-${{ matrix.scenario }}.txt
+          docker compose ls >> validated-examples-${{ matrix.scenario }}.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validated-examples-${{ matrix.scenario }}
+          path: validated-examples-${{ matrix.scenario }}.txt
+          retention-days: 14

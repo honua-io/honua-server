@@ -1,11 +1,11 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (79 files). Other Honua repositories keep their own inventories;
+> repository (80 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-08-28.
+> Last updated: 2026-08-30.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -248,6 +248,7 @@ which is why both the run count and exact observed span are recorded.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
+| `validated-examples-nightly.yml` | Validated examples (advisory) | daily `schedule` (10:37 UTC), `workflow_dispatch` | Executes the STAC operations, mobile/offline, and local geoprocessing shipped examples against isolated, locally built candidate stacks. Verifies the checked-in example inventory first and retains per-scenario logs for 14 days. Advisory in wave 1; the manifest records scheduled coverage without claiming an unobserved pass. |
 | `flaky-detection.yml` | Flaky Test Detection | daily `schedule` (05:00 UTC), `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Reports only; it never gates. |
 | `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | daily `schedule` (04:00 UTC), `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
 | `load-soak-nightly.yml` | Load/Soak Nightly | daily `schedule` (03:00 UTC), `workflow_dispatch` | Scheduled load/soak tests. |
