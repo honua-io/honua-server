@@ -67,6 +67,7 @@ adapter — you can declare as many named providers of the same `Kind` as you wa
       {
         "KeyId": "studio-transcript-2026-07",
         "PublicKey": "<base64 Ed25519 public key>",
+        "NotBefore": "2026-08-15T00:00:00Z",
         "NotAfter": "2026-09-15T00:00:00Z"
       }
     ]
@@ -119,8 +120,9 @@ Notes:
   `studio_ai/provenance_signing_unavailable`.
 - **Rotation is overlap-window based.** The active public key is derived from the resolved seed and
   published with its SHA-256 fingerprint in the capabilities evidence. Public-only previous or
-  next keys may be listed under `OverlapKeys` with explicit `NotBefore`, `NotAfter`, and `Revoked`
-  policy. Private material is never included in capabilities, SSE events, logs, or receipts.
+  next keys may be listed under `OverlapKeys`; both `NotBefore` and `NotAfter` are required so every
+  overlap has an explicit bounded window, with `Revoked` carrying revocation policy. Private
+  material is never included in capabilities, SSE events, logs, or receipts.
 - **`anthropic` providers require HTTPS**; `openai`-kind providers may point at plain-HTTP localhost
   endpoints (Ollama/vLLM/LM Studio) — validated at startup by `StudioAiProxyConfigurationValidator`.
 - **`bedrock` providers need only a `Model`** (and optionally `Region`, default `us-west-2`) — no

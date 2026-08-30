@@ -194,6 +194,33 @@ public sealed class StudioAiProxyConfigurationTests
         result.FailureMessage.Should().Contain("NotBefore must be earlier than NotAfter");
     }
 
+    [UnitTest]
+    public void Validate_OverlapKeyWithoutCompleteWindow_FailsStartupValidation()
+    {
+        var options = ConfigWith("claude", new StudioAiProxyProviderOptions
+        {
+            Kind = StudioAiProxyConfiguration.AnthropicKind,
+            Endpoint = "https://api.anthropic.com",
+            Model = "claude-sonnet-4-5"
+        });
+        options.TranscriptSigning.KeyId = "active";
+        options.TranscriptSigning.PrivateKeyReference = "secret://transcript-signing-key";
+        options.TranscriptSigning.OverlapKeys =
+        [
+            new()
+            {
+                KeyId = "previous",
+                PublicKey = Convert.ToBase64String(new byte[32]),
+                NotAfter = new DateTimeOffset(2026, 9, 15, 0, 0, 0, TimeSpan.Zero)
+            }
+        ];
+
+        var result = new StudioAiProxyConfigurationValidator().Validate(name: null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("NotBefore is required to define the rotation overlap window");
+    }
+
     private static StudioAiProxyConfiguration ConfigWith(string name, StudioAiProxyProviderOptions provider) => new()
     {
         Enabled = true,
