@@ -71,6 +71,7 @@ internal sealed partial class Wfs20Handler
     private readonly IEditProcessor _editProcessor;
     private readonly OgcFeaturesGeometryServices _geometryServices;
     private readonly Wfs20Options _wfs20Options;
+    private readonly string? _dataSourceProvider;
     private readonly ICoordinateTransformService _coordinateTransformService;
     private readonly ICrsRegistry _crsRegistry;
     private readonly FeatureMutationValidator _mutationValidator;
@@ -92,6 +93,7 @@ internal sealed partial class Wfs20Handler
         _queryParameterAdapter = queryServices.QueryParameterAdapter;
         _queryProcessor = queryServices.QueryProcessor;
         _wfs20Options = queryServices.Wfs20Options;
+        _dataSourceProvider = queryServices.DataSourceProvider;
 
         _featureWriter = editServices.FeatureWriter;
         _editParameterAdapter = editServices.EditParameterAdapter;
@@ -657,7 +659,7 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (IsCrs84Request(srsName))
         {
             return SpatialReference.WGS84.Wkid;
         }
@@ -694,7 +696,7 @@ internal sealed partial class Wfs20Handler
             return resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         }
 
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (IsCrs84Request(srsName))
         {
             return SpatialReference.WGS84.Wkid;
         }

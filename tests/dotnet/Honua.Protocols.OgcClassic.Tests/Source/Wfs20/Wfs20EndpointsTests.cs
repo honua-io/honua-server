@@ -177,6 +177,53 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Operation(Operations.Metadata)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetCapabilities_AdvertisedCrs84IdentifiersAreAcceptedByGetFeature()
+    {
+        var capabilitiesResponse = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
+        var capabilitiesContent = await capabilitiesResponse.Content.ReadAsStringAsync();
+        capabilitiesResponse.StatusCode.Should().Be(HttpStatusCode.OK, capabilitiesContent);
+
+        var document = XDocument.Parse(capabilitiesContent);
+        var crs84Identifiers = document
+            .Descendants()
+            .Where(element => element.Name.LocalName == "OtherCRS")
+            .Select(element => element.Value)
+            .Where(value => value.Contains("CRS84", StringComparison.OrdinalIgnoreCase) ||
+                            value.Equals("CRS:84", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        crs84Identifiers.Should().BeEquivalentTo(
+            "CRS:84",
+            "urn:ogc:def:crs:OGC:1.3:CRS84",
+            "http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+
+        var acceptedCrs84Identifiers = crs84Identifiers.Concat(
+        [
+            "CRS84",
+            "OGC:CRS84",
+            "urn:ogc:def:crs:OGC::CRS84",
+            "urn:ogc:def:crs:OGC:CRS84"
+        ]);
+
+        foreach (var crs84Identifier in acceptedCrs84Identifiers)
+        {
+            var requestUri =
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1&SRSNAME={Uri.EscapeDataString(crs84Identifier)}";
+            var response = await _fixture.Client.GetAsync(requestUri);
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"GetFeature should accept advertised CRS '{crs84Identifier}': {content}");
+            content.Should().Contain("srsName=\"urn:ogc:def:crs:OGC:1.3:CRS84\"");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
     public async Task Wfs_GetCapabilities_AdvertisesStoredQueryManagementWithoutVersioningConformance()
     {
         var response = await _fixture.Client.GetAsync(
@@ -632,7 +679,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_GetCapabilities_UpdateSequenceCurrent_ReturnsCurrentUpdateSequence()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE=20260325");
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE=20260829");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);

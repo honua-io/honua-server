@@ -22,7 +22,8 @@ internal sealed class Wfs20QueryServices(
     IFilterExpressionService filterExpressionService,
     Wfs20QueryParameterAdapter queryParameterAdapter,
     IQueryProcessor queryProcessor,
-    IOptions<Wfs20Options> wfs20Options)
+    IOptions<Wfs20Options> wfs20Options,
+    IConfiguration configuration)
 {
     internal IFeatureReader FeatureReader { get; } = featureReader;
 
@@ -37,4 +38,6 @@ internal sealed class Wfs20QueryServices(
     internal IQueryProcessor QueryProcessor { get; } = queryProcessor;
 
     internal Wfs20Options Wfs20Options { get; } = wfs20Options?.Value ?? throw new ArgumentNullException(nameof(wfs20Options));
+
+    internal string? DataSourceProvider { get; } = configuration?["DataSource:Provider"];
 }
