@@ -118,4 +118,23 @@ if grep -Fq 'no exact-head review evidence from an attesting reviewer' "${REVIEW
 fi
 printf 'PASS: %s\n' "trusted Review Gate matches inverted admission vocabulary"
 
+# 6. Every controller that can write the durable train-state issue shares one
+# single-flight key. Read-only train observers must not enter that key: GitHub
+# keeps only one pending run in a group, so the 15-minute observer cadence would
+# otherwise evict a queued writer. These guards make a two-writer lost-update
+# interleaving structurally impossible at the workflow admission boundary.
+TRAIN_WORKFLOW="${TRAIN_DIR}/../../../.github/workflows/merge-train.yml"
+RECOVERY_WORKFLOW="${TRAIN_DIR}/../../../.github/workflows/merge-train-rerun-recovery.yml"
+WRITER_GROUP='merge-train-state-writers'
+grep -Fq "inputs.train_apply && '${WRITER_GROUP}'" "${TRAIN_WORKFLOW}" \
+  || fail "live train dispatch does not enter the state-writer single-flight group"
+grep -Fq "format('merge-train-read-only-{0}', github.run_id)" "${TRAIN_WORKFLOW}" \
+  || fail "read-only train observers can contend with or evict a state writer"
+grep -Fq "group: ${WRITER_GROUP}" "${RECOVERY_WORKFLOW}" \
+  || fail "rerun recovery does not enter the state-writer single-flight group"
+if grep -Fq 'Wait out any live merge-train dispatch' "${RECOVERY_WORKFLOW}"; then
+  fail "best-effort polling remains in place of atomic writer admission"
+fi
+printf 'PASS: %s\n' "concurrent train-state writers are single-flight"
+
 printf 'ALL PASS\n'
