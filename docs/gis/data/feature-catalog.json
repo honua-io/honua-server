@@ -7726,6 +7726,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_MultiProtocolService_ListedOncePerEsriType",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_RasterService_TypedAsImageServerNotFeatureServer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_VectorService_TypedAsFeatureServer",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory",
         "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_GeoServicesCatalog_MatchesGetStatusWithEmptyBodyAndContentLength"
       ],
       "proof_ledger_surface": "geoservices-catalog",
@@ -20375,7 +20377,10 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_Soap12_UsesSoap12EnvelopeAndContentType",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_SupportedOperations_ReturnExpectedResultWrapper",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoap_UnsupportedOperations_DoNotCreateAttackerControlledTelemetry",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_DtdPayload_ReturnsClientFault"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_DtdPayload_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.SoapCatalog_PublicBaseUrlProjectsWsdlSoapAndRestUrls"
       ],
       "proof_ledger_surface": "geoservices-catalog",
       "maturity": "implemented",
