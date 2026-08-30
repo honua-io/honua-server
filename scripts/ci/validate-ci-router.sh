@@ -776,6 +776,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "STAC and API Governance"
+assert_descriptor \
+  "endpoint-registry-includes-mcp-sessions" \
+  "src/Honua.Server/EndpointRegistry.cs" \
+  "targeted" \
+  "false" \
+  "MCP Sessions"
 assert_excludes_shard \
   "endpoint-registry-excludes-wfs-endpoints" \
   "src/Honua.Server/EndpointRegistry.cs" \
@@ -788,6 +794,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "FeatureServer Endpoints Query Services and Replication"
+assert_descriptor \
+  "program-registration-includes-mcp-sessions" \
+  "src/Honua.Server/Program.cs" \
+  "targeted" \
+  "false" \
+  "MCP Sessions"
 
 # Startup/JsonContextRegistration.cs sits under the infrastructure_paths prefix
 # src/Honua.Server/Startup/ but the override must WIN so a JSON-context tweak
@@ -798,6 +810,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "OData Core"
+assert_descriptor \
+  "jsoncontext-registration-includes-mcp-sessions" \
+  "src/Honua.Server/Startup/JsonContextRegistration.cs" \
+  "targeted" \
+  "false" \
+  "MCP Sessions"
 
 # The shared WMTS TopLeftCorner formatter has three bounded consumers. Keep a
 # change to that exact file on the classic WMTS, OGC API Tiles, and ImageServer
