@@ -86,7 +86,7 @@ internal static class OperationsServiceCollectionExtensions
 
         // Executors: concrete work, registered as an enumerable for the dispatcher.
         services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
+            ServiceDescriptor.Scoped<IOperationExecutor, DeferredServicePublishExecutor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftCreateExecutor>());
