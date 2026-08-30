@@ -125,6 +125,30 @@ internal static class OperationsServiceCollectionExtensions
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 
+        if (hasProposalStore &&
+            !services.Any(descriptor => descriptor.ServiceType == typeof(AdminApiOperationRegistrationMarker)))
+        {
+            services.AddSingleton<AdminApiOperationRegistrationMarker>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider,
+                AdminApiOperationDescriptorProvider>());
+            foreach (var definition in AdminApiOperationCatalog.Definitions)
+            {
+                if (definition.Destructive)
+                {
+                    services.AddSingleton<IOperationApprovalRequestMapper>(
+                        new AdminApiOperationApprovalRequestMapper(definition));
+                }
+                services.AddScoped<IOperationExecutor>(sp => new AdminApiOperationExecutor(
+                    definition,
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetRequiredService<IHttpContextAccessor>(),
+                    sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
+                    sp.GetRequiredService<TimeProvider>()));
+            }
+            services.AddHttpClient(AdminApiOperationExecutor.HttpClientName);
+            services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+        }
+
         // Legacy adapters register UNCONDITIONALLY and resolve their control-plane
         // actuator at USE time. The former registration-time services.Any gate was
         // an ordering snapshot: hosts that register control-plane executors after
@@ -197,4 +221,5 @@ internal static class OperationsServiceCollectionExtensions
     internal sealed class LegacyAdapterRegistrationMarker;
 
     internal sealed class AdminConnectImportRegistrationMarker;
+    internal sealed class AdminApiOperationRegistrationMarker;
 }

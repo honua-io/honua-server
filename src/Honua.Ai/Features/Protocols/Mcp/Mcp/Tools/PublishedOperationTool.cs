@@ -183,6 +183,7 @@ internal sealed class PublishedOperationTool : IMcpTool
 
         var parameters = ReadParameters(arguments);
         var dryRun = ReadBool(arguments, "dryRun");
+
         var cacheKey = IsCacheable && !dryRun
             ? IPublishedOperationCache.BuildKey(_descriptor.OperationId, _catalogVersion, parameters, context)
             : null;

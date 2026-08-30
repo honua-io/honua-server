@@ -4,6 +4,8 @@
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -205,6 +207,30 @@ public sealed class PublishedOperationToolTests
     }
 
     // ---- Governance through the policy decision point --------------------------
+
+    [UnitTest]
+    [Endpoint("POST /mcp tools/call honua_op_geo_export")]
+    public async Task Invoke_OperatorGate_FailsClosedWithoutExecuting()
+    {
+        var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
+        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+
+        var result = await tool.InvokeAsync(
+            Context(
+                invoker,
+                gateApproval: ApprovalRequirement.Required(
+                    "operator.publish",
+                    "publish-requires-approval")),
+            Args("""{"layerId":"7"}"""),
+            CancellationToken.None);
+
+        var body = result.StructuredContent!.Value;
+        result.IsError.Should().BeTrue();
+        body.GetProperty("status").GetString().Should().Be("error");
+        body.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        body.GetProperty("policyRef").GetString().Should().Be($"operations/{MutatingOpId}");
+        invoker.SubmitCount.Should().Be(0, "operator-gated MCP operations must fail closed before dispatch");
+    }
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
@@ -694,7 +720,8 @@ public sealed class PublishedOperationToolTests
         IAuthorizationService? authorization = null,
         string[]? roles = null,
         string principalName = "agent-x",
-        string? tenantId = null)
+        string? tenantId = null,
+        ApprovalRequirement? gateApproval = null)
     {
         var services = new ServiceCollection();
         if (invoker is not null)
@@ -723,6 +750,15 @@ public sealed class PublishedOperationToolTests
         {
             services.AddSingleton(authorization);
         }
+
+        var authEvaluator = Substitute.For<IOperatorAuthorizationEvaluator>();
+        var approvalEvaluator = Substitute.For<IOperatorApprovalEvaluator>();
+        approvalEvaluator.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(gateApproval ?? ApprovalRequirement.NotRequired());
+        services.AddSingleton(new OperatorApprovalGate(
+            authEvaluator,
+            approvalEvaluator,
+            NullLogger<OperatorApprovalGate>.Instance));
 
         var claims = new List<Claim>
         {

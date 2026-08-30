@@ -206,7 +206,7 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
-    public void AddOperationsToolset_RegistersLaneAOnlyWithDurableProposalStore_AndIsIdempotent()
+    public void AddOperationsToolset_RegistersLaneAAndLaneBOnlyWithDurableProposalStore_AndIsIdempotent()
     {
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns(Environments.Production);
@@ -218,6 +218,10 @@ public sealed class OperationsToolsetTests
             descriptor.ImplementationType == typeof(AdminConnectImportOperationDescriptorProvider));
         degraded.Should().NotContain(descriptor => descriptor.ServiceType ==
             typeof(OperationsServiceCollectionExtensions.AdminConnectImportRegistrationMarker));
+        degraded.Should().NotContain(descriptor =>
+            descriptor.ImplementationType == typeof(AdminApiOperationDescriptorProvider));
+        degraded.Should().NotContain(descriptor => descriptor.ServiceType ==
+            typeof(OperationsServiceCollectionExtensions.AdminApiOperationRegistrationMarker));
 
         var composed = new ServiceCollection();
         composed.AddSingleton(Substitute.For<IOperationProposalStore>());
@@ -226,11 +230,14 @@ public sealed class OperationsToolsetTests
 
         composed.Count(descriptor => descriptor.ImplementationType ==
             typeof(AdminConnectImportOperationDescriptorProvider)).Should().Be(1);
+        composed.Count(descriptor => descriptor.ImplementationType ==
+            typeof(AdminApiOperationDescriptorProvider)).Should().Be(1);
         composed.Count(descriptor => descriptor.ServiceType == typeof(IOperationExecutor) &&
             descriptor.ImplementationFactory != null).Should().Be(
                 AdminConnectImportOperationCatalog.Definitions.Count +
+                AdminApiOperationCatalog.Definitions.Count +
                 (AdminOperateOperationCatalog.Definitions.Count * 2) + 4,
-                "Lane A is idempotent, Lane D composes on each call, and the four legacy adapters remain unique");
+                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters remain unique");
     }
 
     [UnitTest]
@@ -340,6 +347,31 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task LaneB_AdminOperations_RoundTrip_FromCatalog_ToPublishedTools_WhenEnabled()
+    {
+        var catalog = new OperationCatalog([new AdminApiOperationDescriptorProvider()], TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: AdminApiOperationCatalog.Definitions
+                .Where(static definition => definition.Destructive)
+                .Select(static definition => new AdminApiOperationApprovalRequestMapper(definition)));
+
+        var snapshot = await catalog.GetSnapshotAsync(CancellationToken.None);
+        var laneBDescriptors = snapshot.Operations
+            .Where(operation => AdminApiOperationCatalog.Definitions.Any(definition => definition.OperationId == operation.OperationId))
+            .ToArray();
+        var publishedNames = (await source.GetToolsAsync(CancellationToken.None)).Select(static tool => tool.Name);
+
+        laneBDescriptors.Should().HaveCount(AdminApiOperationCatalog.Definitions.Count);
+        publishedNames.Should().BeEquivalentTo(
+            laneBDescriptors.Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId)));
+        laneBDescriptors.Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
+            .Should().OnlyContain(static descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+    }
+
+    [UnitTest]
     public void LaneD_DescriptorSchemas_DiffCleanlyAgainstAdminApiComponents()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(
@@ -354,6 +386,110 @@ public sealed class OperationsToolsetTests
             descriptor.InputSchema.Should().NotBeNull();
             descriptor.OutputSchema.Should().NotBeNull();
         }
+    }
+
+    [UnitTest]
+    public void LaneB_DescriptorSchemas_AreProjectedFromAdminApiComponents()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            Honua.TestKit.RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+
+        foreach (var definition in AdminApiOperationCatalog.Definitions)
+        {
+            var operation = AdminApiOperationCatalog.FindOperation(document.RootElement, definition.OpenApiOperationId);
+            operation.GetProperty("operationId").GetString().Should().Be(definition.OpenApiOperationId);
+            AdminApiOperationCatalog.Descriptors.Should().ContainSingle(
+                descriptor => descriptor.OperationId == definition.OperationId,
+                "every lane-B descriptor must be built from an operation in admin-api.json");
+        }
+    }
+
+    [UnitTest]
+    public void LaneB_ApprovalPayload_PersistsRequesterTenantAndSchema()
+    {
+        var definition = AdminApiOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.layer.set-enabled");
+        var mapper = new AdminApiOperationApprovalRequestMapper(definition);
+        var descriptor = AdminApiOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var request = new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            ConnectionId = "connection-1",
+            Parameters = new Dictionary<string, string?>
+            {
+                ["layerId"] = "7",
+                ["enabled"] = "true"
+            }
+        };
+
+        var mapped = mapper.Map(descriptor, request, new OperationPolicyContext
+        {
+            TenantId = "requester-tenant",
+            SchemaName = "tenant_schema"
+        }, new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var replay = mapper.MapReplay(mapped);
+
+        replay.TenantId.Should().Be("requester-tenant");
+        replay.SchemaName.Should().Be("tenant_schema");
+        replay.Request.ConnectionId.Should().Be("connection-1");
+        replay.Request.Parameters.Should().Contain("layerId", "7").And.Contain("enabled", "true");
+    }
+
+    [UnitTest]
+    public async Task LaneB_ApprovedReplay_MintsScopedCredential_AndUsesRequesterTenant()
+    {
+        var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var approver = await credentialStore.CreateAsync(
+            "approve-only", ["admin:approve"], null, "approver", CancellationToken.None);
+        AdminApiKeyValidationResult? executionAuthority = null;
+        var handler = new CapturingOperationHandler(async request =>
+        {
+            var executionKey = request.Headers.GetValues("X-API-Key").Single();
+            executionKey.Should().NotBe(approver.Key);
+            request.Headers.GetValues("X-Honua-Tenant").Should().Equal("requester-tenant");
+            executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}")
+            };
+        });
+        var factory = Substitute.For<IHttpClientFactory>();
+        using var httpClient = new HttpClient(handler);
+        factory.CreateClient(AdminApiOperationExecutor.HttpClientName).Returns(httpClient);
+        var current = new DefaultHttpContext();
+        current.Request.Scheme = "https";
+        current.Request.Host = new HostString("localhost");
+        current.Request.Headers["X-API-Key"] = approver.Key;
+        current.Request.Headers["X-Honua-Tenant"] = "approver-tenant";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(current);
+        var definition = AdminApiOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.layer.set-enabled");
+        var executor = new AdminApiOperationExecutor(
+            definition, factory, accessor, credentialStore, TimeProvider.System);
+
+        var handle = await executor.SubmitAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            ConnectionId = "connection-1",
+            Parameters = new Dictionary<string, string?>
+            {
+                ["layerId"] = "7",
+                ["enabled"] = "true"
+            }
+        }, new OperationPolicyContext
+        {
+            ApprovedProposalId = "proposal-1",
+            TenantId = "requester-tenant",
+            PrincipalId = "requester"
+        }, CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        executionAuthority.Should().NotBeNull();
+        executionAuthority!.Record.Permissions.Should().Equal("admin:write");
+        (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
+            .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
 
     [UnitTest]
