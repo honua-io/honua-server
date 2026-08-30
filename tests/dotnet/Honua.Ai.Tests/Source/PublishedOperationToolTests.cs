@@ -210,7 +210,7 @@ public sealed class PublishedOperationToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
-    public async Task Invoke_OperatorGateRequiresApproval_ReturnsWithoutExecuting()
+    public async Task Invoke_OperatorGate_FailsClosedWithoutExecuting()
     {
         var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
         var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
@@ -225,10 +225,11 @@ public sealed class PublishedOperationToolTests
             CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
-        body.GetProperty("status").GetString().Should().Be("RequiresApproval");
-        body.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
-        body.GetProperty("approvalLane").GetString().Should().Be("operator.publish");
-        invoker.SubmitCount.Should().Be(0, "the operator gate must run before dispatch");
+        result.IsError.Should().BeTrue();
+        body.GetProperty("status").GetString().Should().Be("error");
+        body.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        body.GetProperty("policyRef").GetString().Should().Be($"operations/{MutatingOpId}");
+        invoker.SubmitCount.Should().Be(0, "operator-gated MCP operations must fail closed before dispatch");
     }
 
     [UnitTest]
