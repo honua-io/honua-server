@@ -140,8 +140,9 @@ public sealed class AlertWebhookDeliveryE2eTests
                 certificate.GetCertHashString(HashAlgorithmName.SHA256),
                 trustedCertificateHash,
                 StringComparison.Ordinal);
+        var client = new HttpClient(handler);
         var sink = new WebhookAlertDeliverySink(
-            new SingleClientFactory(new HttpClient(handler)),
+            new SingleClientFactory(client),
             options,
             new AlertDestinationGuard(static (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") })));
 
@@ -229,7 +230,7 @@ public sealed class AlertWebhookDeliveryE2eTests
             metrics,
             NullLogger<AlertDispatchBackgroundService>.Instance);
 
-        return new AlertE2eHarness(pipeline, dispatcher, store, provider, handler);
+        return new AlertE2eHarness(pipeline, dispatcher, store, provider, client);
     }
 
     private static string ReserveUnavailableHttpsUrl()
@@ -246,7 +247,7 @@ public sealed class AlertWebhookDeliveryE2eTests
         AlertDispatchBackgroundService dispatcher,
         InMemoryAlertOutbox store,
         ServiceProvider provider,
-        SocketsHttpHandler handler) : IAsyncDisposable
+        HttpClient client) : IAsyncDisposable
     {
         public InMemoryAlertOutbox Store { get; } = store;
 
@@ -269,7 +270,7 @@ public sealed class AlertWebhookDeliveryE2eTests
         {
             await dispatcher.StopAsync(CancellationToken.None);
             await provider.DisposeAsync();
-            handler.Dispose();
+            client.Dispose();
         }
     }
 
