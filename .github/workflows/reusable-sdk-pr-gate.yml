@@ -90,9 +90,11 @@ jobs:
           python-version: ${{ inputs.python-version }}
           cache: 'pip'
 
-      - name: Cache NuGet
+      # This workflow serves PR gates. Restore the caller repository's default-
+      # branch cache, but never create a branch-scoped duplicate from a PR ref.
+      - name: Restore NuGet cache
         if: inputs.dotnet-version != ''
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ~/.nuget/packages
           key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
