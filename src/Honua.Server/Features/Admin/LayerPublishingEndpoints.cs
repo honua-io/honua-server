@@ -191,7 +191,7 @@ internal static class LayerPublishingEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("Database migration failed."));
             }
 
-            var connectionId = Guid.TryParse(id, out var parsedId) ? parsedId : (Guid?)null;
+            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
             var publishRequest = new LayerPublishRequest
             {
                 Schema = request.Schema,
@@ -659,6 +659,18 @@ internal static class LayerPublishingEndpoints
         }
 
         return await resolver.ResolveConnectionStringAsync(id, cancellationToken);
+    }
+
+    private static async Task<Guid?> ResolveConnectionIdAsync(string id, HttpContext context)
+    {
+        if (Guid.TryParse(id, out var parsedId))
+        {
+            return parsedId;
+        }
+
+        var registry = context.RequestServices.GetRequiredService<ISecureConnectionRegistry>();
+        var connection = await registry.GetConnectionByNameAsync(id, context.RequestAborted).ConfigureAwait(false);
+        return connection?.ConnectionId;
     }
 
     private static async Task InvalidateServiceCatalogCacheAsync(
