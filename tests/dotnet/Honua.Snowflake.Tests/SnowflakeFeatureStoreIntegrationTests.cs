@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Snowflake.Features.FeatureStore;
 using Honua.Snowflake.Features.FeatureStore.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -14,7 +15,7 @@ namespace Honua.Snowflake.Tests;
 
 /// <summary>
 /// Integration tests against a live Snowflake account. Gated behind <c>HONUA_TEST_SNOWFLAKE=1</c>
-/// plus <c>HONUA_SNOWFLAKE_TEST_CONNECTION</c>; they no-op (skip) in normal CI so the suite stays
+/// plus <c>HONUA_SNOWFLAKE_TEST_CONNECTION</c>; they report an explicit credential skip in normal CI so the suite stays
 /// hermetic. Configure a Snowflake account with a table whose schema matches the test publication
 /// below (<c>ANALYTICS.PUBLIC.PARCELS</c> with an OBJECTID key and a GEOGRAPHY column named SHAPE).
 /// </summary>
@@ -25,52 +26,28 @@ public sealed class SnowflakeFeatureStoreIntegrationTests
     private const string EnableEnvVar = "HONUA_TEST_SNOWFLAKE";
     private const string ConnectionEnvVar = "HONUA_SNOWFLAKE_TEST_CONNECTION";
 
-    private static bool TryGetConnectionString(out string connectionString)
+    [RequiredEnvironmentVariablesFact(EnableEnvVar, ConnectionEnvVar)]
+    public async Task Count_OnLiveSnowflakeTable_ReturnsRows()
     {
-        connectionString = string.Empty;
-        if (!string.Equals(Environment.GetEnvironmentVariable(EnableEnvVar), "1", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        var cs = Environment.GetEnvironmentVariable(ConnectionEnvVar);
-        if (string.IsNullOrWhiteSpace(cs))
-        {
-            return false;
-        }
-
-        connectionString = cs;
-        return true;
-    }
-
-    [Fact]
-    public async Task Count_OnLiveSnowflakeTable_ReturnsNonNegativeCount()
-    {
-        if (!TryGetConnectionString(out var connectionString))
-        {
-            return; // Hermetic CI: gated off unless HONUA_TEST_SNOWFLAKE=1 and a connection string are present.
-        }
-
+        var connectionString = Environment.GetEnvironmentVariable(ConnectionEnvVar)!;
         var reader = CreateBoundReader(connectionString);
 
         var count = await reader.CountAsync(LayerId, new FeatureQuery());
 
-        Assert.True(count >= 0);
+        Assert.True(count > 0, "The configured live fixture must contain at least one row.");
     }
 
-    [Fact]
+    [RequiredEnvironmentVariablesFact(EnableEnvVar, ConnectionEnvVar)]
     public async Task Query_OnLiveSnowflakeTable_ReturnsFeaturesWithGeometry()
     {
-        if (!TryGetConnectionString(out var connectionString))
-        {
-            return;
-        }
-
+        var connectionString = Environment.GetEnvironmentVariable(ConnectionEnvVar)!;
         var reader = CreateBoundReader(connectionString);
 
         var result = await reader.QueryAsync(LayerId, new FeatureQuery { Limit = 1 });
 
-        Assert.True(result.Features.Length <= 1);
+        var feature = Assert.Single(result.Features);
+        Assert.NotNull(feature.Geometry);
+        Assert.NotEmpty(feature.Geometry);
     }
 
     private static IFeatureReader CreateBoundReader(string connectionString)

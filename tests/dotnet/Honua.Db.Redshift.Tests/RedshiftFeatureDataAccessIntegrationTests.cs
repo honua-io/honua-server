@@ -11,7 +11,7 @@ using Testcontainers.PostgreSql;
 namespace Honua.Db.Redshift.Tests;
 
 /// <summary>
-/// Gated integration tests for the Redshift Npgsql data-access path.
+/// Gated PostGIS stand-in tests for the Redshift Npgsql data-access path.
 /// </summary>
 /// <remarks>
 /// <para>There is no official Amazon Redshift Testcontainer image. Because Redshift speaks the
@@ -25,7 +25,8 @@ namespace Honua.Db.Redshift.Tests;
 /// PR run, and <c>HONUA_TEST_REDSHIFT=1</c> must be set so a stray category filter does not start
 /// Docker on machines without it. To run: <c>HONUA_TEST_REDSHIFT=1 dotnet test --filter Category=Redshift</c>.</para>
 /// </remarks>
-[Trait("Category", "Redshift")]
+[Trait("Category", "RedshiftStandIn")]
+[Trait("Evidence", "PostGISWireCompatibility")]
 public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
 {
     private const string TestRedshiftEnvVar = "HONUA_TEST_REDSHIFT";
@@ -115,7 +116,7 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
         }
     }
 
-    [RequiredEnvironmentFact(TestRedshiftEnvVar, "1", skipReason: "Set HONUA_TEST_REDSHIFT=1 to run Redshift (PostgreSQL-wire stand-in) integration tests.")]
+    [RequiredEnvironmentFact(TestRedshiftEnvVar, "1", skipReason: "stand-in-not-enabled:HONUA_TEST_REDSHIFT")]
     public async Task Count_Select_ObjectIds_Extent_RoundTripOverNpgsql()
     {
         var query = new FeatureQuery();
@@ -144,7 +145,7 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
         Assert.True(extentValue.MinY < extentValue.MaxY);
     }
 
-    [RequiredEnvironmentFact(TestRedshiftEnvVar, "1", skipReason: "Set HONUA_TEST_REDSHIFT=1 to run Redshift (PostgreSQL-wire stand-in) integration tests.")]
+    [RequiredEnvironmentFact(TestRedshiftEnvVar, "1", skipReason: "stand-in-not-enabled:HONUA_TEST_REDSHIFT")]
     public async Task Select_WithWhereFilter_ReturnsSubset()
     {
         var query = new FeatureQuery { Where = "type = 'commercial'" };
@@ -153,5 +154,36 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
             _mapping, RedshiftFeatureQueryBuilder.BuildCountQuery(_mapping, query), dataConnection: null, CancellationToken.None);
 
         Assert.True(count is > 0 and < 10);
+    }
+}
+
+/// <summary>
+/// Live sentinel tests that prove the configured connection reaches Amazon Redshift and executes
+/// Redshift spatial functions. These tests are separate from the PostGIS wire stand-in evidence.
+/// </summary>
+[Trait("Category", "RedshiftLive")]
+[Trait("Evidence", "RealWarehouse")]
+public sealed class RedshiftLiveIntegrationTests
+{
+    internal const string ConnectionEnvVar = "HONUA_REDSHIFT_TEST_CONNECTION";
+
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "missing-credential:HONUA_REDSHIFT_TEST_CONNECTION")]
+    public async Task SpatialRoundTrip_ExecutesOnAmazonRedshift()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(ConnectionEnvVar)!;
+        await using var connection = new Npgsql.NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        await using var versionCommand = connection.CreateCommand();
+        versionCommand.CommandText = "SELECT version()";
+        var version = Assert.IsType<string>(await versionCommand.ExecuteScalarAsync());
+        Assert.Contains("Redshift", version, StringComparison.OrdinalIgnoreCase);
+
+        await using var spatialCommand = connection.CreateCommand();
+        spatialCommand.CommandText = "SELECT ST_AsText(ST_GeomFromText('POINT(-122.335167 47.608013)', 4326))";
+        var roundTrip = Assert.IsType<string>(await spatialCommand.ExecuteScalarAsync());
+        Assert.Contains("POINT", roundTrip, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("-122.335167", roundTrip, StringComparison.Ordinal);
+        Assert.Contains("47.608013", roundTrip, StringComparison.Ordinal);
     }
 }
