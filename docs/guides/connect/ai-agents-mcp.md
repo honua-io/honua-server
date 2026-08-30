@@ -144,6 +144,14 @@ A view is **discovery, not authority**:
 - The complete paginated catalog stays available: omit the view, or pass the reserved name `full`, which also overrides a session or profile default. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
 - Members carry the **exact** canonical description, annotations, and input/output schemas the full catalog serves; nothing is truncated or re-described.
 
+Studio composition and lifecycle members also carry server-owned routing metadata in
+their canonical descriptor. `_meta["honua.studio"]` identifies the
+`honua.studio.composition` family, the `setup` view, and its revision. Terminal
+and SDK clients can therefore route the live family without a hard-coded tool-name
+table; unclassified tools are not implicitly part of that family. The metadata is
+identical in the full catalog and the narrowed view, and remains discovery-only —
+it never widens call-time authorization.
+
 Membership is derived from the live catalog, so an eligible server operation that appears (or disappears) at runtime joins or leaves the view with no client or SDK source-list edit. Runtime-published members are appended after the static ones so a mid-conversation `notifications/tools/list_changed` refresh does not re-sort the `tools` array and invalidate a host's prompt cache.
 
 ## Pagination
