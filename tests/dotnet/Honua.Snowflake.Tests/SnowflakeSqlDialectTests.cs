@@ -60,6 +60,8 @@ public class SnowflakeSqlDialectTests
     [InlineData("1col", false)]
     [InlineData("col; DROP", false)]
     [InlineData("col-name", false)]
+    [InlineData("OBJECTID\n", false)]
+    [InlineData("OBJECTID\r\n", false)]
     [InlineData("", false)]
     public void Identifier_IsValid_MatchesAllowList(string value, bool expected)
     {

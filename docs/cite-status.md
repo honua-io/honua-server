@@ -1,6 +1,6 @@
 # CITE Status — Authoritative Snapshot
 
-Last reviewed: 2026-08-12
+Last reviewed: 2026-08-28
 Owner: Honua Server platform
 
 This page is the single fixed-path answer to "what is the current OGC CITE
@@ -31,28 +31,31 @@ directory — check the workflow.
 ## Current Per-Protocol Status
 
 Snapshot copied from
-[CITE Evidence Report run 31609659377](https://github.com/honua-io/honua-server/actions/runs/31609659377)
-on `trunk@eee76952f08d68e78b93b11b3acedac655625d62`, completed
-2026-08-12T15:29:44Z. The fully green run's `cite-conformance-evidence-10`
-bundle reported `allPassed=true`: 1117 passed, 0
-failed, 0 skipped, 0 CantTell. (This run also validates the hermetic
+[CITE Evidence Report run 33205558805](https://github.com/honua-io/honua-server/actions/runs/33205558805)
+on `trunk@f5ac595ee5e3d4bce3df3c726ca1127ca4e2da0f`, completed
+2026-08-28T20:25:07Z. The run failed only at its final snapshot-freshness
+check; the successfully generated `cite-conformance-evidence-13` bundle
+reported `allPassed=true`: 1138 passed, 0 failed, 0 skipped, 0 CantTell. This
+page records the artifact's conformance result, not a successful workflow-run
+conclusion. (The artifact also validates the hermetic
 OGC test-data stub from #3169 end-to-end on trunk; see #3156.)
 
 | Suite | Profile | Passed / Total | Pass Rate | Last Evidence Run |
 |---|---|---:|---:|---|
-| OGC API Features 1.0 | `default` | 137 / 137 | 100% | 2026-08-12 |
-| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | 2026-08-12 |
-| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | 2026-08-12 |
-| GML 3.2 | `applicable` | 17 / 17 | 100% | 2026-08-12 |
-| KML 2.2 | `applicable` | 42 / 42 | 100% | 2026-08-12 |
-| WFS 1.0 | `basic` | 162 / 162 | 100% | 2026-08-12 |
-| WFS 1.1 | `basic` | 39 / 39 | 100% | 2026-08-12 |
-| WFS 2.0 | `basic` | 167 / 167 | 100% | 2026-08-12 |
-| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | 2026-08-12 |
-| WCS 2.0 | `core` | 82 / 82 | 100% | 2026-08-12 |
-| WMS 1.1.1 | `default` | 126 / 126 | 100% | 2026-08-12 |
-| WMS 1.3 | `default` | 213 / 213 | 100% | 2026-08-12 |
-| WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-08-12 |
+| OGC API Features 1.0 | `default` | 137 / 137 | 100% | 2026-08-28 |
+| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | 2026-08-28 |
+| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | 2026-08-28 |
+| GML 3.2 | `applicable` | 17 / 17 | 100% | 2026-08-28 |
+| KML 2.2 | `applicable` | 42 / 42 | 100% | 2026-08-28 |
+| WFS 1.0 | `basic` | 162 / 162 | 100% | 2026-08-28 |
+| WFS 1.1 | `basic` | 39 / 39 | 100% | 2026-08-28 |
+| WFS 2.0 | `basic` | 167 / 167 | 100% | 2026-08-28 |
+| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | 2026-08-28 |
+| WCS 2.0 | `core` | 82 / 82 | 100% | 2026-08-28 |
+| WPS 2.0 | `basic-async` | 21 / 21 | 100% | 2026-08-28 |
+| WMS 1.1.1 | `default` | 126 / 126 | 100% | 2026-08-28 |
+| WMS 1.3 | `default` | 213 / 213 | 100% | 2026-08-28 |
+| WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-08-28 |
 
 The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures the
 Transaction + LockFeature conformance classes independently from the `basic`
@@ -64,7 +67,7 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 ### Common Re-Grading Mistakes To Avoid
 
 - **"WFS 2.0 CITE is 75% pass."** Incorrect. The `basic` profile is 167/167
-  (100%) on the 2026-08-12 evidence run. The 75% figure does not match any
+  (100%) on the 2026-08-28 evidence run. The 75% figure does not match any
   published or archived result on `trunk` — likely a confusion with a
   partial-run diagnostic, an older branch, or the GML 3.2 `default` profile
   that intentionally loads inapplicable classes.
@@ -102,13 +105,15 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
   conformance-class leg.
 - **WCS 2.0 `core`** — official ETS core profile, with preflight on
   `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`.
+- **WPS 2.0 `basic-async`** — official ETS Basic and Asynchronous conformance
+  classes against the canonical process/job runtime.
 - **WMS 1.1.1 / 1.3 `default`** — the official ETS default profiles.
 - **WMTS 1.0 `default`** — the official ETS default profile.
 
 ## OGC API surfaces without an official CITE ETS
 
 Some OGC API standards do not (yet) have an official CITE Executable Test Suite,
-so they are not part of the 1117/1117 suite count above. They are still shipped as
+so they are not part of the 1138/1138 suite count above. They are still shipped as
 conformant protocol adapters and proven with targeted integration tests plus an
 accurate `/conformance` declaration:
 
@@ -119,7 +124,7 @@ accurate `/conformance` declaration:
   Phase 1 disclosure that POST/DELETE returned `501` no longer applies).
   MapLibre is served from canonical storage; SLD 1.0/1.1 are derived on demand.
   **Conformance status: there is no official OGC API – Styles CITE/ETS
-  executable test suite yet**, so this surface is not part of the 1117/1117 count
+  executable test suite yet**, so this surface is not part of the 1138/1138 count
   above and there is no external pass-rate to report. Honua's status is proven
   by internal integration tests that exercise every claimed conformance class —
   `GetConformance_ListsThePhase1ConformanceClasses` asserts all six classes are
@@ -134,9 +139,13 @@ accurate `/conformance` declaration:
   working but emit advisory `Deprecation`/`Sunset` headers pending removal.
   See [`docs/gis/style-engine-protocol-consumption.md`](guides/style/style-maps.md).
 
-### WPS 2.0.2 onboarding evidence
+### WPS 2.0.2 evidence
 
-WPS 2.0 Basic and Async conformance has substantive pre-integration evidence in [workflow run 32229195554](https://github.com/honua-io/honua-server/actions/runs/32229195554): 21/21 selected assertions passed, with 22/22 raw assertions passing when the Sync class is included. The ETS source is pinned to `e2acc691440fad98d32e873a6b7237c9d759b8df`. WPS is now part of the weekly/manual aggregate workflow and will be included in the authoritative aggregate totals after the first combined run. Until then, the latest single-run aggregate above remains 1,117/1,117 across 13 suites.
+WPS 2.0 Basic and Async conformance is included in the authoritative aggregate
+above: 21/21 selected assertions passed, with 22/22 raw assertions passing when
+the unselected Sync class is included. The ETS source is pinned to
+`e2acc691440fad98d32e873a6b7237c9d759b8df`.
+
 ## How To Refresh This Page
 
 The

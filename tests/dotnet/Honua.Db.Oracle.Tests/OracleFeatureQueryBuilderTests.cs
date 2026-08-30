@@ -436,6 +436,15 @@ public class OracleFeatureQueryBuilderTests
         Assert.Throws<ArgumentException>(() => OracleLayerMapping.FromStorage(TestLayerId, storage));
     }
 
+    [Theory]
+    [InlineData("PARCELS", true)]
+    [InlineData("PARCELS\n", false)]
+    [InlineData("PARCELS\r\n", false)]
+    public void Identifier_IsValid_RequiresExactMatch(string value, bool expected)
+    {
+        Assert.Equal(expected, OracleIdentifier.IsValid(value));
+    }
+
     [Fact]
     public void FromStorage_DefaultsToNoSchema()
     {

@@ -68,7 +68,7 @@ A customer cannot leave Esri without these. Regression in an activated Tier 0 la
 | `esri-arcgis-python` ArcGIS API for Python | active | awaiting-federation | 2026.2 | none | linux-container | `featureserver`, `portal` | [honua-esri-compat#74](https://github.com/honua-io/honua-esri-compat/issues/74) |
 | `esri-dotnet` ArcGIS Maps SDK for .NET | planned | awaiting-runtime | 2026.2 | none | windows-license | `featureserver`, `mapserver` | [honua-esri-compat#75](https://github.com/honua-io/honua-esri-compat/issues/75) |
 | `honua-sdks` Honua SDKs (JavaScript, Python, .NET) | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `ogc-features`, `ogc-maps`, `ogc-tiles`, `odata`, `mvt`, `wfs`, `wms`, `wmts`, `admin-api`, `stac` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
-| `ogc-cite` OGC CITE / TEAM Engine (13 suites) | active | activated | 2026.1 | release | linux-container | `wfs`, `wms`, `wmts`, `wcs`, `gml`, `kml`, `gpkg`, `ogc-tiles` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
+| `ogc-cite` OGC CITE / TEAM Engine (14 suites) | active | activated | 2026.1 | release | linux-container | `wfs`, `wms`, `wmts`, `wcs`, `gml`, `kml`, `gpkg`, `ogc-tiles` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 | `arcgis-stub` ArcGIS REST + Portal facade stub client | active | activated | 2026.1 | nightly | linux-container | `featureserver`, `mapserver`, `portal` | [honua-server#3434](https://github.com/honua-io/honua-server/issues/3434) |
 
 ### Tier 1 - high value
@@ -333,12 +333,12 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
 - **Notes**: Official-SDK parity assignments are owned by #3387. This row records the client identity only, never a second capability denominator.
 
-### `ogc-cite` - OGC CITE / TEAM Engine (13 suites)
+### `ogc-cite` - OGC CITE / TEAM Engine (14 suites)
 
 - **Family / tier**: conformance / 0
 - **Status**: active (activated), target release 2026.1
 - **Required tier**: release (intended on activation: release)
-- **Roster origin**: artifact; artifact status 1117 / 1117
+- **Roster origin**: artifact; artifact status 1138 / 1138
 - **Lane binding**: (none) (external-producer)
 - **Client version policy**: TEAM Engine and per-suite ETS versions pinned by the container image tags in .github/workflows/cite-*.yml.
 - **Protocol surfaces**: `wfs`, `wms`, `wmts`, `wcs`, `gml`, `kml`, `gpkg`, `ogc-tiles`
@@ -351,7 +351,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Fixture projection**: governed-exception - Registered in client-certification-matrix.v1.json fixturePolicy.exceptions. CITE shares candidate identity, image digest, auth policy, and capability mapping with release certification but is never relabelled as having used the canonical client fixture.
 - **Evidence producer**: .github/workflows/cite-*.yml (aggregated by cite-evidence-report.yml)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
-- **Notes**: The compliance receipt, currently 1117/1117. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture.
+- **Notes**: The compliance receipt, currently 1138/1138. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture.
 
 ### `arcgis-stub` - ArcGIS REST + Portal facade stub client
 
