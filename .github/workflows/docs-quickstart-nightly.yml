@@ -18,11 +18,11 @@ jobs:
     name: Primary quickstart (advisory)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Execute documented quickstart
         env:
+          GITHUB_ACTOR: ${{ github.actor }}
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/docs-validation/validate-quickstart.sh
       - name: Upload validation evidence
