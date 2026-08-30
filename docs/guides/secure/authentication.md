@@ -51,6 +51,14 @@ policies for composite sign-in but preserves scoped API-key permission
 enforcement. Console users who sign in with an operator bearer
 token are authorized by operator RBAC instead of this API-key recipe.
 
+Approval and execution remain separate authorities. The Console sends the
+read/approve key only to the proposal decision endpoint. After approval, Honua
+mints a short-lived, single-use credential bound to the exact approved Admin API
+method and path, uses it for the replay, and revokes it immediately. The
+approver's key and identity headers are never forwarded as execution authority;
+`admin:operation:*` grants are server-reserved and cannot be requested through
+the API-key creation endpoint.
+
 ### 3. Enable OIDC for browser and admin sign-in
 
 ```bash

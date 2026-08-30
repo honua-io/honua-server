@@ -5,6 +5,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -148,6 +149,7 @@ internal static class OperationsServiceCollectionExtensions
                 definition,
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<IHttpContextAccessor>(),
+                sp.GetService<IAdminApiKeyStore>(),
                 sp.GetRequiredService<TimeProvider>()));
         }
 

@@ -352,6 +352,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         // Its grants are surfaced as "permission" claims below for endpoint-level
         // enforcement.
         var confersFullAdmin = LayerScopedWriteKey.ConfersFullAdmin(permissions);
+        var isApprovedOperationKey = permissions?.Any(AdminApiKeyPermission.IsApprovedOperationGrant) == true;
 
         List<Claim> claims;
         if (isScopedWriteKey)
@@ -364,7 +365,7 @@ internal sealed class ApiKeyAuthenticationHandler(
                 new Claim(LayerScopedWriteKey.ScopeClaimType, LayerScopedWriteKey.AuthType),
             ];
         }
-        else if (confersFullAdmin)
+        else if (confersFullAdmin || isApprovedOperationKey)
         {
             claims =
             [

@@ -192,6 +192,12 @@ internal static partial class AdminApiKeyEndpoints
             return false;
         }
 
+        if (request.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+        {
+            validationMessage = "Validation failed: approved-operation grants are minted internally";
+            return false;
+        }
+
         // Layer-scoped write grants (#1637) must name a target. Reject a bare
         // "write:" (or "write:{service}/" / "write:/{layer}") so an operator cannot
         // accidentally mint a key that authenticates but matches no resource.

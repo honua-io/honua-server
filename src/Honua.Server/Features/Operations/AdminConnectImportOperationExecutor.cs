@@ -60,7 +60,7 @@ internal sealed class AdminConnectImportOperationExecutor(
         {
             var issued = await adminApiKeyStore.CreateAsync(
                 $"approved-operation:{context.ApprovedProposalId}",
-                ["admin:write"],
+                [AdminApiKeyPermission.CreateApprovedOperationGrant(definition.Method.Method, uri.AbsolutePath)],
                 clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
                 cancellationToken).ConfigureAwait(false);

@@ -438,6 +438,51 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task LaneD_ApprovedReplay_UsesExactOperationCredential_ThenRevokesIt()
+    {
+        var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        AdminApiKeyValidationResult? executionAuthority = null;
+        Uri? replayUri = null;
+        string? replayHost = null;
+        var handler = new CapturingOperationHandler(async request =>
+        {
+            replayUri = request.RequestUri;
+            replayHost = request.Headers.Host;
+            var executionKey = request.Headers.GetValues("X-API-Key").Single();
+            executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}")
+            };
+        });
+        using var client = new HttpClient(handler);
+        var executor = BuildAdminExecutor("admin.cache.invalidate", client, credentialStore);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = executor.OperationId,
+                Parameters = new Dictionary<string, string?> { ["scope"] = "catalog" }
+            },
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal-1",
+                PrincipalId = "requester",
+                TenantId = "requester-tenant",
+            },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        executionAuthority.Should().NotBeNull();
+        replayUri.Should().Be("http://127.0.0.1:8080/api/v1/admin/cache/invalidate");
+        replayHost.Should().Be("public.example.test");
+        executionAuthority!.Record.Permissions.Should().Equal(
+            "admin:operation:POST:/api/v1/admin/cache/invalidate");
+        (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
+            .RevokedAt.Should().NotBeNull("approved operation credentials are single-use");
+    }
+
+    [UnitTest]
     public async Task LaneD_Executor_MapsExpectedAdminFailureToStructuredHandle()
     {
         var handler = new CapturingHandler(HttpStatusCode.BadRequest, "{\"detail\":\"invalid scope\"}");
@@ -619,7 +664,8 @@ public sealed class OperationsToolsetTests
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
-        executionAuthority!.Record.Permissions.Should().Equal("admin:write");
+        executionAuthority!.Record.Permissions.Should().Equal(
+            "admin:operation:POST:/api/v1/admin/connections");
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
@@ -1082,7 +1128,10 @@ public sealed class OperationsToolsetTests
             notifications);
     }
 
-    private static AdminOperateOperationExecutor BuildAdminExecutor(string operationId, HttpClient client)
+    private static AdminOperateOperationExecutor BuildAdminExecutor(
+        string operationId,
+        HttpClient client,
+        IAdminApiKeyStore? credentialStore = null)
     {
         var definition = AdminOperateOperationCatalog.Definitions.Should()
             .ContainSingle(item => item.OperationId == operationId).Subject;
@@ -1090,12 +1139,18 @@ public sealed class OperationsToolsetTests
         factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
         var context = new DefaultHttpContext();
         context.Request.Scheme = "https";
-        context.Request.Host = new HostString("localhost");
+        context.Request.Host = new HostString("public.example.test");
+        context.Connection.LocalPort = 8080;
         context.Request.Headers["X-API-Key"] = "secret";
         context.Request.Headers["X-Honua-Tenant"] = "tenant-a";
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns(context);
-        return new AdminOperateOperationExecutor(definition, factory, accessor, TimeProvider.System);
+        return new AdminOperateOperationExecutor(
+            definition,
+            factory,
+            accessor,
+            credentialStore ?? new InMemoryAdminApiKeyStore(TimeProvider.System),
+            TimeProvider.System);
     }
 
     private static OperationDispatcher BuildDispatcher(
