@@ -2,20 +2,20 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua OGC API Features",
-    "description": "OGC API Features implementation for geospatial data access\n\nCompliance: OGC CITE 1117/1117 across 13 conformance suites — see docs/cite-status.md.",
+    "description": "OGC API Features implementation for geospatial data access\n\nCompliance: OGC CITE 1138/1138 across 14 conformance suites — see docs/cite-status.md.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server"
     },
     "x-honua-cite-compliance": {
-      "summary": "All 13 conformance suites pass at 100% on trunk.",
+      "summary": "All 14 conformance suites pass at 100% on trunk.",
       "totals": {
-        "passed": 1117,
+        "passed": 1138,
         "failed": 0,
         "skipped": 0,
         "cantTell": 0
       },
-      "lastEvidenceRun": "2026-07-27",
+      "lastEvidenceRun": "2026-08-28",
       "evidenceWorkflow": "https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml",
       "authoritativeSource": "docs/cite-status.md",
       "suites": [
@@ -29,6 +29,7 @@
         { "suite": "WFS 2.0", "profile": "basic", "passed": 167, "total": 167, "passRate": "100%" },
         { "suite": "WFS 2.0 Transactional", "profile": "transactional", "passed": 25, "total": 25, "passRate": "100%" },
         { "suite": "WCS 2.0", "profile": "core", "passed": 82, "total": 82, "passRate": "100%" },
+        { "suite": "WPS 2.0", "profile": "basic-async", "passed": 21, "total": 21, "passRate": "100%" },
         { "suite": "WMS 1.1.1", "profile": "default", "passed": 126, "total": 126, "passRate": "100%" },
         { "suite": "WMS 1.3", "profile": "default", "passed": 213, "total": 213, "passRate": "100%" },
         { "suite": "WMTS 1.0", "profile": "default", "passed": 60, "total": 60, "passRate": "100%" }
