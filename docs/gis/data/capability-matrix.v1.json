@@ -19,7 +19,7 @@
     "tests/baselines/client-compat/"
   ],
   "evidenceFreshness": {
-    "anchor": "2026-08-23T21:25:44.795585Z",
+    "anchor": "2026-08-29T20:55:35.537961Z",
     "maxAgeDays": 14,
     "basis": "Newest run_date across the committed client-compat envelopes; deterministic by design so the drift gate stays byte-stable (see #2897)."
   },
@@ -30,10 +30,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 368,
-      "provingTestCount": 1106,
+      "entryCount": 374,
+      "provingTestCount": 1129,
       "maturity": {
-        "implemented": 368
+        "implemented": 374
       },
       "noSurface": null,
       "cite": [],
@@ -675,7 +675,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 24,
+      "provingTestCount": 27,
       "maturity": {
         "implemented": 2
       },
@@ -1655,7 +1655,7 @@
           "protocol": "featureserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:19.209522Z"
           }
         },
@@ -1804,7 +1804,7 @@
           "protocol": "mapserver",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:19.321037Z"
           }
         },
@@ -1829,10 +1829,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 3,
-      "provingTestCount": 36,
+      "entryCount": 4,
+      "provingTestCount": 38,
       "maturity": {
-        "implemented": 3
+        "implemented": 4
       },
       "noSurface": null,
       "cite": [],
@@ -2013,7 +2013,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:39.990000Z"
           }
         },
@@ -2022,7 +2022,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 1,
+            "ageDays": 7,
             "runDate": "2026-08-22T02:57:06.792964Z"
           }
         },
@@ -2031,7 +2031,7 @@
           "protocol": "ogc-features",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:27.279118Z"
           }
         },
@@ -2072,7 +2072,7 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:39.755000Z"
           }
         },
@@ -2081,7 +2081,7 @@
           "protocol": "ogc-maps",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         }
@@ -2135,7 +2135,7 @@
           "protocol": "ogc-tiles",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         }
@@ -2199,7 +2199,7 @@
           "protocol": "mvt",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:52.394000Z"
           }
         }
@@ -2241,7 +2241,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 115,
+      "provingTestCount": 117,
       "maturity": {
         "implemented": 2
       },
@@ -2277,7 +2277,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:40.991000Z"
           }
         },
@@ -2286,7 +2286,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 1,
+            "ageDays": 7,
             "runDate": "2026-08-22T02:57:06.793352Z"
           }
         },
@@ -2295,7 +2295,7 @@
           "protocol": "wfs",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:27.279118Z"
           }
         }
@@ -2334,7 +2334,7 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:39.001000Z"
           }
         },
@@ -2343,7 +2343,7 @@
           "protocol": "wms",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         },
@@ -2393,7 +2393,7 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:37.557000Z"
           }
         },
@@ -2402,7 +2402,7 @@
           "protocol": "wmts",
           "freshness": {
             "state": "stale",
-            "ageDays": 108,
+            "ageDays": 114,
             "runDate": "2026-05-07T14:05:53.364000Z"
           }
         },
