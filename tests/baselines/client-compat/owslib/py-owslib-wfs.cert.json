@@ -4,7 +4,7 @@
   "run_date": "2026-08-29T20:55:35.537029+00:00",
   "server_version": "1.0.0+e358ef1b50961de6fe6e4fae172e544418b7fe0c",
   "server_commit": "e358ef1b50961de6fe6e4fae172e544418b7fe0c",
-  "fixture_revision": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
+  "fixture_revision": "sha256:80c852414b96585cd98772d29098764946b0fb5c7404fcc9e336e35eaf6839b6",
   "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
   "client_lane": "py-owslib",
   "client_version": "0.36.0",
@@ -16,9 +16,9 @@
       "test_case_id": "CERT-CONN-01",
       "status": "pass",
       "duration_ms": 0,
-      "measured_count": 5,
+      "measured_count": 8,
       "measured_delta": null,
-      "notes": "owslib.wfs.WebFeatureService parsed a live WFS 2.0.0 capabilities document titled 'Honua WFS 2.0' with 5 feature types.",
+      "notes": "owslib.wfs.WebFeatureService parsed a live WFS 2.0.0 capabilities document titled 'Honua WFS 2.0' with 8 feature types.",
       "evidence_ref": "http://honua:5000/wfs",
       "protocol_version": null
     },
@@ -56,9 +56,9 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 0,
-      "measured_count": 5,
+      "measured_count": 8,
       "measured_delta": null,
-      "notes": "WebFeatureService.contents listed 5 namespace-qualified feature types: ['honua:test_layer', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
+      "notes": "WebFeatureService.contents listed 8 namespace-qualified feature types: ['honua:test_layer', 'honua:wfs_t_insert_scratch', 'honua:wfs_t_update_scratch', 'honua:wfs_t_delete_scratch', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -439,6 +439,36 @@
       "measured_count": 1,
       "measured_delta": null,
       "notes": "ListStoredQueries advertises 1 queries including the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById; invoking it through OWSLib's storedQueryID/storedQueryParams returned the requested feature test_layer.1.",
+      "evidence_ref": "",
+      "protocol_version": null
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-T-INS-01",
+      "status": "pass",
+      "duration_ms": 286,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "OWSLib openURL posted a WFS 2.0 Insert to its dedicated scratch layer; TransactionResponse reported totalInserted=1 and an OWSLib GetFeature read observed exactly the inserted feature.",
+      "evidence_ref": "",
+      "protocol_version": null
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-T-UPD-01",
+      "status": "pass",
+      "duration_ms": 85,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "OWSLib openURL posted a WFS 2.0 Update to its dedicated seeded scratch layer; TransactionResponse reported totalUpdated=1 and a follow-up OWSLib GetFeature read observed only the new value.",
+      "evidence_ref": "",
+      "protocol_version": null
+    },
+    {
+      "test_case_id": "NB-OWS-WFS-T-DEL-01",
+      "status": "pass",
+      "duration_ms": 69,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "OWSLib openURL posted a WFS 2.0 Delete to its dedicated seeded scratch layer; TransactionResponse reported totalDeleted=1 and a follow-up OWSLib GetFeature read observed an empty layer.",
       "evidence_ref": "",
       "protocol_version": null
     }
