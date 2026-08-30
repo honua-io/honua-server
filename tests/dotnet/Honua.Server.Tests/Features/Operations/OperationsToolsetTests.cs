@@ -32,7 +32,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -221,8 +220,9 @@ public sealed class OperationsToolsetTests
             typeof(AdminConnectImportOperationDescriptorProvider)).Should().Be(1);
         composed.Count(descriptor => descriptor.ServiceType == typeof(IOperationExecutor) &&
             descriptor.ImplementationFactory != null).Should().Be(
-                AdminConnectImportOperationCatalog.Definitions.Count + 4,
-                "the admin catalog and four legacy operation-class adapters are each registered once");
+                AdminConnectImportOperationCatalog.Definitions.Count +
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4,
+                "Lane A is idempotent, Lane D composes on each call, and the four legacy adapters remain unique");
     }
 
     [UnitTest]
@@ -575,8 +575,9 @@ public sealed class OperationsToolsetTests
             };
         });
         var factory = Substitute.For<IHttpClientFactory>();
+        using var httpClient = new HttpClient(handler);
         factory.CreateClient(AdminConnectImportOperationExecutor.HttpClientName)
-            .Returns(new HttpClient(handler));
+            .Returns(httpClient);
         var current = new DefaultHttpContext();
         current.Request.Scheme = "https";
         current.Request.Host = new HostString("localhost");
