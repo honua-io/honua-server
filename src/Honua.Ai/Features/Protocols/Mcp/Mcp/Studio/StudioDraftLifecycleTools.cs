@@ -378,7 +378,8 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             draftId.ToString("D"),
             OperatorOperation.Create).ConfigureAwait(false);
         var updated = await ApplyUpdateAsync(
-            lifecycleService,
+            httpContext,
+            principal,
             draftId,
             new UpdateStudioPackageDraftCommand
             {

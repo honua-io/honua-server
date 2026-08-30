@@ -4,6 +4,9 @@
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -317,8 +320,8 @@ internal abstract class StudioDraftToolBase
     }
 
     /// <summary>
-    /// Applies a mutation to a loaded draft through
-    /// <see cref="IStudioPackageLifecycleService.UpdateDraftAsync"/>. Callers
+    /// Applies a mutation to a loaded draft through the canonical durable
+    /// <see cref="IStudioDraftMutationRuntime"/>. Callers
     /// build <paramref name="command"/> from the draft's current
     /// packageKey/workspaceId/ownerId (composition tools, which never change
     /// them) or from caller-supplied overrides
@@ -330,17 +333,37 @@ internal abstract class StudioDraftToolBase
     /// disappeared between load and update into <see cref="GeoprocessingNotFoundException"/>.
     /// </summary>
     protected static async Task<StudioPackageDraft> ApplyUpdateAsync(
-        IStudioPackageLifecycleService lifecycleService,
+        HttpContext httpContext,
+        ClaimsPrincipal principal,
         Guid draftId,
         UpdateStudioPackageDraftCommand command,
         CancellationToken cancellationToken)
     {
         try
         {
-            var updated = await lifecycleService.UpdateDraftAsync(draftId, command, cancellationToken)
+            var runtime = httpContext.RequestServices.GetRequiredService<IStudioDraftMutationRuntime>();
+            var receipt = await runtime.UpdateAsync(
+                draftId,
+                command,
+                new StudioDraftMutationContext
+                {
+                    PrincipalId = command.ActorId,
+                    TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+                    SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+                    CorrelationId = httpContext.TraceIdentifier,
+                    AuthorizationOutcome = "authorized",
+                    Roles = principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
+                },
+                cancellationToken)
                 .ConfigureAwait(false);
 
-            return updated
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                throw new GeoprocessingPreconditionFailedException(
+                    receipt.Operation.Reason ?? $"Studio draft update ended as '{receipt.Operation.Status}'.");
+            }
+
+            return receipt.Value
                 ?? throw new GeoprocessingNotFoundException($"Studio package draft '{draftId:D}' was not found.");
         }
         catch (InvalidOperationException ex)

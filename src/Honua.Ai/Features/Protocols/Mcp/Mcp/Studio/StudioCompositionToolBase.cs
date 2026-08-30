@@ -71,7 +71,8 @@ internal abstract class StudioCompositionToolBase : StudioDraftToolBase
 
             var actorId = ActorIdFor(RequireAuthorizationService(httpContext), principal);
             var updated = await ApplyUpdateAsync(
-                lifecycleService,
+                httpContext,
+                principal,
                 draftId,
                 EnvelopeOnlyUpdate(draft, envelope, expectedGeneration, actorId),
                 cancellationToken).ConfigureAwait(false);
