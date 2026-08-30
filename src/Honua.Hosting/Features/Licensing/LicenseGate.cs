@@ -61,10 +61,29 @@ internal static class LicenseGate
         IServiceProvider services,
         string entitlementKey)
     {
+        var capability = CapabilityKeyCatalog.All.FirstOrDefault(
+            item => string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase));
+
         var entitlementService = services.GetService<ILicenseEntitlementService>();
         if (entitlementService is not null)
         {
-            return entitlementService.CheckEntitlement(entitlementKey);
+            var decision = entitlementService.CheckEntitlement(entitlementKey);
+            if (decision.IsActive || capability is null || decision.Edition < capability.Edition)
+            {
+                return decision;
+            }
+
+            // Routed experimental capabilities live in CapabilityKeyCatalog rather than
+            // FeatureCatalog so their maturity stays independent of deployability. Older
+            // entitlement providers derive their edition grants from FeatureCatalog; honor
+            // the canonical capability edition here until those providers consume the
+            // broader catalog directly.
+            return decision with
+            {
+                IsActive = true,
+                RequiredEdition = capability.Edition,
+                UpgradeMessage = string.Empty,
+            };
         }
 
         var statusProvider = services.GetService<ILicenseStatusProvider>();
@@ -80,15 +99,13 @@ internal static class LicenseGate
         }
 
         var status = statusProvider.GetCurrentStatus();
-        var feature = FeatureCatalog.All.FirstOrDefault(
-            item => string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase));
-        var requiredEdition = feature?.MinimumEdition;
+        var requiredEdition = capability?.Edition;
         var active = status.Entitlements?.Any(
                 entitlement => entitlement.IsActive &&
                     string.Equals(entitlement.Key, entitlementKey, StringComparison.OrdinalIgnoreCase)) == true ||
             (requiredEdition.HasValue && status.Edition >= requiredEdition.Value);
 
-        var featureName = feature?.DisplayName ?? entitlementKey;
+        var featureName = capability?.DisplayName ?? entitlementKey;
         var upgradeMessage = active
             ? string.Empty
             : $"{featureName} requires an active {requiredEdition?.ToString() ?? "paid"} entitlement. " +

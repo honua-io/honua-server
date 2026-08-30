@@ -118,6 +118,6 @@ describe('GPServer Smoke', () => {
 
     expect(data.error?.code).toBe(503);
     expect(data.error?.message).toBe('Service Unavailable');
-    expect((data.error?.details ?? []).join(' ')).toContain('Redis-backed durable storage');
+    expect((data.error?.details ?? []).join(' ')).toContain('Redis-backed job store');
   });
 });

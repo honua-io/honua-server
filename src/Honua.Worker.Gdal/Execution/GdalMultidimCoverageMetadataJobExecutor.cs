@@ -157,8 +157,10 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
             await context.ReportProgressAsync(80, "Converting to Zarr", cancellationToken).ConfigureAwait(false);
 
             // Best-effort convert so pixel slices resolve through the existing Zarr
-            // reader (ADR-0039 Path B). Writes a derived Zarr beside the source via
-            // GDAL's VSI layer; a failure here leaves metadata serving intact.
+            // reader (ADR-0039 Path B). This is a multidimensional dataset, so use
+            // gdalmdimtranslate rather than the classic-raster gdal_translate CLI.
+            // Writes a derived Zarr beside the source via GDAL's VSI layer; a failure
+            // here leaves metadata serving intact.
             string? zarrRootPath = DeriveZarrRootPath(objectKey);
             var vsiOut = GdalVsiPath.Build(provider, bucket, zarrRootPath);
             var convertResult = await RunConvertAsync(runner, vsiPath, vsiOut, workspace, linked.Token).ConfigureAwait(false);
@@ -218,7 +220,7 @@ internal sealed partial class GdalMultidimCoverageMetadataJobExecutor(
         try
         {
             return await runner
-                .RunAsync("gdal_translate", new List<string> { "-of", "Zarr", vsiIn, vsiOut }, workspace, cancellationToken)
+                .RunAsync("gdalmdimtranslate", new List<string> { "-of", "Zarr", vsiIn, vsiOut }, workspace, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)

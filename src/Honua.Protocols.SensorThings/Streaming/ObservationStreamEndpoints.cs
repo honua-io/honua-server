@@ -7,6 +7,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -30,6 +31,7 @@ internal static class ObservationStreamEndpoints
             .WithDisplayName("STA Observation Stream")
             .WithName("StaObservationStream")
             .WithSummary("Stream new Observations in real time (SSE or WebSocket)")
+            .WithMetadata(WebSocketEndpointMetadata.Instance)
             .WithDescription(
                 "Opens a real-time stream of newly-ingested Observations. SSE: send " +
                 "Accept: text/event-stream. WebSocket: send an Upgrade request. " +

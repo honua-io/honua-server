@@ -40,12 +40,21 @@ public sealed record CapabilityKeyDefinition(
 public static class CapabilityKeyCatalog
 {
     /// <summary>
-    /// Release-posture value marking a key as descriptive-only: it names a surface in the
-    /// public vocabulary but no runtime gate resolves it, so it is not deployable. This is the
-    /// contract shared with the generated <c>capability-keys.v1.json</c> artifact and every
-    /// consumer that reads it, including <c>scripts/deployment/generate-capability-profile.py</c>.
+    /// Release-posture value marking a capability as experimental. Experimental maturity is
+    /// independent of deployability: routed keys remain valid deployment-profile inputs, while
+    /// descriptive-only keys are excluded because no runtime route resolves them.
     /// </summary>
     public const string ExperimentalStatus = "experimental";
+
+    /// <summary>
+    /// Edition-qualified, routed capabilities that remain deployable while their public release
+    /// posture is experimental.
+    /// </summary>
+    public static IReadOnlyList<CapabilityKeyDefinition> RoutedExperimentalKeys { get; } =
+    [
+        new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
+            HonuaEdition.Enterprise, "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.", Status: ExperimentalStatus),
+    ];
 
     /// <summary>
     /// Capability categories introduced alongside the existing
@@ -139,8 +148,6 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Search and browse spatiotemporal asset catalogs through the STAC API."),
         new("serve.3d-tiles-scene", "3D Tiles Scene Serving", Categories.Serve,
             HonuaEdition.Community, "Serve published 3D Tiles scene layers through the SceneServer surface. Scene ingest (CityGML/point cloud) is Enterprise-gated separately."),
-        new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
-            HonuaEdition.Community, "Serve published I3S scene layers Esri clients consume directly."),
         new("serve.elevation", "Elevation Query", Categories.Serve,
             HonuaEdition.Community, "Query elevation profile and point-value surfaces. Sun/shadow, slice, line-of-sight, and viewshed analytics are Pro-gated separately."),
 
@@ -248,6 +255,7 @@ public static class CapabilityKeyCatalog
     public static IReadOnlyList<CapabilityKeyDefinition> All { get; } =
     [
         .. CommunityKeys,
+        .. RoutedExperimentalKeys,
         .. DescriptiveKeys,
         .. FeatureCatalog.All.Select(static feature => new CapabilityKeyDefinition(
             feature.Key,
@@ -260,8 +268,8 @@ public static class CapabilityKeyCatalog
 
     /// <summary>
     /// The deployable subset of <see cref="All"/> — every key a deployment profile may enable.
-    /// Keys carrying <see cref="ExperimentalStatus"/> are excluded: no route resolves to them,
-    /// so enabling one narrows a deployment to nothing served (every request 404s at
+    /// Descriptive keys are excluded because no route resolves to them, so enabling one narrows
+    /// a deployment to nothing served (every request 404s at
     /// <c>UseDeploymentCapabilityProfile</c>) while still deriving a paid <c>requiredEdition</c>
     /// from the key's edition qualifier. They stay in <see cref="All"/> because the vocabulary
     /// is what the crosswalk artifact and honua-evidence resolve against; they are kept out of
@@ -269,7 +277,6 @@ public static class CapabilityKeyCatalog
     /// </summary>
     public static IReadOnlyList<CapabilityKeyDefinition> DeployableKeys { get; } =
     [
-        .. All.Where(static capability =>
-            !string.Equals(capability.Status, ExperimentalStatus, StringComparison.Ordinal)),
+        .. All.Except(DescriptiveKeys),
     ];
 }

@@ -3,7 +3,7 @@
   "run_id": "20260823T211844Z",
   "run_date": "2026-08-23T21:18:44.387919+00:00",
   "server_version": "1.0.0",
-  "server_commit": "unknown",
+  "server_commit": "dbb368c5d06fb744e5289e4fd6ab30acc3973698",
   "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
   "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
   "client_lane": "py-geopandas",
@@ -23,11 +23,11 @@
     },
     {
       "test_case_id": "CERT-CONN-02",
-      "status": "pass",
+      "status": "not-applicable",
       "duration_ms": 0,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Certified endpoint uses scheme 'http'. The client-compat compose network is plain HTTP by design; TLS posture is exercised in the release tier against the HTTPS candidate build.",
+      "notes": "GeoPandas exercised plain HTTP; TLS was not exercised in this run.",
       "evidence_ref": ""
     },
     {
@@ -37,7 +37,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services without credentials returned 401 with WWW-Authenticate='ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"'. httpx is used here because the control plane has no GeoPandas client surface.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-AUTH-02",
@@ -46,7 +47,8 @@
       "measured_count": null,
       "measured_delta": null,
       "notes": "GET /api/v1/admin/services authenticated with the X-API-Key scheme (observed: X-API-Key->200). httpx is used because the control plane has no GeoPandas client surface.",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "CERT-DISC-01",
@@ -231,9 +233,9 @@
   ],
   "summary": {
     "total": 24,
-    "passed": 16,
+    "passed": 15,
     "failed": 0,
-    "skipped": 0,
+    "skipped": 1,
     "not_applicable": 8
   },
   "cite_results": null,
@@ -452,7 +454,8 @@
       "measured_count": 401,
       "measured_delta": null,
       "notes": "An invalid X-API-Key produced 401 (not 403, which would imply an authenticated-but-forbidden principal, and not 500).",
-      "evidence_ref": ""
+      "evidence_ref": "",
+      "client_identity": "httpx"
     },
     {
       "test_case_id": "NB-GPD-SCH-01",

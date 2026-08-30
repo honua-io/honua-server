@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
 {
     private const string TextTurnFixture = """
-        data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}
+        data: {"model":"resolved-model-v2","choices":[{"delta":{"role":"assistant"},"finish_reason":null}]}
 
         data: {"choices":[{"delta":{"content":"Hello"}}]}
 
@@ -69,6 +69,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
             StudioAiChatEventType.TextDelta,
             StudioAiChatEventType.TextDelta,
             StudioAiChatEventType.MessageStop);
+        events[0].Model.Should().Be("resolved-model-v2");
 
         string.Concat(events.Where(e => e.Type == StudioAiChatEventType.TextDelta).Select(e => e.Text))
             .Should().Be("Hello world");

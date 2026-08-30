@@ -83,9 +83,15 @@ internal sealed partial class FeatureQueryBuilder
     {
         foreach (var field in GetEncodedBinaryAttributeFields(resource, query))
         {
-            if (!IsValidFieldName(field.Name))
+            // The value side binds the name as a parameter. The alias side is a real
+            // PostgreSQL identifier: quote-safety is necessary but not sufficient because
+            // PostgreSQL truncates identifiers beyond 63 bytes. Rejecting the binary
+            // projection keeps the encoded schema exact and avoids prefix collisions; the
+            // query executor maps this provider validation failure to a client-safe 400.
+            if (!IsValidEncodedColumnAlias(field.Name))
             {
-                throw new ArgumentException($"Invalid field name for binary projection: {field.Name}");
+                throw new ArgumentException(
+                    $"Field name cannot be represented as a PostgreSQL binary projection alias: {field.Name}");
             }
 
             sql.Append(", ");

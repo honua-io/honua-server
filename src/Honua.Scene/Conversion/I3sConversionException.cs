@@ -4,11 +4,10 @@
 namespace Honua.Core.Features.Scene.Conversion;
 
 /// <summary>
-/// Raised when an I3S scene layer or <c>.slpk</c> package cannot be parsed or
-/// converted to a Honua 3D Tiles tileset. The <see cref="Reason"/> is a stable,
+/// Raised when an I3S scene-layer descriptor cannot be parsed or converted to a
+/// Honua 3D Tiles tileset. The <see cref="Reason"/> is a stable,
 /// non-sensitive discriminator suitable for telemetry and structured error
-/// responses; the message never echoes raw archive contents or filesystem
-/// paths.
+/// responses; the message never echoes raw input contents.
 /// </summary>
 public sealed class I3sConversionException : Exception
 {
@@ -41,12 +40,6 @@ public sealed class I3sConversionException : Exception
 /// </summary>
 public enum I3sConversionErrorReason
 {
-    /// <summary>The <c>.slpk</c> archive could not be opened as a zip container.</summary>
-    InvalidArchive,
-
-    /// <summary>The archive did not contain a <c>3dSceneLayer.json</c> descriptor.</summary>
-    MissingSceneLayer,
-
     /// <summary>The <c>3dSceneLayer.json</c> document was not valid JSON.</summary>
     MalformedSceneLayer,
 

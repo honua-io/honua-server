@@ -37,6 +37,7 @@ internal static class StreamingOperationsEndpoints
         group.MapGet("/alerts", HandleAlertStream)
             .WithDisplayName("Stream Alert Notifications")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(WebSocketEndpointMetadata.Instance)
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         group.MapDelete("/subscribers/{subscriberId:guid}", HandleDisconnectSubscriber)

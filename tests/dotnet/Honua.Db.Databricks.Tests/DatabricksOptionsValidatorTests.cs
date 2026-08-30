@@ -72,6 +72,28 @@ public class DatabricksOptionsValidatorTests
         Assert.Throws<ArgumentException>(() => DatabricksOptionsValidator.ThrowIfInvalid(options));
     }
 
+    [Theory]
+    [InlineData("eo:cloud_cover")]
+    [InlineData("owner.name")]
+    [InlineData("cloud-cover")]
+    public void ThrowIfInvalid_ExtendedDeclaredAttribute_DoesNotThrow(string attribute)
+    {
+        var options = Valid();
+        options.Layers =
+        [
+            new DatabricksLayerOptions
+            {
+                Id = 1,
+                Table = "features",
+                GeometryColumn = "geom",
+                PrimaryKeyColumn = "id",
+                Attributes = [attribute]
+            }
+        ];
+
+        DatabricksOptionsValidator.ThrowIfInvalid(options);
+    }
+
     [Fact]
     public void ThrowIfInvalid_UnknownGeometryType_Throws()
     {

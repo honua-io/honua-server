@@ -53,12 +53,13 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
                 objectid bigint PRIMARY KEY,
                 geom geometry(Point, 4326),
                 name text,
-                population integer
+                population integer,
+                attributes jsonb
             );
 
-            INSERT INTO {_schema}.cities (objectid, geom, name, population) VALUES
-                (1, ST_SetSRID(ST_MakePoint(-157.8583, 21.3069), 4326), 'Honolulu', 350000),
-                (2, ST_SetSRID(ST_MakePoint(-156.3319, 20.7984), 4326), 'Kahului', 26000);
+            INSERT INTO {_schema}.cities (objectid, geom, name, population, attributes) VALUES
+                (1, ST_SetSRID(ST_MakePoint(-157.8583, 21.3069), 4326), 'Honolulu', 350000, jsonb_build_object('eo:cloud_cover', 12.5)),
+                (2, ST_SetSRID(ST_MakePoint(-156.3319, 20.7984), 4326), 'Kahului', 26000, jsonb_build_object('eo:cloud_cover', 3.0));
             """);
     }
 
@@ -93,6 +94,17 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
 
         payload.Should().NotBeNull();
         payload!.Length.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task QueryFlatGeobufAsync_AttributesDocumentWithNamespacedField_ReturnsPayload()
+    {
+        var reader = CreateReader(attributesColumn: "attributes", includeNamespacedField: true);
+
+        var payload = await reader.QueryFlatGeobufAsync(layerId: 1, new FeatureQuery(), CancellationToken.None);
+
+        payload.Should().NotBeNull();
+        payload!.Should().NotBeEmpty();
     }
 
     [Fact]
@@ -131,8 +143,22 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
         payload!.Should().NotBeEmpty();
     }
 
-    private PostgresStorageMappedFeatureReader CreateReader()
+    private PostgresStorageMappedFeatureReader CreateReader(
+        string? attributesColumn = null,
+        bool includeNamespacedField = false)
     {
+        var schemaFields = new List<MetadataV2Field>
+        {
+            new() { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false, SemanticRoles = ["id.primary"] },
+            new() { Name = "geom", Type = MetadataV2FieldType.Geometry, Nullable = true, SemanticRoles = ["geometry.primary"] },
+            new() { Name = "name", Type = MetadataV2FieldType.String },
+            new() { Name = "population", Type = MetadataV2FieldType.Integer },
+        };
+        if (includeNamespacedField)
+        {
+            schemaFields.Add(new MetadataV2Field { Name = "eo:cloud_cover", Type = MetadataV2FieldType.Double });
+        }
+
         var resource = new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-cities", Name = "Cities" },
@@ -143,13 +169,7 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
                 GeometryType = MetadataV2GeometryType.Point,
                 PrimaryGeometryField = "geom",
             },
-            SchemaFields =
-            [
-                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false, SemanticRoles = ["id.primary"] },
-                new MetadataV2Field { Name = "geom", Type = MetadataV2FieldType.Geometry, Nullable = true, SemanticRoles = ["geometry.primary"] },
-                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
-                new MetadataV2Field { Name = "population", Type = MetadataV2FieldType.Integer },
-            ],
+            SchemaFields = schemaFields.ToArray(),
         };
 
         var mapping = new FeatureStorageMapping(
@@ -157,7 +177,8 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
             SchemaName: _schema,
             PrimaryKeyColumn: "objectid",
             GeometryColumn: "geom",
-            StorageSrid: 4326);
+            StorageSrid: 4326,
+            AttributesColumn: attributesColumn);
 
         return new PostgresStorageMappedFeatureReader(
             new FixtureConnectionProvider(_fixture.ConnectionString),

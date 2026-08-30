@@ -466,6 +466,36 @@ public class DuckDBFeatureQueryBuilderTests
         Assert.Contains("ORDER BY \"name\" ASC, \"area\" DESC", result.Sql);
     }
 
+    [Theory]
+    [InlineData("eo:cloud_cover")]
+    [InlineData("owner.name")]
+    [InlineData("cloud-cover")]
+    public void BuildSelectQuery_WithExtendedOrderByField_QuotesSingleIdentifier(string field)
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc(field))
+        };
+
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+
+        Assert.Contains($"ORDER BY \"{field}\" ASC", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("name;DROP")]
+    [InlineData("owner name")]
+    [InlineData("name/name")]
+    public void BuildSelectQuery_WithUnsafeOrderByField_Throws(string field)
+    {
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc(field))
+        };
+
+        Assert.Throws<ArgumentException>(() => _builder.BuildSelectQuery(TestLayerId, query));
+    }
+
     [Fact]
     public void BuildTemporalExtentQuery_GeneratesMinMax()
     {

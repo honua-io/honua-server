@@ -502,9 +502,25 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var maskedFields = query.EnforcedMaskedFields is { IsDefaultOrEmpty: false } fields
             ? fields.ToHashSet(StringComparer.OrdinalIgnoreCase)
             : [];
+        // A field name only has to be a safe SQL identifier when the resource maps
+        // each field to its own column — that is the branch in
+        // BuildAttributesExpressionChunk which emits ValidateAndQuoteIdentifier.
+        // When the resource declares an attributes JSONB column the name is used
+        // solely as a JSON key and an escaped string literal, so requiring
+        // identifier safety there silently dropped legitimate field names from
+        // every protocol's projection. STAC extension properties are the concrete
+        // case: `eo:cloud_cover` is a declared, filterable queryable, yet it was
+        // absent from FeatureServer/OGC API Features/STAC responses because the
+        // colon failed the identifier check (honua-server#3392). The JSONB branch is not
+        // ungated, though: it keeps the jsonb-key allow-list (which admits the prefixed
+        // shapes but no quote, whitespace or control character), so nothing that could
+        // break out of the escaped string literal reaches the emitted SQL either way.
+        var requiresIdentifierSafeNames = string.IsNullOrWhiteSpace(_mapping.AttributesColumn);
         var declaredFields = _resource.SchemaFields
-            .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
-                && IsSafeIdentifier(field.Name)
+             .Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
+                 && (requiresIdentifierSafeNames
+                     ? IsSafeIdentifier(field.Name)
+                     : FeatureQueryBuilder.IsValidJsonAttributeKey(field.Name))
                 && !maskedFields.Contains(field.Name))
             .ToArray();
 
@@ -1425,6 +1441,40 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         return $"{ValidateAndQuoteIdentifier(mapping.SchemaName!)}.{table}";
+    }
+
+    /// <summary>
+    /// Quotes a SELECT alias for a schema field that <see cref="ResolveAttributeFields"/> has
+    /// already admitted, accepting either shape that method admits.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ValidateAndQuoteIdentifier"/> is the wrong guard for an alias derived from a
+    /// declared field name. It enforces <c>SchemaSearchPath.IsValidIdentifier</c>
+    /// (<c>^[A-Za-z_][A-Za-z0-9_]*$</c>), which rejects the colon in a STAC extension queryable
+    /// such as <c>eo:cloud_cover</c>. Before those names were admitted to the projection the
+    /// field was silently dropped; admitting them turned the same request into an
+    /// <see cref="InvalidOperationException"/> and an HTTP 500 on the FlatGeobuf/Geobuf path,
+    /// because the encoded-binary builder aliases every resolved field unconditionally
+    /// (review finding on honua-server#3489).
+    ///
+    /// The alias is safe to emit with doubling-only quoting, exactly as the native
+    /// <c>FeatureQueryBuilder</c> path does: the JSONB branch admits a name only through
+    /// <c>IsValidEncodedColumnAlias</c>, which contains no quote, whitespace, backslash
+    /// or control character and enforces PostgreSQL's 63-byte identifier boundary.
+    /// The guard is re-asserted here rather than assumed, so this stays correct if the
+    /// caller's field filter ever widens.
+    /// </remarks>
+    private static string QuoteAttributeFieldAlias(string fieldName)
+    {
+        var sanitized = fieldName.Trim();
+        if (!FeatureQueryBuilder.IsValidEncodedColumnAlias(sanitized))
+        {
+            // FeatureServerQueryExecutor maps provider ArgumentException failures to
+            // its client-safe invalid-query response instead of leaking a provider 500.
+            throw new ArgumentException($"Invalid PostGIS encoded projection alias '{fieldName}'.");
+        }
+
+        return $"\"{sanitized.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
     }
 
     private static string ValidateAndQuoteIdentifier(string identifier)

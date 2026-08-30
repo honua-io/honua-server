@@ -116,11 +116,12 @@ cert_result <- function(test_case_id,
                         measured_count = NULL,
                         measured_delta = NULL,
                         notes = "",
-                        evidence_ref = "") {
+                        evidence_ref = "",
+                        client_identity = "") {
   if (!status %in% names(STATUS_RANK)) {
     stop(sprintf("unknown status '%s' for %s", status, test_case_id))
   }
-  list(
+  result <- list(
     test_case_id = as.character(test_case_id),
     status = as.character(status),
     duration_ms = cert_num(duration_ms, integer = TRUE),
@@ -129,6 +130,10 @@ cert_result <- function(test_case_id,
     notes = cert_chr(notes),
     evidence_ref = cert_chr(evidence_ref)
   )
+  if (nzchar(cert_chr(client_identity))) {
+    result$client_identity <- cert_chr(client_identity)
+  }
+  result
 }
 
 cert_richness <- function(result) {
@@ -292,7 +297,8 @@ collector_record <- function(collector,
                              measured_count = NULL,
                              measured_delta = NULL,
                              notes = "",
-                             evidence_ref = "") {
+                             evidence_ref = "",
+                             client_identity = "") {
   if (test_case_id %in% COMMON_CORE_IDS && !(test_case_id %in% collector$applicable)) {
     stop(sprintf(
       paste0("%s/%s recorded %s, which it declares not-applicable; ",
@@ -307,7 +313,8 @@ collector_record <- function(collector,
     measured_count = measured_count,
     measured_delta = measured_delta,
     notes = notes,
-    evidence_ref = evidence_ref
+    evidence_ref = evidence_ref,
+    client_identity = client_identity
   )
   bucket <- if (test_case_id %in% COMMON_CORE_IDS) "results" else "extensions"
   existing <- collector[[bucket]][[test_case_id]]

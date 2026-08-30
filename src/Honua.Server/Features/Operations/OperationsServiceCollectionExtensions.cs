@@ -4,6 +4,7 @@
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.Studio.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -44,6 +45,16 @@ internal static class OperationsServiceCollectionExtensions
                 : new UnavailableOperationApprovalReplayVerifier());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
+        foreach (var operationId in new[]
+                 {
+                     StudioDraftOperations.Create,
+                     StudioDraftOperations.Update,
+                     StudioDraftOperations.Delete,
+                 })
+        {
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new StudioDraftApprovalRequestMapper(operationId));
+        }
         if (environment.IsDevelopment() || environment.IsEnvironment("Test"))
         {
             services.TryAddSingleton<IOperationInstanceStore, VolatileOperationInstanceStore>();
@@ -78,18 +89,21 @@ internal static class OperationsServiceCollectionExtensions
             ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
-        // Legacy adapters are FACTORY descriptors (each closes over its operation
-        // class), and TryAddEnumerable REJECTS factory descriptors at registration
-        // time — their implementation type is indistinguishable from the service
-        // type (ArgumentException). That throw only fires in hosts that register a
-        // control-plane executor, so PR Gate's unit smoke stayed green while every
-        // full-host integration suite failed at boot (trunk red 2026-08-29,
-        // run 33237378473). Plain AddScoped accepts factories; the marker restores
-        // the idempotence TryAddEnumerable was providing across repeated
-        // AddOperationsToolset calls.
-        if (services.Any(descriptor => descriptor.ServiceType ==
-                typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor))
-            && !services.Any(descriptor => descriptor.ServiceType == typeof(LegacyAdapterRegistrationMarker)))
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftCreateExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftUpdateExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftDeleteExecutor>());
+        services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
+
+        // Legacy adapters register UNCONDITIONALLY and resolve their control-plane
+        // actuator at USE time. The former registration-time services.Any gate was
+        // an ordering snapshot: hosts that register control-plane executors after
+        // AddOperationsToolset (post-Program ConfigureServices) got no adapters, so
+        // the dispatcher had no compatibility actuator and converge returned
+        // NotSupported with null operation ids (trunk red 2026-08-29, run
+        // 33249627814 — same ordering class the #3621 review caught for the replay
+        // verifier). The marker keeps repeated AddOperationsToolset calls
+        // idempotent; degraded hosts get a typed use-time refusal from the adapter.
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(LegacyAdapterRegistrationMarker)))
         {
             services.AddSingleton<LegacyAdapterRegistrationMarker>();
             AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.Deploy);
@@ -118,7 +132,9 @@ internal static class OperationsServiceCollectionExtensions
                 environment.IsDevelopment() || environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
-                sp.GetRequiredService<IOperationApprovalReplayVerifier>()));
+                sp.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>() is null
+                    ? null
+                    : sp.GetRequiredService<IOperationApprovalReplayVerifier>()));
 
         return services;
     }
@@ -127,9 +143,7 @@ internal static class OperationsServiceCollectionExtensions
         IServiceCollection services,
         Honua.Core.Features.Guardrails.Domain.OperationClass operationClass)
         => services.AddScoped<IOperationExecutor>(sp =>
-            new LegacyGatewayOperationAdapter(
-                sp.GetServices<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>()
-                    .Single(actuator => actuator.OperationClass == operationClass)));
+            new LegacyGatewayOperationAdapter(sp, operationClass));
 
     /// <summary>
     /// Registration sentinel proving the legacy gateway adapters were already added, so

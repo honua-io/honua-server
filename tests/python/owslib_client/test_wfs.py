@@ -130,7 +130,7 @@ def test_conn01_capabilities(wfs: WebFeatureService, wfs_collector: Certificatio
 def test_conn02_transport(base_url: str, wfs_collector: CertificationEvidenceCollector) -> None:
     assert base_url.split("://", 1)[0] == "http"
     wfs_collector.record(
-        "CERT-CONN-02", "pass",
+        "CERT-CONN-02", "pass" if scheme == "https" else "not-applicable",
         notes=(
             "Transport verified as plain http on the compose client-compat network, which "
             "terminates no TLS. TLS handshake behaviour is exercised in the release tier, "

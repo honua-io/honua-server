@@ -204,7 +204,7 @@ def test_conn_02_transport_scheme(
     scheme = urlparse(base_url).scheme
     assert scheme in {"http", "https"}, f"unexpected transport scheme {scheme!r}"
     evidence.record(
-        "CERT-CONN-02", "pass",
+        "CERT-CONN-02", "pass" if scheme == "https" else "not-applicable",
         duration_ms=watch.ms,
         notes=(
             f"Transport scheme is '{scheme}'. The docker/client-compat network is "
@@ -249,6 +249,7 @@ def test_auth_01_anonymous_admin_probe_is_rejected(
             "no HTTP status code or challenge header."
         ),
         evidence_ref=f"{base_url}{fx.ADMIN_PROBE_PATH}",
+        client_identity="httpx",
     )
 
 
@@ -327,6 +328,7 @@ def test_auth_02_api_key_admin_probe_succeeds(
             f"{duckdb_note}."
         ),
         evidence_ref=f"{base_url}{fx.ADMIN_PROBE_PATH}",
+        client_identity="httpx",
     )
     evidence.record(
         "NB-DDB-AUTH-04", "pass",
@@ -362,6 +364,7 @@ def test_ext_auth_03_wrong_api_key_is_401(
             f"GET {fx.ADMIN_PROBE_PATH} with an invalid {fx.ADMIN_API_KEY_HEADER} "
             "-> 401 (not 403, not 500). Measured with httpx."
         ),
+        client_identity="httpx",
     )
 
 

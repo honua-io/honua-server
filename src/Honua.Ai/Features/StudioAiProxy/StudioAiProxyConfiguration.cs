@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.ServiceRegistration;
+using Org.BouncyCastle.Crypto.Parameters;
 
 namespace Honua.Ai.StudioAiProxy;
 
@@ -44,9 +45,38 @@ public sealed class StudioAiProxyConfiguration
     /// <summary>Operator-named provider blocks.</summary>
     public Dictionary<string, StudioAiProxyProviderOptions> Providers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Transcript-provenance signing policy.</summary>
+    public StudioAiTranscriptSigningOptions TranscriptSigning { get; set; } = new();
+
     /// <summary>Returns the configured options for the named provider, or null when absent.</summary>
     public StudioAiProxyProviderOptions? GetProvider(string name)
         => Providers.TryGetValue(name, out var options) ? options : null;
+}
+
+/// <summary>Ed25519 signing configuration. Private material is accepted only by reference.</summary>
+public sealed class StudioAiTranscriptSigningOptions
+{
+    /// <summary>Stable signer identity placed in every envelope.</summary>
+    public string KeyId { get; set; } = string.Empty;
+
+    /// <summary>Secret-provider reference resolving to a base64-encoded 32-byte Ed25519 seed.</summary>
+    public string PrivateKeyReference { get; set; } = string.Empty;
+
+    /// <summary>Validity of a newly issued transcript.</summary>
+    public int LifetimeSeconds { get; set; } = 900;
+
+    /// <summary>Previous/future public keys published during rotation overlap.</summary>
+    public List<StudioAiTranscriptVerificationKeyOptions> OverlapKeys { get; set; } = [];
+}
+
+/// <summary>Configured public key retained for an explicit verification overlap window.</summary>
+public sealed class StudioAiTranscriptVerificationKeyOptions
+{
+    public string KeyId { get; set; } = string.Empty;
+    public string PublicKey { get; set; } = string.Empty;
+    public DateTimeOffset? NotBefore { get; set; }
+    public DateTimeOffset? NotAfter { get; set; }
+    public bool Revoked { get; set; }
 }
 
 /// <summary>Per-provider connection options for the Studio AI proxy.</summary>
@@ -130,6 +160,57 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
         foreach (var (name, provider) in options.Providers)
         {
             ValidateProvider(name, provider, errors);
+        }
+
+        var signing = options.TranscriptSigning;
+        if (!string.IsNullOrWhiteSpace(signing.PrivateKeyReference) || !string.IsNullOrWhiteSpace(signing.KeyId))
+        {
+            ValidateRequiredString(signing.KeyId, "StudioAiProxy:TranscriptSigning:KeyId", errors);
+            ValidateRequiredString(signing.PrivateKeyReference, "StudioAiProxy:TranscriptSigning:PrivateKeyReference", errors);
+            ValidateRange(signing.LifetimeSeconds, 30, 86_400, "StudioAiProxy:TranscriptSigning:LifetimeSeconds", errors);
+            if (!string.IsNullOrWhiteSpace(signing.PrivateKeyReference)
+                && !signing.PrivateKeyReference.Contains("://", StringComparison.Ordinal))
+            {
+                errors.Add("StudioAiProxy:TranscriptSigning:PrivateKeyReference must be a secret reference, not inline key material.");
+            }
+        }
+
+        var keyIds = new HashSet<string>(StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(signing.KeyId))
+        {
+            keyIds.Add(signing.KeyId);
+        }
+
+        for (var index = 0; index < signing.OverlapKeys.Count; index++)
+        {
+            var overlap = signing.OverlapKeys[index];
+            var prefix = $"StudioAiProxy:TranscriptSigning:OverlapKeys:{index}";
+            ValidateRequiredString(overlap.KeyId, $"{prefix}:KeyId", errors);
+            if (!string.IsNullOrWhiteSpace(overlap.KeyId) && !keyIds.Add(overlap.KeyId))
+            {
+                errors.Add($"{prefix}:KeyId '{overlap.KeyId}' is duplicated.");
+            }
+
+            byte[] publicKey;
+            try
+            {
+                publicKey = Convert.FromBase64String(overlap.PublicKey ?? string.Empty);
+            }
+            catch (FormatException)
+            {
+                errors.Add($"{prefix}:PublicKey must be valid Base64.");
+                continue;
+            }
+
+            if (publicKey.Length != Ed25519PublicKeyParameters.KeySize)
+            {
+                errors.Add($"{prefix}:PublicKey must decode to {Ed25519PublicKeyParameters.KeySize} bytes.");
+            }
+
+            if (overlap.NotBefore is { } notBefore && overlap.NotAfter is { } notAfter && notBefore >= notAfter)
+            {
+                errors.Add($"{prefix}:NotBefore must be earlier than NotAfter.");
+            }
         }
     }
 

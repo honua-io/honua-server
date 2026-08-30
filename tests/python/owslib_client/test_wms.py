@@ -116,7 +116,7 @@ def test_conn01_capabilities(wms: WebMapService, wms_collector: CertificationEvi
 def test_conn02_transport(base_url: str, wms_collector: CertificationEvidenceCollector) -> None:
     assert base_url.split("://", 1)[0] == "http"
     wms_collector.record(
-        "CERT-CONN-02", "pass",
+        "CERT-CONN-02", "pass" if scheme == "https" else "not-applicable",
         notes=(
             "Transport verified as plain http on the compose client-compat network, which "
             "terminates no TLS. TLS handshake behaviour is exercised in the release tier, where "

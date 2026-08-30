@@ -30,7 +30,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 368,
-      "provingTestCount": 1098,
+      "provingTestCount": 1100,
       "maturity": {
         "implemented": 368
       },
@@ -120,7 +120,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 105,
+      "provingTestCount": 112,
       "maturity": {
         "implemented": 4
       },
@@ -1194,7 +1194,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 15,
-      "provingTestCount": 61,
+      "provingTestCount": 63,
       "maturity": {
         "implemented": 15
       },
@@ -1577,10 +1577,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 12,
-      "provingTestCount": 76,
+      "entryCount": 6,
+      "provingTestCount": 60,
       "maturity": {
-        "implemented": 12
+        "implemented": 6
       },
       "noSurface": null,
       "cite": [],
@@ -1614,7 +1614,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 418,
+      "provingTestCount": 419,
       "maturity": {
         "implemented": 49
       },
@@ -1829,7 +1829,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 3,
-      "provingTestCount": 30,
+      "provingTestCount": 31,
       "maturity": {
         "implemented": 3
       },
@@ -1876,12 +1876,12 @@
       "key": "serve.i3s-scene",
       "displayName": "I3S Scene Serving",
       "category": "Serve",
-      "edition": "Community",
-      "status": null,
-      "entryCount": 6,
-      "provingTestCount": 25,
+      "edition": "Enterprise",
+      "status": "experimental",
+      "entryCount": 12,
+      "provingTestCount": 41,
       "maturity": {
-        "implemented": 6
+        "implemented": 12
       },
       "noSurface": null,
       "cite": [],
@@ -1990,7 +1990,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 264,
+      "provingTestCount": 274,
       "maturity": {
         "implemented": 21
       },
@@ -2166,7 +2166,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 12,
-      "provingTestCount": 115,
+      "provingTestCount": 121,
       "maturity": {
         "implemented": 12
       },
@@ -2240,7 +2240,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 112,
+      "provingTestCount": 114,
       "maturity": {
         "implemented": 2
       },

@@ -381,9 +381,11 @@ internal sealed class McpOperationToolOutput
     public bool CacheHit { get; set; }
 
     /// <summary>
-    /// The param-keyed cache key for a deterministic, read-only invocation
-    /// (operation id + catalog version + normalized parameters). Null when the
-    /// operation is not cacheable.
+    /// Opaque <c>sha256:</c> cache key for a deterministic, read-only invocation. The
+    /// digest covers the operation id, catalog version, normalized parameters, the
+    /// invoking principal context, and the effective tenant/schema scope; treat it as
+    /// an equality token only and do not parse it. Null when the operation is not
+    /// cacheable.
     /// </summary>
     [JsonPropertyName("cacheKey")]
     public string? CacheKey { get; set; }

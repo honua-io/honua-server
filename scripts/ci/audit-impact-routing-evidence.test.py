@@ -335,6 +335,35 @@ def test_policy_and_discovery() -> None:
         assert [item["artifact_id"] for item in result["artifacts"]] == [12, 11]
         assert result["integrity_failures"] == []
 
+        # The workflow catalogs with the policy step's cutoff, then discovers
+        # several minutes later. The reader must keep that bound instead of
+        # moving the window forward and rejecting runs already admitted by the
+        # catalog query.
+        boundary = run(3, MODULE.PR_GATE_WORKFLOW)
+        boundary["created_at"] = "2026-08-08T11:00:30Z"
+        boundary["updated_at"] = "2026-08-08T11:00:31Z"
+        pages(root / "pr-runs", "workflow_runs", [boundary])
+        artifact_catalog(root / "pr-artifacts", boundary, [])
+        fixed_cutoff = datetime(2026, 8, 8, 12, tzinfo=timezone.utc)
+        clock_drift = MODULE.discover(
+            root / "pr-runs",
+            root / "native-runs",
+            root / "pr-artifacts",
+            root / "native-artifacts",
+            policy(),
+            datetime(2026, 8, 16, 12, 3, tzinfo=timezone.utc),
+            fixed_cutoff,
+        )
+        assert not any(
+            item.get("reason") == "observer workflow run is invalid"
+            for item in clock_drift["integrity_failures"]
+        )
+
+        pages(root / "pr-runs", "workflow_runs", [pr_run])
+        artifact_catalog(root / "pr-artifacts", pr_run, [
+            artifact(11, pr_run, artifact_name(MODULE.PR_GATE_STREAM))
+        ])
+
         artifact_catalog(root / "pr-artifacts", pr_run, [
             artifact(11, pr_run, "pr-gate-impact-observation-10-old-dynamic-name")
         ])
@@ -793,6 +822,7 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     assert "actions/runs/${run_id}/artifacts?per_page=100" in ledger
     assert "producer_count > MAXIMUM_CATALOGS" in ledger
     assert "serving-image-boundary.yml/runs" in ledger
+    assert '--receipt-cutoff "${RECEIPT_CUTOFF}"' in ledger
     assert "worker-gdal-image.yml/runs" in ledger
     assert "actions: write" not in ledger
     assert "contents: write" not in ledger

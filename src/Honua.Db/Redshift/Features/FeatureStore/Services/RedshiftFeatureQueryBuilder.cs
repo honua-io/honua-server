@@ -176,8 +176,7 @@ internal static partial class RedshiftFeatureQueryBuilder
 
         foreach (var column in columns)
         {
-            RedshiftIdentifier.EnsureValid(column, "attribute column");
-            sb.Append(", ").Append(RedshiftIdentifier.Quote(column));
+            sb.Append(", ").Append(RedshiftIdentifier.QuoteAttribute(column));
         }
     }
 
@@ -309,9 +308,8 @@ internal static partial class RedshiftFeatureQueryBuilder
         var clauses = new List<string>(query.OrderBy.Value.Length);
         foreach (var orderBy in query.OrderBy.Value)
         {
-            RedshiftIdentifier.EnsureValid(orderBy.Field, "order-by column");
             var direction = orderBy.Ascending ? "ASC" : "DESC";
-            clauses.Add($"{RedshiftIdentifier.Quote(orderBy.Field)} {direction}");
+            clauses.Add($"{RedshiftIdentifier.QuoteAttribute(orderBy.Field)} {direction}");
         }
 
         sb.Append(" ORDER BY ").Append(string.Join(", ", clauses));
@@ -519,16 +517,16 @@ internal static partial class RedshiftFeatureQueryBuilder
     }
 
     [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)$",
+        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s*(?<op>NOT\s+LIKE|LIKE|>=|<=|!=|<>|=|>|<)\s*(?<value>'(?:''|[^'])*'|-?\d+(?:\.\d+)?)\z",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ComparisonRegex();
 
     [GeneratedRegex(
-        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL$",
+        @"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IS\s+(?<not>NOT\s+)?NULL\z",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NullCheckRegex();
 
-    [GeneratedRegex(@"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?<field>[a-zA-Z_][a-zA-Z0-9_]*)\s+IN\s*\((?<values>(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?)(?:\s*,\s*(?:'(?:''|[^'])*'|-?\d+(?:\.\d+)?))*)\)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex InExpressionRegex();
 
     [GeneratedRegex(@"'(?:''|[^'])*'|-?\d+(?:\.\d+)?", RegexOptions.CultureInvariant)]

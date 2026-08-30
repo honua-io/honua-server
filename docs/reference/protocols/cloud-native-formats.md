@@ -8,8 +8,8 @@ Honua's support for the cloud-native geospatial format family: what each format 
 |---|---|---|---|---|
 | COG / GeoTIFF | Registered source + import | `POST /api/v1/admin/cloud-rasters` (S3/Azure, in place) or file import `POST /api/v1/admin/import/raster` | ImageServer (`exportImage`, `identify`, tiles), WCS 2.0.1, OGC API Coverages | Serving live |
 | PMTiles | Produced artifact | Tile-operations jobs (`archive`, `publish`) — see [Publish tiles](../../guides/publish/publish-tiles.md) | `GET`/`HEAD /api/v1/tiles/pmtiles/{artifactId}` (HTTP range requests) | Serving live |
-| GeoParquet | Import + wire format | File import (`.parquet`, `.geoparquet`) | FeatureServer `f=parquet` (GeoParquet 1.1.0, PostGIS-backed layers) | Live |
-| GeoArrow | Wire format | — | FeatureServer `f=arrow` (Arrow IPC stream, PostGIS-backed layers) | Live |
+| GeoParquet | Import + wire format | File import (`.parquet`, `.geoparquet`) | FeatureServer `f=parquet` (GeoParquet 1.1.0, shared response formatter) | Live |
+| GeoArrow | Wire format | — | FeatureServer `f=arrow` (Arrow IPC stream, shared response formatter) | Live |
 | FlatGeobuf | Import + wire format | File import (`.fgb`) | FeatureServer `f=fgb` (PostGIS-backed layers) | Live |
 | Zarr | Registered source | `POST /api/v1/admin/zarr-stores` (CRUD + `/refresh`) | OGC API Coverages pixel subsets (`ZarrCoverageService`) | Registration + serving live |
 | Cloud-optimized HDF5 / NetCDF4 | Registered source | `POST /api/v1/admin/multidim-coverages` (CRUD; URL-registered, not file-imported); `/refresh` enqueues an async GDAL worker job (202 + jobId/statusUrl) | Metadata extracted + enriched, then auto-converted to Zarr and registered for OGC API Coverages serving | Registration + conversion live; pixel read via the derived Zarr (reader is build-optional) |
@@ -33,7 +33,14 @@ Tile-operations jobs can `archive` a layer's tiles into a single PMTiles file an
 
 ## Analytics wire formats
 
-PostGIS-backed layers negotiate columnar/binary outputs on FeatureServer query (`f=parquet`, `f=arrow`, `f=fgb`, `f=geobuf`) for notebook and pipeline consumption — see [Export data](../../guides/query-analyze/export-data.md) and the [data formats matrix](../data-formats.md) for which surfaces serve which formats.
+FeatureServer query negotiates GeoParquet and GeoArrow after the selected
+provider returns the canonical feature stream, so `f=parquet` and `f=arrow` are
+provider-neutral response formats rather than PostGIS-only provider features.
+The formatter and HTTP contracts are verified in the server test suite;
+PostGIS has the broadest end-to-end coverage, while warehouse-provider nightly
+lanes verify their query capability separately. Native provider exports (for
+example MVT) remain provider-specific. See [Export data](../../guides/query-analyze/export-data.md)
+and the [data formats matrix](../data-formats.md).
 
 ## Zarr and multidimensional coverages (HDF5/NetCDF/GRIB)
 

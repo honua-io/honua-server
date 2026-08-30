@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers.Binary;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -103,8 +104,7 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
             return GetGeometryColumn(context);
         }
 
-        throw new ArgumentException(
-            $"Field '{property.PropertyName}' is not defined on layer '{context.ResourceName}'.");
+        throw UnknownFilterFieldException.ForProperty(property.PropertyName);
     }
 
     protected override string TranslateSpatial(SpatialPredicate spatial, FilterTranslationContext context)
@@ -213,7 +213,7 @@ internal sealed class DuckDbSqlFilterTranslator : SqlFilterExpressionVisitorBase
                         return GetGeometryColumn(context);
                     }
 
-                    throw new ArgumentException($"Field '{property.PropertyName}' is not a geometry field.");
+                    throw UnknownFilterFieldException.ForProperty(property.PropertyName);
                 }
 
                 if (!field.Value.IsGeometry)

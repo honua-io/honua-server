@@ -25,6 +25,26 @@ public sealed class InMemoryFilterEvaluatorTests
     }
 
     [UnitTest]
+    public void TryValidateStreamingExpression_NullBooleanShapes_ReturnTrue()
+    {
+        FilterExpression[] expressions =
+        [
+            new Literal(null, LiteralType.Null),
+            new UnaryExpression(UnaryOperator.Not, new Literal(null, LiteralType.Null)),
+            new BinaryExpression(
+                new Literal(null, LiteralType.Null),
+                BinaryOperator.Or,
+                new Literal(true, LiteralType.Boolean))
+        ];
+
+        foreach (var expression in expressions)
+        {
+            InMemoryFilterEvaluator.TryValidateStreamingExpression(expression, out var error)
+                .Should().BeTrue(error);
+        }
+    }
+
+    [UnitTest]
     public void Evaluate_UnsupportedExpression_ReturnsFalse()
     {
         var expression = new BinaryExpression(
@@ -97,6 +117,78 @@ public sealed class InMemoryFilterEvaluatorTests
         var properties = CreateProperties($$"""{"objectid":{{propertyValue}}}""");
 
         InMemoryFilterEvaluator.Evaluate(expression, properties).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_NotUnknown_ReturnsFalse()
+    {
+        var expression = new UnaryExpression(
+            UnaryOperator.Not,
+            new Literal(null, LiteralType.Null));
+
+        InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("{}")).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_NotUnknownAndTrue_ReturnsFalse()
+    {
+        var expression = new UnaryExpression(
+            UnaryOperator.Not,
+            new BinaryExpression(
+                new Literal(null, LiteralType.Null),
+                BinaryOperator.And,
+                new Literal(true, LiteralType.Boolean)));
+
+        InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("{}")).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_NotUnknownOrFalse_ReturnsFalse()
+    {
+        var expression = new UnaryExpression(
+            UnaryOperator.Not,
+            new BinaryExpression(
+                new Literal(null, LiteralType.Null),
+                BinaryOperator.Or,
+                new Literal(false, LiteralType.Boolean)));
+
+        InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("{}")).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_NotInWithNullListMemberAndNoMatch_ReturnsFalse()
+    {
+        var expression = new BinaryExpression(
+            new PropertyReference("status"),
+            BinaryOperator.NotIn,
+            new ValueList(
+                [new Literal("active", LiteralType.Text), new Literal(null, LiteralType.Null)]));
+
+        InMemoryFilterEvaluator.Evaluate(
+            expression,
+            CreateProperties("""{"status":"inactive"}""")).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_UnknownAndFalse_ReturnsFalse()
+    {
+        var expression = new BinaryExpression(
+            new Literal(null, LiteralType.Null),
+            BinaryOperator.And,
+            new Literal(false, LiteralType.Boolean));
+
+        InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("{}")).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Evaluate_UnknownOrTrue_ReturnsTrue()
+    {
+        var expression = new BinaryExpression(
+            new Literal(null, LiteralType.Null),
+            BinaryOperator.Or,
+            new Literal(true, LiteralType.Boolean));
+
+        InMemoryFilterEvaluator.Evaluate(expression, CreateProperties("{}")).Should().BeTrue();
     }
 
     private static Dictionary<string, JsonElement> CreateProperties(string json)

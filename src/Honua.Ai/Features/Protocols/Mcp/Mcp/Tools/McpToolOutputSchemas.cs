@@ -1046,6 +1046,49 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    /// <summary>Canonical durable envelope and Studio draft projection for converted mutations.</summary>
+    public static readonly JsonElement StudioDraftMutationOutputSchema = Parse(
+        """
+        {
+          "type": "object",
+          "required": ["operation"],
+          "properties": {
+            "operation": {
+              "type": "object",
+              "required": ["operationInstanceId", "operationId", "status", "correlationId", "createdAt", "updatedAt"],
+              "properties": {
+                "operationInstanceId": { "type": "string" },
+                "operationId": { "type": "string" },
+                "status": { "type": "string" },
+                "correlationId": { "type": "string" },
+                "auditId": { "type": ["string", "null"] },
+                "proposalId": { "type": ["string", "null"] },
+                "createdAt": { "type": "string" },
+                "updatedAt": { "type": "string" }
+              }
+            },
+            "draftId": { "type": ["string", "null"] },
+            "itemId": { "type": ["string", "null"] },
+            "packageKey": { "type": ["string", "null"] },
+            "workspaceId": { "type": ["string", "null"] },
+            "ownerId": { "type": ["string", "null"] },
+            "family": { "type": ["string", "null"] },
+            "envelope": { "type": ["object", "null"] },
+            "validation": { "type": ["object", "null"] },
+            "baseVersionId": { "type": ["string", "null"] },
+            "generation": { "type": ["integer", "null"] },
+            "createdBy": { "type": ["string", "null"] },
+            "updatedBy": { "type": ["string", "null"] },
+            "createdAt": { "type": ["string", "null"] },
+            "updatedAt": { "type": ["string", "null"] },
+            "studioAuthorizationCode": {
+              "type": ["string", "null"],
+              "description": "Stable Studio authorization denial code on an error branch."
+            }
+          }
+        }
+        """);
+
     /// <summary>Schema for <c>StudioValidationSummary</c> (<c>honua_studio_validate_draft</c>).</summary>
     public static readonly JsonElement StudioValidationOutputSchema = Parse(
         """

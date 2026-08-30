@@ -147,7 +147,8 @@ public sealed class AdminOperationApprovalBridgeTests
         result.ProposalId.Should().Be("proposal-123");
         result.AuditId.Should().Be("audit-456");
         captured.Should().NotBeNull();
-        captured!.OperationInstanceId.Should().Be("opinst-123");
+        captured!.OperationId.Should().Be("admin.test");
+        captured.OperationInstanceId.Should().Be("opinst-123");
         captured.CorrelationId.Should().Be("corr-123");
         captured.OperationInstanceId.Should().NotBe(result.ProposalId);
     }

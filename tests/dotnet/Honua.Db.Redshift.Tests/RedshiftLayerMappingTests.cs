@@ -93,4 +93,13 @@ public class RedshiftLayerMappingTests
         // The allow-list rejects embedded quotes before they reach the doubling step.
         Assert.Throws<ArgumentException>(() => RedshiftIdentifier.Quote("col\"umn"));
     }
+
+    [Theory]
+    [InlineData("parcels", true)]
+    [InlineData("parcels\n", false)]
+    [InlineData("parcels\r\n", false)]
+    public void Identifier_IsValid_RequiresExactMatch(string value, bool expected)
+    {
+        Assert.Equal(expected, RedshiftIdentifier.IsValid(value));
+    }
 }

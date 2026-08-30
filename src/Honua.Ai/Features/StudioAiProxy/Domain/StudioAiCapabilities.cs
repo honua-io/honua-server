@@ -62,4 +62,8 @@ public sealed class StudioAiCapabilitiesResponse
     /// <summary>Every declared provider, configured or not.</summary>
     [JsonPropertyName("providers")]
     public IReadOnlyList<StudioAiCapability> Providers { get; init; } = [];
+
+    /// <summary>Ed25519 verification keys and overlap-window policy for certification transcripts.</summary>
+    [JsonPropertyName("transcriptSigning")]
+    public StudioAiTranscriptSigningManifest? TranscriptSigning { get; init; }
 }

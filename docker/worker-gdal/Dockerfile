@@ -190,7 +190,7 @@ ENV PATH="/opt/pdal/bin:${PATH}" \
 # compiled in. The ubuntu-full base ships both; this is a build-time guard.
 # `pdal` must also be on PATH with the LAS reader + reprojection filter compiled
 # in (LAZ/COPC decompress + reproject, #1854).
-RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo \
+RUN command -v gdalwarp && command -v ogr2ogr && command -v gdalmdiminfo && command -v gdalmdimtranslate \
  && gdalinfo --version | grep -F "GDAL ${GDAL_VERSION}" \
  # gdal_grid backs the raster IDW interpolation tool (raster.interpolate-idw, #2141);
  # gdalwarp backs raster.resample and raster.mosaic. Both ship in the ubuntu-full base.
