@@ -207,20 +207,32 @@ image build reads; the digest is derived from the same closure and pattern
 predicates as the routing decision (`image_input_selection`), so an input can
 only leave the digest by also leaving the decision.
 
-Changing the selector changes `policy_blob_sha`, which invalidates every
-outstanding receipt by design. The v3 receipt contract deliberately resets the
-observed sample: the v2 sample could never satisfy a narrowing-only savings gate,
-so it carried no promotion value.
+Changing either classifier or `.github/native-image-impact.json` changes the
+semantic `policy_generation_sha256`, which invalidates every outstanding receipt
+by design. The generation manifest contains the PR Gate classifier, native-image
+classifier, and native routing-policy blobs: the inputs that can change a
+routing decision.
 
 That reset is **cohort drift, not receipt loss**, and the ledger says so (#3343).
-Any commit touching one of the nine pinned policy inputs — including a
-dependency bump that changes nothing about routing — starts a new policy
-generation, named by `policy_generation_sha256`. Receipts pinning the previous
-generation stop being countable and are reported under
+Workflow, observer, and trusted-resolver blob SHAs remain pinned in each receipt
+as provenance. The PR Gate workflow, observers, and resolver define the generation
+because they can alter routing or collection semantics. Serving/worker workflow
+action-version, timeout, step-name, and comment edits do not discard an otherwise
+valid cohort. This is fail-closed: the native classifier parses the authoritative
+serving/worker workflow trigger paths and serving variant case arms and validates
+them against `.github/native-image-impact.json` before emitting evidence. A
+routing-relevant workflow edit requires a matching routing-policy edit, which
+changes the generation; drift fails the observer instead of silently retaining
+the old generation. Receipts pinning a previous semantic generation stop being
+countable and are reported under
 `policy_generation_superseded_receipts`. Reporting them as *integrity* failures
 made the ledger red on routine repository maintenance and gave every
 `observe`→`enforce` promotion gate an unusable signal; see
 `impact-routing-evidence.md`, "What the ledger calls a failure".
+
+The retained-ledger trend reports generation resets, resets per week, and the
+largest docs-only/native sample reached within one generation. Those numbers
+make the configured 20/20 cohort's reachability explicit.
 
 The promotion policy and ledger contracts are
 `honua.impact-routing-promotion-policy/v3` and

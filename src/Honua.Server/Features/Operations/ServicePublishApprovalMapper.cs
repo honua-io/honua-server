@@ -45,6 +45,7 @@ internal sealed class ServicePublishApprovalRequestMapper : IOperationApprovalRe
         return new OperationGatewayRequest
         {
             OperationInstanceId = context.OperationInstanceId,
+            OperationId = OperationId,
             Kind = OperationClass.ServicePublish,
             RequestedBy = context.PrincipalId,
             Reason = decision.Reason,

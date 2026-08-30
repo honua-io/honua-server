@@ -53,6 +53,20 @@ internal static class Wfs20ErrorResults
             locator);
     }
 
+    internal static IResult CreateUnauthorized(
+        HttpContext context,
+        string exceptionCode,
+        string detail,
+        string? locator = null,
+        IReadOnlyList<string>? additionalDetails = null)
+    {
+        return Create(
+            context,
+            StandardErrorResponse.Unauthorized(detail, additionalDetails),
+            exceptionCode,
+            locator);
+    }
+
     private static IResult Create(
         HttpContext context,
         StandardErrorResponse errorResponse,

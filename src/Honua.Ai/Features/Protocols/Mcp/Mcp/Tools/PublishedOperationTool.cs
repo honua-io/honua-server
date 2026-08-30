@@ -58,7 +58,7 @@ internal sealed class PublishedOperationTool : IMcpTool
         _catalogVersion = catalogVersion ?? string.Empty;
         _logger = logger;
         Name = ProjectName(descriptor.OperationId);
-        _inputSchema = BuildInputSchema(descriptor.InputSchema);
+        _inputSchema = BuildInputSchema(descriptor.InputSchema, descriptor.Policy.SupportsDryRun);
     }
 
     public string Name { get; }
@@ -113,6 +113,8 @@ internal sealed class PublishedOperationTool : IMcpTool
     {
         var readOnly = _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
         var destructive =
+            _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
+            ||
             _descriptor.Policy.SideEffectClass == OperationSideEffectClass.DestroysState
             || _descriptor.Policy.BlastRadiusClass == OperationBlastRadiusClass.DeploymentScope;
 
@@ -153,6 +155,15 @@ internal sealed class PublishedOperationTool : IMcpTool
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
+
+        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        {
+            // Fail closed until #3586 replaces this refusal with the unified runtime's
+            // transport-neutral approval proof. The MCP adapter must not implement an
+            // approval lane or invoke an operation that requires one.
+            return McpToolHelpers.ErrorResult(new GeoprocessingApprovalRequiredException(
+                $"operations/{_descriptor.OperationId}"));
+        }
 
         // The policy context is resolved BEFORE the cache is consulted because it is
         // part of the cache key: the cache-hit fast path skips the policy decision
@@ -335,7 +346,10 @@ internal sealed class PublishedOperationTool : IMcpTool
         var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (var parameter in _descriptor.InputSchema)
         {
-            parameters[parameter.Name] = ReadString(arguments, parameter.Name);
+            if (arguments is { ValueKind: JsonValueKind.Object } args && args.TryGetProperty(parameter.Name, out _))
+            {
+                parameters[parameter.Name] = ReadString(arguments, parameter.Name);
+            }
         }
 
         return parameters;
@@ -377,11 +391,8 @@ internal sealed class PublishedOperationTool : IMcpTool
         };
     }
 
-    // Builds a JSON Schema object for the operation's parameters using a
-    // Utf8JsonWriter (reflection-free, AOT-safe). Operation parameters are
-    // string-valued on the wire (OperationRequest keeps them as strings), so each
-    // property is typed string with the descriptor's title as its description.
-    private static JsonElement BuildInputSchema(IReadOnlyList<OperationParameterDescriptor> parameters)
+    // Builds JSON Schema from the descriptor's AOT-safe constrained schema model.
+    private static JsonElement BuildInputSchema(IReadOnlyList<OperationParameterDescriptor> parameters, bool supportsDryRun)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -393,12 +404,19 @@ internal sealed class PublishedOperationTool : IMcpTool
             foreach (var parameter in parameters)
             {
                 writer.WriteStartObject(parameter.Name);
-                writer.WriteString("type", "string");
+                WriteSchema(writer, parameter.Schema);
                 if (!string.IsNullOrWhiteSpace(parameter.Title))
                 {
                     writer.WriteString("description", parameter.Title);
                 }
 
+                writer.WriteEndObject();
+            }
+            if (supportsDryRun)
+            {
+                writer.WriteStartObject("dryRun");
+                writer.WriteString("type", "boolean");
+                writer.WriteString("description", "Execute the operation as a dry run without committing side effects.");
                 writer.WriteEndObject();
             }
 
@@ -416,5 +434,48 @@ internal sealed class PublishedOperationTool : IMcpTool
 
         using var document = JsonDocument.Parse(buffer.WrittenMemory);
         return document.RootElement.Clone();
+    }
+
+    private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema)
+    {
+        writer.WriteString("type", schema.Type switch
+        {
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.WholeNumber => "integer",
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.DecimalNumber => "number",
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Flag => "boolean",
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.List => "array",
+            Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Structured => "object",
+            _ => "string"
+        });
+        if (!string.IsNullOrWhiteSpace(schema.Format)) writer.WriteString("format", schema.Format);
+        if (schema.EnumValues.Count > 0)
+        {
+            writer.WriteStartArray("enum");
+            foreach (var value in schema.EnumValues) writer.WriteStringValue(value);
+            writer.WriteEndArray();
+        }
+        if (schema.Items is not null)
+        {
+            writer.WriteStartObject("items");
+            WriteSchema(writer, schema.Items);
+            writer.WriteEndObject();
+        }
+        if (schema.Properties.Count > 0)
+        {
+            writer.WriteStartObject("properties");
+            foreach (var property in schema.Properties)
+            {
+                writer.WriteStartObject(property.Key);
+                WriteSchema(writer, property.Value);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+        }
+        if (schema.RequiredProperties.Count > 0)
+        {
+            writer.WriteStartArray("required");
+            foreach (var property in schema.RequiredProperties) writer.WriteStringValue(property);
+            writer.WriteEndArray();
+        }
     }
 }

@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Extensions;
 using Microsoft.AspNetCore.Hosting;
@@ -48,8 +49,15 @@ public sealed class I3sConformanceFixtureTests : IAsyncLifetime
                 });
             })
             .ConfigureServices(services =>
-                services.AddSingleton<ILicenseStatusProvider>(
-                    new EnterpriseLicenseStatusProvider()));
+            {
+                // The 402 gate resolves ILicenseEntitlementService, not
+                // ILicenseStatusProvider — register the test license for BOTH
+                // (mirrors I3sSceneServerEndpointTests) so the Enterprise-gated
+                // serve.i3s-scene routes stay open for conformance runs.
+                var license = new TestLicenseEntitlementService(HonuaEdition.Enterprise);
+                services.AddSingleton<ILicenseEntitlementService>(license);
+                services.AddSingleton<ILicenseStatusProvider>(license);
+            });
     }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
@@ -159,15 +167,5 @@ public sealed class I3sConformanceFixtureTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{SceneId}/SceneServer/layers/0/statistics/f_99/0");
         await response.AssertGeoServicesErrorAsync(404);
-    }
-
-    private sealed class EnterpriseLicenseStatusProvider : ILicenseStatusProvider
-    {
-        public LicenseStatus GetCurrentStatus() =>
-            new(HonuaEdition.Enterprise, IsValid: true, ExpiresAt: null, LicensedTo: "test");
-
-        public Task<LicenseUploadResult> UploadLicenseAsync(
-            Stream licenseStream, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new LicenseUploadResult(false, "Stub does not support upload."));
     }
 }

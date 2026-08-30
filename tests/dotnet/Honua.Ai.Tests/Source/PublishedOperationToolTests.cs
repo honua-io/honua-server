@@ -221,7 +221,7 @@ public sealed class PublishedOperationToolTests
                 DefaultReason = "Denied by policy on this tier.",
             });
 
-        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+        var tool = new PublishedOperationTool(ApprovalFreeMutatingDescriptor(), "cat-v1", NullLogger.Instance);
         var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
@@ -232,61 +232,34 @@ public sealed class PublishedOperationToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
-    public async Task Invoke_PolicyRequiresApproval_WithoutDurableBridge_FailsClosed()
+    public async Task Invoke_ApprovalGatedInstallation_FailsClosedBeforeInvoker()
     {
-        var invoker = Dispatcher(
-            MutatingDescriptor(),
-            new RecordingExecutor(MutatingOpId),
-            new OperationPolicyOptions
-            {
-                Enabled = true,
-                DefaultDecision = PolicyDecisionKind.RequireApproval,
-                DefaultApprovalLane = "operator-gate",
-                DefaultReason = "Requires operator approval.",
-            });
+        var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
 
         var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
         var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
-        body.GetProperty("status").GetString().Should().Be("Failed");
-        body.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
-        body.GetProperty("approvalLane").GetString().Should().Be("operator-gate");
-        body.TryGetProperty("proposalId", out _).Should().BeFalse();
-        body.GetProperty("auditId").GetString().Should().NotBeNullOrWhiteSpace(
-            "the failed approval envelope retains its durable acceptance evidence");
+        result.IsError.Should().BeTrue();
+        body.GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.FailedPrecondition);
+        body.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        body.GetProperty("policyRef").GetString().Should().Be("operations/geo.export");
+        invoker.SubmitCount.Should().Be(0, "approval-gated MCP calls must not reach IOperationInvoker");
     }
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
-    public async Task Invoke_DurableApproval_ProjectsCanonicalJoinedIdentities()
+    public async Task Invoke_ApprovalFreeInstallation_Executes()
     {
-        var now = DateTimeOffset.UtcNow;
-        var invoker = new CountingInvoker(_ => new OperationHandle
-        {
-            OperationInstanceId = "opinst-123",
-            OperationId = MutatingOpId,
-            ProposalId = "proposal-456",
-            CorrelationId = "corr-789",
-            AuditId = "audit-101",
-            Status = OperationHandleStatus.RequiresApproval,
-            CreatedAt = now,
-            UpdatedAt = now,
-            AuthorizationOutcome = "authorized",
-            PolicyDecision = PolicyDecisionKind.RequireApproval,
-            ApprovalLane = "operator-gate",
-        });
-        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+        var invoker = new CountingInvoker(_ => CompletedHandle(DeterministicReadOnlyOpId));
+        var tool = new PublishedOperationTool(DeterministicReadOnlyDescriptor(), "cat-v1", NullLogger.Instance);
 
         var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
-        body.GetProperty("operationInstanceId").GetString().Should().Be("opinst-123");
-        body.GetProperty("handleId").GetString().Should().Be("opinst-123");
-        body.GetProperty("proposalId").GetString().Should().Be("proposal-456");
-        body.GetProperty("correlationId").GetString().Should().Be("corr-789");
-        body.GetProperty("auditId").GetString().Should().Be("audit-101");
-        body.GetProperty("policyOutcome").GetString().Should().Be("RequireApproval");
+        result.IsError.Should().BeFalse();
+        body.GetProperty("status").GetString().Should().Be("Completed");
+        invoker.SubmitCount.Should().Be(1);
     }
 
     [UnitTest]
@@ -299,7 +272,7 @@ public sealed class PublishedOperationToolTests
             return CompletedHandle(MutatingOpId);
         });
 
-        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+        var tool = new PublishedOperationTool(ApprovalFreeMutatingDescriptor(), "cat-v1", NullLogger.Instance);
         var context = Context(invoker, license: ProEdition(), roles: ["operator", "publisher"]);
 
         await tool.InvokeAsync(context, Args("""{"layerId":"7"}"""), CancellationToken.None);
@@ -542,7 +515,7 @@ public sealed class PublishedOperationToolTests
     {
         var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
         var cache = new PublishedOperationCache();
-        var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
+        var tool = new PublishedOperationTool(ApprovalFreeMutatingDescriptor(), "cat-v1", NullLogger.Instance);
 
         await tool.InvokeAsync(Context(invoker, cache), Args("""{"layerId":"7"}"""), CancellationToken.None);
         var second = await tool.InvokeAsync(
@@ -843,6 +816,11 @@ public sealed class PublishedOperationToolTests
             Determinism = OperationDeterminism.AiAssisted,
             SupportsDryRun = true,
         },
+    };
+
+    private static OperationDescriptor ApprovalFreeMutatingDescriptor() => MutatingDescriptor() with
+    {
+        ApprovalModel = OperationApprovalModel.None,
     };
 
     private static OperationDescriptor ServicePublishDescriptor() => DeterministicReadOnlyDescriptor() with

@@ -86,13 +86,39 @@ internal static class OperationsServiceCollectionExtensions
 
         // Executors: concrete work, registered as an enumerable for the dispatcher.
         services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IOperationExecutor, ServicePublishExecutor>());
+            ServiceDescriptor.Scoped<IOperationExecutor, DeferredServicePublishExecutor>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftCreateExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftUpdateExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftDeleteExecutor>());
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
+
+        var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==
+            typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore));
+        if (hasProposalStore &&
+            !services.Any(descriptor => descriptor.ServiceType == typeof(AdminConnectImportRegistrationMarker)))
+        {
+            services.AddSingleton<AdminConnectImportRegistrationMarker>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider,
+                AdminConnectImportOperationDescriptorProvider>());
+            foreach (var definition in AdminConnectImportOperationCatalog.Definitions)
+            {
+                if (definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
+                {
+                    services.AddSingleton<IOperationApprovalRequestMapper>(
+                        new AdminConnectImportApprovalRequestMapper(definition));
+                }
+                services.AddScoped<IOperationExecutor>(sp => new AdminConnectImportOperationExecutor(
+                    definition,
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetRequiredService<IHttpContextAccessor>(),
+                    sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
+                    sp.GetRequiredService<TimeProvider>()));
+            }
+            services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
+            services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+        }
 
         // Legacy adapters register UNCONDITIONALLY and resolve their control-plane
         // actuator at USE time. The former registration-time services.Any gate was
@@ -111,6 +137,18 @@ internal static class OperationsServiceCollectionExtensions
             AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.MetadataRelease);
             AddLegacyAdapter(services, Honua.Core.Features.Guardrails.Domain.OperationClass.Geoprocess);
         }
+
+        foreach (var definition in AdminOperateOperationCatalog.Definitions)
+        {
+            services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
+                definition,
+                sp.GetRequiredService<IHttpClientFactory>(),
+                sp.GetRequiredService<IHttpContextAccessor>(),
+                sp.GetRequiredService<TimeProvider>()));
+        }
+
+        services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
+        services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
         // One policy seam combines typed operation rules with the legacy guardrail ladder.
         // TryAdd preserves an explicitly registered stricter PDP supplied by a host.
@@ -151,4 +189,6 @@ internal static class OperationsServiceCollectionExtensions
     /// <c>TryAddEnumerable</c> (which cannot hold factory descriptors).
     /// </summary>
     internal sealed class LegacyAdapterRegistrationMarker;
+
+    internal sealed class AdminConnectImportRegistrationMarker;
 }

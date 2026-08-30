@@ -181,19 +181,27 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "BuildAttributesExpressionText",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
-            types: [typeof(MetadataV2Field[])],
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>)],
             modifiers: null);
 
         method.Should().NotBeNull();
 
-        var expression = (string)method!.Invoke(null, [fields])!;
+        var parameters = new List<object?>();
+        string AddParameter(object? value)
+        {
+            parameters.Add(value);
+            return $"${parameters.Count}";
+        }
+
+        var expression = (string)method!.Invoke(null, [fields, null, (Func<object?, string>)AddParameter])!;
 
         expression.Split("jsonb_build_object", StringSplitOptions.None).Length.Should().Be(3);
         expression.Should().StartWith("(");
         expression.Should().EndWith(")::text");
         expression.Should().Contain(" || ");
-        expression.Should().Contain("'field_1', \"field_1\"");
-        expression.Should().Contain("'field_51', \"field_51\"");
+        expression.Should().Contain("$1::text, \"field_1\"");
+        expression.Should().Contain("$51::text, \"field_51\"");
+        parameters.Should().Equal(fields.Select(static field => field.Name));
     }
 
     [Fact]
@@ -212,22 +220,69 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "BuildAttributesExpressionText",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
-            types: [typeof(MetadataV2Field[]), typeof(string)],
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>)],
             modifiers: null);
 
         method.Should().NotBeNull();
 
-        var expression = (string)method!.Invoke(null, [fields, "attributes"])!;
+        var parameters = new List<object?>();
+        string AddParameter(object? value)
+        {
+            parameters.Add(value);
+            return $"${parameters.Count}";
+        }
+
+        var expression = (string)method!.Invoke(null, [fields, "attributes", (Func<object?, string>)AddParameter])!;
 
         // Numeric/boolean fields use the jsonb-preserving accessor (->) so they
         // round-trip as JSON numbers/booleans, not strings.
-        expression.Should().Contain("'sync_version', \"attributes\" -> 'sync_version'");
-        expression.Should().Contain("'elevation', \"attributes\" -> 'elevation'");
-        expression.Should().Contain("'serviceable', \"attributes\" -> 'serviceable'");
+        expression.Should().Contain("$2::text, \"attributes\" -> $2::text");
+        expression.Should().Contain("$3::text, \"attributes\" -> $3::text");
+        expression.Should().Contain("$4::text, \"attributes\" -> $4::text");
 
         // Text/date fields keep the text accessor (->>) — formatting unchanged.
-        expression.Should().Contain("'site_name', \"attributes\" ->> 'site_name'");
-        expression.Should().Contain("'inspected', \"attributes\" ->> 'inspected'");
+        expression.Should().Contain("$1::text, \"attributes\" ->> $1::text");
+        expression.Should().Contain("$5::text, \"attributes\" ->> $5::text");
+        parameters.Should().Equal(fields.Select(static field => field.Name));
+    }
+
+    [Fact]
+    public void BuildAttributesExpressionText_WithQuotedJsonbKey_BindsKeyWithoutChangingStatement()
+    {
+        const string fieldName = "owner's key ->> 'x'; SELECT pg_sleep(1); --";
+        var field = new MetadataV2Field { Name = fieldName, Type = MetadataV2FieldType.String };
+        var resource = CreatePrefixedFieldResource(field);
+        var reader = CreateReader(resource, attributesColumn: "attributes");
+        var resolveMethod = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "ResolveAttributeFields",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+
+        resolveMethod.Should().NotBeNull();
+        var resolved = (MetadataV2Field[])resolveMethod!.Invoke(reader, [new FeatureQuery()])!;
+        resolved.Should().NotContain(candidate => candidate.Name == fieldName,
+            "the existing JSON attribute-key allow-list remains the first gate");
+
+        var buildMethod = typeof(PostgresStorageMappedFeatureReader).GetMethod(
+            "BuildAttributesExpressionText",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>)],
+            modifiers: null);
+        var parameters = new List<object?>();
+        string AddParameter(object? value)
+        {
+            parameters.Add(value);
+            return $"${parameters.Count}";
+        }
+
+        buildMethod.Should().NotBeNull();
+        var expression = (string)buildMethod!.Invoke(
+            null,
+            [new[] { field }, "attributes", (Func<object?, string>)AddParameter])!;
+
+        expression.Should().Be("(jsonb_build_object($1::text, \"attributes\" ->> $1::text))::text");
+        expression.Should().NotContain(fieldName);
+        parameters.Should().ContainSingle().Which.Should().Be(fieldName);
     }
 
     [Fact]
@@ -256,8 +311,8 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "AS \"eo:cloud_cover\"",
             "the alias is quoted, not identifier-validated, exactly as the native builder does");
         sql.Should().Contain(
-            "\"attributes\" ->> 'eo:cloud_cover'",
-            "the value still comes from the JSONB accessor as an escaped key");
+            "\"attributes\" ->> $1::text",
+            "the value still comes from the JSONB accessor with a bound key");
     }
 
     [Fact]

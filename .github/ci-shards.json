@@ -1244,8 +1244,8 @@
       "dispatch_rank": 19.9,
       "artifact_suffix": "mcp",
       "log_name": "server-tests-mcp",
-      "timeout_minutes": 25,
-      "test_timeout_minutes": 15,
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
@@ -1633,6 +1633,7 @@
         "src/Honua.Db/Postgres/Features/Alerts/",
         "tests/dotnet/Honua.Server.Tests/Features/Console/",
         "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertChannelNamesTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertWebhookDeliveryE2eTests.cs",
         "src/Honua.Core/Features/Validation/"
       ],
       "csproj": ""

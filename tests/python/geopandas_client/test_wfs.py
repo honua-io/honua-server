@@ -721,16 +721,23 @@ def test_nb_wfs_sch01_namespaced_field_is_readable(
 def test_nb_wfs_typ01_scalar_typing(
     wfs_dsn: str,
     wfs_typename: str,
+    oapif_dsn: str,
+    geopandas_collection_id: str,
     wfs_evidence: CertificationEvidenceCollector,
 ) -> None:
-    """Numeric and boolean XSD types materialize as numeric/bool dtypes."""
+    """Declared scalar types produce the same dtypes over WFS and OAPIF."""
     timer = CaseTimer()
     frame = pyogrio.read_dataframe(wfs_dsn, layer=wfs_typename)
+    oapif_frame = pyogrio.read_dataframe(
+        oapif_dsn, layer=geopandas_collection_id
+    )
 
     assert str(frame[fixture.FEATURE_ID_FIELD].dtype).startswith("int")
-    assert str(frame["count"].dtype).startswith("int")
-    assert str(frame["ratio"].dtype).startswith("float")
-    assert str(frame["active"].dtype) == "bool"
+    for field in ("count", "ratio", "active", "created_at", "event_date"):
+        assert frame[field].dtype == oapif_frame[field].dtype, (
+            f"{field} dtype diverged: WFS={frame[field].dtype}, "
+            f"OAPIF={oapif_frame[field].dtype}"
+        )
     assert sorted(frame[fixture.FEATURE_ID_FIELD].tolist()) == list(
         range(1, fixture.TOTAL_FEATURES + 1)
     )
@@ -744,8 +751,9 @@ def test_nb_wfs_typ01_scalar_typing(
         notes=(
             f"objectid dtype={frame[fixture.FEATURE_ID_FIELD].dtype}, count="
             f"{frame['count'].dtype}, ratio={frame['ratio'].dtype}, active="
-            f"{frame['active'].dtype}; xsd:int/xsd:double/xsd:boolean from "
-            "DescribeFeatureType survived into pandas dtypes."
+            f"{frame['active'].dtype}, created_at={frame['created_at'].dtype}, "
+            f"event_date={frame['event_date'].dtype}; every shared declared "
+            "scalar dtype matches OGC API Features."
         ),
     )
 
@@ -761,8 +769,10 @@ def test_nb_wfs_typ02_temporal_values(
     frame = pyogrio.read_dataframe(wfs_dsn, layer=wfs_typename)
     anchor = _anchor_row(frame)
 
-    created = pandas.to_datetime(frame["created_at"], utc=True, format="mixed")
-    dates = pandas.to_datetime(frame["event_date"], format="mixed")
+    assert "datetime64" in str(frame["created_at"].dtype)
+    assert "datetime64" in str(frame["event_date"].dtype)
+    created = pandas.to_datetime(frame["created_at"], utc=True)
+    dates = pandas.to_datetime(frame["event_date"])
 
     assert str(created.iloc[0])[:19] == "2024-01-01 12:00:00"
     assert str(dates.iloc[0])[:10] == "2024-02-01"
@@ -777,11 +787,8 @@ def test_nb_wfs_typ02_temporal_values(
         notes=(
             f"created_at={anchor['created_at']!r}, event_date="
             f"{anchor['event_date']!r}, event_time={anchor['event_time']!r} - "
-            "all parse to the seeded instants. GDAL delivers them as strings "
-            "rather than OFTDateTime because it falls back to data-driven GML "
-            "typing when the DescribeFeatureType schema contains an "
-            "xsd:anyType element (the tags/numbers JSON columns), which is a "
-            "GDAL schema-parsing behaviour, not a value defect."
+            "the declared xsd:dateTime/xsd:date types materialized as pandas "
+            "datetime dtypes and all values match the seeded instants."
         ),
     )
 

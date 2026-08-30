@@ -3,11 +3,10 @@ name: Warehouse Providers Nightly (Creds-Gated)
 # #2943: the Snowflake/Redshift/Databricks/SqlServer read/query-only provider
 # test projects require live-cloud credentials this repo does not provision
 # by default, so they were previously referenced by zero workflows — their
-# self-skip behavior (RequiredEnvironmentFact, or an early-return no-op for
-# Databricks) was invisible rather than surfaced. This lane gives them an
+# self-skip behavior was invisible or could be reported as a no-op pass. This lane gives them an
 # explicit, documented execution path instead of silently folding them into
 # the PR path, and reports pass/fail/skip counts in the run summary so a
-# missing secret reads as "not configured" rather than "the project vanished".
+# missing secret reads as the stable `missing-credential:` marker rather than "the project vanished".
 # Configure the optional repository secrets below to exercise a provider
 # against a real warehouse; without them every case in that project skips
 # cleanly and the job still succeeds.
@@ -52,16 +51,31 @@ jobs:
         include:
           - project: Honua.Snowflake.Tests
             csproj: tests/dotnet/Honua.Snowflake.Tests/Honua.Snowflake.Tests.csproj
+            credential_vars: HONUA_SNOWFLAKE_TEST_CONNECTION
+            live_test: Query_OnLiveSnowflakeTable_ReturnsFeaturesWithGeometry
+            engine: Snowflake
+            stand_in: none
           - project: Honua.Redshift.Tests
             csproj: tests/dotnet/Honua.Db.Redshift.Tests/Honua.Redshift.Tests.csproj
+            credential_vars: HONUA_REDSHIFT_TEST_CONNECTION
+            live_test: SpatialRoundTrip_ExecutesOnAmazonRedshift
+            engine: Amazon Redshift
+            stand_in: PostGIS wire-compatibility suite (not Redshift evidence)
           - project: Honua.Databricks.Tests
             csproj: tests/dotnet/Honua.Db.Databricks.Tests/Honua.Databricks.Tests.csproj
+            credential_vars: HONUA_TEST_DATABRICKS_HOST HONUA_TEST_DATABRICKS_WAREHOUSE HONUA_TEST_DATABRICKS_TOKEN HONUA_TEST_DATABRICKS_TABLE
+            live_test: QueryAsync_LiveWarehouse_ReturnsFeatures
+            engine: Databricks SQL Warehouse
+            stand_in: none
           - project: Honua.SqlServer.Tests
             csproj: tests/dotnet/Honua.Db.SqlServer.Tests/Honua.SqlServer.Tests.csproj
+            credential_vars: HONUA_SQLSERVER_TEST_CONNECTION
+            live_test: QueryAsync_NoFilter_ReturnsAllFeatures
+            engine: Microsoft SQL Server
+            stand_in: none
     env:
       # Optional repository secrets — every one of these is unset by default,
-      # which is exactly the "not configured, self-skip" state each test class
-      # already handles via RequiredEnvironmentFact / an early-return no-op.
+      # which is exactly the "not configured, explicit missing-credential skip" state.
       HONUA_TEST_SNOWFLAKE: '1'
       HONUA_SNOWFLAKE_TEST_CONNECTION: ${{ secrets.HONUA_SNOWFLAKE_TEST_CONNECTION }}
       HONUA_TEST_REDSHIFT: '1'
@@ -139,6 +153,58 @@ jobs:
           else
             echo "### ${{ matrix.project }}: no TRX produced" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Verify live warehouse evidence
+        if: always() && steps.gate.outputs.skipped != 'true'
+        shell: bash
+        run: |
+          trx="./tests/TestResults/${{ matrix.project }}.trx"
+          if [[ ! -f "$trx" ]]; then
+            echo "No TRX exists; live evidence cannot be classified." >&2
+            exit 1
+          fi
+
+          missing=()
+          read -ra credential_vars <<< "${{ matrix.credential_vars }}"
+          for variable in "${credential_vars[@]}"; do
+            if [[ -z "${!variable:-}" ]]; then
+              missing+=("$variable")
+            fi
+          done
+
+          live_result=$(grep -F "${{ matrix.live_test }}\"" "$trx" || true)
+          if [[ -z "$live_result" ]]; then
+            echo "Live sentinel ${{ matrix.live_test }} was not discovered." >&2
+            exit 1
+          fi
+
+          if (( ${#missing[@]} > 0 )); then
+            if [[ "$live_result" != *'outcome="NotExecuted"'* ]]; then
+              echo "Live sentinel passed or ran despite missing credentials: ${missing[*]}" >&2
+              exit 1
+            fi
+            if ! grep -Fq 'missing-credential:' "$trx"; then
+              echo "Credential-absent skip did not emit the missing-credential marker." >&2
+              exit 1
+            fi
+            evidence_status="not-configured"
+            actual_engine="none"
+          else
+            if [[ "$live_result" != *'outcome="Passed"'* ]]; then
+              echo "Configured live sentinel did not pass against ${{ matrix.engine }}." >&2
+              exit 1
+            fi
+            evidence_status="real-warehouse"
+            actual_engine="${{ matrix.engine }}"
+          fi
+
+          {
+            echo "#### Evidence classification"
+            echo "- Live status: ${evidence_status}"
+            echo "- Actual live engine: ${actual_engine}"
+            echo "- Stand-in evidence: ${{ matrix.stand_in }}"
+            echo "- Live sentinel: ${{ matrix.live_test }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload warehouse test results
         if: always() && steps.gate.outputs.skipped != 'true'

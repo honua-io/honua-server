@@ -71,6 +71,7 @@ internal sealed partial class Wfs20Handler
     private readonly IEditProcessor _editProcessor;
     private readonly OgcFeaturesGeometryServices _geometryServices;
     private readonly Wfs20Options _wfs20Options;
+    private readonly string? _dataSourceProvider;
     private readonly ICoordinateTransformService _coordinateTransformService;
     private readonly ICrsRegistry _crsRegistry;
     private readonly FeatureMutationValidator _mutationValidator;
@@ -92,6 +93,7 @@ internal sealed partial class Wfs20Handler
         _queryParameterAdapter = queryServices.QueryParameterAdapter;
         _queryProcessor = queryServices.QueryProcessor;
         _wfs20Options = queryServices.Wfs20Options;
+        _dataSourceProvider = queryServices.DataSourceProvider;
 
         _featureWriter = editServices.FeatureWriter;
         _editParameterAdapter = editServices.EditParameterAdapter;
@@ -280,7 +282,10 @@ internal sealed partial class Wfs20Handler
         // storage CRS rather than an unconditional EPSG:4326 assumption (#2737).
         var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var expression = Fes20Parser.ParseFilter(filter, defaultSrid);
-        expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(expression, resource);
+        expression = FilterExpressionHelpers.NormalizeFilterPropertyReferences(
+            expression,
+            resource,
+            propertyName => WfsPropertyNameResolver.Resolve(resource, propertyName, allowGeometryAlias: true));
 
         if (!FilterExpressionHelpers.IsBooleanFilterExpression(expression))
         {
@@ -387,12 +392,11 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
-        // PropertyName wildcard: "*" selects every property. OWSLib — the
-        // reference Python OGC client — sends PROPERTYNAME=* by default on
-        // WFS 1.0.0 and 1.1.0 (owslib/feature/wfs110.py), so rejecting the
-        // wildcard made a bare WebFeatureService(...).getfeature() unusable on
-        // those versions. A wildcard anywhere in the list widens the projection
-        // to everything, which is exactly what the wildcard asks for.
+        // OWSLib emits PROPERTYNAME=* for an unprojected GetFeature request on
+        // every supported WFS generation. The wildcard means all properties;
+        // treating it as a literal field makes a standards-capable maintained
+        // client fail before the canonical query pipeline is reached. A wildcard
+        // anywhere in the list widens the projection to all properties.
         if (requestedProperties.Any(static requested => requested is "*"))
         {
             return null;
@@ -401,7 +405,7 @@ internal sealed partial class Wfs20Handler
         var resolved = ImmutableArray.CreateBuilder<string>();
         foreach (var requestedProperty in requestedProperties)
         {
-            var fieldName = FilterExpressionHelpers.ResolveFieldName(resource, requestedProperty, allowGeometryAlias: true)
+            var fieldName = WfsPropertyNameResolver.Resolve(resource, requestedProperty, allowGeometryAlias: true)
                 ?? throw new ArgumentException($"Unknown property '{requestedProperty}' for feature type '{resource.Metadata.Name}'.");
 
             var geometryField = resource.FindPrimaryGeometryField();
@@ -445,7 +449,7 @@ internal sealed partial class Wfs20Handler
                 continue;
             }
 
-            var fieldName = FilterExpressionHelpers.ResolveFieldName(resource, tokens[0], allowGeometryAlias: false)
+            var fieldName = WfsPropertyNameResolver.Resolve(resource, tokens[0], allowGeometryAlias: false)
                 ?? throw new ArgumentException($"Unknown sort field '{tokens[0]}' for feature type '{resource.Metadata.Name}'.");
 
             var fieldDefinition = resource.SchemaFields.FirstOrDefault(field =>
@@ -654,7 +658,7 @@ internal sealed partial class Wfs20Handler
             return null;
         }
 
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (IsCrs84Request(srsName))
         {
             return SpatialReference.WGS84.Wkid;
         }
@@ -691,7 +695,7 @@ internal sealed partial class Wfs20Handler
             return resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         }
 
-        if (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase))
+        if (IsCrs84Request(srsName))
         {
             return SpatialReference.WGS84.Wkid;
         }
@@ -1690,6 +1694,8 @@ internal sealed partial class Wfs20Handler
     {
         return fieldType switch
         {
+            MetadataV2FieldType.Unknown => "xsd:string",
+            MetadataV2FieldType.String => "xsd:string",
             MetadataV2FieldType.Integer => "xsd:int",
             MetadataV2FieldType.BigInteger => "xsd:long",
             MetadataV2FieldType.Double => "xsd:double",
@@ -1699,8 +1705,18 @@ internal sealed partial class Wfs20Handler
             MetadataV2FieldType.Date => "xsd:date",
             MetadataV2FieldType.Time => "xsd:time",
             MetadataV2FieldType.Binary => "xsd:base64Binary",
-            MetadataV2FieldType.Json => "xsd:anyType",
-            _ => "xsd:string"
+            // WFS serializes JSON attributes as JSON text inside a GML element. XSD 1.0
+            // has no JSON primitive, so string is the faithful wire type. Advertising
+            // anyType makes GDAL abandon the declared schema and infer every field from
+            // values, which also degrades unrelated numeric and temporal field dtypes.
+            MetadataV2FieldType.Json => "xsd:string",
+            MetadataV2FieldType.Uuid => "xsd:string",
+            MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography =>
+                throw new ArgumentOutOfRangeException(
+                    nameof(fieldType),
+                    fieldType,
+                    "Spatial fields must use MapGeometryPropertyType."),
+            _ => throw new ArgumentOutOfRangeException(nameof(fieldType), fieldType, "Unsupported metadata field type.")
         };
     }
 

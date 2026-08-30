@@ -33,6 +33,9 @@ psql -v ON_ERROR_STOP=1 -f tests/seed/client-compat-v1.sql
 echo "Applying browser-compat YAML seed: tests/seed/browser-compat.yaml"
 bash tests/seed/apply-yaml-seed.sh tests/seed/browser-compat.yaml
 
+echo "Applying auth breadth YAML seed: tests/seed/client-compat-auth-wave1.yaml"
+bash tests/seed/apply-yaml-seed.sh tests/seed/client-compat-auth-wave1.yaml
+
 # Portal/Sharing facade fixture (epic #1240 / #1372): public/org/private-tier
 # services the arcgis-stub Portal lane and the licensed ArcGIS Pro / Field Maps
 # evidence runs discover through /sharing/rest. Applied after the base SQL seed

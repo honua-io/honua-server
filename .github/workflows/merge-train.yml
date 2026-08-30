@@ -66,10 +66,13 @@ on:
         required: false
         default: false
 
-# Serialize train runs: a batch in flight must finish before the next starts.
-# cancel-in-progress:false so we never abandon a half-landed batch mid-flight.
+# Serialize every state-writing controller. Live train dispatches share this
+# key with rerun recovery, so their issue-body read/edit sequences cannot
+# interleave. Read-only scheduled and bare-dispatch observers use a unique key:
+# GitHub retains only one pending run per concurrency group, so putting those
+# observers in the writer group could evict a queued recovery.
 concurrency:
-  group: merge-train
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.train_apply && 'merge-train-state-writers' || format('merge-train-read-only-{0}', github.run_id) }}
   cancel-in-progress: false
 
 permissions:

@@ -99,7 +99,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         }
     }
 
-    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "missing-credential:HONUA_SQLSERVER_TEST_CONNECTION")]
     public async Task QueryAsync_NoFilter_ReturnsAllFeatures()
     {
         var result = await _store.QueryAsync(LayerId, new FeatureQuery());
@@ -108,7 +108,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.All(result.Items, f => Assert.NotNull(f.Geometry));
     }
 
-    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "missing-credential:HONUA_SQLSERVER_TEST_CONNECTION")]
     public async Task CountAsync_NoFilter_ReturnsTotalRowCount()
     {
         var count = await _store.CountAsync(LayerId, new FeatureQuery());
@@ -116,7 +116,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(3, count);
     }
 
-    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "missing-credential:HONUA_SQLSERVER_TEST_CONNECTION")]
     public async Task GetExtentAsync_ReturnsLayerEnvelope()
     {
         var extent = await _store.GetExtentAsync(LayerId);
@@ -129,7 +129,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(20, extentValue.MaxY);
     }
 
-    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "missing-credential:HONUA_SQLSERVER_TEST_CONNECTION")]
     public async Task QueryAsync_AttributeFilter_ReturnsMatching()
     {
         var result = await _store.QueryAsync(LayerId, new FeatureQuery { Where = "name = 'Alpha'" });
@@ -138,7 +138,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(1, result.Items[0].Id);
     }
 
-    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "missing-credential:HONUA_SQLSERVER_TEST_CONNECTION")]
     public async Task QueryAsync_GeoServicesEwkbBbox_ReturnsSubset()
     {
         var factory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
@@ -162,7 +162,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.Equal(1, feature.Id);
     }
 
-    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "missing-credential:HONUA_SQLSERVER_TEST_CONNECTION")]
     public async Task QueryAsync_LimitMatchingTotalRows_ReportsNoMoreResults()
     {
         // Three rows are seeded; a limit equal to the row count must not falsely advertise more.
@@ -172,7 +172,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
         Assert.False(result.HasMoreResults);
     }
 
-    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "Set HONUA_SQLSERVER_TEST_CONNECTION to run SQL Server integration tests.")]
+    [RequiredEnvironmentFact(ConnectionEnvVar, skipReason: "missing-credential:HONUA_SQLSERVER_TEST_CONNECTION")]
     public async Task QueryAsync_LimitBelowTotalRows_ReportsMoreResults()
     {
         var result = await _store.QueryAsync(LayerId, new FeatureQuery { Limit = 2 });

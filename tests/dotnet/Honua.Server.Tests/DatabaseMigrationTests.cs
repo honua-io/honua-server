@@ -119,6 +119,20 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         var tablesExist = (int)(long)(await tablesCmd.ExecuteScalarAsync())!;
         tablesExist.Should().Be(6, "core metadata tables should exist");
 
+        await using var roleTombstoneColumnCmd = connection.CreateCommand();
+        roleTombstoneColumnCmd.CommandText = """
+            SELECT COUNT(*)::int
+            FROM information_schema.columns
+            WHERE table_schema = 'honua'
+              AND table_name = 'rbac_roles'
+              AND column_name = 'deleted_at'
+              AND data_type = 'timestamp with time zone'
+              AND is_nullable = 'YES'
+            """;
+        var roleTombstoneColumnCount = (int)(await roleTombstoneColumnCmd.ExecuteScalarAsync())!;
+        roleTombstoneColumnCount.Should().Be(1,
+            "migration 107 must add the nullable role tombstone used by atomic role deletion");
+
         // Verify foreign key constraints
         await using var constraintsCmd = connection.CreateCommand();
         constraintsCmd.CommandText = """

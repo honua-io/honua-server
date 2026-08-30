@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
@@ -46,7 +47,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("WFS_Capabilities");
-        content.Should().Contain("updateSequence=\"20260325\"");
+        content.Should().Contain($"updateSequence=\"{Wfs20Utilities.CurrentUpdateSequence}\"");
         content.Should().Contain("xmlns:honua=\"http://honua.io/wfs\"");
         content.Should().Contain("Operation name=\"GetFeature\"");
         content.Should().Contain("Operation name=\"GetPropertyValue\"");
@@ -71,6 +72,153 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             content,
             "name=\"ImplementsResultPaging\"[\\s\\S]*?<[^>]*DefaultValue>TRUE</",
             RegexOptions.CultureInvariant).Should().BeTrue(content);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Operation(Operations.Query)]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "DescribeFeatureType")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_PrefixedField_AdvertisedNcNameRoundTripsAndRejectsUnknownNames()
+    {
+        const string typeName = "prefixed_fields_layer";
+        const string ogcCollectionId = "res-prefixed-fields-layer";
+        const string canonicalName = "eo:cloud_cover";
+        const string unknownName = "missing_x003A_field";
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+            .ReplaceService<IMetadataV2GraphProvider>(BuildPrefixedFieldMetadataProvider());
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var schemaResponse = await fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES={typeName}");
+            var schemaContent = await schemaResponse.Content.ReadAsStringAsync();
+            schemaResponse.StatusCode.Should().Be(HttpStatusCode.OK, schemaContent);
+
+            var advertisedName = XDocument.Parse(schemaContent)
+                .Descendants()
+                .Where(element => element.Name.LocalName == "element")
+                .Select(element => element.Attribute("name")?.Value)
+                .Single(name => string.Equals(name, "eo_x003A_cloud_cover", StringComparison.Ordinal))!;
+            advertisedName.Should().NotBe(canonicalName);
+
+            var queryablesResponse = await fixture.Client.GetAsync(
+                $"/ogc/features/collections/{ogcCollectionId}/queryables");
+            var queryablesContent = await queryablesResponse.Content.ReadAsStringAsync();
+            queryablesResponse.StatusCode.Should().Be(HttpStatusCode.OK, queryablesContent);
+            using (var queryables = JsonDocument.Parse(queryablesContent))
+            {
+                var properties = queryables.RootElement.GetProperty("properties");
+                properties.TryGetProperty(canonicalName, out _).Should().BeTrue();
+                properties.TryGetProperty(advertisedName, out _).Should().BeFalse();
+            }
+
+            var encodedAdvertisedName = Uri.EscapeDataString(advertisedName);
+            var propertyNameResponse = await fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={typeName}&PROPERTYNAME={encodedAdvertisedName}&COUNT=1");
+            var propertyNameContent = await propertyNameResponse.Content.ReadAsStringAsync();
+            propertyNameResponse.StatusCode.Should().Be(HttpStatusCode.OK, propertyNameContent);
+            propertyNameContent.Should().Contain(advertisedName);
+
+            var filter = $"""
+                <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+                  <fes:PropertyIsNull><fes:ValueReference>{advertisedName}</fes:ValueReference></fes:PropertyIsNull>
+                </fes:Filter>
+                """;
+            var valueReferenceResponse = await fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={typeName}&FILTER={Uri.EscapeDataString(filter)}&COUNT=1");
+            var valueReferenceContent = await valueReferenceResponse.Content.ReadAsStringAsync();
+            valueReferenceResponse.StatusCode.Should().Be(HttpStatusCode.OK, valueReferenceContent);
+            valueReferenceContent.Should().Contain("numberReturned=\"1\"");
+
+            var getPropertyValueResponse = await fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES={typeName}&VALUEREFERENCE={encodedAdvertisedName}&COUNT=1");
+            var getPropertyValueContent = await getPropertyValueResponse.Content.ReadAsStringAsync();
+            getPropertyValueResponse.StatusCode.Should().Be(HttpStatusCode.OK, getPropertyValueContent);
+            getPropertyValueContent.Should().Contain("ValueCollection");
+
+            var sortByResponse = await fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={typeName}&SORTBY={encodedAdvertisedName}%20A&COUNT=1");
+            var sortByContent = await sortByResponse.Content.ReadAsStringAsync();
+            sortByResponse.StatusCode.Should().Be(HttpStatusCode.OK, sortByContent);
+
+            var unknownFilter = $"""
+                <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+                  <fes:PropertyIsNull><fes:ValueReference>{unknownName}</fes:ValueReference></fes:PropertyIsNull>
+                </fes:Filter>
+                """;
+            var unknownRequests = new[]
+            {
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={typeName}&PROPERTYNAME={unknownName}",
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={typeName}&FILTER={Uri.EscapeDataString(unknownFilter)}",
+                $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES={typeName}&VALUEREFERENCE={unknownName}",
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES={typeName}&SORTBY={unknownName}%20A",
+            };
+
+            foreach (var requestUri in unknownRequests)
+            {
+                var response = await fixture.Client.GetAsync(requestUri);
+                var content = await response.Content.ReadAsStringAsync();
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{requestUri}: {content}");
+                content.Should().Contain("ExceptionReport");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetCapabilities_AdvertisedCrs84IdentifiersAreAcceptedByGetFeature()
+    {
+        var capabilitiesResponse = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
+        var capabilitiesContent = await capabilitiesResponse.Content.ReadAsStringAsync();
+        capabilitiesResponse.StatusCode.Should().Be(HttpStatusCode.OK, capabilitiesContent);
+
+        var document = XDocument.Parse(capabilitiesContent);
+        var crs84Identifiers = document
+            .Descendants()
+            .Where(element => element.Name.LocalName == "OtherCRS")
+            .Select(element => element.Value)
+            .Where(value => value.Contains("CRS84", StringComparison.OrdinalIgnoreCase) ||
+                            value.Equals("CRS:84", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        crs84Identifiers.Should().BeEquivalentTo(
+            "CRS:84",
+            "urn:ogc:def:crs:OGC:1.3:CRS84",
+            "http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+
+        var acceptedCrs84Identifiers = crs84Identifiers.Concat(
+        [
+            "CRS84",
+            "OGC:CRS84",
+            "urn:ogc:def:crs:OGC::CRS84",
+            "urn:ogc:def:crs:OGC:CRS84"
+        ]);
+
+        foreach (var crs84Identifier in acceptedCrs84Identifiers)
+        {
+            var requestUri =
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1&SRSNAME={Uri.EscapeDataString(crs84Identifier)}";
+            var response = await _fixture.Client.GetAsync(requestUri);
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"GetFeature should accept advertised CRS '{crs84Identifier}': {content}");
+            content.Should().Contain("srsName=\"urn:ogc:def:crs:OGC:1.3:CRS84\"");
+        }
     }
 
     [IntegrationTest]
@@ -204,6 +352,167 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             .Build();
 
         return new TestMetadataV2GraphProvider(graph);
+    }
+
+    private static TestMetadataV2GraphProvider BuildPrefixedFieldMetadataProvider()
+    {
+        const string ResourceId = "res-prefixed-fields-layer";
+        const string StorageBindingId = "binding-prefixed-fields-layer";
+        const string WfsServiceId = "svc-prefixed-fields-wfs";
+        const string OgcFeaturesServiceId = "svc-prefixed-fields-ogc-features";
+
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                ResourceId,
+                "Prefixed Fields Layer",
+                MetadataV2ResourceType.FeatureDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                fields:
+                [
+                    new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
+                    new MetadataV2Field { Name = "eo:cloud_cover", Type = MetadataV2FieldType.Double },
+                    new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry }
+                ],
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = MetadataV2GeometryType.Point,
+                    SupportedCrs = [MetadataV2SpatialReference.Wgs84]
+                })
+            .AddStorageBinding(
+                StorageBindingId,
+                ResourceId,
+                "features",
+                storageLayerId: WebAppFixture.TestLayerId)
+            .AddService(
+                WfsServiceId,
+                "prefixed_fields",
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                protocols: [MetadataV2ServiceProtocols.Wfs20])
+            .AddService(
+                OgcFeaturesServiceId,
+                "prefixed_fields",
+                route: "/ogc/features",
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                protocols: [MetadataV2ServiceProtocols.OgcFeatures])
+            .AddPublication(
+                "pub-prefixed-fields-wfs",
+                WfsServiceId,
+                ResourceId,
+                layerIndex: WebAppFixture.TestLayerId,
+                storageBindingId: StorageBindingId,
+                serviceLocalId: "prefixed_fields_layer",
+                publicationType: MetadataV2PublicationType.WfsFeatureType)
+            .AddPublication(
+                "pub-prefixed-fields-ogc-features",
+                OgcFeaturesServiceId,
+                ResourceId,
+                storageBindingId: StorageBindingId,
+                serviceLocalId: "prefixed_fields_layer",
+                publicationType: MetadataV2PublicationType.OgcCollection)
+            .Build();
+
+        return new TestMetadataV2GraphProvider(graph);
+    }
+
+    private static TestMetadataV2GraphProvider BuildFieldTypeMetadataProvider()
+    {
+        const string ResourceId = "res-field-types";
+        const string StorageBindingId = "binding-field-types";
+        const string ServiceId = "svc-field-types-wfs";
+
+        var fields = Enum.GetValues<MetadataV2FieldType>()
+            .Where(type => type is not MetadataV2FieldType.Geography)
+            .Select(type => new MetadataV2Field
+            {
+                Name = type.ToString().ToLowerInvariant(),
+                Type = type,
+                Nullable = true
+            })
+            .ToArray();
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(
+                ResourceId,
+                "Field Types",
+                MetadataV2ResourceType.FeatureDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                fields: fields,
+                spatial: new MetadataV2ResourceSpatial
+                {
+                    SpatialReference = MetadataV2SpatialReference.Wgs84,
+                    GeometryType = MetadataV2GeometryType.Point
+                })
+            .AddStorageBinding(StorageBindingId, ResourceId, "field_types", storageLayerId: 0)
+            .AddService(
+                ServiceId,
+                "field_types",
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                protocols: [MetadataV2ServiceProtocols.Wfs20])
+            .AddPublication(
+                "pub-field-types-wfs",
+                ServiceId,
+                ResourceId,
+                layerIndex: 0,
+                storageBindingId: StorageBindingId,
+                serviceLocalId: "field_types",
+                publicationType: MetadataV2PublicationType.WfsFeatureType)
+            .Build();
+
+        return new TestMetadataV2GraphProvider(graph);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "DescribeFeatureType")]
+    public async Task Wfs_DescribeFeatureType_MapsEveryDeclaredAttributeTypeToConcreteXsdType()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+            .ReplaceService<IMetadataV2GraphProvider>(BuildFieldTypeMetadataProvider());
+
+        try
+        {
+            await fixture.InitializeAsync();
+
+            var response = await fixture.Client.GetAsync(
+                "/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES=field_types");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+            XNamespace xsd = "http://www.w3.org/2001/XMLSchema";
+            var servedTypes = XDocument.Parse(content)
+                .Descendants(xsd + "element")
+                .Where(element => element.Attribute("name") is not null && element.Attribute("type") is not null)
+                .ToDictionary(
+                    element => element.Attribute("name")!.Value,
+                    element => element.Attribute("type")!.Value,
+                    StringComparer.Ordinal);
+
+            var expected = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["unknown"] = "xsd:string",
+                ["string"] = "xsd:string",
+                ["integer"] = "xsd:int",
+                ["biginteger"] = "xsd:long",
+                ["double"] = "xsd:double",
+                ["float"] = "xsd:float",
+                ["boolean"] = "xsd:boolean",
+                ["datetime"] = "xsd:dateTime",
+                ["date"] = "xsd:date",
+                ["time"] = "xsd:time",
+                ["json"] = "xsd:string",
+                ["binary"] = "xsd:base64Binary",
+                ["uuid"] = "xsd:string",
+                ["geometry"] = "gml:PointPropertyType"
+            };
+
+            servedTypes.Should().Contain(expected);
+            servedTypes.Values.Should().NotContain("xsd:anyType");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     // WFS local name BuildTypeLocalName derives from the resource title; "Geometry Only Layer"
@@ -471,7 +780,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_GetCapabilities_UpdateSequenceCurrent_ReturnsCurrentUpdateSequence()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE=20260325");
+            $"/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE={Wfs20Utilities.CurrentUpdateSequence}");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
@@ -555,6 +864,24 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         document.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
         document.RootElement.GetProperty("features").ValueKind.Should().Be(JsonValueKind.Array);
         document.RootElement.GetProperty("numberReturned").GetInt32().Should().BeLessOrEqualTo(1);
+    }
+
+    [Theory]
+    [InlineData("1.0.0")]
+    [InlineData("1.1.0")]
+    [InlineData("2.0.0")]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_PropertyNameWildcard_ReturnsAllProperties(string version)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION={version}&TYPENAME=test_layer&PROPERTYNAME=%2A&MAXFEATURES=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain("ExceptionReport");
+        content.Should().Contain("name");
     }
 
     [IntegrationTest]

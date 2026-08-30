@@ -7,6 +7,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
@@ -14,6 +16,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -143,8 +147,23 @@ public sealed class OperationsEndpointsTests
     [IntegrationTest]
     [Operation(Operations.Configuration)]
     [Endpoint("POST /api/v1/operations/{id}/submit")]
-    public async Task SubmitOperation_AdminReadKey_UsesDescriptorSemanticMethod()
+    public async Task SubmitOperation_Prevalidate_RequiresWriteCredentialBeforeExecution()
     {
+        var invoker = Substitute.For<IOperationInvoker>();
+        var now = DateTimeOffset.UtcNow;
+        invoker.SubmitAsync(
+                Arg.Is<OperationRequest>(request => request.OperationId == "admin.metadata.prevalidate"),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationHandle
+            {
+                OperationInstanceId = "opinst-prevalidate",
+                OperationId = "admin.metadata.prevalidate",
+                CorrelationId = "corr-prevalidate",
+                Status = OperationHandleStatus.Completed,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
         var fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
@@ -152,6 +171,11 @@ public sealed class OperationsEndpointsTests
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IOperationInvoker>();
+                services.AddScoped(_ => invoker);
             });
         await fixture.InitializeAsync();
         try
@@ -173,6 +197,22 @@ public sealed class OperationsEndpointsTests
             created.Should().NotBeNull();
             created!.Data.Should().NotBeNull();
 
+            var writerResponse = await bootstrap.PostAsJsonAsync(
+                "/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest
+                {
+                    Name = $"operation-writer-{Guid.NewGuid():N}",
+                    Permissions = ["admin:write"],
+                },
+                JsonOptions);
+            writerResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            var writerCreated = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+                await writerResponse.Content.ReadAsStringAsync(),
+                JsonOptions);
+            writerCreated.Should().NotBeNull();
+            writerCreated!.Data.Should().NotBeNull();
+            var writerKey = writerCreated.Data.Key;
+
             using var reader = fixture.CreateClient(client =>
                 client.DefaultRequestHeaders.Add("X-API-Key", created.Data.Key));
 
@@ -188,17 +228,38 @@ public sealed class OperationsEndpointsTests
                 HttpStatusCode.Forbidden,
                 "the fixture key must carry its admin:read claim into authorization");
 
-            var readOnly = await reader.PostAsJsonAsync(
-                "/api/v1/operations/admin.server.status/submit",
-                new { parameters = new Dictionary<string, string>() });
-            readOnly.StatusCode.Should().Be(
-                HttpStatusCode.OK,
-                "the HTTP transport must authorize the read-only descriptor with the same semantic method as MCP");
-
             var mutating = await reader.PostAsJsonAsync(
-                "/api/v1/operations/service.publish/submit",
+                "/api/v1/operations/admin.metadata.prevalidate/submit",
                 new { parameters = new Dictionary<string, string>() });
             mutating.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            await invoker.DidNotReceive().SubmitAsync(
+                Arg.Any<OperationRequest>(),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<CancellationToken>());
+
+            using var writer = fixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("X-API-Key", writerKey));
+            var writeAuthorized = await writer.PostAsJsonAsync(
+                "/api/v1/operations/admin.metadata.prevalidate/submit",
+                new
+                {
+                    parameters = new Dictionary<string, string>
+                    {
+                        ["releasePackageId"] = Guid.NewGuid().ToString(),
+                        ["targetEnvironment"] = "staging",
+                    },
+                });
+            var writeResponseBody = await writeAuthorized.Content.ReadAsStringAsync();
+            writeAuthorized.StatusCode.Should().Be(
+                HttpStatusCode.OK,
+                "the write-authorized semantic response was {0}",
+                writeResponseBody);
+            var writeResult = JsonDocument.Parse(writeResponseBody).RootElement;
+            writeResult.GetProperty("data").GetProperty("status").GetString().Should().Be("Completed");
+            await invoker.Received(1).SubmitAsync(
+                Arg.Is<OperationRequest>(request => request.OperationId == "admin.metadata.prevalidate"),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<CancellationToken>());
         }
         finally
         {

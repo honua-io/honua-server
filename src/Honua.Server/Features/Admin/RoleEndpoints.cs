@@ -17,6 +17,8 @@ namespace Honua.Server.Features.Admin;
 /// </summary>
 internal static partial class RoleEndpoints
 {
+    private const string ConsoleAccessService = "console-access";
+    private const string WorkspaceMembershipOperation = "workspace-membership";
     /// <summary>
     /// Log category for role endpoints.
     /// </summary>
@@ -212,10 +214,17 @@ internal static partial class RoleEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("Role not found"));
             }
 
+            if (request.Name is not null &&
+                !string.Equals(request.Name, existing.Name, StringComparison.Ordinal))
+            {
+                return TypedResults.BadRequest(
+                    ApiResponse<object>.Failure("Role names cannot be changed after creation."));
+            }
+
             var updated = new RoleDefinition
             {
                 RoleId = existing.RoleId,
-                Name = request.Name ?? existing.Name,
+                Name = existing.Name,
                 Description = request.Description ?? existing.Description,
                 IsBuiltIn = existing.IsBuiltIn,
                 Permissions = existing.Permissions,
@@ -331,6 +340,13 @@ internal static partial class RoleEndpoints
                 Layer = p.Layer,
                 Operation = p.Operation,
             }).ToList();
+
+            // Console-created roles encode their workspace ownership as a reserved
+            // grant. The generic permission editor replaces authorizing grants, but
+            // must not strip this stable ownership metadata.
+            grants.AddRange(role.Permissions.Where(static grant =>
+                string.Equals(grant.Service, ConsoleAccessService, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(grant.Operation, WorkspaceMembershipOperation, StringComparison.Ordinal)));
 
             var result = await store.SetPermissionsAsync(id, grants, context.RequestAborted);
 

@@ -137,7 +137,8 @@ internal sealed partial class Wfs20Handler
 
     private async Task<ImmutableArray<WfsFeatureTypeDescriptor>> GetPublishedFeatureTypesAsync(
         HttpContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enforceAccess = true)
     {
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var candidates = new List<(int StorageLayerId, MetadataV2Resource Resource, MetadataV2Publication Publication, MetadataV2Service Service)>();
@@ -151,12 +152,13 @@ internal sealed partial class Wfs20Handler
 
             var resource = snapshot.ResolveResource(publication);
             if (!snapshot.IsRoutable(publication) ||
-                !await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                !TenantScopeHelpers.IsTenantVisible(context, publication, resource, service) ||
+                (enforceAccess && !await AccessPolicyHelpers.IsResourceAccessibleAsync(
                     context,
                     resource!,
                     service,
                     AuthorizationOperation.Query,
-                    cancellationToken).ConfigureAwait(false))
+                    cancellationToken).ConfigureAwait(false)))
             {
                 continue;
             }
@@ -295,9 +297,7 @@ internal sealed partial class Wfs20Handler
     {
         var resource = featureType.Resource;
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
-        string[]? otherCrs = srid == 3857
-            ? null
-            : [FormatCrs(3857)];
+        var otherCrs = BuildOtherCrsIdentifiers(srid, _dataSourceProvider);
 
         return new FeatureType
         {
@@ -306,13 +306,25 @@ internal sealed partial class Wfs20Handler
             Abstract = resource.Metadata.Description,
             Keywords = BuildKeywords(resource),
             DefaultCRS = FormatCrs(srid),
-            OtherCRS = otherCrs,
+            OtherCRS = otherCrs.Length == 0 ? null : otherCrs,
             OutputFormats = new OutputFormats
             {
                 Formats = Wfs20Utilities.OutputFormats.All.ToArray()
             },
             WGS84BoundingBox = await BuildWgs84BoundingBoxAsync(resource, cancellationToken).ConfigureAwait(false)
         };
+    }
+
+    internal static string[] BuildOtherCrsIdentifiers(int srid, string? dataSourceProvider)
+    {
+        var supportsOutputTransformation = !string.Equals(dataSourceProvider, "mysql", StringComparison.OrdinalIgnoreCase) &&
+                                           !string.Equals(dataSourceProvider, "mariadb", StringComparison.OrdinalIgnoreCase);
+        return (supportsOutputTransformation ? Wfs20Utilities.Crs84Identifiers : [])
+            .Where(identifier => !string.Equals(identifier, FormatCrs(srid), StringComparison.OrdinalIgnoreCase))
+            .Concat(supportsOutputTransformation ? [FormatCrs(3857)] : [])
+            .Where(identifier => !string.Equals(identifier, FormatCrs(srid), StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private async Task<FeatureType[]> BuildFeatureTypesAsync(
