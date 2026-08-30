@@ -68,7 +68,10 @@ internal static class LicenseGate
         if (entitlementService is not null)
         {
             var decision = entitlementService.CheckEntitlement(entitlementKey);
-            if (decision.IsActive || capability is null || decision.Edition < capability.Edition)
+            var routedExperimental = capability is not null &&
+                CapabilityKeyCatalog.RoutedExperimentalKeys.Any(
+                    item => string.Equals(item.Key, capability.Key, StringComparison.OrdinalIgnoreCase));
+            if (decision.IsActive || !routedExperimental || decision.Edition < capability!.Edition)
             {
                 return decision;
             }
@@ -77,7 +80,10 @@ internal static class LicenseGate
             // FeatureCatalog so their maturity stays independent of deployability. Older
             // entitlement providers derive their edition grants from FeatureCatalog; honor
             // the canonical capability edition here until those providers consume the
-            // broader catalog directly.
+            // broader catalog directly. ONLY routed-experimental keys get this edition
+            // fallback: FeatureCatalog-derived keys can be entitlement-strict (e.g.
+            // ai.spec-apply), and overriding the provider's denial for them turns an
+            // entitlement gate into an edition gate and fails open.
             return decision with
             {
                 IsActive = true,
