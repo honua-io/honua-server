@@ -4,7 +4,8 @@
     "GeoPackage 1.2",
     "KML 2.2",
     "WFS 2.0 Transactional",
-    "WMS 1.1.1"
+    "WMS 1.1.1",
+    "WPS 2.0"
   ],
   "schemaVersion": "1.2.0",
   "generator": "scripts/ci/generate-capability-matrix.py",
@@ -30,7 +31,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 368,
-      "provingTestCount": 1100,
+      "provingTestCount": 1106,
       "maturity": {
         "implemented": 368
       },
