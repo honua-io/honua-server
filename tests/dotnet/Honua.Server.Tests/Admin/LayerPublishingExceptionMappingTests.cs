@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -66,6 +67,42 @@ public sealed class LayerPublishingExceptionMappingTests
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
             var payload = await response.Content.ReadAsStringAsync();
             payload.Should().ContainEquivalentOf("requested resource was not found");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_ByConnectionName_ResolvesConnectionStringUsingPinnedId()
+    {
+        var connectionId = Guid.NewGuid();
+        var registry = Substitute.For<ISecureConnectionRegistry>();
+        registry.GetConnectionByNameAsync("catalog", Arg.Any<CancellationToken>())
+            .Returns(new DataConnection { ConnectionId = connectionId, Name = "catalog" });
+
+        var resolver = Substitute.For<ISecureConnectionResolver>();
+        resolver.ResolveConnectionStringAsync(connectionId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string>(new ResourceNotFoundException("Pinned connection was removed.")));
+
+        var fixture = new WebAppFixture()
+            .ReplaceService<ISecureConnectionRegistry>(registry)
+            .ReplaceService<ISecureConnectionResolver>(resolver);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            var response = await fixture.CreateAdminClient().PostAsJsonAsync(
+                "/api/v1/admin/connections/catalog/layers",
+                CreatePublishRequest());
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await registry.Received(1).GetConnectionByNameAsync("catalog", Arg.Any<CancellationToken>());
+            await resolver.Received(1).ResolveConnectionStringAsync(connectionId, Arg.Any<CancellationToken>());
+            await resolver.DidNotReceive().ResolveConnectionStringAsync("catalog", Arg.Any<CancellationToken>());
         }
         finally
         {
