@@ -66,6 +66,9 @@ internal static class AdminApiKeyPermission
     internal const string ApproveGrant = "admin:approve";
     private const string ApprovedOperationGrantPrefix = "admin:operation:";
 
+    /// <summary>The admin API path prefix approved-operation credentials are scoped to.</summary>
+    private const string AdminApiPathPrefix = "/api/v1/admin/";
+
     /// <summary>
     /// Describes how much admin authority a principal's grants confer.
     /// </summary>
@@ -136,7 +139,12 @@ internal static class AdminApiKeyPermission
     {
         ArgumentNullException.ThrowIfNull(principal);
 
-        if (!string.IsNullOrWhiteSpace(httpMethod) && !string.IsNullOrWhiteSpace(requestPath))
+        // Approved-operation grants exist only for admin API paths; the factory THROWS
+        // for any other path, and this method runs for every authenticated request —
+        // computing the grant unconditionally turned all non-admin traffic (health,
+        // metrics, protocol endpoints) into 400s (trunk red at bf7ce4956).
+        if (!string.IsNullOrWhiteSpace(httpMethod)
+            && requestPath?.StartsWith(AdminApiPathPrefix, StringComparison.Ordinal) == true)
         {
             var expectedGrant = CreateApprovedOperationGrant(httpMethod, requestPath);
             if (principal.FindAll(PermissionClaimType).Any(claim =>
@@ -166,7 +174,7 @@ internal static class AdminApiKeyPermission
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(httpMethod);
         ArgumentException.ThrowIfNullOrWhiteSpace(requestPath);
-        if (!requestPath.StartsWith("/api/v1/admin/", StringComparison.Ordinal))
+        if (!requestPath.StartsWith(AdminApiPathPrefix, StringComparison.Ordinal))
         {
             throw new ArgumentException("Approved operation credentials must target an admin API path.", nameof(requestPath));
         }
