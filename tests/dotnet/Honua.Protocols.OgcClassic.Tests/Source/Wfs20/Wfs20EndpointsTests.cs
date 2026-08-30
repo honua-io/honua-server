@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
@@ -46,7 +47,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
         content.Should().Contain("WFS_Capabilities");
-        content.Should().Contain("updateSequence=\"20260325\"");
+        content.Should().Contain($"updateSequence=\"{Wfs20Utilities.CurrentUpdateSequence}\"");
         content.Should().Contain("xmlns:honua=\"http://honua.io/wfs\"");
         content.Should().Contain("Operation name=\"GetFeature\"");
         content.Should().Contain("Operation name=\"GetPropertyValue\"");
@@ -779,7 +780,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     public async Task Wfs_GetCapabilities_UpdateSequenceCurrent_ReturnsCurrentUpdateSequence()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE=20260829");
+            $"/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0&UPDATESEQUENCE={Wfs20Utilities.CurrentUpdateSequence}");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
