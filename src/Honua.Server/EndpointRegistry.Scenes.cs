@@ -58,16 +58,6 @@ public static partial class EndpointRegistry
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}"),
         new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/statistics/{fieldKey}/0"),
 
-        // I3S node geometry preview route (#1810). It returns 404 until a
-        // production geometry provider is registered (GeoServices + /scenes alias).
-        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
-        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/geometries/{geometryId:int}"),
-
-        // I3S per-field attribute preview route (#2234). Geometry-backed values
-        // return 404 until a production geometry provider is registered.
-        new("GET", "/rest/services/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
-        new("GET", "/scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodes/{nodeId:int}/attributes/{fieldKey}/{attributeId:int}"),
-
         new("GET", "/scenes/{sceneId}/{*assetPath}"),
         new("HEAD", "/scenes/{sceneId}/{*assetPath}"),
 

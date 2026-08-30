@@ -61,11 +61,14 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IProposalNotifier>();
                 services.RemoveAll<IOperationGateway>();
                 services.RemoveAll<IOperationExecutor>();
+                services.RemoveAll<IOperationExecutorCatalog>();
 
                 services.AddSingleton<IOperationProposalStore>(_proposalStore);
                 services.AddSingleton<IGuardrailLadder>(_ladder);
                 services.AddSingleton<IProposalNotifier>(_notifier);
                 services.AddSingleton<IOperationExecutor>(_executor);
+                services.AddSingleton<IOperationExecutorCatalog>(
+                    new TestExecutorCatalog([OperationClass.AdminConfigChange]));
                 services.AddSingleton<IOperationGateway, Honua.ControlPlane.OperationGateway>();
             });
     }
@@ -82,16 +85,19 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         OperationProposalStatus status = OperationProposalStatus.AwaitingApproval,
         string? requestedBy = "agent:test",
         OperationProposalAutonomyMetadata? autonomyMetadata = null,
-        string? executionPayload = null)
+        string? executionPayload = null,
+        OperationClass kind = OperationClass.AdminConfigChange)
     {
-        if (status == OperationProposalStatus.AwaitingApproval && autonomyMetadata is null)
+        if (status == OperationProposalStatus.AwaitingApproval &&
+            autonomyMetadata is null &&
+            kind == OperationClass.AdminConfigChange)
         {
             // Ruling 4: approval fixtures must enter through canonical acceptance so
             // replay can prove the original instance identity and sealed plan hash.
             var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
             var routed = await gateway.RouteAsync(new OperationGatewayRequest
             {
-                Kind = OperationClass.AdminConfigChange,
+                Kind = kind,
                 RequestedBy = requestedBy,
                 ExecutionPayload = executionPayload,
                 Plan = new OperationProposalPlan
@@ -108,7 +114,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         var proposal = new OperationProposal
         {
             ProposalId = $"proposal-{Guid.NewGuid():N}",
-            Kind = OperationClass.AdminConfigChange,
+            Kind = kind,
             Status = status,
             RequestedBy = requestedBy,
             AutonomyMetadata = autonomyMetadata,
@@ -205,6 +211,25 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         document.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", responseJson);
         _executor.Executed.Should().BeTrue();
         _notifier.ResolvedCount.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_UnregisteredOperationType_ReturnsActionableProblem()
+    {
+        var proposal = await SeedProposalAsync(
+            requestedBy: "agent:proposer",
+            kind: OperationClass.Seed);
+
+        var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("code").GetString().Should().Be("operation-executor-unavailable");
+        document.RootElement.GetProperty("operationType").GetString().Should().Be("Seed");
+        document.RootElement.GetProperty("detail").GetString().Should().Contain("Seed");
+        _executor.Executed.Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -433,6 +458,12 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             string? actionDiscriminator,
             Honua.Core.Features.Licensing.Domain.HonuaEdition edition)
             => new(Tier, operationClass, edition, "test-stub");
+    }
+
+    private sealed class TestExecutorCatalog(IReadOnlyCollection<OperationClass> supportedKinds)
+        : IOperationExecutorCatalog
+    {
+        public IReadOnlyCollection<OperationClass> SupportedKinds { get; } = supportedKinds;
     }
 
     private sealed class RecordingExecutor : IOperationExecutor

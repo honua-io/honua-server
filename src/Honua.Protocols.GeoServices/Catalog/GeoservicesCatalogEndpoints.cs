@@ -15,6 +15,7 @@ using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.ImageServer;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -40,7 +41,6 @@ internal static class GeoservicesCatalogEndpoints
     private const string Soap12ContentType = "application/soap+xml; charset=utf-8";
     private const string Soap11EnvelopeNamespace = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
-    private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
     private const int MaxSoapRequestCharacters = 1_048_576;
 
     /// <summary>
@@ -118,7 +118,7 @@ internal static class GeoservicesCatalogEndpoints
         XNamespace xs = "http://www.w3.org/2001/XMLSchema";
         XNamespace soap11 = "http://schemas.xmlsoap.org/wsdl/soap/";
         XNamespace soap12 = "http://schemas.xmlsoap.org/wsdl/soap12/";
-        XNamespace esri = ArcGisSoapNamespace;
+        XNamespace esri = ArcGisSoapNamespaces.Current;
         var operations = new[]
         {
             "GetServiceDescriptions",
@@ -267,7 +267,7 @@ internal static class GeoservicesCatalogEndpoints
             operations.Select(operation => new XElement(
                 wsdl + "operation",
                 new XAttribute("name", operation),
-                new XElement(soap + "operation", new XAttribute("soapAction", $"{ArcGisSoapNamespace}/{operation}")),
+                new XElement(soap + "operation", new XAttribute("soapAction", $"{ArcGisSoapNamespaces.Current}/{operation}")),
                 new XElement(wsdl + "input", new XElement(soap + "body", new XAttribute("use", "literal"))),
                 new XElement(wsdl + "output", new XElement(soap + "body", new XAttribute("use", "literal"))))));
 
@@ -365,7 +365,7 @@ internal static class GeoservicesCatalogEndpoints
         var operation = operations[0];
 
         var operationNamespace = operation.Name.Namespace;
-        if (operationNamespace != ArcGisSoapNamespace)
+        if (!ArcGisSoapNamespaces.IsSupported(operationNamespace))
         {
             return CreateSoapFault(
                 "Unsupported ArcGIS SOAP operation namespace.",
@@ -391,15 +391,16 @@ internal static class GeoservicesCatalogEndpoints
 
         try
         {
+            XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
             XElement payload;
             switch (operation.Name.LocalName)
             {
                 case "GetServiceDescriptions":
                     payload = new XElement(
-                        operationNamespace + "GetServiceDescriptionsResult",
+                        "ServiceDescriptions",
+                        new XAttribute(xsi + "type", "tns:ArrayOfServiceDescription"),
                         await BuildSoapServiceDescriptionsAsync(
                             context,
-                            operationNamespace,
                             graphProvider,
                             rasterStore,
                             licenseStatusProvider,
@@ -421,10 +422,10 @@ internal static class GeoservicesCatalogEndpoints
 
                     var folderName = arguments.SingleOrDefault()?.Value.Trim();
                     payload = new XElement(
-                        operationNamespace + "GetServiceDescriptionsExResult",
+                        "ServiceDescriptions",
+                        new XAttribute(xsi + "type", "tns:ArrayOfServiceDescription"),
                         await BuildSoapServiceDescriptionsAsync(
                             context,
-                            operationNamespace,
                             graphProvider,
                             rasterStore,
                             licenseStatusProvider,
@@ -432,25 +433,27 @@ internal static class GeoservicesCatalogEndpoints
                             folderName).ConfigureAwait(false));
                     break;
                 case "GetFolders":
-                    payload = new XElement(operationNamespace + "GetFoldersResult");
+                    payload = new XElement(
+                        "FolderNames",
+                        new XAttribute(xsi + "type", "tns:ArrayOfString"));
                     break;
                 case "GetMessageVersion":
-                    payload = new XElement(operationNamespace + "GetMessageVersionResult", "esriArcGISVersion108");
+                    payload = new XElement("MessageVersion", "esriArcGISVersion108");
                     break;
                 case "GetMessageFormats":
-                    payload = new XElement(operationNamespace + "GetMessageFormatsResult", "esriServiceCatalogMessageFormatSoap");
+                    payload = new XElement("MessageFormats", "esriServiceCatalogMessageFormatSoap");
                     break;
                 case "GetTokenServiceURL":
                     payload = new XElement(
-                        operationNamespace + "GetTokenServiceURLResult",
+                        "TokenServiceURL",
                         tokenOptions.Value.Enabled
                             ? $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/sharing/rest/generateToken"
                             : string.Empty);
                     break;
                 case "RequiresTokens":
                     payload = new XElement(
-                        operationNamespace + "RequiresTokensResult",
-                        tokenOptions.Value.Enabled);
+                        "Result",
+                        tokenOptions.Value.Enabled ? "1" : "0");
                     break;
                 default:
                     return CompleteSoapCatalogOperation(scope, CreateSoapFault(
@@ -464,6 +467,9 @@ internal static class GeoservicesCatalogEndpoints
                 new XElement(
                     soap + "Envelope",
                     new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
+                    new XAttribute(XNamespace.Xmlns + "xsi", xsi.NamespaceName),
+                    new XAttribute(XNamespace.Xmlns + "xsd", "http://www.w3.org/2001/XMLSchema"),
+                    new XAttribute(XNamespace.Xmlns + "tns", operationNamespace.NamespaceName),
                     new XElement(
                         soap + "Body",
                         new XElement(
@@ -471,7 +477,7 @@ internal static class GeoservicesCatalogEndpoints
                             payload))));
 
             return CompleteSoapCatalogOperation(scope, Results.Content(
-                response.ToString(SaveOptions.DisableFormatting),
+                ArcGisSoapNamespaces.SerializeResponse(response),
                 contentType: SoapContentTypeFor(soap),
                 contentEncoding: Encoding.UTF8));
         }
@@ -532,7 +538,6 @@ internal static class GeoservicesCatalogEndpoints
 
     private static async Task<IReadOnlyList<XElement>> BuildSoapServiceDescriptionsAsync(
         HttpContext context,
-        XNamespace operationNamespace,
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILicenseStatusProvider licenseStatusProvider,
@@ -564,6 +569,7 @@ internal static class GeoservicesCatalogEndpoints
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
+        XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
         // Preserve the established ImageServer-first record when one service name
         // publishes several protocol types; protocol-wide discovery adds siblings
         // without changing the existing SOAP catalog's primary description.
@@ -578,14 +584,15 @@ internal static class GeoservicesCatalogEndpoints
                 ? $"{baseUrl}/services/{escapedName}/{ImageServerProtocolName}"
                 : entry.Url;
             return new XElement(
-                operationNamespace + "ServiceDescription",
-                new XElement(operationNamespace + "Name", entry.Name),
-                new XElement(operationNamespace + "Type", entry.Type),
-                new XElement(operationNamespace + "Url", soapUrl),
-                new XElement(operationNamespace + "RestUrl", entry.Url),
-                new XElement(operationNamespace + "ParentType", string.Empty),
-                new XElement(operationNamespace + "Capabilities", entry.SoapCapabilities ?? CapabilitiesFor(entry.Type)),
-                new XElement(operationNamespace + "Description", string.Empty));
+                "ServiceDescription",
+                new XAttribute(xsi + "type", "tns:ServiceDescription"),
+                new XElement("Name", entry.Name),
+                new XElement("Type", entry.Type),
+                new XElement("Url", soapUrl),
+                new XElement("RestUrl", entry.Url),
+                new XElement("ParentType", string.Empty),
+                new XElement("Capabilities", entry.SoapCapabilities ?? CapabilitiesFor(entry.Type)),
+                new XElement("Description", string.Empty));
         }).ToArray();
     }
 
@@ -630,7 +637,7 @@ internal static class GeoservicesCatalogEndpoints
                     fault)));
 
         return Results.Content(
-            response.ToString(SaveOptions.DisableFormatting),
+            ArcGisSoapNamespaces.SerializeResponse(response),
             contentType: SoapContentTypeFor(soap),
             contentEncoding: Encoding.UTF8,
             statusCode: statusCode);
@@ -858,8 +865,32 @@ internal static class GeoservicesCatalogEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        var response = new RestInfoResponse();
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+        var soapUrl = $"{baseUrl}/services";
+
+        // secureSoapUrl must follow the scheme of the SAME resolved public URL that produced
+        // soapUrl, not the internal transport. Behind a TLS-terminating proxy -- the ordinary
+        // deployment -- `Public:BaseUrl` is https while `Request.IsHttps` is false, which
+        // published the contradictory pair `soapUrl: "https://..."` with `secureSoapUrl: null`
+        // and left a client that selects the secure field unable to find the SOAP endpoint.
+        var response = new RestInfoResponse
+        {
+            SoapUrl = soapUrl,
+            SecureSoapUrl = IsHttpsBaseUrl(baseUrl, context) ? soapUrl : null
+        };
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
+    }
+
+    /// <summary>
+    /// Whether the resolved public base URL is served over TLS. A configured absolute base URL
+    /// carries its own scheme and is authoritative; a relative or empty base means no public URL
+    /// was configured, so the request transport is the only signal available.
+    /// </summary>
+    private static bool IsHttpsBaseUrl(string baseUrl, HttpContext context)
+    {
+        return Uri.TryCreate(baseUrl, UriKind.Absolute, out var absolute)
+            ? string.Equals(absolute.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            : context.Request.IsHttps;
     }
 
     /// <summary>

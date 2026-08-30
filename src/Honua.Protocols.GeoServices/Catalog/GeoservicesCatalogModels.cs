@@ -35,7 +35,21 @@ internal sealed record ServiceDirectoryEntry
 
 internal sealed record RestInfoResponse
 {
-    // No currentVersion/fullVersion — Honua does not advertise an ArcGIS Server version.
+    /// <summary>
+    /// ArcGIS REST compatibility level selected for native Esri clients. ArcGIS Pro 3.7's
+    /// ImageServer reader rejects the service before issuing an image operation when this
+    /// field is absent. This is not Honua's product version; keep the exception confined to
+    /// <c>/rest/info</c>, and do not add <c>fullVersion</c> or version fields to service models.
+    /// See honua-server#3375 for the licensed-client A/B evidence.
+    /// </summary>
+    [JsonPropertyName("currentVersion")]
+    public double CurrentVersion { get; init; } = 10.8;
+
+    [JsonPropertyName("soapUrl")]
+    public required string SoapUrl { get; init; }
+
+    [JsonPropertyName("secureSoapUrl")]
+    public string? SecureSoapUrl { get; init; }
 
     [JsonPropertyName("authInfo")]
     public RestAuthInfo AuthInfo { get; init; } = new();
