@@ -51,7 +51,7 @@ public sealed class OperationsToolsetTests
             descriptor.ImplementationType == typeof(ServicePublishApprovalRequestMapper));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(ServicePublishExecutor));
+            descriptor.ImplementationType == typeof(DeferredServicePublishExecutor));
         services.Count(descriptor =>
                 descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
                 descriptor.ImplementationInstance is StudioDraftApprovalRequestMapper)
@@ -66,6 +66,32 @@ public sealed class OperationsToolsetTests
             descriptor.ServiceType == typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor) &&
             descriptor.ImplementationType != null &&
             descriptor.ImplementationType.Name.Contains("ServicePublish", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task AddOperationsToolset_WithoutPublishGraph_ResolvesStudioRuntimeAndRefusesPublishActionably()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddSingleton(Substitute.For<Honua.Core.Features.Studio.Abstractions.IStudioPackageLifecycleService>());
+        services.AddSingleton(Substitute.For<IReadinessCheckService>());
+
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var executors = scope.ServiceProvider.GetServices<IOperationExecutor>().ToArray();
+        executors.Should().Contain(executor => executor.OperationId == StudioDraftOperations.Create);
+
+        var publish = executors.Should().ContainSingle(executor =>
+            executor.OperationId == ServicePublishOperation.OperationId).Subject;
+        var validation = await publish.ValidateAsync(BuildRequest());
+        validation.IsValid.Should().BeFalse();
+        validation.Status.Should().Be("unavailable");
+        validation.Messages.Should().ContainSingle(message =>
+            message.Contains(nameof(IMetadataV2GraphProvider), StringComparison.Ordinal) &&
+            message.Contains("not registered", StringComparison.Ordinal));
     }
 
     [UnitTest]
