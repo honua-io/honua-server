@@ -1,10 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -23,6 +27,9 @@ using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Http;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -209,14 +216,18 @@ public sealed class OperationsToolsetTests
         services.Count(descriptor =>
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
-            .Should().Be(4, "each legacy operation class gets one factory-registered adapter");
+            .Should().Be(
+                AdminOperateOperationCatalog.Definitions.Count + 4,
+                "each admin operation and legacy operation class gets one factory-registered executor");
 
         // Idempotence across repeated composition, previously TryAddEnumerable's job.
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         services.Count(descriptor =>
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
-            .Should().Be(4, "re-registration must not duplicate the legacy adapters");
+            .Should().Be(
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4,
+                "re-registration must not duplicate the legacy adapters even though admin executors are added again");
     }
 
     [UnitTest]
@@ -261,6 +272,151 @@ public sealed class OperationsToolsetTests
         descriptor.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.None);
         descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.ReadOnly);
         descriptor.Policy.Determinism.Should().Be(OperationDeterminism.RuntimeDynamic);
+    }
+
+    [UnitTest]
+    public async Task LaneD_AdminOperations_RoundTrip_FromCatalog_ToPublishedTools_WhenEnabled()
+    {
+        var catalog = new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System);
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance);
+
+        var snapshot = await catalog.GetSnapshotAsync(CancellationToken.None);
+        var descriptors = snapshot.Operations
+            .Where(operation => AdminOperateOperationCatalog.Definitions.Any(definition => definition.OperationId == operation.OperationId))
+            .ToArray();
+        var publishedNames = (await source.GetToolsAsync(CancellationToken.None))
+            .Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal);
+
+        descriptors.Should().HaveCount(AdminOperateOperationCatalog.Definitions.Count);
+        foreach (var descriptor in descriptors)
+        {
+            var projectedName = PublishedOperationTool.ProjectName(descriptor.OperationId);
+            if (descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+                publishedNames.Should().NotContain(projectedName);
+            else
+                publishedNames.Should().Contain(projectedName);
+        }
+    }
+
+    [UnitTest]
+    public void LaneD_DescriptorSchemas_DiffCleanlyAgainstAdminApiComponents()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            Honua.TestKit.RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+
+        foreach (var definition in AdminOperateOperationCatalog.Definitions)
+        {
+            var operation = AdminOperateOperationCatalog.FindOperation(document.RootElement, definition.OpenApiOperationId);
+            operation.GetProperty("operationId").GetString().Should().Be(definition.OpenApiOperationId);
+            var descriptor = AdminOperateOperationCatalog.Descriptors.Should()
+                .ContainSingle(item => item.OperationId == definition.OperationId).Subject;
+            descriptor.InputSchema.Should().NotBeNull();
+            descriptor.OutputSchema.Should().NotBeNull();
+        }
+    }
+
+    [UnitTest]
+    public void LaneD_DestructiveOperations_AreApprovalGated_AndRollbackIsTruthful()
+    {
+        var destructive = AdminOperateOperationCatalog.Descriptors
+            .Where(descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly).ToArray();
+        destructive.Where(descriptor => descriptor.OperationId != "admin.metadata.prevalidate")
+            .Should().OnlyContain(descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+
+        var rollback = destructive.Should().ContainSingle(
+            descriptor => descriptor.OperationId == "admin.metadata.coordinated-releases.rollback").Subject;
+        rollback.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.DestroysState);
+        rollback.Policy.BlastRadiusClass.Should().Be(OperationBlastRadiusClass.DeploymentScope);
+        rollback.Policy.SupportsDryRun.Should().BeFalse(
+            "#3301 has not landed and the coordinated release endpoint exposes no rollback dry run");
+    }
+
+    [UnitTest]
+    public void LaneD_EachDescriptorHasARegisteredExecutor()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        using var provider = services.BuildServiceProvider();
+        var executorIds = services
+            .Where(static descriptor => descriptor.ServiceType == typeof(IOperationExecutor) && descriptor.ImplementationFactory is not null)
+            .Select(descriptor => (IOperationExecutor)descriptor.ImplementationFactory!(provider))
+            .Select(static executor => executor.OperationId).ToHashSet(StringComparer.Ordinal);
+
+        executorIds.Should().Contain(AdminOperateOperationCatalog.Definitions.Select(static definition => definition.OperationId));
+    }
+
+    [UnitTest]
+    public void LaneD_PublishedSchemas_PreserveNestedRequiredMembers_AndAdvertiseDryRun()
+    {
+        var descriptor = AdminOperateOperationCatalog.Descriptors.Should().ContainSingle(
+            item => item.OperationId == "admin.metadata.prevalidate").Subject;
+        var tool = new PublishedOperationTool(descriptor, "test", NullLogger.Instance);
+
+        var schema = tool.Describe().InputSchema;
+        schema.GetProperty("properties").GetProperty("dryRun").GetProperty("type").GetString()
+            .Should().Be("boolean");
+        schema.GetProperty("properties").GetProperty("dataScripts").GetProperty("items")
+            .GetProperty("required").EnumerateArray().Select(static item => item.GetString())
+            .Should().Contain("scriptId");
+        descriptor.Policy.SideEffectClass.Should().Be(OperationSideEffectClass.CreatesMetadata,
+            "the loopback POST requires an admin write credential, so semantic authorization must refuse admin:read before execution");
+        descriptor.ApprovalModel.Should().Be(OperationApprovalModel.None,
+            "prevalidation does not require operator approval; its write classification mirrors the transport credential only");
+    }
+
+    [UnitTest]
+    public async Task LaneD_Executor_WritesAotSafeBody_WithoutRouteOrAbsentOptionalParameters()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.OK, "{\"ok\":true}");
+        using var client = new HttpClient(handler);
+        var executor = BuildAdminExecutor("admin.metadata.coordinated-releases.rollback", client);
+        var request = new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["operationId"] = "operation-1",
+                ["reason"] = null,
+                ["force"] = "true"
+            }
+        };
+
+        var handle = await executor.SubmitAsync(request, new OperationPolicyContext(), CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handler.RequestUri!.AbsolutePath.Should().EndWith("/operations/operation-1/rollback");
+        handler.Headers!.GetValues("X-API-Key").Should().Equal("secret");
+        handler.Headers.GetValues("X-Honua-Tenant").Should().Equal("tenant-a");
+        using var body = JsonDocument.Parse(handler.Body!);
+        body.RootElement.EnumerateObject().Select(static property => property.Name)
+            .Should().BeEquivalentTo("force");
+        body.RootElement.GetProperty("force").GetBoolean().Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task LaneD_Executor_MapsExpectedAdminFailureToStructuredHandle()
+    {
+        var handler = new CapturingHandler(HttpStatusCode.BadRequest, "{\"detail\":\"invalid scope\"}");
+        using var client = new HttpClient(handler);
+        var executor = BuildAdminExecutor("admin.cache.invalidate", client);
+        var request = new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?>(StringComparer.Ordinal) { ["scope"] = "invalid" }
+        };
+
+        var handle = await executor.SubmitAsync(request, new OperationPolicyContext(), CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Reason.Should().Contain("HTTP 400");
+        handle.Result!.Details.Should().Contain("statusCode", "400")
+            .And.Contain("response", "{\"detail\":\"invalid scope\"}");
     }
 
     [UnitTest]
@@ -721,6 +877,22 @@ public sealed class OperationsToolsetTests
             notifications);
     }
 
+    private static AdminOperateOperationExecutor BuildAdminExecutor(string operationId, HttpClient client)
+    {
+        var definition = AdminOperateOperationCatalog.Definitions.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("localhost");
+        context.Request.Headers["X-API-Key"] = "secret";
+        context.Request.Headers["X-Honua-Tenant"] = "tenant-a";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(context);
+        return new AdminOperateOperationExecutor(definition, factory, accessor, TimeProvider.System);
+    }
+
     private static OperationDispatcher BuildDispatcher(
         IOperationExecutor executor,
         IOperationPolicyDecisionPoint policy,
@@ -937,6 +1109,30 @@ public sealed class OperationsToolsetTests
             }
 
             return Task.FromResult<string?>($"audit-test-{Guid.NewGuid():N}");
+        }
+    }
+
+    private sealed class CapturingHandler(HttpStatusCode statusCode, string responseBody) : HttpMessageHandler
+    {
+        public Uri? RequestUri { get; private set; }
+
+        public string? Body { get; private set; }
+
+        public HttpRequestHeaders? Headers { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestUri = request.RequestUri;
+            Headers = request.Headers;
+            Body = request.Content is null
+                ? null
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(responseBody, System.Text.Encoding.UTF8, "application/json")
+            };
         }
     }
 }

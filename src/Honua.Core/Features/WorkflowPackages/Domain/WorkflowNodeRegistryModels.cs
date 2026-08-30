@@ -235,6 +235,11 @@ public sealed record WorkflowSchemaDefinition
     /// </summary>
     public IReadOnlyDictionary<string, WorkflowSchemaDefinition> Properties { get; init; } =
         new Dictionary<string, WorkflowSchemaDefinition>();
+
+    /// <summary>
+    /// Required property names for structured values.
+    /// </summary>
+    public IReadOnlyList<string> RequiredProperties { get; init; } = [];
 }
 
 /// <summary>

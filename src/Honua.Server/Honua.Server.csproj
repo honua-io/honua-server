@@ -51,6 +51,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\developer\api-specs\admin-api.json"
+                      LogicalName="Honua.Server.admin-api.json" />
     <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
     <!-- Postgres reference for AOT assembly inclusion only -->
     <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
