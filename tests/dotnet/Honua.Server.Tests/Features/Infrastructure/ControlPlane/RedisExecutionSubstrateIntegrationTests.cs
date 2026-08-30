@@ -553,6 +553,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
             surfaced.PercentComplete.Should().Be(100);
             surfaced.ArtifactReferences.Should().ContainSingle("s3://integration/native-result.tif");
             (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+            await AssertClaimStateCleanedAsync(harness.Database, operationId);
         }
         finally
         {
@@ -620,6 +621,7 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         surfaced.ErrorMessage.Should().Contain("Worker heartbeat expired");
         surfaced.CompletedAt.Should().NotBeNull();
         (await harness.Queue.GetQueueDepthAsync()).Should().Be(0);
+        await AssertClaimStateCleanedAsync(harness.Database, operationId);
     }
 
     [IntegrationTest]
@@ -901,6 +903,14 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
     }
 
     private static string GetLogKey(string operationId) => $"controlplane:job:log:{operationId}";
+
+    private static async Task AssertClaimStateCleanedAsync(IDatabase database, string operationId)
+    {
+        (await database.SortedSetScoreAsync("controlplane:jobqueue:claimed", operationId))
+            .Should().BeNull();
+        (await database.KeyExistsAsync($"controlplane:jobqueue:meta:{operationId}"))
+            .Should().BeFalse();
+    }
 
     private sealed class DelegatingJobExecutor(
         ExecutionJobKind kind,
