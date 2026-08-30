@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Geoprocessing;
@@ -134,6 +135,78 @@ public sealed class StudioMcpToolContractTests
         var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
         await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
+    public async Task UpdateDraft_WhenMutationRuntimeIsMissing_SurfacesTypedUnavailable()
+    {
+        var draft = BuildDraft(StudioPackageFamily.Map, generation: 1);
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        var tool = new UpdateStudioDraftTool(_jobService, NullLogger<UpdateStudioDraftTool>.Instance);
+        var arguments = UpdateDraftArguments();
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(_lifecycleService);
+            services.AddSingleton<IStudioDraftMutationRuntime>(_ => null!);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
+
+        var act = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        await act.Should().ThrowAsync<GeoprocessingStoreUnavailableException>()
+            .WithMessage("*mutation runtime*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
+    public async Task UpdateDraft_WhenApprovalIsRequired_PreservesProposalResumeDetails()
+    {
+        var runtime = RuntimeReturning(OperationHandleStatus.RequiresApproval, proposalId: "proposal-123");
+
+        var act = () => InvokeUpdateWithRuntimeAsync(runtime);
+
+        var exception = (await act.Should().ThrowAsync<GeoprocessingApprovalRequiredException>()).Which;
+        exception.ProposalId.Should().Be("proposal-123");
+        exception.PolicyRef.Should().Be("enterprise-approval");
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
+    public async Task UpdateDraft_WhenRuntimeReportsNotFound_PreservesCanonicalErrorKind()
+    {
+        var runtime = RuntimeReturning(OperationHandleStatus.Failed, errorKind: "not-found");
+
+        var act = () => InvokeUpdateWithRuntimeAsync(runtime);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
+    public async Task UpdateDraft_WhenRuntimeReportsArgumentError_PreservesCanonicalErrorKind()
+    {
+        var runtime = RuntimeReturning(OperationHandleStatus.Failed, errorKind: "argument");
+
+        var act = () => InvokeUpdateWithRuntimeAsync(runtime);
+
+        await act.Should().ThrowAsync<GeoprocessingValidationException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_update_draft")]
+    public async Task UpdateDraft_WhenRuntimeDeniesMutation_PreservesPermissionDenial()
+    {
+        var runtime = RuntimeReturning(OperationHandleStatus.Denied);
+
+        var act = () => InvokeUpdateWithRuntimeAsync(runtime);
+
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
     }
 
     [UnitTest]
@@ -428,6 +501,71 @@ public sealed class StudioMcpToolContractTests
             services.AddSingleton(_lifecycleService);
             McpTestFactory.AddAllowingStudioAuthorization(services);
         });
+
+    private async Task InvokeUpdateWithRuntimeAsync(IStudioDraftMutationRuntime runtime)
+    {
+        var draft = BuildDraft(StudioPackageFamily.Map, generation: 1);
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        var tool = new UpdateStudioDraftTool(_jobService, NullLogger<UpdateStudioDraftTool>.Instance);
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(_lifecycleService);
+            services.AddSingleton(runtime);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
+
+        await tool.InvokeAsync(context, UpdateDraftArguments(), CancellationToken.None);
+    }
+
+    private static IStudioDraftMutationRuntime RuntimeReturning(
+        OperationHandleStatus status,
+        string? proposalId = null,
+        string? errorKind = null)
+    {
+        var runtime = Substitute.For<IStudioDraftMutationRuntime>();
+        var now = DateTimeOffset.UtcNow;
+        runtime.UpdateAsync(
+                Arg.Any<Guid>(),
+                Arg.Any<UpdateStudioPackageDraftCommand>(),
+                Arg.Any<StudioDraftMutationContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new StudioDraftMutationReceipt<StudioPackageDraft>
+            {
+                Operation = new OperationHandle
+                {
+                    OperationInstanceId = "opinst-review",
+                    OperationId = "studio.draft.update",
+                    CorrelationId = "corr-review",
+                    Status = status,
+                    ProposalId = proposalId,
+                    ApprovalLane = "enterprise-approval",
+                    Reason = "Canonical runtime outcome.",
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    Result = errorKind is null
+                        ? null
+                        : new OperationResultSummary
+                        {
+                            Summary = "Canonical runtime outcome.",
+                            Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                            {
+                                ["errorKind"] = errorKind,
+                            },
+                        },
+                },
+            });
+        return runtime;
+    }
+
+    private static JsonElement UpdateDraftArguments() => McpTestFactory.ToArguments(
+        new McpStudioUpdateDraftArgument
+        {
+            DraftId = DraftId,
+            Generation = 1,
+            PackageKey = "parcels-map",
+            SchemaVersion = "1.0",
+        },
+        StudioMcpJsonContext.Default.McpStudioUpdateDraftArgument);
 
     private Microsoft.AspNetCore.Http.DefaultHttpContext HttpContextWithLifecycleServiceAndValidator() =>
         McpTestFactory.AuthenticatedHttpContextWithServices(services =>

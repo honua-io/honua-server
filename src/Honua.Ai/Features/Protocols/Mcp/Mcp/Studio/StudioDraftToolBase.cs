@@ -142,6 +142,16 @@ internal abstract class StudioDraftToolBase
         ?? throw new GeoprocessingStoreUnavailableException("The Studio package lifecycle service is not available on this server.");
 
     /// <summary>
+    /// Resolves the canonical durable mutation runtime from the current request scope.
+    /// Studio tools are advertised by the modular MCP composition even when a host has
+    /// not composed the server-only operations toolset, so absence must remain a typed,
+    /// retryable capability error rather than masquerading as optimistic concurrency.
+    /// </summary>
+    protected static IStudioDraftMutationRuntime RequireMutationRuntime(HttpContext httpContext) =>
+        httpContext.RequestServices.GetService<IStudioDraftMutationRuntime>()
+        ?? throw new GeoprocessingStoreUnavailableException("The Studio draft mutation runtime is not available on this server.");
+
+    /// <summary>
     /// Resolves the canonical Studio ownership-policy service from the current
     /// request scope. Studio MCP tools must use the same owner rules as the REST
     /// lifecycle surface; failing closed when that policy was not composed is
@@ -339,9 +349,9 @@ internal abstract class StudioDraftToolBase
         UpdateStudioPackageDraftCommand command,
         CancellationToken cancellationToken)
     {
+        var runtime = RequireMutationRuntime(httpContext);
         try
         {
-            var runtime = httpContext.RequestServices.GetRequiredService<IStudioDraftMutationRuntime>();
             var receipt = await runtime.UpdateAsync(
                 draftId,
                 command,
@@ -359,8 +369,7 @@ internal abstract class StudioDraftToolBase
 
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
             {
-                throw new GeoprocessingPreconditionFailedException(
-                    receipt.Operation.Reason ?? $"Studio draft update ended as '{receipt.Operation.Status}'.");
+                ThrowMutationOutcome(receipt.Operation);
             }
 
             return receipt.Value
@@ -377,6 +386,40 @@ internal abstract class StudioDraftToolBase
             // failed_precondition errors instead of an opaque internal error.
             throw new GeoprocessingPreconditionFailedException(ex.Message);
         }
+    }
+
+    private static void ThrowMutationOutcome(OperationHandle operation)
+    {
+        var message = operation.Reason ?? $"Studio draft update ended as '{operation.Status}'.";
+        if (operation.Status == OperationHandleStatus.RequiresApproval)
+        {
+            throw new GeoprocessingApprovalRequiredException(
+                operation.ApprovalLane ?? operation.PolicyDecision?.ToString() ?? operation.OperationId,
+                message,
+                operation.ProposalId);
+        }
+
+        if (operation.Result?.Details.TryGetValue("errorKind", out var errorKind) == true)
+        {
+            switch (errorKind)
+            {
+                case "argument":
+                    throw new GeoprocessingValidationException(message);
+                case "not-found":
+                    throw new GeoprocessingNotFoundException(message);
+            }
+        }
+
+        if (operation.Status == OperationHandleStatus.Denied)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: message,
+                resourceType: OperatorResourceType.StudioDraft,
+                operation: OperatorOperation.Create);
+        }
+
+        throw new GeoprocessingPreconditionFailedException(message);
     }
 
     /// <summary>
