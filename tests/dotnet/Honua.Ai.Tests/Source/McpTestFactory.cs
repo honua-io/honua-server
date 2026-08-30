@@ -142,6 +142,22 @@ internal static class McpTestFactory
                 await lifecycle.DeleteDraftAsync(draftId, cancellationToken).ConfigureAwait(false),
                 "studio.draft.delete");
 
+        public async Task<StudioDraftMutationReceipt<StudioValidationSummary>> ValidateAsync(
+            Guid draftId,
+            string? actorId,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.ValidateDraftAsync(draftId, actorId, cancellationToken).ConfigureAwait(false),
+                "studio.draft.validate");
+
+        public async Task<StudioDraftMutationReceipt<StudioPreviewPlan>> PreviewAsync(
+            Guid draftId,
+            string? actorId,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.PreviewPlanAsync(draftId, actorId, cancellationToken).ConfigureAwait(false),
+                "studio.draft.preview-plan");
+
         private static StudioDraftMutationReceipt<T> Receipt<T>(T? value, string operationId)
         {
             var now = DateTimeOffset.UtcNow;

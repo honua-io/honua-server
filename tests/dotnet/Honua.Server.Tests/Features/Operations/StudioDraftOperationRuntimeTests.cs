@@ -18,6 +18,57 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class StudioDraftOperationRuntimeTests
 {
     [UnitTest]
+    public async Task ValidateExecutor_InvokesLifecycleOnlyAfterCanonicalIdentityIsSupplied()
+    {
+        var draftId = Guid.NewGuid();
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        var summary = StudioValidationSummary.NotValidated;
+        lifecycle.ValidateDraftAsync(draftId, "studio-author", Arg.Any<CancellationToken>())
+            .Returns(summary);
+        var executor = new StudioDraftValidateExecutor(lifecycle, TimeProvider.System);
+        var payload = JsonSerializer.Serialize(
+            new StudioDraftActorPayload { DraftId = draftId, ActorId = "studio-author" },
+            StudioDraftOperationJsonContext.Default.StudioDraftActorPayload);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.Validate, payload),
+            Context("validate"));
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handle.OperationInstanceId.Should().Be("opinst-validate");
+        handle.Result!.Details[StudioDraftOperations.ResultParameter].Should().NotBeNullOrWhiteSpace();
+        await lifecycle.Received(1).ValidateDraftAsync(draftId, "studio-author", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task PreviewExecutor_InvokesExactlyOneTypedLifecycleActuator()
+    {
+        var draftId = Guid.NewGuid();
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.PreviewPlanAsync(draftId, "studio-author", Arg.Any<CancellationToken>())
+            .Returns(new StudioPreviewPlan
+            {
+                DraftId = draftId,
+                Family = StudioPackageFamily.Map,
+                Synchronous = true,
+                RequiresJob = false,
+                Validation = StudioValidationSummary.NotValidated,
+            });
+        var executor = new StudioDraftPreviewPlanExecutor(lifecycle, TimeProvider.System);
+        var payload = JsonSerializer.Serialize(
+            new StudioDraftActorPayload { DraftId = draftId, ActorId = "studio-author" },
+            StudioDraftOperationJsonContext.Default.StudioDraftActorPayload);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.PreviewPlan, payload),
+            Context("preview"));
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        await lifecycle.Received(1).PreviewPlanAsync(draftId, "studio-author", Arg.Any<CancellationToken>());
+        await lifecycle.DidNotReceiveWithAnyArgs().ValidateDraftAsync(default, default, default);
+    }
+
+    [UnitTest]
     public async Task DeleteAsync_ProjectsResultFromDurableStore_NotInvokerHandle()
     {
         var now = DateTimeOffset.UtcNow;
@@ -151,6 +202,21 @@ public sealed class StudioDraftOperationRuntimeTests
                 [StudioDraftOperations.ResultParameter] = payload,
             },
         },
+    };
+
+    private static OperationRequest Request(string operationId, string payload) => new()
+    {
+        OperationId = operationId,
+        Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [StudioDraftOperations.PayloadParameter] = payload,
+        },
+    };
+
+    private static OperationPolicyContext Context(string suffix) => new()
+    {
+        OperationInstanceId = $"opinst-{suffix}",
+        CorrelationId = $"corr-{suffix}",
     };
 
     private sealed class StubInvoker(OperationHandle handle) : IOperationInvoker

@@ -853,6 +853,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandleValidateDraft(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -874,15 +875,23 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var validation = await service.ValidateDraftAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.ValidateAsync(
                 draftId,
-                ConsolePrincipal.ResolveActorId(context.User),
+                actor,
+                BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            return validation is null
-                ? NotFound(context, "Studio package draft was not found.")
-                : Results.Json(
-                    ApiResponse<StudioValidationSummary>.CreateSuccess(validation),
-                    StudioApiJsonContext.Default.ApiResponseStudioValidationSummary);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+
+            var validation = receipt.Value
+                ?? throw new InvalidOperationException("Completed Studio validation has no durable result projection.");
+            return Results.Json(
+                ApiResponse<StudioValidationSummary>.CreateSuccess(validation),
+                StudioApiJsonContext.Default.ApiResponseStudioValidationSummary);
         }
         catch (InvalidOperationException ex)
         {
@@ -898,6 +907,7 @@ internal static class StudioPackageEndpoints
     private static async Task<IResult> HandlePreviewPlan(
         Guid draftId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -919,15 +929,23 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var plan = await service.PreviewPlanAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.PreviewAsync(
                 draftId,
-                ConsolePrincipal.ResolveActorId(context.User),
+                actor,
+                BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
-            return plan is null
-                ? NotFound(context, "Studio package draft was not found.")
-                : Results.Json(
-                    ApiResponse<StudioPreviewPlan>.CreateSuccess(plan),
-                    StudioApiJsonContext.Default.ApiResponseStudioPreviewPlan);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+
+            var plan = receipt.Value
+                ?? throw new InvalidOperationException("Completed Studio preview plan has no durable result projection.");
+            return Results.Json(
+                ApiResponse<StudioPreviewPlan>.CreateSuccess(plan),
+                StudioApiJsonContext.Default.ApiResponseStudioPreviewPlan);
         }
         catch (InvalidOperationException ex)
         {
