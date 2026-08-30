@@ -442,8 +442,12 @@ public sealed class OperationsToolsetTests
     {
         var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
         AdminApiKeyValidationResult? executionAuthority = null;
+        Uri? replayUri = null;
+        string? replayHost = null;
         var handler = new CapturingOperationHandler(async request =>
         {
+            replayUri = request.RequestUri;
+            replayHost = request.Headers.Host;
             var executionKey = request.Headers.GetValues("X-API-Key").Single();
             executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -470,6 +474,8 @@ public sealed class OperationsToolsetTests
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
+        replayUri.Should().Be("http://127.0.0.1:8080/api/v1/admin/cache/invalidate");
+        replayHost.Should().Be("public.example.test");
         executionAuthority!.Record.Permissions.Should().Equal(
             "admin:operation:POST:/api/v1/admin/cache/invalidate");
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
@@ -1133,7 +1139,8 @@ public sealed class OperationsToolsetTests
         factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
         var context = new DefaultHttpContext();
         context.Request.Scheme = "https";
-        context.Request.Host = new HostString("localhost");
+        context.Request.Host = new HostString("public.example.test");
+        context.Connection.LocalPort = 8080;
         context.Request.Headers["X-API-Key"] = "secret";
         context.Request.Headers["X-Honua-Tenant"] = "tenant-a";
         var accessor = Substitute.For<IHttpContextAccessor>();

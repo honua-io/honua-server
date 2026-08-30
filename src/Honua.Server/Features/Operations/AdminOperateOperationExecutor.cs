@@ -56,8 +56,9 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         var dryRun = request.DryRun && _definition.SupportsDryRun;
         var path = BindPath(request, dryRun ? _definition.DryRunPath! : _definition.Path);
         var method = dryRun ? _definition.DryRunMethod ?? _definition.Method : _definition.Method;
-        var uri = new Uri($"{current.Request.Scheme}://{current.Request.Host}/api/v1/admin{AppendQuery(path, request)}");
+        var uri = BuildLocalUri(current, $"/api/v1/admin{AppendQuery(path, request)}");
         using var message = new HttpRequestMessage(method, uri);
+        message.Headers.Host = current.Request.Host.Value;
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
@@ -151,6 +152,18 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
                 }
             };
         }
+    }
+
+    private static Uri BuildLocalUri(HttpContext current, string pathAndQuery)
+    {
+        var localPort = current.Connection.LocalPort;
+        if (localPort <= 0)
+            throw new InvalidOperationException("Admin operation loopback requires the local server port.");
+
+        var scheme = current.Features.Get<Microsoft.AspNetCore.Http.Features.ITlsConnectionFeature>() is null
+            ? Uri.UriSchemeHttp
+            : Uri.UriSchemeHttps;
+        return new UriBuilder(scheme, System.Net.IPAddress.Loopback.ToString(), localPort, pathAndQuery).Uri;
     }
 
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
