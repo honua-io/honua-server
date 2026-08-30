@@ -55,7 +55,16 @@ internal static class ObservabilityAuditEndpoints
                 StatusCodes.Status400BadRequest, ProblemDetailsHelpers.GetTitle(400), error);
         }
 
-        var page = await reader.ListAsync(filter, cancellationToken).ConfigureAwait(false);
+        AuditEventPage page;
+        try
+        {
+            page = await reader.ListAsync(filter, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidAuditLogCursorException)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest, ProblemDetailsHelpers.GetTitle(400), "cursor is malformed.");
+        }
         var response = new ObservabilityAuditPageResponse
         {
             Items = page.Items.Select(MapRecord).ToArray(),

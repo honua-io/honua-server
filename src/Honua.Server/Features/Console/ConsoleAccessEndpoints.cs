@@ -1,7 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -80,7 +81,7 @@ internal static class ConsoleAccessEndpoints
         var roles = allRoles
             .Where(role => role.IsBuiltIn || IsOwnedByWorkspace(role, normalizedWorkspaceId))
             .ToArray();
-        var users = await ListAllUsersAsync(userStore, context.RequestAborted).ConfigureAwait(false);
+        var users = await ListWorkspaceUsersAsync(userStore, workspaceRoleNames, context.RequestAborted).ConfigureAwait(false);
         var projected = roles
             .OrderByDescending(static role => role.IsBuiltIn)
             .ThenBy(static role => role.Name, StringComparer.OrdinalIgnoreCase)
@@ -120,10 +121,7 @@ internal static class ConsoleAccessEndpoints
             .Where(role => role.IsBuiltIn || IsOwnedByWorkspace(role, normalizedWorkspaceId))
             .ToArray();
         var rolesByName = roles.ToDictionary(static role => role.Name, StringComparer.OrdinalIgnoreCase);
-        var allUsers = await ListAllUsersAsync(userStore, context.RequestAborted).ConfigureAwait(false);
-        var users = allUsers
-            .Where(user => user.Roles.Any(workspaceRoleNames.Contains))
-            .ToArray();
+        var users = await ListWorkspaceUsersAsync(userStore, workspaceRoleNames, context.RequestAborted).ConfigureAwait(false);
         var members = users
             .OrderBy(static user => user.DisplayName, StringComparer.OrdinalIgnoreCase)
             .Select(user => ToTeamMember(user, rolesByName, normalizedWorkspaceId))
@@ -183,8 +181,6 @@ internal static class ConsoleAccessEndpoints
             return RoleNameConflict(requestedName);
         }
 
-        _ = await roleStore.SetPermissionsAsync(created.RoleId, grants, context.RequestAborted).ConfigureAwait(false);
-        created = await roleStore.GetRoleAsync(created.RoleId, context.RequestAborted).ConfigureAwait(false) ?? created;
         await RecordRoleAuditAsync(
             auditLog, context, normalizedWorkspaceId, created.RoleId, "console_access.role.create")
             .ConfigureAwait(false);
@@ -259,8 +255,6 @@ internal static class ConsoleAccessEndpoints
             return Results.NotFound(ApiResponse<object>.Failure("Role not found."));
         }
 
-        _ = await roleStore.SetPermissionsAsync(roleId, grants, context.RequestAborted).ConfigureAwait(false);
-        updated = await roleStore.GetRoleAsync(roleId, context.RequestAborted).ConfigureAwait(false) ?? updated;
         await RecordRoleAuditAsync(
             auditLog, context, normalizedWorkspaceId, roleId, "console_access.role.update")
             .ConfigureAwait(false);
@@ -410,17 +404,7 @@ internal static class ConsoleAccessEndpoints
             }
 
             var operation = grant.Operation.Trim();
-            if (operation is "*" || string.Equals(operation, permissionKey, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            if (permissionKey == "view-public" && operation is "read" or "query")
-            {
-                return true;
-            }
-
-            if (permissionKey == "draft" && operation is "write" or "create" or "update" or "edit")
+            if (operation is "*" || string.Equals(operation, ToCanonicalOperation(permissionKey), StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -520,7 +504,7 @@ internal static class ConsoleAccessEndpoints
             {
                 Service = ConsoleAccessService,
                 Layer = normalizedWorkspaceId,
-                Operation = grant.Permission,
+                Operation = ToCanonicalOperation(grant.Permission),
             });
         }
 
@@ -545,24 +529,35 @@ internal static class ConsoleAccessEndpoints
         return true;
     }
 
-    private static async Task<IReadOnlyList<ManagedUser>> ListAllUsersAsync(
+    private static async Task<IReadOnlyList<ManagedUser>> ListWorkspaceUsersAsync(
         IUserStore userStore,
+        IReadOnlySet<string> roleNames,
         CancellationToken cancellationToken)
     {
-        var users = new List<ManagedUser>();
-        for (var offset = 0; ; offset += UserPageSize)
+        var users = new Dictionary<string, ManagedUser>(StringComparer.Ordinal);
+        foreach (var roleName in roleNames)
         {
-            var page = await userStore.ListUsersAsync(new UserListFilter
+            for (var offset = 0; ; offset += UserPageSize)
             {
-                Limit = UserPageSize,
-                Offset = offset,
-            }, cancellationToken).ConfigureAwait(false);
-            users.AddRange(page.Users);
-            if (users.Count >= page.TotalCount || page.Users.Count == 0)
-            {
-                return users;
+                var page = await userStore.ListUsersAsync(new UserListFilter
+                {
+                    Role = roleName,
+                    Limit = UserPageSize,
+                    Offset = offset,
+                }, cancellationToken).ConfigureAwait(false);
+                foreach (var user in page.Users)
+                {
+                    users[user.UserId] = user;
+                }
+
+                if (offset + page.Users.Count >= page.TotalCount || page.Users.Count == 0)
+                {
+                    break;
+                }
             }
         }
+
+        return users.Values.ToArray();
     }
 
     private static Task<string?> RecordRoleAuditAsync(
@@ -572,9 +567,7 @@ internal static class ConsoleAccessEndpoints
         Guid roleId,
         string action)
     {
-        var actor = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? context.User.Identity?.Name
-            ?? AuditEvent.AnonymousActor;
+        var actor = ConsolePrincipal.ResolveActorId(context.User) ?? AuditEvent.AnonymousActor;
         return auditLog.RecordAsync(new AuditEvent
         {
             Timestamp = DateTimeOffset.UtcNow,
@@ -587,10 +580,24 @@ internal static class ConsoleAccessEndpoints
             Outcome = AuditOutcome.Success,
             CorrelationId = context.TraceIdentifier,
             Details = string.Empty,
-        }, context.RequestAborted);
+        }, CancellationToken.None);
     }
 
-    private static string AuditResourceType(string workspaceId) => $"console_access_role:{workspaceId}";
+    private static string AuditResourceType(string workspaceId)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(workspaceId)));
+        return $"console_access_role:{hash[..32]}";
+    }
+
+    private static string ToCanonicalOperation(string permissionKey) => permissionKey switch
+    {
+        "view-public" => "query",
+        "comment" => "write",
+        "draft" => "edit",
+        "publish" => "publish",
+        "manage-roles" => "administer",
+        _ => permissionKey,
+    };
 
     private static string? NormalizeDescription(string? description) =>
         string.IsNullOrWhiteSpace(description) ? null : description.Trim();

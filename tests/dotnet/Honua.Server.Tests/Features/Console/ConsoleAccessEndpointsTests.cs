@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Core.Features.Identity.Domain;
 using Honua.Infrastructure.Models;
@@ -91,6 +92,11 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         var created = await ReadAsync<ConsoleRbacRole>(createResponse);
         Assert.True(created.IsCustom);
         Assert.Contains(created.Grants, static grant => grant.Permission == "publish" && grant.Grant == "granted");
+        var roleStore = _fixture.Services.GetRequiredService<IRoleStore>();
+        var persistedCreate = Assert.IsType<RoleDefinition>(await roleStore.GetRoleAsync(Guid.Parse(created.Id)));
+        Assert.Contains(persistedCreate.Permissions, static grant => grant.Operation == "query");
+        Assert.Contains(persistedCreate.Permissions, static grant => grant.Operation == "publish");
+        Assert.DoesNotContain(persistedCreate.Permissions, static grant => grant.Operation == "view-public");
 
         var updateRequest = createRequest with
         {
@@ -110,6 +116,9 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
         Assert.Equal("Reviews and comments on dashboards.", updated.Description);
         Assert.Contains(updated.Grants, static grant => grant.Permission == "comment" && grant.Grant == "granted");
         Assert.Contains(updated.Grants, static grant => grant.Permission == "publish" && grant.Grant == "not-granted");
+        var persistedUpdate = Assert.IsType<RoleDefinition>(await roleStore.GetRoleAsync(Guid.Parse(created.Id)));
+        Assert.Contains(persistedUpdate.Permissions, static grant => grant.Operation == "write");
+        Assert.DoesNotContain(persistedUpdate.Permissions, static grant => grant.Operation == "comment");
 
         var auditResponse = await _client.GetAsync(
             $"/api/v1/console/access/{WorkspaceId}/roles/audit?pageSize=50");
@@ -300,6 +309,44 @@ public sealed class ConsoleAccessEndpointsTests : IAsyncLifetime
             await _client.GetAsync($"/api/v1/console/access/{workspace}/members"));
         Assert.Contains(membership.Members, member =>
             member.Id == assignedUser.UserId && member.RoleId == role.Id && member.RoleName == role.Name);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/roles/{id}/permissions")]
+    public async Task AdminPermissionReplacement_PreservesConsoleWorkspaceOwnership()
+    {
+        const string workspace = "admin-permission-owner";
+        var role = await CreateRoleAsync(workspace, "admin-permission-reviewer");
+
+        var response = await _client.PutAsJsonAsync(
+            $"/api/v1/admin/roles/{role.Id}/permissions",
+            new SetPermissionsRequest
+            {
+                Permissions =
+                [
+                    new PermissionGrantRequest { Service = "features", Layer = "*", Operation = "query" },
+                ],
+            },
+            JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var overview = await ReadAsync<ConsoleRbacOverview>(
+            await _client.GetAsync($"/api/v1/console/access/{workspace}/roles"));
+        Assert.Contains(overview.Roles, candidate => candidate.Id == role.Id);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/access/{workspaceId}/roles/audit")]
+    public async Task ConsoleAccess_LongWorkspaceId_RetainsMutationAudit()
+    {
+        var workspace = new string('w', 64);
+        var role = await CreateRoleAsync(workspace, "long-workspace-audit-role");
+
+        var audit = await ReadAsync<ConsoleRoleAuditPage>(await _client.GetAsync(
+            $"/api/v1/console/access/{workspace}/roles/audit?pageSize=50"));
+
+        Assert.Contains(audit.Entries, entry =>
+            entry.RoleId == role.Id && entry.Action == "console_access.role.create");
     }
 
     [IntegrationTest]
