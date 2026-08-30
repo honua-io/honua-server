@@ -23,8 +23,8 @@ namespace Honua.Server.Tests;
 // PostgresFixture keeps a single ref-counted, process-wide PostGIS container, so
 // using several collections does NOT spin up several containers — it only unlocks
 // xUnit cross-collection parallelism. Classes are assigned to a collection by CI
-// shard area so the previously-serial Core and gRPC Scene shards parallelize
-// within their own filtered test set.
+// shard area so the previously-serial Core, GeoServices ImageServer, and OGC API
+// Maps/Tiles shards parallelize within their own filtered test set.
 
 /// <summary>
 /// Database-backed collection for Core-shard feature-store / query / CRS tests.
@@ -50,14 +50,5 @@ public class DatabaseCoreEndpointsCollection : ICollectionFixture<DatabaseFixtur
 [CollectionDefinition("Database.CoreSpatial")]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseCoreSpatialCollection : ICollectionFixture<DatabaseFixtureAdapter>
-{
-}
-
-/// <summary>
-/// Database-backed collection for gRPC Scene integration tests.
-/// </summary>
-[CollectionDefinition("Database.SceneGrpc")]
-[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
-public class DatabaseSceneGrpcCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
 }
