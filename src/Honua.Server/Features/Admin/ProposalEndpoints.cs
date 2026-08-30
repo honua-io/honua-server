@@ -58,6 +58,7 @@ internal static class ProposalEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/{id}/reject", HandleRejectProposal)
@@ -172,7 +173,8 @@ internal static class ProposalEndpoints
         [FromServices] IPermissionResolver permissionResolver,
         HttpContext context,
         [FromServices] IOperationGateway? gateway = null,
-        [FromServices] IOperationProposalStore? proposalStore = null)
+        [FromServices] IOperationProposalStore? proposalStore = null,
+        [FromServices] IOperationExecutorCatalog? executorCatalog = null)
     {
         if (gateway is null || proposalStore is null)
         {
@@ -184,6 +186,22 @@ internal static class ProposalEndpoints
         if (denied != null)
         {
             return denied;
+        }
+
+        var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+        if (proposal != null &&
+            (executorCatalog is null || !executorCatalog.SupportedKinds.Contains(proposal.Kind)))
+        {
+            return Results.Problem(
+                title: "Operation executor unavailable",
+                detail: $"No operation executor is registered for proposal type '{proposal.Kind}'. " +
+                    "Register an executor for this operation type before approving the proposal.",
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "operation-executor-unavailable",
+                    ["operationType"] = proposal.Kind.ToString(),
+                });
         }
 
         try
