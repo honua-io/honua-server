@@ -207,6 +207,16 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
                 errors.Add($"{prefix}:PublicKey must decode to {Ed25519PublicKeyParameters.KeySize} bytes.");
             }
 
+            if (overlap.NotBefore is null)
+            {
+                errors.Add($"{prefix}:NotBefore is required to define the rotation overlap window.");
+            }
+
+            if (overlap.NotAfter is null)
+            {
+                errors.Add($"{prefix}:NotAfter is required to define the rotation overlap window.");
+            }
+
             if (overlap.NotBefore is { } notBefore && overlap.NotAfter is { } notAfter && notBefore >= notAfter)
             {
                 errors.Add($"{prefix}:NotBefore must be earlier than NotAfter.");

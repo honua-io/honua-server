@@ -101,6 +101,7 @@ public sealed class StudioAiTranscriptSignerTests
         {
             KeyId = "previous-2026-07",
             PublicKey = Convert.ToBase64String(overlapPublic),
+            NotBefore = DateTimeOffset.Parse("2026-08-15T00:00:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind),
             NotAfter = DateTimeOffset.Parse("2026-09-15T00:00:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind)
         });
         CryptographicOperations.ZeroMemory(activeSeed);
