@@ -43,6 +43,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__ClientCertificates__ProtectedAdminPathPrefixes__N` | — | Admin path prefixes protected by client-certificate auth. |
 | `Authentication__ClientCertificates__ProtectedGrpcServices__N` | — | gRPC service names protected by client-certificate auth. |
 | `Authentication__ClientCertificates__TrustProfiles__N__*` | — | Trust-profile definitions (issuer subjects, SAN types, principal mappings, roles). |
+| `Mcp__Profiles__N` | — | Opt-in MCP tool profile name. Set an entry to `esri-gp` to advertise the three `honua_esri_gp_*` tools. |
 | `Authentication__ClientCertificates__ForwardedCertificate__Enabled` | `false` | Accept proxy-forwarded client certificates. |
 | `Authentication__ClientCertificates__ForwardedCertificate__TrustedProxyNetworks__N` | — | CIDR ranges allowed to forward certificates. |
 | `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the ArcGIS Portal OAuth2 bridge. |

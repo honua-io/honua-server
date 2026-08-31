@@ -11,10 +11,12 @@ using Honua.Ai.Protocols.Mcp.Discovery;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Ai.Protocols.Mcp.Tools.EsriGp;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Geoprocessing;
+using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -874,7 +876,19 @@ public sealed partial class McpTaxonomyAlignmentTests
         // BuildTools is the single static test roster for the live /mcp DI
         // registration. Keeping one roster prevents package-review tools from
         // disappearing from taxonomy or registry conformance independently.
-        return BuildTools();
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var processCatalog = new BuiltInProcessCatalog();
+        return
+        [
+            .. BuildTools(),
+            new EsriGpListTasksTool(jobService, processCatalog),
+            new EsriGpDescribeTaskTool(jobService, processCatalog),
+            new EsriGpExecuteTaskTool(
+                jobService,
+                processCatalog,
+                new GPServerEsriInputTranslator(),
+                NullLogger<EsriGpExecuteTaskTool>.Instance)
+        ];
     }
 
     [UnitTest]

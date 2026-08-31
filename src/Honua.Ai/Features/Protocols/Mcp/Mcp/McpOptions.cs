@@ -47,6 +47,9 @@ internal sealed class McpOptions
     /// <summary>Configuration section name.</summary>
     public const string SectionName = "Mcp";
 
+    /// <summary>Optional MCP profile families (for example <c>esri-gp</c>) enabled for discovery.</summary>
+    public string[] Profiles { get; set; } = [];
+
     /// <summary>
     /// When <see langword="true"/> the server offers the optional server-initiated
     /// <c>GET /mcp</c> SSE stream (progress / <c>*/list_changed</c> notifications);

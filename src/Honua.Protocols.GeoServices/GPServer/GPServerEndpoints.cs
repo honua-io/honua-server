@@ -1700,7 +1700,7 @@ internal static class GPServerEndpoints
         // and single-feature FeatureSet payloads into canonical base64-WKB + srid.
         // Native string / base64-WKB inputs pass through untouched. Multi-feature
         // FeatureSets surface a capability error rather than dropping features.
-        var esriResult = GPServerEsriInputTranslation.Translate(inputs);
+        var esriResult = new GPServerEsriInputTranslator().Translate(inputs);
         if (esriResult.CapabilityMessage is not null)
         {
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);
