@@ -137,6 +137,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y curl jq
 
+      - name: Capture CITE execution start
+        run: date -u +%Y-%m-%dT%H:%M:%SZ > "$RUNNER_TEMP/cite-started-at.txt"
+
       - name: Run CITE suites
         id: run-cite
         env:
@@ -197,7 +200,11 @@ jobs:
         if: always()
         env:
           CITE_EVIDENCE_PUBLIC_BASE_URL: ${{ inputs.publish_pages && format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) || '' }}
-        run: scripts/conformance/cite/build-cite-evidence.sh --output artifacts/cite-evidence
+          HONUA_CITE_TESTED_GIT_SHA: ${{ inputs.source_sha || github.sha }}
+          HONUA_CITE_PRODUCER_GIT_SHA: ${{ github.sha }}
+        run: |
+          scripts/conformance/cite/build-cite-evidence.sh --output artifacts/cite-evidence
+          cp "$RUNNER_TEMP/cite-started-at.txt" artifacts/cite-evidence/execution-started-at.txt
 
       - name: Capture exact CITE suite versions
         if: always()

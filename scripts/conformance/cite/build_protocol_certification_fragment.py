@@ -98,14 +98,18 @@ def build(args: argparse.Namespace) -> dict:
         suite_id = SUITE_BY_SURFACE.get(requirement["surface"])
         suite = suites.get(suite_id) if suite_id else None
         suite_provenance = suite_versions.get(suite_id) if suite_id else None
-        fixture = requirement["fixture_revision"].replace("{source_sha}", args.source_sha)
+        fixture_path = suite_provenance.get("fixture_path") if suite_provenance else None
+        fixture = f"{fixture_path}@{args.source_sha}" if fixture_path else None
         executable = (
             suite is not None
             and suite_provenance is not None
             and suite.get("status") in {"passed", "failed"}
             and int(suite.get("totalTests", 0)) > 0
+            and isinstance(fixture_path, str)
+            and fixture_path.startswith("docker/cite/")
         )
-        result = "pass" if executable and suite["status"] == "passed" else "fail" if executable else "skip"
+        fully_passed = executable and suite["status"] == "passed" and int(suite.get("passed", 0)) == int(suite["totalTests"]) and all(int(suite.get(key, 0)) == 0 for key in ("failed", "skipped", "cantTell"))
+        result = "pass" if fully_passed else "fail" if executable else "skip"
         skip_reason = None
         if not executable:
             if suite_id is None:
@@ -115,7 +119,7 @@ def build(args: argparse.Namespace) -> dict:
             elif suite_provenance is None:
                 skip_reason = f"Required CITE suite {suite_id} did not record exact ETS and TEAM Engine versions."
             else:
-                skip_reason = f"Required CITE suite {suite_id} produced no executed tests."
+                skip_reason = f"Required CITE suite {suite_id} produced no executed tests or fixture provenance."
 
         observation = {
             "capability_key": requirement["capability_key"],
@@ -179,6 +183,11 @@ def build(args: argparse.Namespace) -> dict:
             "source_sha": args.source_sha,
             "image_digest": args.image_digest,
             "cut_at": cut_at,
+        },
+        "operation_scope": {
+            "complete": True,
+            "expected": len(observations),
+            "observed": len(observations),
         },
         "observations": observations,
     }

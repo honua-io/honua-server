@@ -57,7 +57,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          started_at="$(jq -er '.generatedAt' artifacts/cite-evidence/conformance-summary.json)"
+          started_at="$(< artifacts/cite-evidence/execution-started-at.txt)"
           completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           python3 scripts/conformance/cite/build_protocol_certification_fragment.py \
             --summary artifacts/cite-evidence/conformance-summary.json \

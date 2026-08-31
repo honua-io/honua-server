@@ -15,7 +15,7 @@ DIGEST = "sha256:" + "b" * 64
 
 
 class FragmentTests(unittest.TestCase):
-    def build(self, *, include_suite=True, image_digest=DIGEST,
+    def build(self, *, include_suite=True, image_digest=DIGEST, suite_overrides=None,
               candidate_cut="2026-08-30T00:00:00Z",
               started_at="2026-08-30T00:01:00Z"):
         with tempfile.TemporaryDirectory() as directory:
@@ -29,11 +29,13 @@ class FragmentTests(unittest.TestCase):
                 "auth_policy_revision": "anonymous-public-v1",
             }
             summary = {"suites": ([{"id": "wfs20", "status": "passed", "totalTests": 167,
-                                    "passed": 167, "failed": 0, "skipped": 0, "cantTell": 0}]
+                                    "passed": 167, "failed": 0, "skipped": 0, "cantTell": 0,
+                                    **(suite_overrides or {})}]
                                   if include_suite else [])}
             provenance = {"suites": {"wfs20": {"suite_version": "ets-wfs20@sha256:123",
                 "team_engine_version": "6.0.0-RC2", "protocol_version": "2.0",
-                "protocol_profile": "basic", "request_path": "/wfs"}}}
+                "protocol_profile": "basic", "request_path": "/wfs",
+                "fixture_path": "docker/cite/shared/test-data"}}}
             paths = {}
             for name, value in (("requirements", {"requirements": [requirement]}),
                                 ("summary", summary), ("provenance", provenance)):
@@ -59,6 +61,13 @@ class FragmentTests(unittest.TestCase):
                          observation["evidence_receipt"]["identity"]["candidate_cut_at"])
         self.assertTrue(observation["evidence_uri"].endswith(observation["evidence_digest"][7:]))
         self.assertEqual(set(observation["facet_results"]), set(observation["exercised_capabilities"]))
+        self.assertEqual(f"docker/cite/shared/test-data@{SHA}", observation["fixture_revision"])
+        self.assertEqual({"complete": True, "expected": 1, "observed": 1},
+                         fragment["operation_scope"])
+
+    def test_inconsistent_passing_summary_emits_failure(self):
+        observation = self.build(suite_overrides={"passed": 166, "failed": 1})["observations"][0]
+        self.assertEqual("fail", observation["result"])
 
     def test_missing_suite_is_explicit_skip_without_fabricated_evidence(self):
         observation = self.build(include_suite=False)["observations"][0]
