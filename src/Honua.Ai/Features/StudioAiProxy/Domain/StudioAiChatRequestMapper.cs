@@ -133,7 +133,24 @@ public static class StudioAiChatRequestMapper
                     return (null, $"tools[].inputSchema for tool '{tool.Name}' must be a JSON object.");
                 }
 
-                tools.Add(new StudioAiToolDefinition { Name = tool.Name, Description = tool.Description, InputSchema = tool.InputSchema });
+                if (tool.Annotations is { ValueKind: not JsonValueKind.Object })
+                {
+                    return (null, $"tools[].annotations for tool '{tool.Name}' must be a JSON object when provided.");
+                }
+
+                if (tool.OutputSchema is { ValueKind: not JsonValueKind.Object })
+                {
+                    return (null, $"tools[].outputSchema for tool '{tool.Name}' must be a JSON object when provided.");
+                }
+
+                tools.Add(new StudioAiToolDefinition
+                {
+                    Name = tool.Name,
+                    Description = tool.Description,
+                    InputSchema = tool.InputSchema,
+                    Annotations = tool.Annotations,
+                    OutputSchema = tool.OutputSchema
+                });
             }
         }
 

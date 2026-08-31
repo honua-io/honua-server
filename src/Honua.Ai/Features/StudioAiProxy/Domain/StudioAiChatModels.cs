@@ -80,6 +80,12 @@ public sealed class StudioAiToolDefinition
 
     /// <summary>JSON Schema describing the tool's call arguments.</summary>
     public JsonElement InputSchema { get; init; }
+
+    /// <summary>Optional MCP behavior annotations forwarded opaquely for model clients.</summary>
+    public JsonElement? Annotations { get; init; }
+
+    /// <summary>Optional JSON Schema describing the tool's structured result.</summary>
+    public JsonElement? OutputSchema { get; init; }
 }
 
 /// <summary>How strongly the caller wants the model to invoke a tool.</summary>
@@ -219,6 +225,12 @@ public sealed class StudioAiChatHttpTool
 
     [JsonPropertyName("inputSchema")]
     public JsonElement InputSchema { get; init; }
+
+    [JsonPropertyName("annotations")]
+    public JsonElement? Annotations { get; init; }
+
+    [JsonPropertyName("outputSchema")]
+    public JsonElement? OutputSchema { get; init; }
 }
 
 /// <summary>Wire shape of a <see cref="StudioAiToolChoice"/>. <see cref="Mode"/> is lower-case (<c>"auto"</c>, <c>"none"</c>, <c>"required"</c>, <c>"specific"</c>).</summary>
