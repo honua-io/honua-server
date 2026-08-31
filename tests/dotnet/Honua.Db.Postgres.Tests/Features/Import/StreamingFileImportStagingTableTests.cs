@@ -77,7 +77,20 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
                 schema_name, staging_name, target_srid);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || staging_name || '_geometry', schema_name, staging_name);
+            EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || staging_name || '_properties', schema_name, staging_name);
             RETURN staging_name;
+        END;
+        $$;
+
+        CREATE OR REPLACE FUNCTION honua.import_index_name(table_name text, index_kind text)
+        RETURNS text LANGUAGE plpgsql IMMUTABLE AS $$
+        DECLARE index_name text;
+        BEGIN
+            index_name := 'idx_' || table_name || '_' || index_kind;
+            IF length(index_name) > 63 THEN
+                index_name := left(index_name, 46) || '_' || left(md5(index_name), 16);
+            END IF;
+            RETURN index_name;
         END;
         $$;
 
@@ -95,7 +108,9 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             EXECUTE format('DROP TABLE IF EXISTS %I.%I CASCADE', schema_name, table_name);
             EXECUTE format('ALTER TABLE %I.%I RENAME TO %I', schema_name, staging_name, table_name);
             EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
-                schema_name, 'idx_' || staging_name || '_geometry', 'idx_' || table_name || '_geometry');
+                schema_name, 'idx_' || staging_name || '_geometry', honua.import_index_name(table_name, 'geometry'));
+            EXECUTE format('ALTER INDEX IF EXISTS %I.%I RENAME TO %I',
+                schema_name, 'idx_' || staging_name || '_properties', honua.import_index_name(table_name, 'properties'));
         END;
         $$;
 
@@ -136,8 +151,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         int expectedRowCount)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("legacy_names");
-        const string logicalName = "legacy_identifier_imported_before_hash_suffix_names_were_added";
-        var legacyName = ("imported_" + logicalName)[..63];
+        const string logicalName = "legacy_identifier_imported_before_hash_suffix";
+        var legacyName = "imported_" + logicalName;
         try
         {
             await EnsureImportFunctionsAsync();
@@ -183,6 +198,53 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             await using var verificationCommand = verificationConnection.CreateCommand();
             verificationCommand.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".\"{legacyName}\"";
             (await verificationCommand.ExecuteScalarAsync()).Should().Be(expectedRowCount);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFileAsync_TruncatedLegacyPrefix_DoesNotClaimDifferentLogicalName()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("legacy_collision");
+        const string sharedPrefix = "legacy_identifier_with_a_shared_prefix_that_is_long_eno_";
+        var firstLogicalName = sharedPrefix + "first";
+        var secondLogicalName = sharedPrefix + "second";
+        var truncatedLegacyName = ("imported_" + firstLogicalName)[..63];
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"CREATE TABLE \"{schema}\".\"{truncatedLegacyName}\" (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, 4326), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = stream,
+                FileName = "points.geojson",
+                TableName = secondLogicalName,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Append,
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.PhysicalTableName.Should().NotBe(truncatedLegacyName);
         }
         finally
         {

@@ -25,7 +25,6 @@ internal sealed partial class StreamingFileImportService
     // truncates longer identifiers, which can otherwise make the geometry and
     // properties indexes collide with SQLSTATE 42P07.
     private const int MaxImportTableNameLength = 40;
-    private const int MaxPostgresIdentifierLength = 63;
     private const string ImportTableExistsSql = """
         SELECT EXISTS (
             SELECT 1
@@ -70,17 +69,21 @@ internal sealed partial class StreamingFileImportService
             return legacyName;
         }
 
-        // Before long import identifiers were hash-suffixed, PostgreSQL silently
-        // truncated them to NAMEDATALEN - 1 bytes. Preserve that physical identity
-        // when it already exists so append/upsert and replace keep targeting the
-        // installation's original table.
-        var legacyTruncatedName = legacyName[..Math.Min(legacyName.Length, MaxPostgresIdentifierLength)];
+        // Preserve an existing pre-hash table only when its complete physical name
+        // fits in PostgreSQL. A longer identifier would have been truncated, and
+        // distinct logical names with the same 63-character prefix are then
+        // indistinguishable; existence alone cannot prove ownership.
+        if (legacyName.Length > 63)
+        {
+            return GetAllowedTableName(tableName);
+        }
+
         await using var command = new NpgsqlCommand(ImportTableExistsSql, connection);
         command.Parameters.AddWithValue("schema_name", schemaName);
-        command.Parameters.AddWithValue("table_name", legacyTruncatedName);
+        command.Parameters.AddWithValue("table_name", legacyName);
         if ((bool?)await command.ExecuteScalarAsync(cancellationToken) == true)
         {
-            return legacyTruncatedName;
+            return legacyName;
         }
 
         return GetAllowedTableName(tableName);
