@@ -103,7 +103,6 @@ scripts/ci/validate-server-test-binary-artifacts.sh
 scripts/ci/validate-server-test-shard-cache.sh
 scripts/ci/validate-server-test-reuse-benchmark.sh
 scripts/ci/validate-server-test-prebuild.sh
-scripts/ci/validate-pr-gate-build-evidence.sh
 
 # #3054: the OUTER GitHub job cap must clear the INNER dotnet-test cap by enough
 # room for the non-test part of the job (checkout, setup-dotnet, restore or

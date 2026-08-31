@@ -8,9 +8,9 @@ authoritative until a shadowed replacement satisfies the promotion criteria in
 this ADR.
 
 One slice has left shadow: producer-free attempt-1 reuse of the shard-local
-exact-head server-test payload is live in `ci.yml` (see section 5). Every other
-build-reuse topology in this ADR — shared producer jobs and PR Gate build
-evidence — remains report-only and unpromoted.
+exact-head server-test payload is live in `ci.yml` (see section 5). Shared
+producer jobs remain report-only and unpromoted; the PR Gate build-evidence
+topology was retired (see section 5).
 
 ## Context
 
@@ -241,30 +241,12 @@ does not authorize a shared producer job, PR Gate payload consumption, or any
 cross-head/content-addressed key; those remain gated on the promotion criteria
 above and on the #3226 ledger.
 
-The current shadow candidate reuses a sunk build rather than adding a producer
-dependency. The required `PR Gate` already performs the full Release solution
-build after exact-head review. Once that gate is green, a best-effort step may
-package at most two registered projects that are each consumed by two or more
-trusted selected shards. Packaging and upload failure are cache misses and
-cannot change the required gate result.
-
-A read-only default-branch `workflow_run` observer validates only the small
-metadata artifact. It re-resolves the canonical PR Gate run/check/attempt and
-current PR identity, recomputes the merge tree and repeated-project plan, binds
-every execution policy blob, and confirms the large payload's GitHub artifact
-id, name, size, and digest before issuing a small trusted receipt. It never
-executes the payload.
-
-The merge train carries that source identity only for an exact one-member
-batch. Smart CI accepts it only when the complete consumer Git tree equals the
-producer merge tree, then validates and safely extracts the bounded payload and
-runs registered proof filters with `--no-build --no-restore`. This is report-only:
-the authoritative shards still restore and build independently, `CI Gate` does
-not depend on the shadow, and multi-PR/different-tree/missing/invalid evidence
-falls back without waiting. `HONUA_PR_GATE_BUILD_REUSE_SHADOW=false` or absence
-removes producer, lookup, handoff, and consumer work in one rollback. The exact
-contract and promotion procedure are documented in
-`docs/internal/ci/server-test-prebuild-shadow.md` (honua-server#3226).
+The PR Gate build-reuse shadow was retired by operator ruling on 2026-08-31.
+Its only consumer ran on manually dispatched `train/batch/*` refs, while the
+routine landing path had moved to the per-PR lander. The producer, trusted
+receipt, merge-train handoff, and report-only consumer therefore could no
+longer gather useful evidence or reduce the required path. A lander-side reuse
+design may be revisited only after step-breakdown data is available (#3343).
 
 The retained ledger partitions observations by the complete measurement-policy
 digest. If the same exact head is measured more than once under that policy,
@@ -365,11 +347,9 @@ promoted. The next candidate packages build outputs that the required PR Gate
 already produced, validates them through a default-branch receipt, and proves
 tree-equivalent reuse in one-member Smart CI without influencing any gate.
 
-The implementation remains disabled until it is reviewed and merged. After
-merge, enabling `HONUA_PR_GATE_BUILD_REUSE_SHADOW=true` authorizes only the
-report-only observation. It does not authorize shard build removal. Hosted
-results from this policy cohort must be recorded here before any enforcement
-proposal.
+This candidate was later retired on 2026-08-31 when its train-only consumer
+became dead under the per-PR lander. The historical checkpoint remains evidence
+for the prior decision; it is not an active rollout or rollback path.
 
 ### Historical hosted shadow checkpoint (2026-08-14)
 
@@ -439,8 +419,9 @@ The complete checkpoint and decision are also recorded on
    allowlist validator (#3219). Its 20-head shadow audit passed on 2026-08-16
    and the credential-gated enforce transition is implemented; activation waits
    only on the scoped normalization App credential.
-4. Rejected the standalone producer for insufficient savings; shadow the sunk-
-   cost PR Gate build-evidence topology under #3226.
+4. Completed history: rejected the standalone producer for insufficient
+   savings, then retired the sunk-cost PR Gate build-evidence shadow under
+   #3226 when its train-only consumer became dead.
 4a. Completed: producer-free attempt-1 reads of the already-written shard-local
    exact-head payload in `ci.yml` (see "Producer-free attempt-1 reuse" above).
    This is the only build-reuse slice currently enforced in production.

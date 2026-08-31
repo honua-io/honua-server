@@ -39,53 +39,6 @@ train_select_run_id_from_rollup() {
   printf '%s' "${url}" | grep -oE 'runs/[0-9]+' | grep -oE '[0-9]+' | head -1
 }
 
-# train_select_pr_gate_reuse_metadata <admission-snapshot> <expected-head>:
-# emit the exact successful PR Gate run identity that may have produced bounded
-# build evidence. Missing, ambiguous, stale, or noncanonical metadata is a
-# normal cache miss and never changes PR admission.
-train_select_pr_gate_reuse_metadata() {
-  local snapshot="$1" expected_head="$2" gate run_id run_json
-  if [[ "${TRAIN_PR_GATE_BUILD_REUSE_SHADOW:-false}" != "true" ]]; then
-    printf '%s\n' '{}'
-    return 0
-  fi
-  gate="$(jq -c '
-    [.statusCheckRollup[]?
-      | select(.__typename == "CheckRun" and .name == "PR Gate"
-          and .status == "COMPLETED" and .conclusion == "SUCCESS"
-          and ((.detailsUrl // "") | type == "string"))]
-    | if length == 1 then .[0] else empty end
-  ' <<<"${snapshot}")"
-  if [[ -z "${gate}" ]]; then
-    printf '%s\n' '{}'
-    return 0
-  fi
-  run_id="$(train_select_run_id_from_rollup "${gate}")"
-  if [[ ! "${run_id}" =~ ^[1-9][0-9]*$ ]]; then
-    printf '%s\n' '{}'
-    return 0
-  fi
-  if [[ -n "${TRAIN_PR_GATE_RUN_JSON_FOR_ID:-}" ]]; then
-    run_json="$("${TRAIN_PR_GATE_RUN_JSON_FOR_ID}" "${run_id}" 2>/dev/null || true)"
-  else
-    run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" 2>/dev/null || true)"
-  fi
-  if ! jq -e \
-      --argjson id "${run_id}" \
-      --arg head "${expected_head}" '
-        .id == $id and .status == "completed" and .conclusion == "success" and
-        .event == "pull_request" and .path == ".github/workflows/pr-gate.yml" and
-        .head_sha == $head and
-        (.run_attempt | type == "number" and . >= 1)
-      ' <<<"${run_json}" >/dev/null 2>&1; then
-    printf '%s\n' '{}'
-    return 0
-  fi
-  jq -nc --argjson run_id "${run_id}" \
-    --argjson run_attempt "$(jq -r '.run_attempt' <<<"${run_json}")" \
-    '{prGateRunId:$run_id,prGateRunAttempt:$run_attempt}'
-}
-
 # train_select_run_failed_jobs <run-id>: emit the run's non-successful leaf jobs,
 # one per line as "<conclusion><TAB><name>" (conclusion lower-cased, e.g.
 # "failure" / "cancelled" / "timed_out"). Live path uses `gh run view --json
@@ -546,7 +499,7 @@ train_select() {
 
     # Exact-head admission is mandatory. Batch CI remains the integration
     # authority, but cannot substitute for PR and Codex-review readiness.
-    local gate expected_head reuse_metadata review_catchup_needed
+    local gate expected_head review_catchup_needed
     expected_head="$(jq -r '.headRefOid' <<<"${line}")"
     if ! train_pr_admission "${number}" "${expected_head}"; then
       train_log "skip #${number}: exact-head admission failed"; continue
@@ -554,7 +507,6 @@ train_select() {
     # Admission evidence is not CI evidence. Preserve the actual exact-head CI
     # Gate state for observability; it may legitimately be MISSING.
     gate="$(train_select_ci_gate_state "$(jq -c '.statusCheckRollup' <<<"${TRAIN_LAST_ADMISSION_SNAPSHOT}")")"
-    reuse_metadata="$(train_select_pr_gate_reuse_metadata "${TRAIN_LAST_ADMISSION_SNAPSHOT}" "${expected_head}")"
     review_catchup_needed=false
     [[ -n "${TRAIN_REVIEW_CATCHUP_NEEDED:-}" ]] && review_catchup_needed=true
 
@@ -564,9 +516,8 @@ train_select() {
            --arg gate "${gate}" \
            --arg author "$(jq -r '.author.login // .author.name // "?"' <<<"${line}")" \
            --argjson review_catchup_needed "${review_catchup_needed}" \
-           --argjson reuse "${reuse_metadata}" \
       '{number:$n, headRefOid:$oid, createdAt:$created, gate:$gate, author:$author,
-        reviewCatchupNeeded:$review_catchup_needed} + $reuse'
+        reviewCatchupNeeded:$review_catchup_needed}'
 
     count=$((count + 1))
     if [[ "${count}" -ge "${MAX_BATCH}" ]]; then
