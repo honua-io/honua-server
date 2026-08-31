@@ -1,11 +1,11 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (79 files). Other Honua repositories keep their own inventories;
+> repository (80 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-08-28.
+> Last updated: 2026-08-31.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -260,6 +260,7 @@ which is why both the run count and exact observed span are recorded.
 | `real-aws-certification.yml` | Real AWS Certification | weekly `schedule` (Mon 06:00 UTC), `workflow_dispatch` | `Category=RealAwsCertification` against a LIVE AWS account. Gated on a maintainer OIDC role variable, budgeted, teardown-guaranteed. |
 | `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | daily `schedule` (07:00 UTC), `workflow_dispatch` | Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers; best-effort commits the refreshed gap report. |
 | `client-interop-nightly.yml` | Real-Client Interop Matrix | daily `schedule` (07:00 UTC), `workflow_dispatch` | `docker/client-compat` matrix (`gdal`, `pyqgis`, `openlayers`, `cesium`, `arcgis-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` and fails strict mode on any baseline regression. Promote to PR-blocking only after 30 consecutive nightly passes (#806). |
+| `multidim-raster-fixture.yml` | Real Multidimensional Raster Fixture | daily `schedule` (08:15 UTC), `workflow_dispatch` | Composes the pinned LocalStack/S3 object store, real NetCDF seed, native GDAL worker, and server; verifies production metadata scan, derived Zarr objects, and distinct selected-time ImageServer PNG slices. Uploads the verifier log and failure-only composition logs as nightly evidence. |
 | `client-compat-smoke-nightly.yml` | Generic Client Compatibility Smoke | daily `schedule` (07:15 UTC), `workflow_dispatch` | Full CERT-\* matrix (18 cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes, `overall-summary.json`, transcripts, and `pack/`. |
 | `pyqgis-client-compat-nightly.yml` | PyQGIS Client Compatibility Certification | daily `schedule` (07:30 UTC), `workflow_dispatch` | PyQGIS desktop compatibility using real QGIS providers against `client-compat-v1.sql`. |
 | `gdal-driver-e2e.yml` | GDAL Driver End-to-End | daily `schedule` (07:45 UTC), `workflow_dispatch` | `ogrinfo` + `ogr2ogr` against honua-server via GDAL's `OAPIF:` stand-in driver (ADR-0034). |
