@@ -130,6 +130,12 @@ public sealed record OperationGatewayRequest
     /// </summary>
     public string? ExecutionPayload { get; init; }
 
+    /// <summary>Whether the proposer was governed by an OAuth scope ceiling.</summary>
+    public bool ScopeGoverned { get; init; }
+
+    /// <summary>Normalized recognized OAuth scopes retained as the proposal authority ceiling.</summary>
+    public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
+
     /// <summary>
     /// Optional deterministic ops-finding autonomy context. When present, the gateway may ask the
     /// autonomy evaluator whether an approval-tier finding remediation is allowed to execute

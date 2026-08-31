@@ -122,6 +122,9 @@ internal sealed class ProposeOperationTool : IMcpTool
             Reason = argument.Reason,
             IdempotencyKey = argument.IdempotencyKey,
             ExecutionPayload = argument.ExecutionPayload,
+            ScopeGoverned = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog.IsScopeGoverned(principal),
+            RecognizedScopes = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog
+                .CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
         };
 
         var envelopeFactory = httpContext.RequestServices.GetService<IOperationEnvelopeFactory>();
@@ -145,6 +148,8 @@ internal sealed class ProposeOperationTool : IMcpTool
                 PrincipalId = actor,
                 IdempotencyKey = argument.IdempotencyKey,
                 AuthorizationOutcome = "mcp-authorized",
+                ScopeGoverned = request.ScopeGoverned,
+                RecognizedScopes = request.RecognizedScopes,
             },
             cancellationToken).ConfigureAwait(false);
         if (accepted.Status == OperationHandleStatus.Failed || string.IsNullOrWhiteSpace(accepted.AuditId))

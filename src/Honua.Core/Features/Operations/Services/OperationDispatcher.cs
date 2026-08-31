@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 
@@ -90,6 +91,23 @@ public sealed class OperationDispatcher : IOperationInvoker
         string? acceptanceAuditId;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
+            if (context.ScopeGoverned &&
+                (context.RecognizedScopes.Count == 0 ||
+                 context.RecognizedScopes.Any(scope =>
+                     !OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))))
+            {
+                return new OperationHandle
+                {
+                    OperationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}",
+                    OperationId = request.OperationId,
+                    CorrelationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}",
+                    Status = OperationHandleStatus.Failed,
+                    CreatedAt = createdAt,
+                    UpdatedAt = _clock.GetUtcNow(),
+                    Reason = "Approved replay OAuth scope authority is missing or unrecognized.",
+                };
+            }
+
             if (string.IsNullOrWhiteSpace(context.OperationInstanceId) ||
                 string.IsNullOrWhiteSpace(context.ApprovedPlanHash) ||
                 _approvalReplayVerifier is null ||

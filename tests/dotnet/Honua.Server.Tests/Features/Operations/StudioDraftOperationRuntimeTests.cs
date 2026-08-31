@@ -148,13 +148,20 @@ public sealed class StudioDraftOperationRuntimeTests
                     [StudioDraftOperations.PayloadParameter] = payload,
                 },
             },
-            new OperationPolicyContext { PrincipalId = "studio-operator" });
+            new OperationPolicyContext
+            {
+                PrincipalId = "studio-operator",
+                ScopeGoverned = true,
+                RecognizedScopes = ["honua.mcp.delete"],
+            });
 
         handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
         handle.ProposalId.Should().Be("proposal-studio");
         handle.AuditId.Should().NotBeNull();
         bridge.Request.Should().NotBeNull();
         bridge.Request!.OperationId.Should().Be(StudioDraftOperations.Delete);
+        bridge.Context!.ScopeGoverned.Should().BeTrue();
+        bridge.Context.RecognizedScopes.Should().Equal("honua.mcp.delete");
         await lifecycle.DidNotReceiveWithAnyArgs().DeleteDraftAsync(default, default);
     }
 
@@ -299,6 +306,7 @@ public sealed class StudioDraftOperationRuntimeTests
     private sealed class DurableApprovalBridge : IOperationApprovalBridge
     {
         public OperationRequest? Request { get; private set; }
+        public OperationPolicyContext? Context { get; private set; }
 
         public Task<OperationApprovalBridgeResult> CreateProposalAsync(
             IOperationDescriptor descriptor,
@@ -308,6 +316,7 @@ public sealed class StudioDraftOperationRuntimeTests
             CancellationToken cancellationToken = default)
         {
             Request = request;
+            Context = context;
             return Task.FromResult(new OperationApprovalBridgeResult
             {
                 IsDurable = true,

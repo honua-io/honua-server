@@ -77,21 +77,6 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     {
         ArgumentNullException.ThrowIfNull(principal);
 
-        // OAuth scopes are an unconditional ceiling over role, grant, and ownership authority.
-        // Keep this ahead of the admin bypass so Studio HTTP and MCP composition share the same
-        // protocol-independent narrowing seam.
-        var scopeDecision = _scopeAuthorizer.Evaluate(
-            principal,
-            OperatorResourceType.StudioDraft,
-            MapToScopeOperation(operation));
-        if (!scopeDecision.IsAllowed)
-        {
-            return StudioAuthorizationDecision.Deny(
-                ScopeDeniedCode,
-                scopeDecision.Reason
-                    ?? $"The access token's scopes do not permit '{operation}' on Studio drafts.");
-        }
-
         // The literal "admin" role is always recognized regardless of configuration -- this
         // matches every other admin check on the platform (AdminApiKeyPermission, AdminSession,
         // the API-key handler's role stamping) and must never regress even if a deployment
@@ -171,6 +156,21 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(principal);
+
+        // OAuth scopes are an unconditional ceiling over role, grant, and ownership authority.
+        // Keep this ahead of the admin bypass so Studio HTTP and MCP composition share the same
+        // protocol-independent narrowing seam.
+        var scopeDecision = _scopeAuthorizer.Evaluate(
+            principal,
+            OperatorResourceType.StudioDraft,
+            MapToScopeOperation(operation));
+        if (!scopeDecision.IsAllowed)
+        {
+            return StudioAuthorizationDecision.Deny(
+                ScopeDeniedCode,
+                scopeDecision.Reason
+                    ?? $"The access token's scopes do not permit '{operation}' on Studio drafts.");
+        }
 
         // Admins always have full, unscoped access -- unchanged before and after #3001, and
         // independent of the feature flag.

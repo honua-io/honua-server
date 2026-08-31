@@ -4,6 +4,7 @@
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Abstractions;
@@ -289,6 +290,8 @@ internal sealed partial class OperationGateway : IOperationGateway
                         AuthorizationOutcome = "approved",
                         ApprovedProposalId = proposal.ProposalId,
                         ApprovedPlanHash = proposal.SealedPlanHash,
+                        ScopeGoverned = proposal.ScopeGoverned,
+                        RecognizedScopes = proposal.RecognizedScopes,
                     },
                     cancellationToken)
                     .ConfigureAwait(false);
@@ -546,6 +549,12 @@ internal sealed partial class OperationGateway : IOperationGateway
                 ? DeriveProposalId(request.Kind, request.OperationId, request.IdempotencyKey!)
                 : $"proposal-{Guid.NewGuid():N}",
             OperationId = request.OperationId,
+            ScopeGoverned = request.ScopeGoverned,
+            RecognizedScopes = request.RecognizedScopes
+                .Where(scope => OperatorScopeCatalog.SupportedScopes.Contains(scope, StringComparer.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(scope => scope, StringComparer.Ordinal)
+                .ToArray(),
             Kind = request.Kind,
             // Planned is deliberately non-actionable. The proposal transitions to
             // AwaitingApproval only after the durable audit sink assigns its identity.

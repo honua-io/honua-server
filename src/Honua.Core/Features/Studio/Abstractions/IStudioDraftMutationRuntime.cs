@@ -48,6 +48,8 @@ public sealed record StudioDraftMutationContext
     public string? IdempotencyKey { get; init; }
     public string AuthorizationOutcome { get; init; } = "authorized";
     public IReadOnlyList<string> Roles { get; init; } = [];
+    public bool ScopeGoverned { get; init; }
+    public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
 }
 
 /// <summary>Durable envelope plus the typed projection produced by its actuator.</summary>

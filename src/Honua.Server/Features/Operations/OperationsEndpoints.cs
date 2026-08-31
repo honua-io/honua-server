@@ -195,7 +195,11 @@ internal static class OperationsEndpoints
                 AuthorizationOutcome = "authorized",
                 Roles = context.User.FindAll(ClaimTypes.Role)
                     .Select(claim => claim.Value)
-                    .ToArray()
+                    .ToArray(),
+                ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
+                RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(context.User)
+                    .OrderBy(scope => scope, StringComparer.Ordinal)
+                    .ToArray(),
             };
 
             var handle = await invoker
