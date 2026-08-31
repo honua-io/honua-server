@@ -542,7 +542,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             // Stream features and insert in batches
             IReadOnlyList<ImportValidationIssue> rowIssues;
             int repairedCount;
-            (importedCount, failedCount, repairedCount, warnings, rowIssues) = await ImportStreamingAsync(
+            string physicalTableName;
+            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -574,7 +575,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 detectedSrid,
                 stopwatch.Elapsed,
                 warnings,
-                physicalTableName: GetAllowedTableName(request.TableName),
+                physicalTableName: physicalTableName,
                 schema: ResolveTargetSchema(request.TargetSchema),
                 repairedGeometryCount: repairedCount) with
             {

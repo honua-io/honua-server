@@ -68,6 +68,11 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         // Both addressing forms are published for an aliased process...
         tasks.Should().Contain("geometry.buffer");
         tasks.Should().Contain("Buffer");
+        // A known-but-unavailable process remains honestly discoverable under both
+        // its canonical id and Esri-conventional alias. Calling it still fails closed
+        // at the canonical execution-capability boundary.
+        tasks.Count(name => name == "raster.interpolate-kriging").Should().Be(1);
+        tasks.Count(name => name == "Kriging").Should().Be(1);
         // ...a non-aliased Honua-specific job process keeps only its internal-ID name...
         tasks.Should().Contain("analytics.cluster-managed");
         // ...and no task name is ever published twice (duplicate-name handling).
@@ -77,6 +82,23 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     // -----------------------------------------------------------------------
     // Task info via alias
     // -----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("raster.interpolate-kriging")]
+    [InlineData("Kriging")]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_UnavailableTask_PublishesLimitation(string taskName)
+    {
+        var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        root.GetProperty("name").GetString().Should().Be(taskName);
+        root.GetProperty("description").GetString().Should().Contain("UNSUPPORTED");
+        root.GetProperty("description").GetString().Should().Contain("does not bundle");
+    }
 
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]

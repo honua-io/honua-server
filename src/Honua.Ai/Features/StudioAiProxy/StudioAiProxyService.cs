@@ -128,9 +128,23 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                     return $"Tool '{tool.Name}' input schema exceeds the configured per-tool limit of {MaxToolComponentCharacters} characters.";
                 }
 
+                var annotationCharacters = JsonCharacterCount(tool.Annotations);
+                if (annotationCharacters > MaxToolComponentCharacters)
+                {
+                    return $"Tool '{tool.Name}' annotations exceed the configured per-tool limit of {MaxToolComponentCharacters} characters.";
+                }
+
+                var outputSchemaCharacters = JsonCharacterCount(tool.OutputSchema);
+                if (outputSchemaCharacters > MaxToolComponentCharacters)
+                {
+                    return $"Tool '{tool.Name}' output schema exceeds the configured per-tool limit of {MaxToolComponentCharacters} characters.";
+                }
+
                 totalChars += tool.Name.Length;
                 totalChars += tool.Description?.Length ?? 0;
                 totalChars += toolSchemaCharacters;
+                totalChars += annotationCharacters;
+                totalChars += outputSchemaCharacters;
             }
         }
 
@@ -205,6 +219,9 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         => value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
             ? 0
             : value.GetRawText().Length;
+
+    private static int JsonCharacterCount(JsonElement? value)
+        => value is null ? 0 : JsonCharacterCount(value.Value);
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamChatAsync(
         StudioAiChatRequest request,

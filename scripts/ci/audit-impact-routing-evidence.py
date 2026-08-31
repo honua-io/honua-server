@@ -186,11 +186,12 @@ def load_policy(value: object) -> dict[str, Any]:
     catalogs = positive_int(
         value.get("maximum_producer_run_catalogs"), "maximum producer run catalogs"
     )
-    # The download bound covers BOTH streams. It was sized when the PR Gate
-    # stream was (wrongly) contributing nothing, so restoring that stream's
-    # receipts to the index needs roughly double the budget or the collector
-    # fail-closes on its own cap.
-    if pages > 10 or downloads > 1000 or catalogs > 1600:
+    # The download bound covers BOTH streams. The fleet now produces roughly
+    # 1,800 receipts in the seven-day promotion window, so the former
+    # 1,000-download ceiling rejected the policy's required retention period.
+    # Keep finite ceilings above current throughput while still failing closed
+    # before an accidental policy edit can make the API work unbounded.
+    if pages > 10 or downloads > 2500 or catalogs > 3000:
         raise ValueError("GitHub query, catalog, or download bound is unsafe")
     if catalogs < downloads:
         raise ValueError("catalog bound must not be smaller than the download bound")

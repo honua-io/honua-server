@@ -81,6 +81,37 @@ public sealed class BedrockStudioAiProxyAdapterTests
     }
 
     [UnitTest]
+    public async Task StreamAsync_ToolContractMetadata_IsIncludedInProviderDescription()
+    {
+        var client = new CapturingStreamingChatClient();
+        var adapter = new BedrockStudioAiProxyAdapter(
+            new FakeBedrockChatClientFactory(client),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<BedrockStudioAiProxyAdapter>.Instance);
+        var request = new StudioAiChatRequest
+        {
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
+            Tools =
+            [
+                new StudioAiToolDefinition
+                {
+                    Name = "lookup",
+                    InputSchema = System.Text.Json.JsonDocument.Parse("{}").RootElement.Clone(),
+                    Annotations = System.Text.Json.JsonDocument.Parse("{\"readOnlyHint\":true}").RootElement.Clone(),
+                    OutputSchema = System.Text.Json.JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                }
+            ]
+        };
+
+        await CollectAsync(adapter, request);
+
+        client.Options!.Tools.Should().ContainSingle();
+        client.Options.Tools[0].Should().BeAssignableTo<AIFunction>()
+            .Which.Description.Should().Contain("Tool annotations (JSON): {\"readOnlyHint\":true}")
+            .And.Contain("Expected structured output schema (JSON): {\"type\":\"object\"}");
+    }
+
+    [UnitTest]
     public async Task StreamAsync_ClientThrows_EmitsSingleErrorEvent()
     {
         var adapter = new BedrockStudioAiProxyAdapter(
@@ -160,6 +191,31 @@ public sealed class BedrockStudioAiProxyAdapterTests
                 cancellationToken.ThrowIfCancellationRequested();
                 yield return update;
             }
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class CapturingStreamingChatClient : IChatClient
+    {
+        public ChatOptions? Options { get; private set; }
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Streaming-only fake.");
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages,
+            ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Options = options;
+            await Task.Yield();
+            yield return new ChatResponseUpdate { FinishReason = ChatFinishReason.Stop };
         }
 
         public object? GetService(Type serviceType, object? serviceKey = null) => null;

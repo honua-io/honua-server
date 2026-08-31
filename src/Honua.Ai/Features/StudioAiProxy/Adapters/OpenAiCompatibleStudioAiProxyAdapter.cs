@@ -307,7 +307,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             proxyRequest.Tools = tools
                 .Select(t => new OpenAiProxyTool
                 {
-                    Function = new OpenAiProxyFunction { Name = t.Name, Description = t.Description, Parameters = t.InputSchema }
+                    Function = new OpenAiProxyFunction { Name = t.Name, Description = t.BuildProviderDescription(), Parameters = t.InputSchema }
                 })
                 .ToArray();
 

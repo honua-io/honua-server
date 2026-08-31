@@ -20,10 +20,14 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U honua_user -d honua_dev"]
+      # The entrypoint runs a temporary postmaster while initializing a fresh
+      # volume. It can answer pg_isready before stopping, which races Honua's
+      # migrations. PID 1 is postgres only after initialization is complete.
+      test: ["CMD-SHELL", "test \"$(head -n 1 /var/lib/postgresql/data/postmaster.pid 2>/dev/null)\" = \"1\" && pg_isready -U honua_user -d honua_dev"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 90s
     restart: unless-stopped
 
   # Redis for the durable local control plane. The quickstart keeps the memory
@@ -51,8 +55,20 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Named volumes are created as root. Initialize the storage volume for the
+  # non-root server UID before Honua starts so imports work on a clean install.
+  storage-init:
+    image: "${HONUA_SERVER_IMAGE:-honua-server:local}"
+    entrypoint: ["sh", "-c"]
+    command: ["chown -R ${HONUA_CONTAINER_UID:-1001}:${HONUA_CONTAINER_UID:-1001} /storage"]
+    user: "0:0"
+    volumes:
+      - honua_storage:/storage
+    restart: "no"
+
   # Honua Server application
   honua:
+    image: "${HONUA_SERVER_IMAGE:-honua-server:local}"
     build:
       context: .
       args:
@@ -100,6 +116,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/live"]
       interval: 30s

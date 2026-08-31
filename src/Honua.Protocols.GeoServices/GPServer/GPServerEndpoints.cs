@@ -256,7 +256,12 @@ internal static class GPServerEndpoints
 
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
         var definition = ResolveTaskDefinition(processCatalog, taskName);
-        if (definition == null || !GPServerExecutionPolicy.IsJobCallable(definition))
+        // Keep metadata consistent with the service task list: explicitly unavailable
+        // processes are discoverable so clients can inspect the published limitation.
+        // Execution routes retain their independent IsJobCallable guards.
+        if (definition == null ||
+            (!GPServerExecutionPolicy.IsJobCallable(definition) &&
+             definition.ExecutionKind != ProcessExecutionKind.Unavailable))
         {
             GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
             return SetSpanErrorAndReturn(
@@ -1525,7 +1530,13 @@ internal static class GPServerEndpoints
 
         foreach (var process in processes)
         {
-            if (!GPServerExecutionPolicy.IsJobCallable(process))
+            // Unavailable processes remain discoverable so the GPServer catalog can
+            // truthfully describe a known tool and its limitation. Invocation still
+            // fails closed at the shared submit boundary because the process is not
+            // job-callable. Other non-job surfaces (protocol/workflow-only) stay out
+            // of the GP task list because they have a different owning execution path.
+            if (!GPServerExecutionPolicy.IsJobCallable(process)
+                && process.ExecutionKind != ProcessExecutionKind.Unavailable)
             {
                 continue;
             }
@@ -1689,7 +1700,7 @@ internal static class GPServerEndpoints
         // and single-feature FeatureSet payloads into canonical base64-WKB + srid.
         // Native string / base64-WKB inputs pass through untouched. Multi-feature
         // FeatureSets surface a capability error rather than dropping features.
-        var esriResult = GPServerEsriInputTranslation.Translate(inputs);
+        var esriResult = new GPServerEsriInputTranslator().Translate(inputs);
         if (esriResult.CapabilityMessage is not null)
         {
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);

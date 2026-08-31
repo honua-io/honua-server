@@ -291,8 +291,8 @@ def test_policy_and_discovery() -> None:
     for invalid in (
         policy(receipt_retention_days=91),
         policy(maximum_pages_per_query=11),
-        policy(maximum_producer_run_catalogs=1601),
-        policy(maximum_receipt_downloads=1001, maximum_producer_run_catalogs=1500),
+        policy(maximum_producer_run_catalogs=3001),
+        policy(maximum_receipt_downloads=2501, maximum_producer_run_catalogs=3000),
         # The catalog bound must never be tighter than the download bound, or
         # it silently becomes the binding cap on window size again.
         policy(maximum_producer_run_catalogs=19),

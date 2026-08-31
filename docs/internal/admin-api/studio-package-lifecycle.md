@@ -50,6 +50,7 @@ payload.
 | `GET` | `/content-items/{itemId}/versions/{versionId}` | `200 ApiResponse<StudioContentVersion>` | Retrieve one immutable version. |
 | `POST` | `/content-items/{itemId}/version-comparisons` | `200 ApiResponse<StudioVersionComparison>` | Compare two immutable versions by content hash, dependencies, validation, and provenance. |
 | `POST` | `/content-items/{itemId}/versions/{versionId}/publish-requests` | `201 ApiResponse<StudioPublicationRequest>` | Persist a publication request and move the published pointer when validation permits. |
+| `GET` | `/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}` | `200 ApiResponse<StudioPublicationRequest>` | Read one owner-scoped publication request for status polling. |
 | `POST` | `/content-items/{itemId}/versions/{versionId}/reopen` | `201 ApiResponse<StudioPackageDraft>` | Copy an immutable version into a new mutable draft with `baseVersionId`. |
 | `POST` | `/content-items/{itemId}/rollback-requests` | `201 ApiResponse<StudioRollbackRequest>` | Persist a rollback request and move the current, published, or both pointers to an earlier immutable version. |
 
