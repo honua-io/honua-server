@@ -14,6 +14,7 @@ using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -27,6 +28,20 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class ProposeOperationToolTests
 {
+    [UnitTest]
+    [Operation(Operations.ApprovalManagement)]
+    public void McpComposition_ExposesGovernedOperationProposalPath()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
+
+        services.Should().Contain(descriptor =>
+                descriptor.ServiceType == typeof(IMcpTool) &&
+                descriptor.ImplementationType == typeof(ProposeOperationTool),
+            "typed operator-gated tools do not yet create durable approval proposals");
+    }
+
     private static DefaultHttpContext ContextWithGateway(
         IOperationGateway gateway,
         IOperationExecutorCatalog? catalog = null,
