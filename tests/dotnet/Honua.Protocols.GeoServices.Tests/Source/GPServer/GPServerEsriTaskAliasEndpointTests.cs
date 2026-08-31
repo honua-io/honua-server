@@ -83,6 +83,23 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
     // Task info via alias
     // -----------------------------------------------------------------------
 
+    [Theory]
+    [InlineData("raster.interpolate-kriging")]
+    [InlineData("Kriging")]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task TaskInfo_UnavailableTask_PublishesLimitation(string taskName)
+    {
+        var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{taskName}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        root.GetProperty("name").GetString().Should().Be(taskName);
+        root.GetProperty("description").GetString().Should().Contain("UNSUPPORTED");
+        root.GetProperty("description").GetString().Should().Contain("does not bundle");
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]

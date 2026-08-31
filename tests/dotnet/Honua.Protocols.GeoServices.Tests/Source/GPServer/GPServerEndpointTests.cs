@@ -93,7 +93,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         tasks.Should().Contain("geometry.buffer");
         tasks.Should().NotContain("source.geojson");
         tasks.Should().NotContain("analytics.cluster");
-        tasks.Should().NotContain("raster.interpolate-kriging");
+        tasks.Should().Contain("raster.interpolate-kriging");
     }
 
     [IntegrationTest]

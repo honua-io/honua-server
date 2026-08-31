@@ -256,7 +256,12 @@ internal static class GPServerEndpoints
 
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
         var definition = ResolveTaskDefinition(processCatalog, taskName);
-        if (definition == null || !GPServerExecutionPolicy.IsJobCallable(definition))
+        // Keep metadata consistent with the service task list: explicitly unavailable
+        // processes are discoverable so clients can inspect the published limitation.
+        // Execution routes retain their independent IsJobCallable guards.
+        if (definition == null ||
+            (!GPServerExecutionPolicy.IsJobCallable(definition) &&
+             definition.ExecutionKind != ProcessExecutionKind.Unavailable))
         {
             GPServerLog.TaskResolutionUnavailable(logger, serviceId, taskName);
             return SetSpanErrorAndReturn(
