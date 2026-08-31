@@ -13,6 +13,9 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -551,6 +554,7 @@ internal static class DeployControlEndpoints
         string operationId,
         [FromBody] RollbackDeployOperationRequest? request,
         [FromServices] DeployWorkflowService deployWorkflowService,
+        [FromServices] IOperationInvoker operationInvoker,
         HttpContext context)
     {
         try
@@ -579,14 +583,34 @@ internal static class DeployControlEndpoints
                 approvalReasonCodes: ResolveMetadataRollbackApprovalReasonCodes(rollbackPlan));
             if (approvalResult != null) return approvalResult;
 
-            var operation = await deployWorkflowService.RequestRollbackAsync(
-                    operationId,
-                    ResolveRequestedBy(context),
-                    request?.Reason,
-                    approvedMetadataReleaseIsDataAffecting: isDestructive,
-                    approvedMetadataReleaseRequiresApproval: isDestructive || requiresExplicitApproval,
-                    cancellationToken: context.RequestAborted)
+            var requestedBy = ResolveRequestedBy(context);
+            var handle = await operationInvoker.SubmitAsync(
+                    new OperationRequest
+                    {
+                        OperationId = WorkflowRollbackOperations.Deploy,
+                        Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+                        {
+                            [WorkflowRollbackOperations.TargetOperationId] = operationId,
+                            [WorkflowRollbackOperations.RequestedBy] = requestedBy,
+                            [WorkflowRollbackOperations.Reason] = request?.Reason,
+                            [WorkflowRollbackOperations.ApprovedDataAffecting] = isDestructive.ToString(),
+                            [WorkflowRollbackOperations.ApprovedRequiresApproval] =
+                                (isDestructive || requiresExplicitApproval).ToString(),
+                        },
+                    },
+                    new OperationPolicyContext
+                    {
+                        PrincipalId = requestedBy,
+                        CorrelationId = context.TraceIdentifier,
+                        IdempotencyKey = context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+                        AuthorizationOutcome = "authorized",
+                    },
+                    context.RequestAborted)
                 .ConfigureAwait(false);
+
+            var operation = handle.Status == OperationHandleStatus.Completed
+                ? await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false)
+                : null;
 
             if (operation == null)
             {

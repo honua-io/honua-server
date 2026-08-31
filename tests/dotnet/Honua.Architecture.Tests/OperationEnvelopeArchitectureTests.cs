@@ -358,6 +358,29 @@ public sealed class OperationEnvelopeArchitectureTests
     }
 
     [ArchitectureTest]
+    public void WorkflowRollbackEndpoints_EnterCanonicalRuntimeBeforeMutation()
+    {
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        foreach (var relativePath in new[]
+                 {
+                     new[] { "src", "Honua.Server", "Features", "Admin", "DeployControlEndpoints.cs" },
+                     new[] { "src", "Honua.Server", "Features", "Admin", "CoordinatedReleaseControlEndpoints.cs" },
+                 })
+        {
+            var source = File.ReadAllText(Path.Combine([root, .. relativePath]));
+            var rollbackStart = source.IndexOf("private static async Task<IResult> HandleRollback", StringComparison.Ordinal);
+            Assert.True(rollbackStart >= 0, $"{relativePath[^1]} must retain its rollback handler.");
+            var nextMethod = source.IndexOf("\n    private static ", rollbackStart + 1, StringComparison.Ordinal);
+            var rollback = source[rollbackStart..(nextMethod < 0 ? source.Length : nextMethod)];
+
+            Assert.Contains("IOperationInvoker operationInvoker", rollback, StringComparison.Ordinal);
+            Assert.Contains("operationInvoker.SubmitAsync", rollback, StringComparison.Ordinal);
+            Assert.Contains("WorkflowRollbackOperations.", rollback, StringComparison.Ordinal);
+            Assert.DoesNotContain("RequestRollbackAsync(", rollback, StringComparison.Ordinal);
+        }
+    }
+
+    [ArchitectureTest]
     public void LegacyGateway_CannotOwnAnExecutorRegistryOrInvokeAnActuator()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();

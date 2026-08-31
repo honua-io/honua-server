@@ -7,6 +7,9 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Server.Features.Operations;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -244,14 +247,34 @@ internal static class CoordinatedReleaseControlEndpoints
         string operationId,
         [FromBody] CoordinatedReleaseActionRequest? request,
         [FromServices] CoordinatedReleaseControlService controlService,
+        [FromServices] IOperationInvoker operationInvoker,
         HttpContext context)
     {
-        var operation = await controlService.RequestRollbackAsync(
-                operationId,
-                ResolveRequestedBy(context),
-                request?.Reason,
+        var requestedBy = ResolveRequestedBy(context);
+        var handle = await operationInvoker.SubmitAsync(
+                new OperationRequest
+                {
+                    OperationId = WorkflowRollbackOperations.CoordinatedRelease,
+                    Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [WorkflowRollbackOperations.TargetOperationId] = operationId,
+                        [WorkflowRollbackOperations.RequestedBy] = requestedBy,
+                        [WorkflowRollbackOperations.Reason] = request?.Reason,
+                    },
+                },
+                new OperationPolicyContext
+                {
+                    PrincipalId = requestedBy,
+                    CorrelationId = context.TraceIdentifier,
+                    IdempotencyKey = context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+                    AuthorizationOutcome = "authorized",
+                },
                 context.RequestAborted)
             .ConfigureAwait(false);
+
+        var operation = handle.Status == OperationHandleStatus.Completed
+            ? await controlService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false)
+            : null;
 
         if (operation is null)
         {
