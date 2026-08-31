@@ -8,9 +8,9 @@ authoritative until a shadowed replacement satisfies the promotion criteria in
 this ADR.
 
 One slice has left shadow: producer-free attempt-1 reuse of the shard-local
-exact-head server-test payload is live in `ci.yml` (see section 5). Every other
-build-reuse topology in this ADR — shared producer jobs and PR Gate build
-evidence — remains report-only and unpromoted.
+exact-head server-test payload is live in `ci.yml` (see section 5). Shared
+producer jobs remain report-only and unpromoted; the PR Gate build-evidence
+topology was retired (see section 5).
 
 ## Context
 
@@ -419,8 +419,9 @@ The complete checkpoint and decision are also recorded on
    allowlist validator (#3219). Its 20-head shadow audit passed on 2026-08-16
    and the credential-gated enforce transition is implemented; activation waits
    only on the scoped normalization App credential.
-4. Rejected the standalone producer for insufficient savings; shadow the sunk-
-   cost PR Gate build-evidence topology under #3226.
+4. Completed history: rejected the standalone producer for insufficient
+   savings, then retired the sunk-cost PR Gate build-evidence shadow under
+   #3226 when its train-only consumer became dead.
 4a. Completed: producer-free attempt-1 reads of the already-written shard-local
    exact-head payload in `ci.yml` (see "Producer-free attempt-1 reuse" above).
    This is the only build-reuse slice currently enforced in production.
