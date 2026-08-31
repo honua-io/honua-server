@@ -272,8 +272,11 @@ internal sealed class PortalTokenAuthenticationMiddleware(
         }
 
         // Only standard URL-encoded forms carry the ArcGIS POST token transport.
+        // OAuth endpoints use form fields such as RFC 7009's `token` as operation
+        // operands, not request credentials, so they must retain anonymous semantics.
         // Multipart and arbitrary request bodies must never trigger credential parsing.
-        if (PortalTokenAuthenticationHandler.HasFormUrlEncodedContentType(context.Request))
+        if (!context.Request.Path.StartsWithSegments("/sharing/rest/oauth2", StringComparison.OrdinalIgnoreCase) &&
+            PortalTokenAuthenticationHandler.HasFormUrlEncodedContentType(context.Request))
         {
             return true;
         }
