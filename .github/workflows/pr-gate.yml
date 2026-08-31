@@ -183,64 +183,6 @@ jobs:
           # before landing and is fixed forward.
           format-scope: affected
 
-      # The lean gate has already paid for a full Release solution build. In
-      # shadow mode, retain only test projects used by two or more selected
-      # shards so a trusted default-branch observer can prove whether a
-      # single-PR merge tree can reuse these exact bytes. Failure to package or
-      # upload is only a cache miss; it never weakens or fails the required gate.
-      - id: pr-gate-build-evidence
-        name: Package bounded server-test build evidence
-        if: >-
-          github.event_name == 'pull_request' &&
-          vars.HONUA_PR_GATE_BUILD_REUSE_SHADOW == 'true' &&
-          (env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1)
-        continue-on-error: true
-        shell: bash
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
-          PULL_REQUEST: ${{ github.event.pull_request.number }}
-        run: |
-          runner_image="${ImageOS:-unknown}-${ImageVersion:-unknown}"
-          scripts/ci/package-pr-gate-build-evidence.sh \
-            --base-sha "${BASE_SHA}" \
-            --head-sha "${HEAD_SHA}" \
-            --merge-sha "${MERGE_SHA}" \
-            --repository "${GITHUB_REPOSITORY}" \
-            --pull-request "${PULL_REQUEST}" \
-            --run-id "${GITHUB_RUN_ID}" \
-            --run-attempt "${GITHUB_RUN_ATTEMPT}" \
-            --runner-os "${RUNNER_OS}" \
-            --runner-arch "${RUNNER_ARCH}" \
-            --runner-image "${runner_image}" \
-            --output "${RUNNER_TEMP}/pr-gate-build-evidence"
-
-      - id: pr-gate-build-payload
-        name: Upload bounded server-test build payload
-        if: steps.pr-gate-build-evidence.outputs.has_evidence == 'true'
-        continue-on-error: true
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: pr-gate-server-test-binaries-${{ github.run_id }}-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/pr-gate-build-evidence/payload/
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 3
-
-      - name: Upload bounded server-test build metadata
-        if: >-
-          steps.pr-gate-build-evidence.outputs.has_evidence == 'true' &&
-          steps.pr-gate-build-payload.outcome == 'success'
-        continue-on-error: true
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: pr-gate-server-test-metadata-${{ github.run_id }}-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/pr-gate-build-evidence/metadata/
-          if-no-files-found: error
-          compression-level: 9
-          retention-days: 3
-
       # Exercise all clean and injected-rootfs fixtures here without building a
       # container. The separate serving-image workflow and release/deploy/nightly
       # lanes apply this detector to the final production root filesystems.

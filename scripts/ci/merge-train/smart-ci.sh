@@ -10,37 +10,6 @@
 # own PR runs (cancel-in-progress only cancels within the same group). This is
 # intentional: the train never disturbs member PRs' independent CI.
 
-# train_configure_pr_gate_build_reuse <selected-json> <included-csv>:
-# expose exact producer identity only for a one-member batch whose admitted PR
-# Gate CheckRun resolved to one canonical successful workflow run. Multi-PR,
-# attribution, resumed-without-metadata, or malformed batches clear the inputs
-# and therefore take the ordinary independent-build path.
-train_configure_pr_gate_build_reuse() {
-  local selected="${1:-[]}" included="${2:-}" item included_count
-  unset TRAIN_PR_GATE_REUSE_RUN_ID TRAIN_PR_GATE_REUSE_RUN_ATTEMPT \
-    TRAIN_PR_GATE_REUSE_PR TRAIN_PR_GATE_REUSE_HEAD
-  [[ "${TRAIN_PR_GATE_BUILD_REUSE_SHADOW:-false}" == "true" ]] || return 0
-  included_count="$(tr ',' '\n' <<<"${included}" | sed '/^$/d' | wc -l | tr -d ' ')"
-  [[ "${included_count}" == "1" ]] || return 0
-  if ! item="$(jq -ce 'if length == 1 then .[0] else empty end' <<<"${selected}" 2>/dev/null)"; then
-    return 0
-  fi
-  local pr head run_id run_attempt
-  pr="$(jq -r '.number // ""' <<<"${item}")"
-  head="$(jq -r '.headRefOid // ""' <<<"${item}")"
-  run_id="$(jq -r '.prGateRunId // ""' <<<"${item}")"
-  run_attempt="$(jq -r '.prGateRunAttempt // ""' <<<"${item}")"
-  if [[ "${included}" != "${pr}" || ! "${pr}" =~ ^[1-9][0-9]*$ ||
-        ! "${head}" =~ ^[0-9a-f]{40}$ || ! "${run_id}" =~ ^[1-9][0-9]*$ ||
-        ! "${run_attempt}" =~ ^[1-9][0-9]*$ ]]; then
-    return 0
-  fi
-  export TRAIN_PR_GATE_REUSE_PR="${pr}"
-  export TRAIN_PR_GATE_REUSE_HEAD="${head}"
-  export TRAIN_PR_GATE_REUSE_RUN_ID="${run_id}"
-  export TRAIN_PR_GATE_REUSE_RUN_ATTEMPT="${run_attempt}"
-}
-
 # train_smart_ci_shards <batch-branch>: emit the targeted-tests descriptor JSON
 # ({run_all,shards,reason}) for the batch's cumulative diff vs origin/<base>.
 # READ-ONLY; runs in both modes. This is what determines the smart-CI subset.
@@ -116,11 +85,7 @@ train_smart_ci_run() {
 
   if [[ "${TRAIN_APPLY}" != "1" ]]; then
     train_side_effect git push "${TRAIN_REMOTE}" "${batch}:${batch}"
-    train_side_effect gh workflow run ci.yml --ref "${batch}" -f merge_train_nonce=merge-train:dry-run \
-      -f pr_gate_run_id="${TRAIN_PR_GATE_REUSE_RUN_ID:-}" \
-      -f pr_gate_run_attempt="${TRAIN_PR_GATE_REUSE_RUN_ATTEMPT:-}" \
-      -f pr_gate_pr="${TRAIN_PR_GATE_REUSE_PR:-}" \
-      -f pr_gate_head_sha="${TRAIN_PR_GATE_REUSE_HEAD:-}"
+    train_side_effect gh workflow run ci.yml --ref "${batch}" -f merge_train_nonce=merge-train:dry-run
     echo "DRYRUN"
     return 0
   fi
@@ -163,11 +128,7 @@ train_smart_ci_run() {
   expected_title="CI ${dispatch_identity}"
   git -C "${TRAIN_REPO_ROOT}" push "${TRAIN_REMOTE}" "${batch}:${batch}"
   gh workflow run ci.yml --ref "${batch}" \
-    -f merge_train_nonce="${dispatch_identity}" \
-    -f pr_gate_run_id="${TRAIN_PR_GATE_REUSE_RUN_ID:-}" \
-    -f pr_gate_run_attempt="${TRAIN_PR_GATE_REUSE_RUN_ATTEMPT:-}" \
-    -f pr_gate_pr="${TRAIN_PR_GATE_REUSE_PR:-}" \
-    -f pr_gate_head_sha="${TRAIN_PR_GATE_REUSE_HEAD:-}" 1>&2
+    -f merge_train_nonce="${dispatch_identity}" 1>&2
 
   local run_id=""
   run_id="$(train_discover_dispatched_run "${batch}" "${expected_head}" "${pre_dispatch_runs}" "${expected_title}" || echo "")"
