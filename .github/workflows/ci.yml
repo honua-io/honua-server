@@ -1119,18 +1119,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
-      # Reclaim runner disk before building. The modular topology (8 protocol
+      # Reclaim runner disk while .NET setup and cache planning run. The
+      # modular topology (8 protocol
       # assemblies + native packages such as ParquetSharp/Apache.Arrow/SkiaSharp
       # duplicated across their bin/obj, plus Coverlet coverage output) pushed
       # some shards over the ~14GB free-disk limit ("No space left on device").
       # Remove preinstalled toolchains the .NET test shards never use. Best-effort.
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/swift || true
-          sudo rm -rf /usr/local/.ghcup || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
-          df -h / || true
+      - name: Start freeing disk space
+        run: scripts/ci/server-test-shard-free-disk.sh
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -1161,6 +1157,9 @@ jobs:
             --run-attempt '${{ github.run_attempt }}' \
             --prebuild-consume "${PREBUILD_CONSUME}"
 
+      - name: Wait for free disk space
+        run: scripts/ci/server-test-shard-free-disk.sh --await
+
       - name: Start exact-head cache restore timer
         if: steps.shard-cache-plan.outputs.restore_enabled == 'true'
         id: shard-cache-restore-start
@@ -1168,11 +1167,25 @@ jobs:
         run: echo "epoch_ms=$(date +%s%3N)" >> "${GITHUB_OUTPUT}"
 
       - name: Restore exact-head shard cache
-        # Single-shot and fail-open: never waits for the writer, and a cache
-        # service error is a miss rather than a red shard. See
+        # Fail-open: a cache service error is a miss rather than a red shard. See
         # docs/internal/ci/server-test-binary-artifacts.md.
         if: steps.shard-cache-plan.outputs.restore_enabled == 'true'
         id: shard-cache-download
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.shard-cache-plan.outputs.payload_dir }}
+          key: ${{ steps.shard-cache-plan.outputs.cache_key }}
+          fail-on-cache-miss: false
+
+      - name: Wait before retrying exact-head shard cache
+        if: steps.shard-cache-plan.outputs.restore_enabled == 'true' && steps.shard-cache-download.outputs.cache-hit != 'true'
+        shell: bash
+        run: sleep '${{ steps.shard-cache-plan.outputs.restore_retry_delay_seconds }}'
+
+      - name: Retry exact-head shard cache restore
+        if: steps.shard-cache-plan.outputs.restore_enabled == 'true' && steps.shard-cache-download.outputs.cache-hit != 'true'
+        id: shard-cache-download-retry
         continue-on-error: true
         uses: actions/cache/restore@v6
         with:
@@ -1190,13 +1203,18 @@ jobs:
         id: shard-cache-materialize
         shell: bash
         env:
-          CACHE_HIT: ${{ steps.shard-cache-download.outputs.cache-hit }}
+          CACHE_HIT_FIRST: ${{ steps.shard-cache-download.outputs.cache-hit }}
+          CACHE_HIT_RETRY: ${{ steps.shard-cache-download-retry.outputs.cache-hit }}
         run: |
+          cache_hit=false
+          if [[ "${CACHE_HIT_FIRST:-false}" == "true" || "${CACHE_HIT_RETRY:-false}" == "true" ]]; then
+            cache_hit=true
+          fi
           scripts/ci/server-test-shard-cache.sh restore \
             --project '${{ steps.shard-cache-plan.outputs.project }}' \
             --source-sha '${{ github.sha }}' \
             --payload '${{ steps.shard-cache-plan.outputs.payload_dir }}' \
-            --cache-hit "${CACHE_HIT:-false}" \
+            --cache-hit "${cache_hit}" \
             --read-mode '${{ steps.shard-cache-plan.outputs.restore_mode }}'
 
       - name: Restore

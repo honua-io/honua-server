@@ -84,6 +84,8 @@ attempt1_true="$(plan attempt1-true --shard z-second --project "${SERVER_PROJECT
   --run-attempt 1 --prebuild-consume true)"
 grep -qx 'restore_mode=opportunistic' <<<"${attempt1_true}"
 grep -qx 'consume_switch=true' <<<"${attempt1_true}"
+grep -qx 'restore_attempts=2' <<<"${attempt1_true}"
+grep -qx 'restore_retry_delay_seconds=90' <<<"${attempt1_true}"
 
 # Every value except the exact string `true` is off.
 attempt1_off="$(plan attempt1-off --shard z-second --project "${SERVER_PROJECT}" \
@@ -228,7 +230,7 @@ def fail(message):
     print(f"::error::{message}", file=sys.stderr)
     sys.exit(1)
 
-for required in ("shard-cache-plan", "shard-cache-download", "shard-cache-materialize",
+for required in ("shard-cache-plan", "shard-cache-download", "shard-cache-download-retry", "shard-cache-materialize",
                  "shard-cache-package", "shard-cache-save", "shard-cache-build"):
     if required not in by_id:
         fail(f"Server-test shard is missing the '{required}' step.")
@@ -253,22 +255,47 @@ for step_id in read_steps:
 for step_id in ("shard-cache-restore-start", "shard-cache-download", "shard-cache-restore-elapsed"):
     if "restore_enabled" not in str(by_id[step_id].get("if", "")):
         fail(f"Step '{step_id}' must be gated on the plan step's restore_enabled output.")
+retry = by_id["shard-cache-download-retry"]
+retry_condition = str(retry.get("if", ""))
+if "restore_enabled" not in retry_condition or "shard-cache-download.outputs.cache-hit != 'true'" not in retry_condition:
+    fail("The second cache restore must run only after an enabled first-attempt miss.")
+retry_wait = next(s for s in steps if s.get("name") == "Wait before retrying exact-head shard cache")
+if "restore_retry_delay_seconds" not in retry_wait.get("run", ""):
+    fail("The bounded retry wait must use the plan's fixed delay output.")
+if str(retry_wait.get("if", "")) != retry_condition:
+    fail("The retry wait and second restore must share the same miss condition.")
 if "package_enabled" not in str(by_id["shard-cache-package"].get("if", "")):
     fail("The package step must be gated on the plan step's package_enabled output.")
 
 download = by_id["shard-cache-download"]
-if download.get("continue-on-error") is not True:
-    fail("Attempt-1 shard cache reads must be fail-open (continue-on-error: true).")
-with_block = download.get("with", {})
-if with_block.get("fail-on-cache-miss") not in (False, "false"):
-    fail("Shard cache reads must tolerate a miss.")
-if "restore-keys" in with_block:
-    fail("Shard cache restore must not use fallback keys.")
+for candidate in (download, retry):
+    if candidate.get("continue-on-error") is not True:
+        fail("Shard cache reads must be fail-open (continue-on-error: true).")
+    with_block = candidate.get("with", {})
+    if with_block.get("fail-on-cache-miss") not in (False, "false"):
+        fail("Shard cache reads must tolerate a miss.")
+    if "restore-keys" in with_block:
+        fail("Shard cache restore must not use fallback keys.")
+    if with_block.get("key") != download.get("with", {}).get("key"):
+        fail("Both restore attempts must use the unchanged exact cache key.")
 if "${{ github.run_id }}" not in plan_run:
     fail("The cache key must be scoped to the workflow run id.")
 materialize_run = by_id["shard-cache-materialize"]["run"]
 if "--read-mode" not in materialize_run or "restore_mode" not in materialize_run:
     fail("The materializer must receive the planned read mode for visible fallback reasons.")
+if "CACHE_HIT_FIRST" not in materialize_run or "CACHE_HIT_RETRY" not in materialize_run:
+    fail("The materializer must accept a hit from either bounded restore attempt.")
+
+start_free_disk = next(s for s in steps if s.get("name") == "Start freeing disk space")
+wait_free_disk = next(s for s in steps if s.get("name") == "Wait for free disk space")
+if "server-test-shard-free-disk.sh" not in start_free_disk.get("run", ""):
+    fail("Server-test disk cleanup must start through the background helper.")
+if "server-test-shard-free-disk.sh --await" not in wait_free_disk.get("run", ""):
+    fail("Server-test disk cleanup must have an explicit wait barrier.")
+if steps.index(start_free_disk) >= steps.index(by_id["shard-cache-plan"]):
+    fail("Disk cleanup must start before setup/cache planning work.")
+if steps.index(wait_free_disk) >= steps.index(download):
+    fail("The disk-cleanup barrier must complete before cache/build work.")
 
 # The step summary must distinguish a real local-build fallback from a failed
 # or cancelled build, and must not attribute the restored writer's packaging
