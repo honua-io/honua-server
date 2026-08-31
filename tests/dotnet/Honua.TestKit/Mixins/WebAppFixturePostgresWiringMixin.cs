@@ -323,5 +323,12 @@ internal static class WebAppFixturePostgresWiringMixin
         // endpoints read the seeded snapshot without a migrated snapshot row being
         // present in the test database.
         WebAppFixtureMetadataV2Mixin.RegisterDefaultMetadataV2Graph(services);
+
+        // Incremental shared-host seam (#3712): request-local service overrides are
+        // selected by a per-fixture opaque header. General ConfigureServices actions
+        // still use ConfigureIsolatedTestServices; only the explicit opt-in API can
+        // reach this registry, so unsupported registration shapes fail closed.
+        services.AddSingleton<ScopedServiceOverrideRegistry>();
+        services.AddSingleton<IStartupFilter, ScopedServiceOverrideStartupFilter>();
     }
 }

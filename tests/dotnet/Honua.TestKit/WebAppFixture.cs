@@ -49,6 +49,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     private PostgresFixture? _postgres;
     private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
+    private readonly Dictionary<Type, object> _scopedServiceOverrides = [];
     private Action<IWebHostBuilder>? _configureWebHost;
     private WebApplicationFactory<Program>? _factory;
     private string? _currentSchema;
@@ -57,6 +58,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _seedPath;
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
+    private string? _serviceOverrideScopeId;
 
     /// <summary>
     /// Test service ID used for testing operations.
@@ -180,6 +182,14 @@ public sealed class WebAppFixture : IAsyncLifetime
                         _postgres.ConnectionString,
                         () => _currentSchema,
                         _serviceConfigurations);
+
+                    // An isolated fixture owns its host, so request overrides can be
+                    // installed directly without the shared host's header-based registry.
+                    foreach (var (serviceType, instance) in _scopedServiceOverrides)
+                    {
+                        services.RemoveAll(serviceType);
+                        services.AddSingleton(serviceType, instance);
+                    }
                 });
             },
             _environmentName);
@@ -379,6 +389,14 @@ public sealed class WebAppFixture : IAsyncLifetime
         await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin
             .EnsureInitializedAsync(SharedAdminPassword);
 
+        if (_scopedServiceOverrides.Count > 0)
+        {
+            _serviceOverrideScopeId = Guid.NewGuid().ToString("N");
+            Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services
+                .GetRequiredService<ScopedServiceOverrideRegistry>()
+                .Add(_serviceOverrideScopeId, _scopedServiceOverrides);
+        }
+
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
             _currentSchema = await Postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
@@ -401,6 +419,14 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         if (_useSharedServer)
         {
+            if (_serviceOverrideScopeId is not null)
+            {
+                Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services
+                    .GetRequiredService<ScopedServiceOverrideRegistry>()
+                    .Remove(_serviceOverrideScopeId);
+                _serviceOverrideScopeId = null;
+            }
+
             if (_currentSchema is not null)
             {
                 await Postgres.DropSchemaAsync(_currentSchema);
@@ -505,10 +531,29 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Replaces a request-resolved service for this fixture while reusing the shared
+    /// application host. This opt-in is limited to concrete instances resolved directly
+    /// from <c>HttpContext.RequestServices</c>; constructor-graph and hosted-service
+    /// replacements must continue to use <see cref="ReplaceService{TService}(TService)"/>.
+    /// </summary>
+    public WebAppFixture ReplaceRequestService<TService>(TService instance)
+        where TService : class
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        _scopedServiceOverrides[typeof(TService)] = instance;
+        return this;
+    }
+
+    /// <summary>
     /// Get a service from the test server's DI container.
     /// </summary>
     public T GetService<T>() where T : notnull
     {
+        if (_scopedServiceOverrides.TryGetValue(typeof(T), out var scopedOverride))
+        {
+            return (T)scopedOverride;
+        }
+
         var provider = _serviceScope?.ServiceProvider
             ?? throw new InvalidOperationException("Service scope not initialized.");
 
@@ -520,6 +565,11 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public T? GetOptionalService<T>() where T : class
     {
+        if (_scopedServiceOverrides.TryGetValue(typeof(T), out var scopedOverride))
+        {
+            return (T)scopedOverride;
+        }
+
         return _serviceScope?.ServiceProvider.GetService<T>();
     }
 
@@ -608,14 +658,29 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// Useful for constructing custom transports (e.g. gRPC channels) that route
     /// through the same pipeline as <see cref="Client"/>.
     /// </summary>
-    public HttpMessageHandler CreateHandler() => ActiveFactory.Server.CreateHandler();
+    public HttpMessageHandler CreateHandler()
+    {
+        var handler = ActiveFactory.Server.CreateHandler();
+        return _serviceOverrideScopeId is null
+            ? handler
+            : new ServiceOverrideScopeHandler(_serviceOverrideScopeId, handler);
+    }
 
     /// <summary>
     /// Creates a <see cref="Microsoft.AspNetCore.TestHost.WebSocketClient"/> for testing
     /// WebSocket endpoints through the in-memory test server.
     /// </summary>
     public Microsoft.AspNetCore.TestHost.WebSocketClient CreateWebSocketClient()
-        => ActiveFactory.Server.CreateWebSocketClient();
+    {
+        var client = ActiveFactory.Server.CreateWebSocketClient();
+        if (_serviceOverrideScopeId is not null)
+        {
+            client.ConfigureRequest = request =>
+                request.Headers[ScopedServiceOverrideRegistry.HeaderName] = _serviceOverrideScopeId;
+        }
+
+        return client;
+    }
 
     /// <summary>
     /// Create a new HTTP client with custom configuration.
@@ -675,6 +740,14 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     private void ApplyCurrentSchemaHeader(HttpClient client)
     {
+        if (_serviceOverrideScopeId is not null)
+        {
+            client.DefaultRequestHeaders.Remove(ScopedServiceOverrideRegistry.HeaderName);
+            client.DefaultRequestHeaders.Add(
+                ScopedServiceOverrideRegistry.HeaderName,
+                _serviceOverrideScopeId);
+        }
+
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
             return;
@@ -682,6 +755,20 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         client.DefaultRequestHeaders.Remove("X-Honua-Test-Schema");
         client.DefaultRequestHeaders.Add("X-Honua-Test-Schema", _currentSchema);
+    }
+
+    private sealed class ServiceOverrideScopeHandler(
+        string scopeId,
+        HttpMessageHandler innerHandler) : DelegatingHandler(innerHandler)
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            request.Headers.Remove(ScopedServiceOverrideRegistry.HeaderName);
+            request.Headers.Add(ScopedServiceOverrideRegistry.HeaderName, scopeId);
+            return base.SendAsync(request, cancellationToken);
+        }
     }
 
 }
