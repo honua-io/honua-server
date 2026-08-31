@@ -98,6 +98,15 @@ jobs:
           --worker-image honua-worker-gdal:boundary
           --worker-redis 127.0.0.1:6379
 
+      - name: Certify production worker queue handoff
+        env:
+          HONUA_WORKER_IMAGE: honua-worker-gdal:boundary
+        run: >-
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj
+          --configuration Release
+          --filter FullyQualifiedName~ProductionWorkerContainerHandoffTests
+          --logger "console;verbosity=normal"
+
       - name: Create worker vulnerability report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
