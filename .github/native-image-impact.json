@@ -27,6 +27,7 @@
   "serving_shared_patterns": [
     ".dockerignore",
     "scripts/ci/verify-serving-image-boundary.py",
+    "scripts/ci/serving-image-reuse.py",
     ".github/workflows/serving-image-boundary.yml",
     ".github/workflows/release-bundle.yml",
     ".github/workflows/deploy.yml",
@@ -60,6 +61,7 @@
       ".dockerignore",
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
+      "scripts/ci/serving-image-reuse.py",
       "scripts/ci/fixtures/validate-serving-image-boundary.py",
       ".github/workflows/serving-image-boundary.yml"
     ],
@@ -83,6 +85,7 @@
       "docker/cloud/azure-functions/**",
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
+      "scripts/ci/serving-image-reuse.py",
       "scripts/ci/fixtures/validate-serving-image-boundary.py",
       ".github/workflows/serving-image-boundary.yml"
     ],
