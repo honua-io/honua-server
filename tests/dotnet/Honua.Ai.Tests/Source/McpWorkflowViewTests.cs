@@ -99,6 +99,7 @@ public sealed class McpWorkflowViewTests
             "honua_studio_set_view",
             "honua_studio_validate_draft",
             "honua_studio_propose_publication",
+            "honua_propose_operation",
             "honua_supported_operation_kinds",
         ]);
 
