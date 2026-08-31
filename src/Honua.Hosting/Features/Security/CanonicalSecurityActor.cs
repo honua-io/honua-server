@@ -37,10 +37,14 @@ internal static class CanonicalSecurityActor
             return null;
         }
 
-        var apiKeyValue = identity.FindFirst(ApiKeyIdClaim)?.Value;
-        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase)
-            && Guid.TryParse(apiKeyValue, out var apiKeyId))
+        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase))
         {
+            var apiKeyValue = identity.FindFirst(ApiKeyIdClaim)?.Value;
+            if (!Guid.TryParse(apiKeyValue, out var apiKeyId))
+            {
+                return null;
+            }
+
             return new CanonicalSecurityActorIdentity(
                 $"{scheme}:api-key:{apiKeyId:D}", scheme, null, null, apiKeyId.ToString("D"), true);
         }
@@ -53,14 +57,6 @@ internal static class CanonicalSecurityActor
             return new CanonicalSecurityActorIdentity(
                 $"{scheme}:subject:{Encode(issuer ?? "-")}:{Encode(subject)}",
                 scheme, subject, issuer, null, true);
-        }
-
-        // An API-key principal without the immutable id stamped by the handler is
-        // unsafe to bind. Identity.Name is mutable and must never become a session
-        // identifier, even for an otherwise authenticated caller.
-        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
         }
 
         var name = NormalizeValue(identity.Name);
