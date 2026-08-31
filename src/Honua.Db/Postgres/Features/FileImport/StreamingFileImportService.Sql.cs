@@ -25,6 +25,15 @@ internal sealed partial class StreamingFileImportService
     // truncates longer identifiers, which can otherwise make the geometry and
     // properties indexes collide with SQLSTATE 42P07.
     private const int MaxImportTableNameLength = 40;
+    private const string ImportTableExistsSql = """
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_class AS relation
+            INNER JOIN pg_catalog.pg_namespace AS namespace
+                ON namespace.oid = relation.relnamespace
+            WHERE namespace.nspname = @schema_name
+              AND relation.relname = @table_name)
+        """;
 
     private static string QuoteIdentifier(string identifier)
     {
@@ -44,6 +53,40 @@ internal sealed partial class StreamingFileImportService
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(physicalName)))[..12];
         var prefixLength = MaxImportTableNameLength - hash.Length - 1;
         return $"{physicalName[..prefixLength]}_{hash}";
+    }
+
+    private static async Task<string> ResolvePhysicalTableNameAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        ValidateTableName(tableName);
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
+        var legacyName = "imported_" + sanitized.ToLowerInvariant();
+        if (legacyName.Length <= MaxImportTableNameLength)
+        {
+            return legacyName;
+        }
+
+        // Preserve an existing pre-hash table only when its complete physical name
+        // fits in PostgreSQL. A longer identifier would have been truncated, and
+        // distinct logical names with the same 63-character prefix are then
+        // indistinguishable; existence alone cannot prove ownership.
+        if (legacyName.Length > 63)
+        {
+            return GetAllowedTableName(tableName);
+        }
+
+        await using var command = new NpgsqlCommand(ImportTableExistsSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", legacyName);
+        if ((bool?)await command.ExecuteScalarAsync(cancellationToken) == true)
+        {
+            return legacyName;
+        }
+
+        return GetAllowedTableName(tableName);
     }
 
     private static async Task CreateTableAsync(
