@@ -206,10 +206,19 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
         await using var connection = new NpgsqlConnection(_fixture.Postgres.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT count(*) FROM information_schema.tables WHERE table_name = 'imported_{_tableName}';";
+        command.CommandText = """
+            SELECT count(*)
+            FROM information_schema.tables AS imported
+            JOIN honua.layers AS layer
+              ON layer.table_schema = imported.table_schema
+             AND layer.table_name = imported.table_name
+            JOIN honua.service_layers AS service_layer
+              ON service_layer.layer_id = layer.layer_id
+            WHERE service_layer.service_name = @serviceName;
+            """;
+        command.Parameters.AddWithValue("serviceName", _serviceName);
         var tableExists = Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture) > 0;
-        tableExists.Should().BeTrue("the import step must create the generic imported_<table>");
+        tableExists.Should().BeTrue("the import step must create and publish its physical imported table");
     }
 
     private async Task<int> ReadPublishedLayerIdAsync()
@@ -217,9 +226,16 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
         await using var connection = new NpgsqlConnection(_fixture.Postgres.ConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT layer_id FROM honua.layers WHERE table_name = @table ORDER BY layer_id DESC LIMIT 1;";
-        command.Parameters.AddWithValue("table", $"imported_{_tableName}");
+        command.CommandText = """
+            SELECT layer.layer_id
+            FROM honua.layers AS layer
+            JOIN honua.service_layers AS service_layer
+              ON service_layer.layer_id = layer.layer_id
+            WHERE service_layer.service_name = @serviceName
+            ORDER BY layer.layer_id DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("serviceName", _serviceName);
         var scalar = await command.ExecuteScalarAsync();
         return scalar is null or DBNull ? 0 : Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
     }
