@@ -118,7 +118,7 @@ internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKind
         Title = "Supported operation kinds",
         Description =
             "Read-only discovery of stable operation-kind identifiers backed by executors registered "
-            + "in the live operation gateway. Use this before honua_propose_operation; absent kinds "
+            + "in the live operation gateway. Use this before selecting a catalog-published typed operation tool; absent kinds "
             + "remain fail-closed and cannot be routed.",
         InputSchema = McpPlatformOpsSchemas.SupportedOperationKindsInputSchema,
         OutputSchema = McpPlatformOpsSchemas.SupportedOperationKindsOutputSchema,
