@@ -114,7 +114,7 @@ jobs:
     name: Build & Push AOT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     # 180, not 90: a COLD native-AOT build of this image does not fit in 90 minutes, and a timeout
-    # is self-perpetuating. buildx exports the `type=gha` layer cache in `cache-to`, which only runs
+    # is self-perpetuating. buildx exports the registry layer cache in `cache-to`, which only runs
     # after a successful build — so a job killed at the ceiling exports nothing, the next run starts
     # cold too, and the workflow can never converge on its own. Observed 2026-08-19: amd64 timed out
     # at 90m twice in a row (runs 32295916913 and 32304223543, the second on an idle runner pool), so
@@ -193,12 +193,12 @@ jobs:
           # scopes: this workflow overrides the base-image ARGs to its mirrored
           # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
           # from the first instruction down and the caches are not interchangeable.
-          cache-from: type=gha,scope=nightly-aot-${{ matrix.arch }}
-          # ignore-error: a failed/interrupted GHA cache export (common on the
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-aot-${{ matrix.arch }}
+          # ignore-error: a failed/interrupted registry cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
           # not fail an otherwise-successful build. The cache is an accelerator,
           # not a release artifact.
-          cache-to: type=gha,mode=max,scope=nightly-aot-${{ matrix.arch }},ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-aot-${{ matrix.arch }},mode=max,ignore-error=true
           provenance: true
           sbom: true
 
@@ -229,7 +229,7 @@ jobs:
     name: Build & Push Lambda AOT (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     # 180, not 90: a COLD native-AOT build of this image does not fit in 90 minutes, and a timeout
-    # is self-perpetuating. buildx exports the `type=gha` layer cache in `cache-to`, which only runs
+    # is self-perpetuating. buildx exports the registry layer cache in `cache-to`, which only runs
     # after a successful build — so a job killed at the ceiling exports nothing, the next run starts
     # cold too, and the workflow can never converge on its own. Observed 2026-08-19: amd64 timed out
     # at 90m twice in a row (runs 32295916913 and 32304223543, the second on an idle runner pool), so
@@ -307,12 +307,12 @@ jobs:
           # scopes: this workflow overrides the base-image ARGs to its mirrored
           # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
           # from the first instruction down and the caches are not interchangeable.
-          cache-from: type=gha,scope=nightly-lambda-aot-${{ matrix.arch }}
-          # ignore-error: a failed/interrupted GHA cache export (common on the
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-lambda-aot-${{ matrix.arch }}
+          # ignore-error: a failed/interrupted registry cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
           # not fail an otherwise-successful build. The cache is an accelerator,
           # not a release artifact.
-          cache-to: type=gha,mode=max,scope=nightly-lambda-aot-${{ matrix.arch }},ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-lambda-aot-${{ matrix.arch }},mode=max,ignore-error=true
           provenance: false
           sbom: false
 
@@ -425,13 +425,20 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: read
-      packages: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - name: Log in to GHCR for build cache
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build nightly Azure Functions AOT serving image
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
@@ -446,10 +453,10 @@ jobs:
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=gha,scope=nightly-functions-aot-amd64
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-functions-aot-amd64
           # ignore-error: a failed cache export must not fail an otherwise
           # successful build; the cache is an accelerator, not evidence.
-          cache-to: type=gha,mode=max,scope=nightly-functions-aot-amd64,ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-functions-aot-amd64,mode=max,ignore-error=true
           provenance: false
           sbom: false
 
@@ -529,12 +536,12 @@ jobs:
           # scopes: this workflow overrides the base-image ARGs to its mirrored
           # ghcr.io/<repo>-base tags, so its FROM layers differ from every other lane's
           # from the first instruction down and the caches are not interchangeable.
-          cache-from: type=gha,scope=nightly-jit-${{ matrix.arch }}
-          # ignore-error: a failed/interrupted GHA cache export (common on the
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-jit-${{ matrix.arch }}
+          # ignore-error: a failed/interrupted registry cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
           # not fail an otherwise-successful build+push. The cache is a build
           # accelerator, not a release artifact.
-          cache-to: type=gha,mode=max,scope=nightly-jit-${{ matrix.arch }},ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:nightly-jit-${{ matrix.arch }},mode=max,ignore-error=true
           provenance: true
           sbom: true
 

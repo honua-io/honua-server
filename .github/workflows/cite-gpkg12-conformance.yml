@@ -19,7 +19,7 @@ on:
 
 permissions:
   contents: read
-  packages: read
+  packages: write
 
 concurrency:
   group: cite-gpkg12-conformance-${{ github.ref }}
