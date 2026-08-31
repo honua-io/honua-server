@@ -163,7 +163,7 @@ internal sealed class McpDataAccessSurface
         // GPServer traffic. Concrete tool and resource handlers override the
         // operation tag with their operation name (e.g. "ExecutePlan",
         // "GetJob") further down the call stack.
-        McpTelemetry.EnrichActivity(request.Method);
+        McpTelemetry.EnrichActivity(request.Method, httpContext);
 
         try
         {

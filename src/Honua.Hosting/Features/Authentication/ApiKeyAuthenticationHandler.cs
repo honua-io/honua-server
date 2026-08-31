@@ -32,6 +32,8 @@ internal sealed class ApiKeyAuthenticationHandler(
     private const string AdminPasswordEnvVar = "HONUA_ADMIN_PASSWORD";
     private const string AuthFailureMessageKey = "AuthFailureMessage";
     private const string AuthRealm = "Honua Admin";
+    private static readonly Guid DevelopmentBypassActorId = new("00000000-0000-0000-0000-000000000001");
+    private static readonly Guid BootstrapAdminActorId = new("00000000-0000-0000-0000-000000000002");
 
     private readonly ApiKeyAuthenticationOptions _authOptions = dependencies?.Options ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IConnectionSecretResolver? _secretResolver = dependencies.SecretResolver;
@@ -46,7 +48,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         if (IsDevelopmentBypassEnabled())
         {
             AuthenticationLog.DevelopmentBypassEnabled(Logger);
-            return CreateSuccessfulAuthenticationResult("dev-bypass");
+            return CreateSuccessfulAuthenticationResult("dev-bypass", DevelopmentBypassActorId);
         }
 
         // Extract API key from explicit header, or from Basic auth compatibility mode.
@@ -115,7 +117,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         AuthenticationLog.ApiKeyAuthenticationSuccessful(Logger);
-        return CreateSuccessfulAuthenticationResult("admin");
+        return CreateSuccessfulAuthenticationResult("admin", BootstrapAdminActorId);
     }
 
     private string? GetApiKeyFromHeader()

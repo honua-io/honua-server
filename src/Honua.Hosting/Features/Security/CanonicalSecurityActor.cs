@@ -37,10 +37,14 @@ internal static class CanonicalSecurityActor
             return null;
         }
 
-        var apiKeyValue = identity.FindFirst(ApiKeyIdClaim)?.Value;
-        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase)
-            && Guid.TryParse(apiKeyValue, out var apiKeyId))
+        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase))
         {
+            var apiKeyValue = identity.FindFirst(ApiKeyIdClaim)?.Value;
+            if (!Guid.TryParse(apiKeyValue, out var apiKeyId))
+            {
+                return null;
+            }
+
             return new CanonicalSecurityActorIdentity(
                 $"{scheme}:api-key:{apiKeyId:D}", scheme, null, null, apiKeyId.ToString("D"), true);
         }
@@ -53,11 +57,6 @@ internal static class CanonicalSecurityActor
             return new CanonicalSecurityActorIdentity(
                 $"{scheme}:subject:{Encode(issuer ?? "-")}:{Encode(subject)}",
                 scheme, subject, issuer, null, true);
-        }
-
-        if (string.Equals(scheme, "admin", StringComparison.Ordinal))
-        {
-            return new CanonicalSecurityActorIdentity("admin:bootstrap", scheme, null, null, null, false);
         }
 
         var name = NormalizeValue(identity.Name);
