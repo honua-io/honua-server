@@ -241,8 +241,8 @@
       "referenceToolName": "honua_propose_operation",
       "family": "Control-plane proposal (reference shape)",
       "schema": "tools/propose_operation.schema.json",
-      "implementationStatus": "implemented",
-      "notes": "Amended with x-honua-supported-kinds runtime capability discovery (geospatial-mcp#57): the kind enum stays the full wire-compatible OperationClass set, but the routable subset is discoverable at runtime (Seed is currently not routable in the reference)."
+      "implementationStatus": "retired",
+      "notes": "Retired from the public model roster by honua-server#3474 because its generic executionPayload contract was opaque. Catalog-published operation tools provide closed typed schemas and governed approval replay instead."
     },
     {
       "standardName": "ops_health",
