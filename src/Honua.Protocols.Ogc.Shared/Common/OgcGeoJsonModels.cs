@@ -2,11 +2,40 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Protocols.Ogc.Common;
+
+/// <summary>
+/// Serializes OGC response timestamps with a stable payload width.
+/// </summary>
+internal sealed class FixedWidthTimestampConverter : JsonConverter<DateTimeOffset?>
+{
+    /// <inheritdoc />
+    public override bool HandleNull => true;
+
+    /// <inheritdoc />
+    public override DateTimeOffset? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => reader.TokenType == JsonTokenType.Null ? null : reader.GetDateTimeOffset();
+
+    /// <inheritdoc />
+    public override void Write(Utf8JsonWriter writer, DateTimeOffset? value, JsonSerializerOptions options)
+    {
+        if (!value.HasValue)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStringValue(Format(value.Value));
+    }
+
+    internal static string Format(DateTimeOffset value)
+        => value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", CultureInfo.InvariantCulture);
+}
 
 /// <summary>
 /// JSON converter for raw JSON strings to avoid double encoding
@@ -212,6 +241,7 @@ public sealed record FeatureCollection : ICollectionResponse<GeoJsonFeature>
     /// Timestamp when the collection was generated
     /// </summary>
     [JsonPropertyName("timeStamp")]
+    [JsonConverter(typeof(FixedWidthTimestampConverter))]
     public DateTimeOffset? TimeStamp { get; init; }
 
     // ICollectionResponse implementation

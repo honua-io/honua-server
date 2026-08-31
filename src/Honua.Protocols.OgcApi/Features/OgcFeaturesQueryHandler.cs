@@ -1350,7 +1350,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     /// a byte and break clients (GDAL /vsicurl) that size the payload from HEAD (#3674).
     /// </summary>
     private static string FormatFixedWidthTimestamp(DateTimeOffset value)
-        => value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        => FixedWidthTimestampConverter.Format(value);
 
     private static bool TryGetJsonPropertyIgnoreCase(JsonElement element, string propertyName, out JsonProperty property)
     {
