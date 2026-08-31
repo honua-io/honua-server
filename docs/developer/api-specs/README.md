@@ -138,15 +138,17 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 >
 > **Sibling control-plane surfaces**: Console (`/api/v1/console/**`) and Studio
 > (`/api/v1/studio/**`) require the same admin authorization posture but are not
-> part of this `/api/v1/admin` OpenAPI snapshot. Console workflow package
+> part of this `/api/v1/admin` OpenAPI snapshot. The Studio surface is published
+> independently in [studio-api.json](studio-api.json), with bidirectional route
+> drift enforcement against `EndpointRegistry`. Console workflow package
 > contracts are maintained in
 > [Console Workflow Packages](../../internal/admin-api/console-workflow-packages.md),
-> the Studio package lifecycle contract is maintained in
+> the Studio package lifecycle guide is maintained in
 > [Studio Package Lifecycle API](../../internal/admin-api/studio-package-lifecycle.md),
 > and the map/dashboard/report/generated-app publication route contract is
 > maintained in
 > [Content Publication Registry API](../../internal/admin-api/content-publication-registry.md)
-> until dedicated Console and Studio OpenAPI documents are published.
+> until a dedicated Console OpenAPI document is published.
 >
 > **Runtime capability discovery**: `GET /api/v1/capabilities/manifest` is a
 > public, request-scoped discovery contract outside the admin OpenAPI snapshot.
@@ -173,6 +175,15 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
   markdown contract while the OpenAPI snapshot catches up
 
 {% swagger src="admin-api.json" %}
+
+## Studio API
+
+The [Studio OpenAPI document](studio-api.json) is the canonical, SDK-generation-ready
+contract for every `/api/v1/studio/*` endpoint. Its absolute route inventory is checked
+bidirectionally against `EndpointRegistry.Studio.cs`; adding, removing, or renaming a
+Studio route without updating the document fails the OpenAPI drift gate.
+
+{% swagger src="studio-api.json" %}
 {% endswagger %}
 
 ## GeoServices REST Services

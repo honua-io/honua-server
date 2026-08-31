@@ -115,6 +115,11 @@ internal static class StudioPackageEndpoints
             .WithDisplayName("Create Studio Publication Request")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
 
+        group.MapGet("/content-items/{itemId:guid}/versions/{versionId:guid}/publish-requests/{requestId:guid}", HandleGetPublishRequest)
+            .WithDisplayName("Get Studio Publication Request")
+            .WithSummary("Returns one owner-scoped Studio publication request for status polling.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
+
         group.MapPost("/content-items/{itemId:guid}/versions/{versionId:guid}/reopen", HandleReopenVersion)
             .WithDisplayName("Reopen Studio Content Version")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
@@ -1626,6 +1631,48 @@ internal static class StudioPackageEndpoints
         {
             StudioEndpointsLog.EndpointFailed(logger, "publish-request.create", ex);
             return ServerError(context, "Studio publication request could not be created.");
+        }
+    }
+
+    private static async Task<IResult> HandleGetPublishRequest(
+        Guid itemId,
+        Guid versionId,
+        Guid requestId,
+        [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] StudioEndpointAuthorization authorization,
+        [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
+        HttpContext context)
+    {
+        try
+        {
+            var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
+            if (pointers is null)
+            {
+                return NotFound(context, "Studio content item was not found.");
+            }
+
+            var authResult = await EnsureAuthorizedAsync(
+                authorization, context,
+                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
+                resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                isPubliclyReadable: false).ConfigureAwait(false);
+            if (authResult is not null)
+            {
+                return authResult;
+            }
+
+            var publication = await service.GetPublicationRequestAsync(
+                itemId, versionId, requestId, context.RequestAborted).ConfigureAwait(false);
+            return publication is null
+                ? NotFound(context, "Studio publication request was not found.")
+                : Results.Json(
+                    ApiResponse<StudioPublicationRequest>.CreateSuccess(publication),
+                    StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            StudioEndpointsLog.EndpointFailed(logger, "publish-request.get", ex);
+            return ServerError(context, "Studio publication request could not be read.");
         }
     }
 
