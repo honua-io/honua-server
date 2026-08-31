@@ -104,6 +104,9 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      secrets:
+        - github_actor
+        - github_token
     environment:
       ASPNETCORE_ENVIRONMENT: ${HONUA_CLIENT_COMPAT_ENVIRONMENT:-Production}
       ASPNETCORE_URLS: http://+:5000
@@ -186,6 +189,9 @@ services:
     build:
       context: ../..
       dockerfile: docker/worker-gdal/Dockerfile
+      secrets:
+        - github_actor
+        - github_token
     environment:
       DOTNET_ENVIRONMENT: Development
       ConnectionStrings__Redis: redis:6379
@@ -486,3 +492,9 @@ services:
 networks:
   compat:
     driver: bridge
+
+secrets:
+  github_actor:
+    file: ${HONUA_GITHUB_ACTOR_SECRET_FILE:-/dev/null}
+  github_token:
+    file: ${HONUA_GITHUB_TOKEN_SECRET_FILE:-/dev/null}
