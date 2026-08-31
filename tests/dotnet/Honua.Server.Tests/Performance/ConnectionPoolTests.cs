@@ -308,6 +308,7 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         var connectionString = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
         {
             ApplicationName = $"honua-burst-{Guid.NewGuid():N}",
+            MinPoolSize = 0,
             MaxPoolSize = poolSize,
             SearchPath = $"{_schemaName},public",
         };
