@@ -41,6 +41,28 @@ internal sealed partial class PostgreSqlLayerPublishingService
             """;
     }
 
+    private static async Task<string> ResolveCanonicalFeaturesTableAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT namespace.nspname
+            FROM pg_class AS relation
+            JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+            WHERE relation.oid = to_regclass('features');
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        var schema = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
+        if (string.IsNullOrWhiteSpace(schema))
+        {
+            throw new InvalidOperationException("The canonical features table is not available on the connection search path.");
+        }
+
+        return $"{QuoteIdentifier(schema)}.{QuoteIdentifier("features")}";
+    }
+
     private static string BuildAttributesExpression(IReadOnlyList<ColumnInfo> attributeColumns)
     {
         if (attributeColumns.Count == 0)

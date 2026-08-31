@@ -197,10 +197,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var sourceGeometry = $"src.{QuoteIdentifier(geometryColumn)}";
         var canonicalGeometry = BuildCanonicalGeometryExpression(sourceGeometry);
         var attributesExpression = BuildAttributesExpression(attributeColumns);
+        var featuresTable = await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
+            .ConfigureAwait(false);
 
         var sql = $"""
             WITH inserted AS (
-                INSERT INTO features (layer_id, geometry, attributes)
+                INSERT INTO {featuresTable} (layer_id, geometry, attributes)
                 SELECT
                     @layerId,
                     {canonicalGeometry},
