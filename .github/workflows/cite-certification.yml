@@ -1,0 +1,83 @@
+name: Exact-candidate CITE protocol certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_image:
+        description: Immutable Honua Server candidate image (image@sha256:digest)
+        required: true
+        type: string
+      source_sha:
+        description: Full source SHA represented by the candidate image
+        required: true
+        type: string
+      candidate_cut:
+        description: RFC 3339 frozen candidate cut timestamp
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+  actions: read
+
+concurrency:
+  group: cite-certification-${{ inputs.server_image }}
+  cancel-in-progress: false
+
+jobs:
+  cite:
+    uses: ./.github/workflows/cite-evidence-report.yml
+    with:
+      publish_pages: false
+      server_image: ${{ inputs.server_image }}
+      source_sha: ${{ inputs.source_sha }}
+      candidate_cut: ${{ inputs.candidate_cut }}
+    secrets: inherit
+
+  normalize:
+    needs: cite
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Download human-readable and raw CITE evidence
+        uses: actions/download-artifact@v8
+        with:
+          pattern: cite-conformance-evidence-*
+          path: artifacts/cite-evidence
+          merge-multiple: true
+
+      - name: Emit exact-candidate normalized observations
+        env:
+          SERVER_IMAGE: ${{ inputs.server_image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CANDIDATE_CUT: ${{ inputs.candidate_cut }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          started_at="$(jq -er '.generatedAt' artifacts/cite-evidence/conformance-summary.json)"
+          completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python3 scripts/conformance/cite/build_protocol_certification_fragment.py \
+            --summary artifacts/cite-evidence/conformance-summary.json \
+            --requirements certification/cite-protocol-requirements.v1.json \
+            --suite-provenance artifacts/cite-evidence/suite-provenance.json \
+            --output artifacts/protocol-certification-fragment.json \
+            --source-sha "$SOURCE_SHA" \
+            --producer-source-sha "$GITHUB_SHA" \
+            --image-digest "${SERVER_IMAGE##*@}" \
+            --candidate-cut "$CANDIDATE_CUT" \
+            --started-at "$started_at" \
+            --completed-at "$completed_at" \
+            --run-url "$RUN_URL"
+
+      - name: Upload normalized certification fragment
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: cite-protocol-certification-${{ github.run_id }}
+          path: |
+            artifacts/protocol-certification-fragment.json
+            artifacts/cite-evidence/
+          retention-days: 180
+          if-no-files-found: error
