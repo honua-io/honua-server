@@ -388,7 +388,7 @@ jobs:
       - name: Review the diff and publish evidence
         id: claude
         if: steps.target.outputs.skip == 'false'
-        uses: anthropics/claude-code-action@c81e3bc69d1b18badbb63ba39581218f02421678 # v1.0.201
+        uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1.0.210
         with:
           # Exactly one of these is set; the empty one is ignored. Do NOT add a
           # `github_token` input — the default path mints the Claude App token,
@@ -522,7 +522,7 @@ jobs:
 
       - name: Publish reviewer turn-budget fallback
         if: failure() && steps.claude.outcome == 'failure' && steps.exhausted.outputs.max_turns == 'true'
-        uses: anthropics/claude-code-action@c81e3bc69d1b18badbb63ba39581218f02421678 # v1.0.201
+        uses: anthropics/claude-code-action@a874e9ecd7bb36efdad65429c6b35815f5a08f10 # v1.0.210
         with:
           # Use the same App identity and append-only write surface as the main
           # review. GITHUB_TOKEN remains read-only, and no candidate text is
