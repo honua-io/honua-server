@@ -70,11 +70,11 @@ SQL
 
 <!-- docs-validation:quickstart.sdk mode=run -->
 ```bash
-python3 -m venv .quickstart-venv
-. .quickstart-venv/bin/activate
-python3 -m pip install \
+python3 -m venv --without-pip .quickstart-venv
+python3 -m pip --python .quickstart-venv/bin/python install \
   "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-sdk" \
   "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
+. .quickstart-venv/bin/activate
 ```
 
 7. Register the Compose database as a connection (publishing reads tables through named connections), then discover the sample table.
