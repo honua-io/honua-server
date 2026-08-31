@@ -73,11 +73,64 @@ public sealed class SharingCommunityTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/community/createGroup")]
+    public async Task CreateGroup_FormToken_AuthenticatesAndPreservesFormForEndpoint()
+    {
+        // The same form carries both the credential and endpoint fields. A 200
+        // with the requested title proves the middleware authenticates the
+        // form token without consuming the body needed by the GeoServices route.
+        var token = await IssueUserTokenAsync("alice");
+        using var client = CreateUserClient();
+
+        using var response = await PostFormAsync(client, "/sharing/rest/community/createGroup",
+            ("token", token),
+            ("title", "Form Token Field Crew"),
+            ("access", "private"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await ReadAsync<GroupOpPayload>(response);
+        payload.Success.Should().BeTrue();
+        payload.Group!.Owner.Should().Be("alice");
+        payload.Group.Title.Should().Be("Form Token Field Crew");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/community/createGroup")]
     public async Task CreateGroup_Anonymous_Returns401()
     {
         using var client = _fixture.CreateClient();
         using var response = await PostFormAsync(client, "/sharing/rest/community/createGroup",
             ("title", "Field Crew"));
+
+        await response.AssertGeoServicesErrorAsync(401, 499);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/community/createGroup")]
+    public async Task CreateGroup_InvalidFormToken_Returns401()
+    {
+        using var client = CreateUserClient();
+        using var response = await PostFormAsync(client, "/sharing/rest/community/createGroup",
+            ("token", "invalid-portal-token"),
+            ("title", "Field Crew"));
+
+        await response.AssertGeoServicesErrorAsync(401, 499);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/community/createGroup")]
+    public async Task CreateGroup_MultipartToken_DoesNotAuthenticate()
+    {
+        var token = await IssueUserTokenAsync("alice");
+        using var client = CreateUserClient();
+        using var content = new MultipartFormDataContent
+        {
+            { new StringContent(token), "token" },
+            { new StringContent("Field Crew"), "title" },
+        };
+        using var response = await client.PostAsync("/sharing/rest/community/createGroup", content);
 
         await response.AssertGeoServicesErrorAsync(401, 499);
     }
@@ -282,6 +335,9 @@ public sealed class SharingCommunityTests : IAsyncLifetime
 
     private sealed record GroupPayload
     {
+        [System.Text.Json.Serialization.JsonPropertyName("title")]
+        public string Title { get; init; } = string.Empty;
+
         [System.Text.Json.Serialization.JsonPropertyName("owner")]
         public string Owner { get; init; } = string.Empty;
 

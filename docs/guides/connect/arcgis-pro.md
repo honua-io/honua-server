@@ -32,7 +32,7 @@ const credential = await portal.generateToken({
 
 The credential contains `token`, `expires`, and `ssl`.
 
-Reuse the token on any `/rest/services/*` request as `?token=<opaque>`, `Authorization: Bearer <opaque>`, or `X-Esri-Authorization: Bearer <opaque>`. Token issuance is HTTPS-only by default; see your deployment's auth configuration if you need it on plain HTTP for local testing.
+Reuse the token on any `/rest/services/*` request as `?token=<opaque>`, `Authorization: Bearer <opaque>`, `X-Esri-Authorization: Bearer <opaque>`, or a form-encoded POST `token` field. Token issuance is HTTPS-only by default; see your deployment's auth configuration if you need it on plain HTTP for local testing.
 
 ### Esri SDKs
 

@@ -20,7 +20,8 @@ namespace Honua.Infrastructure.Authentication;
 /// The scheme is registered alongside the existing API-key authentication so that
 /// FeatureServer/MapServer endpoints (which use <c>AllowAnonymous</c> route metadata
 /// and authorize per-resource) can observe portal-token credentials carried as
-/// <c>?token=</c>, <c>Authorization: Bearer ...</c>, or <c>X-Esri-Authorization: Bearer ...</c>.
+/// <c>?token=</c>, <c>Authorization: Bearer ...</c>, <c>X-Esri-Authorization: Bearer ...</c>,
+/// or a form-encoded POST <c>token</c> field.
 /// A small middleware bridges anonymous requests by authenticating the scheme on
 /// demand and projecting the resulting principal onto <see cref="HttpContext.User"/>.
 /// </remarks>
@@ -267,6 +268,16 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             // here we accept the cooperative attempt because a portal-token value
             // is opaque hex and never validates as a JWT, so dual schemes can
             // safely coexist.
+            return true;
+        }
+
+        // Only standard URL-encoded forms carry the ArcGIS POST token transport.
+        // OAuth endpoints use form fields such as RFC 7009's `token` as operation
+        // operands, not request credentials, so they must retain anonymous semantics.
+        // Multipart and arbitrary request bodies must never trigger credential parsing.
+        if (!context.Request.Path.StartsWithSegments("/sharing/rest/oauth2", StringComparison.OrdinalIgnoreCase) &&
+            PortalTokenAuthenticationHandler.HasFormUrlEncodedContentType(context.Request))
+        {
             return true;
         }
 
