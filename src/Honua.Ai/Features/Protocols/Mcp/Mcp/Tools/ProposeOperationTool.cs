@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
@@ -99,6 +100,21 @@ internal sealed class ProposeOperationTool : IMcpTool
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
 
+        var scopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal);
+        var recognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal);
+        if (scopeGoverned && !OperatorScopeCatalog.PermitsOperation(recognizedScopes, OperatorOperation.Publish))
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpProposeOperationOutput
+                {
+                    Outcome = "rejected",
+                    RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
+                    Message = $"Operation kind '{kind}' requires OAuth scope '{OperatorScopeCatalog.Publish}'."
+                },
+                McpJsonContext.Default.McpProposeOperationOutput);
+        }
+
         var gateway = httpContext.RequestServices.GetService<IOperationGateway>();
         if (gateway is null)
         {
@@ -122,6 +138,8 @@ internal sealed class ProposeOperationTool : IMcpTool
             Reason = argument.Reason,
             IdempotencyKey = argument.IdempotencyKey,
             ExecutionPayload = argument.ExecutionPayload,
+            ScopeGoverned = scopeGoverned,
+            RecognizedScopes = recognizedScopes.OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
         };
 
         var envelopeFactory = httpContext.RequestServices.GetService<IOperationEnvelopeFactory>();
@@ -145,6 +163,8 @@ internal sealed class ProposeOperationTool : IMcpTool
                 PrincipalId = actor,
                 IdempotencyKey = argument.IdempotencyKey,
                 AuthorizationOutcome = "mcp-authorized",
+                ScopeGoverned = request.ScopeGoverned,
+                RecognizedScopes = request.RecognizedScopes,
             },
             cancellationToken).ConfigureAwait(false);
         if (accepted.Status == OperationHandleStatus.Failed || string.IsNullOrWhiteSpace(accepted.AuditId))

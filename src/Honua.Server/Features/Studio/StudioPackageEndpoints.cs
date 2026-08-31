@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -805,6 +806,10 @@ internal static class StudioPackageEndpoints
         IdempotencyKey = context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
         AuthorizationOutcome = "authorized",
         Roles = context.User.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
+        ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(context.User),
+        RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(context.User)
+            .OrderBy(static scope => scope, StringComparer.Ordinal)
+            .ToArray(),
     };
 
     private static void SetOperationHeaders(HttpContext context, OperationHandle operation)

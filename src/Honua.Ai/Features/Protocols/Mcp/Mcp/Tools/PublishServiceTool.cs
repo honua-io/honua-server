@@ -88,6 +88,9 @@ internal sealed class PublishServiceTool : IMcpTool
             TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
             SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
             AuthorizationOutcome = "authorized",
+            ScopeGoverned = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog.IsScopeGoverned(principal),
+            RecognizedScopes = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog
+                .CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
         };
 
         var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);

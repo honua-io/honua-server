@@ -107,7 +107,11 @@ public sealed class AdminOperationApprovalBridgeTests
         var result = await bridge.CreateProposalAsync(
             Descriptor(),
             Request(),
-            Context(),
+            Context() with
+            {
+                ScopeGoverned = true,
+                RecognizedScopes = ["honua.mcp.update"],
+            },
             Decision());
 
         result.IsDurable.Should().BeFalse();
@@ -140,7 +144,11 @@ public sealed class AdminOperationApprovalBridgeTests
         var result = await bridge.CreateProposalAsync(
             Descriptor(),
             Request(),
-            Context(),
+            Context() with
+            {
+                ScopeGoverned = true,
+                RecognizedScopes = ["honua.mcp.update"],
+            },
             Decision());
 
         result.IsDurable.Should().BeTrue();
@@ -150,7 +158,30 @@ public sealed class AdminOperationApprovalBridgeTests
         captured!.OperationId.Should().Be("admin.test");
         captured.OperationInstanceId.Should().Be("opinst-123");
         captured.CorrelationId.Should().Be("corr-123");
+        captured.ScopeGoverned.Should().BeTrue();
+        captured.RecognizedScopes.Should().Equal("honua.mcp.update");
         captured.OperationInstanceId.Should().NotBe(result.ProposalId);
+    }
+
+    [UnitTest]
+    public async Task CreateProposalAsync_ScopeGovernedWithoutRecognizedScopes_FailsBeforePersistence()
+    {
+        var gateway = Substitute.For<IOperationGateway>();
+        var services = new ServiceCollection()
+            .AddSingleton(gateway)
+            .AddSingleton(AllowApprovalGuardrail())
+            .BuildServiceProvider();
+
+        var result = await CreateBridge(services).CreateProposalAsync(
+            Descriptor(),
+            Request(),
+            Context() with { ScopeGoverned = true },
+            Decision());
+
+        result.IsDurable.Should().BeFalse();
+        result.Reason.Should().Contain("no recognized scope authority");
+        await gateway.DidNotReceiveWithAnyArgs()
+            .CreateApprovalProposalAsync(default!, default!, default);
     }
 
     [UnitTest]

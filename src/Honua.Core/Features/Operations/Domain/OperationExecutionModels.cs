@@ -122,6 +122,12 @@ public sealed record OperationPolicyContext
     /// default ignores them. Empty for an unauthenticated or role-less caller.
     /// </summary>
     public IReadOnlyList<string> Roles { get; init; } = [];
+
+    /// <summary>Whether the invoking authority is narrowed by OAuth scopes.</summary>
+    public bool ScopeGoverned { get; init; }
+
+    /// <summary>Normalized recognized OAuth scopes forming the invocation's upper bound.</summary>
+    public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
 }
 
 /// <summary>

@@ -411,6 +411,8 @@ internal sealed class StudioDraftMutationRuntime(
                 RequestedBy = context.PrincipalId,
                 CorrelationId = context.CorrelationId,
                 IdempotencyKey = ScopeIdempotencyKey(context),
+                ScopeGoverned = context.ScopeGoverned,
+                RecognizedScopes = context.RecognizedScopes,
             },
         };
         var handle = await invoker.SubmitAsync(request, new OperationPolicyContext
@@ -422,6 +424,8 @@ internal sealed class StudioDraftMutationRuntime(
             IdempotencyKey = ScopeIdempotencyKey(context),
             AuthorizationOutcome = context.AuthorizationOutcome,
             Roles = context.Roles,
+            ScopeGoverned = context.ScopeGoverned,
+            RecognizedScopes = context.RecognizedScopes,
         }, cancellationToken).ConfigureAwait(false);
 
         var durable = await instanceStore.GetAsync(handle.OperationInstanceId, cancellationToken).ConfigureAwait(false)

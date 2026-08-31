@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
@@ -119,6 +120,37 @@ public sealed class ProposeOperationToolTests
         var result = await tool.InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
 
         result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /mcp tools/call honua_propose_operation")]
+    public async Task ProposeOperation_ReadScopedBearer_CannotProposeDeploy()
+    {
+        var gateway = new FakeGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, default, "test"),
+            ProposalId = "must-not-be-created",
+        });
+        var context = ContextWithGateway(gateway);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "agent-x"),
+            new Claim(OperatorScopeCatalog.ScopeGovernedClaimType, OperatorScopeCatalog.ScopeGovernedClaimValue),
+            new Claim(OperatorScopeCatalog.ScopeClaimType, OperatorScopeCatalog.Read),
+        ], "Bearer"));
+        var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument { Kind = "Deploy" },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        var content = result.StructuredContent!.Value;
+        content.GetProperty("outcome").GetString().Should().Be("rejected");
+        content.GetProperty("message").GetString().Should().Contain(OperatorScopeCatalog.Publish);
+        gateway.ProposalCalls.Should().Be(0);
     }
 
     [UnitTest]
