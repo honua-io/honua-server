@@ -259,21 +259,20 @@ jobs:
                 'to enable it. Codex remains the only attesting reviewer until then.');
             }
 
-            // Dedupe ONLY a duplicate clean attestation for this exact head. A
-            // prior findings run must never suppress a re-review, and neither
-            // must a stale attestation for an older head.
             const { buildCleanCommentBody } = require('./scripts/ci/claude-review-body');
             const cleanBody = buildCleanCommentBody(head);
-            const { ATTESTING_LOGINS } = require('./scripts/ci/review-gate-evidence');
-            const comments = await github.paginate(
-              github.rest.issues.listComments,
-              { ...context.repo, issue_number: number, per_page: 100 },
-            );
-            const normalise = text => String(text || '').replace(/\r/g, '').trimEnd();
-            if (comments.some(comment =>
-              ATTESTING_LOGINS.includes(comment.user?.login) &&
-              normalise(comment.body) === normalise(cleanBody))) {
-              return skip(`PR #${number} already carries a clean Claude attestation for ${head}.`);
+            const { findCompletedClaudeReview } = require('./scripts/ci/claude-review-dedupe');
+            const prior = await findCompletedClaudeReview({
+              github,
+              repo: context.repo,
+              pullNumber: number,
+              head,
+            });
+            if (prior.completed) {
+              const kind = prior.clean ? 'clean evidence' : 'inline findings';
+              core.summary.addRaw(`PR #${number} already reviewed at ${head} (${kind}).`);
+              await core.summary.write();
+              return skip(`PR #${number} already reviewed at ${head} (${kind}).`);
             }
 
             require('node:fs').mkdirSync('review-input', { recursive: true });
@@ -660,4 +659,3 @@ jobs:
             exit 0
           fi
           echo "pr_gate_green=true" >> "${GITHUB_OUTPUT}"
-
