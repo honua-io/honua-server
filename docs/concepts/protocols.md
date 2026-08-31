@@ -69,7 +69,7 @@ Honua implements the ArcGIS GeoServices REST contract so Esri clients connect wi
   `POST /rest/services/Utilities/Geometry/GeometryServer/buffer`
 - **GPServer** — catalog-backed task discovery, async `submitJob`, job polling, cancellation, per-parameter results over the canonical process runtime.
   `POST /rest/services/analysis/GPServer/geometry.buffer/submitJob`
-- **Portal token issuance** — `POST /sharing/rest/generateToken` exchanges username/password for an opaque token presented via `?token=`, `Authorization: Bearer`, or `X-Esri-Authorization: Bearer`. See [Authentication](../guides/secure/authentication.md).
+- **Portal token issuance** — `POST /sharing/rest/generateToken` exchanges username/password for an opaque token presented via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. See [Authentication](../guides/secure/authentication.md).
 
 ## OGC API
 
