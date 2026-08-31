@@ -210,9 +210,9 @@ public sealed class PublishedOperationToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
-    public async Task Invoke_OperatorGate_FailsClosedWithoutExecuting()
+    public async Task Invoke_OperatorGate_ReturnsDurableProposalWithoutActuating()
     {
-        var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
+        var invoker = new CountingInvoker(_ => ApprovalHandle(MutatingOpId));
         var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
 
         var result = await tool.InvokeAsync(
@@ -225,11 +225,12 @@ public sealed class PublishedOperationToolTests
             CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
-        result.IsError.Should().BeTrue();
-        body.GetProperty("status").GetString().Should().Be("error");
-        body.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
-        body.GetProperty("policyRef").GetString().Should().Be($"operations/{MutatingOpId}");
-        invoker.SubmitCount.Should().Be(0, "operator-gated MCP operations must fail closed before dispatch");
+        result.IsError.Should().BeFalse();
+        body.GetProperty("status").GetString().Should().Be("RequiresApproval");
+        body.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+        body.GetProperty("proposalId").GetString().Should().Be("proposal-typed-1");
+        body.GetProperty("auditId").GetString().Should().Be("audit-typed-1");
+        invoker.SubmitCount.Should().Be(1, "the canonical runtime must durably create the proposal");
     }
 
     [UnitTest]
@@ -258,19 +259,19 @@ public sealed class PublishedOperationToolTests
 
     [UnitTest]
     [Endpoint("POST /mcp tools/call honua_op_geo_export")]
-    public async Task Invoke_ApprovalGatedInstallation_FailsClosedBeforeInvoker()
+    public async Task Invoke_ApprovalGatedInstallation_UsesCanonicalProposalRuntime()
     {
-        var invoker = new CountingInvoker(_ => CompletedHandle(MutatingOpId));
+        var invoker = new CountingInvoker(_ => ApprovalHandle(MutatingOpId));
 
         var tool = new PublishedOperationTool(MutatingDescriptor(), "cat-v1", NullLogger.Instance);
         var result = await tool.InvokeAsync(Context(invoker), Args("""{"layerId":"7"}"""), CancellationToken.None);
 
         var body = result.StructuredContent!.Value;
-        result.IsError.Should().BeTrue();
-        body.GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.FailedPrecondition);
-        body.GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
-        body.GetProperty("policyRef").GetString().Should().Be("operations/geo.export");
-        invoker.SubmitCount.Should().Be(0, "approval-gated MCP calls must not reach IOperationInvoker");
+        result.IsError.Should().BeFalse();
+        body.GetProperty("status").GetString().Should().Be("RequiresApproval");
+        body.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+        body.GetProperty("proposalId").GetString().Should().Be("proposal-typed-1");
+        invoker.SubmitCount.Should().Be(1, "approval-gated calls must use the canonical invoker and its durable bridge");
     }
 
     [UnitTest]
@@ -812,6 +813,20 @@ public sealed class PublishedOperationToolTests
             Summary = "ok",
             Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["rows"] = "3" },
         },
+    };
+
+    private static OperationHandle ApprovalHandle(string operationId) => new()
+    {
+        OperationId = operationId,
+        OperationInstanceId = "op-typed-1",
+        CorrelationId = "corr-typed-1",
+        AuditId = "audit-typed-1",
+        ProposalId = "proposal-typed-1",
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
+        Status = OperationHandleStatus.RequiresApproval,
+        AuthorizationOutcome = "authorized",
+        PolicyDecision = PolicyDecisionKind.RequireApproval,
     };
 
     private static OperationDescriptor DeterministicReadOnlyDescriptor() => new()
