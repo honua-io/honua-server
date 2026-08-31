@@ -49,6 +49,7 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     private PostgresFixture? _postgres;
     private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
+    private readonly Dictionary<Type, object> _scopedServiceOverrides = [];
     private Action<IWebHostBuilder>? _configureWebHost;
     private WebApplicationFactory<Program>? _factory;
     private string? _currentSchema;
@@ -57,6 +58,7 @@ public sealed class WebAppFixture : IAsyncLifetime
     private string? _seedPath;
     private string? _seedProfile;
     private IServiceScope? _serviceScope;
+    private string? _serviceOverrideScopeId;
 
     /// <summary>
     /// Test service ID used for testing operations.
@@ -366,6 +368,14 @@ public sealed class WebAppFixture : IAsyncLifetime
         await Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin
             .EnsureInitializedAsync(SharedAdminPassword);
 
+        if (_scopedServiceOverrides.Count > 0)
+        {
+            _serviceOverrideScopeId = Guid.NewGuid().ToString("N");
+            Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services
+                .GetRequiredService<ScopedServiceOverrideRegistry>()
+                .Add(_serviceOverrideScopeId, _scopedServiceOverrides);
+        }
+
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
             _currentSchema = await Postgres.CreateIsolatedSchemaAsync(nameof(WebAppFixture));
@@ -388,6 +398,14 @@ public sealed class WebAppFixture : IAsyncLifetime
 
         if (_useSharedServer)
         {
+            if (_serviceOverrideScopeId is not null)
+            {
+                Honua.TestKit.Mixins.WebAppFixtureSharedBootstrapMixin.Factory.Services
+                    .GetRequiredService<ScopedServiceOverrideRegistry>()
+                    .Remove(_serviceOverrideScopeId);
+                _serviceOverrideScopeId = null;
+            }
+
             if (_currentSchema is not null)
             {
                 await Postgres.DropSchemaAsync(_currentSchema);
@@ -492,10 +510,29 @@ public sealed class WebAppFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Replaces a request-resolved service for this fixture while reusing the shared
+    /// application host. This opt-in is limited to concrete instances resolved directly
+    /// from <c>HttpContext.RequestServices</c>; constructor-graph and hosted-service
+    /// replacements must continue to use <see cref="ReplaceService{TService}(TService)"/>.
+    /// </summary>
+    public WebAppFixture ReplaceRequestService<TService>(TService instance)
+        where TService : class
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        _scopedServiceOverrides[typeof(TService)] = instance;
+        return this;
+    }
+
+    /// <summary>
     /// Get a service from the test server's DI container.
     /// </summary>
     public T GetService<T>() where T : notnull
     {
+        if (_useSharedServer && _scopedServiceOverrides.TryGetValue(typeof(T), out var scopedOverride))
+        {
+            return (T)scopedOverride;
+        }
+
         var provider = _serviceScope?.ServiceProvider
             ?? throw new InvalidOperationException("Service scope not initialized.");
 
@@ -507,6 +544,11 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// </summary>
     public T? GetOptionalService<T>() where T : class
     {
+        if (_useSharedServer && _scopedServiceOverrides.TryGetValue(typeof(T), out var scopedOverride))
+        {
+            return (T)scopedOverride;
+        }
+
         return _serviceScope?.ServiceProvider.GetService<T>();
     }
 
@@ -662,6 +704,14 @@ public sealed class WebAppFixture : IAsyncLifetime
 
     private void ApplyCurrentSchemaHeader(HttpClient client)
     {
+        if (_serviceOverrideScopeId is not null)
+        {
+            client.DefaultRequestHeaders.Remove(ScopedServiceOverrideRegistry.HeaderName);
+            client.DefaultRequestHeaders.Add(
+                ScopedServiceOverrideRegistry.HeaderName,
+                _serviceOverrideScopeId);
+        }
+
         if (string.IsNullOrWhiteSpace(_currentSchema))
         {
             return;
