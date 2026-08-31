@@ -2,9 +2,8 @@ import importlib.util
 import json
 import os
 import tempfile
-import unittest
 from pathlib import Path
-from unittest import mock
+from unittest import TestCase, main, mock
 
 
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "ci" / "serving-image-reuse.py"
@@ -16,7 +15,7 @@ SPEC.loader.exec_module(MODULE)
 DIGEST = "a" * 64
 
 
-class ServingImageReuseTests(unittest.TestCase):
+class ServingImageReuseTests(TestCase):
     def test_disabled_is_always_a_truthful_rebuild(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "marker.json"
@@ -89,4 +88,4 @@ class ServingImageReuseTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()

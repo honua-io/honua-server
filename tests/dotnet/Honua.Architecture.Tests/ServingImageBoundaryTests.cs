@@ -344,7 +344,11 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("serving-image-reuse.py decide");
         workflow.Should().Contain("steps.reuse.outputs.skip != 'true'");
         workflow.Should().Contain("GITHUB_STEP_SUMMARY");
-        workflow.Should().Contain("honua-serving-image-verification-v1-");
+        workflow.Should().Contain("freshness_epoch: ${{ steps.freshness.outputs.value }}");
+        workflow.Should().Contain("date -u +%Y-%m-%d");
+        workflow.Should().Contain("honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-");
+        workflow.Should().Contain("continue-on-error: true", Exactly.Twice(),
+            "optional marker cache transport must fail open for restore and save");
 
         var functionsDockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.functions.aot"));
         functionsDockerfile.Should().Contain("-p:HonuaSkipOracleForAotVerification=true", Exactly.Thrice());

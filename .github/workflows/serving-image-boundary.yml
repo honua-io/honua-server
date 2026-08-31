@@ -68,6 +68,7 @@ jobs:
     outputs:
       selected: ${{ steps.impact.outputs.selected }}
       input_digests: ${{ steps.digests.outputs.value }}
+      freshness_epoch: ${{ steps.freshness.outputs.value }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -147,6 +148,14 @@ jobs:
           echo "value=${value}" >> "${GITHUB_OUTPUT}"
           echo "Serving-image input digests: ${value}"
 
+      # Docker builds resolve mutable apt/apk repositories and, for Functions,
+      # the current .NET 10 channel. Bound successful evidence to one UTC day
+      # so a later run cannot reuse it indefinitely after upstream inputs move.
+      - name: Bound mutable-input freshness
+        id: freshness
+        shell: bash
+        run: echo "value=$(date -u +%Y-%m-%d)" >> "${GITHUB_OUTPUT}"
+
   build-and-verify:
     name: Build and verify ${{ matrix.description }}
     needs: detect
@@ -192,6 +201,7 @@ jobs:
       # table as JSON inside `detect` and hiding the variant set from review.
       IMPACTED: ${{ contains(fromJSON(needs.detect.outputs.selected), matrix.variant) }}
       INPUT_DIGEST: ${{ fromJSON(needs.detect.outputs.input_digests)[matrix.digest_key] }}
+      FRESHNESS_EPOCH: ${{ needs.detect.outputs.freshness_epoch }}
       SKIP_ENABLED: ${{ vars.HONUA_SERVING_IMAGE_SKIP == 'true' }}
       MARKER_PATH: .serving-image-verification/${{ matrix.variant }}/marker.json
     steps:
@@ -203,10 +213,13 @@ jobs:
       - name: Restore exact verification marker
         id: verification-marker
         if: env.IMPACTED == 'true'
+        # Evidence reuse is optional. Cache outages or corrupt archives must
+        # fall through to the authoritative build-and-verify path below.
+        continue-on-error: true
         uses: actions/cache/restore@v6
         with:
           path: ${{ env.MARKER_PATH }}
-          key: honua-serving-image-verification-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
+          key: honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
           lookup-only: false
 
       - name: Decide content-addressed verification reuse
@@ -304,10 +317,13 @@ jobs:
 
       - name: Save exact verification marker
         if: env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true'
+        # A cache-service failure after successful verification must not turn
+        # optional future reuse into a failure of the current verification.
+        continue-on-error: true
         uses: actions/cache/save@v6
         with:
           path: ${{ env.MARKER_PATH }}
-          key: honua-serving-image-verification-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
+          key: honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.variant }}-${{ env.INPUT_DIGEST }}
 
       - name: Clean up serving-image smoke container
         if: always() && env.IMPACTED == 'true' && steps.reuse.outputs.skip != 'true' && matrix.variant == 'generic'
