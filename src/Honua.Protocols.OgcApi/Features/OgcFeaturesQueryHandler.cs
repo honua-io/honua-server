@@ -1023,7 +1023,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberReturned", features.Length);
         writer.WritePropertyName("links");
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
-        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteString("timeStamp", FormatFixedWidthTimestamp(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
         writer.Flush();
 
@@ -1078,7 +1078,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberReturned", features.Length);
         writer.WritePropertyName("links");
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
-        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteString("timeStamp", FormatFixedWidthTimestamp(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
         writer.Flush();
 
@@ -1342,6 +1342,16 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Serializes a timestamp at a fixed width (invariant round-trip format with all seven
+    /// fractional digits). Utf8JsonWriter's DateTimeOffset overload trims trailing zeros,
+    /// which makes the payload LENGTH vary between otherwise-identical requests — so a
+    /// HEAD's Content-Length and a GET's body, generated independently, could disagree by
+    /// a byte and break clients (GDAL /vsicurl) that size the payload from HEAD (#3674).
+    /// </summary>
+    private static string FormatFixedWidthTimestamp(DateTimeOffset value)
+        => value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+
     private static bool TryGetJsonPropertyIgnoreCase(JsonElement element, string propertyName, out JsonProperty property)
     {
         foreach (var candidate in (element.EnumerateObject()).Where(candidate => candidate.NameEquals(propertyName) || string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase)))
@@ -1420,7 +1430,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var links = buildLinks(hasMoreResults);
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
 
-        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteString("timeStamp", FormatFixedWidthTimestamp(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
