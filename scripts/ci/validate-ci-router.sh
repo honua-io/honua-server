@@ -266,7 +266,7 @@ assert_descriptor \
   "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs" \
   "targeted" \
   "false" \
-  "FeatureServer Endpoints"
+  "FeatureServer Endpoints Query Services and Replication"
 
 assert_descriptor \
   "shared-infrastructure" \
@@ -394,11 +394,11 @@ assert_excludes_shard \
   "GeoServices ImageServer"
 
 # Conversely, a single GeoServices ImageServer change targets ImageServer and
-# must EXCLUDE the FeatureServer Endpoints shard.
+# must EXCLUDE the FeatureServer Endpoints Query Services and Replication shard.
 assert_excludes_shard \
   "imageserver-excludes-featureserver" \
   "src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs" \
-  "FeatureServer Endpoints"
+  "FeatureServer Endpoints Query Services and Replication"
 
 # An OData-only feature change targets the OData shard family (targeted, not
 # run_all) and excludes an unrelated protocol shard.
@@ -417,7 +417,7 @@ assert_descriptor \
 assert_excludes_shard \
   "scene-excludes-featureserver" \
   "src/Honua.Protocols.Scene/SceneServerEndpoints.cs" \
-  "FeatureServer Endpoints"
+  "FeatureServer Endpoints Query Services and Replication"
 
 # A Geocoding (GeocodeServer) change targets the dedicated Geocoding shard and
 # excludes unrelated shards. Before this shard existed, geocoding source lived
@@ -490,7 +490,7 @@ assert_descriptor \
   "src/Honua.Hosting/Features/Tiles/TilePackageWriter.cs" \
   "targeted" \
   "false" \
-  "Geometry Tiles and Terrain"
+  "Raster Serving Scene Geometry and Terrain"
 assert_descriptor \
   "hosting-tiles-includes-imageserver" \
   "src/Honua.Hosting/Features/Tiles/TilePackageWriter.cs" \
@@ -546,7 +546,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Core","Geometry Tiles and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance"]'
+  '["Core","Raster Serving Scene Geometry and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance"]'
 
 # Follow-up proof from draft PR #2700: pure routing tests share the Core owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
@@ -617,18 +617,18 @@ assert_descriptor \
 # retained a shared source-path list after their filters diverged, so the Zarr
 # registrar was routed to the one shard whose filter could actually discover its
 # tests — then the Misc catch-all. #3271 gave Zarr (with COG and Coverages) a
-# real owner, `Raster Serving`; the exclusions below still pin the carved shards
+# real owner, `Raster Serving Scene Geometry and Terrain`; the exclusions below still pin the carved shards
 # out, and the exact-owner assertion now names the raster shard.
 assert_exact_shards \
   "zarr-server-source-exact-owner" \
   "src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs" \
-  '["Raster Serving"]'
+  '["Raster Serving Scene Geometry and Terrain"]'
 # Per-shard exclusion assertions for this path were dropped in #3229 as redundant
 # against the exact-set assertion above; the same reasoning applies to the raster
 # owners added below.
 
 # #3271: the three raster-SERVING protocol adapters route to one owning shard.
-# COG used to land in `Cloud & Contract` (a cloud-provider/contract bucket) and
+# COG used to land in `Infrastructure and Control Plane` (a cloud-provider/contract bucket) and
 # Coverages in the Misc catch-all, so a raster-serving regression surfaced
 # somewhere unrelated or inside a 60-minute shard. Coverages also carried the
 # same #2709 leftover as Zarr — shards carved out of Misc kept its source path
@@ -636,29 +636,29 @@ assert_exact_shards \
 assert_exact_shards \
   "cog-server-source-exact-owner" \
   "src/Honua.Server/Features/Protocols/Cog/CogEndpoints.cs" \
-  '["Raster Serving"]'
+  '["Raster Serving Scene Geometry and Terrain"]'
 assert_exact_shards \
   "coverages-server-source-exact-owner" \
   "src/Honua.Server/Features/Protocols/Coverages/Multidimensional/MultidimensionalCoverageEndpoints.cs" \
-  '["Raster Serving"]'
+  '["Raster Serving Scene Geometry and Terrain"]'
 # The test file itself also sits under the broad tests/.../Features/ prefix that
 # the Misc catch-all family claims, so an exact-set assertion does not apply:
 # assert INCLUSION of the new owner plus the exclusion that actually moved —
-# Cloud & Contract no longer runs COG.
+# Infrastructure and Control Plane no longer runs COG.
 assert_descriptor \
   "cog-test-source-includes-raster-serving" \
   "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogEndpointTests.cs" \
   "targeted" \
   "false" \
-  "Raster Serving"
+  "Raster Serving Scene Geometry and Terrain"
 assert_excludes_shard \
   "cog-test-source-excludes-cloud-contract" \
   "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogEndpointTests.cs" \
-  "Cloud & Contract"
+  "Infrastructure and Control Plane"
 
 # Representative cumulative diff from #2702: shared raster changes retain the
 # ImageServer/coverage/WCS owners, while the server Zarr registrar adds only its
-# executable owner — the `Raster Serving` shard since #3271 (previously the Misc
+# executable owner — the `Raster Serving Scene Geometry and Terrain` shard since #3271 (previously the Misc
 # catch-all).
 assert_exact_shards \
   "zarr-point-slice-cumulative-batch" \
@@ -668,7 +668,7 @@ assert_exact_shards \
       'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs' \
       'src/Honua.Server/Features/Protocols/Zarr/ZarrServiceCollectionExtensions.cs' \
       'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerZarrTestFixture.cs')" \
-  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Raster Serving","WFS"]'
+  '["GeoServices ImageServer","OGC API Tiles Coverages and Processes","Raster Serving Scene Geometry and Terrain","WFS"]'
 
 # Narrowing Zarr must not remove the carved shards' actual feature-area paths.
 assert_descriptor \
@@ -776,6 +776,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "STAC and API Governance"
+assert_descriptor \
+  "endpoint-registry-includes-mcp-sessions" \
+  "src/Honua.Server/EndpointRegistry.cs" \
+  "targeted" \
+  "false" \
+  "MCP Sessions"
 assert_excludes_shard \
   "endpoint-registry-excludes-wfs-endpoints" \
   "src/Honua.Server/EndpointRegistry.cs" \
@@ -787,7 +793,13 @@ assert_descriptor \
   "src/Honua.Server/Program.cs" \
   "targeted" \
   "false" \
-  "FeatureServer Endpoints"
+  "FeatureServer Endpoints Query Services and Replication"
+assert_descriptor \
+  "program-registration-includes-mcp-sessions" \
+  "src/Honua.Server/Program.cs" \
+  "targeted" \
+  "false" \
+  "MCP Sessions"
 
 # Startup/JsonContextRegistration.cs sits under the infrastructure_paths prefix
 # src/Honua.Server/Startup/ but the override must WIN so a JSON-context tweak
@@ -798,6 +810,12 @@ assert_descriptor \
   "targeted" \
   "false" \
   "OData Core"
+assert_descriptor \
+  "jsoncontext-registration-includes-mcp-sessions" \
+  "src/Honua.Server/Startup/JsonContextRegistration.cs" \
+  "targeted" \
+  "false" \
+  "MCP Sessions"
 
 # The shared WMTS TopLeftCorner formatter has three bounded consumers. Keep a
 # change to that exact file on the classic WMTS, OGC API Tiles, and ImageServer
@@ -845,7 +863,7 @@ assert_descriptor \
 assert_excludes_shard \
   "hosting-authentication-excludes-featureserver" \
   "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
-  "FeatureServer Endpoints"
+  "FeatureServer Endpoints Query Services and Replication"
 
 # A Honua.Hosting/Features/Security/ change -> same auth/security shards.
 assert_descriptor \
@@ -930,7 +948,7 @@ assert_descriptor \
 assert_excludes_shard \
   "raster-core-excludes-featureserver" \
   "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
-  "FeatureServer Endpoints"
+  "FeatureServer Endpoints Query Services and Replication"
 
 # #1944 collaboration: src/Honua.Server/Features/Collaboration/ (and the Core
 # slice) is owned by the Server Features Misc catch-all (Features.Collaboration.*
@@ -959,7 +977,7 @@ assert_descriptor \
       'src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerQueryHandler.cs')" \
   "targeted" \
   "false" \
-  "FeatureServer Query"
+  "FeatureServer Endpoints Query Services and Replication"
 # Its own OData query path is included too.
 assert_descriptor \
   "hosting-output-format-services-includes-odata" \
@@ -973,7 +991,7 @@ assert_descriptor \
 # the Admin OAuth endpoints by the Admin & Console shard (Features.Admin.*), and
 # the Hosting/Features/Authentication override routes to the auth/security
 # shards. The combined PR is targeted, NOT run_all, and runs its own tests'
-# shards (Server Features Admin Authentication for OAuthClientEndpointsTests).
+# shards (Server Features Admin Authentication and Credentials for OAuthClientEndpointsTests).
 assert_descriptor \
   "oauth-sharing-source-targeted" \
   "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs" \
@@ -985,17 +1003,13 @@ assert_descriptor \
   "src/Honua.Server/Features/Admin/OAuthClientEndpoints.cs" \
   "targeted" \
   "false" \
-  "Server Features Admin Authentication"
-assert_excludes_shard \
-  "oauth-admin-excludes-credentials-child" \
-  "src/Honua.Server/Features/Admin/OAuthClientEndpoints.cs" \
-  "Server Features Admin Credentials"
+  "Server Features Admin Authentication and Credentials"
 assert_descriptor \
   "admin-api-key-targeted" \
   "src/Honua.Server/Features/Admin/AdminApiKeyEndpoints.cs" \
   "targeted" \
   "false" \
-  "Server Features Admin Credentials"
+  "Server Features Admin Authentication and Credentials"
 assert_descriptor \
   "tenant-admin-targeted" \
   "src/Honua.Server/Features/Admin/TenantAdminEndpoints.cs" \
@@ -1007,7 +1021,7 @@ assert_descriptor \
   "src/Honua.Server/Features/Admin/AdminEndpoints.cs" \
   "targeted" \
   "false" \
-  "Server Features Admin Authentication"
+  "Server Features Admin Authentication and Credentials"
 assert_descriptor \
   "identity-admin-owns-platform-provider-tests" \
   "src/Honua.Server/Features/Admin/IdentityAdminEndpoints.cs" \
@@ -1247,7 +1261,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Admin Authentication" \
+    "Server Features Admin Authentication and Credentials" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1284,8 +1298,18 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Misc" \
+  `# #3711: the session/transport fixtures move together to the static MCP` \
+  `# Sessions owner so the main MCP shard can return to its pre-#3664 cap.` \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP Sessions" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests" \
+    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
+    "MCP Sessions" \
   `# --- #3259: the 20 classes that matched no shard filter and never ran ---` \
-  `# Honua.Ai.Tests assembly -> MCP (the only shard targeting that csproj).` \
+  `# Honua.Ai.Tests assembly -> MCP family.` \
   --assert-owner \
     "Honua.Ai.Tests.Capabilities.CapabilityRegistryConformanceTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
@@ -1339,7 +1363,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.FeatureServer.Services.FeatureQuantizerTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
-    "FeatureServer Services" \
+    "FeatureServer Endpoints Query Services and Replication" \
   --assert-owner \
     "Honua.Protocols.GeoServices.Tests.Source.ImageServer.ImageServerRenderingRuleMappingTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
@@ -1354,23 +1378,23 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Import.AwsS3ShapefileImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "FileImport" \
+    "File and Raster Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.AwsS3UploadProgressTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "FileImport" \
+    "File and Raster Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.AzureBlobShapefileImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "FileImport" \
+    "File and Raster Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.ImportValidationErrorMessageTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "FileImport" \
+    "File and Raster Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.RedisJobQueueFallbackTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "FileImport" \
+    "File and Raster Import" \
   `# The FileImport clause '~Honua.Server.Tests.Import.EmulatorCloudStorage' was` \
   `# dangling: the classes in EmulatorCloudStorageImportTests.cs are named` \
   `# EmulatorAwsS3CloudStorageImportTests / EmulatorAzureBlobCloudStorageImportTests,` \
@@ -1379,30 +1403,30 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Import.EmulatorAwsS3CloudStorageImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "FileImport" \
+    "File and Raster Import" \
   --assert-owner \
     "Honua.Server.Tests.Import.EmulatorAzureBlobCloudStorageImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "FileImport" \
-  `# #3271 Raster Serving: the three raster-serving namespaces are pinned to the` \
+    "File and Raster Import" \
+  `# #3271 Raster Serving Scene Geometry and Terrain: the three raster-serving namespaces are pinned to the` \
   `# shard that now owns them, so a rename back into the Misc catch-all or the` \
-  `# Cloud & Contract bucket fails here rather than silently re-hiding them.` \
+  `# Infrastructure and Control Plane bucket fails here rather than silently re-hiding them.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Cog.CogEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Raster Serving" \
+    "Raster Serving Scene Geometry and Terrain" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Zarr.ZarrEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Raster Serving" \
+    "Raster Serving Scene Geometry and Terrain" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Raster Serving" \
+    "Raster Serving Scene Geometry and Terrain" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Coverages.Multidimensional.MultidimensionalCoverageEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Raster Serving"
+    "Raster Serving Scene Geometry and Terrain"
 else
   echo "⚠️  Skipping shard filter/test-class coverage checks (no working Python 3: tried python3/python/py)"
 fi
