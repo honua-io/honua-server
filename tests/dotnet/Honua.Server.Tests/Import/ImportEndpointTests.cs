@@ -577,17 +577,18 @@ public class ImportEndpointTests : IAsyncLifetime
             var importResult = JsonSerializer.Deserialize<ImportResult>(importPayload, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
-            });
-            importResult.Should().NotBeNull();
-            importResult!.Success.Should().BeTrue($"response: {importPayload}");
-            importResult.TableName.Should().Be(requestedTableName);
-            importResult.Schema.Should().Be("honua_data");
-            importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
-            importResult.PhysicalTableName!.Should().StartWith("imported_");
-            importResult.PhysicalTableName.Length.Should().BeLessThanOrEqualTo(40);
+            }) ?? throw new InvalidOperationException("Import response did not contain a result.");
             var importedPhysicalTableName = importResult.PhysicalTableName
                 ?? throw new InvalidOperationException("Successful import did not return its physical table name.");
             physicalTableName = importedPhysicalTableName;
+
+            importResult.Should().NotBeNull();
+            importResult.Success.Should().BeTrue($"response: {importPayload}");
+            importResult.TableName.Should().Be(requestedTableName);
+            importResult.Schema.Should().Be("honua_data");
+            importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
+            importResult.PhysicalTableName.Should().StartWith("imported_");
+            importResult.PhysicalTableName.Length.Should().BeLessThanOrEqualTo(40);
 
             await using (var connection = await _fixture.Postgres.GetConnectionAsync())
             {
@@ -721,16 +722,17 @@ public class ImportEndpointTests : IAsyncLifetime
             var importResult = JsonSerializer.Deserialize<ImportResult>(importPayload, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
-            });
+            }) ?? throw new InvalidOperationException("Import response did not contain a result.");
+            var physicalTableName = importResult.PhysicalTableName
+                ?? throw new InvalidOperationException("Successful import did not return its physical table name.");
+
             importResult.Should().NotBeNull();
-            importResult!.Success.Should().BeTrue($"response: {importPayload}");
+            importResult.Success.Should().BeTrue($"response: {importPayload}");
             importResult.TableName.Should().Be(requestedTableName);
             importResult.Schema.Should().Be(targetSchema);
             importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
-            importResult.PhysicalTableName!.Should().StartWith("imported_");
+            importResult.PhysicalTableName.Should().StartWith("imported_");
             importResult.PhysicalTableName.Length.Should().BeLessThanOrEqualTo(40);
-            var physicalTableName = importResult.PhysicalTableName
-                ?? throw new InvalidOperationException("Successful import did not return its physical table name.");
 
             await using (var connection = await _fixture.Postgres.GetConnectionAsync())
             {
