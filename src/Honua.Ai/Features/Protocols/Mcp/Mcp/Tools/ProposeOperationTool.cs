@@ -4,6 +4,8 @@
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,8 +13,8 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 
 /// <summary>
 /// MCP tool that proposes an in-scope mutating control-plane operation through the
-/// shared <see cref="IOperationGateway"/>. When the guardrail tier is
-/// <c>RequiresApproval</c> the tool returns a structured result carrying a
+/// shared <see cref="IOperationGateway"/>. The model-facing contract always creates
+/// an approval proposal and returns a structured result carrying a
 /// <c>proposalId</c> and the <c>honua://proposals/{id}</c> resource URI so the
 /// agent can poll until a human resolves it, rather than failing (#1696).
 /// </summary>
@@ -37,8 +39,8 @@ internal sealed class ProposeOperationTool : IMcpTool
     {
         Name = ToolName,
         Title = "Propose operation",
-        Description = "Propose an in-scope mutating control-plane operation (admin config change, deploy, metadata release, or seed). "
-            + "Returns the execution result directly when the edition permits, or a proposalId plus honua://proposals/{id} resource URI when human approval is required.",
+        Description = "Propose a deploy or metadata-release operation for governed approval. "
+            + "This model-facing tool never executes an operation directly.",
         InputSchema = McpToolSchemas.ProposeOperationArgumentSchema,
         OutputSchema = McpToolOutputSchemas.ProposeOperationOutputSchema,
         // Write tool: it routes a mutating control-plane operation through the
@@ -64,6 +66,7 @@ internal sealed class ProposeOperationTool : IMcpTool
         // learns the real supported set instead of hitting a silent dead end.
         var catalog = httpContext.RequestServices.GetService<IOperationExecutorCatalog>();
         var supportedKinds = catalog?.SupportedKinds
+            .Where(McpProposableOperationKinds.Contains)
             .Select(supportedKind => supportedKind.ToString())
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
@@ -78,7 +81,20 @@ internal sealed class ProposeOperationTool : IMcpTool
                     Outcome = "rejected",
                     RequiresApproval = false,
                     SupportedKinds = supportedKinds,
-                    Message = "Unknown or missing operation 'kind'. Expected one of: AdminConfigChange, Deploy, MetadataRelease, Seed."
+                    Message = "Unknown or missing operation 'kind'. Expected one of: Deploy, MetadataRelease."
+                },
+                McpJsonContext.Default.McpProposeOperationOutput);
+        }
+
+        if (!McpProposableOperationKinds.Contains(kind))
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpProposeOperationOutput
+                {
+                    Outcome = "rejected",
+                    RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
+                    Message = $"Operation kind '{kind}' is not safely representable by this generic proposal surface."
                 },
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
@@ -108,7 +124,37 @@ internal sealed class ProposeOperationTool : IMcpTool
             ExecutionPayload = argument.ExecutionPayload,
         };
 
-        var result = await gateway.RouteAsync(request, cancellationToken).ConfigureAwait(false);
+        var envelopeFactory = httpContext.RequestServices.GetService<IOperationEnvelopeFactory>();
+        if (envelopeFactory is null)
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpProposeOperationOutput
+                {
+                    Outcome = "unavailable",
+                    RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
+                    Message = "The canonical operation envelope runtime is unavailable."
+                },
+                McpJsonContext.Default.McpProposeOperationOutput);
+        }
+
+        var accepted = await envelopeFactory.CreateAcceptedAsync(
+            $"control-plane.{kind.ToString().ToLowerInvariant()}",
+            new OperationPolicyContext
+            {
+                PrincipalId = actor,
+                IdempotencyKey = argument.IdempotencyKey,
+                AuthorizationOutcome = "mcp-authorized",
+            },
+            cancellationToken).ConfigureAwait(false);
+        var result = await gateway.CreateApprovalProposalAsync(
+            accepted.OperationInstanceId,
+            request with
+            {
+                OperationInstanceId = accepted.OperationInstanceId,
+                CorrelationId = accepted.CorrelationId,
+            },
+            cancellationToken).ConfigureAwait(false);
 
         var output = new McpProposeOperationOutput
         {
