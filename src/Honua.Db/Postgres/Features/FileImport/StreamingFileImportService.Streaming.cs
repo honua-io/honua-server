@@ -24,7 +24,7 @@ internal sealed partial class StreamingFileImportService
     /// <summary>
     /// Stream features from source and insert into database in batches.
     /// </summary>
-    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues)> ImportStreamingAsync(
+    private async Task<(int imported, int failed, int repaired, string[] warnings, IReadOnlyList<ImportValidationIssue> rowIssues, string physicalTableName)> ImportStreamingAsync(
         ImportRequest request,
         Stream fileStream,
         SupportedFileFormat format,
@@ -39,8 +39,9 @@ internal sealed partial class StreamingFileImportService
         await using var connection = await OpenConnectionAsync(cancellationToken);
 
         // Validate and prepare table
-        var allowedTableName = GetAllowedTableName(request.TableName);
         var targetSchema = ResolveTargetSchema(request.TargetSchema);
+        var allowedTableName = await ResolvePhysicalTableNameAsync(
+            connection, targetSchema, request.TableName, cancellationToken);
         var loadMode = request.EffectiveLoadMode;
 
         // The load mode determines which physical table the batches stream into and how
@@ -307,7 +308,7 @@ internal sealed partial class StreamingFileImportService
             CurrentPhase = "Import completed"
         });
 
-        return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues);
+        return (totalImported, totalFailed, repairTally.Repaired, completionWarnings, rowIssues, allowedTableName);
     }
 
     private void RecordImportMetrics(
