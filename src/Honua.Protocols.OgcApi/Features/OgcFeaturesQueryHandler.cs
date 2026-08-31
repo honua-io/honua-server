@@ -1023,7 +1023,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberReturned", features.Length);
         writer.WritePropertyName("links");
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
-        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
         writer.Flush();
 
@@ -1078,7 +1078,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberReturned", features.Length);
         writer.WritePropertyName("links");
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
-        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
         writer.Flush();
 
@@ -1420,7 +1420,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var links = buildLinks(hasMoreResults);
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
 
-        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
