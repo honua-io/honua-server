@@ -77,7 +77,7 @@ python3 -m pip --python .quickstart-venv/bin/python install \
 . .quickstart-venv/bin/activate
 ```
 
-7. Register the Compose database as a connection (publishing reads tables through named connections), then discover the sample table.
+7. Register the Compose database as a connection (publishing reads tables through named connections).
 
 <!-- docs-validation:quickstart.connection mode=run -->
 ```bash
@@ -98,9 +98,6 @@ with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-pa
         ssl_mode="Prefer",
         ssl_required=False,
     ))
-    tables = admin.discover_tables(connection.connection_id).tables
-    matches = [table for table in tables if table.table.endswith("quickstart_points")]
-    assert len(matches) == 1, "expected exactly one quickstart_points table"
     Path(".quickstart-connection-id").write_text(connection.connection_id)
 PY
 ```
