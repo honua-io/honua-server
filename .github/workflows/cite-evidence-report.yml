@@ -19,6 +19,30 @@ on:
         required: false
         type: boolean
         default: false
+      server_image:
+        description: 'Optional immutable candidate image (image@sha256:digest)'
+        required: false
+      source_sha:
+        description: 'Full source SHA represented by server_image'
+        required: false
+      candidate_cut:
+        description: 'RFC 3339 candidate cut timestamp'
+        required: false
+  workflow_call:
+    inputs:
+      publish_pages:
+        required: false
+        type: boolean
+        default: false
+      server_image:
+        required: false
+        type: string
+      source_sha:
+        required: false
+        type: string
+      candidate_cut:
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -58,7 +82,34 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Pull and verify exact candidate image
+        if: inputs.server_image != ''
+        env:
+          SERVER_IMAGE: ${{ inputs.server_image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$SERVER_IMAGE" =~ ^ghcr\.io/honua-io/honua-server@sha256:[0-9a-f]{64}$ ]] || {
+            echo '::error::server_image must be the canonical lowercase immutable GHCR digest reference'; exit 1;
+          }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo '::error::source_sha must be a full lowercase commit'; exit 1;
+          }
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null
+          docker pull "$SERVER_IMAGE"
+          docker tag "$SERVER_IMAGE" honua-server:latest
+          revision="$(docker image inspect honua-server:latest --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          [[ "$revision" == "$SOURCE_SHA" ]] || {
+            echo '::error::candidate image revision label does not match source_sha'; exit 1;
+          }
+          docker image inspect honua-server:latest --format '{{json .RepoDigests}}' |
+             jq -e --arg digest "${SERVER_IMAGE##*@}" 'any(.[]; endswith("@" + $digest))' >/dev/null || {
+               echo '::error::pulled image inspection does not contain the requested digest'; exit 1;
+             }
+
       - name: Build Honua Server image
+        if: inputs.server_image == ''
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -104,10 +155,12 @@ jobs:
         id: run-cite
         env:
           HONUA_CITE_SKIP_BUILD: 'true'
-          HONUA_CITE_SERVER_BUILD_MODE: source-build
-          HONUA_CITE_TESTED_GIT_SHA: ${{ github.sha }}
+          HONUA_CITE_SERVER_BUILD_MODE: ${{ inputs.server_image == '' && 'source-build' || 'prebuilt' }}
+          HONUA_CITE_REQUESTED_SERVER_IMAGE: ${{ inputs.server_image }}
+          HONUA_CITE_TESTED_GIT_SHA: ${{ inputs.source_sha || github.sha }}
         run: |
           set -euo pipefail
+          date -u +%Y-%m-%dT%H:%M:%SZ > cite-execution-started-at.txt
           exit_codes="$RUNNER_TEMP/cite-exit-codes.txt"
           : > "$exit_codes"
 
@@ -159,7 +212,17 @@ jobs:
         if: always()
         env:
           CITE_EVIDENCE_PUBLIC_BASE_URL: ${{ inputs.publish_pages && format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) || '' }}
-        run: scripts/conformance/cite/build-cite-evidence.sh --output artifacts/cite-evidence
+          CITE_EVIDENCE_TESTED_GIT_SHA: ${{ inputs.source_sha || github.sha }}
+          CITE_EVIDENCE_PRODUCER_GIT_SHA: ${{ github.sha }}
+        run: |
+          scripts/conformance/cite/build-cite-evidence.sh --output artifacts/cite-evidence
+          cp cite-execution-started-at.txt artifacts/cite-evidence/execution-started-at.txt
+
+      - name: Capture exact CITE suite versions
+        if: always()
+        run: >-
+          python3 scripts/conformance/cite/capture_suite_provenance.py
+          --output artifacts/cite-evidence/suite-provenance.json
 
       - name: Upload CITE evidence artifact
         if: always()
