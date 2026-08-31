@@ -1004,6 +1004,11 @@ def test_workflows_are_read_only_and_attempt_bound() -> None:
     assert "ref: ${{ github.workflow_sha }}" in ledger
     assert "actions/runs/${run_id}/artifacts?per_page=100" in ledger
     assert "producer_count > MAXIMUM_CATALOGS" in ledger
+    assert 'id: download' in ledger
+    assert 'zipfile.is_zipfile(sys.argv[1])' in ledger
+    assert 'receipt artifact %s was unavailable or invalid after 4 attempts' in ledger
+    assert "steps.download.outcome == 'success'" in ledger
+    assert 'DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}' in ledger
     assert "serving-image-boundary.yml/runs" in ledger
     assert '--receipt-cutoff "${RECEIPT_CUTOFF}"' in ledger
     assert "worker-gdal-image.yml/runs" in ledger

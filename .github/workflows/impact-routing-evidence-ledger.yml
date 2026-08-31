@@ -170,8 +170,10 @@ jobs:
         env:
           RECEIPT_CUTOFF: ${{ steps.policy.outputs.receipt_cutoff }}
 
-      - name: Download only indexed observation receipts
+      - id: download
+        name: Download only indexed observation receipts
         if: always() && hashFiles('evidence/index.json') != ''
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           MAXIMUM_DOWNLOADS: ${{ steps.policy.outputs.maximum_receipt_downloads }}
@@ -184,16 +186,42 @@ jobs:
               "${count}" "${MAXIMUM_DOWNLOADS}" >&2
             exit 1
           fi
+          download_receipt() {
+            local artifact_id="$1"
+            local destination="evidence/archives/${artifact_id}.zip"
+            local partial="${destination}.part"
+            local attempt
+            for attempt in 1 2 3 4; do
+              if gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+                  > "${partial}" \
+                && python3 - "${partial}" <<'PY'
+          import sys
+          import zipfile
+
+          raise SystemExit(0 if zipfile.is_zipfile(sys.argv[1]) else 1)
+          PY
+              then
+                mv "${partial}" "${destination}"
+                return 0
+              fi
+              if (( attempt < 4 )); then
+                sleep $((attempt * 2))
+              fi
+            done
+            printf '::error::receipt artifact %s was unavailable or invalid after 4 attempts\n' \
+              "${artifact_id}" >&2
+            return 1
+          }
+
           jq -r '.artifacts[].artifact_id' evidence/index.json \
             | while read -r artifact_id; do
                 [[ "${artifact_id}" =~ ^[1-9][0-9]*$ ]] || exit 1
-                gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
-                  > "evidence/archives/${artifact_id}.zip"
+                download_receipt "${artifact_id}"
               done
 
       - id: summarize
         name: Reconcile receipts with authoritative exact-head image outcomes
-        if: always() && hashFiles('evidence/index.json') != ''
+        if: always() && steps.download.outcome == 'success' && hashFiles('evidence/index.json') != ''
         continue-on-error: true
         run: |
           python3 scripts/ci/audit-impact-routing-evidence.py summarize \
@@ -279,6 +307,7 @@ jobs:
         if: always()
         env:
           DISCOVER_OUTCOME: ${{ steps.discover.outcome }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
           SUMMARIZE_OUTCOME: ${{ steps.summarize.outcome }}
         run: |
-          [[ "${DISCOVER_OUTCOME}" == success && "${SUMMARIZE_OUTCOME}" == success ]]
+          [[ "${DISCOVER_OUTCOME}" == success && "${DOWNLOAD_OUTCOME}" == success && "${SUMMARIZE_OUTCOME}" == success ]]
