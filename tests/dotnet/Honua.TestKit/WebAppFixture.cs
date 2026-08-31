@@ -86,6 +86,19 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// configuration without re-declaring a string literal that must stay in lockstep.
     /// </summary>
     public const string SharedAdminPassword = "test-admin-password";
+
+    /// <summary>
+    /// Stable actor identifier assigned to the password-based bootstrap admin by
+    /// the API-key authentication handler. Tests that seed ownership, proposal,
+    /// or audit records for <see cref="CreateAdminClient"/> must use this value.
+    /// </summary>
+    public const string SharedAdminActorId = "00000000-0000-0000-0000-000000000002";
+
+    /// <summary>
+    /// Stable actor identifier assigned when an isolated test host explicitly
+    /// enables the development authentication bypass.
+    /// </summary>
+    public const string DevelopmentBypassActorId = "00000000-0000-0000-0000-000000000001";
     private static readonly TimeSpan _defaultTestClientTimeout = TimeSpan.FromMinutes(5);
 
     public HttpClient Client { get; private set; } = null!;

@@ -88,7 +88,7 @@ public sealed class PublishedRouteEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/published/{*routeSlug}")]
     public async Task PrivateVisibility_OwnerRead_ReturnsClientSafeView()
     {
-        await PublishAsAsync("admin", "owner-private-map", ContentPublicationKind.Map);
+        await PublishAsAsync(WebAppFixture.SharedAdminActorId, "owner-private-map", ContentPublicationKind.Map);
 
         var response = await _adminClient.GetAsync("/api/v1/published/owner-private-map");
 

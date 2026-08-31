@@ -300,9 +300,9 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties()
     {
-        // The admin client authenticates as the "admin" principal; seeding the
-        // proposal with that same requester must trip the separation-of-duties guard.
-        var proposal = await SeedProposalAsync(requestedBy: "admin");
+        // Seed the proposal with the bootstrap admin's stable API-key actor id so
+        // the same authenticated caller must trip the separation-of-duties guard.
+        var proposal = await SeedProposalAsync(requestedBy: WebAppFixture.SharedAdminActorId);
 
         var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
 
