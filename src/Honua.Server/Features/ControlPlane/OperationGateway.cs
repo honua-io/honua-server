@@ -175,6 +175,33 @@ internal sealed partial class OperationGateway : IOperationGateway
         ArgumentNullException.ThrowIfNull(request);
         request = request with { OperationInstanceId = operationInstanceId };
 
+        if (request.Plan is null)
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var invoker = scope.ServiceProvider.GetRequiredService<ICanonicalOperationInvoker>();
+            var validation = await invoker.ValidateAsync(
+                    new OperationRequest
+                    {
+                        OperationId = request.OperationId ?? LegacyOperationIds.For(request.Kind),
+                        GatewayRequest = request,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!validation.IsValid)
+            {
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = _ladder.Resolve(request.Kind),
+                    Message = validation.Messages.Count == 0
+                        ? "Canonical operation validation failed."
+                        : string.Join(" ", validation.Messages),
+                };
+            }
+
+            request = request with { Plan = validation.ApprovalPlan };
+        }
+
         // The approval requirement was already decided by an upstream domain gate
         // (e.g. the geoprocessing destructive-plan gate), so we do NOT re-run the
         // edition ladder — we only need the RequiresApproval floor. Resolve the class

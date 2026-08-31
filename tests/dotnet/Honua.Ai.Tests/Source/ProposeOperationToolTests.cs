@@ -6,6 +6,9 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
@@ -24,10 +27,14 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class ProposeOperationToolTests
 {
-    private static DefaultHttpContext ContextWithGateway(IOperationGateway gateway, IOperationExecutorCatalog? catalog = null)
+    private static DefaultHttpContext ContextWithGateway(
+        IOperationGateway gateway,
+        IOperationExecutorCatalog? catalog = null,
+        IOperationEnvelopeFactory? envelopeFactory = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(gateway);
+        services.AddSingleton(envelopeFactory ?? new FakeEnvelopeFactory());
         if (catalog != null)
         {
             services.AddSingleton(catalog);
@@ -70,26 +77,27 @@ public sealed class ProposeOperationToolTests
     [UnitTest]
     [Operation(Operations.ApprovalManagement)]
     [Endpoint("POST /mcp tools/call honua_propose_operation")]
-    public async Task ProposeOperation_WhenDirectExecute_ReturnsExecutionOutcome()
+    public async Task ProposeOperation_ModelCall_UsesProposalPathAndNeverRoutesToDirectExecution()
     {
         var gateway = new FakeGateway(new OperationGatewayResult
         {
-            Outcome = OperationGatewayOutcome.Executed,
-            Decision = new GuardrailDecision(GuardrailTier.DirectExecute, OperationClass.AdminConfigChange, default, "test"),
-            ExecutionOperationId = "exec-1"
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, default, "model-facing-proposal-requires-approval"),
+            ProposalId = "proposal-gated"
         });
 
         var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
-            new McpProposeOperationArgument { Kind = "AdminConfigChange" },
+            new McpProposeOperationArgument { Kind = "Deploy" },
             McpJsonContext.Default.McpProposeOperationArgument);
 
         var result = await tool.InvokeAsync(ContextWithGateway(gateway), arguments, CancellationToken.None);
 
         var content = result.StructuredContent!.Value;
-        content.GetProperty("requiresApproval").GetBoolean().Should().BeFalse();
-        content.GetProperty("outcome").GetString().Should().Be("Executed");
-        content.GetProperty("executionOperationId").GetString().Should().Be("exec-1");
+        content.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+        content.GetProperty("outcome").GetString().Should().Be("ProposalCreated");
+        gateway.RouteCalls.Should().Be(0, "a model-facing call must never enter the direct-execution route");
+        gateway.ProposalCalls.Should().Be(1);
     }
 
     [UnitTest]
@@ -130,7 +138,7 @@ public sealed class ProposeOperationToolTests
 
         var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
         var arguments = McpTestFactory.ToArguments(
-            new McpProposeOperationArgument { Kind = "Seed" },
+            new McpProposeOperationArgument { Kind = "Deploy" },
             McpJsonContext.Default.McpProposeOperationArgument);
 
         var result = await tool.InvokeAsync(ContextWithGateway(gateway, catalog), arguments, CancellationToken.None);
@@ -140,8 +148,59 @@ public sealed class ProposeOperationToolTests
         var supportedKinds = content.GetProperty("supportedKinds").EnumerateArray()
             .Select(element => element.GetString())
             .ToArray();
-        supportedKinds.Should().BeEquivalentTo(["AdminConfigChange", "Deploy", "MetadataRelease"]);
-        supportedKinds.Should().NotContain("Seed", "Seed has no registered executor and must never be advertised as supported");
+        supportedKinds.Should().BeEquivalentTo(["Deploy", "MetadataRelease"]);
+        supportedKinds.Should().NotContain("AdminConfigChange", "dedicated typed tools own admin mutations");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /mcp tools/call honua_propose_operation")]
+    public async Task ProposeOperation_AcceptanceFailure_DoesNotCreateProposal()
+    {
+        var gateway = new FakeGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, default, "test"),
+            ProposalId = "must-not-be-created",
+        });
+        var envelopeFactory = new FakeEnvelopeFactory(OperationHandleStatus.Failed, auditId: null);
+        var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument { Kind = "Deploy" },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        var result = await tool.InvokeAsync(
+            ContextWithGateway(gateway, envelopeFactory: envelopeFactory),
+            arguments,
+            CancellationToken.None);
+
+        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("Failed");
+        gateway.ProposalCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /mcp tools/call honua_propose_operation")]
+    public async Task ProposeOperation_UsesCanonicalActorForProposalOwnership()
+    {
+        var gateway = new FakeGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, default, "test"),
+            ProposalId = "proposal-canonical-actor",
+        });
+        var context = ContextWithGateway(gateway);
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "agent-x"), new Claim(ClaimTypes.NameIdentifier, "subject-x")],
+            "Test"));
+        var tool = new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance);
+        var arguments = McpTestFactory.ToArguments(
+            new McpProposeOperationArgument { Kind = "Deploy" },
+            McpJsonContext.Default.McpProposeOperationArgument);
+
+        await tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        gateway.LastProposalRequest!.RequestedBy.Should().Be(McpAuthorizationHelper.ResolveActorId(context.User));
     }
 
     private sealed class FakeExecutorCatalog(IReadOnlyCollection<OperationClass> supportedKinds) : IOperationExecutorCatalog
@@ -151,19 +210,64 @@ public sealed class ProposeOperationToolTests
 
     private sealed class FakeGateway(OperationGatewayResult result) : IOperationGateway
     {
+        public int RouteCalls { get; private set; }
+
+        public int ProposalCalls { get; private set; }
+
+        public OperationGatewayRequest? LastProposalRequest { get; private set; }
+
         public Task<OperationGatewayResult> RouteAsync(OperationGatewayRequest request, CancellationToken cancellationToken = default)
-            => Task.FromResult(result);
+        {
+            RouteCalls++;
+            return Task.FromResult(result);
+        }
 
         public Task<OperationGatewayResult> CreateApprovalProposalAsync(
             string operationInstanceId,
             OperationGatewayRequest request,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(result);
+        {
+            ProposalCalls++;
+            LastProposalRequest = request;
+            return Task.FromResult(result);
+        }
 
         public Task<OperationProposal?> ApplyApprovedProposalAsync(string proposalId, string approvedBy, CancellationToken cancellationToken = default)
             => Task.FromResult<OperationProposal?>(null);
 
         public Task<OperationProposal?> RejectProposalAsync(string proposalId, string rejectedBy, string reason, CancellationToken cancellationToken = default)
             => Task.FromResult<OperationProposal?>(null);
+    }
+
+    private sealed class FakeEnvelopeFactory(
+        OperationHandleStatus status = OperationHandleStatus.Accepted,
+        string? auditId = "audit-model-call") : IOperationEnvelopeFactory
+    {
+        public Task<OperationHandle> CreateAcceptedAsync(
+            string operationId,
+            OperationPolicyContext context,
+            CancellationToken cancellationToken = default)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return Task.FromResult(new OperationHandle
+            {
+                OperationInstanceId = "opinst-model-call",
+                OperationId = operationId,
+                Status = status,
+                CorrelationId = "corr-model-call",
+                AuditId = auditId,
+                Reason = status == OperationHandleStatus.Failed ? "acceptance failed" : null,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        public Task<OperationHandle> CompleteCacheHitAsync(
+            string operationId,
+            OperationPolicyContext context,
+            string sourceOperationInstanceId,
+            string? sourceAuditId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 }

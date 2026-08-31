@@ -81,6 +81,27 @@ public sealed class OperationGatewayIdempotencyTests
     }
 
     [Fact]
+    public async Task CreateApprovalProposalAsync_MissingPlan_UsesCanonicalPlanner()
+    {
+        var store = new MultiProposalStore();
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(GuardrailTier.DirectExecute, OperationClass.Deploy, HonuaEdition.Pro, "test"));
+        var sut = BuildGateway(store, ladder);
+
+        var result = await sut.CreateApprovalProposalAsync(
+            "opinst-forced-proposal",
+            new OperationGatewayRequest
+            {
+                Kind = OperationClass.Deploy,
+                RequestedBy = "agent",
+            });
+
+        result.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, result.Message);
+        store.Single.Plan.Summary.Should().Be("Deploy proposal");
+    }
+
+    [Fact]
     public async Task RouteAsync_CanceledDuringAudit_FinalizesPlannedProposal()
     {
         var store = new MultiProposalStore();

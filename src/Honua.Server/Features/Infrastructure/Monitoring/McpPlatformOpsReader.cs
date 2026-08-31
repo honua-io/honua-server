@@ -12,6 +12,8 @@ using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin;
@@ -169,9 +171,22 @@ internal sealed class McpPlatformOpsReader(
         }.Serialize();
 
         var actor = principal.Identity?.Name;
-        var result = await gateway.RouteAsync(
+        var accepted = await _services.GetRequiredService<IOperationEnvelopeFactory>()
+            .CreateAcceptedAsync(
+                "control-plane.deploy",
+                new OperationPolicyContext
+                {
+                    PrincipalId = actor,
+                    IdempotencyKey = Clean(argument.IdempotencyKey),
+                    AuthorizationOutcome = "mcp-authorized",
+                },
+                cancellationToken).ConfigureAwait(false);
+        var result = await gateway.CreateApprovalProposalAsync(
+                accepted.OperationInstanceId,
                 new OperationGatewayRequest
                 {
+                    OperationInstanceId = accepted.OperationInstanceId,
+                    CorrelationId = accepted.CorrelationId,
                     Kind = OperationClass.Deploy,
                     RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
                     RequestedBy = actor,

@@ -12,6 +12,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
@@ -252,6 +254,8 @@ public sealed class McpPlatformOpsReaderTests
         output.ResourceUri.Should().NotBeNullOrWhiteSpace();
         output.SupportedKinds.Should().Equal("Deploy", "MetadataRelease");
         gateway.LastRequest.Should().NotBeNull();
+        gateway.RouteCalls.Should().Be(0, "rollback proposals must never use the direct-execution route");
+        gateway.ProposalCalls.Should().Be(1);
         gateway.LastRequest!.Kind.Should().Be(OperationClass.Deploy);
         gateway.LastRequest.RequestedBy.Should().Be("ops-agent");
         gateway.LastRequest.RequestedByAgent.Should().Be("agent:ops-agent");
@@ -286,14 +290,14 @@ public sealed class McpPlatformOpsReaderTests
                 createdAt: DateTimeOffset.UtcNow.AddMinutes(-10)));
         var gateway = new RecordingGateway(new OperationGatewayResult
         {
-            Outcome = OperationGatewayOutcome.Executed,
+            Outcome = OperationGatewayOutcome.ProposalCreated,
             Decision = new GuardrailDecision(
-                GuardrailTier.DirectExecute,
+                GuardrailTier.RequiresApproval,
                 OperationClass.Deploy,
                 HonuaEdition.Pro,
-                "test"),
-            ExecutionOperationId = "op-rollback",
-            Message = "submitted",
+                "model-facing-proposal-requires-approval"),
+            ProposalId = "proposal-rollback",
+            Message = "queued for approval",
         });
 
         using var services = CreateServices(gateway);
@@ -304,8 +308,10 @@ public sealed class McpPlatformOpsReaderTests
             new McpProposeRollbackArgument { TargetId = "serving-us-west" },
             CancellationToken.None);
 
-        output.Outcome.Should().Be(nameof(OperationGatewayOutcome.Executed));
-        output.ExecutionOperationId.Should().Be("op-rollback");
+        output.Outcome.Should().Be(nameof(OperationGatewayOutcome.ProposalCreated));
+        output.RequiresApproval.Should().BeTrue();
+        gateway.RouteCalls.Should().Be(0, "a direct-execute edition default cannot bypass approval");
+        gateway.ProposalCalls.Should().Be(1);
         gateway.LastRequest.Should().NotBeNull();
         gateway.LastRequest!.IdempotencyKey.Should().Be("rollback:serving-us-west:rev-9");
 
@@ -350,6 +356,22 @@ public sealed class McpPlatformOpsReaderTests
         IOperationExecutorCatalog? catalog = null)
     {
         var services = new ServiceCollection();
+        var envelopeFactory = Substitute.For<IOperationEnvelopeFactory>();
+        var now = DateTimeOffset.UtcNow;
+        envelopeFactory.CreateAcceptedAsync(
+                Arg.Any<string>(),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationHandle
+            {
+                OperationInstanceId = "opinst-rollback",
+                OperationId = "control-plane.deploy",
+                Status = OperationHandleStatus.Accepted,
+                CorrelationId = "corr-rollback",
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        services.AddSingleton(envelopeFactory);
         if (gateway is not null)
         {
             services.AddSingleton(gateway);
@@ -569,10 +591,15 @@ public sealed class McpPlatformOpsReaderTests
     {
         public OperationGatewayRequest? LastRequest { get; private set; }
 
+        public int RouteCalls { get; private set; }
+
+        public int ProposalCalls { get; private set; }
+
         public Task<OperationGatewayResult> RouteAsync(
             OperationGatewayRequest request,
             CancellationToken cancellationToken = default)
         {
+            RouteCalls++;
             LastRequest = request;
             return Task.FromResult(result);
         }
@@ -582,6 +609,7 @@ public sealed class McpPlatformOpsReaderTests
             OperationGatewayRequest request,
             CancellationToken cancellationToken = default)
         {
+            ProposalCalls++;
             LastRequest = request;
             return Task.FromResult(result);
         }
