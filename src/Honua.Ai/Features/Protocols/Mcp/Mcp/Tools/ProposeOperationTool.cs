@@ -113,7 +113,7 @@ internal sealed class ProposeOperationTool : IMcpTool
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
 
-        var actor = principal.Identity?.Name;
+        var actor = McpAuthorizationHelper.ResolveActorId(principal);
         var request = new OperationGatewayRequest
         {
             Kind = kind,
@@ -147,6 +147,20 @@ internal sealed class ProposeOperationTool : IMcpTool
                 AuthorizationOutcome = "mcp-authorized",
             },
             cancellationToken).ConfigureAwait(false);
+        if (accepted.Status == OperationHandleStatus.Failed || string.IsNullOrWhiteSpace(accepted.AuditId))
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpProposeOperationOutput
+                {
+                    Outcome = OperationGatewayOutcome.Failed.ToString(),
+                    RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
+                    Message = accepted.Reason
+                        ?? "The operation could not be durably accepted and audited.",
+                },
+                McpJsonContext.Default.McpProposeOperationOutput);
+        }
+
         var result = await gateway.CreateApprovalProposalAsync(
             accepted.OperationInstanceId,
             request with
