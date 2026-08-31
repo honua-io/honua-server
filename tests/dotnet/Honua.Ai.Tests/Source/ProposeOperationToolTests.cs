@@ -147,8 +147,9 @@ public sealed class ProposeOperationToolTests
 
         var result = await tool.InvokeAsync(context, arguments, CancellationToken.None);
 
-        result.StructuredContent!.Value.GetProperty("outcome").GetString().Should().Be("rejected");
-        result.StructuredContent.Value.GetProperty("message").GetString().Should().Contain(OperatorScopeCatalog.Publish);
+        var content = result.StructuredContent!.Value;
+        content.GetProperty("outcome").GetString().Should().Be("rejected");
+        content.GetProperty("message").GetString().Should().Contain(OperatorScopeCatalog.Publish);
         gateway.ProposalCalls.Should().Be(0);
     }
 
