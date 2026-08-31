@@ -57,12 +57,15 @@ test "$(curl --silent --fail "${base_url}/healthz/ready")" = "Ready"
 "${compose[@]}" ps --format json | jq -s -e '
   length == 3 and all(.[]; .State == "running" and .Health == "healthy")'
 curl --fail --silent --show-error \
+  -H 'X-API-Key: quickstart-admin-password' \
   "${base_url}/rest/services/quickstart/FeatureServer/${layer_id}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true" \
   | jq -e '.features | length == 3'
 curl --fail --silent --show-error \
+  -H 'X-API-Key: quickstart-admin-password' \
   "${base_url}/tiles/${layer_id}/tile.json" \
   | jq -e '.tiles | length > 0'
 curl --fail --silent --show-error \
+  -H 'X-API-Key: quickstart-admin-password' \
   "${base_url}/tiles/${layer_id}/12/655/1582.mvt" \
   --output "${artifacts}/sample.mvt"
 test -s "${artifacts}/sample.mvt"

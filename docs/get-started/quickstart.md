@@ -2,7 +2,7 @@
 
 You'll have Honua running in Docker with a published dataset rendered in a browser map in about 10 minutes.
 
-**Prerequisites:** Docker with Compose v2, `git`, GitHub CLI authenticated with package-read access, `curl`, Python 3, and `jq`.
+**Prerequisites:** Docker with Compose v2, `git`, GitHub CLI authenticated with package-read access, and Python 3.11 or later.
 
 ## Steps
 
@@ -21,19 +21,16 @@ export HONUA_BASE_URL="${HONUA_BASE_URL:-http://localhost:8080}"
 repo_root="${HONUA_REPO_ROOT:-.}"
 GITHUB_ACTOR="${GITHUB_ACTOR:-$(gh api user --jq .login)}" GH_TOKEN=$(gh auth token) \
   bash "${repo_root}/scripts/docker/build-with-github-packages.sh" -t honua-server:local "${repo_root}"
-docker compose up -d --no-build
+docker compose up -d --no-build --wait --wait-timeout 180
 ```
 
 3. Wait until the server reports ready.
 
-Run the following command, then open <http://localhost:8080/healthz/ready> in a browser. Continue when the page says `Ready`.
+The preceding command waits for every Compose health check. Confirm the services are healthy, then open <http://localhost:8080/healthz/ready> in a browser. The page should say `Ready`.
 
 <!-- docs-validation:quickstart.ready mode=run -->
 ```bash
 docker compose ps
-until [ "$(curl --silent --fail "${HONUA_BASE_URL}/healthz/ready")" = "Ready" ]; do
-  sleep 2
-done
 ```
 
 4. Optional Console dashboard: once a compatible `honua-console` image is published, start the profiled Console service and open <http://localhost:5174/operate>. The same service also serves <http://localhost:5174/operate/health> and <http://localhost:5174/operate/copilot>. Console binds to the local server with the quickstart admin key, so admin-only Operate reads work without another deploy step.
@@ -69,58 +66,72 @@ ANALYZE honua_data.quickstart_points;
 SQL
 ```
 
-6. Register the Compose database as a connection (publishing reads tables through named connections), then discover the sample table.
+6. Install the supported Python control-plane and data-plane clients.
+
+<!-- docs-validation:quickstart.sdk mode=run -->
+```bash
+python3 -m pip install \
+  "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-sdk" \
+  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
+```
+
+7. Register the Compose database as a connection (publishing reads tables through named connections), then discover the sample table.
 
 <!-- docs-validation:quickstart.connection mode=run -->
 ```bash
-curl --fail --silent --show-error \
-  -H 'X-API-Key: quickstart-admin-password' \
-  -H 'Content-Type: application/json' \
-  --data '{"name":"local","host":"postgres","port":5432,"databaseName":"honua_dev","username":"honua_user","password":"honua_password","sslMode":"Prefer","sslRequired":false}' \
-  "${HONUA_BASE_URL}/api/v1/admin/connections" | tee quickstart-connection.json
-jq -er '.data.connectionId' quickstart-connection.json > .quickstart-connection-id
-connection_id=$(cat .quickstart-connection-id)
-curl --fail --silent --show-error \
-  -H 'X-API-Key: quickstart-admin-password' \
-  "${HONUA_BASE_URL}/api/v1/admin/connections/${connection_id}/tables" | tee quickstart-tables.json >/dev/null
-jq -e '[.tables[] | select(.table | endswith("quickstart_points"))] | length == 1' quickstart-tables.json
+python3 - <<'PY'
+import os
+from pathlib import Path
+
+from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
+
+with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as admin:
+    connection = admin.create_connection(CreateSecureConnectionRequest(
+        name="local",
+        host="postgres",
+        port=5432,
+        database_name="honua_dev",
+        username="honua_user",
+        password="honua_password",
+        ssl_mode="Prefer",
+        ssl_required=False,
+    ))
+    tables = admin.discover_tables(connection.connection_id).tables
+    matches = [table for table in tables if table.table.endswith("quickstart_points")]
+    assert len(matches) == 1, "expected exactly one quickstart_points table"
+    Path(".quickstart-connection-id").write_text(connection.connection_id)
+PY
 ```
 
-7. Publish the discovered table as a layer and note the `layerId` in the response.
+8. Publish the discovered table as a layer and note the `layerId` in the response.
 
 <!-- docs-validation:quickstart.publish mode=run -->
 ```bash
-connection_id=$(cat .quickstart-connection-id)
-schema=$(jq -r 'first(.tables[] | select(.table | endswith("quickstart_points"))).schema' quickstart-tables.json)
-table=$(jq -r 'first(.tables[] | select(.table | endswith("quickstart_points"))).table' quickstart-tables.json)
-geometry_column=$(jq -r 'first(.tables[] | select(.table | endswith("quickstart_points"))).geometryColumn' quickstart-tables.json)
-jq -n \
-  --arg schema "${schema}" \
-  --arg table "${table}" \
-  --arg geometryColumn "${geometry_column}" \
-  '{schema:$schema,table:$table,layerName:"quickstart-points",geometryColumn:$geometryColumn,geometryType:"Point",srid:4326,primaryKey:"id",fields:["id","name"],serviceName:"quickstart",enabled:true}' \
-  > quickstart-publish.json
-curl --fail --silent --show-error \
-  -H 'X-API-Key: quickstart-admin-password' \
-  -H 'Content-Type: application/json' \
-  --data @quickstart-publish.json \
-  "${HONUA_BASE_URL}/api/v1/admin/connections/${connection_id}/layers" | tee quickstart-layer.json
-jq -er '.data.layerId' quickstart-layer.json > .quickstart-layer-id
+python3 - <<'PY'
+import os
+from pathlib import Path
+
+from honua_admin import HonuaAdminClient, PublishLayerRequest
+
+connection_id = Path(".quickstart-connection-id").read_text()
+with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as admin:
+    layer = admin.publish_layer(connection_id, PublishLayerRequest(
+        schema="honua_data",
+        table="quickstart_points",
+        layer_name="quickstart-points",
+        geometry_column="geometry",
+        geometry_type="Point",
+        srid=4326,
+        primary_key="id",
+        fields_list=["id", "name"],
+        service_name="quickstart",
+    ))
+    Path(".quickstart-layer-id").write_text(str(layer.layer_id))
+    print(layer)
+PY
 ```
 
-8. Allow anonymous reads on the `quickstart` service so the browser can fetch tiles without a key.
-
-<!-- docs-validation:quickstart.anonymous-read mode=run -->
-```bash
-curl --fail --silent --show-error \
-  -X PUT \
-  -H 'X-API-Key: quickstart-admin-password' \
-  -H 'Content-Type: application/json' \
-  --data '{"allowAnonymous":true}' \
-  "${HONUA_BASE_URL}/api/v1/admin/services/quickstart/access-policy"
-```
-
-9. Save this as `map.html`, substitute the published layer ID, then serve it and open <http://localhost:3000/map.html>.
+9. Save this as `map.html`, substitute the published layer ID, then serve it and open <http://localhost:3000/map.html>. The request hook supplies the Compose quickstart's development-only admin key; use a user-scoped credential instead for a deployed server.
 
 <!-- docs-validation:quickstart.map mode=run -->
 ```bash
@@ -131,7 +142,10 @@ cat > map.html <<'EOF'
 <style>html,body,#map{margin:0;height:100%}</style></head>
 <body><div id="map"></div><script>
 const layerId = __LAYER_ID__;
-new maplibregl.Map({container:'map',center:[-122.41,37.79],zoom:12,style:{version:8,
+new maplibregl.Map({container:'map',center:[-122.41,37.79],zoom:12,
+ transformRequest:url => url.startsWith('__HONUA_BASE_URL__')
+   ? {url,headers:{'X-API-Key':'quickstart-admin-password'}} : {url},
+ style:{version:8,
  sources:{
   osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap'},
   honua:{type:'vector',tiles:['__HONUA_BASE_URL__/tiles/'+layerId+'/{z}/{x}/{y}.mvt']}},
@@ -154,17 +168,25 @@ python3 -m http.server 3000
 
 <!-- docs-validation:quickstart.verify mode=run -->
 ```bash
-layer_id=$(cat .quickstart-layer-id)
-curl --fail --silent --show-error "${HONUA_BASE_URL}/rest/services/quickstart/FeatureServer" | jq -e '.layers | length == 1'
-curl --fail --silent --show-error "${HONUA_BASE_URL}/rest/services/quickstart/FeatureServer/${layer_id}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true" | jq -e '.features | length == 3'
-curl --fail --silent --show-error "${HONUA_BASE_URL}/tiles/${layer_id}/tile.json" | jq -e '.tiles | length > 0'
+python3 - <<'PY'
+import os
+from pathlib import Path
+
+from honua_sdk import HonuaClient
+
+layer_id = int(Path(".quickstart-layer-id").read_text())
+with HonuaClient(os.environ["HONUA_BASE_URL"], api_key="quickstart-admin-password") as client:
+    result = client.query_features("quickstart", layer_id)
+    assert len(result["features"]) == 3
+    print("Verified 3 quickstart features")
+PY
 ```
 
-The commands should print `true`, and the browser map should show three blue circles over San Francisco.
+The command should report three verified features, and the browser map should show three blue circles over San Francisco.
 
 ## Troubleshoot
 
-- **Tiles return 401 in the browser** — step 9 (anonymous read) was skipped, or the publish used a different service name than `quickstart`.
+- **Tiles return 401 in the browser** — confirm the request hook still carries the local quickstart key and the layer was published to the `quickstart` service.
 - **Blank map and CORS errors in the browser console** — the page must be served from `http://localhost:3000`, not opened as a `file://` URL. Use `HONUA_DEV_CORS_ORIGIN` before `docker compose up -d` if you serve the page from another origin.
 - **Console is not needed after enabling the profile** - use `HONUA_CONSOLE_REPLICAS=0 docker compose up -d`; Redis still starts because durable jobs, proposals, and workflow state use it.
 - **Contract migration is gated on an existing database** - the quickstart sets `HONUA_CONTRACT_APPLY_POLICY=Gate`. Fresh installs still provision fully; for an upgrade with pending contract scripts, approve one run with `HONUA_APPROVE_CONTRACT_MIGRATIONS=true` and unset it afterward.
