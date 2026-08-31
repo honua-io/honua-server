@@ -92,6 +92,14 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
     public async Task PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile()
     {
+        await DeleteSecureConnectionAsync();
+        _connectionCreated = false;
+        var publishConnection = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        {
+            SearchPath = $"{_fixture.CurrentSchema},public"
+        };
+        await CreateSecureConnectionAsync(publishConnection.ConnectionString);
+
         var logicalTableName = $"quickstart_points_{Guid.NewGuid():N}";
         const string geoJson = """
             {
@@ -120,7 +128,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         uploadResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {uploadPayload}");
         var importResult = JsonSerializer.Deserialize<ImportResult>(uploadPayload, _jsonOptions);
         importResult.Should().NotBeNull();
-        importResult!.Success.Should().BeTrue();
+        importResult!.Success.Should().BeTrue($"response: {uploadPayload}");
         importResult.FeatureCount.Should().Be(3);
         importResult.Schema.Should().NotBeNullOrWhiteSpace();
         importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
@@ -131,7 +139,9 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         var discoveryPayload = await discoveryResponse.Content.ReadAsStringAsync();
         discoveryResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {discoveryPayload}");
         using var discoveryDocument = JsonDocument.Parse(discoveryPayload);
-        var discoveredTable = discoveryDocument.RootElement.GetProperty("data").EnumerateArray().Single(table =>
+        discoveryDocument.RootElement.TryGetProperty("tables", out var discoveryData)
+            .Should().BeTrue($"response: {discoveryPayload}");
+        var discoveredTable = discoveryData.EnumerateArray().Single(table =>
             table.GetProperty("schema").GetString() == _importedTableSchema &&
             table.GetProperty("table").GetString() == _importedTableName);
         discoveredTable.GetProperty("estimatedRows").GetInt64().Should().Be(3);
@@ -2616,7 +2626,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
         // schema-mutation advisory lock (multi-statement, parameterized).
         await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
             await using var command = connection.CreateCommand();
             command.CommandText = """
                 DELETE FROM features

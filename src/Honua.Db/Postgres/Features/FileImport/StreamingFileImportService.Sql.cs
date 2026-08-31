@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Db.Postgres.Features.Infrastructure;
-using Npgsql;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
@@ -11,13 +11,21 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Migration;
+using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    // Reserve enough identifier space for the replace path's `__staging` suffix and
+    // its longest `idx_<table>__staging_properties` index name. PostgreSQL silently
+    // truncates longer identifiers, which can otherwise make the geometry and
+    // properties indexes collide with SQLSTATE 42P07.
+    private const int MaxImportTableNameLength = 40;
+
     private static string QuoteIdentifier(string identifier)
     {
         return $"\"{identifier.Replace("\"", "\"\"")}\"";
@@ -27,7 +35,15 @@ internal sealed partial class StreamingFileImportService
     {
         ValidateTableName(tableName);
         var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
-        return "imported_" + sanitized.ToLowerInvariant();
+        var physicalName = "imported_" + sanitized.ToLowerInvariant();
+        if (physicalName.Length <= MaxImportTableNameLength)
+        {
+            return physicalName;
+        }
+
+        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(physicalName)))[..12];
+        var prefixLength = MaxImportTableNameLength - hash.Length - 1;
+        return $"{physicalName[..prefixLength]}_{hash}";
     }
 
     private static async Task CreateTableAsync(
