@@ -1525,7 +1525,13 @@ internal static class GPServerEndpoints
 
         foreach (var process in processes)
         {
-            if (!GPServerExecutionPolicy.IsJobCallable(process))
+            // Unavailable processes remain discoverable so the GPServer catalog can
+            // truthfully describe a known tool and its limitation. Invocation still
+            // fails closed at the shared submit boundary because the process is not
+            // job-callable. Other non-job surfaces (protocol/workflow-only) stay out
+            // of the GP task list because they have a different owning execution path.
+            if (!GPServerExecutionPolicy.IsJobCallable(process)
+                && process.ExecutionKind != ProcessExecutionKind.Unavailable)
             {
                 continue;
             }

@@ -68,6 +68,11 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         // Both addressing forms are published for an aliased process...
         tasks.Should().Contain("geometry.buffer");
         tasks.Should().Contain("Buffer");
+        // A known-but-unavailable process remains honestly discoverable under both
+        // its canonical id and Esri-conventional alias. Calling it still fails closed
+        // at the canonical execution-capability boundary.
+        tasks.Count(name => name == "raster.interpolate-kriging").Should().Be(1);
+        tasks.Count(name => name == "Kriging").Should().Be(1);
         // ...a non-aliased Honua-specific job process keeps only its internal-ID name...
         tasks.Should().Contain("analytics.cluster-managed");
         // ...and no task name is ever published twice (duplicate-name handling).
