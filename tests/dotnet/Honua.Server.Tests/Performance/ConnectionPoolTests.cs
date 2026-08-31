@@ -8,6 +8,7 @@ using System.Globalization;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Npgsql;
 
 namespace Honua.Server.Tests.Performance;
 
@@ -299,19 +300,45 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
     public async Task ConnectionPool_HandlesBurstTraffic()
     {
         // Arrange
-        const int burstSize = 100;
+        const int poolSize = 4;
+        const int burstSize = poolSize * 5;
         var connectionIds = new ConcurrentBag<int>();
+        var firstWaveCount = 0;
+        var firstWaveReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connectionString = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
+        {
+            ApplicationName = $"honua-burst-{Guid.NewGuid():N}",
+            MaxPoolSize = poolSize,
+            SearchPath = $"{_schemaName},public",
+        };
+        await using var burstDataSource = NpgsqlDataSource.Create(connectionString.ConnectionString);
 
-        // Act - burst of concurrent connections
+        // Act - hold the first physical connections until the pool is full so the
+        // remaining requests must queue and reuse one of those connections.
         var tasks = Enumerable.Range(0, burstSize).Select(async _ =>
         {
-            await using var conn = await _fixture.GetConnectionAsync(_schemaName);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT pg_backend_pid()";
-            var pid = await cmd.ExecuteScalarAsync();
-            if (pid != null)
+            try
             {
-                connectionIds.Add(Convert.ToInt32(pid, CultureInfo.InvariantCulture));
+                await using var conn = await burstDataSource.OpenConnectionAsync();
+                if (Interlocked.Increment(ref firstWaveCount) == poolSize)
+                {
+                    firstWaveReady.TrySetResult();
+                }
+
+                await firstWaveReady.Task;
+
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT pg_backend_pid()";
+                var pid = await cmd.ExecuteScalarAsync();
+                if (pid != null)
+                {
+                    connectionIds.Add(Convert.ToInt32(pid, CultureInfo.InvariantCulture));
+                }
+            }
+            catch (Exception exception)
+            {
+                firstWaveReady.TrySetException(exception);
+                throw;
             }
         });
 
@@ -320,9 +347,9 @@ public sealed class ConnectionPoolTests : IAsyncLifetime
         // Assert - all requests completed
         Assert.Equal(burstSize, connectionIds.Count);
 
-        // Verify pool reuse (should see fewer unique PIDs than total requests)
+        // The barrier proves the pool reached its configured physical size; the larger
+        // burst can only complete by reusing those same PostgreSQL backends.
         var uniquePids = connectionIds.Distinct().Count();
-        Assert.True(uniquePids <= burstSize,
-            $"Expected connection pooling, got {uniquePids} unique connections for {burstSize} requests");
+        Assert.Equal(poolSize, uniquePids);
     }
 }
