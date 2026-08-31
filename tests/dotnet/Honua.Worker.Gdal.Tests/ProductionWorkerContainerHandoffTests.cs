@@ -107,7 +107,10 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
                 store, crash.OperationId,
                 job => job.Status == ExecutionJobStatus.Running,
                 TimeSpan.FromSeconds(20));
-            await worker.StopAsync();
+            // SIGKILL PID 1 so the worker cannot run its graceful-shutdown
+            // cleanup, which force-requeues an in-flight job. This preserves
+            // the Running record that crash reconciliation must recover.
+            await worker.ExecAsync(["/bin/kill", "-9", "1"]);
 
             var running = await store.GetAsync(crash.OperationId);
             var stale = DateTimeOffset.UtcNow.AddMinutes(-5);
