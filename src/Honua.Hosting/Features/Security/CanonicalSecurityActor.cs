@@ -55,9 +55,12 @@ internal static class CanonicalSecurityActor
                 scheme, subject, issuer, null, true);
         }
 
-        if (string.Equals(scheme, "admin", StringComparison.Ordinal))
+        // An API-key principal without the immutable id stamped by the handler is
+        // unsafe to bind. Identity.Name is mutable and must never become a session
+        // identifier, even for an otherwise authenticated caller.
+        if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase))
         {
-            return new CanonicalSecurityActorIdentity("admin:bootstrap", scheme, null, null, null, false);
+            return null;
         }
 
         var name = NormalizeValue(identity.Name);

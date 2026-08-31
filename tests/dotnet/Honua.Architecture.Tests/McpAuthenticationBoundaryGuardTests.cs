@@ -104,6 +104,12 @@ public sealed class McpAuthenticationBoundaryGuardTests
             "$\"{scheme}:api-key:{apiKeyId:D}\"",
             "an API-key actor id must be the immutable key id, never a mutable display name");
         source.Should().Contain(
+            "if (string.Equals(scheme, AuthenticationExtensions.ApiKeyScheme, StringComparison.OrdinalIgnoreCase))",
+            "an API-key principal without an immutable id must fail closed");
+        source.Should().NotContain(
+            "new CanonicalSecurityActorIdentity(\"admin:bootstrap\"",
+            "bootstrap authentication must use a handler-stamped immutable id, not a special display-name fallback");
+        source.Should().Contain(
             "Replace(identity, \"honua:issuer\", actor.SubjectIssuer);",
             "the validated issuer must be stamped onto the request principal by the framework");
         source.Should().Contain(
