@@ -367,7 +367,9 @@ public sealed class OperationEnvelopeArchitectureTests
                      new[] { "src", "Honua.Server", "Features", "Admin", "CoordinatedReleaseControlEndpoints.cs" },
                  })
         {
-            var source = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, relativePath));
+            var source = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+                root,
+                string.Join('/', relativePath)));
             var rollbackStart = source.IndexOf("private static async Task<IResult> HandleRollback", StringComparison.Ordinal);
             Assert.True(rollbackStart >= 0, $"{relativePath[^1]} must retain its rollback handler.");
             var nextMethod = source.IndexOf("\n    private static ", rollbackStart + 1, StringComparison.Ordinal);
