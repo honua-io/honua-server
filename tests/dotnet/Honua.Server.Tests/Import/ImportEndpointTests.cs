@@ -578,6 +578,7 @@ public class ImportEndpointTests : IAsyncLifetime
             {
                 PropertyNameCaseInsensitive = true
             });
+            physicalTableName = importResult?.PhysicalTableName;
             importResult.Should().NotBeNull();
             importResult!.Success.Should().BeTrue($"response: {importPayload}");
             importResult.TableName.Should().Be(requestedTableName);
@@ -585,8 +586,6 @@ public class ImportEndpointTests : IAsyncLifetime
             importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
             importResult.PhysicalTableName!.Should().StartWith("imported_");
             importResult.PhysicalTableName.Length.Should().BeLessThanOrEqualTo(40);
-            physicalTableName = importResult.PhysicalTableName
-                ?? throw new InvalidOperationException("Successful import did not return its physical table name.");
 
             await using (var connection = await _fixture.Postgres.GetConnectionAsync())
             {
