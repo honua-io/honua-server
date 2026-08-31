@@ -578,7 +578,6 @@ public class ImportEndpointTests : IAsyncLifetime
             {
                 PropertyNameCaseInsensitive = true
             });
-            physicalTableName = importResult?.PhysicalTableName;
             importResult.Should().NotBeNull();
             importResult!.Success.Should().BeTrue($"response: {importPayload}");
             importResult.TableName.Should().Be(requestedTableName);
@@ -586,13 +585,16 @@ public class ImportEndpointTests : IAsyncLifetime
             importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
             importResult.PhysicalTableName!.Should().StartWith("imported_");
             importResult.PhysicalTableName.Length.Should().BeLessThanOrEqualTo(40);
+            var importedPhysicalTableName = importResult.PhysicalTableName
+                ?? throw new InvalidOperationException("Successful import did not return its physical table name.");
+            physicalTableName = importedPhysicalTableName;
 
             await using (var connection = await _fixture.Postgres.GetConnectionAsync())
             {
-                var operationalTableExists = await TableExistsAsync(connection, "honua_data", physicalTableName);
+                var operationalTableExists = await TableExistsAsync(connection, "honua_data", importedPhysicalTableName);
                 operationalTableExists.Should().BeTrue("imports should default to the operational data schema");
 
-                var metadataTableExists = await TableExistsAsync(connection, "honua", physicalTableName);
+                var metadataTableExists = await TableExistsAsync(connection, "honua", importedPhysicalTableName);
                 metadataTableExists.Should().BeFalse("imports should not create operator tables in the metadata schema");
             }
 
@@ -608,7 +610,7 @@ public class ImportEndpointTests : IAsyncLifetime
             discovery.Should().NotBeNull();
             discovery!.Tables.Should().Contain(table =>
                 table.Schema == "honua_data" &&
-                table.Table == physicalTableName &&
+                table.Table == importedPhysicalTableName &&
                 table.GeometryColumn == "geometry");
             discovery.Tables
                 .Where(static table =>
@@ -623,7 +625,7 @@ public class ImportEndpointTests : IAsyncLifetime
             var publishRequest = new PublishLayerRequest
             {
                 Schema = "honua_data",
-                Table = physicalTableName,
+                Table = importedPhysicalTableName,
                 LayerName = "Schema Boundary Import",
                 Description = "Issue 991 schema-boundary import publish test",
                 GeometryColumn = "geometry",
@@ -647,7 +649,7 @@ public class ImportEndpointTests : IAsyncLifetime
             publishApi.Should().NotBeNull();
             publishApi!.Data.Should().NotBeNull();
             publishApi.Data!.Schema.Should().Be("honua_data");
-            publishApi.Data.Table.Should().Be(physicalTableName);
+            publishApi.Data.Table.Should().Be(importedPhysicalTableName);
             layerId = publishApi.Data.LayerId;
 
             var queryResponse = await _client.GetAsync(
