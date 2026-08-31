@@ -1,0 +1,66 @@
+name: Real Multidimensional Raster Fixture
+
+# Hardening pillar 2 for the licensed Esri chain: continuously prove that the
+# canonical fixture is backed by real NetCDF bytes, scanned by the native GDAL
+# worker, materialized as Zarr in LocalStack/S3, and readable as a selected
+# ImageServer slice. The licensed ArcGIS Pro SOAP A/B remains in its Windows
+# lane; this workflow owns the portable production-path prerequisite.
+
+on:
+  schedule:
+    - cron: '15 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: multidim-raster-fixture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: NetCDF to Zarr selected-slice verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Run composed fixture
+        shell: bash
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/multidim-raster-fixture
+          docker/client-compat/multidim-fixture/run.sh \
+            2>&1 | tee artifacts/multidim-raster-fixture/verify.log
+
+      - name: Capture composition logs
+        if: failure()
+        shell: bash
+        run: |
+          docker compose -f docker/client-compat/compose.yml \
+            --profile multidim-fixture \
+            logs --no-color --tail=500 \
+            > artifacts/multidim-raster-fixture/compose.log 2>&1 || true
+
+      - name: Upload verification evidence
+        if: always()
+        uses: ./.github/actions/upload-ci-evidence
+        with:
+          kind: evidence
+          suffix: multidim-raster-fixture
+          path: artifacts/multidim-raster-fixture
+          tier: nightly
+
+      - name: Tear down fixture
+        if: always()
+        shell: bash
+        run: |
+          docker compose -f docker/client-compat/compose.yml \
+            --profile multidim-fixture \
+            down --volumes --remove-orphans || true
