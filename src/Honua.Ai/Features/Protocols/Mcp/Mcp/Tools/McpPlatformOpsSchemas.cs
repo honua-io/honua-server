@@ -94,6 +94,11 @@ internal static class McpPlatformOpsSchemas
             "idempotencyKey": {
               "type": "string",
               "description": "Stable idempotency key for the underlying forward Deploy operation."
+            },
+            "parameterOverrides": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Optional backend deploy parameter overrides preserved on the rollback proposal."
             }
           },
           "additionalProperties": false

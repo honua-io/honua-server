@@ -37,6 +37,38 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
     }
 
     [UnitTest]
+    public async Task EvaluateAsync_OperatorGate_WhenDisabled_RequiresApproval()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions { Enabled = false });
+
+        var decision = await Evaluate(pdp, descriptor: BuildDescriptor(OperationApprovalModel.OperatorGate));
+
+        decision.Kind.Should().Be(PolicyDecisionKind.RequireApproval);
+        decision.ApprovalLane.Should().Be("operator");
+    }
+
+    [UnitTest]
+    public async Task EvaluateAsync_OperatorGate_WithMatchingAllowRule_RequiresApproval()
+    {
+        var pdp = BuildPdp(new OperationPolicyOptions
+        {
+            Enabled = true,
+            Rules =
+            [
+                new OperationPolicyRule
+                {
+                    OperationId = PublishOperationId,
+                    Decision = PolicyDecisionKind.Allow,
+                }
+            ]
+        });
+
+        var decision = await Evaluate(pdp, descriptor: BuildDescriptor(OperationApprovalModel.OperatorGate));
+
+        decision.Kind.Should().Be(PolicyDecisionKind.RequireApproval);
+    }
+
+    [UnitTest]
     public async Task EvaluateAsync_When_Enabled_With_No_Rules_Uses_DefaultDecision_Deny()
     {
         var pdp = BuildPdp(new OperationPolicyOptions
@@ -242,9 +274,10 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
     private static Task<PolicyDecision> Evaluate(
         ConfigurableOperationPolicyDecisionPoint pdp,
         OperationPolicyContext? context = null,
-        OperationRequest? request = null)
+        OperationRequest? request = null,
+        OperationDescriptor? descriptor = null)
         => pdp.EvaluateAsync(
-            BuildDescriptor(),
+            descriptor ?? BuildDescriptor(),
             request ?? BuildRequest(),
             context ?? new OperationPolicyContext(),
             CancellationToken.None);
@@ -252,7 +285,8 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
     private static OperationRequest BuildRequest(bool dryRun = false)
         => new() { OperationId = PublishOperationId, DryRun = dryRun };
 
-    private static OperationDescriptor BuildDescriptor()
+    private static OperationDescriptor BuildDescriptor(
+        OperationApprovalModel approvalModel = OperationApprovalModel.None)
         => new()
         {
             OperationId = PublishOperationId,
@@ -261,7 +295,7 @@ public sealed class ConfigurableOperationPolicyDecisionPointTests
             Description = "Publish a layer",
             Category = "Publishing",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = OperationApprovalModel.OperatorGate,
+            ApprovalModel = approvalModel,
             Policy = new OperationPolicyMetadata
             {
                 BlastRadiusClass = OperationBlastRadiusClass.ServiceScope,

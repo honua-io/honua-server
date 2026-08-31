@@ -223,16 +223,6 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         HttpClient mcpClient)
     {
         var sessionId = await InitializeMcpSessionAsync(mcpClient);
-        var executionPayload = JsonSerializer.Serialize(
-            new
-            {
-                targetId = env.TargetId,
-                desiredRevision = env.PreviousRevision,
-                currentRevision = env.CurrentRevision,
-                parameterOverrides = env.RollbackParameterOverrides
-            },
-            JsonOptions);
-
         var request = new
         {
             jsonrpc = "2.0",
@@ -240,13 +230,14 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             method = "tools/call",
             @params = new
             {
-                name = "honua_propose_operation",
+                name = "honua_propose_rollback",
                 arguments = new
                 {
-                    kind = "Deploy",
+                    targetId = env.TargetId,
+                    toRevision = env.PreviousRevision,
                     reason = "Rollback revision B to revision A from the local-substrate bridge cell.",
                     idempotencyKey = $"rollback-{env.Suffix}",
-                    executionPayload
+                    parameterOverrides = env.RollbackParameterOverrides
                 }
             }
         };

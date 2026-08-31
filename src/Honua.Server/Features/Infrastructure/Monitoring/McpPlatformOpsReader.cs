@@ -168,6 +168,7 @@ internal sealed class McpPlatformOpsReader(
             TargetId = targetId,
             DesiredRevision = selection.DesiredRevision,
             CurrentRevision = selection.CurrentRevision,
+            ParameterOverrides = argument.ParameterOverrides,
         }.Serialize();
 
         var actor = principal.Identity?.Name;

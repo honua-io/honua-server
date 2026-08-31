@@ -119,7 +119,7 @@ internal static class McpPromptCatalog
                 + "1. Call honua_query_features to retrieve the parcel geometry and attributes.\n"
                 + "2. Call honua_geocode_address if only an address is known to resolve the parcel.\n"
                 + "3. Call honua_plan_analysis to compile the constraint-overlay plan (if it returns engine=\"fixture\", the plan is a demo — follow its nextSteps to hand-author a plan from honua://catalog/processes), then honua_validate_plan and honua_execute_plan.\n"
-                + "4. If publishing a decision layer, call its catalog-published typed operation tool and respect the approval-required outcome before honua_publish_service.\n"
+                + "4. If publishing a decision layer, call honua_publish_service directly and branch on its returned operation handle, including any approval-required outcome.\n"
                 + "Summarize each constraint as pass/fail with the supporting honua://jobs/{jobId}/results evidence."),
 
         new McpPromptDefinition(

@@ -123,6 +123,20 @@ public sealed class McpPromptCatalogTests
     }
 
     [UnitTest]
+    public void Get_PermitReview_DirectsPublishingThroughPublishServiceTool()
+    {
+        var prompt = McpPromptCatalog.Get("permit_review", new Dictionary<string, string>
+        {
+            ["parcel"] = "parcel-1",
+            ["permitType"] = "ADU",
+        });
+
+        prompt.Messages.Should().ContainSingle();
+        prompt.Messages[0].Content.Text.Should().Contain("call honua_publish_service directly");
+        prompt.Messages[0].Content.Text.Should().NotContain("catalog-published typed operation tool");
+    }
+
+    [UnitTest]
     public void Get_UnknownPromptName_ThrowsValidation()
     {
         var act = () => McpPromptCatalog.Get("does_not_exist", null);

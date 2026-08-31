@@ -173,6 +173,9 @@ internal sealed class McpProposeRollbackArgument
 
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; set; }
+
+    [JsonPropertyName("parameterOverrides")]
+    public Dictionary<string, string>? ParameterOverrides { get; set; }
 }
 
 /// <summary>

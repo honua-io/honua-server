@@ -12,9 +12,9 @@ namespace Honua.Core.Features.Operations.Services;
 /// Configuration-driven <see cref="IOperationPolicyDecisionPoint"/>. Evaluates the ordered
 /// <see cref="OperationPolicyOptions.Rules"/> against the operation id, caller tier, and caller
 /// role(s) on a first-match-wins basis, falling back to <see cref="OperationPolicyOptions.DefaultDecision"/>.
-/// When <see cref="OperationPolicyOptions.Enabled"/> is <see langword="false"/> it is a pass-through
-/// allow, identical to <see cref="AllowAllPolicyDecisionPoint"/>, so the default deployment stays
-/// permissive. Evaluation is deterministic and reflection-free (AOT-safe).
+/// When <see cref="OperationPolicyOptions.Enabled"/> is <see langword="false"/> it is permissive
+/// except for the descriptor's intrinsic <see cref="OperationApprovalModel.OperatorGate"/> contract.
+/// Evaluation is deterministic and reflection-free (AOT-safe).
 /// </summary>
 public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyDecisionPoint
 {
@@ -41,24 +41,46 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
-        // Disabled policy is a pass-through allow — identical to the Community default.
+        // Disabled configuration remains permissive, but cannot weaken a descriptor's
+        // intrinsic operator-approval contract.
         if (!_options.Enabled)
         {
-            return Task.FromResult(PolicyDecision.Allowed);
+            return Task.FromResult(EnforceDescriptorApproval(descriptor, request, PolicyDecision.Allowed));
         }
 
         var matchedRule = _options.Rules.FirstOrDefault(rule => rule is not null && Matches(rule, request, context));
         if (matchedRule is not null)
         {
-            return Task.FromResult(ResolveDecision(matchedRule.Decision, matchedRule.Reason, matchedRule.ApprovalLane, request));
+            return Task.FromResult(EnforceDescriptorApproval(
+                descriptor,
+                request,
+                ResolveDecision(matchedRule.Decision, matchedRule.Reason, matchedRule.ApprovalLane, request)));
         }
 
-        return Task.FromResult(ResolveDecision(
-            _options.DefaultDecision,
-            _options.DefaultReason,
-            _options.DefaultApprovalLane,
-            request));
+        return Task.FromResult(EnforceDescriptorApproval(
+            descriptor,
+            request,
+            ResolveDecision(
+                _options.DefaultDecision,
+                _options.DefaultReason,
+                _options.DefaultApprovalLane,
+                request)));
     }
+
+    private static PolicyDecision EnforceDescriptorApproval(
+        IOperationDescriptor descriptor,
+        OperationRequest request,
+        PolicyDecision decision)
+        => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
+            && !request.DryRun
+            && decision.Kind == PolicyDecisionKind.Allow
+                ? new PolicyDecision
+                {
+                    Kind = PolicyDecisionKind.RequireApproval,
+                    ApprovalLane = "operator",
+                    Reason = "The operation descriptor requires operator approval."
+                }
+                : decision;
 
     private static bool Matches(OperationPolicyRule rule, OperationRequest request, OperationPolicyContext context)
     {
