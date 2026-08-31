@@ -5,7 +5,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Core.Features.PackageReview.Domain;
 using Honua.Core.Features.Reporting.Domain;
-using Honua.Ai.Protocols.Mcp.Tools.EsriGp;
 
 namespace Honua.Ai.Protocols.Mcp.Models;
 
@@ -56,13 +55,6 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpValidatePlanOutput))]
 [JsonSerializable(typeof(McpDryRunOutput))]
 [JsonSerializable(typeof(McpExecuteOutput))]
-[JsonSerializable(typeof(EsriGpDescribeTaskInput))]
-[JsonSerializable(typeof(EsriGpExecuteTaskInput))]
-[JsonSerializable(typeof(EsriGpListTasksOutput))]
-[JsonSerializable(typeof(EsriGpTaskSummary))]
-[JsonSerializable(typeof(EsriGpTaskDescription))]
-[JsonSerializable(typeof(EsriGpParameterDescription))]
-[JsonSerializable(typeof(EsriGpExecuteTaskOutput))]
 [JsonSerializable(typeof(McpCancelJobOutput))]
 [JsonSerializable(typeof(McpProposeOperationArgument))]
 [JsonSerializable(typeof(McpProposeOperationOutput))]

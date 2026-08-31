@@ -79,7 +79,21 @@ internal sealed class ExecutePlanTool : IMcpTool
         // that submits server-side work, so it routes through the same
         // ai.spec-apply entitlement as POST /v1/spec/apply. Discovery/query MCP
         // tools stay ungated (Community).
-        EnforceExecutionPolicy(httpContext, ToolName, ProtocolMetadataSource);
+        var entitlement = LicenseGate.CheckEntitlement(
+            httpContext.RequestServices,
+            FeatureCatalog.AiSpecApplyKey);
+        if (!entitlement.IsActive)
+        {
+            throw new GeoprocessingPreconditionFailedException(entitlement.UpgradeMessage);
+        }
+
+        // AI-operations guardrail ladder (#1631): agent-initiated execution is a
+        // mutating operation, so it also crosses the shared edition-driven policy.
+        // Community runs directly; Pro requires the validation-layer entitlement;
+        // Enterprise additionally requires the approval-workflows entitlement.
+        // This composes with (rather than replaces) the spec-apply gate above,
+        // mirroring SpecEndpoints.HandleApplyAsync.
+        EnforceGuardrails(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpExecutePlanArgument);
         var plan = McpToolHelpers.ToDomainPlan(argument.Plan);
@@ -132,16 +146,8 @@ internal sealed class ExecutePlanTool : IMcpTool
         bridge.Track(sessionId, jobId, principal);
     }
 
-    internal static void EnforceExecutionPolicy(HttpContext httpContext, string operationId, string protocol)
+    private static void EnforceGuardrails(HttpContext httpContext)
     {
-        var entitlement = LicenseGate.CheckEntitlement(
-            httpContext.RequestServices,
-            FeatureCatalog.AiSpecApplyKey);
-        if (!entitlement.IsActive)
-        {
-            throw new GeoprocessingPreconditionFailedException(entitlement.UpgradeMessage);
-        }
-
         var policy = httpContext.RequestServices.GetService<IAgentGuardrailPolicy>();
         if (policy is null)
         {
@@ -152,8 +158,8 @@ internal sealed class ExecutePlanTool : IMcpTool
 
         var descriptor = new AgentOperationDescriptor
         {
-            OperationId = operationId,
-            Protocol = protocol,
+            OperationId = ToolName,
+            Protocol = ProtocolMetadataSource,
             IsMutating = true,
             IsDestructive = false,
             SupportsSnapshot = false,
