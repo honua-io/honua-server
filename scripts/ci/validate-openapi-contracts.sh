@@ -87,7 +87,7 @@ def emit_breaking_change_suppression_notice(
 
     try:
         with Path(summary_path).open("a", encoding="utf-8") as summary:
-            summary.write("## ⚠️ Admin OpenAPI breaking changes acknowledged\n\n")
+            summary.write("## ⚠️ OpenAPI breaking changes acknowledged\n\n")
             summary.write(f"**Acknowledgement:** {escape(acknowledgement_source)}\n\n")
             summary.write(
                 "The contract-governance check found breaking changes and kept the job "
@@ -347,7 +347,7 @@ def compare_operations(path_name: str, method: str, old_op: dict[str, Any], new_
             )
 
 
-def compare_admin_contract(base_doc: dict[str, Any], current_doc: dict[str, Any]) -> None:
+def compare_contract(base_doc: dict[str, Any], current_doc: dict[str, Any]) -> None:
     base_paths = base_doc.get("paths", {})
     current_paths = current_doc.get("paths", {})
     if not isinstance(base_paths, dict) or not isinstance(current_paths, dict):
@@ -505,10 +505,16 @@ breaking_change_source = os.environ.get(
     "OPENAPI_BREAKING_CHANGE_SOURCE", "unspecified override"
 ).strip() or "unspecified override"
 
-if base_ref and admin_doc is not None:
-    baseline_admin_doc = load_json_from_git(base_ref, "docs/developer/api-specs/admin-api.json")
-    if baseline_admin_doc is not None:
-        compare_admin_contract(baseline_admin_doc, admin_doc)
+if base_ref:
+    for contract_path, current_doc in (
+        (admin_path, admin_doc),
+        (studio_path, studio_doc),
+    ):
+        if current_doc is None:
+            continue
+        baseline_doc = load_json_from_git(base_ref, str(contract_path))
+        if baseline_doc is not None:
+            compare_contract(baseline_doc, current_doc)
 
 if warnings:
     print("OpenAPI contract validation warnings:")
@@ -516,13 +522,13 @@ if warnings:
         print(f"- {warning}")
 
 if breaking_changes:
-    print("Potential breaking Admin API contract changes detected:")
+    print("Potential breaking OpenAPI contract changes detected:")
     for change in breaking_changes:
         print(f"- {change}")
 
     if not allow_breaking:
         fail(
-            "Breaking Admin API changes were detected. "
+            "Breaking OpenAPI changes were detected. "
             "If intentional, check OPENAPI_BREAKING_CHANGE_APPROVED in the PR body and "
             "update migration/deprecation docs."
         )
