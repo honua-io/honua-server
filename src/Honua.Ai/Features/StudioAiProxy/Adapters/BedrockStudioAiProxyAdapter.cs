@@ -423,7 +423,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         public override string Name => _definition.Name;
 
-        public override string Description => _definition.Description ?? _definition.Name;
+        public override string Description => _definition.BuildProviderDescription() ?? _definition.Name;
 
         public override JsonElement JsonSchema => _definition.InputSchema;
 

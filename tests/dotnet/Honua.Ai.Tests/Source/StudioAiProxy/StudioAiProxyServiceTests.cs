@@ -184,6 +184,59 @@ public sealed class StudioAiProxyServiceTests
     }
 
     [UnitTest]
+    public void ValidateRequest_ToolContractMetadataCountsTowardMaxPromptCharacters()
+    {
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.MaxPromptCharacters = 30;
+        var service = CreateService(config, new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true));
+
+        var error = service.ValidateRequest(new StudioAiChatRequest
+        {
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
+            Tools =
+            [
+                new StudioAiToolDefinition
+                {
+                    Name = "lookup",
+                    InputSchema = JsonDocument.Parse("{}").RootElement.Clone(),
+                    Annotations = JsonDocument.Parse("{\"readOnlyHint\":true}").RootElement.Clone(),
+                    OutputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                }
+            ]
+        });
+
+        error.Should().Contain("configured limit");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ValidateRequest_OversizedToolContractComponent_IsRejected(bool useAnnotations)
+    {
+        var service = CreateService(
+            ConfigWithOneAnthropicProvider("claude", isDefault: true),
+            new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true));
+        using var oversized = JsonDocument.Parse($"{{\"value\":\"{new string('x', 64_001)}\"}}");
+
+        var error = service.ValidateRequest(new StudioAiChatRequest
+        {
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
+            Tools =
+            [
+                new StudioAiToolDefinition
+                {
+                    Name = "lookup",
+                    InputSchema = JsonDocument.Parse("{}").RootElement.Clone(),
+                    Annotations = useAnnotations ? oversized.RootElement.Clone() : null,
+                    OutputSchema = useAnnotations ? null : oversized.RootElement.Clone()
+                }
+            ]
+        });
+
+        error.Should().Contain(useAnnotations ? "annotations" : "output schema");
+    }
+
+    [UnitTest]
     public void ValidateRequest_TooManyTools_IsRejected()
     {
         var service = CreateService(

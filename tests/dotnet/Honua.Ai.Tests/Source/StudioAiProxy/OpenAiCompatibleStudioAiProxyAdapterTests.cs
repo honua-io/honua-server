@@ -101,6 +101,38 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     }
 
     [UnitTest]
+    public async Task StreamAsync_ToolContractMetadata_IsIncludedInProviderDescription()
+    {
+        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var adapter = new OpenAiCompatibleStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler),
+            new StudioAiProxyApiKeyResolver(),
+            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
+        var request = new StudioAiChatRequest
+        {
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }],
+            Tools =
+            [
+                new StudioAiToolDefinition
+                {
+                    Name = "list_incidents",
+                    Description = "List incidents.",
+                    InputSchema = JsonDocument.Parse("{}").RootElement.Clone(),
+                    Annotations = JsonDocument.Parse("{\"readOnlyHint\":true}").RootElement.Clone(),
+                    OutputSchema = JsonDocument.Parse("{\"type\":\"object\"}").RootElement.Clone()
+                }
+            ]
+        };
+
+        await CollectAsync(adapter, request);
+
+        using var payload = JsonDocument.Parse(handler.CapturedRequestBody!);
+        var description = payload.RootElement.GetProperty("tools")[0].GetProperty("function").GetProperty("description").GetString();
+        description.Should().Contain("Tool annotations (JSON): {\"readOnlyHint\":true}")
+            .And.Contain("Expected structured output schema (JSON): {\"type\":\"object\"}");
+    }
+
+    [UnitTest]
     public async Task StreamAsync_ProviderReturnsHttpError_EmitsSingleErrorEvent()
     {
         var adapter = CreateAdapter("bad gateway", HttpStatusCode.BadGateway);
