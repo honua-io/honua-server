@@ -631,6 +631,7 @@ jobs:
             exit 1
           fi
           echo "Published evidence is consistent with the reported verdict."
+          echo "completed=true" >> "${GITHUB_OUTPUT}"
 
           if [ "${verdict}" != "clean" ]; then
             exit 0
@@ -659,3 +660,12 @@ jobs:
             exit 0
           fi
           echo "pr_gate_green=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Record successful exact-head review completion
+        if: steps.target.outputs.skip == 'false' && steps.claude.outcome == 'success' && steps.evidence.outputs.completed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: claude-review-complete-${{ steps.target.outputs.pr }}-${{ steps.target.outputs.head }}
+          path: review-input/files.txt
+          if-no-files-found: error
+          retention-days: 90

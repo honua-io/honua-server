@@ -5,35 +5,40 @@
 // more inline findings anchored to that commit. This is dispatch policy only;
 // Review Gate remains the authority that decides whether evidence attests.
 
-const { ATTESTING_LOGINS } = require('./review-gate-evidence');
 const { buildCleanCommentBody } = require('./claude-review-body');
 
 const SHA = /^[0-9a-f]{40}$/;
+const CLAUDE_REST_LOGIN = 'claude[bot]';
+const RECEIPT_PREFIX = 'claude-review-complete';
 
 function normalise(text) {
   return String(text || '').replace(/\r/g, '').trimEnd();
 }
 
-function isAttestingLogin(login) {
-  return ATTESTING_LOGINS.includes(login);
+function isClaudeLogin(login) {
+  return login === CLAUDE_REST_LOGIN;
 }
 
-function completedClaudeReviewAtHead({ head, comments = [], reviewComments = [] }) {
+function receiptName(pullNumber, head) {
+  return `${RECEIPT_PREFIX}-${pullNumber}-${head}`;
+}
+
+function completedClaudeReviewAtHead({ head, comments = [], reviewComments = [], hasReceipt = false }) {
   if (!SHA.test(String(head || ''))) {
     throw new Error('head must be a full 40-character lowercase commit sha');
   }
 
   const cleanBody = normalise(buildCleanCommentBody(head));
   const clean = comments.some(comment =>
-    isAttestingLogin(comment.user?.login) && normalise(comment.body) === cleanBody);
+    isClaudeLogin(comment.user?.login) && normalise(comment.body) === cleanBody);
   const findings = reviewComments.some(comment =>
-    isAttestingLogin(comment.user?.login) && comment.commit_id === head);
+    isClaudeLogin(comment.user?.login) && comment.commit_id === head);
 
-  return { completed: clean || findings, clean, findings };
+  return { completed: clean || (findings && hasReceipt), clean, findings, hasReceipt };
 }
 
 async function findCompletedClaudeReview({ github, repo, pullNumber, head }) {
-  const [comments, reviewComments] = await Promise.all([
+  const [comments, reviewComments, artifacts] = await Promise.all([
     github.paginate(github.rest.issues.listComments, {
       ...repo,
       issue_number: pullNumber,
@@ -44,9 +49,19 @@ async function findCompletedClaudeReview({ github, repo, pullNumber, head }) {
       pull_number: pullNumber,
       per_page: 100,
     }),
+    github.rest.actions.listArtifactsForRepo({
+      ...repo,
+      name: receiptName(pullNumber, head),
+      per_page: 1,
+    }),
   ]);
 
-  return completedClaudeReviewAtHead({ head, comments, reviewComments });
+  return completedClaudeReviewAtHead({
+    head,
+    comments,
+    reviewComments,
+    hasReceipt: artifacts.data.artifacts.some(artifact => !artifact.expired),
+  });
 }
 
-module.exports = { completedClaudeReviewAtHead, findCompletedClaudeReview };
+module.exports = { completedClaudeReviewAtHead, findCompletedClaudeReview, receiptName };

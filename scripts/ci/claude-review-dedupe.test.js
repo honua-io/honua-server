@@ -16,16 +16,26 @@ test('canonical clean evidence completes review for the exact head', () => {
     comments: [{ user: bot, body: buildCleanCommentBody(head) }],
   });
 
-  assert.deepEqual(result, { completed: true, clean: true, findings: false });
+  assert.deepEqual(result, { completed: true, clean: true, findings: false, hasReceipt: false });
 });
 
-test('inline Claude findings complete review for the exact head', () => {
+test('inline Claude findings complete review only with a successful receipt', () => {
   const result = completedClaudeReviewAtHead({
     head,
     reviewComments: [{ user: bot, commit_id: head, body: 'Blocking finding' }],
+    hasReceipt: true,
   });
 
-  assert.deepEqual(result, { completed: true, clean: false, findings: true });
+  assert.deepEqual(result, { completed: true, clean: false, findings: true, hasReceipt: true });
+});
+
+test('partial Claude findings do not suppress a retry', () => {
+  const result = completedClaudeReviewAtHead({
+    head,
+    reviewComments: [{ user: bot, commit_id: head, body: 'Finding before exhaustion' }],
+  });
+
+  assert.deepEqual(result, { completed: false, clean: false, findings: true, hasReceipt: false });
 });
 
 test('evidence for a different head never suppresses review', () => {
@@ -35,7 +45,7 @@ test('evidence for a different head never suppresses review', () => {
     reviewComments: [{ user: bot, commit_id: staleHead, body: 'Old finding' }],
   });
 
-  assert.deepEqual(result, { completed: false, clean: false, findings: false });
+  assert.deepEqual(result, { completed: false, clean: false, findings: false, hasReceipt: false });
 });
 
 test('non-Claude comments never suppress review', () => {
@@ -45,5 +55,18 @@ test('non-Claude comments never suppress review', () => {
     reviewComments: [{ user: { login: 'someone' }, commit_id: head }],
   });
 
-  assert.deepEqual(result, { completed: false, clean: false, findings: false });
+  assert.deepEqual(result, { completed: false, clean: false, findings: false, hasReceipt: false });
+});
+
+test('Codex findings never suppress the independent Claude lane', () => {
+  const result = completedClaudeReviewAtHead({
+    head,
+    reviewComments: [{
+      user: { login: 'chatgpt-codex-connector[bot]' },
+      commit_id: head,
+    }],
+    hasReceipt: true,
+  });
+
+  assert.deepEqual(result, { completed: false, clean: false, findings: false, hasReceipt: true });
 });
