@@ -9,11 +9,17 @@ using Honua.Ai.Protocols.Mcp.Tools.EsriGp;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -40,6 +46,21 @@ public sealed class EsriGpProfileTests
         body.GetProperty("taskName").GetString().Should().Be("Buffer");
         body.GetProperty("processId").GetString().Should().Be("geometry.buffer");
         body.GetProperty("parameters").EnumerateArray().Select(p => p.GetProperty("name").GetString()).Should().Contain(["wkb", "srid", "distance"]);
+        body.GetProperty("parameters").EnumerateArray()
+            .Should().Contain(parameter => parameter.GetProperty("direction").GetString() == "esriGPParameterDirectionOutput"
+                && parameter.GetProperty("name").GetString() == "outputFeatureLayer");
+    }
+
+    [UnitTest]
+    public void BuildPlan_SameIdempotencyKey_UsesStablePlanId()
+    {
+        var definition = new BuiltInProcessCatalog().GetProcess("geometry.buffer")!;
+        var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["wkb"] = "AQI=", ["distance"] = "1" };
+
+        var first = EsriGpProjection.BuildPlan("analysis", "Buffer", definition, inputs, "same-key");
+        var second = EsriGpProjection.BuildPlan("analysis", "Buffer", definition, inputs, "same-key");
+
+        second.PlanId.Should().Be(first.PlanId);
     }
 
     [UnitTest]
@@ -56,11 +77,26 @@ public sealed class EsriGpProfileTests
                 UpdatedAt = now,
                 Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob, Backend = "local", WorkloadName = "buffer" }
             });
-        var tool = new EsriGpExecuteTaskTool(jobs, new BuiltInProcessCatalog());
+        var tool = new EsriGpExecuteTaskTool(jobs, new BuiltInProcessCatalog(), new GPServerEsriInputTranslator(), NullLogger<EsriGpExecuteTaskTool>.Instance);
         var arguments = McpTestFactory.ParseJson("""
             {"serviceId":"analysis","taskName":"Buffer","parameters":{"wkb":{"geometryType":"esriGeometryPolygon","spatialReference":{"wkid":4326},"features":[{"attributes":{"parcel_id":"P-101"},"geometry":{"rings":[[[-157.8616,21.3067],[-157.8608,21.3067],[-157.8608,21.3073],[-157.8616,21.3073],[-157.8616,21.3067]]]}}]},"distance":0.00025},"idempotencyKey":"journey-key"}
             """);
-        var result = await tool.InvokeAsync(McpTestFactory.AuthenticatedHttpContext(), arguments, CancellationToken.None);
+        var validator = Substitute.For<IResourceValidator>();
+        validator.ValidateServiceV2Async("analysis", "GPServer", Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(new MetadataV2Service
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "analysis", Name = "analysis" },
+                Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+            }));
+        var access = Substitute.For<IAccessPolicyEvaluator>();
+        access.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<AccessPolicy?>(), Arg.Any<AccessPolicy?>(), Arg.Any<object?>())
+            .Returns(Honua.Core.Features.Security.Domain.AccessDecision.Allowed());
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(validator);
+            services.AddSingleton(access);
+        });
+        var result = await tool.InvokeAsync(context, arguments, CancellationToken.None);
         result.StructuredContent!.Value.GetProperty("processId").GetString().Should().Be("geometry.buffer");
         await jobs.Received(1).SubmitJobAsync(
             Arg.Is<AnalysisPlan>(plan => plan.Steps.Single().ProcessId == "geometry.buffer"

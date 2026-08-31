@@ -1,14 +1,17 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Buffers.Binary;
-using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Ai.Protocols.Mcp.Tools.EsriGp;
 
@@ -80,7 +83,9 @@ internal sealed class EsriGpDescribeTaskTool(
 
 internal sealed class EsriGpExecuteTaskTool(
     IGeoprocessingJobService jobService,
-    IProcessCatalog processCatalog) : IMcpTool
+    IProcessCatalog processCatalog,
+    IEsriGeoprocessingInputTranslator inputTranslator,
+    ILogger<EsriGpExecuteTaskTool> logger) : IMcpTool
 {
     public string Name => EsriGpToolNames.ExecuteTask;
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
@@ -97,12 +102,29 @@ internal sealed class EsriGpExecuteTaskTool(
 
     public async Task<McpToolsCallResult> InvokeAsync(HttpContext context, JsonElement? arguments, CancellationToken cancellationToken)
     {
+        McpTelemetry.EnrichActivity("EsriGpExecuteTask");
+        McpLog.ToolInvoked(logger, Name, WorkflowFamily);
         var principal = McpAuthorizationHelper.EnsurePrincipal(context);
         await jobService.EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Process, OperatorOperation.Execute, cancellationToken).ConfigureAwait(false);
+        ExecutePlanTool.EnforceExecutionPolicy(context, Name, "honua.mcp.esri-gp");
         var input = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.EsriGpExecuteTaskInput);
+        System.Diagnostics.Activity.Current?.SetTag("honua.service.id", input.ServiceId);
+        System.Diagnostics.Activity.Current?.SetTag("honua.gp.task.name", input.TaskName);
+        McpLog.EsriGpTaskInvoked(logger, input.ServiceId, input.TaskName);
+        await ValidateServiceAccessAsync(context, input.ServiceId, cancellationToken).ConfigureAwait(false);
         var definition = EsriGpProjection.Resolve(processCatalog, input.TaskName)
             ?? throw new GeoprocessingNotFoundException($"Esri GP task '{input.TaskName}' was not found.");
-        var plan = EsriGpProjection.BuildPlan(input.ServiceId, input.TaskName, definition, input.Parameters);
+        var rawInputs = input.Parameters.EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.ValueKind == JsonValueKind.String
+                ? property.Value.GetString() ?? string.Empty
+                : property.Value.GetRawText(), StringComparer.OrdinalIgnoreCase);
+        var translated = inputTranslator.Translate(rawInputs);
+        if (translated.CapabilityMessage is not null)
+        {
+            throw new GeoprocessingValidationException(translated.CapabilityMessage);
+        }
+
+        var plan = EsriGpProjection.BuildPlan(input.ServiceId, input.TaskName, definition, translated.Inputs, input.IdempotencyKey);
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["submittedVia"] = "MCP.EsriGP",
@@ -119,6 +141,23 @@ internal sealed class EsriGpExecuteTaskTool(
             TaskName = input.TaskName,
             ProcessId = definition.ProcessId
         }, McpJsonContext.Default.EsriGpExecuteTaskOutput);
+    }
+
+    private static async Task ValidateServiceAccessAsync(HttpContext context, string serviceId, CancellationToken cancellationToken)
+    {
+        var validator = context.RequestServices.GetService<IResourceValidator>()
+            ?? throw new GeoprocessingStoreUnavailableException("The service catalog is not available on this server.");
+        var result = await validator.ValidateServiceV2Async(serviceId, "GPServer", cancellationToken).ConfigureAwait(false);
+        if (!result.IsValid || result.Resource is null)
+        {
+            throw new GeoprocessingNotFoundException(result.ErrorMessage ?? $"GPServer service '{serviceId}' was not found.");
+        }
+
+        if (await AccessPolicyHelpers.RequireServiceAccessAsync(
+                context, result.Resource, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false) is not null)
+        {
+            throw new GeoprocessingAuthorizationException(false);
+        }
     }
 }
 
@@ -177,56 +216,35 @@ internal static class EsriGpProjection
             ParameterType = parameter.Required ? "esriGPParameterTypeRequired" : "esriGPParameterTypeOptional",
             DefaultValue = parameter.DefaultValue,
             ChoiceList = parameter.AllowedValues
-        }).ToArray()
+        }).Concat(definition.OutputArtifactKinds.Select((kind, index) => new EsriGpParameterDescription
+        {
+            Name = BuildOutputParameterName(kind, index, definition.OutputArtifactKinds),
+            DisplayName = BuildOutputParameterName(kind, index, definition.OutputArtifactKinds),
+            Description = $"Output artifact of type {kind}.",
+            DataType = ToEsriDataType(kind),
+            Direction = "esriGPParameterDirectionOutput",
+            ParameterType = definition.OutputsAreAlternatives ? "esriGPParameterTypeOptional" : "esriGPParameterTypeRequired"
+        })).ToArray()
     };
 
-    public static AnalysisPlan BuildPlan(string serviceId, string taskName, ProcessDefinition definition, JsonElement parameters)
+    public static AnalysisPlan BuildPlan(string serviceId, string taskName, ProcessDefinition definition, Dictionary<string, string> inputs, string? idempotencyKey)
     {
-        if (parameters.ValueKind != JsonValueKind.Object) throw new GeoprocessingValidationException("parameters must be an object.");
-        var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var property in parameters.EnumerateObject()) inputs[property.Name] = ToCanonicalValue(property.Name, property.Value, inputs);
         var slug = definition.ProcessId.Replace('.', '-');
         return new AnalysisPlan
         {
-            PlanId = $"mcp-esri-gp-{serviceId}-{slug}-{Guid.NewGuid():N}",
+            PlanId = $"mcp-esri-gp-{serviceId}-{slug}-{StableRequestId(idempotencyKey, inputs)}",
             IntentId = $"mcp:esri-gp:{serviceId}:{taskName}",
             Steps = [new AnalysisPlanStep { StepId = $"gp-task-{slug}", Kind = AnalysisPlanStepKind.Geoprocess, ProcessId = definition.ProcessId, Inputs = inputs }],
             Outputs = definition.OutputArtifactKinds
         };
     }
 
-    private static string ToCanonicalValue(string name, JsonElement value, Dictionary<string, string> inputs)
+    private static string StableRequestId(string? idempotencyKey, IReadOnlyDictionary<string, string> inputs)
     {
-        if (value.ValueKind == JsonValueKind.String) return value.GetString() ?? string.Empty;
-        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty("features", out var features) && features.ValueKind == JsonValueKind.Array)
-        {
-            if (features.GetArrayLength() != 1) throw new GeoprocessingValidationException($"Parameter '{name}' FeatureSet must contain exactly one feature.");
-            var feature = features[0];
-            if (!feature.TryGetProperty("geometry", out var geometry) || !geometry.TryGetProperty("rings", out var rings))
-                throw new GeoprocessingValidationException($"Parameter '{name}' FeatureSet must contain a polygon geometry.");
-            if (value.TryGetProperty("spatialReference", out var sr) && sr.TryGetProperty("wkid", out var wkid)) inputs["srid"] = wkid.GetInt32().ToString(CultureInfo.InvariantCulture);
-            return Convert.ToBase64String(WritePolygonWkb(rings));
-        }
-        return value.GetRawText();
-    }
-
-    private static byte[] WritePolygonWkb(JsonElement rings)
-    {
-        var parsed = rings.EnumerateArray().Select(r => r.EnumerateArray().Select(p => (X: p[0].GetDouble(), Y: p[1].GetDouble())).ToArray()).ToArray();
-        var length = 1 + 4 + 4 + parsed.Sum(r => 4 + r.Length * 16);
-        var bytes = new byte[length]; var offset = 0; bytes[offset++] = 1;
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), 3); offset += 4;
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), (uint)parsed.Length); offset += 4;
-        foreach (var ring in parsed)
-        {
-            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offset, 4), (uint)ring.Length); offset += 4;
-            foreach (var point in ring)
-            {
-                BinaryPrimitives.WriteInt64LittleEndian(bytes.AsSpan(offset, 8), BitConverter.DoubleToInt64Bits(point.X)); offset += 8;
-                BinaryPrimitives.WriteInt64LittleEndian(bytes.AsSpan(offset, 8), BitConverter.DoubleToInt64Bits(point.Y)); offset += 8;
-            }
-        }
-        return bytes;
+        var identity = string.IsNullOrWhiteSpace(idempotencyKey)
+            ? string.Join('\n', inputs.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={pair.Value}"))
+            : idempotencyKey;
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToLowerInvariant()[..24];
     }
 
     private static string ToEsriDataType(ProcessParameterValueType type) => type switch
@@ -237,4 +255,32 @@ internal static class EsriGpProjection
         ProcessParameterValueType.Wkb or ProcessParameterValueType.WkbArray => "GPFeatureRecordSetLayer",
         _ => "GPString"
     };
+
+    private static string ToEsriDataType(ArtifactKind kind) => kind switch
+    {
+        ArtifactKind.FeatureLayer => "GPFeatureRecordSetLayer",
+        ArtifactKind.Table => "GPRecordSet",
+        ArtifactKind.Raster => "GPRasterDataLayer",
+        ArtifactKind.File or ArtifactKind.Report or ArtifactKind.Map or ArtifactKind.AppBundle => "GPDataFile",
+        _ => "GPString"
+    };
+
+    private static string BuildOutputParameterName(ArtifactKind kind, int index, IReadOnlyList<ArtifactKind> allKinds)
+    {
+        var baseName = kind switch
+        {
+            ArtifactKind.FeatureLayer => "outputFeatureLayer",
+            ArtifactKind.Table => "outputTable",
+            ArtifactKind.Raster => "outputRaster",
+            ArtifactKind.File => "outputFile",
+            ArtifactKind.Report => "outputReport",
+            ArtifactKind.Map => "outputMap",
+            ArtifactKind.Scalar => "outputScalar",
+            ArtifactKind.AppBundle => "outputBundle",
+            _ => "output"
+        };
+        return allKinds.Count(candidate => candidate == kind) <= 1
+            ? baseName
+            : $"{baseName}{allKinds.Take(index + 1).Count(candidate => candidate == kind)}";
+    }
 }

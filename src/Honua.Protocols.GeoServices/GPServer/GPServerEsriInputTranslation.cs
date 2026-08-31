@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.GPServer;
@@ -21,24 +22,12 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// Honua <c>geometry.*</c> processes execute on a SINGLE geometry + SRID, so a
 /// multi-feature FeatureSet cannot be flattened to a single canonical input
 /// without losing data. Such inputs are surfaced through
-/// <see cref="EsriInputTranslationResult.RequiresFeatureCollectionExecution"/>
+/// <see cref="EsriGeoprocessingInputTranslation.RequiresFeatureCollectionExecution"/>
 /// so the adapter can return an honest capability message rather than silently
 /// dropping features.
 /// </summary>
-internal static class GPServerEsriInputTranslation
+public sealed class GPServerEsriInputTranslator : IEsriGeoprocessingInputTranslator
 {
-    /// <summary>
-    /// Outcome of attempting to translate Esri geometry/FeatureSet inputs.
-    /// </summary>
-    internal readonly record struct EsriInputTranslationResult(
-        Dictionary<string, string> Inputs,
-        bool RequiresFeatureCollectionExecution,
-        string? CapabilityMessage,
-        int? InputSpatialReference)
-    {
-        public bool Translated { get; init; }
-    }
-
     /// <summary>
     /// Walks every supplied input value and rewrites recognised Esri geometry
     /// JSON / FeatureSet payloads into canonical base64-WKB strings.
@@ -48,7 +37,7 @@ internal static class GPServerEsriInputTranslation
     /// place). Values may be simple strings, base64 WKB, GP unit objects, or
     /// Esri geometry / FeatureSet JSON.
     /// </param>
-    public static EsriInputTranslationResult Translate(IReadOnlyDictionary<string, string> inputs)
+    public EsriGeoprocessingInputTranslation Translate(IReadOnlyDictionary<string, string> inputs)
     {
         ArgumentNullException.ThrowIfNull(inputs);
 
@@ -91,13 +80,13 @@ internal static class GPServerEsriInputTranslation
                     var featureCount = featuresProp.GetArrayLength();
                     if (featureCount == 0)
                     {
-                        return new EsriInputTranslationResult(
+                        return new EsriGeoprocessingInputTranslation(
                             translated,
                             RequiresFeatureCollectionExecution: false,
                             CapabilityMessage:
                                 $"Input '{key}' is an empty FeatureSet; supply at least one feature with a geometry.",
-                            InputSpatialReference: inputSpatialReference)
-                        { Translated = false };
+                            InputSpatialReference: inputSpatialReference,
+                            Translated: false);
                     }
 
                     if (featureCount > 1)
@@ -105,7 +94,7 @@ internal static class GPServerEsriInputTranslation
                         // Multi-feature execution requires the server feature-collection /
                         // layer-level execution stream, which is not part of the
                         // single-geometry geometry.* contract. Do not fake a result.
-                        return new EsriInputTranslationResult(
+                        return new EsriGeoprocessingInputTranslation(
                             translated,
                             RequiresFeatureCollectionExecution: true,
                             CapabilityMessage:
@@ -114,8 +103,8 @@ internal static class GPServerEsriInputTranslation
                                 "execution requires the feature-collection/layer-level execution stream " +
                                 "(use a layer-scoped task such as analytics.* / generalization.* / " +
                                 "conversion.feature-project, or submit one feature per request).",
-                            InputSpatialReference: inputSpatialReference)
-                        { Translated = false };
+                            InputSpatialReference: inputSpatialReference,
+                            Translated: false);
                     }
 
                     var feature = featuresProp[0];
@@ -123,23 +112,23 @@ internal static class GPServerEsriInputTranslation
                     if (!feature.TryGetProperty("geometry", out var featureGeometry) ||
                         featureGeometry.ValueKind != JsonValueKind.Object)
                     {
-                        return new EsriInputTranslationResult(
+                        return new EsriGeoprocessingInputTranslation(
                             translated,
                             RequiresFeatureCollectionExecution: false,
                             CapabilityMessage:
                                 $"Input '{key}' FeatureSet feature is missing a 'geometry' object.",
-                            InputSpatialReference: inputSpatialReference)
-                        { Translated = false };
+                            InputSpatialReference: inputSpatialReference,
+                            Translated: false);
                     }
 
                     if (!TryConvertEsriGeometry(featureGeometry, setSr, out var wkbBase64, out var sr, out var convertError))
                     {
-                        return new EsriInputTranslationResult(
+                        return new EsriGeoprocessingInputTranslation(
                             translated,
                             RequiresFeatureCollectionExecution: false,
                             CapabilityMessage: $"Input '{key}' FeatureSet geometry could not be translated: {convertError}",
-                            InputSpatialReference: inputSpatialReference)
-                        { Translated = false };
+                            InputSpatialReference: inputSpatialReference,
+                            Translated: false);
                     }
 
                     translated[key] = wkbBase64;
@@ -153,12 +142,12 @@ internal static class GPServerEsriInputTranslation
                 {
                     if (!TryConvertEsriGeometry(root, parentSpatialReference: null, out var wkbBase64, out var sr, out var convertError))
                     {
-                        return new EsriInputTranslationResult(
+                        return new EsriGeoprocessingInputTranslation(
                             translated,
                             RequiresFeatureCollectionExecution: false,
                             CapabilityMessage: $"Input '{key}' esriGeometry could not be translated: {convertError}",
-                            InputSpatialReference: inputSpatialReference)
-                        { Translated = false };
+                            InputSpatialReference: inputSpatialReference,
+                            Translated: false);
                     }
 
                     translated[key] = wkbBase64;
@@ -180,12 +169,12 @@ internal static class GPServerEsriInputTranslation
             translated["srid"] = sridValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        return new EsriInputTranslationResult(
+        return new EsriGeoprocessingInputTranslation(
             translated,
             RequiresFeatureCollectionExecution: false,
             CapabilityMessage: null,
-            InputSpatialReference: inputSpatialReference)
-        { Translated = anyTranslated };
+            InputSpatialReference: inputSpatialReference,
+            Translated: anyTranslated);
     }
 
     private static bool LooksLikeJsonObject(string? value)
@@ -293,4 +282,10 @@ internal static class GPServerEsriInputTranslation
 
         return null;
     }
+}
+
+internal static class GPServerEsriInputTranslation
+{
+    public static EsriGeoprocessingInputTranslation Translate(IReadOnlyDictionary<string, string> inputs) =>
+        new GPServerEsriInputTranslator().Translate(inputs);
 }

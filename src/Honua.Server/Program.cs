@@ -755,6 +755,8 @@ Honua.Core.Features.Publishing.Content.ContentPublishingServiceCollectionExtensi
 // Register shared Infrastructure services
 builder.Services.AddScoped<Honua.Infrastructure.Services.IGeometryConverter,
     Honua.Infrastructure.Services.GeometryConverter>();
+builder.Services.AddSingleton<Honua.Core.Features.Geoprocessing.Abstractions.IEsriGeoprocessingInputTranslator,
+    Honua.Protocols.GeoServices.GPServer.GPServerEsriInputTranslator>();
 builder.Services.AddScoped<ILayerStyleService, LayerStyleService>();
 builder.Services.AddScoped<Honua.Core.Features.Styling.Abstractions.IOgcStyleProjection,
     Honua.Server.Features.Styling.OgcStyleProjection>();
