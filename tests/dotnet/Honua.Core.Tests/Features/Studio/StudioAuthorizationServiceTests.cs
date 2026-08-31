@@ -475,15 +475,36 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
-    public async Task AuthorizeAsync_CreateScopedOwner_CanUpdateOwnDraft()
+    public async Task AuthorizeAsync_CreateScopedOwner_CannotUpdateOrDeleteOwnDraft()
     {
         var service = BuildService(enabled: true, out _);
         var principal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Create);
 
-        var decision = await service.AuthorizeAsync(
+        var update = await service.AuthorizeAsync(
             principal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+        var delete = await service.AuthorizeAsync(
+            principal, Alice, StudioAuthorizationOperation.DeleteDraft, Alice);
 
-        Assert.True(decision.IsAllowed);
+        Assert.False(update.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.ScopeDeniedCode, update.Code);
+        Assert.False(delete.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.ScopeDeniedCode, delete.Code);
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_UpdateAndDeleteScopedOwner_UsesMatchingMutationScopes()
+    {
+        var service = BuildService(enabled: true, out _);
+        var updatePrincipal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Update);
+        var deletePrincipal = ScopeGovernedPrincipal(Alice, "creator", OperatorScopeCatalog.Delete);
+
+        var update = await service.AuthorizeAsync(
+            updatePrincipal, Alice, StudioAuthorizationOperation.UpdateDraft, Alice);
+        var delete = await service.AuthorizeAsync(
+            deletePrincipal, Alice, StudioAuthorizationOperation.DeleteDraft, Alice);
+
+        Assert.True(update.IsAllowed);
+        Assert.True(delete.IsAllowed);
     }
 
     private static StudioAuthorizationService BuildService(

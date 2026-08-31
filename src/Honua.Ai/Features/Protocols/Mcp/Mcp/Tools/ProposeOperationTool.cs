@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
@@ -99,6 +100,21 @@ internal sealed class ProposeOperationTool : IMcpTool
                 McpJsonContext.Default.McpProposeOperationOutput);
         }
 
+        var scopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal);
+        var recognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal);
+        if (scopeGoverned && !OperatorScopeCatalog.PermitsOperation(recognizedScopes, OperatorOperation.Publish))
+        {
+            return McpToolHelpers.SuccessResult(
+                new McpProposeOperationOutput
+                {
+                    Outcome = "rejected",
+                    RequiresApproval = false,
+                    SupportedKinds = supportedKinds,
+                    Message = $"Operation kind '{kind}' requires OAuth scope '{OperatorScopeCatalog.Publish}'."
+                },
+                McpJsonContext.Default.McpProposeOperationOutput);
+        }
+
         var gateway = httpContext.RequestServices.GetService<IOperationGateway>();
         if (gateway is null)
         {
@@ -122,9 +138,8 @@ internal sealed class ProposeOperationTool : IMcpTool
             Reason = argument.Reason,
             IdempotencyKey = argument.IdempotencyKey,
             ExecutionPayload = argument.ExecutionPayload,
-            ScopeGoverned = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog.IsScopeGoverned(principal),
-            RecognizedScopes = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog
-                .CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
+            ScopeGoverned = scopeGoverned,
+            RecognizedScopes = recognizedScopes.OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
         };
 
         var envelopeFactory = httpContext.RequestServices.GetService<IOperationEnvelopeFactory>();

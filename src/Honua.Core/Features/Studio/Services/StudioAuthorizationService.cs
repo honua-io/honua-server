@@ -281,6 +281,8 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
             StudioAuthorizationOperation.PublishRequest => OperatorOperation.Publish,
             StudioAuthorizationOperation.Generate => OperatorOperation.Execute,
             StudioAuthorizationOperation.Rollback => OperatorOperation.Rollback,
+            StudioAuthorizationOperation.UpdateDraft => OperatorOperation.Update,
+            StudioAuthorizationOperation.DeleteDraft => OperatorOperation.Delete,
             _ => OperatorOperation.Create,
         };
 
