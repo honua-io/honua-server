@@ -57,6 +57,9 @@ services:
       context: .
       args:
         HONUA_INCLUDE_STAC_OPS_DEMO: "true"
+      secrets:
+        - github_actor
+        - github_token
     ports:
       # Bind to localhost by default so the zero-override quickstart stays
       # local-only: the dev admin password is a public placeholder, so the
@@ -184,3 +187,9 @@ volumes:
   dotnet_diagnostics:
   redis_data:
   minio_data:
+
+secrets:
+  github_actor:
+    environment: GITHUB_ACTOR
+  github_token:
+    environment: GITHUB_TOKEN
