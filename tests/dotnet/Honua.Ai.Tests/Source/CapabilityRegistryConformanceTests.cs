@@ -277,6 +277,7 @@ public sealed class CapabilityRegistryConformanceTests
             new DryRunPlanTool(jobService, NullLogger<DryRunPlanTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
+            new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new AdminServerStatusTool(),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
