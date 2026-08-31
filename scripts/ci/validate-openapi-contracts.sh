@@ -423,10 +423,12 @@ def compare_admin_contract(base_doc: dict[str, Any], current_doc: dict[str, Any]
 admin_path = Path("docs/developer/api-specs/admin-api.json")
 features_path = Path("docs/developer/api-specs/ogc-api-features.json")
 tiles_path = Path("docs/developer/api-specs/ogc-api-tiles.json")
+studio_path = Path("docs/developer/api-specs/studio-api.json")
 
 admin_doc = load_json(admin_path)
 features_doc = load_json(features_path)
 tiles_doc = load_json(tiles_path)
+studio_doc = load_json(studio_path)
 
 if admin_doc is not None:
     validate_common(admin_path, admin_doc)
@@ -482,6 +484,19 @@ if tiles_doc is not None:
     for required_path in required_tile_paths:
         if required_path not in available_tile_paths:
             fail(f"{tiles_path}: required path '{required_path}' is missing.")
+
+if studio_doc is not None:
+    validate_common(studio_path, studio_doc)
+    required_studio_paths = [
+        "/package-drafts",
+        "/content-items",
+        "/content-items/{itemId}/versions/{versionId}/publish-requests",
+        "/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}",
+    ]
+    available_studio_paths = studio_doc.get("paths", {})
+    for required_path in required_studio_paths:
+        if required_path not in available_studio_paths:
+            fail(f"{studio_path}: required path '{required_path}' is missing.")
 
 base_ref = os.environ.get("OPENAPI_BASE_REF", "").strip()
 allow_breaking_raw = os.environ.get("OPENAPI_ALLOW_BREAKING_CHANGES", "false").strip().lower()

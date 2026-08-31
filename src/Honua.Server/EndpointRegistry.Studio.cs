@@ -25,6 +25,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/studio/content-items/{itemId}/versions/{versionId}"),
         new("POST", "/api/v1/studio/content-items/{itemId}/version-comparisons"),
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests"),
+        new("GET", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}"),
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
         // Deterministic map/app package draft creation (#1180; re-founded by ADR-0076 #3255).
