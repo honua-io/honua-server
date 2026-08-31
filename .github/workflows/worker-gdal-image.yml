@@ -8,7 +8,8 @@ name: GDAL Worker Image
 # ROUTING CONTRACT (#3553). The `pull_request` trigger below is deliberately
 # limited to inputs that DEFINE the image: the worker Docker context, worker-owned
 # managed source, the build context filter, the in-image restore helper, the
-# boundary verifier, and this workflow. Shared managed-source and build-graph
+# boundary verifier, the production-image certification test and its CI setup,
+# and this workflow. Shared managed-source and build-graph
 # inputs (`src/Honua.Core/**`, `src/Honua.Core.Abstractions/**`,
 # `src/Honua.Analyzers/**`, `src/Honua.Geoprocessing/**`, `src/Honua.Jobs/**`,
 # `src/Honua.Geometry/**`, `src/Honua.Hosting/**`,
@@ -26,7 +27,8 @@ name: GDAL Worker Image
 #     by a broad `src/**` or build-graph change is therefore caught within seven
 #     days rather than left uncovered.
 #   * Direct image-boundary risk -> this workflow, per PR, whenever the Docker
-#     context, worker-owned source, restore helper, verifier, or routing changes.
+#     context, worker-owned source, restore helper, verifier, certification, or
+#     routing changes.
 #
 # As with #3204, deleting the boundary lane would trade cost for unbounded
 # defects, so nothing is deleted here: the weekly schedule remains unchanged,
@@ -40,6 +42,9 @@ on:
       - '.dockerignore'
       - 'scripts/docker/restore-dotnet-with-github-packages.sh'
       - 'scripts/ci/verify-serving-image-boundary.py'
+      - 'tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs'
+      - 'tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj'
+      - '.github/actions/setup-dotnet-ci/**'
       - '.github/workflows/worker-gdal-image.yml'
   schedule:
     - cron: '45 7 * * 1'
@@ -73,6 +78,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
+      - name: Set up .NET CI
+        uses: ./.github/actions/setup-dotnet-ci
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
@@ -105,6 +113,15 @@ jobs:
           python3 scripts/ci/verify-serving-image-boundary.py
           --worker-image honua-worker-gdal:boundary
           --worker-redis 127.0.0.1:6379
+
+      - name: Certify production worker queue handoff
+        env:
+          HONUA_WORKER_IMAGE: honua-worker-gdal:boundary
+        run: >-
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj
+          --configuration Release
+          --filter FullyQualifiedName~ProductionWorkerContainerHandoffTests
+          --logger "console;verbosity=normal"
 
       - name: Create worker vulnerability report
         uses: aquasecurity/trivy-action@v0.36.0

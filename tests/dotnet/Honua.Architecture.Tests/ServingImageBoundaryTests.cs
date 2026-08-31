@@ -452,6 +452,8 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("file: docker/worker-gdal/Dockerfile");
         workflow.Should().Contain("--worker-image honua-worker-gdal:boundary");
         workflow.Should().Contain("--worker-redis 127.0.0.1:6379");
+        workflow.Should().Contain("uses: ./.github/actions/setup-dotnet-ci");
+        workflow.Should().Contain("--filter FullyQualifiedName~ProductionWorkerContainerHandoffTests");
         workflow.Should().Contain("redis:");
         workflow.Should().Contain("aquasecurity/trivy-action");
         workflow.Should().Contain("severity: CRITICAL,HIGH", Exactly.Twice());
@@ -473,6 +475,9 @@ public sealed class ServingImageBoundaryTests
             ".dockerignore",
             "scripts/docker/restore-dotnet-with-github-packages.sh",
             "scripts/ci/verify-serving-image-boundary.py",
+            "tests/dotnet/Honua.Worker.Gdal.Tests/ProductionWorkerContainerHandoffTests.cs",
+            "tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj",
+            ".github/actions/setup-dotnet-ci/**",
             ".github/workflows/worker-gdal-image.yml");
     }
 
