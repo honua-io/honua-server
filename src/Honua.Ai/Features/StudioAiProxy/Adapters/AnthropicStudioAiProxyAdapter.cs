@@ -274,7 +274,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         if (request.Tools is { Count: > 0 } tools && mode != StudioAiToolChoiceMode.None)
         {
             proxyRequest.Tools = tools
-                .Select(t => new AnthropicProxyTool { Name = t.Name, Description = t.Description, InputSchema = t.InputSchema })
+                .Select(t => new AnthropicProxyTool { Name = t.Name, Description = t.BuildProviderDescription(), InputSchema = t.InputSchema })
                 .ToArray();
 
             proxyRequest.ToolChoice = mode switch

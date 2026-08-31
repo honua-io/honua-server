@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text;
 
 namespace Honua.Ai.StudioAiProxy.Domain;
 
@@ -86,6 +87,39 @@ public sealed class StudioAiToolDefinition
 
     /// <summary>Optional JSON Schema describing the tool's structured result.</summary>
     public JsonElement? OutputSchema { get; init; }
+
+    /// <summary>
+    /// Builds the provider description, including contract metadata that provider tool APIs do not
+    /// expose as first-class fields. Keeping the JSON in the model-visible description preserves
+    /// the contract across Anthropic, OpenAI-compatible, and Bedrock requests.
+    /// </summary>
+    internal string? BuildProviderDescription()
+    {
+        if (Annotations is null && OutputSchema is null)
+        {
+            return Description;
+        }
+
+        var description = new StringBuilder(Description);
+        AppendContract(description, "Tool annotations", Annotations);
+        AppendContract(description, "Expected structured output schema", OutputSchema);
+        return description.ToString();
+    }
+
+    private static void AppendContract(StringBuilder description, string label, JsonElement? contract)
+    {
+        if (contract is null)
+        {
+            return;
+        }
+
+        if (description.Length > 0)
+        {
+            description.AppendLine().AppendLine();
+        }
+
+        description.Append(label).Append(" (JSON): ").Append(contract.Value.GetRawText());
+    }
 }
 
 /// <summary>How strongly the caller wants the model to invoke a tool.</summary>
