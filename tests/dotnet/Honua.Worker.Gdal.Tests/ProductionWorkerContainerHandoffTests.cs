@@ -99,11 +99,15 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             await WaitForQueueMemberRemovalAsync(multiplexer.GetDatabase(), malformed, TimeSpan.FromSeconds(10));
             var untouched = await store.GetAsync(unrelated.OperationId);
             untouched.Should().BeEquivalentTo(unrelated, options => options.Excluding(job => job.Version));
+            (await logStore.GetLogsAsync(malformed)).Should().BeEmpty(
+                "a rejected transport member must never reach a GDAL execution context");
+            (await logStore.GetLogsAsync(unrelated.OperationId)).Should().BeEmpty(
+                "the malformed member must not invoke GDAL against an unrelated job");
 
             var crash = CreateSlowVectorJob();
             (await store.TryCreateAsync(crash)).Should().BeTrue();
             await queue.EnqueueAsync(crash.OperationId);
-            await WaitForJobAsync(
+            var running = await WaitForJobAsync(
                 store, crash.OperationId,
                 job => job.Status == ExecutionJobStatus.Running,
                 TimeSpan.FromSeconds(20));
@@ -112,13 +116,14 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             // the Running record that crash reconciliation must recover.
             await worker.ExecAsync(["/bin/kill", "-9", "1"]);
 
-            var running = await store.GetAsync(crash.OperationId);
             var stale = DateTimeOffset.UtcNow.AddMinutes(-5);
-            await store.SetAsync(running! with
+            await store.SetAsync(running with
             {
+                Status = ExecutionJobStatus.Running,
                 UpdatedAt = stale,
                 LastHeartbeatAt = stale,
                 ClaimedAt = stale,
+                AttemptCount = 1,
                 HeartbeatPolicy = new JobHeartbeatPolicy
                 {
                     Interval = TimeSpan.FromMilliseconds(50),
@@ -150,7 +155,7 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             {
                 Directory.Delete(hostOutputRoot, recursive: true);
             }
-            catch (IOException)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 // Testcontainers can briefly retain a bind-mount handle during teardown.
             }
