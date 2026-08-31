@@ -53,6 +53,7 @@ internal static class OperationsServiceCollectionExtensions
                      StudioDraftOperations.Delete,
                      StudioDraftOperations.Validate,
                      StudioDraftOperations.PreviewPlan,
+                     StudioDraftOperations.SaveVersion,
                  })
         {
             services.AddSingleton<IOperationApprovalRequestMapper>(
@@ -97,6 +98,7 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftDeleteExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftValidateExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftPreviewPlanExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioSaveVersionExecutor>());
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
 
         var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==

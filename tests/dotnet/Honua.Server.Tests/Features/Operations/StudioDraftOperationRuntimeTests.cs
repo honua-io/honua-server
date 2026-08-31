@@ -20,6 +20,7 @@ public sealed class StudioDraftOperationRuntimeTests
     [Theory]
     [InlineData(StudioDraftOperations.Validate)]
     [InlineData(StudioDraftOperations.PreviewPlan)]
+    [InlineData(StudioDraftOperations.SaveVersion)]
     public void LiveDraftOperations_AreRuntimeDynamic(string operationId)
     {
         var descriptor = StudioDraftOperations.BuildDescriptors()
@@ -77,6 +78,43 @@ public sealed class StudioDraftOperationRuntimeTests
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         await lifecycle.Received(1).PreviewPlanAsync(draftId, "studio-author", Arg.Any<CancellationToken>());
         await lifecycle.DidNotReceiveWithAnyArgs().ValidateDraftAsync(default, default, default);
+    }
+
+    [UnitTest]
+    public async Task SaveVersionExecutor_FencesActuationToPayloadGeneration()
+    {
+        var draftId = Guid.NewGuid();
+        const long expectedGeneration = 17;
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.SaveDraftAsVersionAsync(
+                draftId,
+                "approved change",
+                "studio-author",
+                expectedGeneration,
+                Arg.Any<CancellationToken>())
+            .Returns((StudioContentVersion?)null);
+        var executor = new StudioSaveVersionExecutor(lifecycle, TimeProvider.System);
+        var payload = JsonSerializer.Serialize(
+            new StudioSaveVersionPayload
+            {
+                DraftId = draftId,
+                ExpectedGeneration = expectedGeneration,
+                ChangeNote = "approved change",
+                ActorId = "studio-author",
+            },
+            StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.SaveVersion, payload),
+            Context("save-version"));
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        await lifecycle.Received(1).SaveDraftAsVersionAsync(
+            draftId,
+            "approved change",
+            "studio-author",
+            expectedGeneration,
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -199,6 +237,32 @@ public sealed class StudioDraftOperationRuntimeTests
         mapped.Kind.Should().Be(OperationClass.StudioDraftMutation);
         var replay = mapper.MapReplay(mapped);
         replay.Request.Parameters[StudioDraftOperations.PayloadParameter].Should().NotBeNull();
+        replay.TenantId.Should().Be("tenant-a");
+        replay.SchemaName.Should().Be("tenant_schema");
+    }
+
+    [UnitTest]
+    public void SaveVersionApprovalMapper_PreservesExpectedGenerationForReplay()
+    {
+        var mapper = new StudioDraftApprovalRequestMapper(StudioDraftOperations.SaveVersion);
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == StudioDraftOperations.SaveVersion);
+        var payload = JsonSerializer.Serialize(
+            new StudioSaveVersionPayload { DraftId = Guid.NewGuid(), ExpectedGeneration = 23 },
+            StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload);
+        var request = Request(StudioDraftOperations.SaveVersion, payload);
+
+        var mapped = mapper.Map(
+            descriptor,
+            request,
+            new OperationPolicyContext { TenantId = "tenant-a", SchemaName = "tenant_schema" },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var replay = mapper.MapReplay(mapped);
+        var replayPayload = JsonSerializer.Deserialize(
+            replay.Request.Parameters[StudioDraftOperations.PayloadParameter]!,
+            StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload);
+
+        replayPayload!.ExpectedGeneration.Should().Be(23);
         replay.TenantId.Should().Be("tenant-a");
         replay.SchemaName.Should().Be("tenant_schema");
     }

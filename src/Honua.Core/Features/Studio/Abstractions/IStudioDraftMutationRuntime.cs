@@ -36,6 +36,10 @@ public interface IStudioDraftMutationRuntime
         string? actorId,
         StudioDraftMutationContext context,
         CancellationToken cancellationToken = default);
+
+    Task<StudioDraftMutationReceipt<StudioContentVersion>> SaveVersionAsync(
+        Guid draftId, long expectedGeneration, string? changeNote, string? actorId, StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Trusted evidence supplied by an authorized protocol adapter.</summary>

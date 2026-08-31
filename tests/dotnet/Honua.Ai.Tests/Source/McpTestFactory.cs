@@ -158,6 +158,17 @@ internal static class McpTestFactory
                 await lifecycle.PreviewPlanAsync(draftId, actorId, cancellationToken).ConfigureAwait(false),
                 "studio.draft.preview-plan");
 
+        public async Task<StudioDraftMutationReceipt<StudioContentVersion>> SaveVersionAsync(
+            Guid draftId,
+            long expectedGeneration,
+            string? changeNote,
+            string? actorId,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default) => Receipt(
+                await lifecycle.SaveDraftAsVersionAsync(
+                    draftId, changeNote, actorId, expectedGeneration, cancellationToken).ConfigureAwait(false),
+                "studio.draft.save-version");
+
         private static StudioDraftMutationReceipt<T> Receipt<T>(T? value, string operationId)
         {
             var now = DateTimeOffset.UtcNow;

@@ -72,7 +72,8 @@ public sealed class OperationsToolsetTests
                 StudioDraftOperations.Update,
                 StudioDraftOperations.Delete,
                 StudioDraftOperations.Validate,
-                StudioDraftOperations.PreviewPlan);
+                StudioDraftOperations.PreviewPlan,
+                StudioDraftOperations.SaveVersion);
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
             descriptor.ImplementationType == typeof(StudioDraftDeleteExecutor));
