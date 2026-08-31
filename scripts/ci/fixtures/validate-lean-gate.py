@@ -195,23 +195,32 @@ if not PREPULL_SCRIPT.is_file():
     raise AssertionError(f"lean gate must ship {PREPULL_SCRIPT.relative_to(ROOT)}")
 PREPULL_TEXT = PREPULL_SCRIPT.read_text(encoding="utf-8")
 
-# The pre-pull only removes the cold-runner stall when it overlaps all of the
-# work ahead of Governance/Drift. Pin both ends of that concurrency contract:
-# start it as the composite's first step, then await it immediately before the
-# Testcontainers-backed test. The helper must pull the tag it resolved from the
-# shared fixture rather than introducing a second image pin in CI.
+# The required PR Gate must stay Testcontainers-free. The exact governance
+# assertions move to a trunk-only job, and that leaf job must feed test-all so
+# its failure reaches CI Gate and the trailing-verification brake.
+if re.search(r"- name: Run \.NET Tests \(Server Governance/Drift\)", TEXT) or (
+    "prepull-testcontainers-postgis.sh" in TEXT
+):
+    raise AssertionError("lean gate must not boot the governance Testcontainer")
+
 require(
-    r"steps:\n(?:\s*(?:#.*)?\n)*"
-    r"\s+- name: Pre-pull Testcontainers PostGIS image \(background\)\n"
-    r"\s+shell: bash\n\s+run: scripts/ci/prepull-testcontainers-postgis\.sh",
-    "start the Testcontainers PostGIS pre-pull as its first composite step",
+    r"server-governance-drift:\n"
+    r"\s+name: Server Governance/Drift\n"
+    r"\s+if: \$\{\{ github\.ref == 'refs/heads/trunk' \}\}",
+    "run Server Governance/Drift only on the trailing trunk matrix",
+    text=CI_TEXT,
 )
 require(
-    r"- name: Await Testcontainers PostGIS pre-pull\n"
-    r"\s+shell: bash\n"
-    r"\s+run: scripts/ci/prepull-testcontainers-postgis\.sh --await\n\n"
-    r"\s+- name: Run \.NET Tests \(Server Governance/Drift\)",
-    "await the PostGIS pre-pull immediately before Server Governance/Drift",
+    r"dotnet test tests/dotnet/Honua\.Server\.Tests/Honua\.Server\.Tests\.csproj \\\n"
+    r"\s+--no-build \\\n\s+--no-restore \\\n\s+--configuration Release \\\n"
+    r'\s+--filter "Category=Architecture"',
+    "preserve the complete Server governance/drift assertion filter",
+    text=CI_TEXT,
+)
+require(
+    r"test-all:[\s\S]*?needs:[\s\S]*?- server-governance-drift",
+    "feed Server Governance/Drift into Test Suite Summary and CI Gate",
+    text=CI_TEXT,
 )
 require(
     r'FIXTURE="tests/dotnet/Honua\.TestKit/PostgresFixture\.cs"[\s\S]*?'

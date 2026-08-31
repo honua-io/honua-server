@@ -23,10 +23,9 @@ on:
   # only merge path, which meant the batch CI never ran on merged work (that is
   # how a stale feature-catalog.json reached trunk). The fix is a SEPARATE
   # workflow, `.github/workflows/pr-gate.yml`, publishing the context `PR Gate`:
-  # one cheap runner (build + format + Fast unit + architecture smoke + the
-  # Server governance/drift tests, no `services:` orchestration, no matrix — the
-  # governance step boots one ephemeral Testcontainers Postgres for the
-  # EndpointRegistry drift check, #2882), sharing its steps with `merge-queue-gate`
+  # one cheap runner (build + format + Fast unit + architecture/MCP governance
+  # smoke, no `services:` orchestration, no Testcontainers), sharing its steps
+  # with `merge-queue-gate`
   # below via ./.github/actions/lean-gate.
   # DO NOT "simplify" that by adding a `pull_request` trigger to THIS workflow.
   # The heavy jobs below guard on `event_name != 'pull_request' || <not
@@ -1295,6 +1294,71 @@ jobs:
           fi
           echo "All .NET Foundation Tests families passed."
 
+  # The complete Server-project Category=Architecture assertion set formerly
+  # ran inside the required PR Gate. It boots the real WebAppFixture and a
+  # Testcontainers PostgreSQL so EndpointRegistryDriftTests sees store-gated
+  # routes; that fidelity is preserved here, including the exact filter and
+  # test project. The accepted #3213 trade is timing only: drift is detected on
+  # the trailing trunk matrix and fixed forward instead of blocking the PR.
+  #
+  # Restricting this job to refs/heads/trunk keeps it off train/batch branches
+  # and the dormant merge queue. Both selective trailing dispatches and full
+  # scheduled/manual trunk runs execute it. Its ordinary failure flows through
+  # Test Suite Summary into CI Gate, so the fleet's deterministic-failure brake
+  # engages exactly as it does for every other real gate.
+  server-governance-drift:
+    name: Server Governance/Drift
+    if: ${{ github.ref == 'refs/heads/trunk' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Pre-pull Testcontainers PostGIS image (background)
+        run: scripts/ci/prepull-testcontainers-postgis.sh
+
+      - name: Restore
+        run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj
+
+      - name: Build
+        run: |
+          dotnet build tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-restore \
+            --configuration Release \
+            /p:TreatWarningsAsErrors=true
+
+      - name: Create Test Results Directory
+        run: mkdir -p ./tests/TestResults
+
+      - name: Await Testcontainers PostGIS pre-pull
+        run: scripts/ci/prepull-testcontainers-postgis.sh --await
+
+      - name: Run .NET Tests (Server Governance/Drift)
+        run: |
+          timeout 15m \
+            dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+              --no-build \
+              --no-restore \
+              --configuration Release \
+              --filter "Category=Architecture" \
+              --logger "trx;LogFileName=trailing-server-governance.trx" \
+              --logger "console;verbosity=minimal" \
+              --results-directory ./tests/TestResults
+
+      - name: Upload governance/drift test results
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: server-governance-drift-results
+          path: tests/TestResults/
+          if-no-files-found: warn
+          retention-days: 7
+
   server-tests:
     name: Server Tests (${{ matrix.shard_name }})
     # Per ADR-0037 the PR gate runs only the targeted shards selected by
@@ -1862,6 +1926,7 @@ jobs:
       # check cannot then leave a foundation family un-gated (#3567).
       - dotnet-foundation-family-tests
       - dotnet-foundation-tests
+      - server-governance-drift
       - server-tests
       - worker-gdal-tests
       - python-integration-tests
