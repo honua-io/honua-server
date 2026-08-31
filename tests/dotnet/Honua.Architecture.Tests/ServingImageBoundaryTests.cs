@@ -340,6 +340,15 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("http://localhost:8080/healthz/live");
         workflow.Should().Contain("pull_request:");
         workflow.Should().Contain("paths:");
+        workflow.Should().Contain("vars.HONUA_SERVING_IMAGE_SKIP == 'true'");
+        workflow.Should().Contain("serving-image-reuse.py decide");
+        workflow.Should().Contain("steps.reuse.outputs.skip != 'true'");
+        workflow.Should().Contain("GITHUB_STEP_SUMMARY");
+        workflow.Should().Contain("freshness_epoch: ${{ steps.freshness.outputs.value }}");
+        workflow.Should().Contain("date -u +%Y-%m-%d");
+        workflow.Should().Contain("honua-serving-image-verification-v2-${{ env.FRESHNESS_EPOCH }}-");
+        workflow.Should().Contain("continue-on-error: true", Exactly.Twice(),
+            "optional marker cache transport must fail open for restore and save");
 
         var functionsDockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.functions.aot"));
         functionsDockerfile.Should().Contain("-p:HonuaSkipOracleForAotVerification=true", Exactly.Thrice());
@@ -378,6 +387,7 @@ public sealed class ServingImageBoundaryTests
                      "'docker/cloud/azure-functions/**'",
                      "'scripts/docker/restore-dotnet-with-github-packages.sh'",
                      "'scripts/ci/verify-serving-image-boundary.py'",
+                     "'scripts/ci/serving-image-reuse.py'",
                      "'scripts/ci/fixtures/validate-serving-image-boundary.py'",
                      "'.github/workflows/serving-image-boundary.yml'"
                  })

@@ -925,6 +925,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("validate")
+    digests = subparsers.add_parser("image-input-digests")
+    digests.add_argument("--repo-root", type=Path, default=ROOT)
+    digests.add_argument("--tree-ref", default="HEAD")
+    digests.add_argument("--output", type=Path)
     observe = subparsers.add_parser("observe")
     observe.add_argument("--repo-root", type=Path, default=ROOT)
     observe.add_argument("--base", required=True)
@@ -968,6 +972,13 @@ def main(argv: list[str] | None = None) -> int:
             f"native-image-impact=ok mode=observe serving_projects={len(serving)} "
             f"worker_projects={len(worker)}"
         )
+        return 0
+    if args.command == "image-input-digests":
+        values = image_input_digests(args.repo_root.resolve(), policy, args.tree_ref)
+        rendered = json.dumps(dict(sorted(values.items())), sort_keys=True)
+        if args.output is not None:
+            args.output.write_text(rendered + "\n", encoding="utf-8")
+        print(rendered)
         return 0
     repo_root = args.repo_root.resolve()
     identity = observation_identity(args)
