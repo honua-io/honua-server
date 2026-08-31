@@ -103,7 +103,6 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_solve_route", "solve_route", "execution"),
             ("honua_cancel_job", "cancel_job", "lifecycle"),
             ("honua_list_jobs", "list_jobs", "lifecycle"),
-            ("honua_propose_operation", "propose_operation", "lifecycle"),
             ("honua_ingest_dataset", "ingest_dataset", "lifecycle"),
             ("honua_publish_service", "publish_service", "lifecycle"),
             ("honua_admin_server_status", "admin_server_status", "results"),

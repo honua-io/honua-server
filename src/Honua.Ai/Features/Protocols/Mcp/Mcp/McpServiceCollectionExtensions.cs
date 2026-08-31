@@ -60,7 +60,9 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PreviewPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecutePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeOperationTool>());
+        // Generic model-authored operation payloads are intentionally not registered.
+        // Catalog-published operation tools expose closed, typed schemas and own the
+        // governed proposal path for control-plane mutations (#3474).
 
         // ── MCP capability-breadth tools (#2813) ──────────────────────────────
         // honua_list_jobs: caller-scoped job enumeration (status filter + cursor

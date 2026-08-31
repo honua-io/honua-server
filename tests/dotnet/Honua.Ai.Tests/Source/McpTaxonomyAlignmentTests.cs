@@ -45,7 +45,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_validate_package",
         "honua_preview_package",
         "honua_cancel_job",
-        "honua_propose_operation",
         "honua_publish_service",
         "honua_publish_result",
         "honua_create_map_package",
@@ -348,7 +347,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         {
             ["honua_execute_plan"] = (Destructive: false, Idempotent: true),
             ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
-            ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
             ["honua_propose_rollback"] = (Destructive: false, Idempotent: true),
             ["honua_ingest_dataset"] = (Destructive: false, Idempotent: false),
             ["honua_publish_service"] = (Destructive: false, Idempotent: false),
@@ -575,6 +573,9 @@ public sealed partial class McpTaxonomyAlignmentTests
             .Where(t => typeof(IMcpTool).IsAssignableFrom(t))
             .Where(t => !typeof(IStubMcpTool).IsAssignableFrom(t))
             .Where(t => t != typeof(PublishedOperationTool))
+            // Retained only as an internal compatibility implementation; #3474
+            // removed this opaque-payload tool from dependency injection.
+            .Where(t => t != typeof(ProposeOperationTool))
             .ToArray();
 
         var certifiedTypes = BuildLiveToolRoster().Select(t => t.GetType()).ToHashSet();
@@ -846,7 +847,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
-            new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
             new CreateMapPackageTool(

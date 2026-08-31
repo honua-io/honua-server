@@ -31,16 +31,16 @@ public sealed class ProposeOperationToolTests
 {
     [UnitTest]
     [Operation(Operations.ApprovalManagement)]
-    public void McpComposition_ExposesGovernedOperationProposalPath()
+    public void McpComposition_DoesNotExposeGenericModelAuthoredOperationPayloads()
     {
         var services = new ServiceCollection();
 
         services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
 
-        services.Should().Contain(descriptor =>
+        services.Should().NotContain(descriptor =>
                 descriptor.ServiceType == typeof(IMcpTool) &&
                 descriptor.ImplementationType == typeof(ProposeOperationTool),
-            "typed operator-gated tools do not yet create durable approval proposals");
+            "model-facing control-plane mutations must use catalog-published typed tools");
     }
 
     private static DefaultHttpContext ContextWithGateway(

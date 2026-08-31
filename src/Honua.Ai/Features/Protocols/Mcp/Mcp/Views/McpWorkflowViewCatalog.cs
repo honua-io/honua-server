@@ -151,7 +151,6 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
-                    McpWorkflowViewMemberRule.Exact("honua_propose_operation"),
                     McpWorkflowViewMemberRule.Exact("honua_supported_operation_kinds"),
                 ],
             },
