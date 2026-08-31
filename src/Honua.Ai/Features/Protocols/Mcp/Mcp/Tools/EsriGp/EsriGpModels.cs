@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.Tools.EsriGp;
 
@@ -61,8 +62,8 @@ internal static class EsriGpToolSchemas
     public static readonly JsonElement ListInput = Parse("""{"type":"object","properties":{},"required":[],"additionalProperties":false}""");
     public static readonly JsonElement DescribeInput = Parse("""{"type":"object","properties":{"taskName":{"type":"string"}},"required":["taskName"],"additionalProperties":false}""");
     public static readonly JsonElement ExecuteInput = Parse("""{"type":"object","properties":{"serviceId":{"type":"string"},"taskName":{"type":"string"},"parameters":{"type":"object","additionalProperties":true},"idempotencyKey":{"type":"string"}},"required":["serviceId","taskName","parameters"],"additionalProperties":false}""");
-    public static readonly JsonElement ListOutput = Parse("""{"type":"object","required":["tasks"],"properties":{"tasks":{"type":"array","items":{"type":"object","required":["taskName","processId","displayName","category","isAlias","supportsSynchronousExecution"]}}}""");
-    public static readonly JsonElement DescribeOutput = Parse("""{"type":"object","required":["taskName","processId","displayName","description","category","executionType","supportsSynchronousExecution","parameters"],"properties":{"taskName":{"type":"string"},"processId":{"type":"string"},"displayName":{"type":"string"},"description":{"type":"string"},"category":{"type":"string"},"executionType":{"type":"string"},"supportsSynchronousExecution":{"type":"boolean"},"parameters":{"type":"array"}}}""");
-    public static readonly JsonElement ExecuteOutput = Parse("""{"type":"object","required":["jobId","status","resourceUri","serviceId","taskName","processId"],"properties":{"jobId":{"type":"string"},"status":{"type":"string"},"resourceUri":{"type":"string"},"serviceId":{"type":"string"},"taskName":{"type":"string"},"processId":{"type":"string"}}}""");
+    public static readonly JsonElement ListOutput = McpToolOutputSchemas.IncludeErrorEnvelope(Parse("""{"type":"object","required":["tasks"],"properties":{"tasks":{"type":"array","items":{"type":"object","required":["taskName","processId","displayName","category","isAlias","supportsSynchronousExecution"]}}}}"""));
+    public static readonly JsonElement DescribeOutput = McpToolOutputSchemas.IncludeErrorEnvelope(Parse("""{"type":"object","required":["taskName","processId","displayName","description","category","executionType","supportsSynchronousExecution","parameters"],"properties":{"taskName":{"type":"string"},"processId":{"type":"string"},"displayName":{"type":"string"},"description":{"type":"string"},"category":{"type":"string"},"executionType":{"type":"string"},"supportsSynchronousExecution":{"type":"boolean"},"parameters":{"type":"array"}}}"""));
+    public static readonly JsonElement ExecuteOutput = McpToolOutputSchemas.IncludeErrorEnvelope(Parse("""{"type":"object","required":["jobId","status","resourceUri","serviceId","taskName","processId"],"properties":{"jobId":{"type":"string"},"status":{"type":"string"},"resourceUri":{"type":"string"},"serviceId":{"type":"string"},"taskName":{"type":"string"},"processId":{"type":"string"}}}"""));
     private static JsonElement Parse(string json) { using var document = JsonDocument.Parse(json); return document.RootElement.Clone(); }
 }
