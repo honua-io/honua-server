@@ -1,11 +1,11 @@
 # CI Workflow Inventory
 
 > Canonical inventory of **every** workflow in `.github/workflows/` in this
-> repository (81 files). Other Honua repositories keep their own inventories;
+> repository (84 files). Other Honua repositories keep their own inventories;
 > this page no longer mirrors the SDK repos, because a copy here could not be
 > verified against their trees and had already drifted.
 >
-> Last updated: 2026-08-31.
+> Last updated: 2026-09-01.
 >
 > To re-derive the file/name/trigger columns after adding or removing a
 > workflow:
@@ -61,6 +61,7 @@ analysis.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
+| `alerting-enabled-candidate.yml` | Alerting Enabled Candidate | path-filtered `pull_request`, `workflow_dispatch` | Exact-candidate qualification lane for the opt-in (`Alerts:Enabled=true`) Postgres webhook delivery path. Runs the bounded alert webhook E2E fixture against the PR head or an explicitly supplied 40-character source SHA and retains the candidate receipt for 90 days. |
 | `openapi-contract-governance.yml` | OpenAPI Contract Governance | `pull_request`, `workflow_dispatch` | Path-scoped to the API surface; enforces the breaking-change policy (`OPENAPI_ALLOW_BREAKING_CHANGES` is the deliberate escape). |
 | `openapi-drift.yml` | OpenAPI Drift Check | `pull_request`, `workflow_dispatch` | Regenerates the OpenAPI document and fails on drift from the committed contract. |
 | `control-plane-sdk-governance.yml` | Control Plane SDK Governance | `pull_request`, `workflow_dispatch`, `release` | PR governance for the control-plane SDK surface, separate from release publishing. |
