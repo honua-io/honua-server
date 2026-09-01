@@ -421,15 +421,18 @@ class OgcApiProcessesDiagnosticTests(unittest.TestCase):
         self.assertIn("diagnostic-only:", common)
         self.assertIn("default: false", common)
         self.assertIn("executed_tests == '0'", common)
-        self.assertIn("diagnostic-only: true", workflow)
-        self.assertIn("cron: '0 8 * * *'", workflow)
+        self.assertIn("diagnostic-only: false", workflow)
+        self.assertNotIn("schedule:", workflow)
         self.assertNotIn("pull_request:", workflow)
+        self.assertIn("required: true", workflow)
         self.assertIn("validate-image:", workflow)
         self.assertIn("needs: validate-image", workflow)
         self.assertIn(
-            "SERVER_IMAGE: ${{ inputs.server_image || '' }}",
+            "SERVER_IMAGE: ${{ inputs.server_image }}",
             workflow,
         )
+        self.assertIn("enforce_ogcapi_processes_release_gate.py", workflow)
+        self.assertIn("ogcapi-processes-release-baseline.json", workflow)
         self.assertIn(
             "@sha256:[0-9a-f]{64}$",
             workflow,
