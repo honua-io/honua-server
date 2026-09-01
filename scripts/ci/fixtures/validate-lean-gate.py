@@ -16,7 +16,9 @@ SCOPE_SCRIPT = ROOT / "scripts" / "ci" / "compute-lean-gate-build-scope.sh"
 FORMAT_SCOPE_SCRIPT = ROOT / "scripts" / "ci" / "compute-lean-gate-format-scope.sh"
 PR_GATE = ROOT / ".github" / "workflows" / "pr-gate.yml"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
+PRE_PR = ROOT / "scripts" / "ci" / "pre-pr-check.sh"
 TEXT = ACTION.read_text(encoding="utf-8")
+PRE_PR_TEXT = PRE_PR.read_text(encoding="utf-8")
 
 
 def require(pattern: str, description: str, text: str = TEXT) -> None:
@@ -45,13 +47,13 @@ require(
     "run the focused MCP roster drift smoke without rebuilding or restoring",
 )
 require(
-    r"CapabilityRegistryConformanceTests\.LiveMcpTools_MatchRegistryToolDescriptors.*"
-    r"CapabilityRegistryConformanceTests\.RegistryToolDescriptors_MirrorLiveWorkflowFamilies.*"
-    r"McpTaxonomyAlignmentTests\.ToolNames_MatchTaxonomyRoster.*"
-    r"McpTaxonomyAlignmentTests\.TaxonomyRoster_MatchesCapabilityRegistryToolDescriptors.*"
-    r"McpTaxonomyAlignmentTests\.ToolRoster_MatchesFullMcpDependencyInjectionRegistrations.*"
-    r"McpTaxonomyAlignmentTests\.ErrorEnvelopeRoster_CoversEveryStaticallyRegisteredTool",
-    "gate registry names, workflow families, and the taxonomy roster together",
+    r'--filter "FullyQualifiedName~McpTaxonomyAlignmentTests\|FullyQualifiedName~CapabilityRegistryConformanceTests"',
+    "gate the complete taxonomy-alignment and capability-registry conformance classes",
+)
+require(
+    r'--filter "FullyQualifiedName~McpTaxonomyAlignmentTests\|FullyQualifiedName~CapabilityRegistryConformanceTests"',
+    "mirror the complete MCP drift class filter in the local pre-PR check",
+    text=PRE_PR_TEXT,
 )
 
 # ---------------------------------------------------------------------------

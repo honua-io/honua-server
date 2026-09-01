@@ -370,7 +370,8 @@ affected_contains() {
 UNIT_TEST_PROJECTS='tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
 tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
 tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
-tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj'
+tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
+tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj'
 ARCHITECTURE_TEST_PROJECT="tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj"
 MONOLITH_TEST_PROJECT="tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
 
@@ -718,6 +719,22 @@ run_unit_project tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj
 run_unit_project tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj
 run_unit_project tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj
 run_unit_project tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj
+
+# Service-free MCP registry/taxonomy governance mirrors the required lean gate.
+# Keep this class-level filter broad so new drift tests are covered automatically.
+if [[ "${DRY_RUN}" == "1" ]]; then
+    echo "   - [dry-run] would run tests/dotnet/Honua.Ai.Tests (MCP registry/taxonomy drift)"
+else
+    echo "   - tests/dotnet/Honua.Ai.Tests (MCP registry/taxonomy drift)"
+    dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj \
+        --no-build \
+        --no-restore \
+        --configuration Release \
+        --filter "FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests" \
+        --logger "console;verbosity=minimal" \
+        --results-directory ./tests/TestResults \
+        -- RunConfiguration.MaxCpuCount=1
+fi
 
 # Server-test shards: run the targeted subset (or all, when run_all). FAST tier
 # skips them entirely (CI / the merge queue is the gate); otherwise run them in
