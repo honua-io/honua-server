@@ -92,7 +92,8 @@ public sealed class McpPlatformOpsToolTests
               "targetId": "serving-us-west",
               "toRevision": "rev-9",
               "reason": "SLO regression",
-              "idempotencyKey": "rb-1"
+              "idempotencyKey": "rb-1",
+              "parameterOverrides": { "activePort": "5102" }
             }
             """);
 
@@ -105,6 +106,7 @@ public sealed class McpPlatformOpsToolTests
         reader.RollbackArgument.ToRevision.Should().Be("rev-9");
         reader.RollbackArgument.Reason.Should().Be("SLO regression");
         reader.RollbackArgument.IdempotencyKey.Should().Be("rb-1");
+        reader.RollbackArgument.ParameterOverrides.Should().Contain("activePort", "5102");
     }
 
     private static DefaultHttpContext BuildContext(IMcpPlatformOpsReader reader)
@@ -204,5 +206,8 @@ public sealed class McpPlatformOpsToolTests
             LastPrincipal = principal;
             return Task.FromResult(new McpProposeOperationOutput { Outcome = "ProposalCreated", RequiresApproval = true, ProposalId = "proposal-1" });
         }
+
+        public Task<McpProposeOperationOutput> ProposeMetadataReleaseAsync(ClaimsPrincipal principal, McpMetadataReleaseMutationArgument argument, CancellationToken cancellationToken)
+            => Task.FromResult(new McpProposeOperationOutput());
     }
 }

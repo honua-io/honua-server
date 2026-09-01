@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/propose_operation.schema.json",
+  "title": "propose_operation inputSchema",
+  "description": "Argument shape for the control-plane proposal tool (advertised name honua_propose_operation). Proposes an in-scope mutating control-plane operation for human approval on a deterministic server; the proposal is NEVER autonomously executed — execution stays approval-gated behind the human console inbox — consistent with the ADR-0028 posture (deterministic server, approval-gated mutation, no autonomous AI data edits) in taxonomy.md §Non-Goals. x-honua-reference-shape: tracks the reference implementation.",
+  "x-honua-reference-shape": true,
+  "x-honua-supported-kinds": {
+    "description": "Capability discovery: the kind enum is the full, wire-compatible OperationClass vocabulary, but not every member is routable by a given server at runtime.",
+    "routable": ["AdminConfigChange", "Deploy", "MetadataRelease"],
+    "notRoutable": ["Seed"]
+  },
+  "type": "object",
+  "required": ["kind"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": ["AdminConfigChange", "Deploy", "MetadataRelease", "Seed"]
+    },
+    "reason": { "type": "string" },
+    "executionPayload": { "type": "string" },
+    "idempotencyKey": { "type": "string" }
+  }
+}

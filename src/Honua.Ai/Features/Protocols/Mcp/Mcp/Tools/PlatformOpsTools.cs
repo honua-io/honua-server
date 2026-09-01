@@ -261,6 +261,17 @@ internal sealed class ProposeDeployOperationTool(ILogger<ProposeDeployOperationT
     protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken) => reader.ProposeDeployOperationAsync(principal, argument, cancellationToken);
 }
 
+internal sealed class ProposeMetadataReleaseTool(ILogger<ProposeMetadataReleaseTool> logger) : GovernedPlatformMutationTool<McpMetadataReleaseMutationArgument>(logger)
+{
+    public const string ToolName = "honua_propose_metadata_release";
+    public override string Name => ToolName;
+    protected override string Title => "Propose metadata release";
+    protected override string Description => "Seal a schema-closed metadata-release creation as a governed proposal.";
+    protected override JsonElement InputSchema => McpPlatformOpsSchemas.MetadataReleaseMutationInputSchema;
+    protected override JsonTypeInfo<McpMetadataReleaseMutationArgument> ArgumentTypeInfo => McpJsonContext.Default.McpMetadataReleaseMutationArgument;
+    protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpMetadataReleaseMutationArgument argument, CancellationToken cancellationToken) => reader.ProposeMetadataReleaseAsync(principal, argument, cancellationToken);
+}
+
 internal sealed class ProposePlatformReleaseConvergenceTool(ILogger<ProposePlatformReleaseConvergenceTool> logger) : GovernedPlatformMutationTool<McpPlatformReleaseConvergenceArgument>(logger)
 {
     public const string ToolName = "honua_propose_platform_release_convergence";

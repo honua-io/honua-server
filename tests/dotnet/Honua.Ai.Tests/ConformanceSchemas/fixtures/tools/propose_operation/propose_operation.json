@@ -1,0 +1,12 @@
+{
+  "id": "propose_operation.metadata_release",
+  "schemaRef": "tools/propose_operation.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "kind": "MetadataRelease",
+    "reason": "Promote v2 metadata snapshot after analyst review.",
+    "idempotencyKey": "mr-2026-06-21"
+  },
+  "expected": "tool_result",
+  "canonicalRefs": []
+}

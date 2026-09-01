@@ -67,6 +67,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_propose_finding",
         "honua_propose_deploy_plan",
         "honua_propose_deploy_operation",
+        "honua_propose_metadata_release",
         "honua_propose_platform_release_convergence",
         "honua_list_jobs",
         "honua_list_layers",
@@ -367,6 +368,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_propose_finding"] = (Destructive: false, Idempotent: true),
             ["honua_propose_deploy_plan"] = (Destructive: false, Idempotent: true),
             ["honua_propose_deploy_operation"] = (Destructive: false, Idempotent: true),
+            ["honua_propose_metadata_release"] = (Destructive: false, Idempotent: true),
             ["honua_propose_platform_release_convergence"] = (Destructive: false, Idempotent: true),
             ["honua_ingest_dataset"] = (Destructive: false, Idempotent: false),
             ["honua_publish_service"] = (Destructive: false, Idempotent: false),
@@ -897,6 +899,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             new ProposeFindingTool(NullLogger<ProposeFindingTool>.Instance),
             new ProposeDeployPlanTool(NullLogger<ProposeDeployPlanTool>.Instance),
             new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
             new ProposePlatformReleaseConvergenceTool(NullLogger<ProposePlatformReleaseConvergenceTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),

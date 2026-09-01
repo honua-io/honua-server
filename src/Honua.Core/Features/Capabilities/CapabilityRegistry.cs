@@ -118,6 +118,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_propose_finding", "propose_finding", "lifecycle"),
             ("honua_propose_deploy_plan", "propose_deploy_plan", "lifecycle"),
             ("honua_propose_deploy_operation", "propose_deploy_operation", "lifecycle"),
+            ("honua_propose_metadata_release", "propose_metadata_release", "lifecycle"),
             ("honua_propose_platform_release_convergence", "propose_platform_release_convergence", "lifecycle"),
             ("honua_list_layers", "list_layers", "results"),
             ("honua_describe_layer", "describe_layer", "results"),

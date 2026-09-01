@@ -66,6 +66,7 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpProposeRollbackArgument))]
 [JsonSerializable(typeof(McpProposeFindingArgument))]
 [JsonSerializable(typeof(McpDeployMutationArgument))]
+[JsonSerializable(typeof(McpMetadataReleaseMutationArgument))]
 [JsonSerializable(typeof(McpPlatformReleaseConvergenceArgument))]
 [JsonSerializable(typeof(McpPublishServiceArgument))]
 [JsonSerializable(typeof(McpPublishServiceOutput))]

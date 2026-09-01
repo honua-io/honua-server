@@ -95,6 +95,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_propose_finding"] = "propose_finding",
             ["honua_propose_deploy_plan"] = "propose_deploy_plan",
             ["honua_propose_deploy_operation"] = "propose_deploy_operation",
+            ["honua_propose_metadata_release"] = "propose_metadata_release",
             ["honua_propose_platform_release_convergence"] = "propose_platform_release_convergence",
             // Honua extensions over the bare taxonomy (#1949): the standard models
             // entity resolution and capability discovery as CapabilityCatalog reads;
@@ -171,6 +172,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "reproject_features",
         "join_features",
         "export_dataset",
+        "propose_operation",
     };
 
     /// <summary>
