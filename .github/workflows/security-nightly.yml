@@ -193,17 +193,22 @@ jobs:
   container-security-scan:
     name: Container Security Scan (${{ matrix.variant }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - variant: jit-debian
+            timeout_minutes: 30
             dockerfile: Dockerfile
             image_tag: security-test-jit
             cache_scope: honua-jit-amd64
             trivyignore: .trivyignore
           - variant: aot-alpine
+            # Cold native-AOT builds have exceeded 90 minutes; match the
+            # equivalent nightly AOT build's ceiling so cache export can
+            # complete and subsequent security scans receive an image.
+            timeout_minutes: 180
             dockerfile: docker/Dockerfile.aot
             image_tag: security-test-aot
             cache_scope: honua-aot-amd64
