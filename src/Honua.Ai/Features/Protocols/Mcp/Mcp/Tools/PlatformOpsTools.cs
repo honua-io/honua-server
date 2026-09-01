@@ -120,7 +120,7 @@ internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKind
         Title = "Supported operation kinds",
         Description =
             "Read-only discovery of stable operation-kind identifiers backed by executors registered "
-            + "in the live operation gateway. Use this before honua_propose_operation; absent kinds "
+            + "in the live operation gateway. Typed proposal tools remain fail-closed when their operation kind "
             + "remain fail-closed and cannot be routed.",
         InputSchema = McpPlatformOpsSchemas.SupportedOperationKindsInputSchema,
         OutputSchema = McpPlatformOpsSchemas.SupportedOperationKindsOutputSchema,
@@ -259,6 +259,17 @@ internal sealed class ProposeDeployOperationTool(ILogger<ProposeDeployOperationT
     protected override JsonElement InputSchema => McpPlatformOpsSchemas.DeployMutationInputSchema;
     protected override JsonTypeInfo<McpDeployMutationArgument> ArgumentTypeInfo => McpJsonContext.Default.McpDeployMutationArgument;
     protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken) => reader.ProposeDeployOperationAsync(principal, argument, cancellationToken);
+}
+
+internal sealed class ProposeMetadataReleaseTool(ILogger<ProposeMetadataReleaseTool> logger) : GovernedPlatformMutationTool<McpMetadataReleaseMutationArgument>(logger)
+{
+    public const string ToolName = "honua_propose_metadata_release";
+    public override string Name => ToolName;
+    protected override string Title => "Propose metadata release";
+    protected override string Description => "Seal a schema-closed metadata-release creation as a governed proposal.";
+    protected override JsonElement InputSchema => McpPlatformOpsSchemas.MetadataReleaseMutationInputSchema;
+    protected override JsonTypeInfo<McpMetadataReleaseMutationArgument> ArgumentTypeInfo => McpJsonContext.Default.McpMetadataReleaseMutationArgument;
+    protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpMetadataReleaseMutationArgument argument, CancellationToken cancellationToken) => reader.ProposeMetadataReleaseAsync(principal, argument, cancellationToken);
 }
 
 internal sealed class ProposePlatformReleaseConvergenceTool(ILogger<ProposePlatformReleaseConvergenceTool> logger) : GovernedPlatformMutationTool<McpPlatformReleaseConvergenceArgument>(logger)

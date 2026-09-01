@@ -246,6 +246,7 @@ public sealed class McpPlatformOpsReaderTests
                 ToRevision = " rev-9 ",
                 Reason = "rollback bad release",
                 IdempotencyKey = "rollback-key",
+                ParameterOverrides = new Dictionary<string, string> { ["activePort"] = "5102" },
             },
             CancellationToken.None);
 
@@ -273,6 +274,7 @@ public sealed class McpPlatformOpsReaderTests
         var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload);
         payload.Should().NotBeNull();
         payload!.TargetId.Should().Be("serving-us-west");
+        payload.ParameterOverrides.Should().Contain("activePort", "5102");
         payload.DesiredRevision.Should().Be("rev-9");
         payload.CurrentRevision.Should().Be("rev-10");
     }

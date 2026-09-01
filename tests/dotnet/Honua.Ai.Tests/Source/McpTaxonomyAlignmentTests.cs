@@ -45,7 +45,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_validate_package",
         "honua_preview_package",
         "honua_cancel_job",
-        "honua_propose_operation",
         "honua_publish_service",
         "honua_publish_result",
         "honua_create_map_package",
@@ -68,6 +67,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_propose_finding",
         "honua_propose_deploy_plan",
         "honua_propose_deploy_operation",
+        "honua_propose_metadata_release",
         "honua_propose_platform_release_convergence",
         "honua_list_jobs",
         "honua_list_layers",
@@ -184,6 +184,18 @@ public sealed partial class McpTaxonomyAlignmentTests
             rosterTypes,
             "BuildTools must enumerate every static IMcpTool registered by "
             + "McpServiceCollectionExtensions.AddMcpDataAccessSurface with all capability gates enabled");
+    }
+
+    [UnitTest]
+    public void McpComposition_DoesNotExposeOpaqueOperationProposalPath()
+    {
+        BuildTools().Select(tool => tool.Name).Should().NotContain("honua_propose_operation");
+
+        var services = new ServiceCollection();
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
+        services.Where(descriptor => descriptor.ServiceType == typeof(IMcpTool))
+            .Select(descriptor => descriptor.ImplementationType?.Name)
+            .Should().NotContain("ProposeOperationTool");
     }
 
     [UnitTest]
@@ -352,11 +364,11 @@ public sealed partial class McpTaxonomyAlignmentTests
         {
             ["honua_execute_plan"] = (Destructive: false, Idempotent: true),
             ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
-            ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
             ["honua_propose_rollback"] = (Destructive: false, Idempotent: true),
             ["honua_propose_finding"] = (Destructive: false, Idempotent: true),
             ["honua_propose_deploy_plan"] = (Destructive: false, Idempotent: true),
             ["honua_propose_deploy_operation"] = (Destructive: false, Idempotent: true),
+            ["honua_propose_metadata_release"] = (Destructive: false, Idempotent: true),
             ["honua_propose_platform_release_convergence"] = (Destructive: false, Idempotent: true),
             ["honua_ingest_dataset"] = (Destructive: false, Idempotent: false),
             ["honua_publish_service"] = (Destructive: false, Idempotent: false),
@@ -854,7 +866,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
-            new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
             new CreateMapPackageTool(
@@ -888,6 +899,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             new ProposeFindingTool(NullLogger<ProposeFindingTool>.Instance),
             new ProposeDeployPlanTool(NullLogger<ProposeDeployPlanTool>.Instance),
             new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
             new ProposePlatformReleaseConvergenceTool(NullLogger<ProposePlatformReleaseConvergenceTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
                 jobService, NullLogger<Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool>.Instance),

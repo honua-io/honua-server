@@ -277,7 +277,6 @@ public sealed class CapabilityRegistryConformanceTests
             new DryRunPlanTool(jobService, NullLogger<DryRunPlanTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
-            new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new AdminServerStatusTool(),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
@@ -312,6 +311,7 @@ public sealed class CapabilityRegistryConformanceTests
             new ProposeFindingTool(NullLogger<ProposeFindingTool>.Instance),
             new ProposeDeployPlanTool(NullLogger<ProposeDeployPlanTool>.Instance),
             new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
             new ProposePlatformReleaseConvergenceTool(
                 NullLogger<ProposePlatformReleaseConvergenceTool>.Instance),
             new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),

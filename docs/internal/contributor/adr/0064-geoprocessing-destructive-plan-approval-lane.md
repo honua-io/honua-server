@@ -21,7 +21,7 @@ Two gaps followed from this (honua-server#2814):
 1. **Dead-ended approval.** Unlike the control-plane mutating-operation surface —
    which already routes through the shared operation gateway
    ([ADR-0056](0056-mcp-redesign-unified-governed-surface.md), #1692/#1693/#1696):
-   `honua_propose_operation` persists an `AwaitingApproval` proposal, exposes it
+   the governed typed proposal tools persist an `AwaitingApproval` proposal and expose it
    at `honua://proposals/{id}`, and resumes it on human approval — the GP half had
    **no persisted proposal, no status projection, and no resume path**. A gated
    plan simply failed, and the caller had to re-submit from scratch after an
@@ -106,7 +106,7 @@ mirroring the control-plane deploy/metadata-release proposals.
 - **Feature-data editing via MCP stays forbidden**
   ([ADR-0028](0028-ai-data-editing-not-allowed.md)). This lane governs GP *process
   plans* only; it does not open a feature-edit path.
-- The GP lane does not add `Geoprocess` to the `honua_propose_operation` tool
+- The GP lane does not add an opaque generic geoprocessing proposal tool
   schema — GP proposals are created by the GP submit path, not by the
   control-plane propose tool.
 

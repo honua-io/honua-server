@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/propose_metadata_release.schema.json",
+  "title": "propose_metadata_release inputSchema",
+  "description": "Honua extension for schema-closed metadata-release creation proposals.",
+  "x-honua-extension": true,
+  "type": "object",
+  "required": ["packageId", "targetEnvironment", "resourceSemanticId", "newFieldName"],
+  "properties": {
+    "packageId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "targetEnvironment": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "resourceSemanticId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "newFieldName": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "newFieldType": { "type": "string", "maxLength": 128 },
+    "dataPopulateWorkloadId": { "type": "string", "maxLength": 256 },
+    "scriptId": { "type": "string", "maxLength": 256 },
+    "reason": { "type": "string", "maxLength": 2048 },
+    "idempotencyKey": { "type": "string", "maxLength": 256 }
+  },
+  "additionalProperties": false
+}
