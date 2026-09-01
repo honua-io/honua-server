@@ -430,6 +430,61 @@ public sealed class McpAuthorizationHelperTests
     }
 
     [UnitTest]
+    public async Task ValidBearer_IsAuthenticatedBeforeTenantResolution_ThenBoundToResolvedTenant()
+    {
+        var sourcePrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("sub", "shared-subject"),
+            new Claim("iss", "https://issuer.example"),
+            new Claim("tenant_id", "tenant-a"),
+        ], OidcAuthenticationExtensions.JwtBearerScheme));
+        var authentication = new CountingAuthenticationService(AuthenticateResult.Success(
+            new AuthenticationTicket(sourcePrincipal, OidcAuthenticationExtensions.JwtBearerScheme)));
+        var oidc = new OidcAuthenticationOptions
+        {
+            Enabled = true,
+            Generic = new GenericOidcProviderOptions
+            {
+                Enabled = true,
+                Authority = "https://issuer.example",
+                ClientId = "mcp-client",
+            },
+        };
+        var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IAuthenticationService>(authentication)
+            .AddSingleton<IOptions<OidcAuthenticationOptions>>(Options.Create(oidc))
+            .BuildServiceProvider();
+        await using var provider = services;
+        var app = new ApplicationBuilder(provider);
+        string? bindingSeenByEndpoint = null;
+
+        app.UseMcpBearerAuthentication();
+        app.Use(async (context, next) =>
+        {
+            (context.User.Identity?.IsAuthenticated ?? false).Should().BeTrue(
+                "tenant resolution must only observe the validated bearer principal");
+            CanonicalSecurityActor.StampRequestBinding(context.User, "tenant-a");
+            await next().ConfigureAwait(false);
+        });
+        app.Run(context =>
+        {
+            bindingSeenByEndpoint = McpAuthorizationHelper.ResolveSessionBindingKey(context);
+            return Task.CompletedTask;
+        });
+
+        var context = new DefaultHttpContext { RequestServices = provider };
+        context.Request.Path = "/mcp";
+        context.Request.Headers.Authorization = "Bearer validated-token";
+
+        await app.Build()(context);
+
+        authentication.AuthenticateCount.Should().Be(1);
+        bindingSeenByEndpoint.Should().Contain("subject:https%3A%2F%2Fissuer.example:shared-subject");
+        bindingSeenByEndpoint.Should().Contain("tenant:value%3Atenant-a");
+    }
+
+    [UnitTest]
     public async Task EndpointFilter_PreservesEarlyValidatedTenantStampedPrincipal()
     {
         var sourcePrincipal = new ClaimsPrincipal(new ClaimsIdentity(
