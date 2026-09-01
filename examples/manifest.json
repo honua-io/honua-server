@@ -14,14 +14,16 @@
   "statusDefinitions": {
     "passed": "Observed execution against the exact candidate satisfied all assertions.",
     "blocked": "Execution reached an unshipped surface or product defect and includes explicit blockedBy issue links.",
+    "unvalidated": "The inventory item is runnable but has no matching execution evidence.",
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1063,
+    "total": 1062,
     "byStatus": {
-      "not-executable": 1050,
+      "not-executable": 1047,
       "blocked": 4,
-      "passed": 9
+      "passed": 9,
+      "unvalidated": 2
     }
   },
   "entries": [
@@ -3705,7 +3707,8 @@
       },
       "fence": 4,
       "line": 41,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "748ed86d6413f4e9fbcba570d3b8be0655f0eed420a952d858b8ddc9e6fc733c"
     },
     {
       "id": "057001304ec19ecc",
@@ -3721,7 +3724,8 @@
       },
       "fence": 5,
       "line": 48,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "5bd4b0ec32f4801900e7af88d778f959ab5cf866757152c703ed9a77aa2f5a2e"
     },
     {
       "id": "0c493dc491dd6e6f",
@@ -3735,7 +3739,8 @@
       },
       "fence": 3,
       "line": 34,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "063c2dd6d7247f175aa58232a57c5d2908f8dd56b4628a2427204e0a5dcf9c1b"
     },
     {
       "id": "28da1cee54396e02",
@@ -3748,7 +3753,8 @@
       },
       "fence": 1,
       "line": 12,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "fdf0f87cd48b985f50262623687521513137824a1564f14a0c253881abb6f94e"
     },
     {
       "id": "30ac7bc0ce1dbb2b",
@@ -3762,7 +3768,8 @@
       },
       "fence": 7,
       "line": 74,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "7026974350286cab8c62f7c08a3fb501637c1eb4615e41244ebf166c67158662"
     },
     {
       "id": "318680fdf881d7ce",
@@ -3776,7 +3783,8 @@
       },
       "fence": 10,
       "line": 138,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "dc14542e87a084856cbfbacbc824f812e4d266fbaf1ad4c09e966448a98b1f9f"
     },
     {
       "id": "39742a93f739c5c5",
@@ -3790,7 +3798,8 @@
       },
       "fence": 2,
       "line": 19,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "b7dcc487442e5bb18398ef9fd8fadd9fa9d3a430aec1df890251059be3f5f76a"
     },
     {
       "id": "77b9999559e6114b",
@@ -3804,7 +3813,8 @@
       },
       "fence": 9,
       "line": 110,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "86ebc22b9a2dfe24ff69fa9aef97ce7d67f5000c4e696ea78dcb0e897769e4f8"
     },
     {
       "id": "9f087ffab7caa432",
@@ -3818,7 +3828,8 @@
       },
       "fence": 6,
       "line": 55,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "e76431c6a1302517e47d59fa2219d82660ac786fa422f91f3361c2f7ecb829ff"
     },
     {
       "id": "a6140e26c47bc567",
@@ -3832,7 +3843,8 @@
       },
       "fence": 8,
       "line": 85,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "3dcf805e024d72bad7d028140907d1089192d77dcae2f9de3632db8f65041b23"
     },
     {
       "id": "a647d9f5132b4698",
@@ -3846,7 +3858,8 @@
       },
       "fence": 12,
       "line": 171,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "9c1e88dc1b1b34b2ac23ea96e8c821171f53748d52eba3c096ebc5d639d4acfe"
     },
     {
       "id": "b221f0b7144712dc",
@@ -3859,7 +3872,8 @@
       },
       "fence": 11,
       "line": 164,
-      "language": "bash"
+      "language": "bash",
+      "contentSha256": "619fb3cca57c16b68622a3214eadd14b862425bc563b991b332f62e7e2a0fbae"
     },
     {
       "id": "bc02135a91d26a0e",
@@ -12372,19 +12386,6 @@
       "language": "plain"
     },
     {
-      "id": "ec42d31d1a75136f",
-      "kind": "docs-fence",
-      "path": "docs/internal/spikes/citygml-bim-building-scene-layer-ingest.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 122,
-      "language": "plain"
-    },
-    {
       "id": "4e1ade58f746071e",
       "kind": "docs-fence",
       "path": "docs/operator/data-enrichment.md",
@@ -13735,9 +13736,9 @@
       "kind": "quickstart-adjacent-script",
       "path": "scripts/ci/smoke-quickstart-console.sh",
       "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
+        "status": "unvalidated",
+        "reason": "Runnable quickstart-adjacent script has not been explicitly validated.",
+        "check": "explicit-execution-evidence"
       }
     },
     {
@@ -13775,9 +13776,9 @@
       "kind": "quickstart-adjacent-script",
       "path": "scripts/dev/seed-admin-sample.sh",
       "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
+        "status": "unvalidated",
+        "reason": "Runnable quickstart-adjacent script has not been explicitly validated.",
+        "check": "explicit-execution-evidence"
       }
     }
   ]

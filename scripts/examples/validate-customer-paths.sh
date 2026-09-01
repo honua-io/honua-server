@@ -3,12 +3,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCENARIO="${1:-all}"
-CANDIDATE_IMAGE="${HONUA_EXAMPLES_CANDIDATE_IMAGE:-}"
+CANDIDATE_IMAGE="${HONUA_EXAMPLES_CANDIDATE_IMAGE:-${HONUA_SERVER_IMAGE:-}}"
 
 if [[ -n "${CANDIDATE_IMAGE}" ]]; then
   case "${CANDIDATE_IMAGE}" in
     *@sha256:*) ;;
-    *) echo "HONUA_EXAMPLES_CANDIDATE_IMAGE must be digest-pinned" >&2; exit 2 ;;
+    *) echo "effective candidate image must be digest-pinned" >&2; exit 2 ;;
   esac
   export HONUA_SERVER_IMAGE="${CANDIDATE_IMAGE}"
 fi
