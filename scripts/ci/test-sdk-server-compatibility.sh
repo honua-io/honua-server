@@ -116,13 +116,16 @@ release_results="$TMP_DIR/release-results"
 mkdir -p "$release_results"
 jq -n '{js:{installed:true},python:{installed:true},dotnet:{installed:false,trace:"NU1101: Honua.Sdk 1.6.1 not found on nuget.org"}}' > "$release_results/install-results.json"
 python3 "$RELEASE_BUILDER" --manifest "$RELEASE_MANIFEST" --results-dir "$release_results" \
-  --output "$release_results/fragment.json"
+  --output "$release_results/fragment.json" --producer-source-sha "$HEAD_SHA"
 jq -e '
   .schema == "honua.protocol-certification-fragment/v1"
   and .operation_scope == {complete:true,expected:99,observed:99}
   and (.observations | length) == 99
   and ([.observations[] | select(.client_id == "dotnet" and .result == "fail" and (.gap | contains("Honua.Sdk 1.6.1")))] | length) == 33
   and all(.observations[]; .image_digest == "sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72")
+  and all(.observations[]; .producer_source_sha == "1111111111111111111111111111111111111111")
+  and ([.observations[] | select(.capability_key == "serve.ogc-api-features") | .surface] | unique) == ["ogc-api-features"]
+  and ([.observations[] | select(.capability_key == "serve.geoservices-featureserver") | .surface] | unique) == ["feature-server"]
 ' "$release_results/fragment.json" >/dev/null || fail "release fragment must materialize all 99 cells and retain the unavailable .NET coordinate"
 
 echo "SDK compatibility matrix and runner tests passed."

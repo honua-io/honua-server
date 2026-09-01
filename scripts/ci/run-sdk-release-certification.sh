@@ -67,6 +67,7 @@ jq --arg trace "$dotnet_trace" --argjson installed "$([[ $dotnet_install -eq 0 ]
 set -e
 
 python3 "$root_dir/scripts/ci/build-sdk-release-certification.py" --manifest "$manifest" --results-dir "$results_dir" \
-  --output "$results_dir/fragment.json" --run-url "${GITHUB_SERVER_URL:-local}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID:-local}"
+  --output "$results_dir/fragment.json" --producer-source-sha "$(git -C "$root_dir" rev-parse HEAD)" \
+  --run-url "${GITHUB_SERVER_URL:-local}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID:-local}"
 jq -e '.operation_scope.complete == true and (.observations | length) == 99' "$results_dir/fragment.json" >/dev/null
 jq -e '.passed == true' "$results_dir/report.json" >/dev/null
