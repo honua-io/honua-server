@@ -16,6 +16,10 @@ dotnet_package="$(jq -r '.sdks.dotnet.package' "$manifest")"
 dotnet_version="$(jq -r '.sdks.dotnet.version' "$manifest")"
 grpc_package="$(jq -r '.sdks.dotnet.protocolPackage' "$manifest")"
 grpc_version="$(jq -r '.sdks.dotnet.protocolVersion' "$manifest")"
+dotnet_cmd="$(command -v dotnet || true)"
+if [[ -z "$dotnet_cmd" && -x "$HOME/.dotnet/dotnet" ]]; then
+  dotnet_cmd="$HOME/.dotnet/dotnet"
+fi
 
 jq -n '{js:{installed:false},python:{installed:false},dotnet:{installed:false}}' > "$results_dir/install-results.json"
 set +e
@@ -51,9 +55,9 @@ else
 fi
 
 mkdir -p "$work_dir/dotnet"
-(cd "$work_dir/dotnet" && "$HOME/.dotnet/dotnet" new console --framework net10.0 --no-restore >/dev/null && "$HOME/.dotnet/dotnet" add package "$grpc_package" --version "$grpc_version" --source https://api.nuget.org/v3/index.json >/dev/null && "$HOME/.dotnet/dotnet" restore --source https://api.nuget.org/v3/index.json) >"$results_dir/geospatial-grpc-install.log" 2>&1
+(cd "$work_dir/dotnet" && "$dotnet_cmd" new console --framework net10.0 --no-restore >/dev/null && "$dotnet_cmd" add package "$grpc_package" --version "$grpc_version" --source https://api.nuget.org/v3/index.json >/dev/null && "$dotnet_cmd" restore --source https://api.nuget.org/v3/index.json) >"$results_dir/geospatial-grpc-install.log" 2>&1
 grpc_install=$?
-(cd "$work_dir/dotnet" && "$HOME/.dotnet/dotnet" add package "$dotnet_package" --version "$dotnet_version" --source https://api.nuget.org/v3/index.json) >"$results_dir/dotnet-install.log" 2>&1
+(cd "$work_dir/dotnet" && "$dotnet_cmd" add package "$dotnet_package" --version "$dotnet_version" --source https://api.nuget.org/v3/index.json) >"$results_dir/dotnet-install.log" 2>&1
 dotnet_install=$?
 dotnet_trace="$(tail -n 40 "$results_dir/dotnet-install.log")"
 jq --arg trace "$dotnet_trace" --argjson installed "$([[ $dotnet_install -eq 0 ]] && echo true || echo false)" \
