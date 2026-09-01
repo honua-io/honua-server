@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.ControlPlane;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -15,7 +16,6 @@ internal static class WorkflowRollbackOperations
     public const string Deploy = "control-plane.deploy.rollback";
     public const string CoordinatedRelease = "control-plane.coordinated-release.rollback";
     public const string TargetOperationId = "targetOperationId";
-    public const string RequestedBy = "requestedBy";
     public const string Reason = "reason";
     public const string ApprovedDataAffecting = "approvedDataAffecting";
     public const string ApprovedRequiresApproval = "approvedRequiresApproval";
@@ -34,7 +34,7 @@ internal static class WorkflowRollbackOperations
         Description = "Requests workflow rollback through the canonical durable operation runtime.",
         Category = "control-plane",
         ExecutionKind = OperationExecutionKind.Synchronous,
-        ApprovalModel = OperationApprovalModel.None,
+        ApprovalModel = OperationApprovalModel.OperatorGate,
         Policy = new OperationPolicyMetadata
         {
             BlastRadiusClass = OperationBlastRadiusClass.DeploymentScope,
@@ -42,18 +42,57 @@ internal static class WorkflowRollbackOperations
             Determinism = OperationDeterminism.RuntimeDynamic,
             SupportsDryRun = false,
         },
-        InputSchema =
-        [
-            new OperationParameterDescriptor
+        InputSchema = BuildInputSchema(operationId),
+        OutputSchema = [],
+    };
+
+    private static List<OperationParameterDescriptor> BuildInputSchema(string operationId)
+    {
+        var parameters = new List<OperationParameterDescriptor>
+        {
+            new()
             {
                 Name = TargetOperationId,
                 Title = "Target workflow operation id",
                 Required = true,
                 Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text },
             },
-        ],
-        OutputSchema = [],
-    };
+        };
+        if (string.Equals(operationId, Deploy, StringComparison.Ordinal))
+        {
+            parameters.Add(new OperationParameterDescriptor
+            {
+                Name = ApprovedDataAffecting,
+                Title = "Approved rollback data-affecting classification",
+                Required = true,
+                Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Flag },
+            });
+            parameters.Add(new OperationParameterDescriptor
+            {
+                Name = ApprovedRequiresApproval,
+                Title = "Approved rollback explicit-approval classification",
+                Required = true,
+                Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Flag },
+            });
+        }
+
+        return parameters;
+    }
+
+    public static string? ScopeIdempotencyKey(string? idempotencyKey, string targetOperationId)
+        => string.IsNullOrWhiteSpace(idempotencyKey)
+            ? null
+            : $"{targetOperationId.Length}:{targetOperationId}:{idempotencyKey}";
+
+    public static bool IsNotFound(OperationHandle handle)
+        => handle.Status == OperationHandleStatus.Failed
+            && handle.Result?.Details.TryGetValue("errorKind", out var errorKind) == true
+            && string.Equals(errorKind, "not-found", StringComparison.Ordinal);
+
+    public static bool IsConflict(OperationHandle handle)
+        => handle.Status == OperationHandleStatus.Failed
+            && handle.Result?.Details.TryGetValue("errorKind", out var errorKind) == true
+            && string.Equals(errorKind, "conflict", StringComparison.Ordinal);
 }
 
 internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : IOperationExecutor
@@ -64,6 +103,7 @@ internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : 
     public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
     {
         _ = Required(request, WorkflowRollbackOperations.TargetOperationId);
+        ValidateAdditionalParameters(request);
         return Task.FromResult(new OperationValidation { IsValid = true, Status = "valid" });
     }
 
@@ -73,8 +113,21 @@ internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : 
         CancellationToken cancellationToken = default)
     {
         var targetId = Required(request, WorkflowRollbackOperations.TargetOperationId);
-        var result = await RollbackAsync(request, targetId, cancellationToken).ConfigureAwait(false);
+        WorkflowOperationRecord? result = null;
+        string? errorKind = null;
+        string? failureReason = null;
+        try
+        {
+            result = await RollbackAsync(request, context, targetId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ResourceConflictException ex)
+        {
+            errorKind = "conflict";
+            failureReason = ex.Message;
+        }
+
         var now = Clock.GetUtcNow();
+        var failed = result is null;
         return new OperationHandle
         {
             OperationInstanceId = context.OperationInstanceId
@@ -82,23 +135,26 @@ internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : 
             OperationId = OperationId,
             CorrelationId = context.CorrelationId
                 ?? throw new InvalidOperationException("Workflow rollback requires a canonical correlation identity."),
-            Status = result is null ? OperationHandleStatus.Failed : OperationHandleStatus.Completed,
+            Status = failed ? OperationHandleStatus.Failed : OperationHandleStatus.Completed,
             CreatedAt = now,
             UpdatedAt = now,
-            Reason = result is null ? $"Workflow operation '{targetId}' was not found." : null,
-            ResourceIds = result is null
+            Reason = failureReason ?? (failed ? $"Workflow operation '{targetId}' was not found." : null),
+            ResourceIds = failed
                 ? new Dictionary<string, string>(StringComparer.Ordinal)
                 : new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["workflowOperationId"] = result.OperationId,
+                    ["workflowOperationId"] = result!.OperationId,
                 },
             Result = new OperationResultSummary
             {
-                Summary = result is null
-                    ? $"Workflow operation '{targetId}' was not found."
-                    : $"Rollback requested for workflow operation '{result.OperationId}'.",
-                Details = result is null
-                    ? new Dictionary<string, string>(StringComparer.Ordinal) { ["errorKind"] = "not-found" }
+                Summary = failed
+                    ? failureReason ?? $"Workflow operation '{targetId}' was not found."
+                    : $"Rollback requested for workflow operation '{result!.OperationId}'.",
+                Details = failed
+                    ? new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        ["errorKind"] = errorKind ?? "not-found",
+                    }
                     : new Dictionary<string, string>(StringComparer.Ordinal),
             },
         };
@@ -125,8 +181,13 @@ internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : 
 
     protected abstract Task<WorkflowOperationRecord?> RollbackAsync(
         OperationRequest request,
+        OperationPolicyContext context,
         string targetOperationId,
         CancellationToken cancellationToken);
+
+    protected virtual void ValidateAdditionalParameters(OperationRequest request)
+    {
+    }
 
     protected static string Required(OperationRequest request, string name)
         => request.Parameters.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
@@ -135,6 +196,7 @@ internal abstract class WorkflowRollbackOperationExecutor(TimeProvider clock) : 
 
     protected static string? Optional(OperationRequest request, string name)
         => request.Parameters.TryGetValue(name, out var value) ? value : null;
+
 }
 
 internal sealed class DeployRollbackOperationExecutor(
@@ -143,19 +205,33 @@ internal sealed class DeployRollbackOperationExecutor(
 {
     public override string OperationId => WorkflowRollbackOperations.Deploy;
 
-    protected override Task<WorkflowOperationRecord?> RollbackAsync(
-        OperationRequest request,
-        string targetOperationId,
-        CancellationToken cancellationToken) => services.GetRequiredService<DeployWorkflowService>().RequestRollbackAsync(
-            targetOperationId,
-            Optional(request, WorkflowRollbackOperations.RequestedBy),
-            Optional(request, WorkflowRollbackOperations.Reason),
-            ParseNullableBoolean(request, WorkflowRollbackOperations.ApprovedDataAffecting),
-            ParseNullableBoolean(request, WorkflowRollbackOperations.ApprovedRequiresApproval),
-            cancellationToken);
+    protected override void ValidateAdditionalParameters(OperationRequest request)
+    {
+        _ = RequiredBoolean(request, WorkflowRollbackOperations.ApprovedDataAffecting);
+        _ = RequiredBoolean(request, WorkflowRollbackOperations.ApprovedRequiresApproval);
+    }
 
-    private static bool? ParseNullableBoolean(OperationRequest request, string name)
-        => bool.TryParse(Optional(request, name), out var value) ? value : null;
+    protected override async Task<WorkflowOperationRecord?> RollbackAsync(
+        OperationRequest request,
+        OperationPolicyContext context,
+        string targetOperationId,
+        CancellationToken cancellationToken)
+    {
+        return await services.GetRequiredService<DeployWorkflowService>().RequestRollbackAsync(
+            targetOperationId,
+            context.PrincipalId,
+            Optional(request, WorkflowRollbackOperations.Reason),
+            approvedMetadataReleaseIsDataAffecting: RequiredBoolean(
+                request, WorkflowRollbackOperations.ApprovedDataAffecting),
+            approvedMetadataReleaseRequiresApproval: RequiredBoolean(
+                request, WorkflowRollbackOperations.ApprovedRequiresApproval),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool RequiredBoolean(OperationRequest request, string name)
+        => bool.TryParse(Required(request, name), out var value)
+            ? value
+            : throw new ArgumentException($"Required parameter '{name}' must be a boolean.", nameof(request));
 }
 
 internal sealed class CoordinatedReleaseRollbackOperationExecutor(
@@ -166,10 +242,11 @@ internal sealed class CoordinatedReleaseRollbackOperationExecutor(
 
     protected override Task<WorkflowOperationRecord?> RollbackAsync(
         OperationRequest request,
+        OperationPolicyContext context,
         string targetOperationId,
         CancellationToken cancellationToken) => services.GetRequiredService<CoordinatedReleaseControlService>().RequestRollbackAsync(
             targetOperationId,
-            Optional(request, WorkflowRollbackOperations.RequestedBy),
+            context.PrincipalId,
             Optional(request, WorkflowRollbackOperations.Reason),
             cancellationToken);
 }

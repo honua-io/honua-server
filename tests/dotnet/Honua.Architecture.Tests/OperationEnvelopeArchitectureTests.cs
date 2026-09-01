@@ -361,6 +361,15 @@ public sealed class OperationEnvelopeArchitectureTests
     public void WorkflowRollbackEndpoints_EnterCanonicalRuntimeBeforeMutation()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var operationsSource = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+            root, "src", "Honua.Server", "Features", "Operations", "WorkflowRollbackOperations.cs"));
+
+        Assert.Contains("ApprovalModel = OperationApprovalModel.OperatorGate", operationsSource, StringComparison.Ordinal);
+        Assert.Contains("context.PrincipalId", operationsSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("public const string RequestedBy", operationsSource, StringComparison.Ordinal);
+        Assert.Contains("RequiredBoolean(request, WorkflowRollbackOperations.ApprovedDataAffecting)", operationsSource, StringComparison.Ordinal);
+        Assert.Contains("RequiredBoolean(request, WorkflowRollbackOperations.ApprovedRequiresApproval)", operationsSource, StringComparison.Ordinal);
+
         foreach (var relativePath in new[]
                  {
                      new[] { "src", "Honua.Server", "Features", "Admin", "DeployControlEndpoints.cs" },
@@ -378,7 +387,10 @@ public sealed class OperationEnvelopeArchitectureTests
             Assert.Contains("IOperationInvoker operationInvoker", rollback, StringComparison.Ordinal);
             Assert.Contains("operationInvoker.SubmitAsync", rollback, StringComparison.Ordinal);
             Assert.Contains("WorkflowRollbackOperations.", rollback, StringComparison.Ordinal);
+            Assert.Contains("ScopeIdempotencyKey", rollback, StringComparison.Ordinal);
+            Assert.Contains("handle.Status != OperationHandleStatus.Completed", rollback, StringComparison.Ordinal);
             Assert.DoesNotContain("RequestRollbackAsync(", rollback, StringComparison.Ordinal);
+            Assert.DoesNotContain("[WorkflowRollbackOperations.RequestedBy]", rollback, StringComparison.Ordinal);
         }
     }
 

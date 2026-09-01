@@ -591,7 +591,6 @@ internal static class DeployControlEndpoints
                         Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
                         {
                             [WorkflowRollbackOperations.TargetOperationId] = operationId,
-                            [WorkflowRollbackOperations.RequestedBy] = requestedBy,
                             [WorkflowRollbackOperations.Reason] = request?.Reason,
                             [WorkflowRollbackOperations.ApprovedDataAffecting] = isDestructive.ToString(),
                             [WorkflowRollbackOperations.ApprovedRequiresApproval] =
@@ -602,23 +601,21 @@ internal static class DeployControlEndpoints
                     {
                         PrincipalId = requestedBy,
                         CorrelationId = context.TraceIdentifier,
-                        IdempotencyKey = context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+                        IdempotencyKey = WorkflowRollbackOperations.ScopeIdempotencyKey(
+                            context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+                            operationId),
                         AuthorizationOutcome = "authorized",
                     },
                     context.RequestAborted)
                 .ConfigureAwait(false);
 
-            var operation = handle.Status == OperationHandleStatus.Completed
-                ? await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false)
-                : null;
-
-            if (operation == null)
+            if (handle.Status != OperationHandleStatus.Completed)
             {
-                return ProblemDetailsHelpers.CreateAdminProblem(
-                    StatusCodes.Status404NotFound,
-                    ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                    $"Deploy operation '{operationId}' was not found.");
+                return CreateRollbackHandleProblem(handle, operationId);
             }
+
+            var operation = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
+            if (operation == null) return CreateRollbackHandleProblem(handle with { Status = OperationHandleStatus.Indeterminate }, operationId);
 
             return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
         }
@@ -636,6 +633,25 @@ internal static class DeployControlEndpoints
                 detail: DeployControlUnavailableMessage,
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
+    }
+
+    private static IResult CreateRollbackHandleProblem(OperationHandle handle, string operationId)
+    {
+        var statusCode = handle.Status switch
+        {
+            _ when WorkflowRollbackOperations.IsNotFound(handle) => StatusCodes.Status404NotFound,
+            _ when WorkflowRollbackOperations.IsConflict(handle) => StatusCodes.Status409Conflict,
+            OperationHandleStatus.Indeterminate => StatusCodes.Status503ServiceUnavailable,
+            OperationHandleStatus.Denied or OperationHandleStatus.Rejected => StatusCodes.Status403Forbidden,
+            OperationHandleStatus.Failed => StatusCodes.Status502BadGateway,
+            _ => StatusCodes.Status409Conflict,
+        };
+        var detail = handle.Reason
+            ?? $"Rollback for deploy operation '{operationId}' returned canonical status '{handle.Status}' (instance '{handle.OperationInstanceId}').";
+        return ProblemDetailsHelpers.CreateAdminProblem(
+            statusCode,
+            ProblemDetailsHelpers.GetTitle(statusCode),
+            detail);
     }
 
     private const string PlatformReleaseWorkerNote =
