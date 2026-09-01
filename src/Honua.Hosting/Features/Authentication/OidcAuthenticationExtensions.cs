@@ -256,7 +256,12 @@ public static class OidcAuthenticationExtensions
         {
             var schemes = BuildSchemes(
                 ClientCertificateAuthenticationExtensions.IsMtlsCapabilityEnabled(configuration));
-            var adminRoles = BuildRoleSet(oidcOptions.AdminRoles, "admin", "administrator", "Administrator");
+            var adminRoles = BuildRoleSet(
+                oidcOptions.AdminRoles,
+                "admin",
+                "administrator",
+                "Administrator",
+                AdminApiKeyPermission.ApprovedOperationRole);
 
             UpdateRolePolicy(
                 authzOptions,
