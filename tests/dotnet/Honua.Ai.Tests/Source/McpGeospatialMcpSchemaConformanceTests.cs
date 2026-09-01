@@ -66,7 +66,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_preview_package"] = "preview_package",
             ["honua_execute_plan"] = "execute_plan",
             ["honua_cancel_job"] = "cancel_job",
-            ["honua_propose_operation"] = "propose_operation",
             ["honua_create_map_package"] = "create_map_package",
             ["honua_create_app_package"] = "create_app_package",
             ["honua_geocode_address"] = "geocode_address",

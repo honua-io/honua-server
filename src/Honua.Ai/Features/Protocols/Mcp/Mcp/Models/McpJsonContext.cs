@@ -56,7 +56,6 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 [JsonSerializable(typeof(McpDryRunOutput))]
 [JsonSerializable(typeof(McpExecuteOutput))]
 [JsonSerializable(typeof(McpCancelJobOutput))]
-[JsonSerializable(typeof(McpProposeOperationArgument))]
 [JsonSerializable(typeof(McpProposeOperationOutput))]
 [JsonSerializable(typeof(McpConvergenceTargetOutput))]
 [JsonSerializable(typeof(McpSupportedOperationKindsOutput))]
