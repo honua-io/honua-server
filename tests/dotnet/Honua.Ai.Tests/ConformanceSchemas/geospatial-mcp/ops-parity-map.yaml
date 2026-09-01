@@ -36,15 +36,15 @@ routes:
   "GET /api/v1/admin/observability/findings":
     tool: honua_ops_findings
   "POST /api/v1/admin/observability/findings/{findingId}/propose":
-    tool: honua_propose_operation
+    tool: honua_propose_finding
   "GET /api/v1/admin/deploy/preflight":
     tool: honua_ops_health
   "POST /api/v1/admin/deploy/plan":
-    tool: honua_propose_operation
+    tool: honua_propose_deploy_plan
   "GET /api/v1/admin/deploy/operations":
     tool: honua_operate_events
   "POST /api/v1/admin/deploy/operations":
-    tool: honua_propose_operation
+    tool: honua_propose_deploy_operation
   "GET /api/v1/admin/deploy/operations/{operationId}":
     tool: honua_operate_events
   "POST /api/v1/admin/deploy/operations/{operationId}/submit":
@@ -52,9 +52,9 @@ routes:
   "POST /api/v1/admin/deploy/operations/{operationId}/promote":
     human-only: "Promoting a staged deploy operation is an operator control; agents propose operations and observe status instead."
   "POST /api/v1/admin/deploy/operations/{operationId}/rollback":
-    tool: honua_propose_operation
+    tool: honua_propose_rollback
   "POST /api/v1/admin/platform-release/converge":
-    tool: honua_propose_operation
+    tool: honua_propose_platform_release_convergence
   "GET /api/v1/admin/proposals":
     resource: honua://proposals/{proposalId}
   "GET /api/v1/admin/proposals/{id}":

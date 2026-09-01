@@ -7,6 +7,7 @@ using Honua.Ai.Protocols.Mcp.Models;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -257,10 +258,17 @@ public sealed class McpPlatformOpsReaderTests
         gateway.RouteCalls.Should().Be(0, "rollback proposals must never use the direct-execution route");
         gateway.ProposalCalls.Should().Be(1);
         gateway.LastRequest!.Kind.Should().Be(OperationClass.Deploy);
-        gateway.LastRequest.RequestedBy.Should().Be("ops-agent");
-        gateway.LastRequest.RequestedByAgent.Should().Be("agent:ops-agent");
+        gateway.LastRequest.RequestedBy.Should().Be("test:subject:-:ops-agent");
+        gateway.LastRequest.RequestedByAgent.Should().Be("agent:test:subject:-:ops-agent");
         gateway.LastRequest.Reason.Should().Be("rollback bad release");
         gateway.LastRequest.IdempotencyKey.Should().Be("rollback-key");
+        await services.GetRequiredService<IOperationEnvelopeFactory>().Received(1).CreateAcceptedAsync(
+            "control-plane.deploy",
+            Arg.Is<OperationPolicyContext>(context =>
+                context.AuthorizationOutcome == "admin-policy-authorized" &&
+                !context.ScopeGoverned &&
+                context.PrincipalId == "test:subject:-:ops-agent"),
+            Arg.Any<CancellationToken>());
 
         var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload);
         payload.Should().NotBeNull();
@@ -321,15 +329,44 @@ public sealed class McpPlatformOpsReaderTests
         payload.CurrentRevision.Should().Be("rev-10");
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeRollback_ReadOnlyOAuthScope_IsDeniedBeforeProposalPersistence()
+    {
+        var gateway = new RecordingGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"),
+        });
+        using var services = CreateServices(gateway);
+        var reader = CreateReader(scopeAuthorizer: new OperatorScopeAuthorizer(), services: services);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "ops-agent"),
+            new Claim(OperatorScopeCatalog.ScopeGovernedClaimType, OperatorScopeCatalog.ScopeGovernedClaimValue),
+            new Claim(OperatorScopeCatalog.ScopeClaimType, OperatorScopeCatalog.Read),
+        ], "test"));
+
+        var act = () => reader.ProposeRollbackAsync(principal,
+            new McpProposeRollbackArgument { TargetId = "serving-us-west", ToRevision = "rev-9" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingAuthorizationException>();
+        gateway.ProposalCalls.Should().Be(0);
+        gateway.RouteCalls.Should().Be(0);
+    }
+
     private static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,
         IWorkflowOperationStore? store = null,
         IAuthorizationService? authorization = null,
+        IOperatorScopeAuthorizer? scopeAuthorizer = null,
         IServiceProvider? services = null)
         => new(
             new StaticOptionsMonitor<ControlPlaneOptions>(options ?? CreateOptions()),
             CreateDeployService(store ?? new RecordingWorkflowOperationStore()),
             authorization ?? CreateAuthorization(AuthorizationResult.Success()),
+            scopeAuthorizer ?? NullOperatorScopeAuthorizer.Instance,
             services ?? CreateServices());
 
     private static DeployWorkflowService CreateDeployService(IWorkflowOperationStore store)
@@ -347,6 +384,11 @@ public sealed class McpPlatformOpsReaderTests
                 Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<object>(),
                 AuthenticationExtensions.OpsReadPolicy)
+            .Returns(result);
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<object>(),
+                AuthenticationExtensions.AdminPolicy)
             .Returns(result);
         return authorization;
     }
@@ -368,6 +410,7 @@ public sealed class McpPlatformOpsReaderTests
                 OperationId = "control-plane.deploy",
                 Status = OperationHandleStatus.Accepted,
                 CorrelationId = "corr-rollback",
+                AuditId = "audit-rollback",
                 CreatedAt = now,
                 UpdatedAt = now,
             });

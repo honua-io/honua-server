@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using System.Security.Claims;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -191,4 +193,81 @@ internal sealed class ProposeRollbackTool(ILogger<ProposeRollbackTool> logger) :
 
     private static IMcpPlatformOpsReader ResolveReader(HttpContext httpContext) =>
         httpContext.RequestServices.GetRequiredService<IMcpPlatformOpsReader>();
+}
+
+
+internal abstract class GovernedPlatformMutationTool<TArgument>(ILogger logger) : IMcpTool where TArgument : class
+{
+    public abstract string Name { get; }
+    protected abstract string Title { get; }
+    protected abstract string Description { get; }
+    protected abstract JsonElement InputSchema { get; }
+    protected abstract JsonTypeInfo<TArgument> ArgumentTypeInfo { get; }
+    protected abstract Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, TArgument argument, CancellationToken cancellationToken);
+
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
+
+    public McpToolDescriptor Describe() => new()
+    {
+        Name = Name,
+        Title = Title,
+        Description = Description,
+        InputSchema = InputSchema,
+        OutputSchema = McpToolOutputSchemas.ProposeOperationOutputSchema,
+        Annotations = McpToolAnnotationSets.Write(Title, destructive: false, idempotent: true)
+    };
+
+    public async Task<McpToolsCallResult> InvokeAsync(HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
+    {
+        McpTelemetry.EnrichActivity(Name);
+        McpLog.ToolInvoked(logger, Name, WorkflowFamily);
+        var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
+        var argument = McpToolHelpers.ParseArguments(arguments, ArgumentTypeInfo);
+        var output = await ProposeAsync(httpContext.RequestServices.GetRequiredService<IMcpPlatformOpsReader>(), principal, argument, cancellationToken).ConfigureAwait(false);
+        return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpProposeOperationOutput);
+    }
+}
+
+internal sealed class ProposeFindingTool(ILogger<ProposeFindingTool> logger) : GovernedPlatformMutationTool<McpProposeFindingArgument>(logger)
+{
+    public const string ToolName = "honua_propose_finding";
+    public override string Name => ToolName;
+    protected override string Title => "Propose finding remediation";
+    protected override string Description => "Seal the deterministic recommended action for an active finding as a governed proposal.";
+    protected override JsonElement InputSchema => McpPlatformOpsSchemas.ProposeFindingInputSchema;
+    protected override JsonTypeInfo<McpProposeFindingArgument> ArgumentTypeInfo => McpJsonContext.Default.McpProposeFindingArgument;
+    protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpProposeFindingArgument argument, CancellationToken cancellationToken) => reader.ProposeFindingAsync(principal, argument, cancellationToken);
+}
+
+internal sealed class ProposeDeployPlanTool(ILogger<ProposeDeployPlanTool> logger) : GovernedPlatformMutationTool<McpDeployMutationArgument>(logger)
+{
+    public const string ToolName = "honua_propose_deploy_plan";
+    public override string Name => ToolName;
+    protected override string Title => "Propose deploy plan";
+    protected override string Description => "Seal a schema-closed deploy plan as a governed proposal.";
+    protected override JsonElement InputSchema => McpPlatformOpsSchemas.DeployMutationInputSchema;
+    protected override JsonTypeInfo<McpDeployMutationArgument> ArgumentTypeInfo => McpJsonContext.Default.McpDeployMutationArgument;
+    protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken) => reader.ProposeDeployPlanAsync(principal, argument, cancellationToken);
+}
+
+internal sealed class ProposeDeployOperationTool(ILogger<ProposeDeployOperationTool> logger) : GovernedPlatformMutationTool<McpDeployMutationArgument>(logger)
+{
+    public const string ToolName = "honua_propose_deploy_operation";
+    public override string Name => ToolName;
+    protected override string Title => "Propose deploy operation";
+    protected override string Description => "Seal a schema-closed deploy operation as a governed proposal.";
+    protected override JsonElement InputSchema => McpPlatformOpsSchemas.DeployMutationInputSchema;
+    protected override JsonTypeInfo<McpDeployMutationArgument> ArgumentTypeInfo => McpJsonContext.Default.McpDeployMutationArgument;
+    protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken) => reader.ProposeDeployOperationAsync(principal, argument, cancellationToken);
+}
+
+internal sealed class ProposePlatformReleaseConvergenceTool(ILogger<ProposePlatformReleaseConvergenceTool> logger) : GovernedPlatformMutationTool<McpPlatformReleaseConvergenceArgument>(logger)
+{
+    public const string ToolName = "honua_propose_platform_release_convergence";
+    public override string Name => ToolName;
+    protected override string Title => "Propose platform release convergence";
+    protected override string Description => "Seal convergence to the server-declared platform release as a governed proposal.";
+    protected override JsonElement InputSchema => McpPlatformOpsSchemas.PlatformReleaseConvergenceInputSchema;
+    protected override JsonTypeInfo<McpPlatformReleaseConvergenceArgument> ArgumentTypeInfo => McpJsonContext.Default.McpPlatformReleaseConvergenceArgument;
+    protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpPlatformReleaseConvergenceArgument argument, CancellationToken cancellationToken) => reader.ProposePlatformReleaseConvergenceAsync(principal, argument, cancellationToken);
 }
