@@ -36,7 +36,10 @@ public sealed class OperationGatewayAutonomyTests
     {
         var store = new MultiProposalStore();
         var executor = new RecordingExecutor();
-        var sut = BuildGateway(store, new RecordingAutonomyEvaluator(new OpsAutonomyRouteDecision()),
+        var sut = BuildGateway(store, new RecordingAutonomyEvaluator(new OpsAutonomyRouteDecision
+        {
+            ShouldAutoApply = false,
+        }),
             executor, RecordingConvergence.Converged());
         var request = Request() with { AutonomyContext = null };
 
@@ -383,6 +386,7 @@ public sealed class OperationGatewayAutonomyTests
         OpsNotificationService? opsNotificationService = null)
     {
         var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.AdminConfigChange).Returns(RequiresApprovalDecision());
         ladder.Resolve(OperationClass.AdminConfigChange, RedriveAction).Returns(RequiresApprovalDecision());
 
         return CanonicalOperationGatewayTestComposition.Build(

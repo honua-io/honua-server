@@ -5,7 +5,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 
-namespace Honua.Core.Tests.Features.Operations;
+namespace Honua.Core.Tests.OperationScopes;
 
 public sealed class OperationScopeMappingTests
 {
