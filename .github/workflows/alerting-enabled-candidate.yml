@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: alerting-enabled-candidate-${{ github.event.pull_request.head.sha || inputs.candidate_source_sha }}
@@ -57,6 +58,18 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+
+      - name: Authenticate package restore and stamp candidate receipt
+        env:
+          NUGET_AUTH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: |
+          dotnet nuget update source github-honua \
+            --username "${{ github.actor }}" \
+            --password "${NUGET_AUTH_TOKEN}" \
+            --store-password-in-clear-text
+          mkdir -p artifacts/alerting-enabled-candidate
+          printf '%s\n' "${CANDIDATE_SHA}" > artifacts/alerting-enabled-candidate/candidate-source-sha.txt
 
       - name: Run enabled Postgres webhook qualification scenarios
         run: |
