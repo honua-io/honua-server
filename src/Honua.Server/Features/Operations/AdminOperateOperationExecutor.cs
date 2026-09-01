@@ -107,7 +107,8 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         finally
         {
             if (executionCredential is not null)
-                _ = await _adminApiKeyStore!.RevokeAsync(executionCredential.Id, CancellationToken.None).ConfigureAwait(false);
+                await ApprovedOperationCredentialRevocation.RevokeAsync(
+                    _adminApiKeyStore!, executionCredential.Id).ConfigureAwait(false);
         }
         using (response)
         {

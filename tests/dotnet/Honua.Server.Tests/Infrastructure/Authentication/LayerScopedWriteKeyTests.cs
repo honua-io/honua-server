@@ -51,6 +51,7 @@ public sealed class LayerScopedWriteKeyTests
     [InlineData("metadata:read")]
     [InlineData("write:demo/parcels")]
     [InlineData("deploy:approve")]
+    [InlineData("admin:operation:POST:/api/v1/admin/connections")]
     public void ConfersFullAdmin_GenuinelyScopedGrants_ReturnsFalse(string grant)
     {
         // A grant set that carries no full-admin grant confers no admin authority,

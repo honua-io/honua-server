@@ -620,6 +620,45 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task LaneD_ApprovedReplay_SurfacesFailedCredentialRevocation()
+    {
+        using var client = new HttpClient(new CapturingHandler(HttpStatusCode.OK, "{\"ok\":true}"));
+        var credentialStore = Substitute.For<IAdminApiKeyStore>();
+        var issued = await new InMemoryAdminApiKeyStore(TimeProvider.System).CreateAsync(
+            "approved-operation:proposal-1",
+            ["admin:operation:POST:/api/v1/admin/cache/invalidate"],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "requester",
+            CancellationToken.None);
+        credentialStore.CreateAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(issued);
+        credentialStore.RevokeAsync(issued.Record.Id, CancellationToken.None)
+            .Returns((AdminApiKeyRecord?)null);
+        var executor = BuildAdminExecutor("admin.cache.invalidate", client, credentialStore);
+
+        var act = () => executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = executor.OperationId,
+                Parameters = new Dictionary<string, string?> { ["scope"] = "catalog" }
+            },
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal-1",
+                PrincipalId = "requester",
+            },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Failed to revoke approved-operation credential*");
+    }
+
+    [UnitTest]
     public async Task LaneD_Executor_MapsExpectedAdminFailureToStructuredHandle()
     {
         var handler = new CapturingHandler(HttpStatusCode.BadRequest, "{\"detail\":\"invalid scope\"}");

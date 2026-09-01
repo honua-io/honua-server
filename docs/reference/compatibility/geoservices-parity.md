@@ -1,9 +1,12 @@
 # GeoServices REST parity
 
-Honua serves the Esri GeoServices REST API at compatible paths so ArcGIS Pro, the
-ArcGIS SDKs, Esri Leaflet, and the ArcGIS API for Python can connect without
-modification. This page summarizes endpoint-level parity per service; the
-machine-readable source is
+Honua provides protocol-level compatibility at Esri GeoServices REST paths for
+selected, operation-scoped workflows. Client support is bounded by this matrix and
+the [cross-client certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md),
+which identifies operation-level coverage and planned lanes;
+it does not imply blanket compatibility for ArcGIS Pro, ArcGIS SDKs, Esri Leaflet,
+or the ArcGIS API for Python. This page summarizes endpoint-level parity per service;
+the machine-readable source is
 [`docs/gis/data/geoservices-rest-parity.json`](../../gis/data/geoservices-rest-parity.json).
 
 **How this matrix is produced (#2863).** It has two honestly-different halves, and only

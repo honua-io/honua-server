@@ -1,0 +1,7 @@
+# Trivy allowlist for images published by the release-bundle workflow.
+#
+# This file is intentionally empty. Add an advisory ID only after documenting
+# the affected package, exploitability, upstream remediation status, owner, and
+# expiry in the pull request that introduces the exception. A release exception
+# must never be copied from the broader repository/test-tooling allowlist without
+# proving that it applies to the customer-deployed image.

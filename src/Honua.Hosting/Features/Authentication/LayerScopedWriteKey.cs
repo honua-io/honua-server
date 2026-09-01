@@ -235,6 +235,11 @@ internal static class LayerScopedWriteKey
 
     private static bool IsAdminGrant(string permission)
     {
+        if (permission.StartsWith(AdminApiKeyPermission.ApprovedOperationGrantPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (permission.StartsWith(AdminGrantPrefix, StringComparison.OrdinalIgnoreCase))
         {
             return true;
