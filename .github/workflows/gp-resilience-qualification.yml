@@ -1,0 +1,46 @@
+name: GP Resilience Qualification
+on:
+  workflow_dispatch:
+    inputs:
+      server_image: { description: Exact digest-addressed server candidate, required: true, type: string }
+      worker_image: { description: Exact digest-addressed GDAL worker candidate, required: true, type: string }
+      source_sha: { description: Full candidate source SHA, required: true, type: string }
+      soak_seconds: { description: Sustained soak duration, required: true, default: '3600', type: string }
+      soak_concurrency: { description: Concurrent jobs per wave, required: true, default: '8', type: string }
+permissions:
+  contents: read
+  packages: read
+jobs:
+  poison-quota-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      HONUA_SERVER_IMAGE: ${{ inputs.server_image }}
+      HONUA_WORKER_IMAGE: ${{ inputs.worker_image }}
+      HONUA_GP_SOURCE_SHA: ${{ inputs.source_sha }}
+      HONUA_GP_RUN_SOAK: 'true'
+      HONUA_GP_SOAK_SECONDS: ${{ inputs.soak_seconds }}
+      HONUA_GP_SOAK_CONCURRENCY: ${{ inputs.soak_concurrency }}
+      HONUA_GP_TENANT_A_TOKEN: ${{ secrets.GP_QUALIFICATION_TENANT_A_TOKEN }}
+      HONUA_GP_TENANT_B_TOKEN: ${{ secrets.GP_QUALIFICATION_TENANT_B_TOKEN }}
+      HONUA_GP_OIDC_ISSUER: ${{ secrets.GP_QUALIFICATION_OIDC_ISSUER }}
+      HONUA_GP_OIDC_AUDIENCE: ${{ secrets.GP_QUALIFICATION_OIDC_AUDIENCE }}
+      HONUA_GP_OIDC_SIGNING_KEY: ${{ secrets.GP_QUALIFICATION_OIDC_SIGNING_KEY }}
+      HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-resilience
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run poison, quota, and sustained soak qualification
+        run: scripts/qualification/gp-lifecycle-harness.sh
+      - name: Retain scenario receipts, including findings
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: gp-resilience-receipts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gp-resilience/*.json
+          if-no-files-found: error
+          retention-days: 30
