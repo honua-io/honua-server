@@ -16,6 +16,14 @@
   },
   "assets": [
     {
+      "id": "multibyte-rtl-attributes",
+      "path": "multibyte-rtl-attributes.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 934,
+      "sha256": "975829312cade2734d255a90132d3c5b87cc5301ff95552f3eed51fd592693b5",
+      "facets": ["attributes/utf-8", "attributes/rtl-arabic", "attributes/rtl-hebrew", "attributes/rtl-persian", "attributes/combining-mark", "attributes/bidi-isolate", "attributes/emoji"]
+    },
+    {
       "id": "malformed-parseable",
       "path": "malformed-parseable.geojson",
       "mediaType": "application/geo+json",

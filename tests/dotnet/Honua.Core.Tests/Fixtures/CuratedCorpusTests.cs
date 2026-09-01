@@ -19,13 +19,30 @@ public sealed class CuratedCorpusTests
         corpus.VerifyAll();
 
         Assert.Equal("v1", corpus.Revision);
-        Assert.Equal(13, corpus.Assets.Count);
+        Assert.Equal(14, corpus.Assets.Count);
         Assert.All(corpus.Assets, asset =>
         {
             Assert.Equal(64, asset.Sha256.Length);
             Assert.NotEmpty(asset.MediaType);
             Assert.NotEmpty(asset.Facets);
         });
+    }
+
+    [UnitTest]
+    public void MultibyteRtlAsset_PreservesScriptsCombiningMarksAndBidiControls()
+    {
+        var corpus = CuratedCorpus.Load();
+        var text = Encoding.UTF8.GetString(corpus.ReadAllBytes("multibyte-rtl-attributes"));
+        using var document = JsonDocument.Parse(text);
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        Assert.Equal("مرحبا بالعالم", features[0].GetProperty("properties").GetProperty("label").GetString());
+        Assert.Equal("שלום עולם", features[1].GetProperty("properties").GetProperty("label").GetString());
+        Assert.Equal("نقشهٔ هونوا", features[2].GetProperty("properties").GetProperty("label").GetString());
+        Assert.Contains("東京 🌺", text, StringComparison.Ordinal);
+        Assert.Contains('\u0301', features[3].GetProperty("properties").GetProperty("decomposed").GetString());
+        Assert.Contains('\u2067', features[3].GetProperty("properties").GetProperty("isolated").GetString());
+        Assert.Contains('\u2069', features[3].GetProperty("properties").GetProperty("isolated").GetString());
     }
 
     [UnitTest]
