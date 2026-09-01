@@ -36,10 +36,45 @@ env:
   REVIEW_FIRST_MODE: observe
 
 jobs:
+  format:
+    name: PR Gate / Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # `rerun-failed-jobs` only releases jobs that failed attempt 1. Make this
+      # independent path an admission failure too, otherwise a skipped-success
+      # format job would never execute on enforced attempt 2.
+      - name: Await exact-head review
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt == 1
+        run: |
+          echo "Admission passed; exact-head review has not released format verification yet."
+          exit 1
+
+      - uses: actions/checkout@v7.0.1
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        with:
+          fetch-depth: 2
+
+      - name: Setup .NET
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        run: scripts/ci/dotnet-restore-retry.sh Honua.sln
+
+      - name: Format Check
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        uses: ./.github/actions/format-check
+        with:
+          format-scope: affected
+
   pr-gate:
     # This exact string is the branch-protection verification context. Changing it
     # silently un-gates trunk or leaves pull requests waiting forever.
-    name: PR Gate
+    name: PR Gate / Build and tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -162,7 +197,7 @@ jobs:
           # successful measurement, not a failed change.
           enable-build-cache: ${{ vars.HONUA_PR_GATE_BUILD_CACHE == 'true' && 'true' || 'false' }}
 
-      - name: Lean gate (build + format + fast unit/architecture smoke)
+      - name: Lean gate (build + fast unit/architecture smoke)
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         uses: ./.github/actions/lean-gate
         with:
@@ -174,14 +209,9 @@ jobs:
           # train's full-solution build before landing, so it is fixed forward
           # and never reaches trunk unverified.
           build-scope: affected
-          # Per-PR only, same contract: the format check keeps the solution
-          # workspace but restricts per-document analysis (84% of its measured
-          # cost) to the diff's files via --include, falling back to the full
-          # run for untrustworthy bases, shared-infrastructure or
-          # format-sensitive-config changes, and oversized diffs. A residual
-          # out-of-diff diagnostic fails the merge train's full-solution format
-          # before landing and is fixed forward.
-          format-scope: affected
+          # Format retains this same affected/full/skip contract in the parallel
+          # format job above. The default remains inline for every other caller.
+          run-format: 'false'
 
       # Exercise all clean and injected-rootfs fixtures here without building a
       # container. The separate serving-image workflow and release/deploy/nightly
@@ -192,6 +222,46 @@ jobs:
           python3 scripts/ci/fixtures/validate-serving-image-boundary.py
           python3 scripts/ci/fixtures/validate-promote-verified-image.py
 
+      - name: Revalidate exact-head review before success
+        if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const head = context.payload.pull_request?.head?.sha;
+            if (!head || head !== '${{ github.event.pull_request.head.sha }}') {
+              core.setFailed('Attempt 2 has no trustworthy pull-request head.');
+              return;
+            }
+            const statuses = await github.paginate(
+              github.rest.repos.listCommitStatusesForRef,
+              { ...context.repo, ref: head, per_page: 100 },
+            );
+            const reviewGate = statuses.find(status => status.context === 'Review Gate');
+            if (reviewGate?.state !== 'success') {
+              core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
+            }
+
+  required:
+    # Keep the exact branch-protection context stable while both independent
+    # verification paths fail closed into it.
+    name: PR Gate
+    if: always()
+    needs: [pr-gate, format]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require build, tests, and format
+        env:
+          BUILD_AND_TEST_RESULT: ${{ needs.pr-gate.result }}
+          FORMAT_RESULT: ${{ needs.format.result }}
+        run: |
+          if [[ "${BUILD_AND_TEST_RESULT}" != "success" || "${FORMAT_RESULT}" != "success" ]]; then
+            echo "::error::PR Gate failed: build/tests=${BUILD_AND_TEST_RESULT}, format=${FORMAT_RESULT}"
+            exit 1
+          fi
+
+      # This is the last step in the stable required context, after both
+      # parallel verification paths have completed. It closes the interval in
+      # which review evidence could be dismissed while format was still running.
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
         uses: actions/github-script@v9

@@ -93,7 +93,8 @@ def main() -> None:
         "Await exact-head review",
         "Free disk space",
     ]
-    positions = [pr_gate.index(f"- name: {name}") for name in ordered_steps]
+    build_test_job = pr_gate[pr_gate.index("  pr-gate:\n") : pr_gate.index("  required:\n")]
+    positions = [build_test_job.index(f"- name: {name}") for name in ordered_steps]
     if positions != sorted(positions):
         raise AssertionError("admission receipt/wait must precede every expensive step")
 
@@ -106,18 +107,24 @@ def main() -> None:
         "if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
         "'pull_request' || github.run_attempt > 1"
     )
-    if pr_gate.count(full_condition) != 4:
+    # Four expensive steps remain in the build/test job and four now live in
+    # the parallel format job (checkout, setup, restore, format). All eight
+    # must stay attempt-2-only when review-first enforcement is enabled.
+    if pr_gate.count(full_condition) != 8:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
 
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
         "'pull_request' && github.run_attempt > 1"
     )
-    if pr_gate.count(revalidation_condition) != 2:
-        raise AssertionError("attempt 2 must revalidate review evidence before and after verification")
+    if pr_gate.count(revalidation_condition) != 3:
+        raise AssertionError(
+            "attempt 2 must revalidate before build/tests, after build/tests, "
+            "and after both parallel jobs"
+        )
     require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
-    if pr_gate.count("github.rest.repos.listCommitStatusesForRef") != 2:
-        raise AssertionError("both attempt-2 review checks must read exact-head status")
+    if pr_gate.count("github.rest.repos.listCommitStatusesForRef") != 3:
+        raise AssertionError("all three attempt-2 review checks must read exact-head status")
     before = pr_gate.index("- name: Revalidate exact-head review before verification")
     expensive = pr_gate.index("- name: Free disk space")
     after = pr_gate.index("- name: Revalidate exact-head review before success")

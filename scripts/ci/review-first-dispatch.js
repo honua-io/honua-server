@@ -3,13 +3,16 @@
 const { isDeepStrictEqual } = require('node:util');
 
 const PR_GATE_WORKFLOW = '.github/workflows/pr-gate.yml';
-const PR_GATE_JOB = 'PR Gate';
+// The stable required `PR Gate` context is now the fail-closed aggregator. The
+// dispatcher must inspect the build/test job because it owns the admission
+// receipt and review wait steps used to authorize attempt 2.
+const PR_GATE_JOB = 'PR Gate / Build and tests';
 const ADMISSION_RECEIPT_STEP = 'Admission receipt';
 const WAIT_FOR_REVIEW_STEP = 'Await exact-head review';
 const EXPENSIVE_STEPS = new Set([
   'Free disk space',
   'Setup .NET',
-  'Lean gate (build + format + fast unit/architecture smoke)',
+  'Lean gate (build + fast unit/architecture smoke)',
   'Test serving-image boundary detector',
 ]);
 
