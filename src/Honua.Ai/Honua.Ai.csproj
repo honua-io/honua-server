@@ -86,6 +86,12 @@
          (FeatureCatalogDriftTests). -->
     <EmbeddedResource Include="..\..\docs\gis\data\feature-catalog.json"
                       LogicalName="Honua.Ai.Catalog.feature-catalog.json" />
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\buffer_features.schema.json" LogicalName="Honua.Ai.Mcp.AnalysisSchemas.buffer_features.schema.json" />
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\overlay_features.schema.json" LogicalName="Honua.Ai.Mcp.AnalysisSchemas.overlay_features.schema.json" />
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\summarize_statistics.schema.json" LogicalName="Honua.Ai.Mcp.AnalysisSchemas.summarize_statistics.schema.json" />
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\reproject_features.schema.json" LogicalName="Honua.Ai.Mcp.AnalysisSchemas.reproject_features.schema.json" />
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\join_features.schema.json" LogicalName="Honua.Ai.Mcp.AnalysisSchemas.join_features.schema.json" />
+    <EmbeddedResource Include="Schemas\geospatial-mcp\tools\export_dataset.schema.json" LogicalName="Honua.Ai.Mcp.AnalysisSchemas.export_dataset.schema.json" />
   </ItemGroup>
 
   <ItemGroup>

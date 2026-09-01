@@ -1,0 +1,11 @@
+{
+  "id": "reproject_features.artifact_to_3857",
+  "schemaRef": "tools/reproject_features.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "source": { "artifactId": "artifact_buffer_result" },
+    "targetSrid": 3857
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["ArtifactRef"]
+}

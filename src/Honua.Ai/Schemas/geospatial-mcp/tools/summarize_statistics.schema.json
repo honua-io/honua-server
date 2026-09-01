@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/summarize_statistics.schema.json",
+  "title": "summarize_statistics inputSchema",
+  "description": "Direct geoprocessing verb (advertised name honua_summarize_statistics): compute summary statistics over a dataset, optionally grouped by attribute fields, and return the summary rows. Use this for a single self-contained summary step (\"total population by county\", \"mean parcel value by zoning\") over a layer or a prior overlay/verb result; for multi-step analysis with dependencies and a packaged result, use plan_analysis + execute_plan instead. Member of the standard's opt-in **analysis** conformance profile (see /CONFORMANCE.md and docs/adr/0029-direct-geoprocessing-verbs.md). Long-running calls return an ExecutionJob handle (honua://jobs/{job_id}), pollable and cancelable via cancel_job; small/fast calls may return an inline result. Advertised readOnlyHint: true (computes a derived result; mutates no server state). x-honua-reference-shape: the concrete source (serviceId/layerId, artifactId) spellings track the reference pipeline.",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": ["source", "statistics"],
+  "properties": {
+    "source": {
+      "description": "Dataset to summarize: EITHER a published layer (serviceId + layerId) OR a prior-result artifact (artifactId) such as an overlay_features or join_features result.",
+      "oneOf": [
+        { "$ref": "#/$defs/layerRef" },
+        { "$ref": "#/$defs/artifactRef" }
+      ]
+    },
+    "groupByFields": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Attribute fields to group by. Omit for a single summary row over all matching features."
+    },
+    "statistics": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Statistics to compute. Each entry names a statistic type and the field it is computed on.",
+      "items": {
+        "type": "object",
+        "required": ["statisticType", "onField"],
+        "additionalProperties": false,
+        "properties": {
+          "statisticType": {
+            "type": "string",
+            "enum": ["count", "sum", "min", "max", "mean", "stddev", "var"],
+            "description": "Aggregate to compute. count ignores onField values (counts rows)."
+          },
+          "onField": {
+            "type": "string",
+            "description": "Attribute field the statistic is computed on."
+          },
+          "outField": {
+            "type": "string",
+            "description": "Optional name for the output column; defaults to an implementation-defined name derived from statisticType and onField."
+          }
+        }
+      }
+    },
+    "where": {
+      "type": "string",
+      "description": "Optional attribute filter (ArcGIS/SQL WHERE clause) selecting which input features are summarized."
+    }
+  },
+  "$defs": {
+    "layerRef": {
+      "type": "object",
+      "required": ["serviceId", "layerId"],
+      "additionalProperties": false,
+      "properties": {
+        "serviceId": { "type": "string", "minLength": 1, "description": "Published service identifier or name (from list_layers.serviceId or resolve_entity)." },
+        "layerId": { "type": "integer", "minimum": 0, "description": "Service-local layer index (from list_layers.layerId)." }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "required": ["artifactId"],
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1, "description": "Identifier (artifact_…) of a prior-result ArtifactRef produced by an earlier analysis job or verb. See resources/artifact.schema.json." }
+      }
+    }
+  }
+}
