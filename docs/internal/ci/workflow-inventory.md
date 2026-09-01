@@ -61,7 +61,7 @@ analysis.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `alerting-enabled-candidate.yml` | Alerting Enabled Candidate | path-filtered `pull_request`, `workflow_dispatch` | Exact-candidate qualification lane for the opt-in (`Alerts:Enabled=true`) Postgres webhook delivery path. Runs the bounded alert webhook E2E fixture against the PR head or an explicitly supplied 40-character source SHA and retains the candidate receipt for 90 days. |
+| `alerting-enabled-candidate.yml` | Alerting Enabled Candidate | path-filtered `pull_request`, `workflow_dispatch` | Exact-candidate qualification lane for the opt-in (`Alerts:Enabled=true`) Postgres webhook delivery path. Runs the bounded Postgres delivery, retry/DLQ, crash recovery, secret rotation, storm limiting, leader health, delivery-latency metrics, and backlog self-monitoring fixtures against the PR head or an explicitly supplied 40-character source SHA and retains the candidate receipt for 90 days. Database recovery, multi-replica leader handoff, process-restart persistence, and tenant-isolation remain honest gaps until their real infrastructure scenarios land. |
 | `openapi-contract-governance.yml` | OpenAPI Contract Governance | `pull_request`, `workflow_dispatch` | Path-scoped to the API surface; enforces the breaking-change policy (`OPENAPI_ALLOW_BREAKING_CHANGES` is the deliberate escape). |
 | `openapi-drift.yml` | OpenAPI Drift Check | `pull_request`, `workflow_dispatch` | Regenerates the OpenAPI document and fails on drift from the committed contract. |
 | `control-plane-sdk-governance.yml` | Control Plane SDK Governance | `pull_request`, `workflow_dispatch`, `release` | PR governance for the control-plane SDK surface, separate from release publishing. |

@@ -8,6 +8,7 @@ using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
@@ -18,14 +19,17 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AlertOptions _options;
     private readonly AlertDestinationGuard _destinationGuard;
+    private readonly ISecretProvider _secretProvider;
 
     public WebhookAlertDeliverySink(
         IHttpClientFactory httpClientFactory,
         IOptions<AlertOptions> options,
+        ISecretProvider secretProvider,
         AlertDestinationGuard? destinationGuard = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _secretProvider = secretProvider ?? throw new ArgumentNullException(nameof(secretProvider));
         _destinationGuard = destinationGuard ?? new AlertDestinationGuard();
     }
 
@@ -52,7 +56,8 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
             };
         }
 
-        if (string.IsNullOrWhiteSpace(_options.Dispatch.DefaultWebhookSecret))
+        var secretReference = _options.Dispatch.DefaultWebhookSecretReference;
+        if (string.IsNullOrWhiteSpace(secretReference))
         {
             return new AlertDeliveryResult
             {
@@ -64,6 +69,17 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
 
         try
         {
+            var signingSecret = await _secretProvider.GetSecretAsync(secretReference, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(signingSecret))
+            {
+                return new AlertDeliveryResult
+                {
+                    Succeeded = false,
+                    Retryable = true,
+                    Error = "Webhook signing secret could not be resolved."
+                };
+            }
+
             var destinationCheck = await _destinationGuard
                 .CheckAsync(destination, "Webhook destination", cancellationToken)
                 .ConfigureAwait(false);
@@ -83,7 +99,7 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
                 Content = new StringContent(alertEvent.PayloadJson, Encoding.UTF8, "application/json")
             };
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
-            var signature = WebhookDeliveryHelper.ComputeSignature(_options.Dispatch.DefaultWebhookSecret, timestamp, alertEvent.PayloadJson);
+            var signature = WebhookDeliveryHelper.ComputeSignature(signingSecret, timestamp, alertEvent.PayloadJson);
 
             // Ops notifications are not linked to an alert rule; emit the ops source
             // instead of a misleading "0" rule reference (#2427).

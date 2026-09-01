@@ -7,6 +7,8 @@ using System.Text.Json;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Alerts;
 using Honua.Alerts.Ops;
+using Honua.Core.Features.Security.Abstractions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Alerts;
 
@@ -15,6 +17,15 @@ namespace Honua.Server.Tests.Features.Alerts;
 /// </summary>
 internal static class AlertTestFixtures
 {
+    public const string SecretReference = "secret://alerts/test";
+
+    public static ISecretProvider SecretProvider(string value)
+    {
+        var provider = Substitute.For<ISecretProvider>();
+        provider.GetSecretAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(value);
+        return provider;
+    }
+
     /// <summary>
     /// Base URL for delivery-sink tests whose expected outcome requires the outbound SSRF guard to
     /// admit the destination.

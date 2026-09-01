@@ -46,7 +46,8 @@ public sealed class DigestAlertDeliverySinkTests
             provider.GetRequiredService<IServiceScopeFactory>(),
             httpClientFactory,
             Options.Create(CreateDigestOptions()),
-            NullLogger<DigestFlushBackgroundService>.Instance);
+            NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"));
 
         await service.FlushAsync(CancellationToken.None);
 
@@ -88,7 +89,8 @@ public sealed class DigestAlertDeliverySinkTests
             provider.GetRequiredService<IServiceScopeFactory>(),
             httpClientFactory,
             Options.Create(CreateDigestOptions()),
-            NullLogger<DigestFlushBackgroundService>.Instance);
+            NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"));
 
         await service.FlushAsync(CancellationToken.None);
 
@@ -131,6 +133,7 @@ public sealed class DigestAlertDeliverySinkTests
             httpClientFactory,
             Options.Create(CreateDigestOptions(AlertTestFixtures.HostnameWebhookBaseUrl + "/digest")),
             NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"),
             AlertTestFixtures.GuardWithUnavailableResolver());
 
         await service.FlushAsync(CancellationToken.None);
@@ -172,6 +175,7 @@ public sealed class DigestAlertDeliverySinkTests
             httpClientFactory,
             Options.Create(CreateDigestOptions(AlertTestFixtures.HostnameWebhookBaseUrl + "/digest")),
             NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"),
             AlertTestFixtures.GuardWithUnavailableResolver());
 
         await service.FlushAsync(CancellationToken.None);
@@ -212,6 +216,7 @@ public sealed class DigestAlertDeliverySinkTests
             httpClientFactory,
             Options.Create(CreateDigestOptions(AlertTestFixtures.HostnameWebhookBaseUrl + "/digest")),
             NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"),
             AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
 
         await service.FlushAsync(CancellationToken.None);
@@ -237,7 +242,7 @@ public sealed class DigestAlertDeliverySinkTests
                     // AlertTestFixtures.RoutableWebhookBaseUrl (#3056). Tests that exercise host
                     // resolution pass a host name here and inject a resolver instead.
                     WebhookUrl = webhookUrl ?? AlertTestFixtures.RoutableWebhookBaseUrl + "/digest",
-                    WebhookSecret = "digest-secret",
+                    WebhookSecretReference = AlertTestFixtures.SecretReference,
                     MaxBatchSize = 2
                 }
             }

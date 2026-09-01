@@ -151,13 +151,13 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
         return channelType switch
         {
             AlertChannelType.Webhook => !string.IsNullOrWhiteSpace(_options.Dispatch.DefaultWebhookUrl)
-                && !string.IsNullOrWhiteSpace(_options.Dispatch.DefaultWebhookSecret),
+                && !string.IsNullOrWhiteSpace(_options.Dispatch.DefaultWebhookSecretReference),
             AlertChannelType.WebSocket => true,
             AlertChannelType.Email => _deliveryOptions.Dispatch.Email is { SmtpHost.Length: > 0, FromAddress.Length: > 0, DefaultRecipient.Length: > 0 },
             AlertChannelType.Digest => !string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookUrl)
-                && !string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookSecret),
-            AlertChannelType.Slack => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.Slack?.WebhookUrl),
-            AlertChannelType.MicrosoftTeams => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.Teams?.WebhookUrl),
+                && !string.IsNullOrWhiteSpace(_options.Dispatch.Digest.WebhookSecretReference),
+            AlertChannelType.Slack => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.Slack?.WebhookUrlReference),
+            AlertChannelType.MicrosoftTeams => !string.IsNullOrWhiteSpace(_deliveryOptions.Dispatch.Teams?.WebhookUrlReference),
 
             // AWS / Azure channels are only deliverable when the build includes their cloud SDK. In
             // no-cloud / slim builds they are backed solely by UnsupportedAlertDeliverySink, so they

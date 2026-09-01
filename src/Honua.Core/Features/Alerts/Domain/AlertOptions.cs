@@ -173,9 +173,11 @@ public sealed class AlertDispatchOptions
     public string? DefaultWebhookUrl { get; set; }
 
     /// <summary>
-    /// Shared HMAC secret used to sign webhook alert deliveries.
+    /// <see cref="Security.Abstractions.ISecretProvider"/> reference for the shared HMAC secret
+    /// used to sign webhook alert deliveries. The value is resolved for every delivery so
+    /// rotations take effect without restarting the server.
     /// </summary>
-    public string? DefaultWebhookSecret { get; set; }
+    public string? DefaultWebhookSecretReference { get; set; }
 
     /// <summary>
     /// Delay when no dispatch work is available.
@@ -289,9 +291,10 @@ public sealed class DigestAlertOptions
     public string? WebhookUrl { get; set; }
 
     /// <summary>
-    /// Shared HMAC secret used to sign digest webhook deliveries.
+    /// <see cref="Security.Abstractions.ISecretProvider"/> reference for the shared HMAC secret
+    /// used to sign digest webhook deliveries.
     /// </summary>
-    public string? WebhookSecret { get; set; }
+    public string? WebhookSecretReference { get; set; }
 
     /// <summary>
     /// Interval between digest flushes.

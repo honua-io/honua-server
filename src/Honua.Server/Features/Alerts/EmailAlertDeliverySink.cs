@@ -7,6 +7,7 @@ using System.Net.Mail;
 using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
@@ -15,10 +16,15 @@ internal sealed partial class EmailAlertDeliverySink : IAlertDeliverySink
 {
     private readonly AlertDeliveryOptions _options;
     private readonly ILogger<EmailAlertDeliverySink>? _logger;
+    private readonly ISecretProvider _secretProvider;
 
-    public EmailAlertDeliverySink(IOptions<AlertDeliveryOptions> options, ILogger<EmailAlertDeliverySink>? logger = null)
+    public EmailAlertDeliverySink(
+        IOptions<AlertDeliveryOptions> options,
+        ISecretProvider secretProvider,
+        ILogger<EmailAlertDeliverySink>? logger = null)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _secretProvider = secretProvider ?? throw new ArgumentNullException(nameof(secretProvider));
         _logger = logger;
     }
 
@@ -77,7 +83,20 @@ internal sealed partial class EmailAlertDeliverySink : IAlertDeliverySink
 
             if (!string.IsNullOrWhiteSpace(emailOptions.Username))
             {
-                client.Credentials = new NetworkCredential(emailOptions.Username, emailOptions.Password);
+                var password = string.IsNullOrWhiteSpace(emailOptions.PasswordReference)
+                    ? null
+                    : await _secretProvider.GetSecretAsync(emailOptions.PasswordReference, cancellationToken).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(password))
+                {
+                    return new AlertDeliveryResult
+                    {
+                        Succeeded = false,
+                        Retryable = true,
+                        Error = "Email SMTP credential could not be resolved."
+                    };
+                }
+
+                client.Credentials = new NetworkCredential(emailOptions.Username, password);
             }
 
             await client.SendMailAsync(message, cancellationToken).ConfigureAwait(false);

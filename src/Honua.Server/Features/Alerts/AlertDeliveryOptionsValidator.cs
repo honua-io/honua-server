@@ -35,26 +35,12 @@ internal sealed class AlertDeliveryOptionsValidator : OptionsValidator<AlertDeli
         {
             ValidateDataAnnotations(slack, failures, $"{nameof(AlertDeliveryOptions.Dispatch)}.{nameof(AlertDeliveryDispatchOptions.Slack)}");
 
-            if (!string.IsNullOrWhiteSpace(slack.WebhookUrl))
-            {
-                ValidateOutboundHttpUrl(
-                    slack.WebhookUrl,
-                    $"{nameof(AlertDeliveryOptions.Dispatch)}.{nameof(AlertDeliveryDispatchOptions.Slack)}.{nameof(SlackChannelOptions.WebhookUrl)}",
-                    failures);
-            }
         }
 
         if (options.Dispatch.Teams is { } teams)
         {
             ValidateDataAnnotations(teams, failures, $"{nameof(AlertDeliveryOptions.Dispatch)}.{nameof(AlertDeliveryDispatchOptions.Teams)}");
 
-            if (!string.IsNullOrWhiteSpace(teams.WebhookUrl))
-            {
-                ValidateOutboundHttpUrl(
-                    teams.WebhookUrl,
-                    $"{nameof(AlertDeliveryOptions.Dispatch)}.{nameof(AlertDeliveryDispatchOptions.Teams)}.{nameof(TeamsChannelOptions.WebhookUrl)}",
-                    failures);
-            }
         }
 
         if (options.Dispatch.AwsSqs is { } awsSqs)

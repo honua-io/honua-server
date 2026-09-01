@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "contract": "2026.1 §7.3",
+  "scenarios": [
+    { "name": "database-outage-recovery", "status": "red", "evidence": "No real database stop/restart scenario yet." },
+    { "name": "leader-election", "status": "red", "evidence": "Health signaling is covered; multi-replica advisory-lock handoff is not." },
+    { "name": "restart-persistence", "status": "red", "evidence": "Crash-after-claim recovery is covered; a real process restart is not." },
+    { "name": "alert-storm", "status": "green", "evidence": "AlertNotificationRateLimiterTests" },
+    { "name": "tenant-isolation", "status": "red", "evidence": "The alert persistence schema has no tenant-qualified scenario." },
+    { "name": "secret-rotation-no-leakage", "status": "green", "evidence": "WebhookAlertDeliverySinkTests.DeliverAsync_WhenSecretRotates_UsesNewValueWithoutRestartAndDoesNotLeakIt" },
+    { "name": "delivery-latency", "status": "green", "evidence": "AlertPipelineMetricsTests" },
+    { "name": "backlog-self-monitoring", "status": "green", "evidence": "AlertDispatchHealthCheckTests" }
+  ]
+}

@@ -67,7 +67,7 @@ internal sealed class EmailChannelOptions
 
     public string? Username { get; set; }
 
-    public string? Password { get; set; }
+    public string? PasswordReference { get; set; }
 
     public bool UseSsl { get; set; } = true;
 }
@@ -76,14 +76,14 @@ internal sealed class SlackChannelOptions
 {
     [Required]
     [MinLength(1)]
-    public string WebhookUrl { get; set; } = string.Empty;
+    public string WebhookUrlReference { get; set; } = string.Empty;
 }
 
 internal sealed class TeamsChannelOptions
 {
     [Required]
     [MinLength(1)]
-    public string WebhookUrl { get; set; } = string.Empty;
+    public string WebhookUrlReference { get; set; } = string.Empty;
 }
 
 internal sealed class AwsSqsChannelOptions

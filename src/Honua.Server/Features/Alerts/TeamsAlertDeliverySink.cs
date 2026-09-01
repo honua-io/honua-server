@@ -7,6 +7,7 @@ using System.Text.Json;
 using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -18,15 +19,18 @@ internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
     private readonly AlertDeliveryOptions _options;
     private readonly ILogger<TeamsAlertDeliverySink>? _logger;
     private readonly AlertDestinationGuard _destinationGuard;
+    private readonly ISecretProvider _secretProvider;
 
     public TeamsAlertDeliverySink(
         IHttpClientFactory httpClientFactory,
         IOptions<AlertDeliveryOptions> options,
+        ISecretProvider secretProvider,
         ILogger<TeamsAlertDeliverySink>? logger = null,
         AlertDestinationGuard? destinationGuard = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _secretProvider = secretProvider ?? throw new ArgumentNullException(nameof(secretProvider));
         _logger = logger;
         _destinationGuard = destinationGuard ?? new AlertDestinationGuard();
     }
@@ -39,7 +43,8 @@ internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
         CancellationToken cancellationToken = default)
     {
         var teamsOptions = _options.Dispatch.Teams;
-        if (teamsOptions is null || string.IsNullOrWhiteSpace(teamsOptions.WebhookUrl))
+        var webhookReference = dispatchItem.Destination ?? teamsOptions?.WebhookUrlReference;
+        if (string.IsNullOrWhiteSpace(webhookReference))
         {
             return new AlertDeliveryResult
             {
@@ -49,10 +54,19 @@ internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
             };
         }
 
-        var webhookUrl = dispatchItem.Destination ?? teamsOptions.WebhookUrl;
-
         try
         {
+            var webhookUrl = await _secretProvider.GetSecretAsync(webhookReference, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(webhookUrl))
+            {
+                return new AlertDeliveryResult
+                {
+                    Succeeded = false,
+                    Retryable = true,
+                    Error = "Teams webhook credential could not be resolved."
+                };
+            }
+
             var destinationCheck = await _destinationGuard
                 .CheckAsync(webhookUrl, "Teams webhook URL", cancellationToken)
                 .ConfigureAwait(false);

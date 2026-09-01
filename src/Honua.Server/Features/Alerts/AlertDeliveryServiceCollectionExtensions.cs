@@ -95,7 +95,7 @@ internal static class AlertDeliveryServiceCollectionExtensions
     private static void RegisterSlack(IServiceCollection services, IConfiguration configuration)
     {
         var slackSection = configuration.GetSection($"{AlertDeliveryOptions.SectionName}:Dispatch:Slack");
-        var webhookUrl = slackSection.GetValue<string>("WebhookUrl");
+        var webhookUrl = slackSection.GetValue<string>("WebhookUrlReference");
 
         if (!string.IsNullOrWhiteSpace(webhookUrl))
         {
@@ -110,7 +110,7 @@ internal static class AlertDeliveryServiceCollectionExtensions
     private static void RegisterTeams(IServiceCollection services, IConfiguration configuration)
     {
         var teamsSection = configuration.GetSection($"{AlertDeliveryOptions.SectionName}:Dispatch:Teams");
-        var webhookUrl = teamsSection.GetValue<string>("WebhookUrl");
+        var webhookUrl = teamsSection.GetValue<string>("WebhookUrlReference");
 
         if (!string.IsNullOrWhiteSpace(webhookUrl))
         {

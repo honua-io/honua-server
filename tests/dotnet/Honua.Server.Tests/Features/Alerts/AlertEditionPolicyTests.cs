@@ -282,11 +282,11 @@ public sealed class AlertEditionPolicyTests
                 Dispatch = new AlertDispatchOptions
                 {
                     DefaultWebhookUrl = "https://hooks.example.com/alerts",
-                    DefaultWebhookSecret = "signing-secret",
+                    DefaultWebhookSecretReference = "secret://alerts/webhook",
                     Digest = new DigestAlertOptions
                     {
                         WebhookUrl = "https://hooks.example.com/digest",
-                        WebhookSecret = "digest-secret"
+                        WebhookSecretReference = "secret://alerts/digest"
                     }
                 }
             },
@@ -302,8 +302,8 @@ public sealed class AlertEditionPolicyTests
                     },
                     AwsSns = new AwsSnsChannelOptions { TopicArn = "arn:aws:sns:us-east-1:123456789012:test-topic" },
                     AzureEventGrid = new AzureEventGridChannelOptions { TopicEndpoint = "https://alerts.example.com/api/events" },
-                    Slack = new SlackChannelOptions { WebhookUrl = "https://hooks.slack.com/services/T00/B00/xxx" },
-                    Teams = new TeamsChannelOptions { WebhookUrl = "https://outlook.office.com/webhook/xxx" },
+                    Slack = new SlackChannelOptions { WebhookUrlReference = "secret://alerts/slack" },
+                    Teams = new TeamsChannelOptions { WebhookUrlReference = "secret://alerts/teams" },
                     AwsSqs = new AwsSqsChannelOptions { QueueUrl = "https://sqs.us-east-1.amazonaws.com/123456/test-queue" },
                     AzureEventHub = new AzureEventHubChannelOptions
                     {
