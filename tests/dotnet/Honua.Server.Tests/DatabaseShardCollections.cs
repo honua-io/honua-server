@@ -45,6 +45,17 @@ public class DatabaseCoreEndpointsCollection : ICollectionFixture<DatabaseFixtur
 }
 
 /// <summary>
+/// Database-backed collection for the enabled-candidate alerting qualification lane.
+/// The production alert outbox uses the global honua schema, so this collection keeps
+/// its end-to-end scenarios serialized with one shared fixture.
+/// </summary>
+[CollectionDefinition("Database.Alerts")]
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
+public class DatabaseAlertsCollection : ICollectionFixture<DatabaseFixtureAdapter>
+{
+}
+
+/// <summary>
 /// Database-backed collection for Core-shard spatial-correctness tests.
 /// </summary>
 [CollectionDefinition("Database.CoreSpatial")]

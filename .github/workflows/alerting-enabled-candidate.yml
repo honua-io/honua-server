@@ -1,0 +1,77 @@
+name: Alerting Enabled Candidate
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/alerting-enabled-candidate.yml'
+      - 'src/Honua.Core/Features/Alerts/**'
+      - 'src/Honua.Db/Postgres/Features/Alerts/**'
+      - 'src/Honua.Server/Features/Alerts/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertWebhookDeliveryE2eTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/DatabaseShardCollections.cs'
+  workflow_dispatch:
+    inputs:
+      candidate_source_sha:
+        description: Exact 40-character candidate commit SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alerting-enabled-candidate-${{ github.event.pull_request.head.sha || inputs.candidate_source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  postgres-webhook-e2e:
+    name: ENABLED exact candidate / Postgres webhook E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      HONUA_ALERTS_ENABLED: 'true'
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    steps:
+      - name: Resolve exact candidate
+        id: candidate
+        env:
+          REQUESTED_SHA: ${{ inputs.candidate_source_sha }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          candidate_sha="${PR_SHA:-${REQUESTED_SHA}}"
+          [[ "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]] || { echo 'candidate_source_sha must be an exact 40-character commit SHA' >&2; exit 1; }
+          echo "sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.candidate.outputs.sha }}
+
+      - name: Verify checkout identity
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run enabled Postgres webhook qualification scenarios
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release \
+            --filter 'FullyQualifiedName~AlertWebhookDeliveryE2eTests' \
+            --logger 'trx;LogFileName=alerting-enabled-candidate.trx' \
+            --results-directory artifacts/alerting-enabled-candidate \
+            -m:1 /nodeReuse:false
+
+      - name: Retain immutable candidate receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alerting-enabled-candidate-${{ steps.candidate.outputs.sha }}
+          path: artifacts/alerting-enabled-candidate/
+          if-no-files-found: error
+          retention-days: 90
