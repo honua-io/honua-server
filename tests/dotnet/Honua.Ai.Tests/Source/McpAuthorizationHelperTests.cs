@@ -14,6 +14,7 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -450,25 +451,22 @@ public sealed class McpAuthorizationHelperTests
                 ClientId = "mcp-client",
             },
         };
-        var services = new ServiceCollection()
+        var serviceCollection = new ServiceCollection()
             .AddLogging()
             .AddSingleton<IAuthenticationService>(authentication)
-            .AddSingleton<IOptions<OidcAuthenticationOptions>>(Options.Create(oidc))
-            .BuildServiceProvider();
+            .AddSingleton<IOptions<OidcAuthenticationOptions>>(Options.Create(oidc));
+        serviceCollection.AddHonuaTenantContext(new ConfigurationBuilder().Build());
+        var services = serviceCollection.BuildServiceProvider();
         await using var provider = services;
         var app = new ApplicationBuilder(provider);
         string? bindingSeenByEndpoint = null;
+        ITenantContext? tenantSeenByEndpoint = null;
 
         app.UseMcpBearerAuthentication();
-        app.Use(async (context, next) =>
-        {
-            (context.User.Identity?.IsAuthenticated ?? false).Should().BeTrue(
-                "tenant resolution must only observe the validated bearer principal");
-            CanonicalSecurityActor.StampRequestBinding(context.User, "tenant-a");
-            await next().ConfigureAwait(false);
-        });
+        app.UseHonuaTenantContext();
         app.Run(context =>
         {
+            tenantSeenByEndpoint = context.RequestServices.GetRequiredService<ITenantContext>();
             bindingSeenByEndpoint = McpAuthorizationHelper.ResolveSessionBindingKey(context);
             return Task.CompletedTask;
         });
@@ -480,6 +478,9 @@ public sealed class McpAuthorizationHelperTests
         await app.Build()(context);
 
         authentication.AuthenticateCount.Should().Be(1);
+        tenantSeenByEndpoint.Should().NotBeNull();
+        tenantSeenByEndpoint!.TenantId.Should().Be("tenant-a");
+        tenantSeenByEndpoint.Source.Should().Be(TenantContextSource.Claim);
         bindingSeenByEndpoint.Should().Contain("subject:https%3A%2F%2Fissuer.example:shared-subject");
         bindingSeenByEndpoint.Should().Contain("tenant:value%3Atenant-a");
     }
