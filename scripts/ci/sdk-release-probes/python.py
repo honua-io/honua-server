@@ -11,14 +11,23 @@ now = lambda: datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 base_url = os.environ.get("HONUA_SERVER_BASE_URL", "http://localhost:5000")
 service_id = os.environ.get("HONUA_SDK_SERVICE_ID", "test_service")
 client = HonuaClient(base_url)
+
+def require_payload(value, *needles):
+    payload = json.dumps(value, default=lambda item: getattr(item, "__dict__", str(item)))
+    if value is None or payload in ("{}", "[]") or any(needle not in payload for needle in needles):
+        raise AssertionError(f"SDK response failed invariant ({', '.join(needles)}): {payload[:1024]}")
+
+def checked(invoke, *needles):
+    return require_payload(invoke(), *needles)
+
 cases = [
-    ("serve.geoservices-root", "HonuaClient.list_services", lambda: client.list_services()),
-    ("serve.geoservices-featureserver", "FeatureServer.metadata", lambda: client.feature_server(service_id).metadata()),
-    ("serve.geoservices-featureserver", "FeatureServer.query", lambda: client.feature_server(service_id).query(0, where="1=1", extra_params={"resultRecordCount": 1})),
-    ("serve.ogc-api-features", "OgcFeatures.landing", lambda: client.ogc_features().landing()),
-    ("serve.ogc-api-features", "OgcFeatures.collections", lambda: client.ogc_features().collections()),
-    ("serve.stac", "StacClient.catalog", lambda: client.stac().catalog()),
-    ("serve.odata", "ODataClient.layers", lambda: client.odata().layers(top=1)),
+    ("serve.geoservices-root", "HonuaClient.list_services", lambda: checked(client.list_services, service_id)),
+    ("serve.geoservices-featureserver", "FeatureServer.metadata", lambda: checked(client.feature_server(service_id).metadata, "Test Feature Service", "layers")),
+    ("serve.geoservices-featureserver", "FeatureServer.query", lambda: require_payload(client.feature_server(service_id).query(0, where="1=1", extra_params={"resultRecordCount": 1}), "alpha")),
+    ("serve.ogc-api-features", "OgcFeatures.landing", lambda: checked(client.ogc_features().landing, "links")),
+    ("serve.ogc-api-features", "OgcFeatures.collections", lambda: checked(client.ogc_features().collections, service_id)),
+    ("serve.stac", "StacClient.catalog", lambda: checked(client.stac().catalog, "links")),
+    ("serve.odata", "ODataClient.layers", lambda: require_payload(client.odata().layers(top=1), "Test Layer")),
 ]
 observations = []
 try:

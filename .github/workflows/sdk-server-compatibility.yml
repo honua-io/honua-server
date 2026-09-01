@@ -33,8 +33,8 @@ permissions:
   packages: read
 
 concurrency:
-  group: sdk-server-compatibility-${{ github.ref }}
-  cancel-in-progress: true
+  group: sdk-server-compatibility-${{ github.ref }}-${{ inputs.release_certification && github.run_id || 'compatibility' }}
+  cancel-in-progress: ${{ inputs.release_certification != true }}
 
 env:
   DOTNET_VERSION: '10.0.x'
@@ -692,6 +692,20 @@ jobs:
             echo '::error::release source SHA differs from the reviewed image source pin'
             exit 1
           }
+          docker pull "$SERVER_IMAGE"
+          image_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$SERVER_IMAGE")"
+          [ "${image_revision,,}" = "${SERVER_SOURCE_SHA,,}" ] || {
+            echo "::error::candidate image revision ${image_revision:-<missing>} differs from source SHA $SERVER_SOURCE_SHA"
+            exit 1
+          }
+
+      - name: Materialize candidate seed
+        shell: bash
+        env:
+          SERVER_SOURCE_SHA: ${{ inputs.server_current_ref }}
+        run: |
+          set -euo pipefail
+          git show "$SERVER_SOURCE_SHA:tests/seed/base-schema.sql" > "$RUNNER_TEMP/sdk-release-base-schema.sql"
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -714,7 +728,7 @@ jobs:
         with:
           server-image: ${{ inputs.server_current_image }}
           dotnet-version: ${{ env.DOTNET_VERSION }}
-          base-seed-path: tests/seed/base-schema.sql
+          base-seed-path: ${{ runner.temp }}/sdk-release-base-schema.sql
           log-path: logs/honua-server-sdk-release.log
         env:
           NuGetAudit: false

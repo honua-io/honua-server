@@ -8,6 +8,24 @@ from pathlib import Path
 
 SCHEMA = "honua.protocol-certification-fragment/v1"
 
+CAPABILITY_SURFACES = {
+    "editing.featureserver-edits": "feature-server", "geocoding.batch": "geocode-server",
+    "geocoding.forward": "geocode-server", "geocoding.reverse": "geocode-server",
+    "process.geoprocessing": "geoprocessing", "process.ogc-api-processes": "ogc-api-processes",
+    "routing.solve": "route-server", "serve.3d-tiles-scene": "3d-tiles",
+    "serve.elevation": "elevation", "serve.geoservices-featureserver": "feature-server",
+    "serve.geoservices-geocodeserver": "geocode-server", "serve.geoservices-geometry-service": "geometry-service",
+    "serve.geoservices-imageserver": "image-server", "serve.geoservices-mapserver": "map-server",
+    "serve.geoservices-root": "geoservices-root", "serve.geoservices-vectortileserver": "vector-tile-server",
+    "serve.i3s-scene": "i3s", "serve.odata": "odata", "serve.ogc-api-coverages": "ogc-api-coverages",
+    "serve.ogc-api-edr": "ogc-api-edr", "serve.ogc-api-features": "ogc-api-features",
+    "serve.ogc-api-maps": "ogc-api-maps", "serve.ogc-api-records": "ogc-api-records",
+    "serve.ogc-api-tiles": "ogc-api-tiles", "serve.sensorthings": "sensorthings-1.1",
+    "serve.stac": "stac", "serve.vector-tiles": "vector-tiles", "serve.wcs": "wcs-2.0",
+    "serve.wfs": "wfs-2.0", "serve.wms": "wms-1.3", "serve.wmts": "wmts-1.0",
+    "styling.auto-suggest": "control-plane-admin", "styling.ogc-api-styles": "ogc-api-styles",
+}
+
 def load(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -17,6 +35,7 @@ def main():
     parser.add_argument("--results-dir", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--run-url", default="local")
+    parser.add_argument("--producer-source-sha", required=True)
     args = parser.parse_args()
     manifest = load(args.manifest)
     results_dir = Path(args.results_dir)
@@ -53,14 +72,14 @@ def main():
             }
             digest = "sha256:" + hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             observations.append({
-                "capability_key": capability, "surface": capability.split(".", 1)[0], "operation": operation,
+                "capability_key": capability, "surface": CAPABILITY_SURFACES[capability], "operation": operation,
                 "canonical_client": coordinate["package"], "client_version": coordinate["version"],
                 "deployment_target": "exact-candidate-local-docker", "client_id": sdk,
                 "runner_lane": "sdk-release-certification", "protocol_version": "2026.1",
                 "protocol_profile": "frozen-2026.1", "performed_by": "published SDK public API",
                 "request_url": None, "exercised_capabilities": [capability] if executed else [],
                 "result": result, "skip_reason": None, "gap": gap,
-                "source_sha": manifest["candidate"]["sourceSha"], "producer_source_sha": manifest["candidate"]["sourceSha"],
+                "source_sha": manifest["candidate"]["sourceSha"], "producer_source_sha": args.producer_source_sha,
                 "image_digest": manifest["candidate"]["imageDigest"], "fixture_revision": manifest["candidate"]["fixtureRevision"],
                 "contract_revision": manifest["candidate"]["contractRevision"], "auth_policy_revision": "anonymous-public-v1",
                 "evidence_uri": None, "evidence_digest": digest, "evidence_receipt": payload,
