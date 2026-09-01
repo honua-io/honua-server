@@ -94,6 +94,11 @@ internal static class McpPlatformOpsSchemas
             "idempotencyKey": {
               "type": "string",
               "description": "Stable idempotency key for the underlying forward Deploy operation."
+            },
+            "parameterOverrides": {
+              "type": "object",
+              "additionalProperties": { "type": "string" },
+              "description": "Backend-specific parameters required to perform the forward deploy."
             }
           },
           "additionalProperties": false
@@ -108,6 +113,11 @@ internal static class McpPlatformOpsSchemas
     public static readonly JsonElement DeployMutationInputSchema = Parse(
         """
         {"type":"object","required":["targetId","desiredRevision"],"properties":{"targetId":{"type":"string","minLength":1,"maxLength":256},"desiredRevision":{"type":"string","minLength":1,"maxLength":2048},"currentRevision":{"type":"string","maxLength":2048},"reason":{"type":"string","maxLength":2048},"idempotencyKey":{"type":"string","maxLength":256}},"additionalProperties":false}
+        """);
+
+    public static readonly JsonElement MetadataReleaseMutationInputSchema = Parse(
+        """
+        {"type":"object","required":["packageId","targetEnvironment","resourceSemanticId","newFieldName"],"properties":{"packageId":{"type":"string","minLength":1,"maxLength":256},"targetEnvironment":{"type":"string","minLength":1,"maxLength":256},"resourceSemanticId":{"type":"string","minLength":1,"maxLength":256},"newFieldName":{"type":"string","minLength":1,"maxLength":256},"newFieldType":{"type":"string","maxLength":128},"dataPopulateWorkloadId":{"type":"string","maxLength":256},"scriptId":{"type":"string","maxLength":256},"reason":{"type":"string","maxLength":2048},"idempotencyKey":{"type":"string","maxLength":256}},"additionalProperties":false}
         """);
 
     public static readonly JsonElement PlatformReleaseConvergenceInputSchema = Parse(

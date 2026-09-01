@@ -29,6 +29,7 @@ internal sealed class McpExecutePlanArgument
 
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; set; }
+
 }
 
 /// <summary>
@@ -154,6 +155,9 @@ internal sealed class McpProposeRollbackArgument
 
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; set; }
+
+    [JsonPropertyName("parameterOverrides")]
+    public Dictionary<string, string>? ParameterOverrides { get; set; }
 }
 
 internal sealed class McpProposeFindingArgument
@@ -172,6 +176,36 @@ internal sealed class McpDeployMutationArgument
 
     [JsonPropertyName("currentRevision")]
     public string? CurrentRevision { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; set; }
+}
+
+internal sealed class McpMetadataReleaseMutationArgument
+{
+    [JsonPropertyName("packageId")]
+    public string? PackageId { get; set; }
+
+    [JsonPropertyName("targetEnvironment")]
+    public string? TargetEnvironment { get; set; }
+
+    [JsonPropertyName("resourceSemanticId")]
+    public string? ResourceSemanticId { get; set; }
+
+    [JsonPropertyName("newFieldName")]
+    public string? NewFieldName { get; set; }
+
+    [JsonPropertyName("newFieldType")]
+    public string? NewFieldType { get; set; }
+
+    [JsonPropertyName("dataPopulateWorkloadId")]
+    public string? DataPopulateWorkloadId { get; set; }
+
+    [JsonPropertyName("scriptId")]
+    public string? ScriptId { get; set; }
 
     [JsonPropertyName("reason")]
     public string? Reason { get; set; }

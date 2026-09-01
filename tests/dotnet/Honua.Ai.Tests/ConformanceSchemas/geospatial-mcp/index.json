@@ -239,7 +239,16 @@
     {"standardName":"propose_finding","referenceToolName":"honua_propose_finding","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_finding.schema.json","implementationStatus":"implemented"},
     {"standardName":"propose_deploy_plan","referenceToolName":"honua_propose_deploy_plan","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_deploy_plan.schema.json","implementationStatus":"implemented"},
     {"standardName":"propose_deploy_operation","referenceToolName":"honua_propose_deploy_operation","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_deploy_operation.schema.json","implementationStatus":"implemented"},
+    {"standardName":"propose_metadata_release","referenceToolName":"honua_propose_metadata_release","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_metadata_release.schema.json","implementationStatus":"implemented"},
     {"standardName":"propose_platform_release_convergence","referenceToolName":"honua_propose_platform_release_convergence","family":"Control-plane proposal (Honua extension)","schema":"tools/propose_platform_release_convergence.schema.json","implementationStatus":"implemented"},
+    {
+      "standardName": "propose_operation",
+      "referenceToolName": "honua_propose_operation",
+      "family": "Control-plane proposal (reference shape)",
+      "schema": "tools/propose_operation.schema.json",
+      "implementationStatus": "known-gap",
+      "notes": "The standard still publishes this generic reference shape. Honua retired its opaque executionPayload implementation in favor of schema-closed typed proposal tools."
+    },
     {
       "standardName": "ops_health",
       "referenceToolName": "honua_ops_health",

@@ -162,6 +162,7 @@ internal sealed class McpPlatformOpsReader(
             TargetId = targetId,
             DesiredRevision = selection.DesiredRevision,
             CurrentRevision = selection.CurrentRevision,
+            ParameterOverrides = argument.ParameterOverrides,
         }.Serialize();
 
         return await SealProposalAsync(principal, OperationClass.Deploy, payload,
@@ -184,6 +185,25 @@ internal sealed class McpPlatformOpsReader(
 
     public async Task<McpProposeOperationOutput> ProposeDeployOperationAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
         => await ProposeDeployAsync(principal, argument, "deploy-operation", cancellationToken).ConfigureAwait(false);
+
+    public async Task<McpProposeOperationOutput> ProposeMetadataReleaseAsync(ClaimsPrincipal principal, McpMetadataReleaseMutationArgument argument, CancellationToken cancellationToken)
+    {
+        await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        var payload = new MetadataReleaseExecutionPayload
+        {
+            PackageId = Clean(argument.PackageId) ?? throw new GeoprocessingValidationException("'packageId' is required."),
+            TargetEnvironment = Clean(argument.TargetEnvironment) ?? throw new GeoprocessingValidationException("'targetEnvironment' is required."),
+            ResourceSemanticId = Clean(argument.ResourceSemanticId) ?? throw new GeoprocessingValidationException("'resourceSemanticId' is required."),
+            NewFieldName = Clean(argument.NewFieldName) ?? throw new GeoprocessingValidationException("'newFieldName' is required."),
+            NewFieldType = Clean(argument.NewFieldType),
+            DataPopulateWorkloadId = Clean(argument.DataPopulateWorkloadId),
+            ScriptId = Clean(argument.ScriptId),
+        };
+        var serialized = JsonSerializer.Serialize(payload, MetadataReleaseExecutionPayloadJsonContext.Default.MetadataReleaseExecutionPayload);
+        return await SealProposalAsync(principal, OperationClass.MetadataRelease, serialized,
+            Clean(argument.Reason) ?? $"Propose metadata release '{payload.PackageId}'.",
+            Clean(argument.IdempotencyKey) ?? $"metadata-release:{payload.PackageId}:{payload.TargetEnvironment}", cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<McpProposeOperationOutput> ProposePlatformReleaseConvergenceAsync(ClaimsPrincipal principal, McpPlatformReleaseConvergenceArgument argument, CancellationToken cancellationToken)
     {

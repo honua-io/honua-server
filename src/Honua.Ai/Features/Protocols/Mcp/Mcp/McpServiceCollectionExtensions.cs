@@ -214,6 +214,7 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeFindingTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeDeployPlanTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeDeployOperationTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeMetadataReleaseTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposePlatformReleaseConvergenceTool>());
         }
 

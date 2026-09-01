@@ -201,7 +201,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         var request = new CreateAdminApiKeyRequest
         {
             Name = name,
-            Permissions = ["read:layers"]
+            Permissions = ["admin:write"]
         };
 
         using var response = await adminClient.PostAsJsonAsync(
@@ -236,7 +236,8 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                     targetId = env.TargetId,
                     toRevision = env.PreviousRevision,
                     reason = "Rollback revision B to revision A from the local-substrate bridge cell.",
-                    idempotencyKey = $"rollback-{env.Suffix}"
+                    idempotencyKey = $"rollback-{env.Suffix}",
+                    parameterOverrides = env.RollbackParameterOverrides
                 }
             }
         };
