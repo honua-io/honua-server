@@ -1,21 +1,19 @@
-name: OGC API Processes 1.0 CITE Diagnostic
+name: OGC API Processes 1.0 Release Gate
 
 on:
   workflow_dispatch:
     inputs:
       server_image:
-        description: Optional digest-addressed Honua Server candidate image
-        required: false
+        description: Exact digest-addressed Honua Server candidate image (image@sha256:...)
+        required: true
         type: string
       source_sha:
-        description: Full source SHA represented by server_image; defaults to this workflow commit
-        required: false
+        description: Full Honua source SHA represented by server_image
+        required: true
         type: string
-  schedule:
-    - cron: '0 8 * * *'
 
-# Tier: nightly diagnostic. Promotion to a required exact-candidate release gate
-# is owned by server#3405 after seven complete greens.
+# Tier: required release gate. Intentionally dispatch-only: release cuts supply
+# the immutable candidate digest after publication. This is never a per-PR job.
 permissions:
   contents: read
   packages: write
@@ -32,10 +30,15 @@ jobs:
     steps:
       - name: Reject mutable candidate image tags
         env:
-          SERVER_IMAGE: ${{ inputs.server_image || '' }}
+          SERVER_IMAGE: ${{ inputs.server_image }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
-          if [[ -n "$SERVER_IMAGE" && ! "$SERVER_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
+          if [[ ! "$SERVER_IMAGE" =~ ^[a-z0-9.-]+(/[a-z0-9._-]+)+@sha256:[0-9a-f]{64}$ ]]; then
             echo '::error::server_image must be a canonical lowercase immutable image@sha256 digest reference'
+            exit 1
+          fi
+          if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::source_sha must be the full lowercase source commit represented by server_image'
             exit 1
           fi
 
@@ -51,7 +54,15 @@ jobs:
       timeout-seconds: 3600
       job-timeout-minutes: 70
       cite-profile: diagnostic
-      tested-honua-git-sha: ${{ inputs.source_sha || github.sha }}
-      honua-image: ${{ inputs.server_image || '' }}
+      tested-honua-git-sha: ${{ inputs.source_sha }}
+      honua-image: ${{ inputs.server_image }}
       extra-artifact-paths: docker/cite/ogc-api-processes/config/
-      diagnostic-only: true
+      validation-command: >-
+        python3 scripts/conformance/cite/enforce_ogcapi_processes_release_gate.py
+        --input cite-ogcapi-processes-results/cite-ogcapi-processes-diagnostic.json
+        --baseline scripts/conformance/cite/ogcapi-processes-release-baseline.json
+        --expected-image '${{ inputs.server_image }}'
+        --expected-source '${{ inputs.source_sha }}'
+        --json cite-ogcapi-processes-results/release-gate-verdict.json
+        --summary cite-ogcapi-processes-results/release-gate-verdict.md
+      diagnostic-only: false
