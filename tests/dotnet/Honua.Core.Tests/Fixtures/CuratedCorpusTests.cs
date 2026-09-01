@@ -40,9 +40,9 @@ public sealed class CuratedCorpusTests
         Assert.Equal("שלום עולם", features[1].GetProperty("properties").GetProperty("label").GetString());
         Assert.Equal("نقشهٔ هونوا", features[2].GetProperty("properties").GetProperty("label").GetString());
         Assert.Contains("東京 🌺", text, StringComparison.Ordinal);
-        Assert.Contains('\u0301', features[3].GetProperty("properties").GetProperty("decomposed").GetString());
-        Assert.Contains('\u2067', features[3].GetProperty("properties").GetProperty("isolated").GetString());
-        Assert.Contains('\u2069', features[3].GetProperty("properties").GetProperty("isolated").GetString());
+        Assert.Contains('\u0301', features[3].GetProperty("properties").GetProperty("decomposed").GetString()!);
+        Assert.Contains('\u2067', features[3].GetProperty("properties").GetProperty("isolated").GetString()!);
+        Assert.Contains('\u2069', features[3].GetProperty("properties").GetProperty("isolated").GetString()!);
     }
 
     [UnitTest]
@@ -95,7 +95,7 @@ public sealed class CuratedCorpusTests
         var corpus = CuratedCorpus.Load();
         using var document = JsonDocument.Parse(corpus.ReadAllBytes("mixed-crs-features"));
         var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
-        var sourceSystems = features.Select(feature => feature.GetProperty("properties").GetProperty("sourceCrs").GetString()).ToArray();
+        var sourceSystems = features.Select(feature => feature.GetProperty("properties").GetProperty("sourceCrs").GetString()!).ToArray();
 
         Assert.Equal(4, features.Length);
         Assert.Equal(["EPSG:4326", "EPSG:3857", "EPSG:26904", "OGC:CRS84"], sourceSystems);
