@@ -60,6 +60,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          # The additions-only example gate diffs the PR head against its base.
+          fetch-depth: 0
 
       # The checker's own tests run first and are self-contained (synthetic docs
       # trees in temp directories). A checker that wrongly reports clean is the
