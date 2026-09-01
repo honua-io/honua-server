@@ -142,7 +142,12 @@ VALUES
         68910,
         'Offline Field Sites',
         'Mobile-editable point layer for SDK offline create, update, delete, and conflict scenarios.',
-        current_schema(),
+        (
+            SELECT n.nspname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.oid = to_regclass('features')
+        ),
         'features',
         'objectid',
         'geometry',
@@ -188,7 +193,12 @@ VALUES
         68920,
         'Offline Work Zones',
         'Polygon context layer included in the offline package as readonly operational context.',
-        current_schema(),
+        (
+            SELECT n.nspname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.oid = to_regclass('features')
+        ),
         'features',
         'objectid',
         'geometry',
@@ -381,5 +391,10 @@ VALUES
             'notes', 'Readonly operational context for offline package.'
         )
     );
+
+-- This is an isolated demo database. Invalidate the bootstrap snapshot after the
+-- complete legacy fixture exists so the runtime's supported V1 compatibility projector
+-- rebuilds the adopted Metadata v2 graph on restart.
+DELETE FROM honua.metadata_v2_current;
 
 COMMIT;

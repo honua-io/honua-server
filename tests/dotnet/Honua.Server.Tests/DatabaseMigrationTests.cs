@@ -664,16 +664,17 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         await using var storageCmd = connection.CreateCommand();
         storageCmd.CommandText = """
             SELECT COUNT(*)
-            FROM honua.layers
-            WHERE layer_id IN (68910, 68920)
-              AND table_schema = current_schema()
-              AND table_name = 'features'
-              AND primary_key_column = 'objectid'
-              AND geometry_column = 'geometry'
-              AND storage_srid = 4326
+            FROM honua.layers l
+            JOIN pg_namespace n ON n.nspname = l.table_schema
+            JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = l.table_name
+            WHERE l.layer_id IN (68910, 68920)
+              AND l.table_name = 'features'
+              AND l.primary_key_column = 'objectid'
+              AND l.geometry_column = 'geometry'
+              AND l.storage_srid = 4326
             """;
         var storageBindingCount = (long)(await storageCmd.ExecuteScalarAsync())!;
-        storageBindingCount.Should().Be(2, "fixture layers should declare provider-ready storage bindings that resolve features to the active schema");
+        storageBindingCount.Should().Be(2, "fixture layers should declare provider-ready storage bindings that resolve the physical features table");
     }
 
     [Fact]
