@@ -19,13 +19,28 @@ public sealed class CuratedCorpusTests
         corpus.VerifyAll();
 
         Assert.Equal("v1", corpus.Revision);
-        Assert.Equal(11, corpus.Assets.Count);
+        Assert.Equal(12, corpus.Assets.Count);
         Assert.All(corpus.Assets, asset =>
         {
             Assert.Equal(64, asset.Sha256.Length);
             Assert.NotEmpty(asset.MediaType);
             Assert.NotEmpty(asset.Facets);
         });
+    }
+
+    [UnitTest]
+    public void LargeAttributeAsset_PreservesPayloadWithoutTruncation()
+    {
+        var corpus = CuratedCorpus.Load();
+        using var document = JsonDocument.Parse(corpus.ReadAllBytes("large-attributes"));
+        var properties = document.RootElement.GetProperty("properties");
+        var payload = properties.GetProperty("payload").GetString();
+
+        Assert.NotNull(payload);
+        Assert.Equal(16_384, payload.Length);
+        Assert.StartsWith("0123456789abcdef", payload, StringComparison.Ordinal);
+        Assert.EndsWith("0123456789abcdef", payload, StringComparison.Ordinal);
+        Assert.Equal("END-OF-LARGE-ATTRIBUTE", properties.GetProperty("tailMarker").GetString());
     }
 
     [UnitTest]

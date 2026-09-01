@@ -16,6 +16,14 @@
   },
   "assets": [
     {
+      "id": "large-attributes",
+      "path": "large-attributes.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 16652,
+      "sha256": "04caeae271c9e354e6a2e5c8c327428cebe2e8bb6ef85dde4e89c976d7c6ac06",
+      "facets": ["attributes/large-payload", "attributes/utf-8", "attributes/boundary-marker"]
+    },
+    {
       "id": "extreme-coordinate-ranges",
       "path": "extreme-coordinate-ranges.geojson",
       "mediaType": "application/geo+json",
