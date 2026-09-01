@@ -2448,20 +2448,16 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// BH-009 regression: a multi-layer WFS Transaction with rollbackOnFailure=true (the
-    /// default) must be rejected before any data is committed because cross-layer atomicity
-    /// cannot be guaranteed.  Using rollbackOnFailure=false must still succeed (see the
-    /// existing Wfs_Transaction_MultiLayer_Insert test).
+    /// A multi-layer WFS Transaction uses one provider transaction when
+    /// rollbackOnFailure=true (the default), so every layer commits atomically.
     /// </summary>
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.Update)]
     [Endpoint("POST /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
-    public async Task Wfs_Transaction_MultiLayer_DefaultRollbackOnFailure_ReturnsOperationProcessingFailed()
+    public async Task Wfs_Transaction_MultiLayer_DefaultRollbackOnFailure_CommitsEveryLayer()
     {
         // rollbackOnFailure defaults to true when the attribute is omitted (ISO 19142 §15.2.5.2).
-        // A multi-layer transaction cannot provide cross-layer atomicity, so it must be rejected
-        // before committing anything to avoid partial-commit state.
         const string requestBody = """
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -2495,12 +2491,32 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         var response = await _fixture.Client.PostAsync("/wfs", requestContent);
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        content.Should().Contain("exceptionCode=\"OperationProcessingFailed\"");
-        content.Should().ContainAny(
-            "cross-layer atomicity",
-            "rollbackOnFailure",
-            "Multi-layer");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("TransactionResponse");
+        content.Should().Contain("<wfs:totalInserted>2</wfs:totalInserted>");
+        content.Should().Contain("handle=\"insert-primary\"");
+        content.Should().Contain("handle=\"insert-related\"");
+
+        var primaryRidMatch = Regex.Match(
+            content,
+            "rid=\"(?<rid>test_layer\\.\\d+)\"",
+            RegexOptions.CultureInvariant);
+        var relatedRidMatch = Regex.Match(
+            content,
+            "rid=\"(?<rid>related_test_layer_1\\.\\d+)\"",
+            RegexOptions.CultureInvariant);
+        primaryRidMatch.Success.Should().BeTrue(content);
+        relatedRidMatch.Success.Should().BeTrue(content);
+
+        var primaryRid = primaryRidMatch.Groups["rid"].Value;
+        var relatedRid = relatedRidMatch.Groups["rid"].Value;
+
+        var primary = await _fixture.Client.GetStringAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID={primaryRid}");
+        var related = await _fixture.Client.GetStringAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=related_test_layer_1&RESOURCEID={relatedRid}");
+        primary.Should().Contain("BH009 Primary Layer Feature");
+        related.Should().Contain("BH009 Related Layer Feature");
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -14,6 +15,18 @@ namespace Honua.Core.Features.FeatureStore.Abstractions;
 /// </summary>
 public interface IFeatureWriter
 {
+    /// <summary>
+    /// Opens a writer transaction that can apply batches to more than one layer atomically.
+    /// </summary>
+    /// <param name="isolationLevel">Database isolation level for the transaction.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A transaction-bound feature writer.</returns>
+    /// <exception cref="NotSupportedException">The provider does not support cross-layer transactions.</exception>
+    Task<IFeatureWriterTransaction> BeginTransactionAsync(
+        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This feature writer does not support cross-layer transactions.");
+
     /// <summary>
     /// Creates a new feature
     /// </summary>
@@ -81,4 +94,47 @@ public interface IFeatureWriter
                 $"Resource '{resource.Metadata.Id}' has no resolvable storage-layer id.");
         return await ApplyEditsAsync(storageLayerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
+}
+
+/// <summary>
+/// Applies feature-edit batches through one provider transaction, including batches for
+/// different layers.
+/// </summary>
+public interface IFeatureWriterTransaction : IAsyncDisposable
+{
+    /// <summary>
+    /// Applies one layer batch without committing the enclosing transaction.
+    /// </summary>
+    /// <param name="layerId">Storage layer identifier.</param>
+    /// <param name="editBatch">Ordered edits to apply.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The edit result for this layer batch.</returns>
+    Task<FeatureEditResult> ApplyEditsAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Commits every batch applied through this transaction.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Rolls back every batch applied through this transaction.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task RollbackAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Describes whether a writer transaction's commit was acknowledged.
+/// </summary>
+public enum FeatureWriterTransactionCommitOutcome
+{
+    /// <summary>The provider acknowledged that the transaction committed.</summary>
+    Committed,
+
+    /// <summary>The commit may be durable, but its acknowledgement was lost.</summary>
+    Unknown
 }

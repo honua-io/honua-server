@@ -20897,7 +20897,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Insert_3dGmlPosList_EvenVertexCount_StoresCorrectGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Insert_WithUnparseableSrsName_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_MultiLayerWithoutRollback_ReturnsTransactionResponseAndCreatesFeatures",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_MultiLayer_DefaultRollbackOnFailure_ReturnsOperationProcessingFailed",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_MultiLayer_DefaultRollbackOnFailure_CommitsEveryLayer",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Replace_ReturnsReplaceSummaryAndUpdatesFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_Replace_RoundTripsGmlDescriptionAndIdentifierCodeSpace",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Transaction_UpdateBoundedBy_WithInvalidValue_ReturnsInvalidValueException",

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -710,6 +711,42 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
         var restoredFeature = await store.GetAsync(GetLayerId("points"), existing.Id, CancellationToken.None);
         restoredFeature.Should().NotBeNull();
         restoredFeature!.Value.Attributes["category"].Should().Be(existing.Attributes["category"]);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    public async Task WriterTransaction_LaterLayerFailure_RollsBackEarlierLayer()
+    {
+        var store = CreateFeatureStore();
+        var original = await store.GetAsync(PointsLayerId, 1, CancellationToken.None)
+            ?? throw new InvalidOperationException("Expected the original feature.");
+
+        var changed = Feature.Create(
+            original.Id,
+            original.Geometry,
+            original.Attributes.SetItem("category", "must-be-rolled-back"));
+        var missing = Feature.Create(
+            long.MaxValue,
+            CreatePolygonWkb("POLYGON((-122 37, -121 37, -121 38, -122 38, -122 37))"),
+            ImmutableDictionary<string, object?>.Empty);
+
+        await using (var transaction = await store.BeginTransactionAsync(IsolationLevel.Serializable))
+        {
+            var firstResult = await transaction.ApplyEditsAsync(
+                PointsLayerId,
+                FeatureEditBatch.Create(operations: [FeatureEditOperation.Update(changed)]));
+            var secondResult = await transaction.ApplyEditsAsync(
+                PolygonsLayerId,
+                FeatureEditBatch.Create(operations: [FeatureEditOperation.Update(missing)]));
+
+            firstResult.IsSuccess.Should().BeTrue();
+            secondResult.IsSuccess.Should().BeFalse();
+            await transaction.RollbackAsync();
+        }
+
+        var restored = await store.GetAsync(PointsLayerId, original.Id, CancellationToken.None);
+        restored.Should().NotBeNull();
+        restored!.Value.Attributes["category"].Should().Be(original.Attributes["category"]);
     }
 
     [IntegrationTest]

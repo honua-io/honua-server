@@ -3,6 +3,7 @@
 
 using System.Collections;
 using System.Collections.Immutable;
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Security;
@@ -1749,18 +1750,11 @@ internal sealed partial class Wfs20Handler
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // Multi-layer transactions cannot provide a single atomic cross-layer rollback:
-        // each layer is committed independently by the data layer.  If rollbackOnFailure=true
-        // is requested, reject before any data is committed rather than silently leaving a
-        // partially-committed state the client believes was rolled back (ISO 19142 §15.2.5.3).
-        if (rollbackOnFailure)
-        {
-            throw new WfsTransactionException(
-                "OperationProcessingFailed",
-                "Multi-layer transactions with rollbackOnFailure=true are not supported because cross-layer atomicity cannot be guaranteed. " +
-                "Submit each feature type in a separate Transaction or set rollbackOnFailure=false.",
-                "Transaction");
-        }
+        await using var writerTransaction = rollbackOnFailure
+            ? await _featureWriter.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken).ConfigureAwait(false)
+            : null;
 
         var createResultIndexes = new Dictionary<int, int>();
         var updateResultIndexes = new Dictionary<int, int>();
@@ -1817,10 +1811,20 @@ internal sealed partial class Wfs20Handler
                         .Select(static operation => operation.RequestGeometryChanged)
                         .ToImmutableArray(),
                     rollbackOnFailure,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    writerTransaction).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (writerTransaction is not null)
+                {
+                    await writerTransaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                    throw new WfsTransactionException(
+                        "OperationProcessingFailed",
+                        "The WFS transaction failed and all layer edits were rolled back.",
+                        "Transaction");
+                }
+
                 // BH3-011: If ExecutePreparedEditAsync throws for this layer, layers processed
                 // before it have already committed to the database. Rather than letting the
                 // exception escape (which would bypass the post-commit cache-invalidation block
@@ -1902,7 +1906,7 @@ internal sealed partial class Wfs20Handler
             }
         }
 
-        return FeatureEditResult.Success(
+        var aggregatedResult = FeatureEditResult.Success(
             createdCount,
             updatedCount,
             deletedCount,
@@ -1913,7 +1917,42 @@ internal sealed partial class Wfs20Handler
             createResults: aggregatedCreateResults.ToImmutableArray(),
             updateResults: aggregatedUpdateResults.ToImmutableArray(),
             deleteResults: aggregatedDeleteResults.ToImmutableArray());
+
+        if (writerTransaction is null)
+        {
+            return aggregatedResult;
+        }
+
+        if (!aggregatedResult.IsSuccess)
+        {
+            await writerTransaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            return FeatureEditResult.Rollback(
+                aggregatedResult.CreateResults,
+                aggregatedResult.UpdateResults,
+                aggregatedResult.DeleteResults);
+        }
+
+        var commitOutcome = await writerTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (commitOutcome == FeatureWriterTransactionCommitOutcome.Committed)
+        {
+            return aggregatedResult;
+        }
+
+        const string errorMessage = "Transaction commit outcome is unknown.";
+        return FeatureEditResult.FailureWithUnknownCommitOutcome(
+            MarkCommitOutcomeUnknown(aggregatedResult.CreateResults, errorMessage),
+            MarkCommitOutcomeUnknown(aggregatedResult.UpdateResults, errorMessage),
+            MarkCommitOutcomeUnknown(aggregatedResult.DeleteResults, errorMessage));
     }
+
+    private static ImmutableArray<EditOperationResult> MarkCommitOutcomeUnknown(
+        ImmutableArray<EditOperationResult> results,
+        string errorMessage)
+        => results
+            .Select(result => EditOperationResult.FailureWithUnknownCommitOutcome(
+                errorMessage,
+                objectId: result.ObjectId))
+            .ToImmutableArray();
 
     private async Task<FeatureEditResult> ExecutePreparedEditAsync(
         HttpContext context,
@@ -1922,7 +1961,8 @@ internal sealed partial class Wfs20Handler
         ImmutableArray<FeatureEditOperation> operations,
         ImmutableArray<bool> requestGeometryChangedFlags,
         bool rollbackOnFailure,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IFeatureWriterTransaction? writerTransaction = null)
     {
         var editAdapterResult = await _editParameterAdapter.ConvertAsync(
             new Wfs20EditRequest
@@ -1959,7 +1999,9 @@ internal sealed partial class Wfs20Handler
             perOperationGeometryChanged: perOperationGeometryChanged,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
-        return await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
+        return writerTransaction is null
+            ? await _featureWriter.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false)
+            : await writerTransaction.ApplyEditsAsync(layerId, editBatch, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
