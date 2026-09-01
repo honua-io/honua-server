@@ -39,6 +39,9 @@ jobs:
               core.notice(
                 `superseded: event subject ${eventHead} is not current head ${pull.head.sha} for PR #${prNumber}`);
               core.setOutput('superseded', 'true');
+              // workflow_run consumers cannot read step outputs. Publish a
+              // non-success conclusion so the trusted gate can skip its job.
+              core.setFailed('Superseded review event; trusted notification suppressed.');
             }
 
       - name: Record review event

@@ -137,6 +137,16 @@ def main() -> None:
         'workflows: ["PR Gate", "Review Event Bridge"]',
         "PR Gate and review-event completion must re-evaluate trusted review",
     )
+    require(
+        review_gate,
+        "github.event.workflow_run.name != 'Review Event Bridge' ||",
+        "non-successful bridge runs must skip the trusted resolver job",
+    )
+    require(
+        review_gate,
+        "github.event.workflow_run.conclusion == 'success'",
+        "only successful bridge runs may start trusted resolution",
+    )
     require(review_gate, "cancel-in-progress: false", "trusted dispatch must not be interrupted")
     require(
         review_gate,
@@ -183,6 +193,11 @@ def main() -> None:
         review_bridge,
         "if: steps.stale.outputs.superseded != 'true'",
         "superseded bridge events must skip trusted gate notification",
+    )
+    require(
+        review_bridge,
+        "core.setFailed('Superseded review event; trusted notification suppressed.');",
+        "superseded bridge events must expose a non-success workflow conclusion",
     )
     require(
         review_gate,

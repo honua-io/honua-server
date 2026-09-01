@@ -30,7 +30,11 @@ env:
 
 jobs:
   resolve:
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    if: >-
+      (github.event_name != 'issue_comment' || github.event.issue.pull_request) &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.name != 'Review Event Bridge' ||
+       github.event.workflow_run.conclusion == 'success')
     name: Resolve pull request identity
     runs-on: ubuntu-latest
     timeout-minutes: 20
