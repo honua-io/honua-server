@@ -60,6 +60,19 @@ internal static class DiscoveryToolSchemas
               "type": "boolean",
               "default": true,
               "description": "Include the grounding/catalog resource URIs a client LLM should read first to ground a workflow."
+            },
+            "toolCursor": {
+              "type": "string",
+              "description": "Opaque cursor returned as nextToolCursor. Omit for the first bounded page."
+            },
+            "resourceCursor": {
+              "type": "string",
+              "description": "Opaque cursor returned as nextResourceCursor. Omit for the first bounded page."
+            },
+            "fullExport": {
+              "type": "boolean",
+              "default": false,
+              "description": "Explicit admin-only operation that exports the complete capability inventory."
             }
           }
         }
@@ -103,6 +116,8 @@ internal static class DiscoveryToolSchemas
             "serverVersion": { "type": "string" },
             "protocolVersions": { "type": "array", "items": { "type": "string" } },
             "toolCount": { "type": "integer" },
+            "totalToolCount": { "type": "integer" },
+            "nextToolCursor": { "type": ["string", "null"] },
             "tools": {
               "type": "array",
               "items": {
@@ -117,6 +132,8 @@ internal static class DiscoveryToolSchemas
               }
             },
             "resourceCount": { "type": "integer" },
+            "totalResourceCount": { "type": "integer" },
+            "nextResourceCursor": { "type": ["string", "null"] },
             "resources": {
               "type": "array",
               "items": {
@@ -132,7 +149,7 @@ internal static class DiscoveryToolSchemas
             "groundingResources": { "type": "array", "items": { "type": "string" } },
             "workflowViews": {
               "type": "array",
-              "description": "Named server-authored workflow discovery views. Pass one of these names as tools/list params.view (or negotiate it once at initialize via params._meta[\"honua.io/workflow-view\"]) to receive only that bounded set of canonical descriptors. Omit the view, or pass \"full\", for the complete paginated catalog. Selecting a view narrows discovery only; every call is still independently authenticated and authorized.",
+              "description": "Named server-authored workflow discovery views. Pass one of these names as tools/list params.view (or negotiate it once at initialize via params._meta[\"honua.io/workflow-view\"]) to receive only that bounded set of canonical descriptors. The reserved \"full\" view is an explicit admin-only catalog export. Selecting a view narrows discovery only; every call is still independently authenticated and authorized.",
               "items": {
                 "type": "object",
                 "properties": {

@@ -33,7 +33,7 @@ internal static class McpPagination
     /// Default maximum number of list entries returned per page when the host
     /// does not override <see cref="McpSurfaceLimits.ListPageSize"/>.
     /// </summary>
-    public const int DefaultListPageSize = 50;
+    public const int DefaultListPageSize = 12;
 
     /// <summary>
     /// Default maximum number of characters returned per <c>resources/read</c>
@@ -41,7 +41,10 @@ internal static class McpPagination
     /// a single response (no <c>nextCursor</c>) and only genuinely large
     /// job-results/catalog payloads are chunked.
     /// </summary>
-    public const int DefaultMaxResourceReadChars = 1_000_000;
+    public const int DefaultMaxResourceReadChars = 64_000;
+
+    /// <summary>Largest explicit per-request resource-read opt-up.</summary>
+    public const int MaxResourceReadChars = 1_000_000;
 
     private const string ListCursorPrefix = "l1:";
     private const string ReadCursorPrefix = "r1:";

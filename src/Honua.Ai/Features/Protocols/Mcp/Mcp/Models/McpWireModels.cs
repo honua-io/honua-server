@@ -559,6 +559,14 @@ internal sealed class McpResourcesReadParams
     /// </summary>
     [JsonPropertyName("cursor")]
     public string? Cursor { get; set; }
+
+    /// <summary>
+    /// Explicit per-request character budget. Omit for the bounded 64,000-character
+    /// default; callers may opt up to 1,000,000 characters when they deliberately
+    /// need a larger document window.
+    /// </summary>
+    [JsonPropertyName("maxChars")]
+    public int? MaxChars { get; set; }
 }
 
 /// <summary>
