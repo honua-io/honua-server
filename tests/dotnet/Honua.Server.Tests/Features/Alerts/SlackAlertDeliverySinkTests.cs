@@ -20,7 +20,7 @@ public sealed class SlackAlertDeliverySinkTests
         {
             Dispatch = new AlertDeliveryDispatchOptions
             {
-                Slack = new SlackChannelOptions { WebhookUrl = webhookUrl }
+                Slack = new SlackChannelOptions { WebhookUrlReference = AlertTestFixtures.SecretReference }
             }
         };
 
@@ -28,7 +28,7 @@ public sealed class SlackAlertDeliverySinkTests
     public async Task DeliverAsync_WithNoWebhookUrlConfigured_ReturnsNonRetryableFailure()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()));
+        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()), AlertTestFixtures.SecretProvider("unused"));
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
@@ -47,7 +47,7 @@ public sealed class SlackAlertDeliverySinkTests
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-slack").Returns(client);
 
-        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithSlack()));
+        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithSlack()), AlertTestFixtures.SecretProvider(AlertTestFixtures.RoutableWebhookBaseUrl + "/services/T00/B00/xxx"));
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
             AlertTestFixtures.CreateAlertEvent());
@@ -64,7 +64,7 @@ public sealed class SlackAlertDeliverySinkTests
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-slack").Returns(client);
 
-        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithSlack()));
+        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithSlack()), AlertTestFixtures.SecretProvider(AlertTestFixtures.RoutableWebhookBaseUrl + "/services/T00/B00/xxx"));
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
             AlertTestFixtures.CreateAlertEvent());
@@ -81,7 +81,7 @@ public sealed class SlackAlertDeliverySinkTests
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-slack").Returns(client);
 
-        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithSlack()));
+        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithSlack()), AlertTestFixtures.SecretProvider(AlertTestFixtures.RoutableWebhookBaseUrl + "/services/T00/B00/xxx"));
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
             AlertTestFixtures.CreateAlertEvent());
@@ -98,7 +98,7 @@ public sealed class SlackAlertDeliverySinkTests
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-slack").Returns(client);
 
-        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithSlack()));
+        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithSlack()), AlertTestFixtures.SecretProvider(AlertTestFixtures.RoutableWebhookBaseUrl + "/services/T00/B00/xxx"));
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Slack),
             AlertTestFixtures.CreateOpsAlertEvent());
@@ -122,6 +122,7 @@ public sealed class SlackAlertDeliverySinkTests
         var sink = new SlackAlertDeliverySink(
             httpClientFactory,
             Options.Create(CreateOptionsWithSlack(AlertTestFixtures.HostnameWebhookBaseUrl + "/services/T00/B00/xxx")),
+            AlertTestFixtures.SecretProvider(AlertTestFixtures.HostnameWebhookBaseUrl + "/services/T00/B00/xxx"),
             destinationGuard: AlertTestFixtures.GuardWithUnavailableResolver());
 
         var result = await sink.DeliverAsync(
@@ -144,6 +145,7 @@ public sealed class SlackAlertDeliverySinkTests
         var sink = new SlackAlertDeliverySink(
             httpClientFactory,
             Options.Create(CreateOptionsWithSlack(AlertTestFixtures.HostnameWebhookBaseUrl + "/services/T00/B00/xxx")),
+            AlertTestFixtures.SecretProvider(AlertTestFixtures.HostnameWebhookBaseUrl + "/services/T00/B00/xxx"),
             destinationGuard: AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
 
         var result = await sink.DeliverAsync(
@@ -159,7 +161,7 @@ public sealed class SlackAlertDeliverySinkTests
     public void ChannelType_ReturnsSlack()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()));
+        var sink = new SlackAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()), AlertTestFixtures.SecretProvider("unused"));
         Assert.Equal(AlertChannelType.Slack, sink.ChannelType);
     }
 }

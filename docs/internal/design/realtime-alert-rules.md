@@ -240,11 +240,12 @@ route to `AlertAdminEndpoints` + `EndpointRegistry.cs` + the JSON context.
   (`AlertOptions` · `src/Honua.Core/Features/Alerts/Domain/AlertOptions.cs`; sinks under
   `src/Honua.Server/Features/Alerts/*DeliverySink.cs`). The editor does NOT author secrets — it only selects
   channels, and the server reports each channel's configured/unconfigured/unauthorized state via §4.2/§4.3
-  so the operator sees which channels will actually deliver. Channel credentials (SMTP `Password`, Slack/
-  Teams `WebhookUrl`, SNS/SQS/Event Grid/Event Hub URLs and connection strings) are **config-bound values
-  today** — plain settings on `AlertDeliveryOptions` bound from configuration/environment; there is no
-  secret-reference (`ISecretProvider`) resolution for channel secrets yet (deliberately deferred). Either
-  way, do not surface them through the rule API.
+  so the operator sees which channels will actually deliver. Credential-bearing settings on the supported
+  webhook, digest, SMTP, Slack, and Teams sinks are secret-store references resolved through
+  `ISecretProvider` for every delivery attempt, allowing rotation without a server restart. Plain routing
+  settings such as the SMTP host and recipient remain ordinary configuration. Never surface a reference or
+  resolved credential through the rule API or delivery error text. Cloud channel credentials remain Preview
+  with their sinks until a real-channel receipt qualifies each one.
 - **Edition gating:** `IAlertEditionPolicy` enforces which triggers/channels the configured edition allows;
   disallowed selections fail validation (`unauthorized`). This is already wired — honour it.
 - **Provider:** alert evaluation depends on the durable change tracker (`IChangeTracker`) + Postgres alert

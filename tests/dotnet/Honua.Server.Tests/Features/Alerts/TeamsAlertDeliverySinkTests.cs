@@ -21,7 +21,7 @@ public sealed class TeamsAlertDeliverySinkTests
         {
             Dispatch = new AlertDeliveryDispatchOptions
             {
-                Teams = new TeamsChannelOptions { WebhookUrl = webhookUrl }
+                Teams = new TeamsChannelOptions { WebhookUrlReference = AlertTestFixtures.SecretReference }
             }
         };
 
@@ -29,7 +29,7 @@ public sealed class TeamsAlertDeliverySinkTests
     public async Task DeliverAsync_WithNoWebhookUrlConfigured_ReturnsNonRetryableFailure()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()));
+        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()), AlertTestFixtures.SecretProvider("unused"));
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
@@ -51,6 +51,7 @@ public sealed class TeamsAlertDeliverySinkTests
         var sink = new TeamsAlertDeliverySink(
             httpClientFactory,
             Options.Create(CreateOptionsWithTeams(AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook/xxx")),
+            AlertTestFixtures.SecretProvider(AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook/xxx"),
             destinationGuard: AlertTestFixtures.GuardWithUnavailableResolver());
 
         var result = await sink.DeliverAsync(
@@ -73,6 +74,7 @@ public sealed class TeamsAlertDeliverySinkTests
         var sink = new TeamsAlertDeliverySink(
             httpClientFactory,
             Options.Create(CreateOptionsWithTeams(AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook/xxx")),
+            AlertTestFixtures.SecretProvider(AlertTestFixtures.HostnameWebhookBaseUrl + "/webhook/xxx"),
             destinationGuard: AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
 
         var result = await sink.DeliverAsync(
@@ -92,7 +94,7 @@ public sealed class TeamsAlertDeliverySinkTests
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-teams").Returns(client);
 
-        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithTeams()));
+        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithTeams()), AlertTestFixtures.SecretProvider(AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook/xxx"));
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
             AlertTestFixtures.CreateAlertEvent());
@@ -109,7 +111,7 @@ public sealed class TeamsAlertDeliverySinkTests
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-teams").Returns(client);
 
-        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithTeams()));
+        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithTeams()), AlertTestFixtures.SecretProvider(AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook/xxx"));
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
             AlertTestFixtures.CreateAlertEvent());
@@ -126,7 +128,7 @@ public sealed class TeamsAlertDeliverySinkTests
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-teams").Returns(client);
 
-        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithTeams()));
+        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithTeams()), AlertTestFixtures.SecretProvider(AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook/xxx"));
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
@@ -148,7 +150,7 @@ public sealed class TeamsAlertDeliverySinkTests
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
         httpClientFactory.CreateClient("alerts-teams").Returns(client);
 
-        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithTeams()));
+        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(CreateOptionsWithTeams()), AlertTestFixtures.SecretProvider(AlertTestFixtures.RoutableWebhookBaseUrl + "/webhook/xxx"));
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.MicrosoftTeams),
             AlertTestFixtures.CreateOpsAlertEvent());
@@ -165,7 +167,7 @@ public sealed class TeamsAlertDeliverySinkTests
     public void ChannelType_ReturnsMicrosoftTeams()
     {
         var httpClientFactory = Substitute.For<IHttpClientFactory>();
-        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()));
+        var sink = new TeamsAlertDeliverySink(httpClientFactory, Options.Create(new AlertDeliveryOptions()), AlertTestFixtures.SecretProvider("unused"));
         Assert.Equal(AlertChannelType.MicrosoftTeams, sink.ChannelType);
     }
 

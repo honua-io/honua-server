@@ -90,9 +90,9 @@ public sealed class AlertOptionsValidator : ConfigurationValidator<AlertOptions>
                 $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.DefaultWebhookUrl)}",
                 errors);
 
-            if (string.IsNullOrWhiteSpace(options.Dispatch.DefaultWebhookSecret))
+            if (string.IsNullOrWhiteSpace(options.Dispatch.DefaultWebhookSecretReference))
             {
-                errors.Add($"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.DefaultWebhookSecret)} must be configured when {nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.DefaultWebhookUrl)} is set.");
+                errors.Add($"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.DefaultWebhookSecretReference)} must be configured when {nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.DefaultWebhookUrl)} is set.");
             }
         }
 
@@ -105,9 +105,9 @@ public sealed class AlertOptionsValidator : ConfigurationValidator<AlertOptions>
                 $"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}.{nameof(DigestAlertOptions.WebhookUrl)}",
                 errors);
 
-            if (string.IsNullOrWhiteSpace(options.Dispatch.Digest.WebhookSecret))
+            if (string.IsNullOrWhiteSpace(options.Dispatch.Digest.WebhookSecretReference))
             {
-                errors.Add($"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}.{nameof(DigestAlertOptions.WebhookSecret)} must be configured when {nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}.{nameof(DigestAlertOptions.WebhookUrl)} is set.");
+                errors.Add($"{nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}.{nameof(DigestAlertOptions.WebhookSecretReference)} must be configured when {nameof(AlertOptions.Dispatch)}.{nameof(AlertDispatchOptions.Digest)}.{nameof(DigestAlertOptions.WebhookUrl)} is set.");
             }
         }
 

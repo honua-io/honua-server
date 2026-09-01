@@ -20,7 +20,7 @@ public sealed class AlertOptionsValidatorTests
             Dispatch = new AlertDispatchOptions
             {
                 DefaultWebhookUrl = "https://8.8.8.8/alerts",
-                DefaultWebhookSecret = "signing-secret"
+                DefaultWebhookSecretReference = "secret://alerts/webhook"
             }
         };
 
@@ -54,7 +54,7 @@ public sealed class AlertOptionsValidatorTests
             Dispatch = new AlertDispatchOptions
             {
                 DefaultWebhookUrl = "https://localhost/webhook",
-                DefaultWebhookSecret = "signing-secret"
+                DefaultWebhookSecretReference = "secret://alerts/webhook"
             }
         };
 
@@ -73,7 +73,7 @@ public sealed class AlertOptionsValidatorTests
             Dispatch = new AlertDispatchOptions
             {
                 DefaultWebhookUrl = "http://hooks.example.com/alerts",
-                DefaultWebhookSecret = "signing-secret"
+                DefaultWebhookSecretReference = "secret://alerts/webhook"
             }
         };
 

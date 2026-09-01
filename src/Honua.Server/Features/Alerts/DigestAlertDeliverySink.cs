@@ -7,6 +7,7 @@ using System.Globalization;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Events;
 using Microsoft.Extensions.Options;
 
@@ -38,18 +39,21 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
     private readonly AlertOptions _options;
     private readonly ILogger<DigestFlushBackgroundService> _logger;
     private readonly AlertDestinationGuard _destinationGuard;
+    private readonly ISecretProvider _secretProvider;
 
     public DigestFlushBackgroundService(
         IServiceScopeFactory scopeFactory,
         IHttpClientFactory httpClientFactory,
         IOptions<AlertOptions> options,
         ILogger<DigestFlushBackgroundService> logger,
+        ISecretProvider secretProvider,
         AlertDestinationGuard? destinationGuard = null)
     {
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _secretProvider = secretProvider ?? throw new ArgumentNullException(nameof(secretProvider));
         _destinationGuard = destinationGuard ?? new AlertDestinationGuard();
     }
 
@@ -137,7 +141,40 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             return;
         }
 
-        var webhookSecret = _options.Dispatch.Digest.WebhookSecret;
+        var secretReference = _options.Dispatch.Digest.WebhookSecretReference;
+        if (!_secretProvider.IsSecretReference(secretReference))
+        {
+            await MarkBatchFailedAsync(
+                batchItems,
+                dispatchStore,
+                now,
+                retryable: false,
+                "Digest webhook signing secret must be a supported secret reference.",
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        string? webhookSecret;
+        try
+        {
+            webhookSecret = await _secretProvider.GetSecretAsync(secretReference!, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            await MarkBatchFailedAsync(
+                batchItems,
+                dispatchStore,
+                now,
+                retryable: true,
+                ex.Message,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(webhookSecret))
         {
             await MarkBatchFailedAsync(

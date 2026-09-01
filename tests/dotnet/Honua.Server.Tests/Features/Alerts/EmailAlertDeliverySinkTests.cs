@@ -13,7 +13,7 @@ public sealed class EmailAlertDeliverySinkTests
     [UnitTest]
     public async Task DeliverAsync_WithNoSmtpConfigured_ReturnsNonRetryableFailure()
     {
-        var sink = new EmailAlertDeliverySink(Options.Create(new AlertDeliveryOptions()));
+        var sink = new EmailAlertDeliverySink(Options.Create(new AlertDeliveryOptions()), AlertTestFixtures.SecretProvider("unused"));
 
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Email),
@@ -39,7 +39,7 @@ public sealed class EmailAlertDeliverySinkTests
             }
         };
 
-        var sink = new EmailAlertDeliverySink(Options.Create(options));
+        var sink = new EmailAlertDeliverySink(Options.Create(options), AlertTestFixtures.SecretProvider("smtp-password"));
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Email),
             AlertTestFixtures.CreateAlertEvent());
@@ -67,7 +67,7 @@ public sealed class EmailAlertDeliverySinkTests
             }
         };
 
-        var sink = new EmailAlertDeliverySink(Options.Create(options));
+        var sink = new EmailAlertDeliverySink(Options.Create(options), AlertTestFixtures.SecretProvider("smtp-password"));
         var result = await sink.DeliverAsync(
             AlertTestFixtures.CreateDispatchItem(AlertChannelType.Email, destination: "user@example.com"),
             AlertTestFixtures.CreateAlertEvent());
@@ -104,7 +104,7 @@ public sealed class EmailAlertDeliverySinkTests
     [UnitTest]
     public void ChannelType_ReturnsEmail()
     {
-        var sink = new EmailAlertDeliverySink(Options.Create(new AlertDeliveryOptions()));
+        var sink = new EmailAlertDeliverySink(Options.Create(new AlertDeliveryOptions()), AlertTestFixtures.SecretProvider("unused"));
         Assert.Equal(AlertChannelType.Email, sink.ChannelType);
     }
 }

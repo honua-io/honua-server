@@ -9,6 +9,12 @@ on:
       - 'src/Honua.Server/Features/Alerts/**'
       - 'src/Honua.Server/Migrations/**'
       - 'tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertWebhookDeliveryE2eTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Alerts/WebhookAlertDeliverySinkTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertNotificationRateLimiterTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertEvaluationHealthCheckTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertDispatchHealthCheckTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertPipelineMetricsTests.cs'
+      - 'quality/alerting-enabled-candidate-scenarios.json'
       - 'tests/dotnet/Honua.Server.Tests/DatabaseShardCollections.cs'
   workflow_dispatch:
     inputs:
@@ -72,14 +78,22 @@ jobs:
           mkdir -p artifacts/alerting-enabled-candidate
           printf '%s\n' "${CANDIDATE_SHA}" > artifacts/alerting-enabled-candidate/candidate-source-sha.txt
 
-      - name: Run enabled Postgres webhook qualification scenarios
+      - name: Run enabled alerting qualification scenarios
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --configuration Release \
-            --filter 'FullyQualifiedName~AlertWebhookDeliveryE2eTests' \
+            --filter 'FullyQualifiedName~AlertWebhookDeliveryE2eTests|FullyQualifiedName~WebhookAlertDeliverySinkTests|FullyQualifiedName~AlertNotificationRateLimiterTests|FullyQualifiedName~AlertEvaluationHealthCheckTests|FullyQualifiedName~AlertDispatchHealthCheckTests|FullyQualifiedName~AlertPipelineMetricsTests' \
             --logger 'trx;LogFileName=alerting-enabled-candidate.trx' \
             --results-directory artifacts/alerting-enabled-candidate \
             -m:1 /nodeReuse:false
+
+      - name: Retain honest-red qualification scenarios
+        continue-on-error: true
+        run: |
+          cp quality/alerting-enabled-candidate-scenarios.json \
+            artifacts/alerting-enabled-candidate/scenarios.json
+          jq -e 'all(.scenarios[]; .status == "green")' \
+            artifacts/alerting-enabled-candidate/scenarios.json
 
       - name: Retain immutable candidate receipt
         if: always()

@@ -165,7 +165,7 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
             Dispatch = new AlertDispatchOptions
             {
                 DefaultWebhookUrl = destination,
-                DefaultWebhookSecret = SigningSecret,
+                DefaultWebhookSecretReference = AlertTestFixtures.SecretReference,
                 IdleDelay = TimeSpan.FromMilliseconds(10),
                 InitialBackoff = TimeSpan.Zero,
                 MaxBackoff = TimeSpan.Zero,
@@ -209,6 +209,7 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         var sink = new WebhookAlertDeliverySink(
             new SingleClientFactory(client),
             options,
+            AlertTestFixtures.SecretProvider(SigningSecret),
             new AlertDestinationGuard(static (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") })));
 
         var changeReader = Substitute.For<IAlertChangeReader>();

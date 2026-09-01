@@ -46,7 +46,8 @@ public sealed class DigestAlertDeliverySinkTests
             provider.GetRequiredService<IServiceScopeFactory>(),
             httpClientFactory,
             Options.Create(CreateDigestOptions()),
-            NullLogger<DigestFlushBackgroundService>.Instance);
+            NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"));
 
         await service.FlushAsync(CancellationToken.None);
 
@@ -88,7 +89,8 @@ public sealed class DigestAlertDeliverySinkTests
             provider.GetRequiredService<IServiceScopeFactory>(),
             httpClientFactory,
             Options.Create(CreateDigestOptions()),
-            NullLogger<DigestFlushBackgroundService>.Instance);
+            NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"));
 
         await service.FlushAsync(CancellationToken.None);
 
@@ -100,6 +102,45 @@ public sealed class DigestAlertDeliverySinkTests
             Arg.Is<string?>(value => value != null && value.Contains("500", StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
         await dispatchStore.DidNotReceiveWithAnyArgs().MarkDeliveredAsync(default, default, default);
+    }
+
+    [UnitTest]
+    public async Task FlushAsync_WithSecretResolutionFailure_MarksBatchFailedForRetry()
+    {
+        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var eventStore = Substitute.For<IAlertEventStore>();
+        var dispatchItem = AlertTestFixtures.CreateDispatchItem(AlertChannelType.Digest) with
+        {
+            DispatchId = 22,
+            EventId = 202,
+            MaxAttempts = 3
+        };
+        dispatchStore.ClaimPendingDigestAsync(2, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns([dispatchItem]);
+        eventStore.GetAsync(202, Arg.Any<CancellationToken>())
+            .Returns(AlertTestFixtures.CreateAlertEvent(dedupeKey: "evt-202"));
+
+        var secretProvider = Substitute.For<Honua.Core.Features.Security.Abstractions.ISecretProvider>();
+        secretProvider.IsSecretReference(AlertTestFixtures.SecretReference).Returns(true);
+        secretProvider.GetSecretAsync(AlertTestFixtures.SecretReference, Arg.Any<CancellationToken>())
+            .Returns<Task<string?>>(_ => throw new InvalidOperationException("secret backend unavailable"));
+        using var provider = CreateServiceProvider(dispatchStore, eventStore);
+        var service = new DigestFlushBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            Substitute.For<IHttpClientFactory>(),
+            Options.Create(CreateDigestOptions()),
+            NullLogger<DigestFlushBackgroundService>.Instance,
+            secretProvider);
+
+        await service.FlushAsync(CancellationToken.None);
+
+        await dispatchStore.Received(1).MarkFailedAsync(
+            22,
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<DateTimeOffset>(),
+            false,
+            Arg.Is<string?>(value => value != null && value.Contains("backend unavailable", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -131,6 +172,7 @@ public sealed class DigestAlertDeliverySinkTests
             httpClientFactory,
             Options.Create(CreateDigestOptions(AlertTestFixtures.HostnameWebhookBaseUrl + "/digest")),
             NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"),
             AlertTestFixtures.GuardWithUnavailableResolver());
 
         await service.FlushAsync(CancellationToken.None);
@@ -172,6 +214,7 @@ public sealed class DigestAlertDeliverySinkTests
             httpClientFactory,
             Options.Create(CreateDigestOptions(AlertTestFixtures.HostnameWebhookBaseUrl + "/digest")),
             NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"),
             AlertTestFixtures.GuardWithUnavailableResolver());
 
         await service.FlushAsync(CancellationToken.None);
@@ -212,6 +255,7 @@ public sealed class DigestAlertDeliverySinkTests
             httpClientFactory,
             Options.Create(CreateDigestOptions(AlertTestFixtures.HostnameWebhookBaseUrl + "/digest")),
             NullLogger<DigestFlushBackgroundService>.Instance,
+            AlertTestFixtures.SecretProvider("digest-secret"),
             AlertTestFixtures.GuardResolvingTo("10.0.0.5"));
 
         await service.FlushAsync(CancellationToken.None);
@@ -237,7 +281,7 @@ public sealed class DigestAlertDeliverySinkTests
                     // AlertTestFixtures.RoutableWebhookBaseUrl (#3056). Tests that exercise host
                     // resolution pass a host name here and inject a resolver instead.
                     WebhookUrl = webhookUrl ?? AlertTestFixtures.RoutableWebhookBaseUrl + "/digest",
-                    WebhookSecret = "digest-secret",
+                    WebhookSecretReference = AlertTestFixtures.SecretReference,
                     MaxBatchSize = 2
                 }
             }

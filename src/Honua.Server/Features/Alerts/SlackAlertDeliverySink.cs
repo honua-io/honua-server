@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -17,15 +18,18 @@ internal sealed partial class SlackAlertDeliverySink : IAlertDeliverySink
     private readonly AlertDeliveryOptions _options;
     private readonly ILogger<SlackAlertDeliverySink>? _logger;
     private readonly AlertDestinationGuard _destinationGuard;
+    private readonly ISecretProvider _secretProvider;
 
     public SlackAlertDeliverySink(
         IHttpClientFactory httpClientFactory,
         IOptions<AlertDeliveryOptions> options,
+        ISecretProvider secretProvider,
         ILogger<SlackAlertDeliverySink>? logger = null,
         AlertDestinationGuard? destinationGuard = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _secretProvider = secretProvider ?? throw new ArgumentNullException(nameof(secretProvider));
         _logger = logger;
         _destinationGuard = destinationGuard ?? new AlertDestinationGuard();
     }
@@ -38,7 +42,8 @@ internal sealed partial class SlackAlertDeliverySink : IAlertDeliverySink
         CancellationToken cancellationToken = default)
     {
         var slackOptions = _options.Dispatch.Slack;
-        if (slackOptions is null || string.IsNullOrWhiteSpace(slackOptions.WebhookUrl))
+        var webhookReference = dispatchItem.Destination ?? slackOptions?.WebhookUrlReference;
+        if (string.IsNullOrWhiteSpace(webhookReference))
         {
             return new AlertDeliveryResult
             {
@@ -48,10 +53,29 @@ internal sealed partial class SlackAlertDeliverySink : IAlertDeliverySink
             };
         }
 
-        var webhookUrl = dispatchItem.Destination ?? slackOptions.WebhookUrl;
+        if (!_secretProvider.IsSecretReference(webhookReference))
+        {
+            return new AlertDeliveryResult
+            {
+                Succeeded = false,
+                Retryable = false,
+                Error = "Slack webhook credential must be a supported secret reference."
+            };
+        }
 
         try
         {
+            var webhookUrl = await _secretProvider.GetSecretAsync(webhookReference, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(webhookUrl))
+            {
+                return new AlertDeliveryResult
+                {
+                    Succeeded = false,
+                    Retryable = true,
+                    Error = "Slack webhook credential could not be resolved."
+                };
+            }
+
             var destinationCheck = await _destinationGuard
                 .CheckAsync(webhookUrl, "Slack webhook URL", cancellationToken)
                 .ConfigureAwait(false);
