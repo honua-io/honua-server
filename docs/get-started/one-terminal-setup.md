@@ -21,16 +21,16 @@ pinned revision:
 git clone https://github.com/honua-io/honua-server.git
 cd honua-server
 git checkout ddf373e86
-bash scripts/docs-validation/validate-quickstart.sh
+HONUA_DOCS_PRESERVE_STACK=1 bash scripts/docs-validation/validate-quickstart.sh
 ```
 
 The validation script extracts the commands from the quickstart instead of
 maintaining a second recipe. It starts clean PostGIS, Redis, and server
 containers; creates the connection; publishes the sample table; queries its
-three features; and retrieves TileJSON plus a non-empty MVT. It removes its
-containers and volumes afterward. Keep the returned service and layer IDs for
-later stages; do not copy the quickstart development credential into a deployed
-environment.
+three features; and retrieves TileJSON plus a non-empty MVT. The preservation
+flag leaves that validated stack and its database volume running so the later
+stages can use the returned service and layer IDs. Do not copy the quickstart
+development credential into a deployed environment.
 
 The quickstart currently installs the pinned Python SDK packages from the
 `python-sdk-v0.1.9` source tag. The server image is built from the checked-out
@@ -66,6 +66,12 @@ OGC API Processes, waits on the returned job URL, and reads the result. The
 same operation can be submitted through `honua_validate_plan` and
 `honua_execute_plan`; poll `honua://jobs/{jobId}` and read the results resource.
 Retain the job ID and output artifact reference.
+
+After retaining the receipt, remove the local stack and its volumes:
+
+```bash
+docker compose --project-name honua-docs-quickstart down --volumes --remove-orphans
+```
 
 Direct analysis-profile verbs such as `buffer_features` remain intentionally
 absent until
