@@ -38,9 +38,9 @@ internal static partial class SchemaSearchPath
         }
 
         await using var command = connection.CreateCommand();
-        // codeql[cs/sql-injection]: identifier is validated against ^[A-Za-z_][A-Za-z0-9_]*$ allow-list
-        // above; PostgreSQL `SET search_path` does not accept parameter binding for identifiers.
-        command.CommandText = $"SET search_path TO \"{sanitized}\", public;";
+        // PostgreSQL does not accept parameter binding for identifiers. Quote the allow-listed
+        // schema through Npgsql's provider API instead of hand-building an identifier token.
+        command.CommandText = $"SET search_path TO {QuoteIdentifier(sanitized)}, public;";
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -64,7 +64,7 @@ internal static partial class SchemaSearchPath
             throw new InvalidOperationException($"Invalid schema name '{schemaName}'.");
         }
 
-        return $"\"{sanitized}\"";
+        return QuoteIdentifier(sanitized);
     }
 
     /// <summary>
@@ -80,4 +80,9 @@ internal static partial class SchemaSearchPath
 
     [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
     private static partial Regex SchemaNamePattern();
+
+    private static string QuoteIdentifier(string identifier)
+    {
+        return new NpgsqlCommandBuilder().QuoteIdentifier(identifier);
+    }
 }
