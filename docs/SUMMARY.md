@@ -3,6 +3,7 @@
 ## Get started
 
 - [Quickstart: zero to a map](get-started/quickstart.md)
+- [One-terminal setup journey](get-started/one-terminal-setup.md)
 - [Your first dataset](get-started/first-dataset.md)
 - [Your first map](get-started/first-map.md)
 
