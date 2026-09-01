@@ -102,7 +102,7 @@ named "operator surface" ships in this repo.
    - `honua_alert_events` - GIS alert events and ops notifications.
    - `honua_operate_events` - fused Operate timeline events.
 
-   Before proposing a mutating control-plane operation, call the read-only `honua_supported_operation_kinds` tool and choose only a returned kind. Then use `honua_propose_operation`; approval still resolves through the Console inbox, and MCP does not approve its own proposals. The `supportedKinds` field on rejected proposal responses remains for compatibility but is deprecated for discovery.
+   Mutating control-plane requests use schema-closed tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. Approval resolves through the Console inbox; MCP does not approve its own proposals or accept opaque execution payloads.
 
 7. Compose a Studio draft — the same server-resident lifecycle draft the Studio UI observes (AD-8: composition state IS the draft; the browser is a projection). Every mutating call is optimistic-concurrency checked: pass the `generation` last returned by `honua_studio_get_draft` / `honua_studio_create_draft`, and a stale value returns `failed_precondition` — re-fetch and retry rather than resubmitting blindly.
 

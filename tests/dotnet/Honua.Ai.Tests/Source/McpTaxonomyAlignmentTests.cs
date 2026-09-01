@@ -45,7 +45,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_validate_package",
         "honua_preview_package",
         "honua_cancel_job",
-        "honua_propose_operation",
         "honua_publish_service",
         "honua_publish_result",
         "honua_create_map_package",
@@ -184,6 +183,18 @@ public sealed partial class McpTaxonomyAlignmentTests
             rosterTypes,
             "BuildTools must enumerate every static IMcpTool registered by "
             + "McpServiceCollectionExtensions.AddMcpDataAccessSurface with all capability gates enabled");
+    }
+
+    [UnitTest]
+    public void McpComposition_DoesNotExposeOpaqueOperationProposalPath()
+    {
+        BuildTools().Select(tool => tool.Name).Should().NotContain("honua_propose_operation");
+
+        var services = new ServiceCollection();
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder().Build());
+        services.Where(descriptor => descriptor.ServiceType == typeof(IMcpTool))
+            .Select(descriptor => descriptor.ImplementationType?.Name)
+            .Should().NotContain("ProposeOperationTool");
     }
 
     [UnitTest]
@@ -352,7 +363,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         {
             ["honua_execute_plan"] = (Destructive: false, Idempotent: true),
             ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
-            ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
             ["honua_propose_rollback"] = (Destructive: false, Idempotent: true),
             ["honua_propose_finding"] = (Destructive: false, Idempotent: true),
             ["honua_propose_deploy_plan"] = (Destructive: false, Idempotent: true),
@@ -854,7 +864,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
-            new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),
             new PublishResultTool(jobService, NullLogger<PublishResultTool>.Instance),
             new CreateMapPackageTool(

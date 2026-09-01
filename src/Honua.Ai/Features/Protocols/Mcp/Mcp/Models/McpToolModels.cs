@@ -41,25 +41,6 @@ internal sealed class McpCancelJobArgument
 }
 
 /// <summary>
-/// Arguments for <c>honua_propose_operation</c>: submit an in-scope mutating
-/// control-plane operation through the approval gateway (#1696).
-/// </summary>
-internal sealed class McpProposeOperationArgument
-{
-    [JsonPropertyName("kind")]
-    public string? Kind { get; set; }
-
-    [JsonPropertyName("reason")]
-    public string? Reason { get; set; }
-
-    [JsonPropertyName("executionPayload")]
-    public string? ExecutionPayload { get; set; }
-
-    [JsonPropertyName("idempotencyKey")]
-    public string? IdempotencyKey { get; set; }
-}
-
-/// <summary>
 /// Arguments for <c>honua_ops_findings</c>: list active deterministic ops
 /// findings, or fetch a single finding by its stable identifier.
 /// </summary>
@@ -209,7 +190,7 @@ internal sealed class McpPlatformReleaseConvergenceArgument
 }
 
 /// <summary>
-/// Output for <c>honua_propose_operation</c>. On <c>requiresApproval</c> the
+/// Shared output for typed governed proposal tools. On <c>requiresApproval</c> the
 /// agent polls the <c>resourceUri</c> until the proposal resolves (#1696).
 /// </summary>
 internal sealed class McpProposeOperationOutput
