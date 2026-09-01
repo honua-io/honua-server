@@ -2,7 +2,8 @@
 
 Honua provides protocol-level compatibility at Esri GeoServices REST paths for
 selected, operation-scoped workflows. Client support is bounded by this matrix and
-the published [certified client envelope](../../gis/CLIENT_CERTIFICATION_ROSTER.md);
+the [cross-client certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md),
+which identifies operation-level coverage and planned lanes;
 it does not imply blanket compatibility for ArcGIS Pro, ArcGIS SDKs, Esri Leaflet,
 or the ArcGIS API for Python. This page summarizes endpoint-level parity per service;
 the machine-readable source is
