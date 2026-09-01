@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
+using System.Data.Common;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -13,6 +16,9 @@ using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Db.Postgres.Features.Alerts;
+using Honua.Server.Tests.Infrastructure;
 using Honua.Server.Tests.Infrastructure.Telemetry;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -23,9 +29,12 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Npgsql;
+using NpgsqlTypes;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Alerts;
@@ -37,7 +46,8 @@ namespace Honua.Server.Tests.Features.Alerts;
 /// </summary>
 [Protocol(ProtocolNames.Infrastructure)]
 [Operation(Operations.ContractTesting)]
-public sealed class AlertWebhookDeliveryE2eTests
+[Collection("Database.Alerts")]
+public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database)
 {
     private const long RuleId = 3665;
     private const int LayerId = 7;
@@ -49,7 +59,7 @@ public sealed class AlertWebhookDeliveryE2eTests
     public async Task TriggeredRule_DeliversCanonicalPayloadObservedByExternalWebhookReceiver()
     {
         await using var receiver = await WebhookReceiver.StartAsync();
-        await using var harness = CreateHarness(receiver.Url, maxAttempts: 3, receiver.Certificate);
+        await using var harness = await CreateHarnessAsync(receiver.Url, maxAttempts: 3, receiver.Certificate);
 
         await harness.FireRuleAsync();
         var received = await receiver.WaitForRequestAsync(TimeSpan.FromSeconds(10));
@@ -75,37 +85,83 @@ public sealed class AlertWebhookDeliveryE2eTests
         var timestamp = received.Headers["X-Honua-Event-Timestamp"];
         received.Headers["X-Honua-Signature"].Should().Be(
             $"sha256={Honua.Infrastructure.Events.WebhookDeliveryHelper.ComputeSignature(SigningSecret, timestamp, received.Body)}");
+
+        (await harness.PersistDuplicateAsync()).Should().BeNull("the production unique dedupe key suppresses the duplicate event");
+        (await harness.CountEventsAsync()).Should().Be(1, "the production unique dedupe key suppresses the duplicate evaluation");
+        (await harness.CountDispatchesAsync()).Should().Be(1, "a deduplicated event must not enqueue another delivery");
+
+        var acknowledged = await harness.Lifecycle.AcknowledgeAsync(
+            harness.EventId, "candidate-operator", "receipt acknowledged", DateTimeOffset.UtcNow);
+        acknowledged!.Status.Should().Be(AlertLifecycleStatus.Acknowledged);
+        var resolved = await harness.Lifecycle.ResolveAsync(
+            harness.EventId, "candidate-operator", "synthetic condition cleared", DateTimeOffset.UtcNow);
+        resolved!.Status.Should().Be(AlertLifecycleStatus.Resolved);
+        (await harness.Lifecycle.GetAsync(harness.EventId))!.ResolvedBy.Should().Be("candidate-operator");
     }
 
     [IntegrationTest]
     public async Task TriggeredRule_WhenWebhookIsDown_RetriesThenDeadLetters()
     {
         var unavailableUrl = ReserveUnavailableHttpsUrl();
-        await using var harness = CreateHarness(unavailableUrl, maxAttempts: 3);
+        await using var harness = await CreateHarnessAsync(unavailableUrl, maxAttempts: 3);
 
         await harness.FireRuleAsync();
         await harness.WaitForStatusAsync(AlertDispatchStatus.DeadLetter, TimeSpan.FromSeconds(10));
 
-        harness.Store.Attempts.Should().Be(3, "the retry budget must be exhausted before dead-lettering");
-        harness.Store.FailureTransitions.Should().Equal(
-            AlertDispatchStatus.Failed,
-            AlertDispatchStatus.Failed,
-            AlertDispatchStatus.DeadLetter);
-        harness.Store.LastError.Should().Be("Webhook delivery failed.");
-        var backlog = await harness.Store.GetBacklogAsync();
+        (await harness.GetAttemptsAsync()).Should().Be(3, "the retry budget must be exhausted before dead-lettering");
+        (await harness.GetLastErrorAsync()).Should().Be("Webhook delivery failed.");
+        var backlog = await harness.DispatchStore.GetBacklogAsync();
         backlog.PendingCount.Should().Be(0);
         backlog.DeadLetteredCount.Should().Be(1);
     }
 
-    private static AlertE2eHarness CreateHarness(
+    [IntegrationTest]
+    public async Task ClaimedDispatch_WhenWorkerCrashes_IsReclaimedFromProductionOutbox()
+    {
+        await using var harness = await CreateHarnessAsync(ReserveUnavailableHttpsUrl(), maxAttempts: 3);
+        await harness.EvaluateOnlyAsync();
+
+        var firstClaim = await harness.DispatchStore.ClaimPendingAsync(1, DateTimeOffset.UtcNow);
+        firstClaim.Should().ContainSingle();
+        await harness.ExpireClaimAsync(firstClaim[0].DispatchId);
+
+        var recovered = await harness.DispatchStore.ClaimPendingAsync(1, DateTimeOffset.UtcNow);
+        recovered.Should().ContainSingle();
+        recovered[0].DispatchId.Should().Be(firstClaim[0].DispatchId);
+        recovered[0].Attempts.Should().Be(0, "a worker crash does not consume the provider retry budget");
+    }
+
+    private async Task<AlertE2eHarness> CreateHarnessAsync(
         string destination,
         int maxAttempts,
         X509Certificate2? trustedCertificate = null)
     {
-        var store = new InMemoryAlertOutbox(maxAttempts);
-        var options = Options.Create(new AlertOptions
+        var migrationSchema = await database.CreateIsolatedSchemaAsync(nameof(AlertWebhookDeliveryE2eTests));
+        var migration = await database.RunEmbeddedMigrationsUnderLockAsync(
+            migrationSchema,
+            Assembly.GetAssembly(typeof(Program))!);
+        migration.Successful.Should().BeTrue(migration.Error?.ToString());
+        await database.DropSchemaAsync(migrationSchema);
+        await database.ApplyGlobalSeedSqlAsync("""
+            TRUNCATE TABLE honua.alert_event_lifecycle, honua.alert_dispatch, honua.alert_events, honua.alert_rules
+            RESTART IDENTITY CASCADE;
+            INSERT INTO honua.alert_rules
+                (rule_id, service_id, layer_id, rule_name, trigger_type, conditions,
+                 severity, edition_required, channels, is_active)
+            VALUES
+                (3665, 'alert-e2e-service', 7, 'speed threshold', 2,
+                 '{"field":"speed","operator":">","value":50}'::jsonb,
+                 'warning', 2, ARRAY['webhook'], true);
+            """);
+        var connectionProvider = new TestConnectionProvider(database.DataSource);
+        var outbox = new PostgresAlertOutboxWriter(connectionProvider);
+        var dispatchStore = new PostgresAlertDispatchStore(
+            connectionProvider,
+            NullLogger<PostgresAlertDispatchStore>.Instance);
+        var eventStore = new PostgresAlertEventStore(connectionProvider);
+        var lifecycleStore = new PostgresAlertLifecycleStore(connectionProvider);
+        var alertOptions = new AlertOptions
         {
-            Enabled = true,
             Dispatch = new AlertDispatchOptions
             {
                 DefaultWebhookUrl = destination,
@@ -116,7 +172,13 @@ public sealed class AlertWebhookDeliveryE2eTests
                 CircuitBreakerThreshold = 100,
                 MaxNotificationsPerMinutePerChannel = 0,
             },
-        });
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Alerts:Enabled"] = "true" })
+            .AddEnvironmentVariables()
+            .Build();
+        configuration.GetSection(AlertOptions.SectionName).Bind(alertOptions);
+        var options = Options.Create(alertOptions);
 
         var handler = new SocketsHttpHandler
         {
@@ -215,13 +277,13 @@ public sealed class AlertWebhookDeliveryE2eTests
             new TestMetadataV2GraphProvider(graph),
             new DefaultAlertEvaluator(),
             editionPolicy,
-            new AlertDispatchWriter(store, metrics, NullLogger<AlertDispatchWriter>.Instance),
+            new AlertDispatchWriter(outbox, metrics, NullLogger<AlertDispatchWriter>.Instance),
             NullLogger<AlertPipeline>.Instance);
 
         var services = new ServiceCollection();
-        services.AddSingleton<IAlertDispatchStore>(store);
-        services.AddSingleton<IAlertEventStore>(store);
-        services.AddSingleton<IAlertLifecycleStore>(new EmptyLifecycleStore());
+        services.AddSingleton<IAlertDispatchStore>(dispatchStore);
+        services.AddSingleton<IAlertEventStore>(eventStore);
+        services.AddSingleton<IAlertLifecycleStore>(lifecycleStore);
         services.AddSingleton<IAlertEditionPolicy>(editionPolicy);
         var provider = services.BuildServiceProvider();
         var dispatcher = new AlertDispatchBackgroundService(
@@ -233,7 +295,9 @@ public sealed class AlertWebhookDeliveryE2eTests
             metrics,
             NullLogger<AlertDispatchBackgroundService>.Instance);
 
-        return new AlertE2eHarness(pipeline, dispatcher, store, provider, client);
+        return new AlertE2eHarness(
+            pipeline, dispatcher, outbox, eventStore, dispatchStore, lifecycleStore,
+            database.DataSource, provider, client, maxAttempts);
     }
 
     private static string ReserveUnavailableHttpsUrl()
@@ -248,25 +312,77 @@ public sealed class AlertWebhookDeliveryE2eTests
     private sealed class AlertE2eHarness(
         AlertPipeline pipeline,
         AlertDispatchBackgroundService dispatcher,
-        InMemoryAlertOutbox store,
+        IAlertOutboxWriter outbox,
+        IAlertEventStore eventStore,
+        IAlertDispatchStore dispatchStore,
+        PostgresAlertLifecycleStore lifecycle,
+        NpgsqlDataSource dataSource,
         ServiceProvider provider,
-        HttpClient client) : IAsyncDisposable
+        HttpClient client,
+        int maxAttempts) : IAsyncDisposable
     {
-        public InMemoryAlertOutbox Store { get; } = store;
+        public IAlertDispatchStore DispatchStore { get; } = dispatchStore;
+        public PostgresAlertLifecycleStore Lifecycle { get; } = lifecycle;
+        public long EventId { get; private set; }
 
         public async Task FireRuleAsync()
         {
-            (await pipeline.ProcessChangesAsync(0, 10, CancellationToken.None)).Should().Be(1);
+            await EvaluateOnlyAsync();
             await dispatcher.StartAsync(CancellationToken.None);
+        }
+
+        public async Task EvaluateOnlyAsync()
+        {
+            (await pipeline.ProcessChangesAsync(0, 10, CancellationToken.None)).Should().Be(1);
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand("""
+                UPDATE honua.alert_dispatch SET max_attempts = @max_attempts;
+                SELECT event_id FROM honua.alert_events ORDER BY event_id LIMIT 1;
+                """, connection);
+            command.Parameters.AddWithValue("max_attempts", NpgsqlDbType.Integer, maxAttempts);
+            EventId = (long)(await command.ExecuteScalarAsync())!;
         }
 
         public async Task WaitForStatusAsync(AlertDispatchStatus status, TimeSpan timeout)
         {
             using var cts = new CancellationTokenSource(timeout);
-            while (Store.Status != status)
+            while (await GetStatusAsync(cts.Token) != status)
             {
                 await Task.Delay(10, cts.Token);
             }
+        }
+
+        public Task<long> CountEventsAsync() => ScalarAsync<long>("SELECT COUNT(*) FROM honua.alert_events;");
+        public Task<long> CountDispatchesAsync() => ScalarAsync<long>("SELECT COUNT(*) FROM honua.alert_dispatch;");
+        public async Task<long?> PersistDuplicateAsync()
+        {
+            var alertEvent = await eventStore.GetAsync(EventId);
+            return await outbox.AppendAndEnqueueAsync(alertEvent!, ImmutableArray.Create(AlertChannelType.Webhook));
+        }
+        public Task<int> GetAttemptsAsync() => ScalarAsync<int>("SELECT attempts FROM honua.alert_dispatch LIMIT 1;");
+        public Task<string> GetLastErrorAsync() => ScalarAsync<string>("SELECT last_error FROM honua.alert_dispatch LIMIT 1;");
+
+        public async Task ExpireClaimAsync(long dispatchId)
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand(
+                "UPDATE honua.alert_dispatch SET updated_at = now() - INTERVAL '6 minutes' WHERE dispatch_id = @dispatch_id;",
+                connection);
+            command.Parameters.AddWithValue("dispatch_id", NpgsqlDbType.Bigint, dispatchId);
+            _ = await command.ExecuteNonQueryAsync();
+        }
+
+        private async Task<AlertDispatchStatus> GetStatusAsync(CancellationToken cancellationToken)
+        {
+            var value = await ScalarAsync<short>("SELECT status FROM honua.alert_dispatch LIMIT 1;", cancellationToken);
+            return (AlertDispatchStatus)value;
+        }
+
+        private async Task<T> ScalarAsync<T>(string sql, CancellationToken cancellationToken = default)
+        {
+            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            await using var command = new NpgsqlCommand(sql, connection);
+            return (T)(await command.ExecuteScalarAsync(cancellationToken))!;
         }
 
         public async ValueTask DisposeAsync()
@@ -277,121 +393,29 @@ public sealed class AlertWebhookDeliveryE2eTests
         }
     }
 
-    private sealed class InMemoryAlertOutbox(int maxAttempts) : IAlertOutboxWriter, IAlertDispatchStore, IAlertEventStore
+    private sealed class TestConnectionProvider(NpgsqlDataSource dataSource) : IAdoNetDatabaseConnectionProvider
     {
-        private readonly object _sync = new();
-        private AlertEventEnvelope? _event;
-        private AlertDispatchItem? _dispatch;
-        private long _nextEventId;
-
-        public AlertDispatchStatus? Status { get { lock (_sync) { return _dispatch?.Status; } } }
-        public int Attempts { get { lock (_sync) { return _dispatch?.Attempts ?? 0; } } }
-        public string? LastError { get; private set; }
-        public List<AlertDispatchStatus> FailureTransitions { get; } = [];
-
-        public Task<long?> AppendAndEnqueueAsync(AlertEventEnvelope alertEvent, ImmutableArray<AlertChannelType> channels, CancellationToken cancellationToken = default)
+        public string GetConnectionString() => dataSource.ConnectionString;
+        public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+            => await dataSource.OpenConnectionAsync(cancellationToken);
+        public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
+            IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+            CancellationToken cancellationToken = default)
         {
-            lock (_sync)
-            {
-                if (_event is not null)
-                {
-                    return Task.FromResult<long?>(null);
-                }
-
-                _event = alertEvent;
-                _nextEventId = 1;
-                _dispatch = new AlertDispatchItem
-                {
-                    DispatchId = 1,
-                    EventId = _nextEventId,
-                    ChannelType = channels.Single(),
-                    Status = AlertDispatchStatus.Pending,
-                    Attempts = 0,
-                    MaxAttempts = maxAttempts,
-                    NextAttemptAt = DateTimeOffset.UtcNow,
-                };
-                return Task.FromResult<long?>(_nextEventId);
-            }
+            var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+            var transaction = await connection.BeginTransactionAsync(isolationLevel, cancellationToken);
+            return (connection, transaction);
         }
-
-        public Task<AlertEventEnvelope?> GetAsync(long eventId, CancellationToken cancellationToken = default)
+        public async Task<T> ExecuteWithDeadlockRetryAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken = default)
         {
-            lock (_sync) { return Task.FromResult(eventId == _nextEventId ? _event : null); }
+            cancellationToken.ThrowIfCancellationRequested();
+            return await operation();
         }
-
-        public Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingAsync(int maxCount, DateTimeOffset now, CancellationToken cancellationToken = default)
+        public async Task ExecuteWithDeadlockRetryAsync(Func<Task> operation, CancellationToken cancellationToken = default)
         {
-            lock (_sync)
-            {
-                if (_dispatch is null || _dispatch.NextAttemptAt > now ||
-                    _dispatch.Status is not (AlertDispatchStatus.Pending or AlertDispatchStatus.Failed))
-                {
-                    return Task.FromResult<IReadOnlyList<AlertDispatchItem>>([]);
-                }
-
-                var claimed = _dispatch;
-                _dispatch = _dispatch with { Status = AlertDispatchStatus.Processing };
-                return Task.FromResult<IReadOnlyList<AlertDispatchItem>>([claimed]);
-            }
+            cancellationToken.ThrowIfCancellationRequested();
+            await operation();
         }
-
-        public Task MarkDeliveredAsync(long dispatchId, DateTimeOffset deliveredAt, CancellationToken cancellationToken = default)
-        {
-            lock (_sync) { _dispatch = _dispatch! with { Status = AlertDispatchStatus.Delivered }; }
-            return Task.CompletedTask;
-        }
-
-        public Task MarkFailedAsync(long dispatchId, DateTimeOffset attemptedAt, DateTimeOffset nextAttemptAt, bool deadLetter, string? errorMessage, CancellationToken cancellationToken = default)
-        {
-            lock (_sync)
-            {
-                var status = deadLetter ? AlertDispatchStatus.DeadLetter : AlertDispatchStatus.Failed;
-                _dispatch = _dispatch! with
-                {
-                    Status = status,
-                    Attempts = _dispatch.Attempts + 1,
-                    NextAttemptAt = nextAttemptAt,
-                };
-                LastError = errorMessage;
-                FailureTransitions.Add(status);
-            }
-            return Task.CompletedTask;
-        }
-
-        public Task<AlertDispatchBacklog> GetBacklogAsync(CancellationToken cancellationToken = default)
-        {
-            lock (_sync)
-            {
-                return Task.FromResult(new AlertDispatchBacklog
-                {
-                    PendingCount = _dispatch?.Status is AlertDispatchStatus.Pending or AlertDispatchStatus.Processing or AlertDispatchStatus.Failed ? 1 : 0,
-                    RetryingCount = _dispatch?.Status == AlertDispatchStatus.Failed ? 1 : 0,
-                    DeadLetteredCount = _dispatch?.Status == AlertDispatchStatus.DeadLetter ? 1 : 0,
-                });
-            }
-        }
-
-        public Task RescheduleAsync(long dispatchId, DateTimeOffset nextAttemptAt, CancellationToken cancellationToken = default)
-        {
-            lock (_sync) { _dispatch = _dispatch! with { Status = AlertDispatchStatus.Pending, NextAttemptAt = nextAttemptAt }; }
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingDigestAsync(int maxCount, DateTimeOffset now, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AlertDispatchItem>>([]);
-        public Task EnqueueAsync(long eventId, ImmutableArray<AlertChannelType> channels, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<long?> TryAppendAsync(AlertEventEnvelope alertEvent, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<int> PurgeDeliveredAsync(DateTimeOffset deliveredBefore, int batchLimit, CancellationToken cancellationToken = default) => Task.FromResult(0);
-        public Task<int> RedriveDeadLettersAsync(DateTimeOffset now, int batchLimit, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task SetChannelPausedAsync(AlertChannelType channel, bool paused, DateTimeOffset now, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IReadOnlyDictionary<AlertChannelType, bool>> GetChannelPauseStatesAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyDictionary<AlertChannelType, bool>>(new Dictionary<AlertChannelType, bool>());
-    }
-
-    private sealed class EmptyLifecycleStore : IAlertLifecycleStore
-    {
-        public Task<AlertEventLifecycle?> GetAsync(long eventId, CancellationToken cancellationToken = default) => Task.FromResult<AlertEventLifecycle?>(null);
-        public Task<AlertEventLifecycle?> AcknowledgeAsync(long eventId, string actor, string? note, DateTimeOffset acknowledgedAt, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<AlertEventLifecycle?> SuppressAsync(long eventId, string actor, DateTimeOffset suppressUntil, string? note, DateTimeOffset suppressedAt, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<AlertEventLifecycle?> ResolveAsync(long eventId, string actor, string? note, DateTimeOffset resolvedAt, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class SingleClientFactory(HttpClient client) : IHttpClientFactory
