@@ -76,6 +76,7 @@ services:
 
   # Honua server — the lean serving image. Runs the in-process GP worker loop.
   honua:
+    image: "${HONUA_SERVER_IMAGE:-honua-server:gp-local}"
     build:
       context: .
       secrets:

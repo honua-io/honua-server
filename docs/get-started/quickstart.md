@@ -19,8 +19,10 @@ git clone https://github.com/honua-io/honua-server.git && cd honua-server
 ```bash
 export HONUA_BASE_URL="${HONUA_BASE_URL:-http://localhost:8080}"
 repo_root="${HONUA_REPO_ROOT:-.}"
-GITHUB_ACTOR="${GITHUB_ACTOR:-$(gh api user --jq .login)}" GH_TOKEN=$(gh auth token) \
-  bash "${repo_root}/scripts/docker/build-with-github-packages.sh" -t honua-server:local "${repo_root}"
+if [ -z "${HONUA_SERVER_IMAGE:-}" ]; then
+  GITHUB_ACTOR="${GITHUB_ACTOR:-$(gh api user --jq .login)}" GH_TOKEN=$(gh auth token) \
+    bash "${repo_root}/scripts/docker/build-with-github-packages.sh" -t honua-server:local "${repo_root}"
+fi
 docker compose up -d --no-build --wait --wait-timeout 180
 ```
 

@@ -20,6 +20,14 @@ CUSTOMER_PATHS = {
     "scripts/demos/run-mobile-offline-demo.sh": "mobile-offline",
     "scripts/demos/run-stac-ops-demo.sh": "stac-ops",
 }
+CANDIDATE_IMAGE = "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72"
+CANDIDATE_SOURCE_REVISION = "ac30266fbd153363bebdbed13130accc8ab0c94a"
+EVIDENCE_RECORDED_AT = "2026-09-01T15:14:00Z"
+QUICKSTART_PASSED_FENCES = {2, 3, 6, 7, 8, 9, 10, 12}
+QUICKSTART_BLOCKERS = {
+    4: "https://github.com/honua-io/honua-server/issues/3364",
+    5: "https://github.com/honua-io/honua-server/issues/3364",
+}
 
 
 def shipped_files(*pathspecs: str) -> list[Path]:
@@ -41,18 +49,35 @@ def stable_id(kind: str, path: str, suffix: str = "") -> str:
 
 def entry(kind: str, path: str, suffix: str = "", **extra: object) -> dict[str, object]:
     validation = {
-        "status": "not-validated",
-        "reason": "Inventoried in wave 1; no execution evidence is claimed.",
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification",
     }
-    if path in CUSTOMER_PATHS:
+    if path == "samples/gp-local-dev/submit-buffer.sh":
         validation = {
-            "status": "scheduled-nightly",
-            "reason": (
-                "Selected for execution by the advisory nightly lane; "
-                "no successful run is claimed by this manifest."
-            ),
+            "status": "passed",
+            "reason": "Submitted geometry.buffer, reached successful, fetched GeoJSON, and cleaned up.",
             "runner": "scripts/examples/validate-customer-paths.sh",
-            "scenario": CUSTOMER_PATHS[path],
+            "scenario": "gp-local-dev",
+            "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh gp-local-dev",
+        }
+    elif path == "scripts/demos/run-mobile-offline-demo.sh":
+        validation = {
+            "status": "blocked",
+            "reason": "Candidate returned an empty feature collection for seeded layer 68910.",
+            "runner": "scripts/examples/validate-customer-paths.sh",
+            "scenario": "mobile-offline",
+            "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh mobile-offline",
+            "blockedBy": ["https://github.com/honua-io/honua-server/issues/3836"],
+        }
+    elif path == "scripts/demos/run-stac-ops-demo.sh":
+        validation = {
+            "status": "blocked",
+            "reason": "Core STAC checks passed, but the release candidate does not ship /samples/stac-ops/.",
+            "runner": "scripts/examples/validate-customer-paths.sh",
+            "scenario": "stac-ops",
+            "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh stac-ops",
+            "blockedBy": ["https://github.com/honua-io/honua-server/issues/3837"],
         }
     result: dict[str, object] = {
         "id": stable_id(kind, path, suffix),
@@ -80,14 +105,30 @@ def docs_entries() -> list[dict[str, object]]:
                 continue
             inside_fence = True
             ordinal += 1
-            result.append(entry(
+            item = entry(
                 "docs-fence",
                 relative,
                 str(ordinal),
                 fence=ordinal,
                 line=line_number,
                 language=match.group("language") or "plain",
-            ))
+            )
+            if relative == "docs/get-started/quickstart.md":
+                if ordinal in QUICKSTART_PASSED_FENCES:
+                    item["validation"] = {
+                        "status": "passed",
+                        "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
+                        "runner": "scripts/docs-validation/validate-quickstart.sh",
+                        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+                    }
+                elif ordinal in QUICKSTART_BLOCKERS:
+                    item["validation"] = {
+                        "status": "blocked",
+                        "reason": "Optional Console surface has no compatible shipped image in this candidate lane.",
+                        "check": "docs-validation annotation mode=skip",
+                        "blockedBy": [QUICKSTART_BLOCKERS[ordinal]],
+                    }
+            result.append(item)
     return result
 
 
@@ -111,6 +152,11 @@ def build_manifest() -> dict[str, object]:
         counts[status] = counts.get(status, 0) + 1
     return {
         "schemaVersion": 1,
+        "evidence": {
+            "recordedAt": EVIDENCE_RECORDED_AT,
+            "candidateImage": CANDIDATE_IMAGE,
+            "candidateSourceRevision": CANDIDATE_SOURCE_REVISION,
+        },
         "scope": {
             "docs": "Every fenced block in README.md and docs/**/*.md",
             "samples": "Every file below samples/",
@@ -118,8 +164,9 @@ def build_manifest() -> dict[str, object]:
             "quickstartAdjacentScripts": "scripts/demos/*, scripts/dev/*sample*, scripts/ci/*quickstart*",
         },
         "statusDefinitions": {
-            "scheduled-nightly": "The shipped example is configured to execute against a locally built candidate; the manifest does not claim that an unobserved run passed.",
-            "not-validated": "The example is inventoried, but wave 1 has not produced execution evidence for it.",
+            "passed": "Observed execution against the exact candidate satisfied all assertions.",
+            "blocked": "Execution reached an unshipped surface or product defect and includes explicit blockedBy issue links.",
+            "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made.",
         },
         "summary": {"total": len(entries), "byStatus": counts},
         "entries": entries,
@@ -130,11 +177,24 @@ def render() -> str:
     return json.dumps(build_manifest(), indent=2, sort_keys=False) + "\n"
 
 
+def validate(manifest: dict[str, object]) -> None:
+    evidence = manifest["evidence"]  # type: ignore[index]
+    image = str(evidence["candidateImage"])  # type: ignore[index]
+    if "@sha256:" not in image:
+        raise ValueError("candidateImage must be digest-pinned")
+    for item in manifest["entries"]:  # type: ignore[index]
+        validation = item["validation"]
+        if validation["status"] == "blocked" and not validation.get("blockedBy"):
+            raise ValueError(f"blocked entry lacks blockedBy: {item['id']}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    expected = render()
+    manifest = build_manifest()
+    validate(manifest)
+    expected = json.dumps(manifest, indent=2, sort_keys=False) + "\n"
     if args.check:
         actual = MANIFEST.read_text(encoding="utf-8") if MANIFEST.exists() else ""
         if actual != expected:
