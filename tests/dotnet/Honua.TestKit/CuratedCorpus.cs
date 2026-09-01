@@ -134,7 +134,7 @@ public sealed class CuratedCorpus
             throw new InvalidDataException($"Curated corpus asset path contains an unsafe segment: {relativePath}");
         }
 
-        var path = Path.GetFullPath(Path.Combine(_root, Path.Combine(segments)));
+        var path = Path.GetFullPath(Path.Join(_root, relativePath));
         var rootPrefix = _root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         if (!path.StartsWith(rootPrefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
         {
