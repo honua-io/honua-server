@@ -139,6 +139,7 @@ FROM ${GDAL_BASE_IMAGE} AS native-tools
 ARG GDAL_VERSION
 ARG DOTNET_RUNTIME_VERSION
 ARG PDAL_VERSION
+ARG HONUA_GIT_SHA=
 
 # Install the .NET runtime onto the GDAL (Ubuntu) base via the dotnet-install
 # script. The GDAL base already provides gdalwarp / ogr2ogr on PATH.
@@ -259,6 +260,7 @@ ENV DOTNET_RUNNING_IN_CONTAINER=true \
 LABEL org.opencontainers.image.title="honua-worker-etl" \
       org.opencontainers.image.description="Honua heavyweight GP/ETL worker (GDAL + PDAL equipped, native runtime profile)" \
       org.opencontainers.image.licenses="Elastic-2.0" \
+      org.opencontainers.image.revision="${HONUA_GIT_SHA}" \
       honua.runtime.profile="native" \
       honua.native.gdal.version="${GDAL_VERSION}" \
       honua.native.pdal.version="${PDAL_VERSION}" \

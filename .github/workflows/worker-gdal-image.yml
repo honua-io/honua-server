@@ -100,6 +100,8 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: honua-worker-gdal:boundary
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}

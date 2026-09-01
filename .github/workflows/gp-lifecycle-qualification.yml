@@ -11,6 +11,10 @@ on:
         description: Exact digest-addressed Honua GDAL worker candidate
         required: true
         type: string
+      source_sha:
+        description: Full source commit represented by both candidate images
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,6 +27,7 @@ jobs:
     env:
       HONUA_SERVER_IMAGE: ${{ inputs.server_image }}
       HONUA_WORKER_IMAGE: ${{ inputs.worker_image }}
+      HONUA_GP_SOURCE_SHA: ${{ inputs.source_sha }}
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-lifecycle
     steps:
       - uses: actions/checkout@v7.0.1

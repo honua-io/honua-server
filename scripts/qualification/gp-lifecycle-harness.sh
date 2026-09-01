@@ -22,6 +22,11 @@ require_digest() {
 
 require_digest HONUA_SERVER_IMAGE
 require_digest HONUA_WORKER_IMAGE
+if [[ ! "${HONUA_GP_SOURCE_SHA:-}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  echo "HONUA_GP_SOURCE_SHA must be the full candidate commit SHA" >&2
+  exit 2
+fi
+candidate_source_sha="${HONUA_GP_SOURCE_SHA,,}"
 command -v docker >/dev/null
 command -v curl >/dev/null
 command -v jq >/dev/null
@@ -34,6 +39,15 @@ image_id() {
   docker image inspect --format '{{index .RepoDigests 0}}' "$1"
 }
 
+verify_image_revision() {
+  local name="$1" image="$2" revision
+  revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${image}")"
+  if [[ "${revision,,}" != "${candidate_source_sha}" ]]; then
+    echo "${name} image revision '${revision}' does not match candidate ${candidate_source_sha}" >&2
+    exit 2
+  fi
+}
+
 write_receipt() {
   local scenario="$1" outcome="$2" finding="$3" job_id="${4:-}" terminal="${5:-}" output_sha="${6:-}"
   jq -n \
@@ -43,7 +57,7 @@ write_receipt() {
     --arg server_image "${HONUA_SERVER_IMAGE}" --arg worker_image "${HONUA_WORKER_IMAGE}" \
     --arg postgres_image "$(compose images -q postgres | xargs docker image inspect --format '{{index .RepoDigests 0}}')" \
     --arg redis_image "$(compose images -q redis | xargs docker image inspect --format '{{index .RepoDigests 0}}')" \
-    --arg source_sha "$(git -C "${repo_root}" rev-parse HEAD)" --arg completed_at "$(now)" \
+    --arg source_sha "${candidate_source_sha}" --arg completed_at "$(now)" \
     '{schema:$schema,scenario:$scenario,outcome:$outcome,finding:(if $finding == "" then null else $finding end),candidate:{source_sha:$source_sha,server_image:$server_image,worker_image:$worker_image,postgres_image:$postgres_image,redis_image:$redis_image},job:{id:$job_id,terminal_state:$terminal,output_sha256:$output_sha256},completed_at:$completed_at}' \
     > "${receipt_root}/${scenario}.json"
 }
@@ -115,12 +129,21 @@ run_async_baseline() {
 }
 
 run_duplicate_delivery() {
-  local scenario=duplicate-delivery job score terminal state digest
-  # Redis uses a sorted set, so adding the same delivery twice must remain one member.
-  job="$(submit_async)" || { write_receipt "${scenario}" fail "submission failed"; compose start worker >/dev/null; return 1; }
+  local scenario=duplicate-delivery job score terminal state digest record attempts deadline
+  # Two consumers are required: re-deliver after the first has claimed and begun executing.
+  compose up -d --scale worker=2 worker >/dev/null
+  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { write_receipt "${scenario}" fail "submission failed"; return 1; }
+  wait_running "${job}" || { write_receipt "${scenario}" fail "job did not reach running before redelivery" "${job}"; return 1; }
   score="$(date +%s%3N)"
   compose exec -T redis redis-cli ZADD controlplane:jobqueue:pending "${score}" "${job}" >/dev/null
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:pending "${score}" "${job}" >/dev/null
+  deadline=$((SECONDS + 30)); attempts=0
+  while (( SECONDS < deadline )); do
+    record="$(compose exec -T redis redis-cli --raw GET "controlplane:job:${job}")"
+    attempts="$(jq -r '.attemptCount // 0' <<<"${record}")"
+    (( attempts >= 2 )) && break
+    sleep 0.1
+  done
+  (( attempts >= 2 )) || { write_receipt "${scenario}" fail "FINDING: redelivery was not claimed" "${job}"; return 1; }
   terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: duplicate delivery lost job" "${job}"; return 1; }
   state="$(jq -r '.status' <<<"${terminal}")"
   digest="$(result_digest "${job}" 2>/dev/null || true)"
@@ -221,7 +244,7 @@ run_timeout() {
 
 run_disruption() {
   local component="$1" boundary="$2" scenario="restart-${component}-${boundary}" job terminal state before after process=geometry.buffer body="${payload}"
-  if [[ "${component}" == worker ]]; then process=gdal.ogr2ogr; body="${native_payload}"; fi
+  if [[ "${component}" == worker || "${boundary}" == running ]]; then process=gdal.ogr2ogr; body="${native_payload}"; fi
   job="$(submit_async "${process}" "${body}")" || { write_receipt "${scenario}" fail "submission failed"; return 1; }
   if [[ "${boundary}" == running ]] && ! wait_running "${job}"; then
     write_receipt "${scenario}" fail "FINDING: job reached terminal state before running boundary could be disrupted" "${job}"
@@ -247,6 +270,8 @@ failures=0
 cleanup() { compose down --volumes --remove-orphans >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 if [[ "${HONUA_GP_SKIP_PULL:-false}" != true ]]; then compose pull || exit 1; fi
+verify_image_revision HONUA_SERVER_IMAGE "${HONUA_SERVER_IMAGE}"
+verify_image_revision HONUA_WORKER_IMAGE "${HONUA_WORKER_IMAGE}"
 compose up -d || exit 1
 wait_ready || { write_receipt topology fail "topology did not become ready"; exit 1; }
 run_sync || failures=$((failures + 1))
