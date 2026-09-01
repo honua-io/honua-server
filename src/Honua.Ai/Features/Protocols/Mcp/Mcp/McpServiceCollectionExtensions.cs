@@ -7,7 +7,6 @@ using Honua.Ai.Grounding;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
-using Honua.Ai.Protocols.Mcp.Tools.EsriGp;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -62,14 +61,6 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecutePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeOperationTool>());
-
-        if (configuration.GetSection("Mcp:Profiles").GetChildren()
-            .Any(profile => string.Equals(profile.Value, "esri-gp", StringComparison.OrdinalIgnoreCase)))
-        {
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, EsriGpListTasksTool>());
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, EsriGpDescribeTaskTool>());
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, EsriGpExecuteTaskTool>());
-        }
 
         // ── MCP capability-breadth tools (#2813) ──────────────────────────────
         // honua_list_jobs: caller-scoped job enumeration (status filter + cursor

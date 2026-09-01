@@ -10961,6 +10961,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_MaxZoomScopedStyle_OmitsLayerAtOrAboveThreshold",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_MinZoomScopedStyle_OmitsLayerBelowThreshold",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsZoomGatingTests.Wms_GetMap_UnscopedStyle_RendersAtEveryScale",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.RenderedRasterBaselineTests.Wms_GetMap_Point_MatchesCommittedBaseline",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.RenderedRasterBaselineTests.Wms_GetMap_Transparent_MatchesCommittedBaseline",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms111_GetCapabilities_LegendDimensionsMatchAdvertisedImage",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms111_GetLegendGraphic_ReturnsPngLegend",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetCapabilities_AdvertisesLegendUrlForLegendCapableLayer",
@@ -11164,7 +11166,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithValidBbox_AsImage_ReturnsImage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithWideDatelineCrossingBbox_In3857_PreservesWrappedExtent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Handlers_WithSameIdStacPublication_IgnoreProtocolDuplicate",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerRenderCapacityTests.Export_WhenRasterCapacityUnavailable_ReturnsServiceUnavailable"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerRenderCapacityTests.Export_WhenRasterCapacityUnavailable_ReturnsServiceUnavailable",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.RenderedRasterBaselineTests.MapServer_Export_Point_MatchesCommittedBaseline"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
@@ -12643,6 +12646,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.RenderedRasterBaselineTests.StaticMap_Overlays_MatchesCommittedBaseline",
         "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.Bbox_DatelineCrossing_ReturnsImage",
         "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.Bbox_InvalidBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.Bbox_InvertedLatitudeRange_ReturnsBadRequest",
