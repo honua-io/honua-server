@@ -39,9 +39,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
-      # workflow_run.head_sha is the canonical subject for both fork and
-      # non-fork completions; pull_requests may be empty for fork runs.
-      group: review-resolve-pr-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha) || github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || github.run_id }}-head-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha) || github.event.pull_request['head']['sha'] || github.event.client_payload.head_sha || github.run_id }}
+      # Keep all heads for one PR in the same cancellation group. Fork
+      # workflow_run payloads may omit pull_requests, so repository + branch is
+      # the stable subject fallback for those completions.
+      group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}
       cancel-in-progress: true
     permissions:
       contents: read
