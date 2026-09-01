@@ -11,6 +11,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Geoprocessing;
@@ -26,9 +27,11 @@ namespace Honua.Server.Tests.Features.Geoprocessing;
 /// the production composition root then wires the durable IConnectionMultiplexer, the job
 /// store, the result-package store, the queue, AND — per the #1841 fix — the in-process
 /// worker. Unlike <c>GPServerDurableRuntimeTests</c>, which calls <c>AddJobWorker()</c> in
-/// its own <c>ConfigureServices</c> override, this test deliberately does not replace the
-/// worker or executor. It proves the production composition and real geometry-buffer
-/// executor advance the durable job through a terminal state.
+/// its own <c>ConfigureServices</c> override to compensate for the missing wiring, this
+/// test deliberately does NOT register the worker itself. That isolates the fix to a single
+/// variable: the only thing that drains the queue is the worker the composition root now
+/// registers. If it regresses to dead code, the worker assertion fails immediately and the
+/// end-to-end poll would otherwise time out, reproducing the original bug.
 /// </remarks>
 [Collection("Redis")]
 [Protocol(TestProtocols.GPServer)]
@@ -36,6 +39,7 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis)
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
     private const string ServiceId = WebAppFixture.TestServiceId;
+    private const string DurableArtifactUri = "https://example.test/composition-root-gp-output.geojson";
 
     [IntegrationTest]
     [Operation(Operations.Create)]
@@ -61,6 +65,23 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis)
                 // #1827/#1787.
                 builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
                 builder.UseSetting("Licensing:DevGrantEdition", "Pro");
+            })
+            .ConfigureServices(services =>
+            {
+                // With the DevGrant=Pro + Redis host settings above, the production
+                // composition root already wires the durable IConnectionMultiplexer, the job
+                // store/result-package store/queue, AND (per the #1841 fix) the worker. The
+                // only substitution this test makes is the executor: replace the production
+                // geometry.buffer executor with a deterministic fixture so the test exercises
+                // the worker wiring and the GPServer protocol projection independently of the
+                // buffer implementation. The worker resolves IEnumerable<IJobExecutor> lazily
+                // at host start, so this post-composition-root substitution is honored.
+                //
+                // NOTE: AddJobWorker() is intentionally NOT called here. The composition root
+                // is solely responsible for it; if it regresses to dead code, the worker
+                // assertion and the end-to-end poll below both fail.
+                services.RemoveAll<IJobExecutor>();
+                services.AddSingleton<IJobExecutor, SuccessfulGpServerJobExecutor>();
             });
 
         await fixture.InitializeAsync();
@@ -112,7 +133,7 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis)
             var resultRoot = resultDoc.RootElement;
             resultRoot.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             resultRoot.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
-            resultRoot.GetProperty("value").GetString().Should().NotBeNullOrWhiteSpace();
+            resultRoot.GetProperty("value").GetString().Should().Be(DurableArtifactUri);
 
             var jobStore = fixture.GetService<IExecutionJobStore>();
             var durableJob = await jobStore.GetAsync(jobId!);
@@ -178,4 +199,18 @@ public sealed class GpJobWorkerCompositionRootTests(RedisFixture redis)
         return multiplexer.GetServer(endpoints[0]);
     }
 
+    private sealed class SuccessfulGpServerJobExecutor : IJobExecutor
+    {
+        public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
+
+        public async Task<JobExecutionResult> ExecuteAsync(
+            ExecutionJobRecord job,
+            IJobExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            await context.ReportProgressAsync(75, "Producing GPServer test output", cancellationToken);
+            await context.PublishArtifactAsync(DurableArtifactUri, cancellationToken);
+            return JobExecutionResult.Succeeded();
+        }
+    }
 }

@@ -81,12 +81,6 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    // State this on the concrete production dispatcher instead of relying on the
-    // interface default. The AOT serving image builds the worker's aggregate claim
-    // fence from concrete executor instances; an explicit managed profile guarantees
-    // locally submitted GP jobs are claimable and cannot remain Queued indefinitely.
-    public IReadOnlySet<string> AcceptedRuntimeProfiles => RuntimeProfiles.DefaultAccepted;
-
     /// <summary>
     /// Set of process ids the dispatcher currently routes. Surfaced so error
     /// messages can list the supported set without hard-coding it twice.
