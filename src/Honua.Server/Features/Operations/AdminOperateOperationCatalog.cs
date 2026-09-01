@@ -26,18 +26,19 @@ internal static class AdminOperateOperationCatalog
         string? DryRunPath = null,
         HttpMethod? DryRunMethod = null,
         string? ContentType = null,
-        OperationApprovalModel? ApprovalModel = null);
+        OperationApprovalModel? ApprovalModel = null,
+        OperationClass OperationClass = OperationClass.AdminConfigChange);
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
         Read("admin.metadata.release-packages.list", "List metadata release packages", "/metadata/release-packages", "listMetadataReleasePackages"),
         Read("admin.metadata.release-packages.get", "Get metadata release package", "/metadata/release-packages/{packageId}", "getMetadataReleasePackage"),
         Read("admin.metadata.release-packages.gitops-manifest", "Get metadata release GitOps manifest", "/metadata/release-packages/{packageId}/gitops-manifest", "getMetadataReleaseGitOpsManifest"),
-        Write("admin.metadata.release-packages.create", "Create metadata release package", HttpMethod.Post, "/metadata/release-packages", "createMetadataReleasePackage", OperationSideEffectClass.CreatesMetadata),
+        Write("admin.metadata.release-packages.create", "Create metadata release package", HttpMethod.Post, "/metadata/release-packages", "createMetadataReleasePackage", OperationSideEffectClass.CreatesMetadata, operationClass: OperationClass.MetadataRelease),
         new("admin.metadata.prevalidate", "Prevalidate metadata release", HttpMethod.Post, "/metadata/prevalidate", "prevalidateMetadataReleasePackageCompatibility", OperationSideEffectClass.CreatesMetadata, OperationBlastRadiusClass.ResourceScope, true, "/metadata/prevalidate", HttpMethod.Post, ApprovalModel: OperationApprovalModel.None),
-        Write("admin.metadata.releases.activate", "Activate metadata release", HttpMethod.Post, "/metadata/releases/operations", "createMetadataReleaseOperation", OperationSideEffectClass.MutatesMetadata, OperationBlastRadiusClass.DeploymentScope),
+        Write("admin.metadata.releases.activate", "Activate metadata release", HttpMethod.Post, "/metadata/releases/operations", "createMetadataReleaseOperation", OperationSideEffectClass.MutatesMetadata, OperationBlastRadiusClass.DeploymentScope, OperationClass.MetadataRelease),
         Read("admin.metadata.releases.status", "Get metadata release status", "/metadata/releases/{packageId}/operation", "getMetadataReleaseOperationByPackageId"),
-        Write("admin.metadata.coordinated-releases.rollback", "Roll back coordinated release", HttpMethod.Post, "/metadata/coordinated-releases/operations/{operationId}/rollback", "rollbackCoordinatedReleaseOperation", OperationSideEffectClass.DestroysState, OperationBlastRadiusClass.DeploymentScope),
+        Write("admin.metadata.coordinated-releases.rollback", "Roll back coordinated release", HttpMethod.Post, "/metadata/coordinated-releases/operations/{operationId}/rollback", "rollbackCoordinatedReleaseOperation", OperationSideEffectClass.DestroysState, OperationBlastRadiusClass.DeploymentScope, OperationClass.MetadataRelease),
         Read("admin.cache.status", "Get cache status", "/cache/status", "getAdminCacheStatus"),
         Write("admin.cache.invalidate", "Invalidate cache", HttpMethod.Post, "/cache/invalidate", "invalidateAdminCache", OperationSideEffectClass.DestroysState),
         Read("admin.license.status", "Get license status", "/license/status", "getPlatformLicenseStatus"),
@@ -55,8 +56,9 @@ internal static class AdminOperateOperationCatalog
         new(id, title, HttpMethod.Get, path, openApiId, OperationSideEffectClass.ReadOnly, OperationBlastRadiusClass.ResourceScope);
 
     private static Definition Write(string id, string title, HttpMethod method, string path, string openApiId,
-        OperationSideEffectClass sideEffect, OperationBlastRadiusClass blastRadius = OperationBlastRadiusClass.ResourceScope) =>
-        new(id, title, method, path, openApiId, sideEffect, blastRadius);
+        OperationSideEffectClass sideEffect, OperationBlastRadiusClass blastRadius = OperationBlastRadiusClass.ResourceScope,
+        OperationClass operationClass = OperationClass.AdminConfigChange) =>
+        new(id, title, method, path, openApiId, sideEffect, blastRadius, OperationClass: operationClass);
 
     private static OperationDescriptor[] BuildDescriptors()
     {
@@ -222,7 +224,7 @@ internal sealed class AdminOperateOperationApprovalRequestMapper(
         {
             OperationInstanceId = context.OperationInstanceId,
             OperationId = OperationId,
-            Kind = OperationClass.AdminConfigChange,
+            Kind = definition.OperationClass,
             RequestedBy = context.PrincipalId,
             Reason = decision.Reason,
             CorrelationId = context.CorrelationId,
