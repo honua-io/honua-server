@@ -16,6 +16,14 @@
   },
   "assets": [
     {
+      "id": "mixed-crs-features",
+      "path": "mixed-crs-features.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 740,
+      "sha256": "86c36f8ad647decbb85a33abaac5470176f25b88f8b6bf89bcda01eaeebd7c19",
+      "facets": ["crs/mixed-collection", "crs/epsg-4326", "crs/epsg-3857", "crs/epsg-26904", "crs/ogc-crs84", "crs/axis-order"]
+    },
+    {
       "id": "degenerate-geometries",
       "path": "degenerate-geometries.geojson",
       "mediaType": "application/geo+json",

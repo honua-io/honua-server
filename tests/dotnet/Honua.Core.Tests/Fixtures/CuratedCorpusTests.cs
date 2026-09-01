@@ -19,13 +19,26 @@ public sealed class CuratedCorpusTests
         corpus.VerifyAll();
 
         Assert.Equal("v1", corpus.Revision);
-        Assert.Equal(9, corpus.Assets.Count);
+        Assert.Equal(10, corpus.Assets.Count);
         Assert.All(corpus.Assets, asset =>
         {
             Assert.Equal(64, asset.Sha256.Length);
             Assert.NotEmpty(asset.MediaType);
             Assert.NotEmpty(asset.Facets);
         });
+    }
+
+    [UnitTest]
+    public void MixedCrsAsset_KeepsPerFeatureSourceReferenceSystems()
+    {
+        var corpus = CuratedCorpus.Load();
+        using var document = JsonDocument.Parse(corpus.ReadAllBytes("mixed-crs-features"));
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        var sourceSystems = features.Select(feature => feature.GetProperty("properties").GetProperty("sourceCrs").GetString()).ToArray();
+
+        Assert.Equal(4, features.Length);
+        Assert.Equal(["EPSG:4326", "EPSG:3857", "EPSG:26904", "OGC:CRS84"], sourceSystems);
+        Assert.Equal("yx", features[0].GetProperty("properties").GetProperty("axisOrder").GetString());
     }
 
     [UnitTest]
