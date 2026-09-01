@@ -171,6 +171,12 @@ internal static class OperationsServiceCollectionExtensions
 
         foreach (var definition in AdminOperateOperationCatalog.Definitions)
         {
+            if (definition.ApprovalModel != Honua.Core.Features.Operations.Domain.OperationApprovalModel.None &&
+                definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
+            {
+                services.AddSingleton<IOperationApprovalRequestMapper>(
+                    new AdminOperateOperationApprovalRequestMapper(definition));
+            }
             services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
                 definition,
                 sp.GetRequiredService<IHttpClientFactory>(),

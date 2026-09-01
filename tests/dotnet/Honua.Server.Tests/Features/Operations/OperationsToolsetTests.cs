@@ -527,6 +527,60 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public void LaneD_ApprovalGatedOperations_HaveExactlyOneReplayMapper()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        using var provider = services.BuildServiceProvider();
+        var mapperCounts = services
+            .Where(static descriptor => descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+                descriptor.ImplementationInstance is AdminOperateOperationApprovalRequestMapper)
+            .Select(static descriptor => (IOperationApprovalRequestMapper)descriptor.ImplementationInstance!)
+            .GroupBy(static mapper => mapper.OperationId, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
+
+        var approvalGated = AdminOperateOperationCatalog.Descriptors
+            .Where(static descriptor => descriptor.ApprovalModel != OperationApprovalModel.None)
+            .Select(static descriptor => descriptor.OperationId)
+            .ToArray();
+        mapperCounts.Keys.Should().BeEquivalentTo(approvalGated);
+        mapperCounts.Should().OnlyContain(static pair => pair.Value == 1);
+    }
+
+    [UnitTest]
+    public void LaneD_ApprovalMappers_PreserveOperationGuardrailClass()
+    {
+        var metadataReleaseOperations = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "admin.metadata.release-packages.create",
+            "admin.metadata.releases.activate",
+            "admin.metadata.coordinated-releases.rollback"
+        };
+
+        foreach (var definition in AdminOperateOperationCatalog.Definitions
+                     .Where(static definition => definition.ApprovalModel != OperationApprovalModel.None &&
+                         definition.SideEffect != OperationSideEffectClass.ReadOnly))
+        {
+            var descriptor = AdminOperateOperationCatalog.Descriptors.Single(
+                descriptor => descriptor.OperationId == definition.OperationId);
+            var request = new OperationRequest { OperationId = definition.OperationId };
+            var mapped = new AdminOperateOperationApprovalRequestMapper(definition).Map(
+                descriptor,
+                request,
+                new OperationPolicyContext(),
+                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+            mapped.Kind.Should().Be(
+                metadataReleaseOperations.Contains(definition.OperationId)
+                    ? OperationClass.MetadataRelease
+                    : OperationClass.AdminConfigChange);
+        }
+    }
+
+    [UnitTest]
     public void LaneD_PublishedSchemas_PreserveNestedRequiredMembers_AndAdvertiseDryRun()
     {
         var descriptor = AdminOperateOperationCatalog.Descriptors.Should().ContainSingle(

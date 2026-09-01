@@ -238,6 +238,18 @@ public sealed class OperationEnvelopeArchitectureTests
     }
 
     [ArchitectureTest]
+    public void LoadSoakProductionTopology_ProvisionsFailClosedOperationPolicy()
+    {
+        var workflow = File.ReadAllText(Path.Join(
+            FindRepositoryRoot(),
+            ".github/workflows/load-soak-nightly.yml"));
+
+        Assert.Contains("ASPNETCORE_ENVIRONMENT: Production", workflow, StringComparison.Ordinal);
+        Assert.Contains("Operations__Policy__Enabled: \"true\"", workflow, StringComparison.Ordinal);
+        Assert.Contains("Operations__Policy__DefaultDecision: Deny", workflow, StringComparison.Ordinal);
+    }
+
+    [ArchitectureTest]
     public async Task ProductionStartup_WithoutExactlyOneActuator_FailsClosed()
     {
         var descriptor = Descriptor();
