@@ -1548,6 +1548,7 @@ internal static class StudioPackageEndpoints
         Guid versionId,
         CreateStudioPublicationRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1590,13 +1591,21 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var publication = await service.CreatePublicationRequestAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.CreatePublicationRequestAsync(
                 itemId,
                 versionId,
                 request.Intent,
                 request.WarningAcknowledgement,
-                ConsolePrincipal.ResolveActorId(context.User),
+                actor,
+                BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+            var publication = receipt.Value;
             if (publication is null)
             {
                 return NotFound(context, "Studio content version was not found.");
@@ -1680,6 +1689,7 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         Guid versionId,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1701,11 +1711,19 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var draft = await service.ReopenVersionAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.ReopenVersionAsync(
                 itemId,
                 versionId,
-                ConsolePrincipal.ResolveActorId(context.User),
+                actor,
+                BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+            var draft = receipt.Value;
             if (draft is null)
             {
                 return NotFound(context, "Studio content version was not found.");
@@ -1732,6 +1750,7 @@ internal static class StudioPackageEndpoints
         Guid itemId,
         CreateStudioRollbackRequest request,
         [FromServices] IStudioPackageLifecycleService service,
+        [FromServices] IStudioDraftMutationRuntime mutationRuntime,
         [FromServices] StudioEndpointAuthorization authorization,
         [FromServices] ILogger<StudioPackageEndpointsMarker> logger,
         HttpContext context)
@@ -1776,13 +1795,21 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var rollback = await service.RollbackAsync(
+            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var receipt = await mutationRuntime.RollbackAsync(
                 itemId,
                 request.TargetVersionId,
                 request.Target,
-                ConsolePrincipal.ResolveActorId(context.User),
+                actor,
                 request.Reason,
+                BuildMutationContext(context, actor),
                 context.RequestAborted).ConfigureAwait(false);
+            SetOperationHeaders(context, receipt.Operation);
+            if (receipt.Operation.Status != OperationHandleStatus.Completed)
+            {
+                return MutationDecision(context, receipt.Operation);
+            }
+            var rollback = receipt.Value;
             if (rollback is null)
             {
                 return NotFound(context, "Studio content version was not found.");

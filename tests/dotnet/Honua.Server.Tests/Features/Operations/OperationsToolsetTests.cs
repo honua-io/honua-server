@@ -73,10 +73,22 @@ public sealed class OperationsToolsetTests
                 StudioDraftOperations.Delete,
                 StudioDraftOperations.Validate,
                 StudioDraftOperations.PreviewPlan,
-                StudioDraftOperations.SaveVersion);
+                StudioDraftOperations.SaveVersion,
+                StudioDraftOperations.CreatePublicationRequest,
+                StudioDraftOperations.ReopenVersion,
+                StudioDraftOperations.Rollback);
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
             descriptor.ImplementationType == typeof(StudioDraftDeleteExecutor));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(StudioCreatePublicationRequestExecutor));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(StudioReopenVersionExecutor));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(StudioRollbackExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationEnvelopeFactory) &&
             descriptor.Lifetime == ServiceLifetime.Singleton);

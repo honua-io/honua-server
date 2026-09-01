@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
@@ -17,6 +18,15 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 
 public sealed class StudioDraftOperationRuntimeTests
 {
+    [Fact]
+    public void PublicationRequest_UsesStudioApprovalLane()
+    {
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == StudioDraftOperations.CreatePublicationRequest);
+
+        descriptor.ApprovalModel.Should().Be(OperationApprovalModel.StudioPublishRequest);
+    }
+
     [Theory]
     [InlineData(StudioDraftOperations.Validate)]
     [InlineData(StudioDraftOperations.PreviewPlan)]
@@ -239,6 +249,32 @@ public sealed class StudioDraftOperationRuntimeTests
         replay.Request.Parameters[StudioDraftOperations.PayloadParameter].Should().NotBeNull();
         replay.TenantId.Should().Be("tenant-a");
         replay.SchemaName.Should().Be("tenant_schema");
+    }
+
+    [Fact]
+    public async Task RollbackProposalPlans_AreHighRisk()
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        var executor = new StudioRollbackExecutor(lifecycle, TimeProvider.System);
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == StudioDraftOperations.Rollback);
+        var payload = JsonSerializer.Serialize(new StudioRollbackPayload
+        {
+            ItemId = Guid.NewGuid(),
+            TargetVersionId = Guid.NewGuid(),
+            Target = StudioRollbackPointer.Current,
+        }, StudioDraftOperationJsonContext.Default.StudioRollbackPayload);
+        var request = Request(StudioDraftOperations.Rollback, payload);
+
+        var validation = await executor.ValidateAsync(request);
+        var mapped = new StudioDraftApprovalRequestMapper(StudioDraftOperations.Rollback).Map(
+            descriptor,
+            request,
+            new OperationPolicyContext(),
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+        validation.ApprovalPlan!.RiskLevel.Should().Be(ProposalRiskLevel.High);
+        mapped.Plan!.RiskLevel.Should().Be(ProposalRiskLevel.High);
     }
 
     [UnitTest]

@@ -54,6 +54,9 @@ internal static class OperationsServiceCollectionExtensions
                      StudioDraftOperations.Validate,
                      StudioDraftOperations.PreviewPlan,
                      StudioDraftOperations.SaveVersion,
+                     StudioDraftOperations.CreatePublicationRequest,
+                     StudioDraftOperations.ReopenVersion,
+                     StudioDraftOperations.Rollback,
                  })
         {
             services.AddSingleton<IOperationApprovalRequestMapper>(
@@ -99,6 +102,9 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftValidateExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftPreviewPlanExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioSaveVersionExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioCreatePublicationRequestExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioReopenVersionExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioRollbackExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, DeployRollbackOperationExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, CoordinatedReleaseRollbackOperationExecutor>());
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
