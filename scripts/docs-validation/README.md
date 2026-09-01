@@ -24,7 +24,12 @@ bash scripts/docs-validation/validate-quickstart.sh
 ```
 
 Failure evidence is retained under `artifacts/docs-validation/quickstart/`.
-The harness always removes its containers and volumes on exit.
+By default, the harness removes its containers and volumes on exit.
+
+Set `HONUA_DOCS_PRESERVE_STACK=1` to leave the validated Compose project and
+its volumes running for a subsequent local journey stage. The caller then owns
+teardown; for the default project, run
+`docker compose --project-name honua-docs-quickstart down --volumes --remove-orphans`.
 
 ## Path to required at RC
 
