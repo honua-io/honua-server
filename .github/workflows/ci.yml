@@ -1982,7 +1982,7 @@ jobs:
     name: MCP Certification (${{ matrix.transport }})
     if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
+    needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
     outputs:
       # Matrix job: GHA keeps the last-finishing leg's output.
@@ -2420,7 +2420,7 @@ jobs:
     # critical path.
     if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
     runs-on: ubuntu-latest
-    needs: [build, changes, test-all, core-package-compatibility, postgres-compat]
+    needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
