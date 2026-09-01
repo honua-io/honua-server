@@ -14,11 +14,13 @@ ROOT = Path(__file__).resolve().parents[3]
 ACTION = ROOT / ".github" / "actions" / "lean-gate" / "action.yml"
 SCOPE_SCRIPT = ROOT / "scripts" / "ci" / "compute-lean-gate-build-scope.sh"
 FORMAT_SCOPE_SCRIPT = ROOT / "scripts" / "ci" / "compute-lean-gate-format-scope.sh"
+FORMAT_ACTION = ROOT / ".github" / "actions" / "format-check" / "action.yml"
 PR_GATE = ROOT / ".github" / "workflows" / "pr-gate.yml"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 PRE_PR = ROOT / "scripts" / "ci" / "pre-pr-check.sh"
 TEXT = ACTION.read_text(encoding="utf-8")
 PRE_PR_TEXT = PRE_PR.read_text(encoding="utf-8")
+FORMAT_TEXT = FORMAT_ACTION.read_text(encoding="utf-8")
 
 
 def require(pattern: str, description: str, text: str = TEXT) -> None:
@@ -33,6 +35,7 @@ require(
 require(
     r"dotnet format Honua\.sln --verify-no-changes --no-restore ",
     "format without repeating restore after the full build",
+    text=FORMAT_TEXT,
 )
 require(
     r"dotnet test tests/dotnet/Honua\.Server\.Tests/Honua\.Server\.Tests\.csproj \\\s+--no-build \\\s+--no-restore",
@@ -106,19 +109,26 @@ require(
     "the format check",
 )
 require(
+    r"uses: \./\.github/actions/format-check",
+    "delegate format execution to the shared format action",
+)
+require(
     r"run: scripts/ci/compute-lean-gate-format-scope\.sh",
     "compute the format scope with the shared script",
+    text=FORMAT_TEXT,
 )
 require(
     r"dotnet format Honua\.sln --verify-no-changes --no-restore --verbosity diagnostic \\\s+"
     r"--include \"\$\{include_paths\[@\]\}\"",
     "run the scoped format check over the same solution workspace with the "
     "same --verify-no-changes/--no-restore contract as the full run",
+    text=FORMAT_TEXT,
 )
 require(
     r"include list is missing or empty",
     "fail loudly when format scope says 'affected' without a non-empty "
     "include list",
+    text=FORMAT_TEXT,
 )
 
 if not SCOPE_SCRIPT.is_file():
@@ -160,8 +170,31 @@ require(
     text=PR_GATE_TEXT,
 )
 require(
-    r"uses: \./\.github/actions/lean-gate\n(?:.*\n)*?\s+format-scope: affected",
-    "have pr-gate.yml pass format-scope: affected",
+    r"format:\n[\s\S]*?uses: \./\.github/actions/format-check\n"
+    r"\s+with:\n\s+format-scope: affected",
+    "run affected-scope format in a parallel PR Gate job",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"uses: \./\.github/actions/lean-gate\n(?:.*\n)*?\s+run-format: 'false'",
+    "disable only the serialized PR format invocation",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, format\]",
+    "keep the required PR Gate context as a fail-closed aggregator",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"format:\n[\s\S]*?- name: Await exact-head review\n"
+    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?exit 1",
+    "fail the format job on enforced attempt 1 so rerun-failed-jobs releases it",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"required:\n[\s\S]*?- name: Revalidate exact-head review before success\n"
+    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?Review Gate",
+    "revalidate exact-head review after both parallel paths complete",
     text=PR_GATE_TEXT,
 )
 require(

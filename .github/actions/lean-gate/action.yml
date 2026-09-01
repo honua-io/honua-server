@@ -1,18 +1,14 @@
 name: Lean Gate
 description: >
-  Shared LEAN gate: warnings-as-errors Release build + solution-wide format check
-  + the Fast/architecture/MCP-governance unit smoke. Single source of truth for
-  BOTH the per-PR `PR Gate` job (.github/workflows/pr-gate.yml) and the
-  `Merge Queue Gate` job (.github/workflows/ci.yml). Keeping one definition is
-  deliberate — two hand-maintained copies of a gate is exactly the drift that
-  produced #2865.
+  Shared LEAN gate: warnings-as-errors Release build + optional shared format
+  check + the Fast/architecture/MCP-governance unit smoke. Single source of
+  truth for BOTH the per-PR verification job (.github/workflows/pr-gate.yml)
+  and the `Merge Queue Gate` job (.github/workflows/ci.yml).
 
-  The two callers differ in exactly two inputs: `PR Gate` passes
-  `build-scope: affected` and `format-scope: affected`, `Merge Queue Gate`
-  keeps both `full`. See the "Compute gate build scope" and "Compute gate
-  format scope" steps for why those splits are safe and what backstops them.
-  Everything else — every test step, every timeout — is identical for both,
-  on purpose.
+  PR verification passes `build-scope: affected` and disables the in-action
+  format step because the workflow runs that same shared format action in a
+  parallel job. `Merge Queue Gate` keeps both scopes full and runs format
+  inline. Every test step and timeout remains identical for both callers.
 
   Callers must run actions/checkout and ./.github/actions/setup-dotnet-ci first
   (and may reclaim runner disk); this action owns only the gate itself.
@@ -57,6 +53,13 @@ inputs:
       scripts/ci/compute-lean-gate-format-scope.sh.
     required: false
     default: 'full'
+  run-format:
+    description: >
+      Whether to run the shared format check inline. Defaults to true so every
+      caller retains format coverage unless it explicitly supplies an
+      equivalent required job.
+    required: false
+    default: 'true'
   build-timeout-minutes:
     description: 'Cap for the warnings-as-errors build step.'
     required: false
@@ -182,36 +185,11 @@ runs:
     # never reaches trunk unverified. The scope script also refuses to narrow
     # past its include-file bound instead of truncating: a truncated include
     # list would be a silent coverage hole.
-    - name: Compute gate format scope
-      id: format-scope
-      shell: bash
-      env:
-        FORMAT_SCOPE: ${{ inputs.format-scope }}
-        GITHUB_EVENT_NAME: ${{ github.event_name }}
-      run: scripts/ci/compute-lean-gate-format-scope.sh
-
     - name: Format Check
-      shell: bash
-      # Restore already completed above and produced assets for every solution
-      # project, whatever the build or format scope was. Re-evaluating restore
-      # here adds network/project work without increasing format coverage.
-      env:
-        GATE_FORMAT_MODE: ${{ steps.format-scope.outputs.mode }}
-        GATE_FORMAT_INCLUDE_FILE: ${{ steps.format-scope.outputs.include-file }}
-      run: |
-        if [[ "${GATE_FORMAT_MODE}" == "affected" ]]; then
-          if [[ ! -s "${GATE_FORMAT_INCLUDE_FILE}" ]]; then
-            echo "::error::format scope is 'affected' but the include list is missing or empty"
-            exit 1
-          fi
-          mapfile -t include_paths < "${GATE_FORMAT_INCLUDE_FILE}"
-          dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic \
-            --include "${include_paths[@]}"
-        elif [[ "${GATE_FORMAT_MODE}" == "skip" ]]; then
-          echo "::notice::Format check skipped: the diff has no surviving formattable files and no format-sensitive configuration. The merge train's full-solution format remains the backstop."
-        else
-          dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
-        fi
+      if: inputs.run-format == 'true'
+      uses: ./.github/actions/format-check
+      with:
+        format-scope: ${{ inputs.format-scope }}
 
     - name: Create Test Results Directory
       shell: bash
