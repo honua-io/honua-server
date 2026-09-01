@@ -37,6 +37,16 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed partial class McpTaxonomyAlignmentTests
 {
+    private static readonly string[] DeferredAnalysisToolNames =
+    {
+        "honua_buffer_features",
+        "honua_overlay_features",
+        "honua_summarize_statistics",
+        "honua_reproject_features",
+        "honua_join_features",
+        "honua_export_dataset"
+    };
+
     private static readonly string[] TaxonomyToolNames =
     {
         "honua_validate_plan",
@@ -184,6 +194,34 @@ public sealed partial class McpTaxonomyAlignmentTests
             rosterTypes,
             "BuildTools must enumerate every static IMcpTool registered by "
             + "McpServiceCollectionExtensions.AddMcpDataAccessSurface with all capability gates enabled");
+    }
+
+    [UnitTest]
+    public void DeferredAnalysisTools_AreNotAdvertisedOrRegistered()
+    {
+        var registryNames = new CapabilityRegistry().All
+            .Where(d => d.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal))
+            .Select(d => d.McpToolName)
+            .Where(n => n is not null)
+            .Cast<string>();
+
+        var services = new ServiceCollection();
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Mcp:Profiles:0"] = "analysis"
+            })
+            .Build());
+        var registeredNames = services
+            .Where(d => d.ServiceType == typeof(IMcpTool))
+            .Select(d => d.ImplementationType?.GetField("ToolName")?.GetRawConstantValue() as string)
+            .Where(n => n is not null)
+            .Cast<string>();
+
+        registryNames.Should().NotIntersectWith(DeferredAnalysisToolNames,
+            "capability discovery must not claim deferred analysis verbs");
+        registeredNames.Should().NotIntersectWith(DeferredAnalysisToolNames,
+            "configuration must not re-enable deferred analysis verbs without executable implementations");
     }
 
     [UnitTest]
