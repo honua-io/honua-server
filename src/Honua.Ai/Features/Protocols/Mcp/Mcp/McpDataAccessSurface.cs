@@ -71,6 +71,7 @@ internal sealed class McpDataAccessSurface
         _profiles = configuredOptions.Profiles
             .Append("base")
             .Where(static profile => !string.IsNullOrWhiteSpace(profile))
+            .Where(McpOptions.IsSupportedProfile)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(static profile => profile, StringComparer.OrdinalIgnoreCase)
             .ToArray();

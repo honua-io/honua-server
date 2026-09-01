@@ -93,6 +93,34 @@ public sealed class McpAnalysisProfileTests
     }
 
     [UnitTest]
+    public async Task Initialize_DoesNotAdvertiseUnknownConfiguredProfile()
+    {
+        var surface = new McpDataAccessSurface(
+            [],
+            [],
+            NullLogger<McpDataAccessSurface>.Instance,
+            options: Options.Create(new McpOptions { Profiles = ["analysys"] }));
+        using var paramsDocument = JsonDocument.Parse(
+            """{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"analysis-test","version":"1"}}""");
+        using var idDocument = JsonDocument.Parse("1");
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AuthenticatedHttpContext(),
+            new McpJsonRpcRequest
+            {
+                JsonRpc = "2.0",
+                Id = idDocument.RootElement.Clone(),
+                Method = "initialize",
+                Params = paramsDocument.RootElement.Clone()
+            },
+            CancellationToken.None);
+
+        response!.Result!.Value.GetProperty("capabilities").GetProperty("profiles")
+            .EnumerateArray().Select(value => value.GetString())
+            .Should().Equal("base");
+    }
+
+    [UnitTest]
     public async Task BufferFeatures_SubmitsSingleCanonicalJobPlan()
     {
         var jobService = Substitute.For<IGeoprocessingJobService>();
@@ -119,6 +147,28 @@ public sealed class McpAnalysisProfileTests
         submitted.Steps[0].ProcessId.Should().Be("analytics.buffer-aggregate");
         submitted.Steps[0].Inputs.Should().ContainKey("layerId").WhoseValue.Should().Be("0");
         submitted.Steps[0].Inputs.Should().ContainKey("distance").WhoseValue.Should().Be("500");
+    }
+
+    [UnitTest]
+    public async Task BufferFeatures_ProjectsFalseDissolveDefault()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        AnalysisPlan? submitted = null;
+        jobService.SubmitJobAsync(
+                Arg.Do<AnalysisPlan>(plan => submitted = plan),
+                Arg.Any<string?>(),
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(CreateQueuedJob());
+        var tool = new BufferFeaturesTool(jobService, NullLogger<BufferFeaturesTool>.Instance);
+        using var arguments = JsonDocument.Parse(
+            """{"source":{"serviceId":"county_roads","layerId":0},"distance":500,"unit":"meters"}""");
+
+        await tool.InvokeAsync(
+            McpTestFactory.AuthenticatedHttpContext(), arguments.RootElement, CancellationToken.None);
+
+        submitted!.Steps[0].Inputs.Should().ContainKey("dissolve").WhoseValue.Should().Be("false");
     }
 
     [UnitTest]
@@ -178,7 +228,7 @@ public sealed class McpAnalysisProfileTests
         string verb,
         string fixtureRelativePath)
     {
-        var fixturePath = Path.Combine(
+        var fixturePath = Path.Join(
             AppContext.BaseDirectory,
             "ConformanceSchemas",
             "geospatial-mcp",
@@ -218,8 +268,10 @@ public sealed class McpAnalysisProfileTests
             McpTestFactory.AuthenticatedHttpContext(), inputs, CancellationToken.None);
 
         result.IsError.Should().BeFalse();
-        result.StructuredContent!.Value.GetProperty("status").GetString().Should().Be("succeeded");
-        result.StructuredContent.Value.GetProperty("artifacts").GetArrayLength().Should().Be(1);
+        result.StructuredContent.Should().NotBeNull();
+        var structuredContent = result.StructuredContent!.Value;
+        structuredContent.GetProperty("status").GetString().Should().Be("succeeded");
+        structuredContent.GetProperty("artifacts").GetArrayLength().Should().Be(1);
     }
 
     [UnitTest]
