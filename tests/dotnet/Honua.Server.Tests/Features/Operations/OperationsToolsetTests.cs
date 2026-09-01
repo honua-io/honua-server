@@ -12,6 +12,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Health;
@@ -1017,6 +1018,29 @@ public sealed class OperationsToolsetTests
         (await store.GetAsync(handle.OperationInstanceId)).Should().BeEquivalentTo(handle);
         audit.CanceledWriteCount.Should().Be(0,
             "terminal evidence must use a bounded token independent of the disconnected request");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ApprovedReplayWithNarrowSealedCeiling_RefusesWiderOperation()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var dispatcher = BuildDispatcher(
+            BuildExecutor(publishing, Substitute.For<IMetadataV2GraphProvider>()),
+            new AllowAllPolicyDecisionPoint());
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal-1",
+                ScopeGoverned = true,
+                RecognizedScopes = [OperatorScopeCatalog.Read],
+            },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Reason.Should().Be("Approved replay operation exceeds the sealed OAuth scope authority.");
+        await publishing.DidNotReceiveWithAnyArgs().PublishLayerAsync(default!, default!, default);
     }
 
     [UnitTest]

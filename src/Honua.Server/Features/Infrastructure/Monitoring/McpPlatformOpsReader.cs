@@ -167,7 +167,8 @@ internal sealed class McpPlatformOpsReader(
 
         return await SealProposalAsync(principal, OperationClass.Deploy, payload,
             string.IsNullOrWhiteSpace(argument.Reason) ? $"Propose rollback of deploy target '{targetId}' to prior revision '{selection.DesiredRevision}'." : argument.Reason,
-            Clean(argument.IdempotencyKey) ?? $"rollback:{targetId}:{selection.DesiredRevision}", cancellationToken).ConfigureAwait(false);
+            Clean(argument.IdempotencyKey) ?? $"rollback:{targetId}:{selection.DesiredRevision}", cancellationToken,
+            actionDiscriminator: "deploy.rollback").ConfigureAwait(false);
     }
 
     public async Task<McpProposeOperationOutput> ProposeFindingAsync(ClaimsPrincipal principal, McpProposeFindingArgument argument, CancellationToken cancellationToken)
