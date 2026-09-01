@@ -81,7 +81,7 @@ public sealed partial class CiteStatusComplianceDriftTests
 
         var canonicalTotalPassed = canonical.Values.Sum(row => row.Passed);
         var canonicalTotalTests = canonical.Values.Sum(row => row.Total);
-        var canonicalTotalFailed = canonicalTotalTests - canonicalTotalPassed;
+        var canonicalTotalNonPassing = canonicalTotalTests - canonicalTotalPassed;
 
         foreach (var (displayPath, segments) in VendorExtensionArtifacts)
         {
@@ -96,7 +96,7 @@ public sealed partial class CiteStatusComplianceDriftTests
 
             if (hasTotals)
             {
-                AssertTotals(displayPath, totalsElement, canonicalTotalPassed, canonicalTotalFailed);
+                AssertTotals(displayPath, totalsElement, canonicalTotalPassed, canonicalTotalNonPassing);
             }
 
             // Required only when the extension has neither a totals object nor a
@@ -181,7 +181,7 @@ public sealed partial class CiteStatusComplianceDriftTests
         string displayPath,
         JsonElement totalsElement,
         int canonicalTotalPassed,
-        int canonicalTotalFailed)
+        int canonicalTotalNonPassing)
     {
         var passed = totalsElement.GetProperty("passed").GetInt32();
         var failed = totalsElement.GetProperty("failed").GetInt32();
@@ -193,15 +193,12 @@ public sealed partial class CiteStatusComplianceDriftTests
             $"row in {CiteStatusRelativePath} is {canonicalTotalPassed}. Regenerate {displayPath}'s totals from the " +
             $"latest CITE Evidence Report run, or correct {CiteStatusRelativePath} if the OpenAPI extension already " +
             "reflects a newer one.");
-        failed.Should().Be(canonicalTotalFailed,
-            $"{displayPath}'s x-honua-cite-compliance.totals.failed is {failed}, but the per-suite rows in " +
-            $"{CiteStatusRelativePath} report {canonicalTotalFailed} failed assertion(s).");
-        skipped.Should().Be(0,
-            $"{displayPath}'s x-honua-cite-compliance.totals.skipped is {skipped}, but {CiteStatusRelativePath} only " +
-            $"ever documents suites at 100% pass -- a nonzero skipped count means {displayPath} is stale.");
-        cantTell.Should().Be(0,
-            $"{displayPath}'s x-honua-cite-compliance.totals.cantTell is {cantTell}, but {CiteStatusRelativePath} only " +
-            $"ever documents suites at 100% pass -- a nonzero cantTell count means {displayPath} is stale.");
+        (failed + skipped + cantTell).Should().Be(canonicalTotalNonPassing,
+            $"{displayPath}'s x-honua-cite-compliance.totals contains {failed + skipped + cantTell} non-passing " +
+            $"assertion(s) (failed={failed}, skipped={skipped}, cantTell={cantTell}), but the passed/total rows in " +
+            $"{CiteStatusRelativePath} establish only {canonicalTotalNonPassing} non-passing assertion(s). " +
+            $"The canonical table does not distinguish outcome categories, so preserve their evidence-derived " +
+            $"breakdown while keeping their sum consistent with the table.");
     }
 
     private static void AssertProseAggregate(

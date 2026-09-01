@@ -16,7 +16,10 @@
         "cantTell": 0
       },
       "lastEvidenceRun": "2026-08-31",
-      "evidenceRun": "https://github.com/honua-io/honua-server/actions/runs/33376911053",
+      "evidenceRuns": {
+        "aggregate": "https://github.com/honua-io/honua-server/actions/runs/33205558805",
+        "wfs20Basic": "https://github.com/honua-io/honua-server/actions/runs/33376911053"
+      },
       "evidenceWorkflow": "https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml",
       "authoritativeSource": "docs/cite-status.md",
       "suites": [
