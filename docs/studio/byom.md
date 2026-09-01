@@ -17,9 +17,9 @@ release documentation. From the server process, prove its endpoint is
 reachable. `localhost` inside a container is the container itself, so use a
 resolvable host or service name there.
 
-```bash
-curl -fsS http://127.0.0.1:11434/v1/models
-```
+Run `ollama list` and confirm that the tool-capable model you intend to configure
+is present. This verifies the Ollama installation through its own CLI without
+bypassing the supported client surface with a raw HTTP request.
 
 Configure the candidate:
 
