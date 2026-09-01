@@ -142,9 +142,39 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
         }
 
         var secretReference = _options.Dispatch.Digest.WebhookSecretReference;
-        var webhookSecret = string.IsNullOrWhiteSpace(secretReference)
-            ? null
-            : await _secretProvider.GetSecretAsync(secretReference, cancellationToken).ConfigureAwait(false);
+        if (!_secretProvider.IsSecretReference(secretReference))
+        {
+            await MarkBatchFailedAsync(
+                batchItems,
+                dispatchStore,
+                now,
+                retryable: false,
+                "Digest webhook signing secret must be a supported secret reference.",
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        string? webhookSecret;
+        try
+        {
+            webhookSecret = await _secretProvider.GetSecretAsync(secretReference!, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            await MarkBatchFailedAsync(
+                batchItems,
+                dispatchStore,
+                now,
+                retryable: true,
+                ex.Message,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(webhookSecret))
         {
             await MarkBatchFailedAsync(

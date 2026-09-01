@@ -22,6 +22,7 @@ internal static class AlertTestFixtures
     public static ISecretProvider SecretProvider(string value)
     {
         var provider = Substitute.For<ISecretProvider>();
+        provider.IsSecretReference(SecretReference).Returns(true);
         provider.GetSecretAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(value);
         return provider;
     }

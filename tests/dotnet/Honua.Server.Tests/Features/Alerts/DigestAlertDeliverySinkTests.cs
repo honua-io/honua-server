@@ -105,6 +105,45 @@ public sealed class DigestAlertDeliverySinkTests
     }
 
     [UnitTest]
+    public async Task FlushAsync_WithSecretResolutionFailure_MarksBatchFailedForRetry()
+    {
+        var dispatchStore = Substitute.For<IAlertDispatchStore>();
+        var eventStore = Substitute.For<IAlertEventStore>();
+        var dispatchItem = AlertTestFixtures.CreateDispatchItem(AlertChannelType.Digest) with
+        {
+            DispatchId = 22,
+            EventId = 202,
+            MaxAttempts = 3
+        };
+        dispatchStore.ClaimPendingDigestAsync(2, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns([dispatchItem]);
+        eventStore.GetAsync(202, Arg.Any<CancellationToken>())
+            .Returns(AlertTestFixtures.CreateAlertEvent(dedupeKey: "evt-202"));
+
+        var secretProvider = Substitute.For<Honua.Core.Features.Security.Abstractions.ISecretProvider>();
+        secretProvider.IsSecretReference(AlertTestFixtures.SecretReference).Returns(true);
+        secretProvider.GetSecretAsync(AlertTestFixtures.SecretReference, Arg.Any<CancellationToken>())
+            .Returns<Task<string?>>(_ => throw new InvalidOperationException("secret backend unavailable"));
+        using var provider = CreateServiceProvider(dispatchStore, eventStore);
+        var service = new DigestFlushBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            Substitute.For<IHttpClientFactory>(),
+            Options.Create(CreateDigestOptions()),
+            NullLogger<DigestFlushBackgroundService>.Instance,
+            secretProvider);
+
+        await service.FlushAsync(CancellationToken.None);
+
+        await dispatchStore.Received(1).MarkFailedAsync(
+            22,
+            Arg.Any<DateTimeOffset>(),
+            Arg.Any<DateTimeOffset>(),
+            false,
+            Arg.Is<string?>(value => value != null && value.Contains("backend unavailable", StringComparison.Ordinal)),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task FlushAsync_WithTransientResolutionFailure_MarksBatchFailedForRetry()
     {
         var dispatchStore = Substitute.For<IAlertDispatchStore>();

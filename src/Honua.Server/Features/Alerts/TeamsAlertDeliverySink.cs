@@ -54,6 +54,16 @@ internal sealed partial class TeamsAlertDeliverySink : IAlertDeliverySink
             };
         }
 
+        if (!_secretProvider.IsSecretReference(webhookReference))
+        {
+            return new AlertDeliveryResult
+            {
+                Succeeded = false,
+                Retryable = false,
+                Error = "Teams webhook credential must be a supported secret reference."
+            };
+        }
+
         try
         {
             var webhookUrl = await _secretProvider.GetSecretAsync(webhookReference, cancellationToken).ConfigureAwait(false);

@@ -67,6 +67,16 @@ internal sealed class WebhookAlertDeliverySink : IAlertDeliverySink
             };
         }
 
+        if (!_secretProvider.IsSecretReference(secretReference))
+        {
+            return new AlertDeliveryResult
+            {
+                Succeeded = false,
+                Retryable = false,
+                Error = "Webhook signing secret must be a supported secret reference."
+            };
+        }
+
         try
         {
             var signingSecret = await _secretProvider.GetSecretAsync(secretReference, cancellationToken).ConfigureAwait(false);

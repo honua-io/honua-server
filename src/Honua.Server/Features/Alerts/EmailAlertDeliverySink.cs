@@ -83,6 +83,16 @@ internal sealed partial class EmailAlertDeliverySink : IAlertDeliverySink
 
             if (!string.IsNullOrWhiteSpace(emailOptions.Username))
             {
+                if (!_secretProvider.IsSecretReference(emailOptions.PasswordReference))
+                {
+                    return new AlertDeliveryResult
+                    {
+                        Succeeded = false,
+                        Retryable = false,
+                        Error = "Email SMTP credential must be a supported secret reference."
+                    };
+                }
+
                 var password = string.IsNullOrWhiteSpace(emailOptions.PasswordReference)
                     ? null
                     : await _secretProvider.GetSecretAsync(emailOptions.PasswordReference, cancellationToken).ConfigureAwait(false);

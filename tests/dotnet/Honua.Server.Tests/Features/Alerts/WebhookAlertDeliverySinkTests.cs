@@ -21,6 +21,7 @@ public sealed class WebhookAlertDeliverySinkTests
         const string secondSecret = "rotation-secret-v2";
         var activeSecret = firstSecret;
         var secretProvider = Substitute.For<Honua.Core.Features.Security.Abstractions.ISecretProvider>();
+        secretProvider.IsSecretReference(AlertTestFixtures.SecretReference).Returns(true);
         secretProvider.GetSecretAsync(AlertTestFixtures.SecretReference, Arg.Any<CancellationToken>())
             .Returns(_ => activeSecret);
 
@@ -42,6 +43,27 @@ public sealed class WebhookAlertDeliverySinkTests
         handler.Signatures[1].Should().Be("sha256=" + WebhookDeliveryHelper.ComputeSignature(secondSecret, handler.Timestamps[1], "{\"test\":true}"));
         handler.Signatures.Should().OnlyContain(signature => !signature.Contains(firstSecret, StringComparison.Ordinal) && !signature.Contains(secondSecret, StringComparison.Ordinal));
         await secretProvider.Received(2).GetSecretAsync(AlertTestFixtures.SecretReference, Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    public async Task DeliverAsync_WithPlaintextSigningSecret_RejectsWithoutResolving()
+    {
+        var options = CreateOptions();
+        options.Dispatch.DefaultWebhookSecretReference = "plaintext-secret";
+        var secretProvider = Substitute.For<Honua.Core.Features.Security.Abstractions.ISecretProvider>();
+        var sink = new WebhookAlertDeliverySink(
+            Substitute.For<IHttpClientFactory>(),
+            Options.Create(options),
+            secretProvider);
+
+        var result = await sink.DeliverAsync(
+            AlertTestFixtures.CreateDispatchItem(AlertChannelType.Webhook),
+            AlertTestFixtures.CreateAlertEvent());
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.Retryable);
+        Assert.Contains("secret reference", result.Error, StringComparison.OrdinalIgnoreCase);
+        await secretProvider.DidNotReceiveWithAnyArgs().GetSecretAsync(default!, default);
     }
 
     [UnitTest]
