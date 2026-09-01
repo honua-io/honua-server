@@ -289,13 +289,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // Pro-edition gated (fieldops.offline-sync entitlement) — GA means no longer
             // hidden/unadvertised, not free-tier.
             ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
-            // Realtime feature streaming — promoted to GA (Implemented) in #2428.
-            // Second Experimental->Implemented promotion (after alerts.geofence, #2427):
-            // WebSocket/SSE feature-change streams with subscription filters and durable
-            // replay cursors ship on the default first-release surface. Still Pro-edition
-            // gated (streaming.feature-subscriptions entitlement) — GA means no longer
-            // hidden/unadvertised, not free-tier.
-            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            // Realtime remains opt-in Preview until the per-transport qualification
+            // denominator passes against the exact release candidate (#3810).
+            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Preview),
+            // SensorThings uses the same canonical opt-in gate as its route registration;
+            // it must never be present at runtime while absent from capability discovery.
+            ("serve.sensorthings", "realtime", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             // Geofence enter/exit alerting — promoted to GA (Implemented) in #2427.
             // First Experimental->Implemented promotion; engine ships as shared,
             // un-gated GA infrastructure. Workers still self-gate on

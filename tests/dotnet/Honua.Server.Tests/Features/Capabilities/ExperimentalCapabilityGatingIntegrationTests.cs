@@ -58,7 +58,6 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [
         // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
         // sync.offline promoted to GA (Implemented) in #2430 — no longer experimental-gated.
-        // realtime.feature-streams promoted to GA (Implemented) in #2428 — no longer experimental-gated.
         // alerts.geofence promoted in #2427 — not gated.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
@@ -94,6 +93,17 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 HasCapability(root, experimentalId).Should().BeFalse(
                     "the experimental capability {0} is gated OFF the first-release manifest by default",
                     experimentalId);
+            }
+
+            foreach (var previewId in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            {
+                var preview = root.GetProperty("capabilities")
+                    .EnumerateArray()
+                    .Single(item => item.GetProperty("id").GetString() == previewId);
+                preview.GetProperty("lifecycle").GetString().Should().Be("preview");
+                preview.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
+                preview.GetProperty("available").GetBoolean().Should().BeFalse();
+                preview.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
             }
 
             // In-release capabilities are unaffected by the flip — still served.
@@ -139,6 +149,35 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             {
                 HasCapability(root, stillDisabled).Should().BeFalse(
                     "{0} was not opted in and stays absent", stillDisabled);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task Manifest_WhenRealtimePreviewsOptedIn_DeclaresPreviewLifecycle()
+    {
+        var fixture = CreateFixture(experimentalGlobalEnabled: true);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = await ReadDocumentAsync(response);
+            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            {
+                var capability = document.RootElement.GetProperty("capabilities")
+                    .EnumerateArray()
+                    .Single(item => item.GetProperty("id").GetString() == id);
+                capability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
             }
         }
         finally

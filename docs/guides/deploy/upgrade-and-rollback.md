@@ -29,7 +29,7 @@ the nested evaluation, dispatch, delivery-channel, and operations settings.
 ### SensorThings API
 
 The OGC SensorThings API remains experimental and is not registered unless
-`Experimental__Features__SensorThings=true` is set. SensorThings write routes now
+`Capabilities__Experimental__serve.sensorthings__Enabled=true` is set. SensorThings write routes now
 require API-key/admin authentication by default. Deployments that intentionally
 accepted unauthenticated STA ingestion must explicitly set
 `SensorThings__AllowAnonymousWritesDangerously=true`; use that only behind a

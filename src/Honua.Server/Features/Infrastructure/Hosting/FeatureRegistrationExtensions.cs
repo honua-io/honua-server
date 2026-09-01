@@ -76,6 +76,7 @@ using Honua.Server.Features.StaticMap;
 using Honua.Protocols.Ogc.Classic.Wfs20;
 using Honua.Protocols.Ogc.Classic.Wps20;
 using Honua.Core.Features.Studio;
+using Honua.Core.Features.Capabilities;
 
 namespace Honua.Infrastructure.Hosting;
 
@@ -133,9 +134,9 @@ internal static class FeatureRegistrationExtensions
         services.AddNlQuery(configuration);
         services.AddStudioAiProxy(configuration);
         services.AddStac();
-        // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
-        // Set Experimental__Features__SensorThings=true to opt in.
-        if (configuration.GetValue<bool>(SensorThingsOptions.ExperimentalFeatureFlagPath, false))
+        // Preview gate: SensorThings is off by default. Set
+        // Capabilities__Experimental__serve.sensorthings__Enabled=true to opt in.
+        if (CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.sensorthings"))
         {
             services.AddSensorThings();
         }
@@ -298,7 +299,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapStacEndpoints();
         // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
         var staConfig = endpoints.ServiceProvider.GetRequiredService<IConfiguration>();
-        if (staConfig.GetValue<bool>(SensorThingsOptions.ExperimentalFeatureFlagPath, false))
+        if (CapabilityFlagOptions.IsExperimentalEnabled(staConfig, "serve.sensorthings"))
         {
             endpoints.MapSensorThingsEndpoints();
         }

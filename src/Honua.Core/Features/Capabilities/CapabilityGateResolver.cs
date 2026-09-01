@@ -52,7 +52,7 @@ public static class CapabilityGateResolver
             return new CapabilityResolution(false, CapabilityReasonCodes.NotRegistered);
         }
 
-        if (descriptor.Maturity == CapabilityMaturity.Experimental)
+        if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
         {
             if (!context.ExperimentalFlags.IsExperimentalEnabled(descriptor.Id))
             {

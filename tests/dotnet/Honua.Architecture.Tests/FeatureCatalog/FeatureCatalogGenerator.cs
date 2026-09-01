@@ -76,6 +76,9 @@ internal static class FeatureCatalogGenerator
     /// </summary>
     public const string MaturityExperimental = "experimental";
 
+    /// <summary>Maturity tier for an opt-in preview route group.</summary>
+    public const string MaturityPreview = "preview";
+
     /// <summary>
     /// The unified capability registry (ADR-0058) the generator joins against for
     /// each entry's <c>maturity</c>. It is a pure, static-backed projection, so a
@@ -282,11 +285,19 @@ internal static class FeatureCatalogGenerator
         // in #2430, so it is no longer a flipped experimental group: its routes fall through to
         // the in-release surface (implemented) like any other GA capability.
 
-        // Realtime feature streaming (/api/v1/streaming/features*, the admin
-        // session-visibility and streaming-operations surfaces) was promoted to GA
-        // (Implemented) in #2428, so it is no longer a flipped experimental group: its
-        // routes fall through to the in-release surface (implemented) like any other GA
-        // capability.
+        // Realtime feature streaming remains opt-in Preview until exact-candidate
+        // transport qualification passes (#3810).
+        if (route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase) ||
+            route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase))
+        {
+            return "realtime.feature-streams";
+        }
+
+        // SensorThings is registered only when its Preview flag is enabled.
+        if (route.StartsWith("/sta/v1.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.sensorthings";
+        }
 
         // Branch versioning (VMS REST surface) — /rest/services/{serviceId}/VersionManagementServer/*
         // Gated Preview in the BH6-001/BH6-002 fix batch (ADR-0058).
@@ -309,6 +320,7 @@ internal static class FeatureCatalogGenerator
             CapabilityMaturity.Planned => "planned",
             CapabilityMaturity.Deferred => "deferred",
             CapabilityMaturity.Experimental => "experimental",
+            CapabilityMaturity.Preview => MaturityPreview,
             CapabilityMaturity.Partial => "partial",
             CapabilityMaturity.Implemented => MaturityImplemented,
             _ => MaturityImplemented,

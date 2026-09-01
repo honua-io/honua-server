@@ -39,6 +39,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "temporal.animation-api",
         "sync.offline",
         "realtime.feature-streams",
+        "serve.sensorthings",
         "alerts.geofence",
         "jobs.runner",
         "ai.spec-apply",
@@ -93,6 +94,12 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "security.mtls",
     ];
 
+    private static readonly string[] PreviewManifestCapabilityIds =
+    [
+        "realtime.feature-streams",
+        "serve.sensorthings",
+    ];
+
     [Fact]
     public void Registry_ExperimentalManifestDescriptors_AreOmittedWhenFlagOff()
     {
@@ -121,10 +128,11 @@ public sealed class CapabilityManifestRegistryProjectionTests
         // unaffected by T10.
         var context = CapabilityGateContext.Default;
         var experimental = ExperimentalManifestCapabilityIds.ToHashSet(StringComparer.Ordinal);
+        var preview = PreviewManifestCapabilityIds.ToHashSet(StringComparer.Ordinal);
 
         foreach (var descriptor in Registry.All.Where(IsManifestCapability))
         {
-            if (experimental.Contains(descriptor.Id))
+            if (experimental.Contains(descriptor.Id) || preview.Contains(descriptor.Id))
             {
                 continue;
             }

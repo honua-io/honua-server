@@ -253,6 +253,20 @@ public sealed class CapabilityGateResolverTests
     }
 
     [Fact]
+    public void IsExperimentalEnabled_FromConfiguration_HonorsGlobalSwitch()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Capabilities:Experimental:Enabled"] = "true",
+            })
+            .Build();
+
+        CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.sensorthings")
+            .Should().BeTrue();
+    }
+
+    [Fact]
     public void AddCapabilityFlagOptions_BindsFromConfigurationIntoOptions()
     {
         var configuration = new ConfigurationBuilder()

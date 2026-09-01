@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Server;
 using Xunit;
 
@@ -106,7 +107,8 @@ public sealed class FeatureCatalogDriftTests
 
         var unexplained = catalog.Entries
             .Where(entry => entry.Maturity != FeatureCatalogGenerator.MaturityImplemented
-                && entry.Maturity != FeatureCatalogGenerator.MaturityExperimental)
+                && entry.Maturity != FeatureCatalogGenerator.MaturityExperimental
+                && entry.Maturity != FeatureCatalogGenerator.MaturityPreview)
             .Where(entry => !(overriddenCapabilities.TryGetValue(entry.Capability, out var demoted)
                 && string.Equals(demoted, entry.Maturity, StringComparison.Ordinal)))
             .Select(entry => $"{EndpointKey.Format(entry.Method, entry.Route)} -> {entry.Maturity}")
@@ -136,9 +138,13 @@ public sealed class FeatureCatalogDriftTests
         foreach (var entry in catalog.Entries)
         {
             var gatedDescriptorId = FeatureCatalogGenerator.ResolveDescriptorIdForRoute(entry.Route);
-            var gateTier = gatedDescriptorId is null
-                ? FeatureCatalogGenerator.MaturityImplemented
-                : FeatureCatalogGenerator.MaturityExperimental;
+            var descriptor = gatedDescriptorId is null ? null : new CapabilityRegistry().Find(gatedDescriptorId);
+            var gateTier = descriptor?.Maturity switch
+            {
+                CapabilityMaturity.Experimental => FeatureCatalogGenerator.MaturityExperimental,
+                CapabilityMaturity.Preview => FeatureCatalogGenerator.MaturityPreview,
+                _ => FeatureCatalogGenerator.MaturityImplemented,
+            };
             var expected = overrides.ResolveEffective(entry.Capability, gateTier);
 
             if (string.Equals(expected, gateTier, StringComparison.Ordinal))
@@ -183,6 +189,14 @@ public sealed class FeatureCatalogDriftTests
         // /api/v1/streaming/features* was promoted to GA (Implemented) in #2428 — no longer an
         // experimental route group, so it is intentionally absent from this sanity set.
         // Branch versioning (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
+
+        var previewRoutes = catalog.Entries
+            .Where(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview)
+            .Select(entry => entry.Route)
+            .ToArray();
+        previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
+        previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
+        previewRoutes.Should().Contain(route => route.StartsWith("/sta/v1.1", StringComparison.OrdinalIgnoreCase));
         experimentalRoutes.Should().Contain(route => route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase));
     }
 
