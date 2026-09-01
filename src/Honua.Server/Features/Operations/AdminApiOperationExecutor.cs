@@ -118,7 +118,8 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         finally
         {
             if (executionCredential is not null)
-                _ = await _adminApiKeyStore.RevokeAsync(executionCredential.Id, CancellationToken.None).ConfigureAwait(false);
+                await ApprovedOperationCredentialRevocation.RevokeAsync(
+                    _adminApiKeyStore, executionCredential.Id).ConfigureAwait(false);
         }
         using var responseLease = response;
         var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
