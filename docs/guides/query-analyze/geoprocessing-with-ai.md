@@ -18,29 +18,45 @@ The examples use `POINT(-122.4194 37.7749)` in EPSG:4326 and a planar distance o
 
 ## 1. Discover and describe the process
 
-Confirm that the candidate publishes the process, its execution modes, and both accepted geometry representations:
+Use the JavaScript SDK to confirm that the candidate publishes the process, its
+execution modes, and both accepted geometry representations:
 
-```bash
-curl -fsS "$HONUA_URL/ogc/processes/processes" |
-  jq '.processes[] | select(.id == "geometry.buffer")'
+```ts
+import { HonuaClient } from "@honua/sdk-js";
 
-curl -fsS "$HONUA_URL/ogc/processes/processes/geometry.buffer" |
-  jq '{id, jobControlOptions, inputs, outputs}'
+const client = new HonuaClient({
+  baseUrl: process.env.HONUA_URL!,
+  apiKey: process.env.HONUA_API_KEY!,
+});
+const discovery = client.ogcProcesses();
+const conformance = await discovery.conformance();
+const processes = client.ogcProcesses({ conformance, capabilityPolicy: "advertised" });
+const description = await processes.describe("geometry.buffer");
+console.log(description.id, description.jobControlOptions, description.inputs, description.outputs);
 ```
 
 The `wkb` input name is retained for compatibility, but its OGC schema accepts either base64 WKB or a GeoJSON geometry object (`application/geo+json`).
 
-## 2. Run the GeoJSON buffer through OGC
+## 2. Run the buffer through OGC
 
-Omit `Prefer` for the advertised synchronous mode:
+Execute through that same advertised SDK surface. `mode: "sync"` selects the
+advertised bounded synchronous mode:
 
-```bash
-curl -fsS \
-  -H "X-API-Key: $HONUA_API_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{"inputs":{"wkb":{"type":"Point","coordinates":[-122.4194,37.7749]},"srid":4326,"distance":0.00025,"geodesic":false}}' \
-  "$HONUA_URL/ogc/processes/processes/geometry.buffer/execution" |
-  jq '.outputFeatureLayer | {id, kind, href, type}'
+```ts
+const run = await processes.execute({
+  processId: "geometry.buffer",
+  mode: "sync",
+  jobControlOptions: description.jobControlOptions ?? [],
+  inputs: {
+    wkb: "AQEAAABQ/Bhz15pewNDVVuwv40JA",
+    srid: 4326,
+    distance: 0.00025,
+    geodesic: false,
+  },
+});
+const result = await run.results();
+const artifact = result.outputs.outputFeatureLayer;
+console.log(artifact.id, artifact.kind, artifact.href, artifact.type);
 ```
 
 Keep the returned artifact `id` and `href`. The `href` is a GeoJSON data URI in the bounded inline result; it is the artifact consumed by the later Studio stage. For durable execution, send `Prefer: respond-async`, poll the returned job URL, and read `/ogc/processes/jobs/{jobId}/results`.
@@ -82,16 +98,6 @@ The SDK performs discovery and gates execution on the candidate's advertised con
 
 ```ts
 import { HonuaClient } from "@honua/sdk-js";
-
-const client = new HonuaClient({
-  baseUrl: process.env.HONUA_URL!,
-  apiKey: process.env.HONUA_API_KEY!,
-});
-
-const discovery = client.ogcProcesses();
-const conformance = await discovery.conformance();
-const processes = client.ogcProcesses({ conformance, capabilityPolicy: "advertised" });
-const description = await processes.describe("geometry.buffer");
 
 const run = await processes.execute({
   processId: "geometry.buffer",
