@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
 
@@ -186,6 +190,72 @@ internal static class AdminOperateOperationCatalog
             RequiredProperties = resolved.TryGetProperty("required", out var required)
                 ? required.EnumerateArray().Select(static value => value.GetString()!).ToArray()
                 : []
+        };
+    }
+}
+
+internal sealed class AdminOperateOperationApprovalRequestMapper(
+    AdminOperateOperationCatalog.Definition definition) : IOperationApprovalRequestMapper
+{
+    public string OperationId => definition.OperationId;
+
+    public OperationGatewayRequest Map(
+        IOperationDescriptor descriptor,
+        OperationRequest request,
+        OperationPolicyContext context,
+        PolicyDecision decision)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(decision);
+        if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
+        {
+            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
+        }
+
+        var payload = AdminApiOperationApprovalPayload.From(request, context);
+        var serialized = JsonSerializer.Serialize(
+            payload,
+            AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
+        return new OperationGatewayRequest
+        {
+            OperationInstanceId = context.OperationInstanceId,
+            OperationId = OperationId,
+            Kind = OperationClass.AdminConfigChange,
+            RequestedBy = context.PrincipalId,
+            Reason = decision.Reason,
+            CorrelationId = context.CorrelationId,
+            ExecutionPayload = serialized,
+            Plan = new OperationProposalPlan
+            {
+                Summary = $"Execute {OperationId} through the canonical admin operation runtime.",
+                RiskLevel = definition.SideEffect == OperationSideEffectClass.DestroysState
+                    ? ProposalRiskLevel.High
+                    : ProposalRiskLevel.Medium,
+                ExecutionPayload = serialized,
+            },
+        };
+    }
+
+    public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var payload = JsonSerializer.Deserialize(
+            request.Plan?.ExecutionPayload ?? request.ExecutionPayload
+                ?? throw new InvalidOperationException("The persisted admin operation replay payload is unavailable."),
+            AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+            ?? throw new InvalidOperationException("The persisted admin operation replay payload is invalid.");
+        if (payload.OperationId != OperationId)
+        {
+            throw new InvalidOperationException("The persisted admin operation replay identity does not match its mapper.");
+        }
+
+        return new OperationApprovalReplayMapping
+        {
+            Request = payload.ToOperationRequest(),
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName,
         };
     }
 }

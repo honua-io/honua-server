@@ -155,6 +155,11 @@ jobs:
           RateLimiting__Enabled: "false"
           Security__DisableHttpsRedirection: "true"
           Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
+          # Production startup requires the canonical operation policy to be active
+          # and fail closed for unmatched operations. The load topology has no
+          # approval operator, so deny is the honest safe default.
+          Operations__Policy__Enabled: "true"
+          Operations__Policy__DefaultDecision: Deny
           ConnectionStrings__redis: "localhost:6379"
           # PostgresDataSourceFactory applies Limits:Connections to the data source after
           # parsing the connection string. Keep both settings aligned: setting only

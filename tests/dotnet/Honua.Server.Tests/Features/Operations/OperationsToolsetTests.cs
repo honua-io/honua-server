@@ -527,6 +527,30 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public void LaneD_ApprovalGatedOperations_HaveExactlyOneReplayMapper()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        using var provider = services.BuildServiceProvider();
+        var mapperCounts = services
+            .Where(static descriptor => descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+                descriptor.ImplementationInstance is AdminOperateOperationApprovalRequestMapper)
+            .Select(static descriptor => (IOperationApprovalRequestMapper)descriptor.ImplementationInstance!)
+            .GroupBy(static mapper => mapper.OperationId, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
+
+        var approvalGated = AdminOperateOperationCatalog.Descriptors
+            .Where(static descriptor => descriptor.ApprovalModel != OperationApprovalModel.None)
+            .Select(static descriptor => descriptor.OperationId)
+            .ToArray();
+        mapperCounts.Keys.Should().BeEquivalentTo(approvalGated);
+        mapperCounts.Should().OnlyContain(static pair => pair.Value == 1);
+    }
+
+    [UnitTest]
     public void LaneD_PublishedSchemas_PreserveNestedRequiredMembers_AndAdvertiseDryRun()
     {
         var descriptor = AdminOperateOperationCatalog.Descriptors.Should().ContainSingle(
