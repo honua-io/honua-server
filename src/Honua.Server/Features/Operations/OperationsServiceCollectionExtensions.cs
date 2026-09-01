@@ -99,6 +99,8 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftValidateExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftPreviewPlanExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioSaveVersionExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, DeployRollbackOperationExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, CoordinatedReleaseRollbackOperationExecutor>());
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
 
         var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==

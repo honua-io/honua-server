@@ -370,6 +370,43 @@ public sealed class OperationEnvelopeArchitectureTests
     }
 
     [ArchitectureTest]
+    public void WorkflowRollbackEndpoints_EnterCanonicalRuntimeBeforeMutation()
+    {
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var operationsSource = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+            root, "src", "Honua.Server", "Features", "Operations", "WorkflowRollbackOperations.cs"));
+
+        Assert.Contains("ApprovalModel = OperationApprovalModel.OperatorGate", operationsSource, StringComparison.Ordinal);
+        Assert.Contains("context.PrincipalId", operationsSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("public const string RequestedBy", operationsSource, StringComparison.Ordinal);
+        Assert.Contains("RequiredBoolean(request, WorkflowRollbackOperations.ApprovedDataAffecting)", operationsSource, StringComparison.Ordinal);
+        Assert.Contains("RequiredBoolean(request, WorkflowRollbackOperations.ApprovedRequiresApproval)", operationsSource, StringComparison.Ordinal);
+
+        foreach (var relativePath in new[]
+                 {
+                     new[] { "src", "Honua.Server", "Features", "Admin", "DeployControlEndpoints.cs" },
+                     new[] { "src", "Honua.Server", "Features", "Admin", "CoordinatedReleaseControlEndpoints.cs" },
+                 })
+        {
+            var source = File.ReadAllText(ArchitectureTestHelpers.CombinePath(
+                root,
+                string.Join('/', relativePath)));
+            var rollbackStart = source.IndexOf("private static async Task<IResult> HandleRollback", StringComparison.Ordinal);
+            Assert.True(rollbackStart >= 0, $"{relativePath[^1]} must retain its rollback handler.");
+            var nextMethod = source.IndexOf("\n    private static ", rollbackStart + 1, StringComparison.Ordinal);
+            var rollback = source[rollbackStart..(nextMethod < 0 ? source.Length : nextMethod)];
+
+            Assert.Contains("IOperationInvoker operationInvoker", rollback, StringComparison.Ordinal);
+            Assert.Contains("operationInvoker.SubmitAsync", rollback, StringComparison.Ordinal);
+            Assert.Contains("WorkflowRollbackOperations.", rollback, StringComparison.Ordinal);
+            Assert.Contains("ScopeIdempotencyKey", rollback, StringComparison.Ordinal);
+            Assert.Contains("handle.Status != OperationHandleStatus.Completed", rollback, StringComparison.Ordinal);
+            Assert.DoesNotContain("RequestRollbackAsync(", rollback, StringComparison.Ordinal);
+            Assert.DoesNotContain("[WorkflowRollbackOperations.RequestedBy]", rollback, StringComparison.Ordinal);
+        }
+    }
+
+    [ArchitectureTest]
     public void LegacyGateway_CannotOwnAnExecutorRegistryOrInvokeAnActuator()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
