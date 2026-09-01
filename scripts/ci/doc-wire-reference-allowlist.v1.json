@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "description": "Pages whose subject is a wire protocol and for which raw HTTP examples are unavoidable. Every curl example on an allowlisted page must be marked <!-- wire-reference -->, and the exception must be justified in the PR body.",
+  "entries": []
+}

@@ -38,6 +38,9 @@ on:
       - 'scripts/ci/check-doc-links.test.py'
       - 'scripts/ci/code-referenced-anchors.v1.json'
       - 'scripts/ci/doc-link-rot-allowlist.v1.json'
+      - 'scripts/ci/check-doc-example-surfaces.py'
+      - 'scripts/ci/check-doc-example-surfaces.test.py'
+      - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
       - '.github/workflows/docs-link-gate.yml'
   workflow_dispatch:
 
@@ -66,5 +69,11 @@ jobs:
       - name: Test the documentation link checker
         run: python3 scripts/ci/check-doc-links.test.py
 
+      - name: Test documentation example surface enforcement
+        run: python3 scripts/ci/check-doc-example-surfaces.test.py
+
       - name: Check documentation links, anchors, and code-referenced anchors
         run: python3 scripts/ci/check-doc-links.py
+
+      - name: Reject raw curl additions in documentation
+        run: python3 scripts/ci/check-doc-example-surfaces.py --base "${{ github.event.pull_request.base.sha || 'origin/trunk' }}"
