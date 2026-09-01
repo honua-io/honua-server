@@ -402,9 +402,11 @@ internal sealed class CapabilityManifestService(
             Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
             Capability("realtime.feature-streams", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
+                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("realtime.feature-streams"),
                 entitlementKey: "streaming.feature-subscriptions"),
             Capability("serve.sensorthings", "realtime", context,
-                maturity: CapabilityMaturity.Preview),
+                maturity: CapabilityMaturity.Preview,
+                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("serve.sensorthings")),
             Capability("alerts.geofence", "alerts", context, entitlementKey: "alerts.enter-exit", configured: alertOptionsValue.Enabled),
             // A compute backend is always registered, so `supported` alone over-claims: without
             // the Redis-backed durable job store nothing can be submitted (honua-release#202).
@@ -418,7 +420,10 @@ internal sealed class CapabilityManifestService(
             Capability("transport.native-grpc", "transports", context),
             Capability("transport.mcp", "transports", context),
             Capability("transport.qgis", "transports", context),
-            Capability("security.mtls", "security", context, entitlementKey: FeatureCatalog.MtlsClientCertificateKey, configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled),
+            Capability("security.mtls", "security", context,
+                maturity: CapabilityMaturity.Experimental,
+                entitlementKey: FeatureCatalog.MtlsClientCertificateKey,
+                configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled),
 
             Capability("preview.file-import", "preview", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("query.features", "query", context),
@@ -435,7 +440,9 @@ internal sealed class CapabilityManifestService(
             // default (#2480 / ADR-0058). Mirrors the registry descriptor order
             // (CapabilityRegistry.BuildManifestCapabilityDescriptors) so the hand-curated and
             // registry-derived Capabilities[] stay byte-identical.
-            Capability("versioning.branch", "versioning", context, entitlementKey: FeatureCatalog.BranchVersioningKey),
+            Capability("versioning.branch", "versioning", context,
+                maturity: CapabilityMaturity.Experimental,
+                entitlementKey: FeatureCatalog.BranchVersioningKey),
             // Aggregated operate status (A12) — the server-authoritative operate/status surface. Ungated
             // GA; read-authorized (ops:read) at the HTTP layer. Kept last to mirror the registry order.
             Capability("operate.status", "operate", context, requiresAuthentication: true),

@@ -59,7 +59,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
     private static WebAppFixture CreateManifestFixture(
         string[]? entitlements = null,
         HonuaEdition edition = HonuaEdition.Pro,
-        bool manifestFromRegistry = false)
+        bool manifestFromRegistry = false,
+        bool experimentalGlobalEnabled = true)
         => new WebAppFixture()
             .WithTestLicense(edition, entitlements: entitlements)
             .ConfigureServices(services =>
@@ -87,10 +88,38 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                         ["Limits:Analytics:MaxDWithinDistanceMeters"] = "45678.5",
                         ["FeatureStreaming:MaxConcurrentSessions"] = "12",
                         ["Grpc:StreamBatchSize"] = "42",
-                        ["Capabilities:ManifestFromRegistry"] = manifestFromRegistry ? "true" : "false"
+                        ["Capabilities:ManifestFromRegistry"] = manifestFromRegistry ? "true" : "false",
+                        ["Capabilities:Experimental:Enabled"] = experimentalGlobalEnabled ? "true" : "false",
                     });
                 });
             });
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable()
+    {
+        var fixture = CreateManifestFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var document = await ReadDocumentAsync(response);
+            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            {
+                var capability = GetCapability(document.RootElement, id);
+                capability.GetProperty("available").GetBoolean().Should().BeFalse();
+                capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 
     private static WebAppFixture CreateWorkspaceScopedManifestFixture()
         => CreateManifestFixture()

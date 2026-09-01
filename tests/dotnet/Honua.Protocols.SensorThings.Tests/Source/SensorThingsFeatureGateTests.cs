@@ -35,6 +35,7 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
                 {
                     cfg.AddInMemoryCollection(new Dictionary<string, string?>
                     {
+                        ["Capabilities:Experimental:Enabled"] = "false",
                         ["Capabilities:Experimental:serve.sensorthings:Enabled"] = "false",
                     });
                 });

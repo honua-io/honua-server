@@ -574,7 +574,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.DisconnectSession_UnknownId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "admin.control-plane"
     },
     {
@@ -4091,7 +4091,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ListSessions_WithFilter_ReturnsSessionFilterInfo"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "admin.control-plane"
     },
     {
@@ -4425,6 +4425,7 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAdminWithEnvironmentAndWorkspace_ReturnsFilteredManifest",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAnonymous_ReturnsPublicTenantManifestAndNoStoreHeaders",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AutonomyTracksPolicyStoreInsteadOfWorkflowStore",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RegistryDerived_MatchesHandCuratedComposition",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RollbackIgnoresTargetsFromOtherEnvironments",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RollbackRequiresDurableOperationStore",
@@ -4442,6 +4443,7 @@
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalDisabled_OmitsEveryExperimentalCapability",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalEnabledPerCapability_IncludesExactlyThatCapability",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenRealtimePreviewsOptedIn_DeclaresPreviewLifecycle",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Manifest_PublishesTheImmutableRevisionUnderBothNames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_ExposesImmutableDeploymentRevisionSeparatelyFromServerVersion",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_RejectsMalformedDeploymentRevisionRatherThanEchoingIt"
@@ -5424,7 +5426,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.WebSocket_SnapshotThenDeltaMode_EmitsOneBatchedBaselineThenTheMutation"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -5443,7 +5445,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Capabilities_AdvertisesSnapshotModeSequenceAndDeploymentRevision"
       ],
       "proof_ledger_surface": "feature-event-streaming",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "streaming.feature-subscriptions"
     },
     {
@@ -12242,7 +12244,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Datastreams_ReturnsCollectionWithNavigationLinks"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12257,7 +12259,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Datastreams_WithExpandObservations_InlinesObservations"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12271,7 +12273,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.DatastreamObservations_OrderByDescending_ReturnsObservations"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12288,7 +12290,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Observations_WithResultFilter_FiltersByResult"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12302,7 +12304,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Observations_ById_ReturnsEntity"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12317,7 +12319,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsStreamEndpointsTests.ObservationsStream_WithoutTransportHeader_Returns400"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12331,7 +12333,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.ObservedProperties_ReturnsCollection"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12345,7 +12347,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.ObservedProperties_ById_ReturnsEntity"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12359,7 +12361,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Sensors_ReturnsCollection"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12373,7 +12375,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Sensors_ById_ReturnsEntity"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12388,7 +12390,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Things_ReturnsConformanceShapedCollection"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -12402,7 +12404,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsReadEndpointsTests.Things_ById_ReturnsEntityEnvelope"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -20683,7 +20685,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostDatastream_WithInlineRelatedEntities_CreatesQueryableDatastream"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -20697,7 +20699,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsIngestEndpointsTests.PostObservation_OnDatastreamNavigation_PersistsToThatDatastream"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
@@ -20717,7 +20719,7 @@
         "Honua.Server.Tests.Features.Protocols.SensorThings.SensorThingsWriteAuthorizationTests.PostObservation_WithAdminApiKeyWhenAnonymousWritesDisabled_CreatesObservation"
       ],
       "proof_ledger_surface": "sensorthings-1.1",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.sensorthings"
     },
     {
