@@ -67,8 +67,10 @@ internal abstract class AnalysisProfileToolBase : IMcpTool, IMcpProfileTool
             cancellationToken).ConfigureAwait(false);
 
         var argument = RequireObject(arguments);
-        var plan = BuildPlan(argument);
-        var idempotencyKey = BuildIdempotencyKey(argument);
+        var principalKey = McpAuthorizationHelper.ResolvePrincipalKey(principal);
+        var requestIdentity = BuildRequestIdentity(principalKey, argument);
+        var plan = BuildPlan(argument) with { PlanId = $"mcp-{Name}-{requestIdentity}" };
+        var idempotencyKey = $"mcp-analysis:{requestIdentity}";
         var job = await _jobService.SubmitJobAsync(
             plan,
             idempotencyKey,
@@ -227,10 +229,11 @@ internal abstract class AnalysisProfileToolBase : IMcpTool, IMcpProfileTool
             .Select(item => item.GetString()));
     }
 
-    private string BuildIdempotencyKey(JsonElement argument)
+    private string BuildRequestIdentity(string principalKey, JsonElement argument)
     {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(Name + ":" + argument.GetRawText()));
-        return $"mcp-analysis:{Convert.ToHexString(bytes)}";
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(
+            principalKey + ":" + Name + ":" + argument.GetRawText()));
+        return Convert.ToHexString(bytes);
     }
 
     protected sealed record DatasetReference(
@@ -273,7 +276,9 @@ internal sealed class BufferFeaturesTool(IGeoprocessingJobService jobs, ILogger<
 
         CopyScalar(argument, "distance", inputs);
         CopyScalar(argument, "unit", inputs);
-        CopyScalar(argument, "dissolve", inputs);
+        inputs["dissolve"] = argument.TryGetProperty("dissolve", out var dissolve)
+            ? dissolve.GetRawText()
+            : "false";
         return SingleStepPlan("buffer-features", AnalysisPlanStepKind.Geoprocess, processId, inputs, ArtifactKind.FeatureLayer);
     }
 }
