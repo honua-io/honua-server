@@ -95,7 +95,7 @@ Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), Op
 
 ## Compliance
 
-- **OGC CITE:** 1138 / 1138 passing across 14 conformance suites (OGC API Features 1.0, OGC API Tiles 1.0, GeoPackage 1.2, GML 3.2, KML 2.2, WFS 1.0/1.1/2.0 plus WFS 2.0 Transactional, WCS 2.0, WPS 2.0, WMS 1.1.1/1.3, WMTS 1.0) as of the 2026-08-28 evidence artifact — see [docs/cite-status.md](docs/cite-status.md) for the authoritative snapshot and [OGC conformance evidence](docs/reference/compatibility/ogc-conformance.md) for suite-by-suite evidence.
+- **OGC CITE:** 1137 / 1138 passing across 14 conformance suites. WFS 2.0 `basic` is 166/167 because multi-layer `rollbackOnFailure=true` transactions are rejected; the other published suite profiles pass in full. See the [authoritative snapshot and run receipt](docs/cite-status.md) and [OGC conformance evidence](docs/reference/compatibility/ogc-conformance.md).
 - **Client compatibility:** the supported client x protocol matrix — including known limitations — is the [compatibility contract](docs/reference/compatibility/clients.md); Esri-side parity is tracked in [GeoServices parity](docs/reference/compatibility/geoservices-parity.md).
 - **gRPC stability:** versioning, deprecation, and stability guarantees for the `geospatial.v1` surface are defined in the [gRPC reference](docs/reference/protocols/grpc.md).
 - **Control plane stability:** admin/control-plane API versioning is governed by [versioning and support](docs/reference/versioning-and-support.md).
