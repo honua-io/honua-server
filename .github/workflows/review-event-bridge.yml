@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
-      group: review-event-bridge-${{ github.event.pull_request.number }}-${{ github.event.review.commit_id || github.event.comment.commit_id }}
+      group: review-event-bridge-pr-${{ github.event.pull_request.number }}-head-${{ github.event.review.commit_id || github.event.comment.commit_id }}
       cancel-in-progress: true
     steps:
       - name: Shed superseded review event
