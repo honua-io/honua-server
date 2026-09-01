@@ -718,13 +718,13 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
     public async Task WriterTransaction_LaterLayerFailure_RollsBackEarlierLayer()
     {
         var store = CreateFeatureStore();
-        var original = await store.GetAsync(PointsLayerId, 1, CancellationToken.None);
-        original.Should().NotBeNull();
+        var original = await store.GetAsync(PointsLayerId, 1, CancellationToken.None)
+            ?? throw new InvalidOperationException("Expected the original feature.");
 
         var changed = Feature.Create(
-            original!.Value.Id,
-            original.Value.Geometry,
-            original.Value.Attributes.SetItem("category", "must-be-rolled-back"));
+            original.Id,
+            original.Geometry,
+            original.Attributes.SetItem("category", "must-be-rolled-back"));
         var missing = Feature.Create(
             long.MaxValue,
             CreatePolygonWkb("POLYGON((-122 37, -121 37, -121 38, -122 38, -122 37))"),
@@ -744,9 +744,9 @@ public class PostgresFeatureStoreIntegrationTests : IAsyncLifetime
             await transaction.RollbackAsync();
         }
 
-        var restored = await store.GetAsync(PointsLayerId, original.Value.Id, CancellationToken.None);
+        var restored = await store.GetAsync(PointsLayerId, original.Id, CancellationToken.None);
         restored.Should().NotBeNull();
-        restored!.Value.Attributes["category"].Should().Be(original.Value.Attributes["category"]);
+        restored!.Value.Attributes["category"].Should().Be(original.Attributes["category"]);
     }
 
     [IntegrationTest]
