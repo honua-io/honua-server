@@ -134,6 +134,16 @@ def main() -> None:
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(
         review_gate,
+        "group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}",
+        "resolver concurrency must cancel superseded heads for the same PR",
+    )
+    require(
+        review_bridge,
+        "group: review-event-bridge-pr-${{ github.event.pull_request.number }}",
+        "review bridge concurrency must cancel superseded heads for the same PR",
+    )
+    require(
+        review_gate,
         'workflows: ["PR Gate", "Review Event Bridge"]',
         "PR Gate and review-event completion must re-evaluate trusted review",
     )
@@ -154,11 +164,6 @@ def main() -> None:
         "every trusted mutation must serialize on a resolved PR number",
     )
     require(review_gate, "needs: resolve", "attestation must wait for PR identity resolution")
-    require(
-        review_gate,
-        "group: review-resolve-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha)",
-        "review resolution must be single-flight for each event subject head",
-    )
     stale_review = review_gate.index("- name: Shed superseded review event")
     resolve_review = review_gate.index("- name: Resolve every event to one pull request")
     if stale_review >= resolve_review:
@@ -175,11 +180,6 @@ def main() -> None:
     )
     if "github.event.workflow_run.head_sha ||" in review_gate:
         raise AssertionError("fork workflow events must not use a different concurrency identity")
-    require(
-        review_bridge,
-        "group: review-event-bridge-${{ github.event.pull_request.number }}-${{ github.event.review.commit_id || github.event.comment.commit_id }}",
-        "review bridge events must be single-flight for each PR and subject head",
-    )
     require(
         review_bridge,
         "const eventHead = context.payload.review?.commit_id ||",
