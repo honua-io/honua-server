@@ -89,7 +89,11 @@ smoke_fixture() {
 
 echo "Starting isolated mobile offline demo stack (${COMPOSE_PROJECT_NAME}) on ${BASE_URL}."
 compose down --remove-orphans --volumes >/dev/null 2>&1 || true
-compose up -d --build postgres honua >/dev/null
+if [[ -n "${HONUA_SERVER_IMAGE:-}" ]]; then
+  compose up -d --no-build postgres honua >/dev/null
+else
+  compose up -d --build postgres honua >/dev/null
+fi
 wait_for_ready
 
 echo "Applying baseline seed: ${BASE_SEED}"

@@ -2,10 +2,9 @@
 
 `manifest.json` inventories every Markdown fence in the repository documentation,
 every asset under `samples/`, every asset in a documentation `examples/` directory,
-and the quickstart-adjacent demo/sample scripts. Its status is deliberately
-evidence-based: `not-validated` is not a failure, but it is also not green.
-Likewise, `scheduled-nightly` records CI coverage without claiming that an
-unobserved execution passed.
+and the quickstart-adjacent demo/sample scripts. Each entry has a candidate-bound
+verdict: `passed` is observed execution, `blocked` requires an issue link, and
+`not-executable` identifies supporting material without making a green claim.
 
 Regenerate and verify the inventory with:
 
@@ -14,12 +13,14 @@ python3 scripts/examples/generate-manifest.py
 python3 scripts/examples/generate-manifest.py --check
 ```
 
-The three wave-one customer paths are STAC operations, mobile/offline sync, and
-local geoprocessing. Each runs the shipped example itself against an isolated,
-locally built candidate:
+Run the executable customer paths and primary quickstart against an immutable
+candidate (floating tags are rejected by the customer-path runner):
 
 ```bash
-bash scripts/examples/validate-customer-paths.sh all
+HONUA_EXAMPLES_CANDIDATE_IMAGE='ghcr.io/honua-io/honua-server@sha256:...' \
+  bash scripts/examples/validate-customer-paths.sh all
+HONUA_SERVER_IMAGE='ghcr.io/honua-io/honua-server@sha256:...' \
+  bash scripts/docs-validation/validate-quickstart.sh
 ```
 
 The nightly lane is advisory. Promotion to a required RC gate needs fourteen

@@ -3,6 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCENARIO="${1:-all}"
+CANDIDATE_IMAGE="${HONUA_EXAMPLES_CANDIDATE_IMAGE:-${HONUA_SERVER_IMAGE:-}}"
+
+if [[ -n "${CANDIDATE_IMAGE}" ]]; then
+  case "${CANDIDATE_IMAGE}" in
+    *@sha256:*) ;;
+    *) echo "effective candidate image must be digest-pinned" >&2; exit 2 ;;
+  esac
+  export HONUA_SERVER_IMAGE="${CANDIDATE_IMAGE}"
+fi
 
 run_stac_ops() {
   trap 'COMPOSE_PROJECT_NAME=honua-examples-stac HONUA_HTTP_PORT=18080 HONUA_GRPC_PORT=18083 POSTGRES_PORT=55432 REDIS_PORT=56381 HONUA_STORAGE_VOLUME_NAME=honua_examples_stac_storage docker compose -f "${ROOT_DIR}/docker-compose.yml" --project-directory "${ROOT_DIR}" down --remove-orphans --volumes >/dev/null 2>&1 || true' RETURN
@@ -34,7 +43,11 @@ run_gp_local_dev() {
       docker compose -f "${ROOT_DIR}/docker-compose.gp-dev.yml" --project-directory "${ROOT_DIR}" "$@"
   }
   trap 'compose down --remove-orphans --volumes >/dev/null 2>&1 || true' RETURN
-  compose up -d --build postgres redis honua
+  if [[ -n "${CANDIDATE_IMAGE}" ]]; then
+    compose up -d --no-build postgres redis honua
+  else
+    compose up -d --build postgres redis honua
+  fi
   for _ in $(seq 1 90); do
     [[ "$(curl -fsS http://127.0.0.1:18084/healthz/ready 2>/dev/null || true)" == "Ready" ]] && break
     sleep 2
