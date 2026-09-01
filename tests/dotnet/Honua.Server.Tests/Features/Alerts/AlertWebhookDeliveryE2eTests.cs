@@ -29,6 +29,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -159,9 +160,8 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
             NullLogger<PostgresAlertDispatchStore>.Instance);
         var eventStore = new PostgresAlertEventStore(connectionProvider);
         var lifecycleStore = new PostgresAlertLifecycleStore(connectionProvider);
-        var options = Options.Create(new AlertOptions
+        var alertOptions = new AlertOptions
         {
-            Enabled = true,
             Dispatch = new AlertDispatchOptions
             {
                 DefaultWebhookUrl = destination,
@@ -172,7 +172,13 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
                 CircuitBreakerThreshold = 100,
                 MaxNotificationsPerMinutePerChannel = 0,
             },
-        });
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Alerts:Enabled"] = "true" })
+            .AddEnvironmentVariables()
+            .Build();
+        configuration.GetSection(AlertOptions.SectionName).Bind(alertOptions);
+        var options = Options.Create(alertOptions);
 
         var handler = new SocketsHttpHandler
         {

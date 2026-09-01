@@ -49,7 +49,7 @@ public class DatabaseCoreEndpointsCollection : ICollectionFixture<DatabaseFixtur
 /// The production alert outbox uses the global honua schema, so this collection keeps
 /// its end-to-end scenarios serialized with one shared fixture.
 /// </summary>
-[CollectionDefinition("Database.Alerts")]
+[CollectionDefinition("Database.Alerts", DisableParallelization = true)]
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1711:Identifiers should not have incorrect suffix", Justification = "This is an xUnit collection definition which requires the Collection suffix")]
 public class DatabaseAlertsCollection : ICollectionFixture<DatabaseFixtureAdapter>
 {
