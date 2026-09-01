@@ -186,5 +186,23 @@ public sealed class McpPlatformOpsToolTests
                 ResourceUri = "honua://proposals/proposal-1",
             });
         }
+
+        public Task<McpProposeOperationOutput> ProposeFindingAsync(ClaimsPrincipal principal, McpProposeFindingArgument argument, CancellationToken cancellationToken)
+            => Proposal(principal);
+
+        public Task<McpProposeOperationOutput> ProposeDeployPlanAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
+            => Proposal(principal);
+
+        public Task<McpProposeOperationOutput> ProposeDeployOperationAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
+            => Proposal(principal);
+
+        public Task<McpProposeOperationOutput> ProposePlatformReleaseConvergenceAsync(ClaimsPrincipal principal, McpPlatformReleaseConvergenceArgument argument, CancellationToken cancellationToken)
+            => Proposal(principal);
+
+        private Task<McpProposeOperationOutput> Proposal(ClaimsPrincipal principal)
+        {
+            LastPrincipal = principal;
+            return Task.FromResult(new McpProposeOperationOutput { Outcome = "ProposalCreated", RequiresApproval = true, ProposalId = "proposal-1" });
+        }
     }
 }

@@ -94,4 +94,17 @@ internal static class OpsFindingEvidenceMap
         OpsFindingsService.RulePlatformReleaseRuntimeDivergence => ReleaseDivergenceSources,
         _ => [EvidencePostureVocabulary.SourceIds.Findings],
     };
+
+    public static bool TryGetActionableRequiredSources(
+        OpsFindingsEvaluation evaluation,
+        OpsFinding finding,
+        out EvidenceSourceEnvelope[] requiredSources)
+    {
+        var requiredSourceIds = RequiredSourceIds(finding.Rule);
+        requiredSources = evaluation.Posture.Sources
+            .Where(source => requiredSourceIds.Contains(source.SourceId, StringComparer.Ordinal))
+            .ToArray();
+        return requiredSources.Length == requiredSourceIds.Count &&
+            requiredSources.All(EvidencePostureFactory.IsActionable);
+    }
 }

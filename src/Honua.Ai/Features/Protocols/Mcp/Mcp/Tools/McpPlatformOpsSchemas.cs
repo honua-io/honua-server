@@ -100,6 +100,21 @@ internal static class McpPlatformOpsSchemas
         }
         """);
 
+    public static readonly JsonElement ProposeFindingInputSchema = Parse(
+        """
+        {"type":"object","required":["findingId"],"properties":{"findingId":{"type":"string","minLength":1,"maxLength":256}},"additionalProperties":false}
+        """);
+
+    public static readonly JsonElement DeployMutationInputSchema = Parse(
+        """
+        {"type":"object","required":["targetId","desiredRevision"],"properties":{"targetId":{"type":"string","minLength":1,"maxLength":256},"desiredRevision":{"type":"string","minLength":1,"maxLength":2048},"currentRevision":{"type":"string","maxLength":2048},"reason":{"type":"string","maxLength":2048},"idempotencyKey":{"type":"string","maxLength":256}},"additionalProperties":false}
+        """);
+
+    public static readonly JsonElement PlatformReleaseConvergenceInputSchema = Parse(
+        """
+        {"type":"object","properties":{"reason":{"type":"string","maxLength":2048},"idempotencyKey":{"type":"string","maxLength":256}},"additionalProperties":false}
+        """);
+
     public static readonly JsonElement PlatformReleaseStatusOutputSchema = Parse(
         """
         {

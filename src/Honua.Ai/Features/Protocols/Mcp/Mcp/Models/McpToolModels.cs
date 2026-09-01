@@ -175,6 +175,39 @@ internal sealed class McpProposeRollbackArgument
     public string? IdempotencyKey { get; set; }
 }
 
+internal sealed class McpProposeFindingArgument
+{
+    [JsonPropertyName("findingId")]
+    public string? FindingId { get; set; }
+}
+
+internal sealed class McpDeployMutationArgument
+{
+    [JsonPropertyName("targetId")]
+    public string? TargetId { get; set; }
+
+    [JsonPropertyName("desiredRevision")]
+    public string? DesiredRevision { get; set; }
+
+    [JsonPropertyName("currentRevision")]
+    public string? CurrentRevision { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; set; }
+}
+
+internal sealed class McpPlatformReleaseConvergenceArgument
+{
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; set; }
+}
+
 /// <summary>
 /// Output for <c>honua_propose_operation</c>. On <c>requiresApproval</c> the
 /// agent polls the <c>resourceUri</c> until the proposal resolves (#1696).
@@ -205,6 +238,27 @@ internal sealed class McpProposeOperationOutput
     /// </summary>
     [JsonPropertyName("supportedKinds")]
     public string[]? SupportedKinds { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("result")]
+    public JsonElement? Result { get; set; }
+
+    [JsonPropertyName("targets")]
+    public McpConvergenceTargetOutput[]? Targets { get; set; }
+}
+
+internal sealed class McpConvergenceTargetOutput
+{
+    [JsonPropertyName("targetId")]
+    public string TargetId { get; set; } = string.Empty;
+
+    [JsonPropertyName("outcome")]
+    public string Outcome { get; set; } = string.Empty;
+
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; set; }
 
     [JsonPropertyName("message")]
     public string? Message { get; set; }

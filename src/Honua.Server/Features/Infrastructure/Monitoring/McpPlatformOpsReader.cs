@@ -11,6 +11,9 @@ using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -31,6 +34,7 @@ internal sealed class McpPlatformOpsReader(
     IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
     DeployWorkflowService deployWorkflowService,
     IAuthorizationService authorization,
+    IOperatorScopeAuthorizer scopeAuthorizer,
     IServiceProvider services) : IMcpPlatformOpsReader
 {
     private const int DefaultPageSize = 50;
@@ -40,6 +44,7 @@ internal sealed class McpPlatformOpsReader(
     private readonly IOptionsMonitor<ControlPlaneOptions> _controlPlaneOptions = controlPlaneOptions;
     private readonly DeployWorkflowService _deployWorkflowService = deployWorkflowService;
     private readonly IAuthorizationService _authorization = authorization;
+    private readonly IOperatorScopeAuthorizer _scopeAuthorizer = scopeAuthorizer;
     private readonly IServiceProvider _services = services;
 
     public async Task<JsonElement> GetPlatformReleaseStatusAsync(
@@ -138,18 +143,7 @@ internal sealed class McpPlatformOpsReader(
     {
         ArgumentNullException.ThrowIfNull(argument);
 
-        var gateway = _services.GetService<IOperationGateway>();
-        var supportedKinds = ResolveSupportedKinds();
-        if (gateway is null)
-        {
-            return new McpProposeOperationOutput
-            {
-                Outcome = "unavailable",
-                RequiresApproval = false,
-                SupportedKinds = supportedKinds,
-                Message = "The operation gateway is unavailable (durable storage is not configured)."
-            };
-        }
+        await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Rollback, cancellationToken).ConfigureAwait(false);
 
         var targetId = Clean(argument.TargetId);
         if (targetId is null)
@@ -170,45 +164,131 @@ internal sealed class McpPlatformOpsReader(
             CurrentRevision = selection.CurrentRevision,
         }.Serialize();
 
-        var actor = principal.Identity?.Name;
-        var accepted = await _services.GetRequiredService<IOperationEnvelopeFactory>()
-            .CreateAcceptedAsync(
-                "control-plane.deploy",
-                new OperationPolicyContext
-                {
-                    PrincipalId = actor,
-                    IdempotencyKey = Clean(argument.IdempotencyKey),
-                    AuthorizationOutcome = "mcp-authorized",
-                },
-                cancellationToken).ConfigureAwait(false);
-        var result = await gateway.CreateApprovalProposalAsync(
-                accepted.OperationInstanceId,
-                new OperationGatewayRequest
-                {
-                    OperationInstanceId = accepted.OperationInstanceId,
-                    CorrelationId = accepted.CorrelationId,
-                    Kind = OperationClass.Deploy,
-                    RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
-                    RequestedBy = actor,
-                    Reason = string.IsNullOrWhiteSpace(argument.Reason)
-                        ? $"Propose rollback of deploy target '{targetId}' to prior revision '{selection.DesiredRevision}'."
-                        : argument.Reason,
-                    IdempotencyKey = Clean(argument.IdempotencyKey)
-                        ?? $"rollback:{targetId}:{selection.DesiredRevision}",
-                    ExecutionPayload = payload,
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
+        return await SealProposalAsync(principal, OperationClass.Deploy, payload,
+            string.IsNullOrWhiteSpace(argument.Reason) ? $"Propose rollback of deploy target '{targetId}' to prior revision '{selection.DesiredRevision}'." : argument.Reason,
+            Clean(argument.IdempotencyKey) ?? $"rollback:{targetId}:{selection.DesiredRevision}", cancellationToken).ConfigureAwait(false);
+    }
 
+    public async Task<McpProposeOperationOutput> ProposeFindingAsync(ClaimsPrincipal principal, McpProposeFindingArgument argument, CancellationToken cancellationToken)
+    {
+        await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        var findingId = Clean(argument.FindingId) ?? throw new GeoprocessingValidationException("'findingId' is required.");
+        var evaluation = await _services.GetRequiredService<IOpsFindingsEvidenceSource>()
+            .EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
+        var finding = evaluation.Findings
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, findingId, StringComparison.Ordinal));
+        var action = finding?.RecommendedAction ?? throw new GeoprocessingNotFoundException($"Finding '{findingId}' was not found or has no recommended action.");
+        if (!OpsFindingEvidenceMap.TryGetActionableRequiredSources(evaluation, finding, out _))
+            return new McpProposeOperationOutput { Outcome = "Blocked", SupportedKinds = ResolveSupportedKinds(), Message = "evidencePostureNotActionable" };
+        return await SealProposalAsync(principal, action.Kind, action.ExecutionPayload, action.Reason, findingId, cancellationToken, action.ActionDiscriminator).ConfigureAwait(false);
+    }
+
+    public async Task<McpProposeOperationOutput> ProposeDeployPlanAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
+    {
+        await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        var targetId = Clean(argument.TargetId) ?? throw new GeoprocessingValidationException("'targetId' is required.");
+        var desiredRevision = Clean(argument.DesiredRevision) ?? throw new GeoprocessingValidationException("'desiredRevision' is required.");
+        var plan = await _deployWorkflowService.PlanAsync(targetId, desiredRevision, Clean(argument.CurrentRevision), null, principal, cancellationToken).ConfigureAwait(false)
+            ?? throw new GeoprocessingNotFoundException($"Deploy target '{targetId}' was not found.");
+        return new McpProposeOperationOutput
+        {
+            Outcome = "planned",
+            RequiresApproval = false,
+            Result = Serialize(DeployControlEndpoints.MapPlanResponse(plan), DeployControlJsonContext.Default.DeployPlanResponse),
+        };
+    }
+
+    public async Task<McpProposeOperationOutput> ProposeDeployOperationAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
+        => await ProposeDeployAsync(principal, argument, "deploy-operation", cancellationToken).ConfigureAwait(false);
+
+    public async Task<McpProposeOperationOutput> ProposePlatformReleaseConvergenceAsync(ClaimsPrincipal principal, McpPlatformReleaseConvergenceArgument argument, CancellationToken cancellationToken)
+    {
+        await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        var options = _controlPlaneOptions.CurrentValue;
+        var release = options.PlatformRelease.ToDefinition() ?? throw new GeoprocessingPreconditionFailedException("A platform release is not declared.");
+        var desiredRevision = Clean(release.ServingArtifactReference) ?? throw new GeoprocessingPreconditionFailedException("The platform release has no serving artifact.");
+        var targets = options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)).ToArray();
+        if (targets.Length == 0) throw new GeoprocessingPreconditionFailedException("No serving deploy target is configured.");
+        var outcomes = new List<McpConvergenceTargetOutput>();
+        foreach (var target in targets)
+        {
+            if (!string.IsNullOrWhiteSpace(target.ArtifactReference) && !string.Equals(target.ArtifactReference, desiredRevision, StringComparison.Ordinal))
+            {
+                outcomes.Add(new() { TargetId = target.TargetId, Outcome = "skipped-pinned", Message = "Target pins an explicit artifact that diverges from the release." });
+                continue;
+            }
+            var lastApplied = (await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false))?.Deploy?.DesiredRevision;
+            if (string.Equals(lastApplied, desiredRevision, StringComparison.Ordinal))
+            {
+                outcomes.Add(new() { TargetId = target.TargetId, Outcome = "already-converged" });
+                continue;
+            }
+            var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
+            var requestedKey = Clean(argument.IdempotencyKey);
+            var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
+                Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
+                requestedKey is null ? $"converge:{release.Version}:{target.TargetId}" : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
+            outcomes.Add(new() { TargetId = target.TargetId, Outcome = proposal.Outcome, ProposalId = proposal.ProposalId, Message = proposal.Message });
+        }
+        return new McpProposeOperationOutput { Outcome = "completed", RequiresApproval = outcomes.Any(item => item.ProposalId is not null), Targets = outcomes.ToArray(), SupportedKinds = ResolveSupportedKinds() };
+    }
+
+    private async Task<McpProposeOperationOutput> ProposeDeployAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, string idempotencyPrefix, CancellationToken cancellationToken)
+    {
+        await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        var targetId = Clean(argument.TargetId) ?? throw new GeoprocessingValidationException("'targetId' is required.");
+        var desiredRevision = Clean(argument.DesiredRevision) ?? throw new GeoprocessingValidationException("'desiredRevision' is required.");
+        var payload = new DeployExecutionPayload { TargetId = targetId, DesiredRevision = desiredRevision, CurrentRevision = Clean(argument.CurrentRevision) }.Serialize();
+        return await SealProposalAsync(principal, OperationClass.Deploy, payload,
+            Clean(argument.Reason) ?? $"Propose deploy of target '{targetId}' to '{desiredRevision}'.",
+            Clean(argument.IdempotencyKey) ?? $"{idempotencyPrefix}:{targetId}:{desiredRevision}", cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<McpProposeOperationOutput> SealProposalAsync(ClaimsPrincipal principal, OperationClass kind, string? payload, string? reason, string idempotencyKey, CancellationToken cancellationToken, string? actionDiscriminator = null)
+    {
+        var gateway = _services.GetService<IOperationGateway>();
+        var envelopeFactory = _services.GetService<IOperationEnvelopeFactory>();
+        if (gateway is null || envelopeFactory is null)
+            return new McpProposeOperationOutput { Outcome = "unavailable", SupportedKinds = ResolveSupportedKinds(), Message = "The governed operation proposal runtime is unavailable." };
+
+        var actor = McpAuthorizationHelper.ResolveActorId(principal);
+        var scopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal);
+        var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray();
+        var authorizationOutcome = scopeGoverned ? "admin-policy-and-oauth-scope-authorized" : "admin-policy-authorized";
+        var accepted = await envelopeFactory.CreateAcceptedAsync($"control-plane.{kind.ToString().ToLowerInvariant()}", new OperationPolicyContext
+        {
+            PrincipalId = actor,
+            IdempotencyKey = idempotencyKey,
+            AuthorizationOutcome = authorizationOutcome,
+            ScopeGoverned = scopeGoverned,
+            RecognizedScopes = scopes,
+        }, cancellationToken).ConfigureAwait(false);
+        if (accepted.Status == OperationHandleStatus.Failed || string.IsNullOrWhiteSpace(accepted.AuditId))
+            return new McpProposeOperationOutput { Outcome = "Failed", SupportedKinds = ResolveSupportedKinds(), Message = accepted.Reason ?? "The proposal could not be durably accepted and audited." };
+
+        var result = await gateway.CreateApprovalProposalAsync(accepted.OperationInstanceId, new OperationGatewayRequest
+        {
+            OperationInstanceId = accepted.OperationInstanceId,
+            CorrelationId = accepted.CorrelationId,
+            Kind = kind,
+            ActionDiscriminator = actionDiscriminator,
+            RequestedBy = actor,
+            RequestedByAgent = string.IsNullOrWhiteSpace(actor) ? $"{AgentActorPrefix}mcp" : $"{AgentActorPrefix}{actor}",
+            Reason = reason,
+            IdempotencyKey = idempotencyKey,
+            ExecutionPayload = payload,
+            ScopeGoverned = scopeGoverned,
+            RecognizedScopes = scopes,
+        }, cancellationToken).ConfigureAwait(false);
         return new McpProposeOperationOutput
         {
             Outcome = result.Outcome.ToString(),
             RequiresApproval = result.Outcome == OperationGatewayOutcome.ProposalCreated,
             ProposalId = result.ProposalId,
-            ResourceUri = result.ProposalId == null ? null : McpResourceUris.ProposalUri(result.ProposalId),
+            ResourceUri = result.ProposalId is null ? null : McpResourceUris.ProposalUri(result.ProposalId),
             ExecutionOperationId = result.ExecutionOperationId,
-            SupportedKinds = supportedKinds,
-            Message = result.Message,
+            SupportedKinds = ResolveSupportedKinds(),
+            Message = result.Message
         };
     }
 
@@ -292,6 +372,23 @@ internal sealed class McpPlatformOpsReader(
                 requiresAuthentication: false,
                 message: "Caller is not authorized to read platform operations.");
         }
+    }
+
+    private async Task EnsureMutationAuthorizedAsync(
+        ClaimsPrincipal principal,
+        OperatorResourceType resourceType,
+        OperatorOperation operation,
+        CancellationToken cancellationToken)
+    {
+        var resource = new DefaultHttpContext { User = principal, RequestAborted = cancellationToken };
+        resource.Request.Method = HttpMethods.Post;
+        var grant = await _authorization.AuthorizeAsync(principal, resource, AuthenticationExtensions.AdminPolicy).ConfigureAwait(false);
+        if (!grant.Succeeded)
+            throw new GeoprocessingAuthorizationException(false, "Caller is not authorized to propose platform mutations.");
+
+        var scope = _scopeAuthorizer.Evaluate(principal, resourceType, operation);
+        if (!scope.IsAllowed)
+            throw new GeoprocessingAuthorizationException(false, scope.Reason ?? "The access token scope does not authorize this mutation.");
     }
 
     private string[]? ResolveSupportedKinds()

@@ -212,6 +212,10 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DeployOperationsTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SupportedOperationKindsTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeRollbackTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeFindingTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeDeployPlanTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeDeployOperationTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposePlatformReleaseConvergenceTool>());
         }
 
         // honua_list_capabilities (#1949): a self-describing manifest of the live

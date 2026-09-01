@@ -839,7 +839,7 @@ internal static class DeployControlEndpoints
         public const string Blocked = "blocked";
     }
 
-    private static DeployPlanResponse MapPlanResponse(DeployWorkflowPlanResult result)
+    internal static DeployPlanResponse MapPlanResponse(DeployWorkflowPlanResult result)
         => new()
         {
             Target = MapTargetResponse(result.Spec),

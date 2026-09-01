@@ -309,6 +309,11 @@ public sealed class CapabilityRegistryConformanceTests
             new DeployOperationsTool(NullLogger<DeployOperationsTool>.Instance),
             new SupportedOperationKindsTool(NullLogger<SupportedOperationKindsTool>.Instance),
             new ProposeRollbackTool(NullLogger<ProposeRollbackTool>.Instance),
+            new ProposeFindingTool(NullLogger<ProposeFindingTool>.Instance),
+            new ProposeDeployPlanTool(NullLogger<ProposeDeployPlanTool>.Instance),
+            new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            new ProposePlatformReleaseConvergenceTool(
+                NullLogger<ProposePlatformReleaseConvergenceTool>.Instance),
             new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
             new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
             new Honua.Ai.Protocols.Mcp.MapTools.ListLayersTool(
