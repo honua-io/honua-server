@@ -240,6 +240,9 @@ internal sealed class McpInitializeResult
 
 internal sealed class McpServerCapabilities
 {
+    [JsonPropertyName("profiles")]
+    public IReadOnlyList<string> Profiles { get; set; } = ["base"];
+
     [JsonPropertyName("tools")]
     public McpCapabilityFlag Tools { get; set; } = new();
 

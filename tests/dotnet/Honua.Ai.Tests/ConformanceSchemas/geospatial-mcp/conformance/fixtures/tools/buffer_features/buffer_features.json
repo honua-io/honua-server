@@ -1,0 +1,15 @@
+{
+  "id": "buffer_features.layer_500m_dissolved",
+  "schemaRef": "tools/buffer_features.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "source": { "serviceId": "county_roads", "layerId": 0 },
+    "distance": 500,
+    "unit": "meters",
+    "dissolve": true,
+    "where": "road_class = 'arterial'",
+    "outSrid": 3857
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef"]
+}

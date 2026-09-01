@@ -62,6 +62,13 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeOperationTool>());
 
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, BufferFeaturesTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, OverlayFeaturesTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SummarizeStatisticsTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ReprojectFeaturesTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, JoinFeaturesTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExportDatasetTool>());
+
         // ── MCP capability-breadth tools (#2813) ──────────────────────────────
         // honua_list_jobs: caller-scoped job enumeration (status filter + cursor
         // paging) over the canonical IGeoprocessingJobService.ListJobsAsync, so an

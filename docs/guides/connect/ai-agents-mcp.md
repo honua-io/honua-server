@@ -314,13 +314,29 @@ matches your ingress:
 | **Baseline serverless** (recommended default) | `Mcp:ServerInitiatedStreamEnabled=false` | Poll `honua://jobs/{jobId}` for job state (no server push); `GET /mcp` → `405` | `engine:"fixture"` — a canned capability demo; hand-author plans from `honua://catalog/processes` and confirm with `honua_validate_plan` | Works behind buffering ingress (CloudFront → API Gateway HTTP API → Lambda); the SDK skips the optional standalone stream. |
 | **Streaming-capable** | `Mcp:ServerInitiatedStreamEnabled=true` behind non-buffering ingress | Server-initiated `GET /mcp` SSE pushes progress + `*/list_changed` | Unchanged by this switch (always `engine:"fixture"`) | Enable only behind nginx (`proxy_buffering off`), an ALB, or a direct connection — never a buffering serverless gateway. |
 
-Both profiles change only *how* the surface behaves, not *which* tools and
-resources it advertises: the progress-delivery switch leaves
+Both deployment profiles change only *how* the surface behaves, not *which*
+tools and resources it advertises: the progress-delivery switch leaves
 `tools/list`, `resources/list`, and `prompts/list` unchanged. The difference is
 operational — whether progress is pushed or polled. The read-only pre-flight tools
 (`honua_validate_plan`, `honua_dry_run_plan`) report the same execution reality in
 every profile — including that a job runs a single process, so multi-step or
 sync-only plans are flagged rather than silently under-executed.
+
+### Analysis profile
+
+The geospatial-mcp `analysis` profile is a separate, disabled-by-default roster
+switch. Enable it with `Mcp:Profiles:0=base` and
+`Mcp:Profiles:1=analysis` (or the equivalent JSON array). The server then
+advertises `honua_buffer_features`, `honua_overlay_features`,
+`honua_summarize_statistics`, `honua_reproject_features`,
+`honua_join_features`, and `honua_export_dataset`; `initialize` also reports
+both `base` and `analysis` in `capabilities.profiles`. Each verb submits one
+canonical plan through `IGeoprocessingJobService` and returns a job handle plus
+result artifact references. Export uses the existing GeoJSON sink; GeoPackage
+output remains unsupported and is not enabled by this profile.
+
+When `analysis` is absent from `Mcp:Profiles`, all six verbs are omitted from
+`tools/list` and dispatch while the base catalog and manifest remain unchanged.
 
 ### Which tools and resources appear (capability gating)
 

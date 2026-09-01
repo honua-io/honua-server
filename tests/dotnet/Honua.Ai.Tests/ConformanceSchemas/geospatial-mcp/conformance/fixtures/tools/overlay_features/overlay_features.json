@@ -1,0 +1,13 @@
+{
+  "id": "overlay_features.intersect_layer_with_artifact",
+  "schemaRef": "tools/overlay_features.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "source": { "serviceId": "county_parcels", "layerId": 0 },
+    "overlay": { "artifactId": "artifact_flood_100yr" },
+    "operation": "intersect",
+    "outSrid": 4326
+  },
+  "expected": "tool_result",
+  "canonicalRefs": ["LayerRef", "ArtifactRef"]
+}
