@@ -218,18 +218,20 @@ public sealed class McpPaginationTests
     public async Task ResourcesRead_ExplicitMaxCharsOptsUpWithinHardCeiling()
     {
         var text = new string('z', 70_000);
+        var resource = new StubResource("honua://big/doc", text);
         var surface = new McpDataAccessSurface(
             tools: [],
-            resources: [new StubResource("honua://big/doc", text)],
+            resources: [resource],
             logger: NullLogger<McpDataAccessSurface>.Instance);
 
         var bounded = await DispatchAsync(
             surface,
             """{"jsonrpc":"2.0","id":"r1","method":"resources/read","params":{"uri":"honua://big/doc"}}""",
             McpTestFactory.AuthenticatedHttpContext());
-        bounded!.Result!.Value.GetProperty("contents")[0].GetProperty("text").GetString()!
+        var boundedResult = bounded!.Result!.Value;
+        boundedResult.GetProperty("contents")[0].GetProperty("text").GetString()!
             .Length.Should().Be(64_000);
-        bounded.Result.Value.GetProperty("nextCursor").GetString().Should().NotBeNullOrWhiteSpace();
+        boundedResult.GetProperty("nextCursor").GetString().Should().NotBeNullOrWhiteSpace();
 
         var optedUp = await DispatchAsync(
             surface,
@@ -244,6 +246,7 @@ public sealed class McpPaginationTests
             McpTestFactory.AuthenticatedHttpContext());
         excessive!.Error.Should().NotBeNull();
         excessive.Error!.Code.Should().Be(McpErrorMapper.JsonRpcInvalidParams);
+        resource.ReadCount.Should().Be(2, "invalid limits must be rejected before provider I/O");
     }
 
     private static async Task<(string[] Names, string? NextCursor)> ListToolPageAsync(
@@ -318,6 +321,8 @@ public sealed class McpPaginationTests
 
         public string Family => McpTelemetry.ResourceFamily.Unknown;
 
+        public int ReadCount { get; private set; }
+
         public IReadOnlyList<McpResourceDescriptor> Describe() =>
             [new McpResourceDescriptor { Uri = _uri, Name = "stub", Description = "stub" }];
 
@@ -328,13 +333,16 @@ public sealed class McpPaginationTests
         public Task<McpResourcesReadResult> ReadAsync(
             HttpContext httpContext,
             string uri,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(new McpResourcesReadResult
+            CancellationToken cancellationToken)
+        {
+            ReadCount++;
+            return Task.FromResult(new McpResourcesReadResult
             {
                 Contents =
                 [
                     new McpResourceContent { Uri = _uri, MimeType = "application/json", Text = _text }
                 ]
             });
+        }
     }
 }

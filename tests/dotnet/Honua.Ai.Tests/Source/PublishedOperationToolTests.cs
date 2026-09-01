@@ -635,7 +635,7 @@ public sealed class PublishedOperationToolTests
         // tools/list advertises the runtime-published tool.
         var listResponse = await surface.DispatchAsync(
             AuthenticatedContext(new ServiceCollection().BuildServiceProvider()),
-            Rpc("l1", "tools/list", null),
+            Rpc("l1", "tools/list", """{"view":"full"}"""),
             CancellationToken.None);
 
         listResponse!.Result!.Value.GetProperty("tools").EnumerateArray()
@@ -674,7 +674,7 @@ public sealed class PublishedOperationToolTests
 
         var response = await surface.DispatchAsync(
             AuthenticatedContext(new ServiceCollection().BuildServiceProvider()),
-            Rpc("l2", "tools/list", null),
+            Rpc("l2", "tools/list", """{"view":"full"}"""),
             CancellationToken.None);
 
         response!.Result!.Value.GetProperty("tools").EnumerateArray()

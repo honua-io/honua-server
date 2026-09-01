@@ -629,29 +629,41 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     public async Task ToolsList_DefaultComposition_AdvertisesGeocodeAndRouteTools()
     {
-        var response = await PostRpcAsync("""
-            {"jsonrpc":"2.0","id":"tools-1","method":"tools/list"}
-            """);
+        var tools = new List<JsonElement>();
+        string? cursor = null;
+        do
+        {
+            var cursorParameter = cursor is null
+                ? string.Empty
+                : ",\"cursor\":" + JsonSerializer.Serialize(cursor);
+            var response = await PostRpcAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":\"tools-1\",\"method\":\"tools/list\",\"params\":{\"view\":\"full\""
+                + cursorParameter + "}}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = await ReadJsonAsync(response);
-        var root = document.RootElement;
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadJsonAsync(response);
+            var result = document.RootElement.GetProperty("result");
+            tools.AddRange(result.GetProperty("tools").EnumerateArray().Select(tool => tool.Clone()));
+            cursor = result.TryGetProperty("nextCursor", out var nextCursor)
+                ? nextCursor.GetString()
+                : null;
+        }
+        while (cursor is not null);
 
-        var tools = root.GetProperty("result").GetProperty("tools");
-        var names = tools.EnumerateArray()
+        var names = tools
             .Select(t => t.GetProperty("name").GetString())
             .ToArray();
 
         names.Should().Contain("honua_geocode_address");
         names.Should().Contain("honua_solve_route");
 
-        var geocode = tools.EnumerateArray().Single(t =>
+        var geocode = tools.Single(t =>
             t.GetProperty("name").GetString() == "honua_geocode_address");
         geocode.GetProperty("inputSchema").GetProperty("required").EnumerateArray()
             .Select(item => item.GetString())
             .Should().Contain("address");
 
-        var route = tools.EnumerateArray().Single(t =>
+        var route = tools.Single(t =>
             t.GetProperty("name").GetString() == "honua_solve_route");
         route.GetProperty("inputSchema").GetProperty("required").EnumerateArray()
             .Select(item => item.GetString())

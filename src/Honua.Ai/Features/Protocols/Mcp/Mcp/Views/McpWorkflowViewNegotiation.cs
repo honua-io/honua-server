@@ -50,7 +50,7 @@ internal sealed class McpWorkflowViewOptions
 /// Selecting a view can only <em>narrow discovery</em>. It never grants,
 /// caches, or implies authority, and it never hides the escape hatch: a
 /// <c>tools/list</c> that selects no view — or explicitly selects
-/// <see cref="FullCatalogViewName"/> — requests the explicit admin-only complete
+/// <see cref="FullCatalogViewName"/> — requests the explicit authenticated complete
 /// catalog export.
 /// </para>
 /// </remarks>
@@ -70,7 +70,7 @@ internal static class McpWorkflowViewNegotiation
 
     /// <summary>
     /// Reserved name a client sends to explicitly opt back out of any negotiated
-    /// or configured view and request the admin-only complete paginated catalog.
+    /// or configured view and request the authenticated complete paginated catalog.
     /// </summary>
     public const string FullCatalogViewName = "full";
 

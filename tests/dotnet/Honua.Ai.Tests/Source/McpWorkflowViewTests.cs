@@ -209,12 +209,24 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
-    public async Task ToolsList_FullCatalogExport_RequiresAdmin()
+    public async Task ToolsList_FullCatalogExport_IsAvailableToAuthenticatedClients()
     {
         var response = await DispatchAsync(
             BuildFullSurface(),
             """{"jsonrpc":"2.0","id":"full","method":"tools/list","params":{"view":"full"}}""",
             McpTestFactory.AuthenticatedHttpContext());
+
+        response!.Error.Should().BeNull();
+        response.Result!.Value.GetProperty("tools").EnumerateArray().Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    public async Task ToolsList_FullCatalogExport_RequiresAuthentication()
+    {
+        var response = await DispatchAsync(
+            BuildFullSurface(),
+            """{"jsonrpc":"2.0","id":"full","method":"tools/list","params":{"view":"full"}}""",
+            McpTestFactory.AnonymousHttpContext());
 
         response!.Error.Should().NotBeNull();
         response.Error!.Data!.Code.Should().Be(McpErrorMapper.Codes.PermissionDenied);
@@ -822,11 +834,6 @@ public sealed class McpWorkflowViewTests
         HttpContext? context = null)
     {
         context ??= McpTestFactory.AuthenticatedHttpContext();
-        if (McpWorkflowViewNegotiation.IsFullCatalog(view))
-        {
-            ((ClaimsIdentity)context.User.Identity!).AddClaim(new Claim(ClaimTypes.Role, "admin"));
-        }
-
         var tools = new List<JsonElement>();
         var meta = default(JsonElement);
         string? cursor = null;
