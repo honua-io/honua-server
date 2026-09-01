@@ -251,14 +251,14 @@ assert_descriptor \
   ".github/ci-shards.json" \
   "no_path_match" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 
 assert_descriptor \
   "ci-script-only" \
   "scripts/ci/honua-server-targeted-tests.sh" \
   "no_path_match" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 
 assert_descriptor \
   "feature-server-slice" \
@@ -272,20 +272,20 @@ assert_descriptor \
   "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs" \
   "infrastructure_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 assert_descriptor \
   "unmapped-source" \
   "src/Honua.Server/Features/NewFeature/NewEndpoint.cs" \
   "unmapped_source_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # A change to the shared Honua.Core validation pipeline must target the protocol
 # shards that exercise it (query/edit/metadata validation) instead of escalating
 # to run_all. ResourceValidator/CommonQueryValidator are consumed by the
 # GeoServices, OGC API, OGC Classic, OData, STAC, Geometry, Operator Eval, Admin
-# and MCP query/edit paths, so a validation-only diff is targeted, not run_all.
+# and MCP and Sessions query/edit paths, so a validation-only diff is targeted, not run_all.
 assert_descriptor \
   "core-validation-targeted" \
   "src/Honua.Core/Features/Validation/ResourceValidator.cs" \
@@ -300,40 +300,40 @@ assert_descriptor \
   "false" \
   "OGC API Features"
 
-# Publishing persistence is a bounded MCP/operator surface. Its canonical
-# Core/Postgres models and stores are exercised by the MCP promotion-resource
-# tests plus the Core shard's Postgres server-composition proof, so changes in
+# Publishing persistence is a bounded MCP and Sessions/operator surface. Its canonical
+# Core and Cloud Contracts/Postgres models and stores are exercised by the MCP and Sessions promotion-resource
+# tests plus the Core and Cloud Contracts shard's Postgres server-composition proof, so changes in
 # that slice target both owners instead of tripping the unmapped-source net.
 assert_descriptor \
   "publishing-core-targeted" \
   "src/Honua.Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
   "targeted" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 assert_descriptor \
   "publishing-core-includes-mcp" \
   "src/Honua.Core/Features/Publishing/Domain/PublishingJsonContext.cs" \
   "targeted" \
   "false" \
-  "MCP"
+  "MCP and Sessions"
 assert_descriptor \
   "publishing-postgres-targeted" \
   "src/Honua.Db/Postgres/Features/Publishing/PostgresPublishedServiceStore.cs" \
   "targeted" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 assert_descriptor \
   "publishing-postgres-includes-mcp" \
   "src/Honua.Db/Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
   "targeted" \
   "false" \
-  "MCP"
+  "MCP and Sessions"
 assert_excludes_shard \
   "publishing-excludes-imageserver" \
   "src/Honua.Db/Postgres/Features/Publishing/PostgresDeploymentStore.cs" \
   "GeoServices ImageServer"
 
-# The promotion migration is selected by the Core shard's migration/startup
+# The promotion migration is selected by the Core and Cloud Contracts shard's migration/startup
 # coverage. Keep this exact-file mapping narrow: unrelated future migrations
 # remain unmapped and therefore fail safe until their owners are declared.
 assert_descriptor \
@@ -341,23 +341,23 @@ assert_descriptor \
   "src/Honua.Server/Migrations/082_CreatePromotionStores.sql" \
   "targeted" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # Client-compat Seed classes and the focused promotion Startup composition test
-# are selected by the Core catch-all filter. Claim their paths explicitly so a
+# are selected by the Core and Cloud Contracts catch-all filter. Claim their paths explicitly so a
 # test-only edit does not instantiate every server-test shard.
 assert_descriptor \
   "client-compat-seed-targeted" \
   "tests/dotnet/Honua.Server.Tests/Seed/ClientCompatSeedSequenceTests.cs" \
   "targeted" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 assert_descriptor \
   "promotion-startup-targeted" \
   "tests/dotnet/Honua.Server.Tests/Startup/PostgresPromotionSurfaceRegistrationTests.cs" \
   "targeted" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # Do not weaken the global Postgres DI fail-safe. Arbitrary changes to the
 # shared registrar can affect every Postgres-backed fixture and must run all.
@@ -366,7 +366,7 @@ assert_descriptor \
   "src/Honua.Db/Postgres/ServiceCollectionExtensions.cs" \
   "infrastructure_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # ---------------------------------------------------------------------------
 # #1897 guard cases: feature PRs must route to a targeted subset, not run_all,
@@ -382,7 +382,7 @@ assert_descriptor \
   "Honua.sln" \
   "no_path_match" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # A single GeoServices FeatureServer change targets the FeatureServer shards and
 # must EXCLUDE the unrelated GeoServices ImageServer shard (correctness: do not
@@ -442,14 +442,14 @@ assert_descriptor \
   "tests/dotnet/Honua.TestKit/PostgresFixture.cs" \
   "infrastructure_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 assert_descriptor \
   "core-query-pipeline-still-run-all" \
   "src/Honua.Core/Queries/FeatureQuery.cs" \
   "infrastructure_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # A brand-new, not-yet-mapped top-level protocol area (e.g. a future
 # src/Honua.Protocols.Wcps/ landing before its shard is added) trips the
@@ -460,7 +460,7 @@ assert_descriptor \
   "src/Honua.Protocols.Wcps/WcpsEndpoints.cs" \
   "unmapped_source_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # SensorThings (STA) now HAS a shard (#1899): a change confined to it must route
 # to the dedicated SensorThings shard (targeted), not run_all and not a silent
@@ -479,7 +479,7 @@ assert_descriptor \
   "src/Honua.Hosting/Features/Rendering/RasterMapRenderingPipeline.cs" \
   "unmapped_source_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # #2693: bounded operator paths observed in merge-train child 29142991789
 # already had known test owners, but missing path ownership caused the entire
@@ -507,7 +507,7 @@ assert_descriptor \
   "src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs" \
   "targeted" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 assert_descriptor \
   "imageserver-registry-targets-imageserver" \
   "src/Honua.Server/EndpointRegistry.ImageServer.cs" \
@@ -525,13 +525,13 @@ assert_descriptor \
   "tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs" \
   "targeted" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 assert_descriptor \
   "routing-solver-test-targeted" \
   "tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs" \
   "targeted" \
   "false" \
-  "Core"
+  "Core and Cloud Contracts"
 assert_descriptor \
   "compact-tile-writer-test-targeted" \
   "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Tiles/CompactTilePackageWriterTests.cs" \
@@ -545,9 +545,9 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Domain/RoutingModels.cs' \
       'src/Honua.Server/EndpointRegistry.ImageServer.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NAServerPgRoutingEndToEndTests.cs')" \
-  '["Core","Raster Serving Scene Geometry and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance"]'
+  '["Core and Cloud Contracts","Raster Serving Scene Geometry and Terrain","GeoServices ImageServer","GeoServices GPServer and NAServer","STAC and API Governance"]'
 
-# Follow-up proof from draft PR #2700: pure routing tests share the Core owner
+# Follow-up proof from draft PR #2700: pure routing tests share the Core and Cloud Contracts owner
 # with the real pgRouting fixture and must not widen the canonical NAServer diff.
 assert_exact_shards \
   "location-allocation-routing-batch" \
@@ -555,7 +555,7 @@ assert_exact_shards \
       'src/Honua.Routing/Features/Routing/Providers/LocationAllocationSolver.cs' \
       'src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/LocationAllocationSolverTests.cs')" \
-  '["Core","GeoServices GPServer and NAServer"]'
+  '["Core and Cloud Contracts","GeoServices GPServer and NAServer"]'
 
 # #2712: migration 083 and the exact pgRouting TestKit fixture are bounded
 # companions to the canonical Routing/NAServer slice. Keep other migrations
@@ -563,11 +563,11 @@ assert_exact_shards \
 assert_exact_shards \
   "routing-profile-migration-owner" \
   "src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql" \
-  '["Core"]'
+  '["Core and Cloud Contracts"]'
 assert_exact_shards \
   "routing-topology-lifecycle-migration-owner" \
   "src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql" \
-  '["Core"]'
+  '["Core and Cloud Contracts"]'
 assert_exact_shards \
   "network-dataset-admin-exact-owner" \
   "tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs" \
@@ -581,7 +581,7 @@ assert_descriptor \
 assert_exact_shards \
   "pgrouting-fixture-owner" \
   "tests/dotnet/Honua.TestKit/PgRoutingFixture.cs" \
-  '["Core"]'
+  '["Core and Cloud Contracts"]'
 assert_exact_shards \
   "routing-profile-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s\n%s' \
@@ -590,7 +590,7 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/083_AddNetworkDatasetTravelProfiles.sql' \
       'tests/dotnet/Honua.TestKit/PgRoutingFixture.cs' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkDatasetValidationTests.cs')" \
-  '["Core","GeoServices GPServer and NAServer"]'
+  '["Core and Cloud Contracts","GeoServices GPServer and NAServer"]'
 assert_exact_shards \
   "routing-topology-lifecycle-cumulative-batch" \
   "$(printf '%s\n%s\n%s\n%s' \
@@ -598,21 +598,21 @@ assert_exact_shards \
       'src/Honua.Server/Migrations/084_CreateNetworkTopologyGenerations.sql' \
       'tests/dotnet/Honua.Server.Tests/Routing/NetworkTopologyLifecycleTests.cs' \
       'tests/dotnet/Honua.Server.Tests/Features/Admin/NetworkDatasetAdminEndpointsTests.cs')" \
-  '["Core","GeoServices GPServer and NAServer","Server Features Admin Network and Jobs"]'
+  '["Core and Cloud Contracts","GeoServices GPServer and NAServer","Server Features Admin Network and Jobs"]'
 assert_descriptor \
   "unknown-migration-still-run-all" \
   "src/Honua.Server/Migrations/999_FutureUnmappedMigration.sql" \
   "unmapped_source_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 assert_descriptor \
   "unrelated-testkit-still-run-all" \
   "tests/dotnet/Honua.TestKit/FutureSharedFixture.cs" \
   "infrastructure_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
-# #2709: the four shards carved from the former Server Features Misc shard
+# #2709: the four shards carved from the former Server Features Miscellaneous shard
 # retained a shared source-path list after their filters diverged, so the Zarr
 # registrar was routed to the one shard whose filter could actually discover its
 # tests — then the Misc catch-all. #3271 gave Zarr (with COG and Coverages) a
@@ -627,7 +627,7 @@ assert_exact_shards \
 # owners added below.
 
 # #3271: the three raster-SERVING protocol adapters route to one owning shard.
-# COG used to land in `Infrastructure and Control Plane` (a cloud-provider/contract bucket) and
+# COG used to land in `Caching File Storage Styling and Infrastructure` (a cloud-provider/contract bucket) and
 # Coverages in the Misc catch-all, so a raster-serving regression surfaced
 # somewhere unrelated or inside a 60-minute shard. Coverages also carried the
 # same #2709 leftover as Zarr — shards carved out of Misc kept its source path
@@ -643,7 +643,7 @@ assert_exact_shards \
 # The test file itself also sits under the broad tests/.../Features/ prefix that
 # the Misc catch-all family claims, so an exact-set assertion does not apply:
 # assert INCLUSION of the new owner plus the exclusion that actually moved —
-# Infrastructure and Control Plane no longer runs COG.
+# Caching File Storage Styling and Infrastructure no longer runs COG.
 assert_descriptor \
   "cog-test-source-includes-raster-serving" \
   "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogEndpointTests.cs" \
@@ -653,7 +653,7 @@ assert_descriptor \
 assert_excludes_shard \
   "cog-test-source-excludes-cloud-contract" \
   "tests/dotnet/Honua.Server.Tests/Features/Protocols/Cog/CogEndpointTests.cs" \
-  "Infrastructure and Control Plane"
+  "Caching File Storage Styling and Infrastructure"
 
 # Representative cumulative diff from #2702: shared raster changes retain the
 # ImageServer/coverage/WCS owners, while the server Zarr registrar adds only its
@@ -675,7 +675,7 @@ assert_descriptor \
   "src/Honua.Server/Features/DataEnrichment/DataEnrichmentServiceCollectionExtensions.cs" \
   "targeted" \
   "false" \
-  "Server Features Data Enrichment and Sharing"
+  "Server Features Data Enrichment and Capabilities"
 # Capacity rebalance (#2422, re-split in #3229): Streaming SOURCE is
 # class-balanced across three executable owners - the Misc catch-all (heavy
 # FeatureStreamEndpointsTests), the dedicated Streaming Snapshot and Conformance
@@ -684,7 +684,7 @@ assert_descriptor \
 assert_exact_shards \
   "streaming-source-exact-owners" \
   "src/Honua.Server/Features/Streaming/FeatureStreamEndpoints.cs" \
-  '["Server Features Data Enrichment and Sharing","Server Features Misc","Server Features Streaming Snapshot and Conformance"]'
+  '["Server Features Data Enrichment and Capabilities","Server Features Miscellaneous","Server Features Sharing","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance"]'
 # A Streaming TEST change, by contrast, must reach the shard that runs those
 # classes and must NOT wake the 25-minute Data Enrichment and Sharing child,
 # which runs no Streaming class. #3229 narrowed that child off the broad
@@ -692,21 +692,21 @@ assert_exact_shards \
 assert_exact_shards \
   "streaming-test-exact-owners" \
   "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
-  '["Server Features Misc","Server Features Spec Printing and Static Maps","Server Features Streaming Snapshot and Conformance"]'
+  '["Server Features Miscellaneous","Server Features Spec Printing and Static Maps","Server Features Streaming Endpoints","Server Features Streaming Snapshot and Conformance"]'
 assert_excludes_shard \
   "streaming-test-excludes-data-enrichment-sharing" \
   "tests/dotnet/Honua.Server.Tests/Features/Streaming/FeatureStreamSnapshotEndpointsTests.cs" \
-  "Server Features Data Enrichment and Sharing"
+  "Server Features Data Enrichment and Capabilities"
 # Root Admin tests share the already-running Admin Operations shard after the
 # legacy Admin & Infrastructure runner exhausted its test budget.
 assert_exact_shards \
   "root-admin-test-exact-owner" \
   "tests/dotnet/Honua.Server.Tests/Admin/LayerPublishingIntegrationTests.cs" \
-  '["Server Features Admin Operations"]'
+  '["Server Features Admin Operations Endpoints","Server Features Admin Runtime Operations"]'
 assert_exact_shards \
   "root-admin-endpoint-test-exact-owner" \
   "tests/dotnet/Honua.Server.Tests/AdminEndpointTests.cs" \
-  '["Server Features Admin Operations"]'
+  '["Server Features Admin Operations Endpoints","Server Features Admin Runtime Operations"]'
 assert_descriptor \
   "collaboration-source-retains-owner" \
   "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
@@ -716,17 +716,17 @@ assert_descriptor \
 assert_excludes_shard \
   "collaboration-source-excludes-studio-child" \
   "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
-  "Server Features Studio and Feature Store"
+  "Server Features Analytics Studio Export and Reporting"
 assert_excludes_shard \
   "collaboration-source-excludes-analytics-child" \
   "src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs" \
-  "Server Features Analytics Export and Reporting"
+  "Server Features Analytics Studio Export and Reporting"
 assert_descriptor \
   "studio-source-retains-owner" \
   "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs" \
   "targeted" \
   "false" \
-  "Server Features Studio and Feature Store"
+  "Server Features Analytics Studio Export and Reporting"
 assert_excludes_shard \
   "studio-source-excludes-collaboration-child" \
   "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs" \
@@ -736,11 +736,11 @@ assert_descriptor \
   "src/Honua.Server/Features/Reporting/AnalysisReportEndpoints.cs" \
   "targeted" \
   "false" \
-  "Server Features Analytics Export and Reporting"
+  "Server Features Analytics Studio Export and Reporting"
 assert_excludes_shard \
-  "reporting-source-excludes-studio-child" \
+  "reporting-source-excludes-collaboration-child" \
   "src/Honua.Server/Features/Reporting/AnalysisReportEndpoints.cs" \
-  "Server Features Studio and Feature Store"
+  "Server Features Collaboration Mobile and Identity"
 assert_descriptor \
   "spec-source-retains-owner" \
   "src/Honua.Server/Features/Spec/HonuaSpecService.cs" \
@@ -755,7 +755,7 @@ assert_descriptor \
   "src/Honua.Routing/Features/Future/FutureRouter.cs" \
   "unmapped_source_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # ---------------------------------------------------------------------------
 # targeted_override_prefixes guard (ADR-0037 targeting follow-up): endpoint-
@@ -780,7 +780,7 @@ assert_descriptor \
   "src/Honua.Server/EndpointRegistry.cs" \
   "targeted" \
   "false" \
-  "MCP Sessions"
+  "MCP and Sessions"
 assert_excludes_shard \
   "endpoint-registry-excludes-wfs-endpoints" \
   "src/Honua.Server/EndpointRegistry.cs" \
@@ -798,7 +798,7 @@ assert_descriptor \
   "src/Honua.Server/Program.cs" \
   "targeted" \
   "false" \
-  "MCP Sessions"
+  "MCP and Sessions"
 
 # Startup/JsonContextRegistration.cs sits under the infrastructure_paths prefix
 # src/Honua.Server/Startup/ but the override must WIN so a JSON-context tweak
@@ -814,7 +814,7 @@ assert_descriptor \
   "src/Honua.Server/Startup/JsonContextRegistration.cs" \
   "targeted" \
   "false" \
-  "MCP Sessions"
+  "MCP and Sessions"
 
 # The shared WMTS TopLeftCorner formatter has three bounded consumers. Keep a
 # change to that exact file on the classic WMTS, OGC API Tiles, and ImageServer
@@ -843,7 +843,7 @@ assert_descriptor \
       'src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs')" \
   "targeted" \
   "false" \
-  "MCP"
+  "MCP and Sessions"
 
 # A Honua.Hosting/Features/Authentication/ change -> auth/security shards, NOT
 # run_all and NOT a silent skip.
@@ -858,7 +858,7 @@ assert_descriptor \
   "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
   "targeted" \
   "false" \
-  "Infrastructure and Control Plane"
+  "Caching File Storage Styling and Infrastructure"
 assert_excludes_shard \
   "hosting-authentication-excludes-featureserver" \
   "src/Honua.Hosting/Features/Authentication/JwtBearerSupport.cs" \
@@ -876,7 +876,7 @@ assert_descriptor \
   "src/Honua.Hosting/Features/Security/SecretReferenceResolver.cs" \
   "targeted" \
   "false" \
-  "Infrastructure and Control Plane"
+  "Caching File Storage Styling and Infrastructure"
 
 # Conservatism guards: the override must NOT widen run_all coverage. A NON-override
 # Startup file (DI/host bootstrap core) must STILL run_all, and a generic unmapped
@@ -886,16 +886,16 @@ assert_descriptor \
   "src/Honua.Server/Startup/InfrastructureCompositionRoot.cs" \
   "infrastructure_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 assert_descriptor \
   "non-override-hosting-feature-still-run-all" \
   "src/Honua.Hosting/Features/Caching/HostResponseCache.cs" \
   "unmapped_source_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
-# A registration override mixed with a genuinely cross-cutting Core change still
-# escalates to run_all (the Core file is not override-claimed): override must not
+# A registration override mixed with a genuinely cross-cutting Core and Cloud Contracts change still
+# escalates to run_all (the Core and Cloud Contracts file is not override-claimed): override must not
 # mask a real infrastructure change.
 assert_descriptor \
   "override-plus-core-still-run-all" \
@@ -904,7 +904,7 @@ assert_descriptor \
       'src/Honua.Core/Queries/FeatureQuery.cs')" \
   "infrastructure_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # ---------------------------------------------------------------------------
 # #1897 src-dir->shard mapping (follow-up to #2035): mapping each feature's
@@ -914,7 +914,7 @@ assert_descriptor \
 # targeted AND must include the shard that runs its OWN feature's tests.
 # ---------------------------------------------------------------------------
 
-# Capability registry changes are covered by the always-on Core foundation tests,
+# Capability registry changes are covered by the always-on Core and Cloud Contracts foundation tests,
 # the server capability projection tests, and the admin feature-overview projection.
 # They must not trigger the 50+ shard unmapped-source fallback.
 assert_descriptor \
@@ -922,7 +922,7 @@ assert_descriptor \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
   "targeted" \
   "false" \
-  "Server Features Data Enrichment and Sharing"
+  "Server Features Data Enrichment and Capabilities"
 assert_descriptor \
   "core-capability-registry-includes-admin-governance" \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
@@ -932,7 +932,7 @@ assert_descriptor \
 assert_excludes_shard \
   "core-capability-registry-excludes-unrelated-admin-operations" \
   "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs" \
-  "Server Features Admin Operations"
+  "Server Features Admin Runtime Operations"
 
 # #1939 raster: src/Honua.Core/Features/Raster/ is the shared raster pipeline
 # adapted by ImageServer + OGC API Coverages + Wcs(WFS). A raster change targets
@@ -949,8 +949,8 @@ assert_excludes_shard \
   "src/Honua.Core/Features/Raster/ZarrParser/ZarrMetadataExtractor.cs" \
   "FeatureServer Endpoints Query Services and Replication"
 
-# #1944 collaboration: src/Honua.Server/Features/Collaboration/ (and the Core
-# slice) is owned by the Server Features Misc catch-all (Features.Collaboration.*
+# #1944 collaboration: src/Honua.Server/Features/Collaboration/ (and the Core and Cloud Contracts
+# slice) is owned by the Server Features Miscellaneous catch-all (Features.Collaboration.*
 # tests). A collaboration change targets that shard, NOT run_all.
 assert_descriptor \
   "collaboration-targeted" \
@@ -959,14 +959,14 @@ assert_descriptor \
       'src/Honua.Server/Features/Collaboration/FeatureLocks/FeatureLockServices.cs')" \
   "targeted" \
   "false" \
-  "Server Features Misc"
+  "Server Features Miscellaneous"
 
 # #1961 output-formats: the shared format/geometry host services in
 # src/Honua.Hosting/Features/Services/ (GeoParquet writer, GeometryService,
 # SpatialReference/Raster helpers) are mapped to every query/format consumer
 # shard (FeatureServer/OData/OGC Features/WFS families, Infra & Security which
-# runs GeometryService/RasterParsingHelpers tests, Server Features Misc which
-# runs Export/FeatureStore, and Core). A change there is targeted across that
+# runs GeometryService/RasterParsingHelpers tests, Server Features Miscellaneous which
+# runs Export/FeatureStore, and Core and Cloud Contracts). A change there is targeted across that
 # consumer set, NOT run_all — and includes the FeatureServer query shard that
 # the #1961 FeatureServerQueryHandler change exercises.
 assert_descriptor \
@@ -986,7 +986,7 @@ assert_descriptor \
   "OData Core"
 
 # #1963 oauth: the GeoServices Sharing source (src/Honua.Protocols.GeoServices/
-# Sharing/) is owned by the Server Features Misc catch-all (Features.Sharing.*),
+# Sharing/) is owned by the Server Features Miscellaneous catch-all (Features.Sharing.*),
 # the Admin OAuth endpoints by the Admin & Console shard (Features.Admin.*), and
 # the Hosting/Features/Authentication override routes to the auth/security
 # shards. The combined PR is targeted, NOT run_all, and runs its own tests'
@@ -996,7 +996,7 @@ assert_descriptor \
   "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs" \
   "targeted" \
   "false" \
-  "Server Features Misc"
+  "Server Features Miscellaneous"
 assert_descriptor \
   "oauth-admin-endpoints-targeted" \
   "src/Honua.Server/Features/Admin/OAuthClientEndpoints.cs" \
@@ -1128,28 +1128,28 @@ assert_descriptor \
   "src/Honua.Core/Features/Authorization/PermissionResolver.cs" \
   "targeted" \
   "false" \
-  "Server Features Studio and Feature Store"
+  "Server Features Analytics Studio Export and Reporting"
 assert_descriptor \
   "authorization-postgres-includes-studio-owner" \
   "src/Honua.Db/Postgres/Features/Authorization/PostgresRlsPolicyStore.cs" \
   "targeted" \
   "false" \
-  "Server Features Studio and Feature Store"
+  "Server Features Analytics Studio Export and Reporting"
 assert_descriptor \
   "forms-core-includes-studio-owner" \
   "src/Honua.Core/Features/Forms/Packages/FormPackageContracts.cs" \
   "targeted" \
   "false" \
-  "Server Features Studio and Feature Store"
+  "Server Features Analytics Studio Export and Reporting"
 assert_descriptor \
   "forms-postgres-includes-studio-owner" \
   "src/Honua.Db/Postgres/Features/Forms/PostgresFormPackageStore.cs" \
   "targeted" \
   "false" \
-  "Server Features Studio and Feature Store"
+  "Server Features Analytics Studio Export and Reporting"
 
 # A Server/Features/Infrastructure FEATURE subdir (ControlPlane/Errors/Helpers)
-# maps to Infrastructure and Control Plane (Features.Infrastructure.* tests), NOT run_all —
+# maps to Caching File Storage Styling and Infrastructure (Features.Infrastructure.* tests), NOT run_all —
 # while the shared host-wiring subdirs (Hosting/Middleware/Services/Monitoring)
 # still escalate via infrastructure_paths (asserted below).
 assert_descriptor \
@@ -1157,44 +1157,44 @@ assert_descriptor \
   "src/Honua.Server/Features/Infrastructure/ControlPlane/DeployWorkflowService.cs" \
   "targeted" \
   "false" \
-  "Infrastructure and Control Plane"
+  "Caching File Storage Styling and Infrastructure"
 # The deploy/coordinated-release/telemetry ControlPlane source actually lives at
 # src/Honua.Server/Features/ControlPlane/ (sibling of Features/Infrastructure/),
 # while its tests live under tests/.../Features/Infrastructure/ControlPlane/. That
-# path is claimed by the Infrastructure and Control Plane shard so a reconciler/telemetry change
+# path is claimed by the Caching File Storage Styling and Infrastructure shard so a reconciler/telemetry change
 # targets it instead of tripping the unmapped-source run_all net.
 assert_descriptor \
   "controlplane-source-targeted" \
   "src/Honua.Server/Features/ControlPlane/DeployWorkflowReconciler.cs" \
   "targeted" \
   "false" \
-  "Infrastructure and Control Plane"
+  "Caching File Storage Styling and Infrastructure"
 assert_descriptor \
   "core-caching-targeted-to-split-child" \
   "src/Honua.Core/Features/Caching/MetadataCacheState.cs" \
   "targeted" \
   "false" \
-  "Caching File Storage and Styling"
+  "Caching File Storage Styling and Infrastructure"
 assert_descriptor \
   "file-storage-targeted-to-split-child" \
   "src/Honua.Server/Features/FileStorage/FileStorageServiceCollectionExtensions.cs" \
   "targeted" \
   "false" \
-  "Caching File Storage and Styling"
+  "Caching File Storage Styling and Infrastructure"
 assert_descriptor \
   "styling-targeted-to-split-child" \
   "src/Honua.Server/Features/Styling/OgcStyleProjection.cs" \
   "targeted" \
   "false" \
-  "Caching File Storage and Styling"
+  "Caching File Storage Styling and Infrastructure"
 assert_descriptor \
   "infra-hosting-wiring-still-run-all" \
   "src/Honua.Server/Features/Infrastructure/Hosting/FeatureRegistrationExtensions.cs" \
   "infrastructure_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
-# Cross-cutting Core feature trees NOT mapped to a shard still run_all (the
+# Cross-cutting Core and Cloud Contracts feature trees NOT mapped to a shard still run_all (the
 # unmapped-source net): e.g. src/Honua.Core/Features/Geometry/ has no owning
 # shard and must not be silently narrowed.
 assert_descriptor \
@@ -1202,7 +1202,7 @@ assert_descriptor \
   "src/Honua.Core/Features/Geometry/GeometryOperations.cs" \
   "unmapped_source_change" \
   "true" \
-  "Core"
+  "Core and Cloud Contracts"
 
 # ---------------------------------------------------------------------------
 # #1899 guard, BOTH directions:
@@ -1244,15 +1244,15 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core" \
+    "Core and Cloud Contracts" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NetworkDatasetValidationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core" \
+    "Core and Cloud Contracts" \
   --assert-owner \
     "Honua.Server.Tests.Routing.PgRoutingProviderIntegrationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Core" \
+    "Core and Cloud Contracts" \
   --assert-owner \
     "Honua.Server.Tests.Import.PostgresMigrationStyleApplicatorTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1288,7 +1288,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Studio and Feature Store" \
+    "Server Features Analytics Studio Export and Reporting" \
   `# Synthetic probe, not a real class (#2709): proves an unknown future` \
   `# Features.Protocols.* namespace still falls through to the Server Features` \
   `# Misc catch-all. --assert-route skips the class-exists check that` \
@@ -1296,66 +1296,66 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-route \
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
-    "Server Features Misc" \
-  `# #3711: the session/transport fixtures move together to the static MCP` \
-  `# Sessions owner so the main MCP shard can return to its pre-#3664 cap.` \
+    "Server Features Miscellaneous" \
+  `# #3711: the session/transport fixtures move together to the static MCP and Sessions` \
+  `# Sessions owner so the main MCP and Sessions shard can return to its pre-#3664 cap.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP Sessions" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP Sessions" \
+    "MCP and Sessions" \
   `# --- #3259: the 20 classes that matched no shard filter and never ran ---` \
-  `# Honua.Ai.Tests assembly -> MCP family.` \
+  `# Honua.Ai.Tests assembly -> MCP and Sessions family.` \
   --assert-owner \
     "Honua.Ai.Tests.Capabilities.CapabilityRegistryConformanceTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Ai.Tests.Capabilities.McpRegistryCompositionTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   `# ADR-0076 (#3255) retired the server-side generation families, deleting` \
   `# AnalysisGenerationServiceTests along with them, so the #3259 owner` \
   `# assertion for that class is dropped rather than repointed.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Infrastructure.Rendering.RasterRenderingUnavailableExceptionTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.AnthropicStudioAiProxyAdapterTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.BedrockStudioAiProxyAdapterTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.OpenAiCompatibleStudioAiProxyAdapterTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiChatRequestMapperTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyConfigurationTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyJsonContextReflectionSafetyTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyLatencyTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.StudioAiProxy.StudioAiProxyServiceTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP" \
+    "MCP and Sessions" \
   `# Honua.Protocols.GeoServices.Tests assembly: two classes use the` \
   `# Honua.Protocols.GeoServices.Tests.Source.* namespace root instead of the` \
   `# Honua.Server.Tests.Features.Protocols.GeoServices.* root every filter used.` \
@@ -1409,7 +1409,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "File and Raster Import" \
   `# #3271 Raster Serving Scene Geometry and Terrain: the three raster-serving namespaces are pinned to the` \
   `# shard that now owns them, so a rename back into the Misc catch-all or the` \
-  `# Infrastructure and Control Plane bucket fails here rather than silently re-hiding them.` \
+  `# Caching File Storage Styling and Infrastructure bucket fails here rather than silently re-hiding them.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Cog.CogEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \

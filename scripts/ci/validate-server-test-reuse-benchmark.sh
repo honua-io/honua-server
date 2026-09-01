@@ -45,9 +45,9 @@ jq -e '
 ' "${fixture}/core.json" >/dev/null
 expected_baseline="$(jq -r '.shards | length' .github/ci-shards.json)"
 jq -e --argjson expected_baseline "${expected_baseline}" '
-  ((.baseline | length) == $expected_baseline) and (.producers | length == 6) and
-  ((.reused_consumers | length) == 53) and
-  ([.producers[].identity] | sort) == ["ai", "geoservices", "odata", "ogc-api", "ogc-classic", "server"]
+  ((.baseline | length) == $expected_baseline) and (.producers | length == 5) and
+  ((.reused_consumers | length) == 52) and
+  ([.producers[].identity] | sort) == ["geoservices", "odata", "ogc-api", "ogc-classic", "server"]
 ' "${fixture}/full.json" >/dev/null
 
 grep -Fq '  workflow_dispatch:' "${workflow}"
