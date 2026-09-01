@@ -60,6 +60,7 @@ public sealed class CapabilityRegistryConformanceTests
         "temporal.animation-api",
         "sync.offline",
         "realtime.feature-streams",
+        "serve.sensorthings",
         "alerts.geofence",
         "jobs.runner",
         "ai.spec-apply",
@@ -115,12 +116,12 @@ public sealed class CapabilityRegistryConformanceTests
         foreach (var descriptor in Registry.All)
         {
             var resolution = Registry.Resolve(descriptor.Id, context);
-            if (descriptor.Maturity == CapabilityMaturity.Experimental)
+            if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
             {
                 // Since the #2346 T10 flip, experimental capabilities resolve disabled in the
                 // default context (no experimental flags set) with the dedicated reason code.
                 resolution.Enabled.Should().BeFalse(
-                    $"experimental capability '{descriptor.Id}' is off by default");
+                    $"opt-in capability '{descriptor.Id}' is off by default");
                 resolution.ReasonCode.Should().Be(CapabilityReasonCodes.ExperimentalDisabled);
             }
             else

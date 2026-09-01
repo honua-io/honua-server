@@ -37,9 +37,8 @@ internal static partial class FeatureStreamEndpoints
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var streamGroup = endpoints.MapGroup("/api/v{version:apiVersion}/streaming")
-            // Promoted to GA in #2428: realtime feature streaming ships on the default
-            // first-release surface (no capability gate). Pro-edition entitlement is still
-            // enforced per request (RequireProEdition / streaming.feature-subscriptions).
+            // Opt-in Preview until the exact-candidate transport qualification gate passes.
+            .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Streaming");
@@ -67,7 +66,7 @@ internal static partial class FeatureStreamEndpoints
 
         // Admin endpoints for session visibility
         var adminGroup = endpoints.MapGroup("/api/v{version:apiVersion}/admin/streaming/features")
-            // GA in #2428 — no capability gate; admin authorization still required below.
+            .WithCapabilityGate("realtime.feature-streams")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Streaming")

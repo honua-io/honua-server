@@ -400,7 +400,11 @@ internal sealed class CapabilityManifestService(
             Capability("temporal.animation-api", "temporal", context, entitlementKey: "temporal.animation-api"),
 
             Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
-            Capability("realtime.feature-streams", "realtime", context, entitlementKey: "streaming.feature-subscriptions"),
+            Capability("realtime.feature-streams", "realtime", context,
+                maturity: CapabilityMaturity.Preview,
+                entitlementKey: "streaming.feature-subscriptions"),
+            Capability("serve.sensorthings", "realtime", context,
+                maturity: CapabilityMaturity.Preview),
             Capability("alerts.geofence", "alerts", context, entitlementKey: "alerts.enter-exit", configured: alertOptionsValue.Enabled),
             // A compute backend is always registered, so `supported` alone over-claims: without
             // the Redis-backed durable job store nothing can be submitted (honua-release#202).
@@ -466,18 +470,22 @@ internal sealed class CapabilityManifestService(
             }
 
             var resolution = CapabilityGateResolver.Resolve(descriptor, gateContext);
-            if (IsExperimentalDisabled(resolution))
+            if (IsExperimentalDisabled(resolution) && descriptor.Maturity != CapabilityMaturity.Preview)
             {
                 continue;
             }
 
             var spec = specs.GetValueOrDefault(descriptor.Id, ManifestCapabilitySpec.Default);
+            var configured = spec.Configured &&
+                (descriptor.Maturity != CapabilityMaturity.Preview ||
+                 options.ExperimentalCapabilityFlags.IsExperimentalEnabled(descriptor.Id));
             capabilities.Add(Capability(
                 descriptor.Id,
                 descriptor.Category,
                 context,
+                maturity: descriptor.Maturity,
                 supported: spec.Supported,
-                configured: spec.Configured,
+                configured: configured,
                 entitlementKey: spec.EntitlementKey,
                 entitlementKeys: spec.EntitlementKeys,
                 policyCapability: spec.PolicyCapability,
@@ -616,6 +624,7 @@ internal sealed class CapabilityManifestService(
         string id,
         string category,
         CapabilityPolicyContext context,
+        CapabilityMaturity maturity = CapabilityMaturity.Implemented,
         bool supported = true,
         bool configured = true,
         string? entitlementKey = null,
@@ -699,6 +708,8 @@ internal sealed class CapabilityManifestService(
         {
             Id = id,
             Category = category,
+            Lifecycle = maturity == CapabilityMaturity.Preview ? "preview" : maturity.ToString().ToLowerInvariant(),
+            OptInRequired = maturity is CapabilityMaturity.Preview or CapabilityMaturity.Experimental,
             Supported = supported,
             Available = available,
             ReasonCode = available ? null : reasonCode,

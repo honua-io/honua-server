@@ -133,8 +133,8 @@ internal static class FeatureRegistrationExtensions
         services.AddNlQuery(configuration);
         services.AddStudioAiProxy(configuration);
         services.AddStac();
-        // Experimental gate (PA-096/PA-103/PA-116/PA-145): SensorThings is off by default.
-        // Set Experimental__Features__SensorThings=true to opt in.
+        // Preview gate: SensorThings is off by default. Set
+        // Capabilities__Experimental__serve.sensorthings__Enabled=true to opt in.
         if (configuration.GetValue<bool>(SensorThingsOptions.ExperimentalFeatureFlagPath, false))
         {
             services.AddSensorThings();
