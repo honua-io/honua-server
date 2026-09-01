@@ -311,6 +311,7 @@ public sealed class CapabilityRegistryConformanceTests
             new ProposeFindingTool(NullLogger<ProposeFindingTool>.Instance),
             new ProposeDeployPlanTool(NullLogger<ProposeDeployPlanTool>.Instance),
             new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
             new ProposePlatformReleaseConvergenceTool(
                 NullLogger<ProposePlatformReleaseConvergenceTool>.Instance),
             new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
