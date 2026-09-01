@@ -25,10 +25,10 @@ See [Ops evidence posture](evidence-posture.md) for the complete vocabularies.
 
 | Concern | REST/MCP evidence | Prometheus series observed or emitted |
 |---|---|---|
-| Request availability and latency | ops-health `health` and `servingLatency` | `honua_http_request_total`, `honua_http_request_duration_ms`, `honua_http_active_requests` |
+| Request availability and latency | ops-health `health` and `servingLatency` | `honua_http_request_total`, `honua_http_request_duration_ms_bucket`, `honua_http_request_duration_ms_count`, `honua_http_request_duration_ms_sum`, `honua_http_active_requests` |
 | Alert dispatch backlog | `alertDispatch`; `honua_alert_events` | `honua_alerts_dispatch_backlog_count`, `honua_alerts_dispatch_dead_lettered_count` |
 | Alert evaluator leadership | alert health source | `honua_alerts_evaluation_no_leader` |
-| Alert delivery outcomes | alert events and timeline | `honua_alerts_events_emitted_total`, `honua_alerts_dispatches_enqueued_total`, `honua_alerts_deliveries_succeeded_total`, `honua_alerts_deliveries_failed_total`, `honua_alerts_deliveries_dead_lettered_total`, `honua_alerts_deliveries_rate_capped_total`, `honua_alerts_deliveries_suppressed_total`, `honua_alerts_deliveries_circuit_deferred_total`, `honua_alerts_delivery_latency` |
+| Alert delivery outcomes | alert events and timeline | `honua_alerts_events_emitted_total`, `honua_alerts_dispatches_enqueued_total`, `honua_alerts_deliveries_succeeded_total`, `honua_alerts_deliveries_failed_total`, `honua_alerts_deliveries_dead_lettered_total`, `honua_alerts_deliveries_rate_capped_total`, `honua_alerts_deliveries_suppressed_total`, `honua_alerts_deliveries_circuit_deferred_total`, `honua_alerts_delivery_latency_bucket`, `honua_alerts_delivery_latency_count`, `honua_alerts_delivery_latency_sum` |
 | Database/cache posture | ops-health `database` | `honua_cache_hit_ratio` plus database connection/acquisition metrics when the pool records them |
 | GP queue | ops-health `geoprocessing` and findings | durable queue buckets; no Prometheus series is required to authorize the scenario |
 | Deploy/release readiness | ops-health `deploy`, platform-release/deploy-operation reads | evidence envelope and typed operation receipt, not a free-form metric |

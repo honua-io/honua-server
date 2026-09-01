@@ -18,13 +18,19 @@ below so their absence cannot be mistaken for product behavior.
 Use a dedicated checkout and record the full identity before starting it:
 
 ```bash
-git rev-parse HEAD
-test "$(git rev-parse HEAD)" = a3e1fd8cee11e010d98844ab11c22b98134cc7ef
+candidate_sha=a3e1fd8cee11e010d98844ab11c22b98134cc7ef
+candidate_image="honua-server:operate-${candidate_sha}"
+test "$(git rev-parse HEAD)" = "$candidate_sha"
+GITHUB_ACTOR="${GITHUB_ACTOR:-$(gh api user --jq .login)}" GH_TOKEN=$(gh auth token) \
+  bash scripts/docker/build-with-github-packages.sh -t "$candidate_image" .
 HONUA_ENABLE_OBSERVABILITY_TEST_SEED=true \
 HONUA_OPERATE_FIXTURE_SEED_ON_STARTUP=true \
 POSTGRES_PORT=15432 REDIS_PORT=16379 \
 HONUA_HTTP_PORT=18090 HONUA_GRPC_PORT=18091 \
-docker compose -p honua3302 up -d
+HONUA_SERVER_IMAGE="$candidate_image" \
+docker compose -p honua3302 up -d --no-build --wait --wait-timeout 180
+test "$(docker inspect --format '{{.Config.Image}}' \
+  "$(docker compose -p honua3302 ps -q honua)")" = "$candidate_image"
 curl --fail http://localhost:18090/healthz/ready
 ```
 
