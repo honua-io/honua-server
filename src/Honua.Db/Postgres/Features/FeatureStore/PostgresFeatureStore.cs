@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -570,6 +571,11 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     {
         return await _dataAccess.ApplyEditsAsync(layerId, editBatch, cancellationToken);
     }
+
+    public Task<IFeatureWriterTransaction> BeginTransactionAsync(
+        IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+        CancellationToken cancellationToken = default)
+        => _dataAccess.BeginTransactionAsync(isolationLevel, cancellationToken);
 
     #endregion
 

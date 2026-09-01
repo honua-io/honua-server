@@ -6,6 +6,7 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Events.Outbox;
 using NetTopologySuite.IO;
@@ -315,6 +316,7 @@ internal sealed partial class FeatureDataAccess
                     connection,
                     transaction,
                     preconditions,
+                    manageTransaction: true,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -454,6 +456,18 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    public async Task<IFeatureWriterTransaction> BeginTransactionAsync(
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken)
+    {
+        var (connection, transaction) = await _connectionProvider
+            .OpenTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+        return new PostgresFeatureWriterTransaction(
+            this,
+            connection,
+            (NpgsqlTransaction)transaction);
+    }
+
     /// <summary>
     /// Builds an object-id keyed lookup of row-state expectations from the batch's
     /// preconditions. Returns null when the batch carries no preconditions so the hot
@@ -558,6 +572,7 @@ internal sealed partial class FeatureDataAccess
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         Dictionary<long, FeatureEditPrecondition>? preconditions,
+        bool manageTransaction,
         CancellationToken cancellationToken)
     {
         var createdIds = ImmutableArray.CreateBuilder<long>();
@@ -583,7 +598,7 @@ internal sealed partial class FeatureDataAccess
 
             if (!operationSucceeded && editBatch.RollbackOnFailure)
             {
-                if (transaction != null)
+                if (manageTransaction && transaction != null)
                 {
                     await RollbackIfNeededAsync(transaction).ConfigureAwait(false);
                 }
@@ -595,7 +610,7 @@ internal sealed partial class FeatureDataAccess
             }
         }
 
-        if (transaction != null)
+        if (manageTransaction && transaction != null)
         {
             await CommitEditTransactionAsync(transaction, cancellationToken).ConfigureAwait(false);
         }
@@ -614,6 +629,111 @@ internal sealed partial class FeatureDataAccess
             immutableUpdateResults,
             immutableDeleteResults,
             wasRolledBack: false);
+    }
+
+    private async Task<FeatureEditResult> ApplyEditsWithinTransactionAsync(
+        int layerId,
+        FeatureEditBatch editBatch,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (editBatch.VersionContext is { IsDefault: false })
+        {
+            throw new NotSupportedException("Cross-layer transactions do not support branch-versioned edits.");
+        }
+
+        if (editBatch.Operations.IsDefaultOrEmpty)
+        {
+            throw new NotSupportedException("Cross-layer transactions require ordered edit operations.");
+        }
+
+        return await ApplyOrderedEditsAsync(
+            layerId,
+            editBatch,
+            connection,
+            transaction,
+            BuildPreconditionMap(editBatch),
+            manageTransaction: false,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private sealed class PostgresFeatureWriterTransaction(
+        FeatureDataAccess owner,
+        DbConnection connection,
+        NpgsqlTransaction transaction) : IFeatureWriterTransaction
+    {
+        private readonly FeatureDataAccess _owner = owner;
+        private readonly DbConnection _connectionLease = connection;
+        private readonly NpgsqlConnection _connection = connection.RequireNpgsqlConnection();
+        private readonly NpgsqlTransaction _transaction = transaction;
+        private bool _completed;
+        private bool _disposed;
+
+        public Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_completed)
+            {
+                throw new InvalidOperationException("The feature writer transaction has already completed.");
+            }
+
+            return _owner.ApplyEditsWithinTransactionAsync(
+                layerId,
+                editBatch,
+                _connection,
+                _transaction,
+                cancellationToken);
+        }
+
+        public async Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_completed)
+            {
+                throw new InvalidOperationException("The feature writer transaction has already completed.");
+            }
+
+            await CommitEditTransactionAsync(_transaction, cancellationToken).ConfigureAwait(false);
+            _completed = true;
+        }
+
+        public async Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_completed)
+            {
+                return;
+            }
+
+            await _transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            _completed = true;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!_completed)
+                {
+                    await RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                _disposed = true;
+                await _transaction.DisposeAsync().ConfigureAwait(false);
+                await _connectionLease.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task<bool> ApplyOrderedEditOperationAsync(
