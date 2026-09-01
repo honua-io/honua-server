@@ -338,7 +338,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Family / tier**: conformance / 0
 - **Status**: active (activated), target release 2026.1
 - **Required tier**: release (intended on activation: release)
-- **Roster origin**: artifact; artifact status 1138 / 1138
+- **Roster origin**: artifact; artifact status 1137 / 1138
 - **Lane binding**: (none) (external-producer)
 - **Client version policy**: TEAM Engine and per-suite ETS versions pinned by the container image tags in .github/workflows/cite-*.yml.
 - **Protocol surfaces**: `wfs`, `wms`, `wmts`, `wcs`, `gml`, `kml`, `gpkg`, `ogc-tiles`
@@ -351,7 +351,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Fixture projection**: governed-exception - Registered in client-certification-matrix.v1.json fixturePolicy.exceptions. CITE shares candidate identity, image digest, auth policy, and capability mapping with release certification but is never relabelled as having used the canonical client fixture.
 - **Evidence producer**: .github/workflows/cite-*.yml (aggregated by cite-evidence-report.yml)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3434
-- **Notes**: The compliance receipt, currently 1138/1138. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture.
+- **Notes**: The compliance receipt is currently 1137/1138; WFS 2.0 `basic` is 166/167 because multi-layer `rollbackOnFailure=true` transactions are rejected. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture.
 
 ### `arcgis-stub` - ArcGIS REST + Portal facade stub client
 

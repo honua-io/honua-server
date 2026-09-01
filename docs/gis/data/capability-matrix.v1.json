@@ -30,10 +30,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 374,
-      "provingTestCount": 1135,
+      "entryCount": 375,
+      "provingTestCount": 1138,
       "maturity": {
-        "implemented": 374
+        "implemented": 375
       },
       "noSurface": null,
       "cite": [],
@@ -1061,7 +1061,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 18,
-      "provingTestCount": 63,
+      "provingTestCount": 66,
       "maturity": {
         "implemented": 18
       },
@@ -1764,7 +1764,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 45,
-      "provingTestCount": 323,
+      "provingTestCount": 326,
       "maturity": {
         "implemented": 45
       },
@@ -2058,7 +2058,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 10,
-      "provingTestCount": 131,
+      "provingTestCount": 132,
       "maturity": {
         "implemented": 10
       },
@@ -2264,9 +2264,9 @@
         {
           "suite": "WFS 2.0",
           "profile": "basic",
-          "passed": 167,
+          "passed": 166,
           "total": 167,
-          "passRate": 100.0
+          "passRate": 99.4
         }
       ],
       "parity": [],

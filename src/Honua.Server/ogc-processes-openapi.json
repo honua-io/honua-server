@@ -2,11 +2,12 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua OGC API Processes",
-    "description": "OGC API Processes adapter over the Honua canonical geoprocessing runtime.\n\nCompliance: OGC CITE 1138/1138 across 14 conformance suites — see docs/cite-status.md.",
+    "description": "OGC API Processes adapter over the Honua canonical geoprocessing runtime.\n\nCompliance: OGC CITE 1137/1138 across 14 conformance suites; WFS 2.0 basic is 166/167 because multi-layer rollbackOnFailure=true transactions are rejected — see docs/cite-status.md and run 33376911053.",
     "version": "1.0.0",
     "x-honua-cite-compliance": {
-      "summary": "OGC API Processes does not yet have a published ETS; the surrounding Honua OGC stack passes 1138/1138 across 14 conformance suites.",
-      "lastEvidenceRun": "2026-08-28",
+      "summary": "OGC API Processes does not yet have a published ETS; the surrounding Honua OGC stack passes 1137/1138 across 14 conformance suites because multi-layer WFS rollbackOnFailure=true transactions are rejected.",
+      "lastEvidenceRun": "2026-08-31",
+      "evidenceRun": "https://github.com/honua-io/honua-server/actions/runs/33376911053",
       "authoritativeSource": "docs/cite-status.md"
     }
   },
