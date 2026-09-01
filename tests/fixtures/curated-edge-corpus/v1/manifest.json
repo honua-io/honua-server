@@ -16,6 +16,14 @@
   },
   "assets": [
     {
+      "id": "malformed-parseable",
+      "path": "malformed-parseable.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 790,
+      "sha256": "2fcf89981d19dd080c3c5041c99db34d19728ee9d0a4120af83fee12b1ffa680",
+      "facets": ["malformed/duplicate-member", "malformed/wrong-coordinate-shape", "malformed/unknown-geometry", "malformed/type-mismatch", "malformed/missing-member", "parseable/json"]
+    },
+    {
       "id": "large-attributes",
       "path": "large-attributes.geojson",
       "mediaType": "application/geo+json",

@@ -19,13 +19,29 @@ public sealed class CuratedCorpusTests
         corpus.VerifyAll();
 
         Assert.Equal("v1", corpus.Revision);
-        Assert.Equal(12, corpus.Assets.Count);
+        Assert.Equal(13, corpus.Assets.Count);
         Assert.All(corpus.Assets, asset =>
         {
             Assert.Equal(64, asset.Sha256.Length);
             Assert.NotEmpty(asset.MediaType);
             Assert.NotEmpty(asset.Facets);
         });
+    }
+
+    [UnitTest]
+    public void MalformedAsset_RemainsJsonParseableWhileRetainingSemanticFaults()
+    {
+        var corpus = CuratedCorpus.Load();
+        var bytes = corpus.ReadAllBytes("malformed-parseable");
+        using var document = JsonDocument.Parse(bytes);
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        Assert.Equal(5, features.Length);
+        Assert.Equal(JsonValueKind.Number, features[1].GetProperty("geometry").GetProperty("coordinates").ValueKind);
+        Assert.Equal("Rhombus", features[2].GetProperty("geometry").GetProperty("type").GetString());
+        Assert.Equal(JsonValueKind.String, features[3].GetProperty("properties").GetProperty("height").ValueKind);
+        Assert.False(features[4].TryGetProperty("properties", out _));
+        Assert.Contains("\"id\":\"duplicate-member\",\"id\":", Encoding.UTF8.GetString(bytes), StringComparison.Ordinal);
     }
 
     [UnitTest]
