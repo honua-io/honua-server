@@ -1,0 +1,5 @@
+event_id,tenant_id,observed_at,region_code,category,measure_value,quality_flag,nullable_note
+9007199254740991,tenant-α,2026-01-01T00:00:00.000000Z,US-HI,temperature,24.125,good,
+9007199254740992,tenant-α,2026-01-01T00:05:00.000000Z,US-HI,temperature,-0.0001,suspect,"sensor café"
+9007199254740993,tenant-東京,2026-01-02T12:34:56.123456Z,JP-13,precipitation,0,bad,"欠測 replaced"
+9007199254740994,tenant-🌺,2026-01-03T23:59:59.999999Z,US-HI,temperature,999999.999999,good,"quoted, value"

@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "honua.curated-test-corpus/v1",
+  "identity": {
+    "id": "curated-edge-corpus",
+    "revision": "v1",
+    "title": "Release 2026.1 frozen honest-gaps tranche"
+  },
+  "provenance": {
+    "kind": "deterministic-synthetic",
+    "source": "honua-server#3759",
+    "containsProductionData": false
+  },
+  "license": {
+    "expression": "Elastic-2.0",
+    "scope": "repository"
+  },
+  "assets": [
+    {
+      "id": "edge-geometries",
+      "path": "edge-geometries.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 1368,
+      "sha256": "9db18b32fb484fbd31508c3d68115bb4ef0f95a3c8ef654341cdaa7872cf0060",
+      "facets": ["geometry/multipoint", "geometry/multilinestring", "geometry/multipolygon", "geometry/polygon-hole", "attributes/unicode", "attributes/null"]
+    },
+    {
+      "id": "crs-cases",
+      "path": "crs-cases.csv",
+      "mediaType": "text/csv",
+      "byteLength": 491,
+      "sha256": "d0744c6207a091227b27060975bc89ad34eeb459b58346b6a1cf6f1bcb240b59",
+      "facets": ["crs/epsg-4326", "crs/ogc-crs84", "crs/epsg-3857", "crs/epsg-26904", "crs/axis-order"]
+    },
+    {
+      "id": "warehouse-fact-table",
+      "path": "warehouse-fact-table.csv",
+      "mediaType": "text/csv",
+      "byteLength": 496,
+      "sha256": "c054bac9a3ae7ed239827f78baab73ccedda5036c96d556e09b12594a069edcc",
+      "facets": ["table/warehouse-fact", "attributes/unicode", "attributes/int64", "attributes/decimal", "attributes/timestamp-microseconds", "attributes/null"]
+    },
+    {
+      "id": "sst-zarr-group",
+      "path": "sea-surface-temperature.zarr/.zgroup",
+      "mediaType": "application/json",
+      "byteLength": 23,
+      "sha256": "e1e1914ae531ecb50e1ead685ef01895a5452faf5f25f35cd78f1f5de1367470",
+      "facets": ["raster/zarr-v2", "raster/multidimensional"]
+    },
+    {
+      "id": "sst-zarr-group-attributes",
+      "path": "sea-surface-temperature.zarr/.zattrs",
+      "mediaType": "application/json",
+      "byteLength": 115,
+      "sha256": "ee47b737fc704f8c38c036935fbbf1d600208554c57b266081ef93096d082361",
+      "facets": ["raster/zarr-v2", "raster/cf-1.8", "crs/epsg-4326"]
+    },
+    {
+      "id": "sst-temperature-array",
+      "path": "sea-surface-temperature.zarr/temperature/.zarray",
+      "mediaType": "application/json",
+      "byteLength": 168,
+      "sha256": "6713a41d2554c1b070e8ac7381cd6d576f431294c14096ee71eac4e0ec5dc6d3",
+      "facets": ["raster/zarr-v2", "raster/multidimensional", "raster/float32"]
+    },
+    {
+      "id": "sst-temperature-attributes",
+      "path": "sea-surface-temperature.zarr/temperature/.zattrs",
+      "mediaType": "application/json",
+      "byteLength": 170,
+      "sha256": "312814d974ba18823b046aee9adcf2653b050ea7d0220685a34ef9e4999d73e5",
+      "facets": ["raster/zarr-v2", "raster/dimensions-time-latitude-longitude"]
+    },
+    {
+      "id": "sst-temperature-chunk-0",
+      "path": "sea-surface-temperature.zarr/temperature/0.0.0",
+      "mediaType": "application/octet-stream",
+      "byteLength": 96,
+      "sha256": "205fcce783b6b704cd7dbfa31c2b3147ce6353faf3ec04947dcc16f5d9591ba6",
+      "facets": ["raster/zarr-v2", "raster/multidimensional", "raster/two-time-slices", "raster/float32-little-endian"]
+    }
+  ]
+}
