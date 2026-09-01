@@ -36,18 +36,24 @@ def qualify(evidence: dict, expected_revision: str) -> dict:
             f"evidence server revision {actual_revision!r} does not match exact candidate {expected_revision!r}"
         )
 
-    by_transport = {item.get("id"): item for item in evidence.get("transports", [])}
+    transport_items = evidence.get("transports", [])
+    transport_ids = [item.get("id") for item in transport_items]
+    if len(transport_ids) != len(set(transport_ids)):
+        raise ValueError("evidence must not contain duplicate transport verdicts")
+
+    by_transport = {item.get("id"): item for item in transport_items}
     if set(by_transport) != set(TRANSPORTS):
         raise ValueError("evidence must contain exactly sse, websocket, and odata transport verdicts")
 
     transports = []
     for transport_id in TRANSPORTS:
         source = by_transport[transport_id]
-        observed = {
-            item.get("id"): item.get("result")
-            for item in source.get("scenarios", [])
-            if isinstance(item, dict)
-        }
+        scenario_items = [item for item in source.get("scenarios", []) if isinstance(item, dict)]
+        scenario_ids = [item.get("id") for item in scenario_items]
+        if len(scenario_ids) != len(set(scenario_ids)):
+            raise ValueError(f"{transport_id} evidence must not contain duplicate scenario observations")
+
+        observed = {item.get("id"): item.get("result") for item in scenario_items}
         scenarios = []
         for scenario_id, aliases in SINGLE_NODE_SCENARIOS.items():
             matches = [observed[name] for name in aliases if name in observed]

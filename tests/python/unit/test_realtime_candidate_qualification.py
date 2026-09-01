@@ -39,6 +39,27 @@ class RealtimeCandidateQualificationTests(unittest.TestCase):
         duplicate = receipt["transports"][0]["scenarios"][2]
         self.assertEqual("failed", duplicate["state"])
 
+    def test_duplicate_transport_verdicts_are_rejected(self):
+        source = evidence()
+        duplicate = {
+            "id": "sse",
+            "scenarios": [{"id": "baseline-completion", "result": "passed"}],
+        }
+        source["transports"].insert(0, duplicate)
+
+        with self.assertRaisesRegex(ValueError, "duplicate transport verdicts"):
+            MODULE.qualify(source, "a" * 40)
+
+    def test_duplicate_scenario_observations_are_rejected(self):
+        source = evidence()
+        source["transports"][0]["scenarios"] = [
+            {"id": "baseline-completion", "result": "failed"},
+            {"id": "baseline-completion", "result": "passed"},
+        ]
+
+        with self.assertRaisesRegex(ValueError, "duplicate scenario observations"):
+            MODULE.qualify(source, "a" * 40)
+
     def test_revision_mismatch_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "exact candidate"):
             MODULE.qualify(evidence(), "c" * 40)
