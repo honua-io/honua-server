@@ -64,7 +64,7 @@ internal static class AdminApiKeyPermission
     private static readonly string[] WriteSubGrants = ["write", "manage", "*"];
 
     internal const string ApproveGrant = "admin:approve";
-    private const string ApprovedOperationGrantPrefix = "admin:operation:";
+    internal const string ApprovedOperationGrantPrefix = "admin:operation:";
 
     /// <summary>The admin API path prefix approved-operation credentials are scoped to.</summary>
     private const string AdminApiPathPrefix = "/api/v1/admin/";

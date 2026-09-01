@@ -6,11 +6,13 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -282,6 +284,27 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         var response = await scopedClient.GetAsync("/api/v1/admin/api-keys");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/studio/content-items")]
+    public async Task ApprovedOperationKey_AllowsExactOperation_ButRoleOnlySurfaceRefusesIt()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var issued = await store.CreateAsync(
+            "approved-operation:test-proposal",
+            [AdminApiKeyPermission.CreateApprovedOperationGrant("GET", "/api/v1/admin/api-keys")],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "test-requester",
+            CancellationToken.None);
+        using var operationClient = CreateApiKeyClient(issued.Key);
+
+        var exactOperation = await operationClient.GetAsync("/api/v1/admin/api-keys");
+        var unrelatedRoleOnlySurface = await operationClient.GetAsync("/api/v1/studio/content-items");
+
+        Assert.Equal(HttpStatusCode.OK, exactOperation.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, unrelatedRoleOnlySurface.StatusCode);
     }
 
     [IntegrationTest]

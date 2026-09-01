@@ -87,7 +87,8 @@ internal sealed class AdminConnectImportOperationExecutor(
         finally
         {
             if (executionCredential is not null)
-                _ = await adminApiKeyStore.RevokeAsync(executionCredential.Id, CancellationToken.None).ConfigureAwait(false);
+                await ApprovedOperationCredentialRevocation.RevokeAsync(
+                    adminApiKeyStore, executionCredential.Id).ConfigureAwait(false);
         }
         using (response)
         {
