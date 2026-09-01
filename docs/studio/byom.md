@@ -43,7 +43,10 @@ ID and optional region; credentials come from the AWS credential chain.
 Non-admin interactive users require
 `Studio:EndUserAuthorization:Enabled=true`. API keys, client certificates, and
 client-credentials tokens are not accepted as interactive Studio AI users.
-The chat endpoint is limited to 30 requests per minute.
+The chat endpoint's application-side limit is 30 requests per minute when the
+opt-in limiter is enabled with `RateLimiting__Enabled=true`; rate limiting is
+off by default. If you leave it disabled, enforce an equivalent limit at your
+WAF, API gateway, ingress, or load balancer.
 
 The configuration was checked against candidate source, but no live Ollama
 daemon/model was available in the candidate environment. This page therefore
