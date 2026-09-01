@@ -109,6 +109,7 @@ jobs:
   sdk-compat-matrix:
     name: ${{ matrix.server_label }} x ${{ matrix.sdk_label }} (${{ matrix.cell_status }})
     needs: load-matrix
+    if: inputs.release_certification != true
     runs-on: ubuntu-latest
     timeout-minutes: 75
     continue-on-error: ${{ matrix.expected_supported == false }}
@@ -650,12 +651,106 @@ jobs:
           echo "::error::Supported SDK/server compatibility cell failed: ${{ matrix.server_label }} x ${{ matrix.sdk_label }}"
           exit 1
 
+  sdk-release-certification:
+    name: Published SDKs x exact candidate image
+    needs: load-matrix
+    if: inputs.release_certification == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: honua
+          POSTGRES_PASSWORD: honua
+          POSTGRES_DB: honua_test
+          POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout certification producer
+        uses: actions/checkout@v7.0.1
+
+      - name: Reject coordinate drift
+        shell: bash
+        env:
+          SERVER_IMAGE: ${{ inputs.server_current_image }}
+          SERVER_SOURCE_SHA: ${{ inputs.server_current_ref }}
+        run: |
+          set -euo pipefail
+          manifest=docs/developer/sdk-release-certification.json
+          [ "$SERVER_IMAGE" = "$(jq -r '.candidate.image' "$manifest")" ] || {
+            echo '::error::release image differs from the reviewed exact-candidate coordinate'
+            exit 1
+          }
+          [ "${SERVER_SOURCE_SHA,,}" = "$(jq -r '.candidate.sourceSha' "$manifest")" ] || {
+            echo '::error::release source SHA differs from the reviewed image source pin'
+            exit 1
+          }
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+
+      - name: Setup .NET
+        uses: ./.github/actions/setup-dotnet-ci
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Start exact candidate with deterministic seed
+        uses: ./.github/actions/setup-honua-server
+        with:
+          server-image: ${{ inputs.server_current_image }}
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          base-seed-path: tests/seed/base-schema.sql
+          log-path: logs/honua-server-sdk-release.log
+        env:
+          NuGetAudit: false
+          WarningsNotAsErrors: NU1901;NU1902;NU1903;NU1904
+
+      - name: Run clean public-registry SDK certification
+        id: release-certification
+        continue-on-error: true
+        shell: bash
+        run: bash scripts/ci/run-sdk-release-certification.sh
+
+      - name: Upload normalized fragment, report, and traces
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sdk-release-certification-${{ github.run_id }}
+          path: |
+            results/sdk-release-certification/
+            logs/honua-server-sdk-release.log
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Enforce release result after retaining findings
+        if: always()
+        shell: bash
+        run: |
+          test -f results/sdk-release-certification/fragment.json
+          jq -e '.operation_scope == {complete:true,expected:99,observed:99}' results/sdk-release-certification/fragment.json >/dev/null
+          jq -e '.passed == true' results/sdk-release-certification/report.json >/dev/null
+
   compatibility-report:
     name: Publish SDK Compatibility Table
     needs:
       - load-matrix
       - sdk-compat-matrix
-    if: always()
+    if: always() && inputs.release_certification != true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
