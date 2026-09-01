@@ -26,7 +26,7 @@ public sealed class CuratedCorpus
     public string Revision { get; }
 
     /// <summary>Gets all declared assets in stable identifier order.</summary>
-    public IReadOnlyCollection<CuratedCorpusAsset> Assets => _assets.Values;
+    public IReadOnlyCollection<CuratedCorpusAsset> Assets => _assets.Values.ToArray();
 
     /// <summary>Loads a committed corpus revision from the repository fixture root.</summary>
     public static CuratedCorpus Load(string revision = "v1")
