@@ -241,6 +241,27 @@ internal sealed class McpProposeOperationOutput
 
     [JsonPropertyName("message")]
     public string? Message { get; set; }
+
+    [JsonPropertyName("result")]
+    public JsonElement? Result { get; set; }
+
+    [JsonPropertyName("targets")]
+    public McpConvergenceTargetOutput[]? Targets { get; set; }
+}
+
+internal sealed class McpConvergenceTargetOutput
+{
+    [JsonPropertyName("targetId")]
+    public string TargetId { get; set; } = string.Empty;
+
+    [JsonPropertyName("outcome")]
+    public string Outcome { get; set; } = string.Empty;
+
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
 }
 
 /// <summary>

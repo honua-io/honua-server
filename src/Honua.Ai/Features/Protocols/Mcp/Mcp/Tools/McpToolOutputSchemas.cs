@@ -294,7 +294,24 @@ internal static class McpToolOutputSchemas
               "items": { "type": "string" },
               "description": "Operation classes with a genuinely registered executor (routable through the gateway); reported on every response, including rejections, so proposing an unsupported kind is never a silent dead end (#2563)."
             },
-            "message": { "type": ["string", "null"] }
+            "message": { "type": ["string", "null"] },
+            "result": {
+              "type": ["object", "null"],
+              "description": "Canonical non-mutating result returned by planning tools."
+            },
+            "targets": {
+              "type": ["array", "null"],
+              "items": {
+                "type": "object",
+                "required": ["targetId", "outcome"],
+                "properties": {
+                  "targetId": { "type": "string" },
+                  "outcome": { "type": "string" },
+                  "proposalId": { "type": ["string", "null"] },
+                  "message": { "type": ["string", "null"] }
+                }
+              }
+            }
           }
         }
         """);
