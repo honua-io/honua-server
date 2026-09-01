@@ -316,7 +316,7 @@ The MVP intentionally defers enterprise/operational features to reduce complexit
 ### Documentation examples use product surfaces
 
 Documentation examples must use Honua's own supported surfaces: the Honua CLI,
-published SDKs, or MCP. Never use raw `curl` as a substitute for a product
+published SDKs, or MCP. Never use a raw HTTP shell command as a substitute for a product
 workflow. If a page's subject is the wire protocol itself and raw HTTP is
 unavoidable, justify the exception in the PR body, add the page to
 `scripts/ci/doc-wire-reference-allowlist.v1.json`, and mark each affected
