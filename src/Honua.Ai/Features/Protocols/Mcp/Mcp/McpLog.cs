@@ -105,7 +105,4 @@ internal static partial class McpLog
     /// </summary>
     [LoggerMessage(8174, LogLevel.Debug, "MCP unknown session served statelessly: SessionIdPrefix={SessionIdPrefix}")]
     public static partial void SessionServedStateless(ILogger logger, string sessionIdPrefix);
-
-    [LoggerMessage(8175, LogLevel.Information, "MCP Esri GP task invoked: ServiceId={ServiceId}, TaskName={TaskName}")]
-    public static partial void EsriGpTaskInvoked(ILogger logger, string serviceId, string taskName);
 }
