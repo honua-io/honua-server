@@ -222,6 +222,7 @@ internal sealed class AuditingFeatureWriter(
         IFeatureWriterTransaction inner) : IFeatureWriterTransaction
     {
         private readonly List<(int LayerId, FeatureEditBatch Batch, FeatureEditResult Result)> _applied = [];
+        private bool _auditFinalized;
 
         public async Task<FeatureEditResult> ApplyEditsAsync(
             int layerId,
@@ -233,24 +234,63 @@ internal sealed class AuditingFeatureWriter(
             return result;
         }
 
-        public async Task CommitAsync(CancellationToken cancellationToken = default)
+        public async Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            CancellationToken cancellationToken = default)
         {
-            await inner.CommitAsync(cancellationToken).ConfigureAwait(false);
-            foreach (var (layerId, batch, result) in _applied)
+            try
             {
-                await owner.EmitBulkEditAsync(layerId, batch, result, cancellationToken).ConfigureAwait(false);
+                var outcome = await inner.CommitAsync(cancellationToken).ConfigureAwait(false);
+                if (outcome == FeatureWriterTransactionCommitOutcome.Unknown)
+                {
+                    await EmitRollbackFailuresAsync(CancellationToken.None).ConfigureAwait(false);
+                    return outcome;
+                }
+
+                foreach (var (layerId, batch, result) in _applied)
+                {
+                    await owner.EmitBulkEditAsync(layerId, batch, result, cancellationToken).ConfigureAwait(false);
+                }
+
+                _auditFinalized = true;
+                return outcome;
+            }
+            catch
+            {
+                await EmitRollbackFailuresAsync(CancellationToken.None).ConfigureAwait(false);
+                throw;
             }
         }
 
         public async Task RollbackAsync(CancellationToken cancellationToken = default)
         {
             await inner.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await EmitRollbackFailuresAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await inner.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                await EmitRollbackFailuresAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+
+        private async Task EmitRollbackFailuresAsync(CancellationToken cancellationToken)
+        {
+            if (_auditFinalized)
+            {
+                return;
+            }
+
+            _auditFinalized = true;
             foreach (var (layerId, batch, _) in _applied)
             {
                 await owner.EmitBulkEditFailureAsync(layerId, batch, cancellationToken).ConfigureAwait(false);
             }
         }
-
-        public ValueTask DisposeAsync() => inner.DisposeAsync();
     }
 }

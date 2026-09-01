@@ -689,7 +689,8 @@ internal sealed partial class FeatureDataAccess
                 cancellationToken);
         }
 
-        public async Task CommitAsync(CancellationToken cancellationToken = default)
+        public async Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            CancellationToken cancellationToken = default)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_completed)
@@ -697,8 +698,19 @@ internal sealed partial class FeatureDataAccess
                 throw new InvalidOperationException("The feature writer transaction has already completed.");
             }
 
-            await CommitEditTransactionAsync(_transaction, cancellationToken).ConfigureAwait(false);
-            _completed = true;
+            try
+            {
+                await CommitEditTransactionAsync(_transaction, cancellationToken).ConfigureAwait(false);
+                _completed = true;
+                return FeatureWriterTransactionCommitOutcome.Committed;
+            }
+            catch (FeatureEditCommitOutcomeUnknownException)
+            {
+                // COMMIT may already be durable. Do not let disposal attempt a rollback and
+                // mask the explicit unknown outcome (or imply that the writes were undone).
+                _completed = true;
+                return FeatureWriterTransactionCommitOutcome.Unknown;
+            }
         }
 
         public async Task RollbackAsync(CancellationToken cancellationToken = default)

@@ -118,11 +118,23 @@ public interface IFeatureWriterTransaction : IAsyncDisposable
     /// Commits every batch applied through this transaction.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task CommitAsync(CancellationToken cancellationToken = default);
+    Task<FeatureWriterTransactionCommitOutcome> CommitAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Rolls back every batch applied through this transaction.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task RollbackAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Describes whether a writer transaction's commit was acknowledged.
+/// </summary>
+public enum FeatureWriterTransactionCommitOutcome
+{
+    /// <summary>The provider acknowledged that the transaction committed.</summary>
+    Committed,
+
+    /// <summary>The commit may be durable, but its acknowledgement was lost.</summary>
+    Unknown
 }

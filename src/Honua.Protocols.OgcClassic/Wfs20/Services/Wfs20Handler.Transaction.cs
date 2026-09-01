@@ -1932,9 +1932,27 @@ internal sealed partial class Wfs20Handler
                 aggregatedResult.DeleteResults);
         }
 
-        await writerTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return aggregatedResult;
+        var commitOutcome = await writerTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        if (commitOutcome == FeatureWriterTransactionCommitOutcome.Committed)
+        {
+            return aggregatedResult;
+        }
+
+        const string errorMessage = "Transaction commit outcome is unknown.";
+        return FeatureEditResult.FailureWithUnknownCommitOutcome(
+            MarkCommitOutcomeUnknown(aggregatedResult.CreateResults, errorMessage),
+            MarkCommitOutcomeUnknown(aggregatedResult.UpdateResults, errorMessage),
+            MarkCommitOutcomeUnknown(aggregatedResult.DeleteResults, errorMessage));
     }
+
+    private static ImmutableArray<EditOperationResult> MarkCommitOutcomeUnknown(
+        ImmutableArray<EditOperationResult> results,
+        string errorMessage)
+        => results
+            .Select(result => EditOperationResult.FailureWithUnknownCommitOutcome(
+                errorMessage,
+                objectId: result.ObjectId))
+            .ToImmutableArray();
 
     private async Task<FeatureEditResult> ExecutePreparedEditAsync(
         HttpContext context,

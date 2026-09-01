@@ -128,6 +128,34 @@ public sealed class AuditingFeatureWriterTests
         _auditLog.Events.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Transaction_DisposeWithoutCompletion_EmitsBulkFailureOnce()
+    {
+        var batch = FeatureEditBatch.Create(deletes: ImmutableArray.Create(42L, 43L));
+        await using (var transaction = await _writer.BeginTransactionAsync())
+        {
+            await transaction.ApplyEditsAsync(layerId: 7, batch);
+        }
+
+        var evt = _auditLog.Events.Should().ContainSingle().Subject;
+        evt.Action.Should().Be("feature.bulk-edit.delete");
+        evt.Outcome.Should().Be(AuditOutcome.Failure);
+        _inner.Transaction!.RolledBack.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Transaction_ExplicitRollbackThenDispose_EmitsBulkFailureOnce()
+    {
+        var batch = FeatureEditBatch.Create(deletes: ImmutableArray.Create(42L, 43L));
+        await using (var transaction = await _writer.BeginTransactionAsync())
+        {
+            await transaction.ApplyEditsAsync(layerId: 7, batch);
+            await transaction.RollbackAsync();
+        }
+
+        _auditLog.Events.Should().ContainSingle();
+    }
+
     private static Feature NewFeature() => new()
     {
         Id = 0,
@@ -137,6 +165,8 @@ public sealed class AuditingFeatureWriterTests
 
     private sealed class StubFeatureWriter : IFeatureWriter
     {
+        public StubFeatureWriterTransaction? Transaction { get; private set; }
+
         public bool DeleteResult { get; set; } = true;
 
         public bool ThrowOnDelete { get; set; }
@@ -165,6 +195,43 @@ public sealed class AuditingFeatureWriterTests
             FeatureEditBatch editBatch,
             CancellationToken cancellationToken = default)
             => Task.FromResult(EditResult);
+
+        public Task<IFeatureWriterTransaction> BeginTransactionAsync(
+            System.Data.IsolationLevel isolationLevel = System.Data.IsolationLevel.RepeatableRead,
+            CancellationToken cancellationToken = default)
+        {
+            Transaction = new StubFeatureWriterTransaction(this);
+            return Task.FromResult<IFeatureWriterTransaction>(Transaction);
+        }
+    }
+
+    private sealed class StubFeatureWriterTransaction(StubFeatureWriter owner) : IFeatureWriterTransaction
+    {
+        public bool RolledBack { get; private set; }
+
+        public Task<FeatureEditResult> ApplyEditsAsync(
+            int layerId,
+            FeatureEditBatch editBatch,
+            CancellationToken cancellationToken = default)
+            => owner.ApplyEditsAsync(layerId, editBatch, cancellationToken);
+
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(FeatureWriterTransactionCommitOutcome.Committed);
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            RolledBack = true;
+            return Task.CompletedTask;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!RolledBack)
+            {
+                await RollbackAsync(CancellationToken.None);
+            }
+        }
     }
 
     private sealed class CapturingAuditLog : IAuditLog

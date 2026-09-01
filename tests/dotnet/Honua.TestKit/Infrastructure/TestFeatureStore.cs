@@ -614,10 +614,11 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             CancellationToken cancellationToken = default)
             => owner.ApplyEditsAsync(layerId, editBatch, cancellationToken);
 
-        public Task CommitAsync(CancellationToken cancellationToken = default)
+        public Task<FeatureWriterTransactionCommitOutcome> CommitAsync(
+            CancellationToken cancellationToken = default)
         {
             _completed = true;
-            return Task.CompletedTask;
+            return Task.FromResult(FeatureWriterTransactionCommitOutcome.Committed);
         }
 
         public Task RollbackAsync(CancellationToken cancellationToken = default)
