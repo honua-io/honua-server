@@ -15,7 +15,7 @@ For WMS 1.1.1 / WFS 1.0.0 / WFS 1.1.0 (manual-only legacy suites), see [Legacy O
 |---|---|---|---|
 | OGC API Features 1.0 | service | `run-cite-tests.sh` | `cite-conformance.yml` |
 | OGC API Tiles | service | `run-cite-tiles-tests.sh` | `cite-tiles-conformance.yml` |
-| OGC API Processes 1.0 | service diagnostic | `run-cite-ogcapi-processes-tests.sh` | `cite-ogcapi-processes-conformance.yml` |
+| OGC API Processes 1.0 | service release gate | `run-cite-ogcapi-processes-tests.sh` | `cite-ogcapi-processes-conformance.yml` |
 | OGC API Maps | service | `run-ogc-maps-conformance-tests.sh` (integration suite — not TeamEngine) | `ogc-maps-conformance.yml` |
 | WMS 1.3 | service | `run-cite-wms-tests.sh` | `cite-wms-conformance.yml` |
 | WMTS 1.0 | service | `run-cite-wmts-tests.sh` | `cite-wmts-conformance.yml` |
@@ -62,11 +62,11 @@ CI baseline for required suites:
 - `total_tests` must be greater than `0`.
 - For format-level suites: `skipped_tests` and `canttell_tests` must also be `0` (these run a strict no-skip `applicable` profile by default).
 
-The OGC API Processes lane is diagnostic until #3405 is satisfied. It retains
-failed and skipped verdicts as provisional observations, but still fails on a
-missing summary, nonzero ETS exit, timeout, zero tests, an all-skip/CantTell
-run, unknown test classes, or result-accounting drift. A diagnostic-red run is
-not a public conformance claim and is not added to the passing CITE aggregate.
+The OGC API Processes lane is a required, dispatch-only release gate. It runs
+against the immutable candidate image and fails closed on provenance mismatch,
+incomplete output, infrastructure errors, skipped/CantTell tests, or any pass
+regression or denominator drift from the recorded baseline. It is not a PR job
+or a scheduled source of nightly evidence.
 
 Artifacts (markdown summary + raw TeamEngine outputs or TRX) are uploaded with 30-day retention. Preserve anything you need for release or certification evidence outside the normal workflow artifact store.
 

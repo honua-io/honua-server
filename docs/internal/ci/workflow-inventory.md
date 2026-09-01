@@ -279,7 +279,7 @@ which is why both the run count and exact observed span are recorded.
 | `cite-conformance-common.yml` | CITE Conformance (reusable) | `workflow_call` | Shared checkout/build/run/parse/upload/fail skeleton for single-suite CITE runs. |
 | `cite-conformance.yml` | OGC CITE Conformance Tests (Features) | weekly `schedule` (Mon 06:00 UTC), `workflow_dispatch` | |
 | `cite-tiles-conformance.yml` | OGC API Tiles CITE Conformance | weekly `schedule` (Tue 06:00 UTC), `workflow_dispatch` | |
-| `cite-ogcapi-processes-conformance.yml` | OGC API Processes 1.0 CITE Diagnostic | daily `schedule` (08:00 UTC), `workflow_dispatch` | Pinned upstream ETS diagnostic. Complete red runs remain evidence; missing, zero-test, all-skip, timed-out, or structurally invalid runs fail. Promotion to a strict release gate is tracked by #3405. |
+| `cite-ogcapi-processes-conformance.yml` | OGC API Processes 1.0 Release Gate | `workflow_dispatch` | Required exact-candidate release gate over the pinned upstream ETS denominator. Release cuts supply an immutable image digest and its full source SHA; provenance mismatches, incomplete or invalid results, skips/CantTell verdicts, and pass or denominator regressions fail closed. |
 | `cite-wfs20-conformance.yml` | WFS 2.0 CITE Conformance | weekly `schedule` (Mon 03:00 UTC), `workflow_dispatch` | Standalone (not the reusable wrapper) because of suite-specific setup. |
 | `cite-wms-conformance.yml` | OGC WMS CITE Conformance | weekly `schedule` (Wed 06:00 UTC), `workflow_dispatch` | WMS 1.3. |
 | `cite-wms11-conformance.yml` | OGC WMS 1.1.1 CITE Conformance | weekly `schedule` (Thu 06:00 UTC), `workflow_dispatch` | |
