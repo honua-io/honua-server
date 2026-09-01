@@ -790,10 +790,12 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj",
-      "_comment": "ADR-0037 finer-sharding: narrowed to the Wms namespace; Wmts was carved into OGC Classic WMTS. Wcs20 paths moved to the WFS shard (which now owns Wcs20 coverage). Wms and Wmts are disjoint namespaces, so the two shards partition the original suite with no gaps or overlaps.",
+      "_comment": "ADR-0037 finer-sharding: narrowed to the Wms namespace; Wmts was carved into OGC Classic WMTS. Wcs20 paths moved to the WFS shard (which now owns Wcs20 coverage). The GeoServices MapServer and StaticMap source paths also select this shard because RenderedRasterBaselineTests validates their shared rendered-map pipeline.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.MetadataV2LifecycleRoutingTests",
       "paths": [
         "src/Honua.Protocols.OgcClassic/Wms/",
+        "src/Honua.Protocols.GeoServices/MapServer/",
+        "src/Honua.Server/Features/StaticMap/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wms/",
         "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/MetadataV2LifecycleRoutingTests.cs",
         "src/Honua.Core/Features/Metadata/Domain/V2/",

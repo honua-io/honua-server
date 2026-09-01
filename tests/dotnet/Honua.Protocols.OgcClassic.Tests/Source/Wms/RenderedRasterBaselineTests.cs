@@ -14,11 +14,9 @@ using SkiaSharp;
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 
 /// <summary>
-/// Pixel baselines for the shared rendered-map pipeline. These tests intentionally live in the
-/// WMS namespace so the OGC Classic Maps raster shard owns all three protocol entry points.
+/// Pixel baselines for the shared rendered-map pipeline.
 /// </summary>
 [Collection("Database")]
-[Protocol(TestProtocols.Wms13)]
 public sealed class RenderedRasterBaselineTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
@@ -33,39 +31,41 @@ public sealed class RenderedRasterBaselineTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    public static TheoryData<string, string, RasterBaselineTolerance> Scenes => new()
-    {
-        {
-            "wms-getmap-point",
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=37.4,-122.6,37.6,-122.4&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png",
-            RasterBaselineTolerance.Exact
-        },
-        {
-            "wms-getmap-transparent",
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=37.4,-122.6,37.6,-122.4&WIDTH=192&HEIGHT=128&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TRANSPARENT=true",
-            RasterBaselineTolerance.Exact
-        },
-        {
-            "static-map-overlays",
-            $"/static/{WebAppFixture.TestServiceId}/bbox/-122.6,37.4,-122.4,37.6/256x192.png?layers={WebAppFixture.TestLayerId}&markers=-122.55,37.55,blue&path=-122.58,37.42|-122.42,37.58",
-            RasterBaselineTolerance.Exact
-        },
-        {
-            "mapserver-export-point",
-            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-122.6,37.4,-122.4,37.6&bboxSR=4326&imageSR=4326&size=256,192&format=png32&transparent=false&f=image",
-            RasterBaselineTolerance.Exact
-        }
-    };
-
-    [Theory]
-    [MemberData(nameof(Scenes))]
-    [Trait("Category", "Integration")]
-    [Trait("Tier", Tiers.Integration)]
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms13)]
     [Operation(Operations.Render)]
-    public async Task RenderedRaster_CanonicalScene_MatchesCommittedBaseline(
-        string baselineName,
-        string requestPath,
-        RasterBaselineTolerance tolerance)
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
+    public Task Wms_GetMap_Point_MatchesCommittedBaseline() => AssertMatchesAsync(
+        "wms-getmap-point",
+        $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=37.4,-122.6,37.6,-122.4&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms13)]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetMap")]
+    public Task Wms_GetMap_Transparent_MatchesCommittedBaseline() => AssertMatchesAsync(
+        "wms-getmap-transparent",
+        $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=37.4,-122.6,37.6,-122.4&WIDTH=192&HEIGHT=128&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TRANSPARENT=true");
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.StaticMap)]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /static/{serviceId}/bbox/{bbox}/{dimensions}.{format}")]
+    public Task StaticMap_Overlays_MatchesCommittedBaseline() => AssertMatchesAsync(
+        "static-map-overlays",
+        $"/static/{WebAppFixture.TestServiceId}/bbox/-122.6,37.4,-122.4,37.6/256x192.png?layers={WebAppFixture.TestLayerId}&markers=-122.55,37.55,blue&path=-122.58,37.42|-122.42,37.58");
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.MapServer)]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public Task MapServer_Export_Point_MatchesCommittedBaseline() => AssertMatchesAsync(
+        "mapserver-export-point",
+        $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-122.6,37.4,-122.4,37.6&bboxSR=4326&imageSR=4326&size=256,192&format=png32&transparent=false&f=image");
+
+    private async Task AssertMatchesAsync(string baselineName, string requestPath)
     {
         using var response = await _fixture.Client.GetAsync(requestPath);
         var actual = await response.Content.ReadAsByteArrayAsync();
@@ -73,7 +73,7 @@ public sealed class RenderedRasterBaselineTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(actual));
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
 
-        RasterBaseline.AssertMatches(baselineName, actual, tolerance);
+        RasterBaseline.AssertMatches(baselineName, actual, RasterBaselineTolerance.Exact);
     }
 }
 
@@ -98,11 +98,11 @@ internal static class RasterBaseline
             }
 
             Directory.CreateDirectory(sourceDirectory);
-            File.WriteAllBytes(Path.Combine(sourceDirectory, $"{name}.png"), actualBytes);
+            File.WriteAllBytes(Path.Join(sourceDirectory, $"{name}.png"), actualBytes);
             return;
         }
 
-        var expectedPath = Path.Combine(AppContext.BaseDirectory, "Baselines", $"{name}.png");
+        var expectedPath = Path.Join(AppContext.BaseDirectory, "Baselines", $"{name}.png");
         File.Exists(expectedPath).Should().BeTrue($"the committed raster baseline {name}.png must be copied to the test output");
 
         using var expected = SKBitmap.Decode(expectedPath);
@@ -136,13 +136,13 @@ internal static class RasterBaseline
             }
         }
 
-        var rootMeanSquareError = Math.Sqrt(squaredError / (actual.Width * actual.Height * 4d));
+        var rootMeanSquareError = Math.Sqrt(squaredError / (actual.Width * (double)actual.Height * 4d));
         if (rootMeanSquareError > tolerance.MaximumRootMeanSquareError || changedPixels > tolerance.MaximumChangedPixels)
         {
-            var diagnosticsDirectory = Path.Combine(AppContext.BaseDirectory, "TestResults", "raster-baseline-diffs");
+            var diagnosticsDirectory = Path.Join(AppContext.BaseDirectory, "TestResults", "raster-baseline-diffs");
             Directory.CreateDirectory(diagnosticsDirectory);
-            var actualPath = Path.Combine(diagnosticsDirectory, $"{name}.actual.png");
-            var diffPath = Path.Combine(diagnosticsDirectory, $"{name}.diff.png");
+            var actualPath = Path.Join(diagnosticsDirectory, $"{name}.actual.png");
+            var diffPath = Path.Join(diagnosticsDirectory, $"{name}.diff.png");
             File.WriteAllBytes(actualPath, actualBytes);
             using var image = SKImage.FromBitmap(diff);
             using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
