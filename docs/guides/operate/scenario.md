@@ -31,35 +31,25 @@ HONUA_SERVER_IMAGE="$candidate_image" \
 docker compose -p honua3302 up -d --no-build --wait --wait-timeout 180
 test "$(docker inspect --format '{{.Config.Image}}' \
   "$(docker compose -p honua3302 ps -q honua)")" = "$candidate_image"
-curl --fail http://localhost:18090/healthz/ready
 ```
 
-The final command returned `Ready`. Use a secret-backed admin credential outside
-local development; the examples assume `HONUA_ADMIN_PASSWORD` is already set.
+Open `http://localhost:18090/healthz/ready` in a browser and confirm that it
+returns `Ready`. Use a secret-backed admin credential outside local development;
+the examples assume `HONUA_ADMIN_PASSWORD` is already set.
 
 ```bash
 export HONUA_URL=http://localhost:18090
 export HONUA_KEY="$HONUA_ADMIN_PASSWORD"
 ```
 
-## 1. Observe through REST
+## 1. Observe through MCP
 
-```bash
-curl --fail --silent --show-error \
-  -H "X-API-Key: $HONUA_KEY" \
-  "$HONUA_URL/api/v1/admin/observability/ops-health" |
-  jq '{generatedAt, evidencePosture, overallStatus, health, servingLatency, geoprocessing, alertDispatch, deploy, database}'
-
-curl --fail --silent --show-error \
-  -H "X-API-Key: $HONUA_KEY" \
-  "$HONUA_URL/api/v1/admin/observability/findings" |
-  jq '{generatedAt, evidencePosture, findings}'
-
-curl --fail --silent --show-error \
-  -H "X-API-Key: $HONUA_KEY" \
-  "$HONUA_URL/api/v1/admin/observability/events?pageSize=5" |
-  jq '{partialResult, sourceErrors, evidencePosture, items}'
-```
+Connect an MCP client to `$HONUA_URL/mcp` with the `X-API-Key` header set to
+`$HONUA_KEY`, then call `honua_ops_health`, `honua_ops_findings`, and
+`honua_operate_events` (with `pageSize: 5`). Inspect `generatedAt`,
+`evidencePosture`, `overallStatus`, and the health sections from the first call;
+the findings from the second; and `partialResult`, `sourceErrors`, and `items`
+from the third.
 
 On the verified candidate, the first two calls returned HTTP 200 but the posture
 was `unavailable`: `honua_ops_health.alert_dispatch` and
@@ -72,27 +62,10 @@ The decision gate is mechanical. Continue only when every id in a finding's
 `observedAt` and `lastSuccessfulAt`, complete coverage, and has not passed
 `validUntil`. `generatedAt` is only response time.
 
-## 2. Read the same truth through MCP
+## 2. Complete the MCP evidence inventory
 
-The HTTP MCP transport returns Server-Sent Event framing. This helper prints the
-JSON-RPC message:
-
-```bash
-mcp_call() {
-  curl --fail --silent --show-error \
-    -H 'Content-Type: application/json' \
-    -H 'Accept: application/json, text/event-stream' \
-    -H "X-API-Key: $HONUA_KEY" \
-    --data "$1" "$HONUA_URL/mcp" |
-    sed -n 's/^data: //p' | jq .
-}
-
-mcp_call '{"jsonrpc":"2.0","id":"health","method":"tools/call","params":{"name":"honua_ops_health","arguments":{}}}'
-mcp_call '{"jsonrpc":"2.0","id":"findings","method":"tools/call","params":{"name":"honua_ops_findings","arguments":{}}}'
-mcp_call '{"jsonrpc":"2.0","id":"alerts","method":"tools/call","params":{"name":"honua_alert_events","arguments":{"pageSize":5}}}'
-mcp_call '{"jsonrpc":"2.0","id":"timeline","method":"tools/call","params":{"name":"honua_operate_events","arguments":{"pageSize":5}}}'
-mcp_call '{"jsonrpc":"2.0","id":"kinds","method":"tools/call","params":{"name":"honua_supported_operation_kinds","arguments":{}}}'
-```
+In the same MCP client, call `honua_alert_events` with `pageSize: 5`, then call
+`honua_supported_operation_kinds` with no arguments.
 
 All five calls executed on the candidate. The four reads returned
 `isError:false` with the same posture semantics as REST. The local placement
