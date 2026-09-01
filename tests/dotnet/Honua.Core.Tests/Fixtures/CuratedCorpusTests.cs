@@ -19,13 +19,27 @@ public sealed class CuratedCorpusTests
         corpus.VerifyAll();
 
         Assert.Equal("v1", corpus.Revision);
-        Assert.Equal(8, corpus.Assets.Count);
+        Assert.Equal(9, corpus.Assets.Count);
         Assert.All(corpus.Assets, asset =>
         {
             Assert.Equal(64, asset.Sha256.Length);
             Assert.NotEmpty(asset.MediaType);
             Assert.NotEmpty(asset.Facets);
         });
+    }
+
+    [UnitTest]
+    public void DegenerateGeometryAsset_PreservesCollapsedAndEmptyShapes()
+    {
+        var corpus = CuratedCorpus.Load();
+        using var document = JsonDocument.Parse(corpus.ReadAllBytes("degenerate-geometries"));
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        Assert.Equal(5, features.Length);
+        Assert.Equal(3, features[0].GetProperty("geometry").GetProperty("coordinates").GetArrayLength());
+        Assert.Equal(4, features[1].GetProperty("geometry").GetProperty("coordinates")[0].GetArrayLength());
+        Assert.Empty(features[3].GetProperty("geometry").GetProperty("geometries").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, features[4].GetProperty("geometry").ValueKind);
     }
 
     [UnitTest]

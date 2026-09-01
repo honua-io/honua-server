@@ -16,6 +16,14 @@
   },
   "assets": [
     {
+      "id": "degenerate-geometries",
+      "path": "degenerate-geometries.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 843,
+      "sha256": "1d1ea2b751c65521026d4d81dd0bf8410f0e2c42906eb11a3abd6e7551d20458",
+      "facets": ["geometry/zero-length-segment", "geometry/zero-area-ring", "geometry/collapsed-hole", "geometry/empty-collection", "geometry/null"]
+    },
+    {
       "id": "edge-geometries",
       "path": "edge-geometries.geojson",
       "mediaType": "application/geo+json",
