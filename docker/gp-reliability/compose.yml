@@ -1,0 +1,70 @@
+name: honua-gp-reliability
+
+services:
+  postgres:
+    image: pgrouting/pgrouting:17-3.5-3.7.3@sha256:e15a541283d5086981f3e19648a15f969e8d09aa9e72a5a5acf6777673da1784
+    environment:
+      POSTGRES_DB: honua
+      POSTGRES_USER: honua
+      POSTGRES_PASSWORD: honua
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honua -d honua"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+  redis:
+    image: redis:7.2-alpine@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+  server:
+    image: ${HONUA_SERVER_IMAGE:?set HONUA_SERVER_IMAGE to a digest-addressed image}
+    ports:
+      - "127.0.0.1:${HONUA_GP_PORT:-18080}:8080"
+    environment: &honua-environment
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=honua;Username=honua;Password=honua
+      ConnectionStrings__Redis: redis:6379
+      Licensing__DevGrantEdition: Pro
+      HONUA_ADMIN_PASSWORD: gp-reliability-admin
+      Security__ConnectionEncryption__MasterKey: honua-gp-reliability-master-key-0123456789
+      Security__ConnectionEncryption__Salt: aG9udWEtZ3AtcmVsaWFiaWxpdHktc2FsdA==
+      Kestrel__Endpoints__Http__Url: http://+:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+
+  worker:
+    image: ${HONUA_WORKER_IMAGE:?set HONUA_WORKER_IMAGE to a digest-addressed image}
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__Redis: redis:6379
+      GdalWorker__ScratchRoot: /tmp/honua-gdal-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:noexec,nosuid,size=256m
+
+volumes:
+  postgres-data:
+  redis-data:
