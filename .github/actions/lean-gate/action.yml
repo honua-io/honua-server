@@ -266,7 +266,7 @@ runs:
             --no-build \
             --no-restore \
             --configuration Release \
-            --filter "FullyQualifiedName~CapabilityRegistryConformanceTests.LiveMcpTools_MatchRegistryToolDescriptors|FullyQualifiedName~CapabilityRegistryConformanceTests.RegistryToolDescriptors_MirrorLiveWorkflowFamilies|FullyQualifiedName~McpTaxonomyAlignmentTests.ToolNames_MatchTaxonomyRoster|FullyQualifiedName~McpTaxonomyAlignmentTests.TaxonomyRoster_MatchesCapabilityRegistryToolDescriptors|FullyQualifiedName~McpTaxonomyAlignmentTests.ToolRoster_MatchesFullMcpDependencyInjectionRegistrations|FullyQualifiedName~McpTaxonomyAlignmentTests.ErrorEnvelopeRoster_CoversEveryStaticallyRegisteredTool" \
+            --filter "FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests" \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-mcp-roster.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
