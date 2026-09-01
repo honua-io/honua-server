@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Features.Protocols.Grpc;
 /// Uses gRPC-Web transport (HTTP/1.1) since the in-memory test server does not
 /// support HTTP/2.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.SceneGrpc")]
 [Protocol(TestProtocols.Grpc)]
 public sealed class SceneGrpcIntegrationTests : IAsyncLifetime
 {
