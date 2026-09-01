@@ -38,9 +38,11 @@ internal static partial class SchemaSearchPath
         }
 
         await using var command = connection.CreateCommand();
-        // PostgreSQL does not accept parameter binding for identifiers. Quote the allow-listed
-        // schema through Npgsql's provider API instead of hand-building an identifier token.
-        command.CommandText = $"SET search_path TO {QuoteIdentifier(sanitized)}, public;";
+        // SET does not accept a bound identifier, so use PostgreSQL's set_config value API.
+        // The provider quotes the allow-listed schema as an identifier, while the entire
+        // search_path value is still transmitted as data rather than interpolated SQL.
+        command.CommandText = "SELECT set_config('search_path', @searchPath, false);";
+        command.Parameters.AddWithValue("searchPath", BuildSearchPathValue(sanitized));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -84,5 +86,10 @@ internal static partial class SchemaSearchPath
     private static string QuoteIdentifier(string identifier)
     {
         return new NpgsqlCommandBuilder().QuoteIdentifier(identifier);
+    }
+
+    internal static string BuildSearchPathValue(string schemaName)
+    {
+        return $"{ValidateAndQuote(schemaName)}, public";
     }
 }

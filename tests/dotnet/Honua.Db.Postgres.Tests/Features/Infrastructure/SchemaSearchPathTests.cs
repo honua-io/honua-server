@@ -26,4 +26,10 @@ public sealed class SchemaSearchPathTests
 
         action.Should().Throw<InvalidOperationException>();
     }
+
+    [Fact]
+    public void BuildSearchPathValue_QuotesSchemaAndKeepsPublicFallback()
+    {
+        SchemaSearchPath.BuildSearchPathValue("select").Should().Be("\"select\", public");
+    }
 }
