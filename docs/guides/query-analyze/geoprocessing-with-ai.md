@@ -3,7 +3,7 @@
 Use one governed `geometry.buffer` operation across OGC API Processes, Honua's MCP plan tools, and the JavaScript SDK, then hand the result artifact to Studio. This is stage two of the terminal journey: complete the [server setup and control-plane walkthrough](https://github.com/honua-io/honua-server/issues/3364) first, and continue with the [Studio save and reopen journey](https://github.com/honua-io/honua-server/issues/3305) when that documentation lands.
 
 > [!IMPORTANT]
-> **Capability truth.** `process.geoprocessing` and `process.ogc-api-processes` are Community capabilities. Process discovery is open; execution requires an authenticated identity with `Process.Execute`. Redis-backed durable job storage is required for asynchronous execution. The bounded `geometry.buffer` operation is non-destructive and does not require approval. Mutating or destructive catalog operations require their additional grant and may enter the human approval lane. The direct geospatial-mcp analysis-profile verb `buffer_features` is not shipped: [#3269](https://github.com/honua-io/honua-server/issues/3269) blocks that shortcut. Use the shipped `honua_validate_plan` and `honua_execute_plan` tools below.
+> **Capability truth.** `process.geoprocessing` and `process.ogc-api-processes` are Community capabilities. Process discovery is open; OGC execution requires an authenticated identity with `Process.Execute`. MCP plan validation is available in Community, but `honua_execute_plan` additionally requires a Pro license with the `ai.spec-apply` and `ai.agent-operations` entitlements. Redis-backed durable job storage is required for asynchronous execution. The bounded `geometry.buffer` operation is non-destructive and does not require approval. Mutating or destructive catalog operations require their additional grant and may enter the human approval lane. The direct geospatial-mcp analysis-profile verb `buffer_features` is not shipped: [#3269](https://github.com/honua-io/honua-server/issues/3269) blocks that shortcut. Use the shipped `honua_validate_plan` and, on Pro, `honua_execute_plan` tools below.
 
 ## Before you start
 
@@ -47,7 +47,7 @@ Keep the returned artifact `id` and `href`. The `href` is a GeoJSON data URI in 
 
 ## 3. Run the same governed operation through MCP
 
-The shipped MCP surface executes canonical plans. Its plan schema currently string-encodes process inputs, and catalog validation for this base-plan path requires base64 WKB. This is a transport-shape distinction, not a claim that OGC accepts only WKB.
+The shipped MCP surface executes canonical plans on Pro. The executing identity needs `Process.Execute`, `ai.spec-apply`, and `ai.agent-operations`; Community can validate the plan but cannot execute it through MCP. Its plan schema currently string-encodes process inputs, and catalog validation for this base-plan path requires base64 WKB. This is a transport-shape distinction, not a claim that OGC accepts only WKB.
 
 Call `honua_validate_plan` first with this `plan` value, then pass the same value to `honua_execute_plan`:
 
@@ -113,7 +113,7 @@ The SDK handles either legal synchronous or asynchronous response shape. It does
 
 ## 5. Continue in Studio
 
-Add the GeoJSON result referenced by `artifact.href` to the same server-resident Studio draft, or promote a durable MCP result with `honua_publish_result` and add the returned hosted layer. Save the artifact id, job id, draft id, and draft generation together so the next stage can prove it is using this run rather than a fixture.
+Add the GeoJSON result referenced by `artifact.href` to the same server-resident Studio draft. The `geometry.buffer` result is an inline GeoJSON data-URI artifact, not a materialized database table, so it cannot be passed directly to `honua_publish_result`. A hosted-layer workflow must first import or otherwise materialize the GeoJSON into a table that records `connectionId`, `schema`, and `table` metadata. Save the artifact id, job id, draft id, and draft generation together so the next stage can prove it is using this run rather than a fixture.
 
 The complete Studio authoring/run UI is a 2026.2 surface. Until [#3305](https://github.com/honua-io/honua-server/issues/3305) lands, use the existing [Studio AI proxy guide](../run-studio-ai-proxy.md) and the `honua_studio_*` MCP lifecycle described in [Connect AI agents](../connect/ai-agents-mcp.md). Console job/result inspection is optional and does not define completion of this terminal path.
 
