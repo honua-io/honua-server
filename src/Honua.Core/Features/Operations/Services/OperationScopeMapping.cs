@@ -43,10 +43,19 @@ public static class OperationScopeMapping
             "studio.draft.create" => OperatorOperation.Create,
             "studio.draft.update" or "studio.draft.save-version" => OperatorOperation.Update,
             "studio.draft.delete" => OperatorOperation.Delete,
+            "admin.layer.publish" => OperatorOperation.Publish,
+            "admin.connections.create" or "admin.import.upload" or "admin.import.upload-url" => OperatorOperation.Create,
+            "admin.connections.delete" or "admin.import.jobs.cancel" => OperatorOperation.Delete,
+            "admin.layer.set-enabled" or "admin.layer.fields.set" or "admin.layer.filter.set" or
+                "admin.layer.popup-info.set" or "admin.layer.drawing-info.set" or
+                "admin.layer.style.set" or "admin.layer.style.import-sld" or
+                "admin.services.protocols.set" or "admin.services.access-policy.set" or
+                "admin.services.timeinfo.set" or "admin.services.layer-metadata.set" or
+                "admin.connections.update" or "admin.connections.extents.refresh" or
+                "admin.connections.features.refresh" => OperatorOperation.Update,
             _ => default,
         };
-        return request.OperationId is "service.publish" or "studio.draft.create" or
-            "studio.draft.update" or "studio.draft.save-version" or "studio.draft.delete";
+        return operation != default;
     }
 
     private static bool IsStudioOperation(string operationId)

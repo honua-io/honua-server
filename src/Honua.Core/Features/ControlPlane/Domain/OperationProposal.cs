@@ -189,6 +189,9 @@ public sealed record OperationProposal
     /// </summary>
     public required OperationClass Kind { get; init; }
 
+    /// <summary>Registered action discriminator sealed independently of optional autonomy metadata.</summary>
+    public string? ActionDiscriminator { get; init; }
+
     /// <summary>
     /// Current proposal lifecycle status.
     /// </summary>
