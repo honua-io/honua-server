@@ -19,13 +19,26 @@ public sealed class CuratedCorpusTests
         corpus.VerifyAll();
 
         Assert.Equal("v1", corpus.Revision);
-        Assert.Equal(10, corpus.Assets.Count);
+        Assert.Equal(11, corpus.Assets.Count);
         Assert.All(corpus.Assets, asset =>
         {
             Assert.Equal(64, asset.Sha256.Length);
             Assert.NotEmpty(asset.MediaType);
             Assert.NotEmpty(asset.Facets);
         });
+    }
+
+    [UnitTest]
+    public void ExtremeCoordinateAsset_PreservesFiniteRangeEdges()
+    {
+        var corpus = CuratedCorpus.Load();
+        using var document = JsonDocument.Parse(corpus.ReadAllBytes("extreme-coordinate-ranges"));
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+
+        Assert.Equal(179.99999999999997, features[0].GetProperty("geometry").GetProperty("coordinates")[0][0].GetDouble());
+        Assert.Equal(1_000_000, features[1].GetProperty("geometry").GetProperty("coordinates")[0].GetDouble());
+        Assert.Equal(1e150, features[2].GetProperty("geometry").GetProperty("coordinates")[0].GetDouble());
+        Assert.True(double.IsFinite(features[3].GetProperty("geometry").GetProperty("coordinates")[0].GetDouble()));
     }
 
     [UnitTest]

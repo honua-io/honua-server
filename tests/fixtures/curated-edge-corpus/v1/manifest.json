@@ -16,6 +16,14 @@
   },
   "assets": [
     {
+      "id": "extreme-coordinate-ranges",
+      "path": "extreme-coordinate-ranges.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 729,
+      "sha256": "d1c4b23d856042f01e24b7dd39909b05caf153e76ed1f37c4463ab77d0a615f5",
+      "facets": ["coordinates/antimeridian-epsilon", "coordinates/out-of-domain", "coordinates/large-finite", "coordinates/subnormal"]
+    },
+    {
       "id": "mixed-crs-features",
       "path": "mixed-crs-features.geojson",
       "mediaType": "application/geo+json",

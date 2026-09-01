@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type":"Feature","id":"antimeridian-epsilon","properties":{"case":"near-antimeridian"},"geometry":{"type":"LineString","coordinates":[[179.99999999999997,89.99999999999997],[-179.99999999999997,-89.99999999999997]]}},
+    {"type":"Feature","id":"outside-geographic-domain","properties":{"case":"finite-out-of-range"},"geometry":{"type":"Point","coordinates":[1000000,-1000000]}},
+    {"type":"Feature","id":"large-projected","properties":{"case":"large-finite-projected"},"geometry":{"type":"Point","coordinates":[1e150,-1e150]}},
+    {"type":"Feature","id":"subnormal","properties":{"case":"smallest-scale"},"geometry":{"type":"Point","coordinates":[5e-324,-5e-324]}}
+  ]
+}
