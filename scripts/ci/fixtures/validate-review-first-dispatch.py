@@ -137,6 +137,16 @@ def main() -> None:
         'workflows: ["PR Gate", "Review Event Bridge"]',
         "PR Gate and review-event completion must re-evaluate trusted review",
     )
+    require(
+        review_gate,
+        "github.event.workflow_run.name != 'Review Event Bridge' ||",
+        "non-successful bridge runs must skip the trusted resolver job",
+    )
+    require(
+        review_gate,
+        "github.event.workflow_run.conclusion == 'success'",
+        "only successful bridge runs may start trusted resolution",
+    )
     require(review_gate, "cancel-in-progress: false", "trusted dispatch must not be interrupted")
     require(
         review_gate,
@@ -144,8 +154,51 @@ def main() -> None:
         "every trusted mutation must serialize on a resolved PR number",
     )
     require(review_gate, "needs: resolve", "attestation must wait for PR identity resolution")
+    require(
+        review_gate,
+        "group: review-resolve-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha)",
+        "review resolution must be single-flight for each event subject head",
+    )
+    stale_review = review_gate.index("- name: Shed superseded review event")
+    resolve_review = review_gate.index("- name: Resolve every event to one pull request")
+    if stale_review >= resolve_review:
+        raise AssertionError("stale review events must exit before trusted pull request resolution")
+    require(
+        review_gate,
+        "if: steps.stale.outputs.superseded != 'true'",
+        "superseded review events must skip trusted pull request resolution",
+    )
+    require(
+        review_gate,
+        "const { data: pull } = await github.rest.pulls.get({",
+        "review events must compare their subject SHA with the current API head",
+    )
     if "github.event.workflow_run.head_sha ||" in review_gate:
         raise AssertionError("fork workflow events must not use a different concurrency identity")
+    require(
+        review_bridge,
+        "group: review-event-bridge-${{ github.event.pull_request.number }}-${{ github.event.review.commit_id || github.event.comment.commit_id }}",
+        "review bridge events must be single-flight for each PR and subject head",
+    )
+    require(
+        review_bridge,
+        "const eventHead = context.payload.review?.commit_id ||",
+        "review bridge must use the review or comment subject commit",
+    )
+    stale_bridge = review_bridge.index("- name: Shed superseded review event")
+    notify_bridge = review_bridge.index("- name: Record review event")
+    if stale_bridge >= notify_bridge:
+        raise AssertionError("stale bridge events must exit before notifying the trusted gate")
+    require(
+        review_bridge,
+        "if: steps.stale.outputs.superseded != 'true'",
+        "superseded bridge events must skip trusted gate notification",
+    )
+    require(
+        review_bridge,
+        "core.setFailed('Superseded review event; trusted notification suppressed.');",
+        "superseded bridge events must expose a non-success workflow conclusion",
+    )
     require(
         review_gate,
         "ref: ${{ github.workflow_sha }}",
