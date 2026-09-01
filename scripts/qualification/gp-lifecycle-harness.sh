@@ -22,6 +22,9 @@ require_digest() {
 
 require_digest HONUA_SERVER_IMAGE
 require_digest HONUA_WORKER_IMAGE
+for name in HONUA_GP_TENANT_A_TOKEN HONUA_GP_TENANT_B_TOKEN HONUA_GP_OIDC_ISSUER HONUA_GP_OIDC_AUDIENCE HONUA_GP_OIDC_SIGNING_KEY; do
+  [[ -n "${!name:-}" ]] || { echo "${name} is required" >&2; exit 2; }
+done
 if [[ ! "${HONUA_GP_SOURCE_SHA:-}" =~ ^[0-9a-fA-F]{40}$ ]]; then
   echo "HONUA_GP_SOURCE_SHA must be the full candidate commit SHA" >&2
   exit 2
@@ -297,7 +300,13 @@ run_output_write_failure() {
   local scenario=output-write-failure job terminal state digest
   job="$(submit_async gdal.ogr2ogr "${native_payload}")" || return 1
   wait_running "${job}" || { write_receipt "${scenario}" fail "job never ran" "${job}"; return 1; }
-  compose stop redis >/dev/null; sleep 2; compose start redis >/dev/null
+  compose pause worker >/dev/null
+  if result_digest "${job}" >/dev/null 2>&1; then
+    compose unpause worker >/dev/null
+    write_receipt "${scenario}" fail "FINDING: output was published before the outage barrier" "${job}" running
+    return 1
+  fi
+  compose stop redis >/dev/null; compose unpause worker >/dev/null; sleep 2; compose start redis >/dev/null
   terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: output-store outage lost terminal state" "${job}"; return 1; }
   state="$(jq -r .status <<<"${terminal}")"; digest="$(result_digest "${job}" 2>/dev/null || true)"
   if [[ "${state}" == successful && -n "${digest}" ]]; then write_receipt "${scenario}" pass "recovered after output-store outage" "${job}" "${state}" "${digest}"; return; fi

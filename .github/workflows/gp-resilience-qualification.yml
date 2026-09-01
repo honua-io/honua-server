@@ -23,6 +23,9 @@ jobs:
       HONUA_GP_SOAK_CONCURRENCY: ${{ inputs.soak_concurrency }}
       HONUA_GP_TENANT_A_TOKEN: ${{ secrets.GP_QUALIFICATION_TENANT_A_TOKEN }}
       HONUA_GP_TENANT_B_TOKEN: ${{ secrets.GP_QUALIFICATION_TENANT_B_TOKEN }}
+      HONUA_GP_OIDC_ISSUER: ${{ secrets.GP_QUALIFICATION_OIDC_ISSUER }}
+      HONUA_GP_OIDC_AUDIENCE: ${{ secrets.GP_QUALIFICATION_OIDC_AUDIENCE }}
+      HONUA_GP_OIDC_SIGNING_KEY: ${{ secrets.GP_QUALIFICATION_OIDC_SIGNING_KEY }}
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-resilience
     steps:
       - uses: actions/checkout@v7.0.1
