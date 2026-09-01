@@ -9,9 +9,9 @@ using Honua.Ai.Protocols.Mcp.Prompts;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
-using Microsoft.Extensions.Options;
 using Honua.Ai.Protocols.Mcp.Views;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp;
 
@@ -53,28 +53,15 @@ internal sealed class McpDataAccessSurface
     private readonly IReadOnlyList<IMcpResource> _resources;
     private readonly McpSurfaceLimits _limits;
     private readonly ILogger<McpDataAccessSurface> _logger;
-    private readonly IReadOnlyList<string> _profiles;
 
     public McpDataAccessSurface(
         IEnumerable<IMcpTool> tools,
         IEnumerable<IMcpResource> resources,
         ILogger<McpDataAccessSurface> logger,
         McpSurfaceLimits? limits = null,
-        IEnumerable<IMcpToolSource>? toolSources = null,
-        IOptions<McpOptions>? options = null)
+        IEnumerable<IMcpToolSource>? toolSources = null)
     {
-        var configuredOptions = options?.Value ?? new McpOptions();
-        _tools = tools
-            .Where(tool => tool is not IMcpProfileTool profiled
-                || configuredOptions.IsProfileEnabled(profiled.ProfileName))
-            .ToDictionary(t => t.Name, StringComparer.Ordinal);
-        _profiles = configuredOptions.Profiles
-            .Append("base")
-            .Where(static profile => !string.IsNullOrWhiteSpace(profile))
-            .Where(McpOptions.IsSupportedProfile)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(static profile => profile, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        _tools = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
         // Dynamic, runtime-published tools (#2483). None composed by default, so the
         // surface behaves exactly as before unless a host opts a source in.
         _toolSources = toolSources?.ToList() ?? [];
@@ -209,7 +196,7 @@ internal sealed class McpDataAccessSurface
     /// </summary>
     internal const string ElicitationCapabilityItemKey = "honua.mcp.client.elicitation";
 
-    private McpJsonRpcResponse HandleInitialize(HttpContext httpContext, McpJsonRpcRequest request)
+    private static McpJsonRpcResponse HandleInitialize(HttpContext httpContext, McpJsonRpcRequest request)
     {
         var parameters = ParseParams(request.Params, McpJsonContext.Default.McpInitializeParams);
         if (parameters is null)
@@ -283,8 +270,7 @@ internal sealed class McpDataAccessSurface
             {
                 Tools = new McpCapabilityFlag { ListChanged = true },
                 Resources = new McpCapabilityFlag { ListChanged = true },
-                Prompts = new McpCapabilityFlag { ListChanged = false },
-                Profiles = _profiles
+                Prompts = new McpCapabilityFlag { ListChanged = false }
             }
         };
         return SuccessResponse(request.Id, result, McpJsonContext.Default.McpInitializeResult);

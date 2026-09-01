@@ -37,11 +37,20 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed partial class McpTaxonomyAlignmentTests
 {
+    private static readonly string[] DeferredAnalysisToolNames =
+    {
+        "honua_buffer_features",
+        "honua_overlay_features",
+        "honua_summarize_statistics",
+        "honua_reproject_features",
+        "honua_join_features",
+        "honua_export_dataset"
+    };
+
     private static readonly string[] TaxonomyToolNames =
     {
         "honua_validate_plan",
         "honua_execute_plan",
-        "honua_export_dataset",
         "honua_dry_run_plan",
         "honua_validate_package",
         "honua_preview_package",
@@ -86,11 +95,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_studio_update_draft",
         "honua_studio_validate_draft",
         "honua_studio_preview_draft",
-        "honua_buffer_features",
-        "honua_overlay_features",
-        "honua_summarize_statistics",
-        "honua_reproject_features",
-        "honua_join_features",
         "honua_studio_add_layer",
         "honua_studio_remove_layer",
         "honua_studio_set_layer_style",
@@ -190,6 +194,34 @@ public sealed partial class McpTaxonomyAlignmentTests
             rosterTypes,
             "BuildTools must enumerate every static IMcpTool registered by "
             + "McpServiceCollectionExtensions.AddMcpDataAccessSurface with all capability gates enabled");
+    }
+
+    [UnitTest]
+    public void DeferredAnalysisTools_AreNotAdvertisedOrRegistered()
+    {
+        var registryNames = new CapabilityRegistry().All
+            .Where(d => d.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal))
+            .Select(d => d.McpToolName)
+            .Where(n => n is not null)
+            .Cast<string>();
+
+        var services = new ServiceCollection();
+        services.AddMcpDataAccessSurface(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Mcp:Profiles:0"] = "analysis"
+            })
+            .Build());
+        var registeredNames = services
+            .Where(d => d.ServiceType == typeof(IMcpTool))
+            .Select(d => d.ImplementationType?.GetField("ToolName")?.GetRawConstantValue() as string)
+            .Where(n => n is not null)
+            .Cast<string>();
+
+        registryNames.Should().NotIntersectWith(DeferredAnalysisToolNames,
+            "capability discovery must not claim deferred analysis verbs");
+        registeredNames.Should().NotIntersectWith(DeferredAnalysisToolNames,
+            "configuration must not re-enable deferred analysis verbs without executable implementations");
     }
 
     [UnitTest]
@@ -348,11 +380,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_studio_get_draft",
         "honua_studio_validate_draft",
         "honua_studio_preview_draft",
-        "honua_buffer_features",
-        "honua_overlay_features",
-        "honua_summarize_statistics",
-        "honua_reproject_features",
-        "honua_join_features",
     };
 
     /// <summary>
@@ -362,7 +389,6 @@ public sealed partial class McpTaxonomyAlignmentTests
         new(StringComparer.Ordinal)
         {
             ["honua_execute_plan"] = (Destructive: false, Idempotent: true),
-            ["honua_export_dataset"] = (Destructive: false, Idempotent: true),
             ["honua_cancel_job"] = (Destructive: true, Idempotent: true),
             ["honua_propose_operation"] = (Destructive: false, Idempotent: true),
             ["honua_propose_rollback"] = (Destructive: false, Idempotent: true),
@@ -865,12 +891,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             new ValidatePackageTool(reviewService, jobService, NullLogger<ValidatePackageTool>.Instance),
             new PreviewPackageTool(reviewService, jobService, NullLogger<PreviewPackageTool>.Instance),
             new ExecutePlanTool(jobService, NullLogger<ExecutePlanTool>.Instance),
-            new BufferFeaturesTool(jobService, NullLogger<BufferFeaturesTool>.Instance),
-            new OverlayFeaturesTool(jobService, NullLogger<OverlayFeaturesTool>.Instance),
-            new SummarizeStatisticsTool(jobService, NullLogger<SummarizeStatisticsTool>.Instance),
-            new ReprojectFeaturesTool(jobService, NullLogger<ReprojectFeaturesTool>.Instance),
-            new JoinFeaturesTool(jobService, NullLogger<JoinFeaturesTool>.Instance),
-            new ExportDatasetTool(jobService, NullLogger<ExportDatasetTool>.Instance),
             new CancelJobTool(jobService, NullLogger<CancelJobTool>.Instance),
             new ProposeOperationTool(NullLogger<ProposeOperationTool>.Instance),
             new PublishServiceTool(NullLogger<PublishServiceTool>.Instance),

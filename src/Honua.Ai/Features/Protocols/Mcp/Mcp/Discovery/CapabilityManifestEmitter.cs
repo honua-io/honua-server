@@ -76,10 +76,6 @@ internal sealed class CapabilityManifest
     [JsonPropertyName("implementation")]
     public CapabilityManifestImplementation Implementation { get; set; } = new();
 
-    /// <summary>geospatial-mcp conformance profiles represented by this manifest.</summary>
-    [JsonPropertyName("profiles")]
-    public IReadOnlyList<string> Profiles { get; set; } = ["base"];
-
     /// <summary>Advertised tools that map onto standard vocabulary.</summary>
     [JsonPropertyName("tools")]
     public IReadOnlyList<CapabilityManifestTool> Tools { get; set; } = [];
@@ -130,15 +126,6 @@ internal sealed partial class CapabilityManifestJsonContext : JsonSerializerCont
 /// </remarks>
 internal static class CapabilityManifestEmitter
 {
-    private static readonly HashSet<string> AnalysisProfileTools = new(StringComparer.Ordinal)
-    {
-        "honua_buffer_features",
-        "honua_overlay_features",
-        "honua_summarize_statistics",
-        "honua_reproject_features",
-        "honua_join_features",
-        "honua_export_dataset",
-    };
     /// <summary>
     /// The <c>Date</c> header of the <c>spec/conformance.md</c> revision the
     /// emitted manifest is produced against.
@@ -197,44 +184,31 @@ internal static class CapabilityManifestEmitter
     /// tools ordered by advertised name and resources by family for a diff-stable
     /// artifact.
     /// </summary>
-    public static CapabilityManifest EmitManifest(IEnumerable<string>? enabledProfiles = null)
+    public static CapabilityManifest EmitManifest() => new()
     {
-        var profiles = (enabledProfiles ?? ["base"])
-            .Append("base")
-            .Where(static profile => !string.IsNullOrWhiteSpace(profile))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(static profile => profile, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var analysisEnabled = profiles.Contains("analysis", StringComparer.OrdinalIgnoreCase);
-
-        return new CapabilityManifest
+        SpecDate = SpecDate,
+        Implementation = new CapabilityManifestImplementation
         {
-            SpecDate = SpecDate,
-            Implementation = new CapabilityManifestImplementation
-            {
-                Name = ImplementationName,
-                IsReferenceImplementation = true,
-            },
-            Profiles = profiles,
-            Tools = Tools
-                .Where(tool => analysisEnabled || !AnalysisProfileTools.Contains(tool.AdvertisedName))
-                .OrderBy(t => t.AdvertisedName, StringComparer.Ordinal)
-                .ToList(),
-            Resources = ResourcesByLiveFamily.Values
-                .OrderBy(r => r.Family, StringComparer.Ordinal)
-                .ToList(),
-        };
-    }
+            Name = ImplementationName,
+            IsReferenceImplementation = true,
+        },
+        Tools = Tools
+            .OrderBy(t => t.AdvertisedName, StringComparer.Ordinal)
+            .ToList(),
+        Resources = ResourcesByLiveFamily.Values
+            .OrderBy(r => r.Family, StringComparer.Ordinal)
+            .ToList(),
+    };
 
     /// <summary>
     /// Serializes <see cref="EmitManifest"/> to the newline-terminated,
     /// indented JSON the geospatial-mcp repo vendors as
     /// <c>conformance/manifests/honua.manifest.json</c>.
     /// </summary>
-    public static string EmitJson(IEnumerable<string>? enabledProfiles = null)
+    public static string EmitJson()
     {
         var json = JsonSerializer.Serialize(
-            EmitManifest(enabledProfiles),
+            EmitManifest(),
             CapabilityManifestJsonContext.Default.CapabilityManifest);
         return json + "\n";
     }

@@ -65,12 +65,6 @@ public sealed partial class McpTaxonomyAlignmentTests
             ["honua_validate_package"] = "validate_package",
             ["honua_preview_package"] = "preview_package",
             ["honua_execute_plan"] = "execute_plan",
-            ["honua_buffer_features"] = "buffer_features",
-            ["honua_overlay_features"] = "overlay_features",
-            ["honua_summarize_statistics"] = "summarize_statistics",
-            ["honua_reproject_features"] = "reproject_features",
-            ["honua_join_features"] = "join_features",
-            ["honua_export_dataset"] = "export_dataset",
             ["honua_cancel_job"] = "cancel_job",
             ["honua_propose_operation"] = "propose_operation",
             ["honua_create_map_package"] = "create_map_package",
@@ -166,6 +160,18 @@ public sealed partial class McpTaxonomyAlignmentTests
         // standard still publishes the schema, so the gap is real and closeable
         // by any adopter that makes a different trust decision — but not by Honua.
         "edit_features",
+        // Direct geoprocessing verbs: members of the standard's opt-in 'analysis'
+        // conformance profile (geospatial-mcp#55, upstream ADR-0029). The index
+        // marks them known-gap for the reference implementation; they are required
+        // for FULL only when a manifest declares the analysis profile. Honua does
+        // not ship direct verbs yet (#2555/#2566 and the A8/analysis track) —
+        // plan_analysis/execute_plan cover those workflows today.
+        "buffer_features",
+        "overlay_features",
+        "summarize_statistics",
+        "reproject_features",
+        "join_features",
+        "export_dataset",
     };
 
     /// <summary>
@@ -878,7 +884,7 @@ public sealed partial class McpTaxonomyAlignmentTests
     [UnitTest]
     public void EmittedManifest_ToolRoster_MatchesLiveCatalog_AndTitleCasesLiveWorkflowFamily()
     {
-        var manifest = CapabilityManifestEmitter.EmitManifest(["base", "analysis"]);
+        var manifest = CapabilityManifestEmitter.EmitManifest();
         var liveTools = BuildLiveToolRoster();
 
         // 1. The emitted advertised-name set is exactly the live advertised roster.
@@ -904,7 +910,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         // Mirrors conformance/check_manifest.py: every advertised standardName maps
         // onto the index, every 'implemented' index tool/resource family is
         // advertised, and every advertised resource uriForm equals the index.
-        var manifest = CapabilityManifestEmitter.EmitManifest(["base", "analysis"]);
+        var manifest = CapabilityManifestEmitter.EmitManifest();
 
         using var doc = JsonDocument.Parse(File.ReadAllText(VendoredIndexPath));
         var indexTools = doc.RootElement.GetProperty("tools").EnumerateArray()
