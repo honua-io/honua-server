@@ -76,7 +76,7 @@
       "path": "crs-cases.csv",
       "mediaType": "text/csv",
       "byteLength": 491,
-      "sha256": "d0744c6207a091227b27060975bc89ad34eeb459b58346b6a1cf6f1bcb240b59",
+      "sha256": "02e80517dce99bd6e0a55f9ec23e6124fc37f1dc8e5d4f2c79389aed27e5cb06",
       "facets": ["crs/epsg-4326", "crs/ogc-crs84", "crs/epsg-3857", "crs/epsg-26904", "crs/axis-order"]
     },
     {
