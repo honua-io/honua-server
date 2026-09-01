@@ -259,6 +259,8 @@ retry = by_id["shard-cache-download-retry"]
 retry_condition = str(retry.get("if", ""))
 if "restore_enabled" not in retry_condition or "shard-cache-download.outputs.cache-hit != 'true'" not in retry_condition:
     fail("The second cache restore must run only after an enabled first-attempt miss.")
+if "shard-cache-plan.outputs.cache_writer != 'true'" not in retry_condition:
+    fail("The designated writer must build immediately instead of waiting for a cache retry.")
 retry_wait = next(s for s in steps if s.get("name") == "Wait before retrying exact-head shard cache")
 if "restore_retry_delay_seconds" not in retry_wait.get("run", ""):
     fail("The bounded retry wait must use the plan's fixed delay output.")
@@ -283,6 +285,17 @@ if "${{ github.run_id }}" not in plan_run:
 materialize_run = by_id["shard-cache-materialize"]["run"]
 if "--read-mode" not in materialize_run or "restore_mode" not in materialize_run:
     fail("The materializer must receive the planned read mode for visible fallback reasons.")
+
+report = next(s for s in steps if s.get("name") == "Report shard cache decision")
+report_env = report.get("env", {})
+for required in ("CACHE_HIT_FIRST", "CACHE_HIT_RETRY", "DOWNLOAD_OUTCOME_FIRST", "DOWNLOAD_OUTCOME_RETRY"):
+    if required not in report_env:
+        fail(f"The shard cache summary must receive '{required}' for retry-aware reporting.")
+report_run = report.get("run", "")
+if "CACHE_HIT_FIRST" not in report_run or "CACHE_HIT_RETRY" not in report_run:
+    fail("The shard cache summary must combine the first and retry cache-hit outputs.")
+if "DOWNLOAD_OUTCOME_FIRST" not in report_run or "DOWNLOAD_OUTCOME_RETRY" not in report_run:
+    fail("The shard cache summary must report both cache lookup outcomes.")
 if "CACHE_HIT_FIRST" not in materialize_run or "CACHE_HIT_RETRY" not in materialize_run:
     fail("The materializer must accept a hit from either bounded restore attempt.")
 
