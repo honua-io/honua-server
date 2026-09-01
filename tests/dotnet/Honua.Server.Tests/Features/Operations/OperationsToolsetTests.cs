@@ -551,6 +551,26 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public void LaneD_MetadataApprovalMappers_PreserveMetadataReleaseGuardrails()
+    {
+        foreach (var definition in AdminOperateOperationCatalog.Definitions.Where(static definition =>
+                     definition.Path.StartsWith("/metadata/", StringComparison.Ordinal) &&
+                     definition.ApprovalModel != OperationApprovalModel.None &&
+                     definition.SideEffect != OperationSideEffectClass.ReadOnly))
+        {
+            var descriptor = AdminOperateOperationCatalog.Descriptors.Single(candidate =>
+                candidate.OperationId == definition.OperationId);
+            var mapped = new AdminOperateOperationApprovalRequestMapper(definition).Map(
+                descriptor,
+                new OperationRequest { OperationId = definition.OperationId },
+                new OperationPolicyContext(),
+                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+            mapped.Kind.Should().Be(OperationClass.MetadataRelease);
+        }
+    }
+
+    [UnitTest]
     public void LaneD_PublishedSchemas_PreserveNestedRequiredMembers_AndAdvertiseDryRun()
     {
         var descriptor = AdminOperateOperationCatalog.Descriptors.Should().ContainSingle(

@@ -222,7 +222,9 @@ internal sealed class AdminOperateOperationApprovalRequestMapper(
         {
             OperationInstanceId = context.OperationInstanceId,
             OperationId = OperationId,
-            Kind = OperationClass.AdminConfigChange,
+            Kind = definition.Path.StartsWith("/metadata/", StringComparison.Ordinal)
+                ? OperationClass.MetadataRelease
+                : OperationClass.AdminConfigChange,
             RequestedBy = context.PrincipalId,
             Reason = decision.Reason,
             CorrelationId = context.CorrelationId,
