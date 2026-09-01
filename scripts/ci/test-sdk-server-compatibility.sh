@@ -8,6 +8,8 @@ MATRIX_BUILDER="$ROOT_DIR/scripts/ci/build-sdk-compatibility-matrix.sh"
 RUNNER="$ROOT_DIR/scripts/ci/run-sdk-server-compatibility.sh"
 REPORTER="$ROOT_DIR/scripts/ci/generate-sdk-compatibility-table.sh"
 WORKFLOW="$ROOT_DIR/.github/workflows/sdk-server-compatibility.yml"
+RELEASE_MANIFEST="$ROOT_DIR/docs/developer/sdk-release-certification.json"
+RELEASE_BUILDER="$ROOT_DIR/scripts/ci/build-sdk-release-certification.py"
 HEAD_SHA="1111111111111111111111111111111111111111"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -109,5 +111,18 @@ grep -Fq '11: "Cancelled"' "$RUNNER" \
 sed -n '/^write_migration_automation_summary()/,/^write_migration_automation_not_applicable_summary()/p' "$RUNNER" \
   | grep -Fq 'required: true' \
   || fail "strict current capability evidence must record migration automation as required"
+
+release_results="$TMP_DIR/release-results"
+mkdir -p "$release_results"
+jq -n '{js:{installed:true},python:{installed:true},dotnet:{installed:false,trace:"NU1101: Honua.Sdk 1.6.1 not found on nuget.org"}}' > "$release_results/install-results.json"
+python3 "$RELEASE_BUILDER" --manifest "$RELEASE_MANIFEST" --results-dir "$release_results" \
+  --output "$release_results/fragment.json"
+jq -e '
+  .schema == "honua.protocol-certification-fragment/v1"
+  and .operation_scope == {complete:true,expected:99,observed:99}
+  and (.observations | length) == 99
+  and ([.observations[] | select(.client_id == "dotnet" and .result == "fail" and (.gap | contains("Honua.Sdk 1.6.1")))] | length) == 33
+  and all(.observations[]; .image_digest == "sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72")
+' "$release_results/fragment.json" >/dev/null || fail "release fragment must materialize all 99 cells and retain the unavailable .NET coordinate"
 
 echo "SDK compatibility matrix and runner tests passed."
