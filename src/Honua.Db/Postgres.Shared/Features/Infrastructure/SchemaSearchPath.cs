@@ -85,7 +85,8 @@ internal static partial class SchemaSearchPath
 
     private static string QuoteIdentifier(string identifier)
     {
-        return new NpgsqlCommandBuilder().QuoteIdentifier(identifier);
+        using var commandBuilder = new NpgsqlCommandBuilder();
+        return commandBuilder.QuoteIdentifier(identifier);
     }
 
     internal static string BuildSearchPathValue(string schemaName)
