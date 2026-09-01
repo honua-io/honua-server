@@ -8,12 +8,7 @@ namespace Honua.Architecture.Tests;
 /// <summary>Decrement-only ratchet for the Slice 3a Studio mutation conversion.</summary>
 public sealed class StudioDraftMutationArchitectureTests
 {
-    private static readonly string[] KnownRemainingDirectMutationSites =
-    [
-        "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|CreatePublicationRequestAsync",
-        "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|ReopenVersionAsync",
-        "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs|RollbackAsync",
-    ];
+    private static readonly string[] KnownRemainingDirectMutationSites = [];
 
     [ArchitectureTest]
     public void ConvertedStudioMutationSites_CannotCallLifecycleActuatorsDirectly()
@@ -33,6 +28,9 @@ public sealed class StudioDraftMutationArchitectureTests
         Assert.Contains("mutationRuntime.UpdateAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.DeleteAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.SaveVersionAsync(", endpoints, StringComparison.Ordinal);
+        Assert.Contains("mutationRuntime.CreatePublicationRequestAsync(", endpoints, StringComparison.Ordinal);
+        Assert.Contains("mutationRuntime.ReopenVersionAsync(", endpoints, StringComparison.Ordinal);
+        Assert.Contains("mutationRuntime.RollbackAsync(", endpoints, StringComparison.Ordinal);
         Assert.Contains("mutationRuntime.CreateAsync(", lifecycleTools, StringComparison.Ordinal);
 
         var toolBase = File.ReadAllText(Path.Join(
@@ -64,7 +62,8 @@ public sealed class StudioDraftMutationArchitectureTests
             .SelectMany(path => File.ReadLines(Path.Join(root, path.Replace('/', Path.DirectorySeparatorChar)))
                 .Where(line => line.Contains("await ", StringComparison.Ordinal))
                 .SelectMany(line => mutationMethods
-                    .Where(method => line.Contains($".{method}(", StringComparison.Ordinal))
+                    .Where(method => line.Contains($"service.{method}(", StringComparison.Ordinal)
+                        || line.Contains($"lifecycleService.{method}(", StringComparison.Ordinal))
                     .Select(method => $"{path}|{method}")))
             .OrderBy(static site => site, StringComparer.Ordinal)
             .ToArray();

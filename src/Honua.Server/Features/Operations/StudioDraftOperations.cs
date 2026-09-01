@@ -26,6 +26,9 @@ internal static class StudioDraftOperations
     public const string Validate = "studio.draft.validate";
     public const string PreviewPlan = "studio.draft.preview-plan";
     public const string SaveVersion = "studio.draft.save-version";
+    public const string CreatePublicationRequest = "studio.content.create-publication-request";
+    public const string ReopenVersion = "studio.content.reopen-version";
+    public const string Rollback = "studio.content.rollback";
     public const string PayloadParameter = "payload";
     public const string ResultParameter = "payload";
 
@@ -49,6 +52,9 @@ internal static class StudioDraftOperations
             "Save Studio draft version",
             OperationSideEffectClass.CreatesMetadata,
             OperationDeterminism.RuntimeDynamic),
+        Build(CreatePublicationRequest, "Create Studio publication request", OperationSideEffectClass.MutatesMetadata),
+        Build(ReopenVersion, "Reopen Studio content version", OperationSideEffectClass.CreatesMetadata),
+        Build(Rollback, "Roll back Studio content pointers", OperationSideEffectClass.DestroysState),
     ];
 
     private static OperationDescriptor Build(
@@ -130,6 +136,37 @@ internal sealed record StudioSaveVersionPayload
     public required long ExpectedGeneration { get; init; }
     public string? ChangeNote { get; init; }
     public string? ActorId { get; init; }
+    public string? TenantId { get; init; }
+    public string? SchemaName { get; init; }
+}
+
+internal sealed record StudioPublicationRequestPayload
+{
+    public required Guid ItemId { get; init; }
+    public required Guid VersionId { get; init; }
+    public StudioPublicationIntent? Intent { get; init; }
+    public string? WarningAcknowledgement { get; init; }
+    public string? ActorId { get; init; }
+    public string? TenantId { get; init; }
+    public string? SchemaName { get; init; }
+}
+
+internal sealed record StudioReopenVersionPayload
+{
+    public required Guid ItemId { get; init; }
+    public required Guid VersionId { get; init; }
+    public string? ActorId { get; init; }
+    public string? TenantId { get; init; }
+    public string? SchemaName { get; init; }
+}
+
+internal sealed record StudioRollbackPayload
+{
+    public required Guid ItemId { get; init; }
+    public required Guid TargetVersionId { get; init; }
+    public required StudioRollbackPointer Target { get; init; }
+    public string? ActorId { get; init; }
+    public string? Reason { get; init; }
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
 }
@@ -363,6 +400,53 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
             ?? throw new KeyNotFoundException($"Studio draft '{payload.DraftId:D}' was not found.");
 }
 
+internal sealed class StudioCreatePublicationRequestExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
+    : StudioDraftMutationExecutor<StudioPublicationRequestPayload, StudioPublicationRequest>(lifecycle, clock)
+{
+    public override string OperationId => StudioDraftOperations.CreatePublicationRequest;
+    protected override JsonTypeInfo<StudioPublicationRequestPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload;
+    protected override JsonTypeInfo<StudioPublicationRequest> ResultType => StudioDraftOperationJsonContext.Default.StudioPublicationRequest;
+
+    protected override async Task<StudioPublicationRequest> ActuateAsync(
+        StudioPublicationRequestPayload payload,
+        CancellationToken cancellationToken) => await Lifecycle
+            .CreatePublicationRequestAsync(payload.ItemId, payload.VersionId, payload.Intent,
+                payload.WarningAcknowledgement, payload.ActorId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
+}
+
+internal sealed class StudioReopenVersionExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
+    : StudioDraftMutationExecutor<StudioReopenVersionPayload, StudioPackageDraft>(lifecycle, clock)
+{
+    public override string OperationId => StudioDraftOperations.ReopenVersion;
+    protected override JsonTypeInfo<StudioReopenVersionPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioReopenVersionPayload;
+    protected override JsonTypeInfo<StudioPackageDraft> ResultType => StudioDraftOperationJsonContext.Default.StudioPackageDraft;
+
+    protected override async Task<StudioPackageDraft> ActuateAsync(
+        StudioReopenVersionPayload payload,
+        CancellationToken cancellationToken) => await Lifecycle
+            .ReopenVersionAsync(payload.ItemId, payload.VersionId, payload.ActorId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
+}
+
+internal sealed class StudioRollbackExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
+    : StudioDraftMutationExecutor<StudioRollbackPayload, StudioRollbackRequest>(lifecycle, clock)
+{
+    public override string OperationId => StudioDraftOperations.Rollback;
+    protected override JsonTypeInfo<StudioRollbackPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioRollbackPayload;
+    protected override JsonTypeInfo<StudioRollbackRequest> ResultType => StudioDraftOperationJsonContext.Default.StudioRollbackRequest;
+
+    protected override async Task<StudioRollbackRequest> ActuateAsync(
+        StudioRollbackPayload payload,
+        CancellationToken cancellationToken) => await Lifecycle
+            .RollbackAsync(payload.ItemId, payload.TargetVersionId, payload.Target, payload.ActorId,
+                payload.Reason, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio content version '{payload.TargetVersionId:D}' was not found.");
+}
+
 internal sealed class StudioDraftMutationRuntime(
     IOperationInvoker invoker,
     IOperationInstanceStore instanceStore) : IStudioDraftMutationRuntime
@@ -438,6 +522,50 @@ internal sealed class StudioDraftMutationRuntime(
             },
             StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload,
             StudioDraftOperationJsonContext.Default.StudioContentVersion,
+            context,
+            cancellationToken);
+
+    public Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
+        Guid itemId, Guid versionId, StudioPublicationIntent? intent, string? warningAcknowledgement, string? actorId,
+        StudioDraftMutationContext context, CancellationToken cancellationToken = default) => InvokeAsync(
+            StudioDraftOperations.CreatePublicationRequest,
+            new StudioPublicationRequestPayload
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                Intent = intent,
+                WarningAcknowledgement = warningAcknowledgement,
+                ActorId = actorId,
+            },
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload,
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequest,
+            context,
+            cancellationToken);
+
+    public Task<StudioDraftMutationReceipt<StudioPackageDraft>> ReopenVersionAsync(
+        Guid itemId, Guid versionId, string? actorId, StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default) => InvokeAsync(
+            StudioDraftOperations.ReopenVersion,
+            new StudioReopenVersionPayload { ItemId = itemId, VersionId = versionId, ActorId = actorId },
+            StudioDraftOperationJsonContext.Default.StudioReopenVersionPayload,
+            StudioDraftOperationJsonContext.Default.StudioPackageDraft,
+            context,
+            cancellationToken);
+
+    public Task<StudioDraftMutationReceipt<StudioRollbackRequest>> RollbackAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioDraftMutationContext context, CancellationToken cancellationToken = default) => InvokeAsync(
+            StudioDraftOperations.Rollback,
+            new StudioRollbackPayload
+            {
+                ItemId = itemId,
+                TargetVersionId = targetVersionId,
+                Target = target,
+                ActorId = actorId,
+                Reason = reason,
+            },
+            StudioDraftOperationJsonContext.Default.StudioRollbackPayload,
+            StudioDraftOperationJsonContext.Default.StudioRollbackRequest,
             context,
             cancellationToken);
 
@@ -588,6 +716,18 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload)! with
             { TenantId = context.TenantId, SchemaName = context.SchemaName },
             StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload),
+        StudioDraftOperations.CreatePublicationRequest => JsonSerializer.Serialize(
+            JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload)! with
+            { TenantId = context.TenantId, SchemaName = context.SchemaName },
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload),
+        StudioDraftOperations.ReopenVersion => JsonSerializer.Serialize(
+            JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioReopenVersionPayload)! with
+            { TenantId = context.TenantId, SchemaName = context.SchemaName },
+            StudioDraftOperationJsonContext.Default.StudioReopenVersionPayload),
+        StudioDraftOperations.Rollback => JsonSerializer.Serialize(
+            JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioRollbackPayload)! with
+            { TenantId = context.TenantId, SchemaName = context.SchemaName },
+            StudioDraftOperationJsonContext.Default.StudioRollbackPayload),
         _ => throw new InvalidOperationException($"Unsupported Studio mutation descriptor '{OperationId}'."),
     };
 
@@ -598,6 +738,9 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
         StudioDraftOperations.Delete => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload)!),
         StudioDraftOperations.Validate or StudioDraftOperations.PreviewPlan => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftActorPayload)!),
         StudioDraftOperations.SaveVersion => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload)!),
+        StudioDraftOperations.CreatePublicationRequest => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload)!),
+        StudioDraftOperations.ReopenVersion => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioReopenVersionPayload)!),
+        StudioDraftOperations.Rollback => Read(JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioRollbackPayload)!),
         _ => throw new InvalidOperationException($"Unsupported Studio mutation descriptor '{OperationId}'."),
     };
 
@@ -606,6 +749,9 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
     private static (string? TenantId, string? SchemaName) Read(StudioDraftDeletePayload payload) => (payload.TenantId, payload.SchemaName);
     private static (string? TenantId, string? SchemaName) Read(StudioDraftActorPayload payload) => (payload.TenantId, payload.SchemaName);
     private static (string? TenantId, string? SchemaName) Read(StudioSaveVersionPayload payload) => (payload.TenantId, payload.SchemaName);
+    private static (string? TenantId, string? SchemaName) Read(StudioPublicationRequestPayload payload) => (payload.TenantId, payload.SchemaName);
+    private static (string? TenantId, string? SchemaName) Read(StudioReopenVersionPayload payload) => (payload.TenantId, payload.SchemaName);
+    private static (string? TenantId, string? SchemaName) Read(StudioRollbackPayload payload) => (payload.TenantId, payload.SchemaName);
 
     private void ValidatePayload(string payload)
     {
@@ -616,6 +762,9 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             StudioDraftOperations.Delete => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftDeletePayload),
             StudioDraftOperations.Validate or StudioDraftOperations.PreviewPlan => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioDraftActorPayload),
             StudioDraftOperations.SaveVersion => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload),
+            StudioDraftOperations.CreatePublicationRequest => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload),
+            StudioDraftOperations.ReopenVersion => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioReopenVersionPayload),
+            StudioDraftOperations.Rollback => JsonSerializer.Deserialize(payload, StudioDraftOperationJsonContext.Default.StudioRollbackPayload),
             _ => throw new InvalidOperationException($"Unsupported Studio mutation descriptor '{OperationId}'."),
         };
         if (parsed is null)
@@ -633,9 +782,14 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
 [JsonSerializable(typeof(StudioDraftDeletePayload))]
 [JsonSerializable(typeof(StudioDraftActorPayload))]
 [JsonSerializable(typeof(StudioSaveVersionPayload))]
+[JsonSerializable(typeof(StudioPublicationRequestPayload))]
+[JsonSerializable(typeof(StudioReopenVersionPayload))]
+[JsonSerializable(typeof(StudioRollbackPayload))]
 [JsonSerializable(typeof(StudioPackageDraft))]
 [JsonSerializable(typeof(StudioContentVersion))]
 [JsonSerializable(typeof(StudioValidationSummary))]
 [JsonSerializable(typeof(StudioPreviewPlan))]
+[JsonSerializable(typeof(StudioPublicationRequest))]
+[JsonSerializable(typeof(StudioRollbackRequest))]
 [JsonSerializable(typeof(bool))]
 internal sealed partial class StudioDraftOperationJsonContext : JsonSerializerContext;
