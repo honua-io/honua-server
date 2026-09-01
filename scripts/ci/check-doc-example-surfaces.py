@@ -17,7 +17,7 @@ MARKER = "<!-- wire-reference -->"
 
 def added_lines(repo: Path, base: str) -> list[tuple[str, int, str]]:
     result = subprocess.run(
-        ["git", "diff", "--unified=0", "--no-ext-diff", f"{base}...HEAD", "--", "docs/**/*.md"],
+        ["git", "diff", "--unified=0", "--no-ext-diff", f"{base}...HEAD", "--", "README.md", "docs/**/*.md"],
         cwd=repo, text=True, capture_output=True, check=True,
     )
     found: list[tuple[str, int, str]] = []
@@ -92,12 +92,16 @@ def main(argv: list[str] | None = None) -> int:
             errors.append(f"stale wire-reference allowlist entry: {path} does not exist")
             continue
         lines = page.read_text(encoding="utf-8").splitlines()
-        marked_curl = any(
-            CURL_COMMAND.search(line) and marked_fence(lines, number)
-            for number, line in enumerate(lines, start=1)
-        )
-        if not marked_curl:
+        curl_lines = [
+            number for number, line in enumerate(lines, start=1)
+            if CURL_COMMAND.search(line)
+        ]
+        if not curl_lines:
             errors.append(f"stale wire-reference allowlist entry: {path} has no marked curl example")
+            continue
+        for number in curl_lines:
+            if not marked_fence(lines, number):
+                errors.append(f"{path}:{number}: allowlisted curl example lacks {MARKER}")
     if errors:
         print("documentation example surface gate failed:", file=sys.stderr)
         for error in errors:
