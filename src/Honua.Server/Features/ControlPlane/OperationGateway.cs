@@ -556,6 +556,9 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .OrderBy(scope => scope, StringComparer.Ordinal)
                 .ToArray(),
             Kind = request.Kind,
+            ActionDiscriminator = IsBoundedIdentifier(request.ActionDiscriminator, 128)
+                ? request.ActionDiscriminator
+                : null,
             // Planned is deliberately non-actionable. The proposal transitions to
             // AwaitingApproval only after the durable audit sink assigns its identity.
             Status = OperationProposalStatus.Planned,
@@ -929,7 +932,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         IdempotencyKey = proposal.Audit.IdempotencyKey,
         Plan = proposal.Plan,
         ExecutionPayload = proposal.Plan.ExecutionPayload,
-        ActionDiscriminator = proposal.AutonomyMetadata?.ActionDiscriminator,
+        ActionDiscriminator = proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator,
         AutonomyContext = proposal.AutonomyMetadata is null
             ? null
             : new OperationGatewayAutonomyContext
