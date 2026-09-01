@@ -14,8 +14,9 @@ namespace Honua.Ai.Protocols.Mcp.Discovery;
 /// <summary>
 /// MCP tool that returns a self-describing manifest of the tools, resources, and
 /// grounding resources the live <c>/mcp</c> surface exposes (#1949), so a client
-/// LLM with no Honua-specific knowledge can discover the full composable surface
-/// and plan a workflow. It projects the same in-process catalog the dispatcher
+/// LLM with no Honua-specific knowledge can discover a bounded page and plan a
+/// workflow. An explicit admin-only export returns the full inventory. It projects
+/// the same in-process catalog the dispatcher
 /// serves over both the HTTP-SSE and stdio transports (#1950), so the manifest is
 /// transport-symmetric by construction.
 /// </summary>
@@ -50,7 +51,7 @@ internal sealed class ListCapabilitiesTool : IMcpTool
     {
         Name = ToolName,
         Title = "List capabilities",
-        Description = "List every tool and resource this server exposes, with LLM-grade descriptions and read/write hints, plus the grounding resource URIs to read first, and the named server-authored workflow views that narrow discovery to one bounded journey. Call this first to discover the full workflow surface (discover, ground, query, analyze, compose, publish) before composing a plan; then, if a view matches your task, re-list tools with that view to work from a smaller, server-selected set.",
+        Description = "Search the server capability catalog in bounded pages (12 tools and resources by default), with opaque cursors and server-authored workflow views. Use the returned names to describe and compose a typed propose/execute path. The full inventory is available only through the explicit admin-only fullExport operation.",
         InputSchema = DiscoveryToolSchemas.ListCapabilitiesArgumentSchema,
         OutputSchema = DiscoveryToolSchemas.ListCapabilitiesOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("List capabilities")
@@ -72,11 +73,18 @@ internal sealed class ListCapabilitiesTool : IMcpTool
 
         var includeResources = true;
         var includeGroundingResources = true;
+        var argument = new McpListCapabilitiesArgument();
         if (arguments is { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined })
         {
-            var argument = McpToolHelpers.ParseArguments(arguments, DiscoveryJsonContext.Default.McpListCapabilitiesArgument);
+            argument = McpToolHelpers.ParseArguments(arguments, DiscoveryJsonContext.Default.McpListCapabilitiesArgument);
             includeResources = argument.IncludeResources ?? true;
             includeGroundingResources = argument.IncludeGroundingResources ?? true;
+        }
+
+        var fullExport = argument.FullExport == true;
+        if (fullExport && !IsAdmin(principal, httpContext.RequestServices))
+        {
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         }
 
         var serverInfo = new McpServerInfo();
@@ -100,7 +108,19 @@ internal sealed class ListCapabilitiesTool : IMcpTool
             // lightweight host that did not register the registry falls back to the
             // live surface unchanged.
             var registry = httpContext.RequestServices.GetService<ICapabilityRegistry>();
-            output.Tools = await BuildToolManifestAsync(surface, registry, cancellationToken).ConfigureAwait(false);
+            var allTools = await BuildToolManifestAsync(surface, registry, cancellationToken).ConfigureAwait(false);
+            output.TotalToolCount = allTools.Count;
+            string? nextToolCursor = null;
+            output.Tools = allTools;
+            if (!fullExport)
+            {
+                output.Tools = McpPagination.Page(
+                    allTools,
+                    argument.ToolCursor,
+                    McpPagination.DefaultListPageSize,
+                    out nextToolCursor);
+            }
+            output.NextToolCursor = nextToolCursor;
             output.ToolCount = output.Tools.Count;
 
             // honua-server#3428: advertise the server-authored workflow discovery
@@ -114,16 +134,28 @@ internal sealed class ListCapabilitiesTool : IMcpTool
             if (includeResources || includeGroundingResources)
             {
                 var resources = BuildResourceManifest(surface, registry);
+                output.TotalResourceCount = resources.Count;
+                string? nextResourceCursor = null;
+                IReadOnlyList<McpCapabilityResource> resourcePage = resources;
+                if (!fullExport)
+                {
+                    resourcePage = McpPagination.Page(
+                        resources,
+                        argument.ResourceCursor,
+                        McpPagination.DefaultListPageSize,
+                        out nextResourceCursor);
+                }
+                output.NextResourceCursor = nextResourceCursor;
 
                 if (includeResources)
                 {
-                    output.Resources = resources;
-                    output.ResourceCount = resources.Count;
+                    output.Resources = resourcePage;
+                    output.ResourceCount = resourcePage.Count;
                 }
 
                 if (includeGroundingResources)
                 {
-                    output.GroundingResources = resources
+                    output.GroundingResources = resourcePage
                         .Where(r => string.Equals(r.Family, McpTelemetry.ResourceFamily.Catalog, StringComparison.Ordinal))
                         .Select(r => r.Uri)
                         .ToList();
@@ -132,6 +164,19 @@ internal sealed class ListCapabilitiesTool : IMcpTool
         }
 
         return McpToolHelpers.SuccessResult(output, DiscoveryJsonContext.Default.McpListCapabilitiesOutput);
+    }
+
+    private static bool IsAdmin(System.Security.Claims.ClaimsPrincipal principal, IServiceProvider services)
+    {
+        if (principal.IsInRole("admin"))
+        {
+            return true;
+        }
+
+        var configured = services.GetService<Microsoft.Extensions.Options.IOptions<
+            Honua.Core.Features.Authorization.AdminRoleOptions>>()?.Value.AdminRoles
+            ?? ["admin", "administrator"];
+        return configured.Any(principal.IsInRole);
     }
 
     /// <summary>

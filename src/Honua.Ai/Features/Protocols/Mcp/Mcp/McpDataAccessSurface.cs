@@ -313,10 +313,8 @@ internal sealed class McpDataAccessSurface
 
         // honua-server#3428: resolve the effective workflow view from the explicit
         // request / session / server-profile negotiation contract. Selecting a view
-        // can only NARROW discovery — it never grants authority and never removes
-        // the escape hatch: with no view selected (or the reserved `full` name) the
-        // complete paginated catalog is served exactly as before, parity counts
-        // untouched. Discovery is not authority: every tools/call still
+        // can only NARROW discovery — it never grants authority. The reserved
+        // `full` export is explicit and admin-only. Discovery is not authority: every tools/call still
         // reauthenticates and reauthorizes on the existing call-time path,
         // regardless of whether the tool was discovered through a view.
         if (!McpWorkflowViewNegotiation.TryReadRequestedView(request.Params, out var requestView, out var viewError))
@@ -328,6 +326,13 @@ internal sealed class McpDataAccessSurface
             requestView,
             SessionWorkflowView(httpContext),
             ProfileDefaultWorkflowView(httpContext));
+
+        if (effectiveView is null && !IsAdmin(httpContext))
+        {
+            return ErrorResponse(
+                request.Id,
+                McpErrorMapper.Map(new GeoprocessingAuthorizationException(requiresAuthentication: false)));
+        }
 
         if (!TryReadCursor(request, out var cursor, out var error))
         {
@@ -409,7 +414,23 @@ internal sealed class McpDataAccessSurface
     private static string? ProfileDefaultWorkflowView(HttpContext httpContext) =>
         httpContext.RequestServices?
             .GetService<IOptionsMonitor<McpWorkflowViewOptions>>()?
-            .CurrentValue.DefaultView;
+            .CurrentValue.DefaultView
+        ?? McpWorkflowViewCatalog.DefaultViewName;
+
+    private static bool IsAdmin(HttpContext httpContext)
+    {
+        var principal = httpContext.User;
+        if (principal.IsInRole("admin"))
+        {
+            return true;
+        }
+
+        var configured = httpContext.RequestServices?
+            .GetService<IOptions<Honua.Core.Features.Authorization.AdminRoleOptions>>()?
+            .Value.AdminRoles
+            ?? ["admin", "administrator"];
+        return configured.Any(principal.IsInRole);
+    }
 
     /// <summary>
     /// The client-facing message for a view name this server does not publish. It
@@ -419,7 +440,7 @@ internal sealed class McpDataAccessSurface
     private static string UnknownViewMessage(string requested) =>
         $"Unknown workflow view '{requested}'. Published views: "
         + string.Join(", ", McpWorkflowViewCatalog.Names)
-        + $". Omit the view (or use '{McpWorkflowViewNegotiation.FullCatalogViewName}') for the complete paginated catalog.";
+        + $". Use the admin-only '{McpWorkflowViewNegotiation.FullCatalogViewName}' export for the complete paginated catalog.";
 
     /// <summary>
     /// Resolves the runtime-published dynamic tools (#2483) from every registered
@@ -857,10 +878,17 @@ internal sealed class McpDataAccessSurface
             // the same invalid_argument the list methods use.
             try
             {
+                var maxChars = parameters.MaxChars ?? _limits.MaxResourceReadChars;
+                if (maxChars <= 0 || maxChars > McpPagination.MaxResourceReadChars)
+                {
+                    throw new GeoprocessingValidationException(
+                        $"'maxChars' must be between 1 and {McpPagination.MaxResourceReadChars}.");
+                }
+
                 var page = McpPagination.Chunk(
                     result.Contents,
                     parameters.Cursor,
-                    _limits.MaxResourceReadChars,
+                    maxChars,
                     out var nextCursor);
                 result = new McpResourcesReadResult { Contents = page, NextCursor = nextCursor };
             }

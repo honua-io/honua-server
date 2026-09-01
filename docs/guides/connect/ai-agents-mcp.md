@@ -133,7 +133,7 @@ Select a view three ways, highest precedence first:
 
 1. **Per request** — `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"view":"setup"}}` (or `params._meta["honua.io/workflow-view"]`).
 2. **Per session** — send `_meta: {"honua.io/workflow-view": "setup"}` in `initialize.params`; the negotiated name binds to the issued `Mcp-Session-Id` and applies to every later `tools/list` on that session.
-3. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. Unset by default, so an existing host's `tools/list` is unchanged until an operator opts in.
+3. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. The default is the server-authored `default` view, capped at 12 meta/workflow tools.
 
 The shipped view is `setup`: the bounded terminal path of readiness → connect/import → publish service and layer → verify access → canonical style and render → bounded geoprocessing → Studio map/dashboard composition and lifecycle → publication submit and status. It is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
 
@@ -141,7 +141,9 @@ A view is **discovery, not authority**:
 
 - Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.
 - Every `tools/call` is independently reauthenticated and reauthorized against the current actor, tenant, roles/grants, OAuth scope, and policy — whether or not the tool was discovered through a view.
-- The complete paginated catalog stays available: omit the view, or pass the reserved name `full`, which also overrides a session or profile default. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
+- The complete paginated catalog is an explicit admin operation: pass the reserved name `full`, which overrides a session or profile default and requires an admin role. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
+- `honua_list_capabilities` returns at most 12 tools and 12 resources by default. Follow `nextToolCursor` and `nextResourceCursor`; `fullExport: true` is admin-only.
+- `resources/read` returns at most 64,000 characters by default. A caller may explicitly request `maxChars` up to the hard ceiling of 1,000,000.
 - Members carry the **exact** canonical description, annotations, and input/output schemas the full catalog serves; nothing is truncated or re-described.
 
 Studio composition and lifecycle members also carry server-owned routing metadata in

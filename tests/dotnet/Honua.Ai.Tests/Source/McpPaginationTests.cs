@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -30,6 +31,14 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpPaginationTests
 {
+    [UnitTest]
+    public void DefaultSurfaceLimits_AreBounded()
+    {
+        McpPagination.DefaultListPageSize.Should().Be(12);
+        McpPagination.DefaultMaxResourceReadChars.Should().Be(64_000);
+        McpPagination.MaxResourceReadChars.Should().Be(1_000_000);
+    }
+
     [UnitTest]
     public void Page_WhenMoreRemain_ReturnsFirstPageAndOpaqueNextCursor()
     {
@@ -205,16 +214,51 @@ public sealed class McpPaginationTests
         secondResult.GetProperty("contents")[0].GetProperty("text").GetString()!.Length.Should().Be(20);
     }
 
+    [UnitTest]
+    public async Task ResourcesRead_ExplicitMaxCharsOptsUpWithinHardCeiling()
+    {
+        var text = new string('z', 70_000);
+        var surface = new McpDataAccessSurface(
+            tools: [],
+            resources: [new StubResource("honua://big/doc", text)],
+            logger: NullLogger<McpDataAccessSurface>.Instance);
+
+        var bounded = await DispatchAsync(
+            surface,
+            """{"jsonrpc":"2.0","id":"r1","method":"resources/read","params":{"uri":"honua://big/doc"}}""",
+            McpTestFactory.AuthenticatedHttpContext());
+        bounded!.Result!.Value.GetProperty("contents")[0].GetProperty("text").GetString()!
+            .Length.Should().Be(64_000);
+        bounded.Result.Value.GetProperty("nextCursor").GetString().Should().NotBeNullOrWhiteSpace();
+
+        var optedUp = await DispatchAsync(
+            surface,
+            """{"jsonrpc":"2.0","id":"r2","method":"resources/read","params":{"uri":"honua://big/doc","maxChars":70000}}""",
+            McpTestFactory.AuthenticatedHttpContext());
+        optedUp!.Result!.Value.GetProperty("contents")[0].GetProperty("text").GetString()!
+            .Length.Should().Be(70_000);
+
+        var excessive = await DispatchAsync(
+            surface,
+            """{"jsonrpc":"2.0","id":"r3","method":"resources/read","params":{"uri":"honua://big/doc","maxChars":1000001}}""",
+            McpTestFactory.AuthenticatedHttpContext());
+        excessive!.Error.Should().NotBeNull();
+        excessive.Error!.Code.Should().Be(McpErrorMapper.JsonRpcInvalidParams);
+    }
+
     private static async Task<(string[] Names, string? NextCursor)> ListToolPageAsync(
         McpDataAccessSurface surface,
         string? cursor)
     {
         var paramsJson = cursor is null
-            ? string.Empty
-            : ",\"params\":{\"cursor\":\"" + cursor + "\"}";
+            ? ",\"params\":{\"view\":\"full\"}"
+            : ",\"params\":{\"view\":\"full\",\"cursor\":\"" + cursor + "\"}";
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        ((ClaimsIdentity)context.User.Identity!).AddClaim(new Claim(ClaimTypes.Role, "admin"));
         var response = await DispatchAsync(
             surface,
-            "{\"jsonrpc\":\"2.0\",\"id\":\"t\",\"method\":\"tools/list\"" + paramsJson + "}");
+            "{\"jsonrpc\":\"2.0\",\"id\":\"t\",\"method\":\"tools/list\"" + paramsJson + "}",
+            context);
 
         var result = response!.Result!.Value;
         var names = result.GetProperty("tools")
