@@ -134,6 +134,16 @@ def main() -> None:
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(
         review_gate,
+        "group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}",
+        "resolver concurrency must cancel superseded heads for the same PR",
+    )
+    require(
+        review_bridge,
+        "group: review-event-bridge-pr-${{ github.event.pull_request.number }}",
+        "review bridge concurrency must cancel superseded heads for the same PR",
+    )
+    require(
+        review_gate,
         'workflows: ["PR Gate", "Review Event Bridge"]',
         "PR Gate and review-event completion must re-evaluate trusted review",
     )
