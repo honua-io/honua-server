@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
+using Honua.Db.SqlServer.Features.Security;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -55,12 +56,8 @@ internal sealed class SqlServerConnectionFactory : ISqlServerConnectionFactory
         // SqlServerConnectionDriver.TestConnectionAsync does for the admin health-probe path
         // (#3048): per the MVP deferrals, secure connections are "encrypted or secret references
         // only" (never unencrypted).
-        var builder = new SqlConnectionStringBuilder(connectionString)
-        {
-            Encrypt = true
-        };
-
-        var connection = new SqlConnection(builder.ConnectionString);
+        var encryptedConnectionString = SqlServerConnectionSecurity.RequireEncryption(connectionString);
+        var connection = new SqlConnection(encryptedConnectionString);
         try
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
