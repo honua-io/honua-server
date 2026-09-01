@@ -32,6 +32,8 @@ internal static class StudioDraftOperations
     public const string PayloadParameter = "payload";
     public const string ResultParameter = "payload";
 
+    public static bool IsHighRisk(string operationId) => operationId is Delete or Rollback;
+
     public static IReadOnlyList<IOperationDescriptor> BuildDescriptors() =>
     [
         Build(Create, "Create Studio draft", OperationSideEffectClass.CreatesMetadata),
@@ -69,7 +71,9 @@ internal static class StudioDraftOperations
             Description = "Mutates a Studio draft through the canonical durable operation runtime.",
             Category = "studio",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = OperationApprovalModel.OperatorGate,
+            ApprovalModel = operationId == CreatePublicationRequest
+                ? OperationApprovalModel.StudioPublishRequest
+                : OperationApprovalModel.OperatorGate,
             Policy = new OperationPolicyMetadata
             {
                 BlastRadiusClass = OperationBlastRadiusClass.ResourceScope,
@@ -195,7 +199,7 @@ internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
             ApprovalPlan = new OperationProposalPlan
             {
                 Summary = $"Execute {OperationId} with its accepted typed payload.",
-                RiskLevel = OperationId == StudioDraftOperations.Delete
+                RiskLevel = StudioDraftOperations.IsHighRisk(OperationId)
                     ? ProposalRiskLevel.High
                     : ProposalRiskLevel.Medium,
                 ExecutionPayload = RequirePayload(request),
@@ -665,7 +669,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             Plan = new OperationProposalPlan
             {
                 Summary = $"Execute {OperationId} with its accepted typed payload.",
-                RiskLevel = OperationId == StudioDraftOperations.Delete
+                RiskLevel = StudioDraftOperations.IsHighRisk(OperationId)
                     ? ProposalRiskLevel.High
                     : ProposalRiskLevel.Medium,
                 ExecutionPayload = payload,
