@@ -398,6 +398,33 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CoreSchemaGuard_WhenRasterDataIsMissing_RejectsJournaledMigration()
+    {
+        var guard = new PostgresCoreSchemaGuard();
+        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var result = await runner.RunMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+        result.Successful.Should().BeTrue();
+
+        await using (var connection = new Npgsql.NpgsqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "DROP TABLE honua.raster_data CASCADE;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var verify = () => guard.VerifyAsync(_connectionString);
+        var exception = await verify.Should().ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterExternalStorageMigration);
+        exception.Which.FailureKind.Should().Be(
+            Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
+        exception.Which.Message.Should().Contain("required raster table(s) are absent");
+        exception.Which.Message.Should().Contain("honua.raster_data");
+    }
+
+    [Fact]
     public async Task DbUpMigrations_OnExistingDatabase_IsIdempotent()
     {
         // Arrange
