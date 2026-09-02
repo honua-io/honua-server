@@ -4,7 +4,8 @@ Realtime Preview qualification is transport-, surface-, execution-, and candidat
 The required `Realtime Preview Qualification` workflow consumes the immutable SDK artifact;
 local copies and route availability never qualify a row.
 
-The SDK artifact must contain `realtime-preview-evidence.json` in
+The SDK artifact must be produced by `.github/workflows/realtime-live-conformance.yml`, be named
+`realtime-cross-transport-conformance-<run-id>`, and contain `realtime-preview-evidence.json` in
 `honua.realtime-preview-evidence.v2` format. It binds the server commit and image digest, SDK
 commit and package, candidate environment, workflow/run/attempt/artifact, generation window,
 and an executed assertion receipt for every exact row. Dispatch the server workflow with those

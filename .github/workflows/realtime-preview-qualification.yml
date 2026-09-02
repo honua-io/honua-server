@@ -107,21 +107,25 @@ jobs:
           SDK_ARTIFACT_ID: ${{ inputs.sdk_artifact_id }}
           SDK_REVISION: ${{ inputs.sdk_revision }}
         with:
-          github-token: ${{ github.token }}
+          github-token: ${{ secrets.release_bundle_token || github.token }}
           script: |
             const owner = 'honua-io';
             const repo = 'honua-sdk-js';
+            const expectedWorkflowPath = '.github/workflows/realtime-live-conformance.yml';
+            const expectedArtifactName = `realtime-cross-transport-conformance-${process.env.SDK_RUN_ID}`;
             const run = (await github.rest.actions.getWorkflowRun({
               owner, repo, run_id: Number(process.env.SDK_RUN_ID),
             })).data;
             if (run.conclusion !== 'success') core.setFailed(`source run conclusion is ${run.conclusion}`);
             if (String(run.run_attempt) !== process.env.SDK_RUN_ATTEMPT) core.setFailed('source run attempt mismatch');
             if (run.head_sha !== process.env.SDK_REVISION) core.setFailed('source run SDK revision mismatch');
+            if (run.path !== expectedWorkflowPath) core.setFailed(`source workflow path is ${run.path}`);
             const artifact = (await github.rest.actions.getArtifact({
               owner, repo, artifact_id: Number(process.env.SDK_ARTIFACT_ID),
             })).data;
             if (artifact.expired) core.setFailed('source artifact is expired');
             if (artifact.workflow_run?.id !== Number(process.env.SDK_RUN_ID)) core.setFailed('artifact does not belong to source run');
+            if (artifact.name !== expectedArtifactName) core.setFailed(`source artifact name is ${artifact.name}`);
 
       - name: Download immutable SDK artifact
         uses: actions/download-artifact@v8
