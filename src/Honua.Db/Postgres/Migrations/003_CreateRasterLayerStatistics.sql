@@ -13,7 +13,7 @@
 -- This table is migration-owned. Runtime statistics reads verify the journal/schema floor
 -- and fail closed when it is absent; they never self-provision it.
 
-CREATE TABLE IF NOT EXISTS honua.raster_layer_statistics (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.raster_layer_statistics (
     layer_id INTEGER NOT NULL,
     merge_strategy VARCHAR(32) NOT NULL,
     raster_signature TEXT NOT NULL,
@@ -28,4 +28,4 @@ CREATE TABLE IF NOT EXISTS honua.raster_layer_statistics (
     PRIMARY KEY (layer_id, merge_strategy, raster_signature, band_number)
 );
 
-COMMENT ON TABLE honua.raster_layer_statistics IS 'Persisted layer-level (mosaic) band statistics served by ImageServer/WCS metadata endpoints; invalidated by raster_signature when the layer''s raster set changes';
+COMMENT ON TABLE $HonuaSchema$.raster_layer_statistics IS 'Persisted layer-level (mosaic) band statistics served by ImageServer/WCS metadata endpoints; invalidated by raster_signature when the layer''s raster set changes';

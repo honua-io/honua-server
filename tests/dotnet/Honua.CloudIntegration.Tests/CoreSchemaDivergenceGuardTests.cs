@@ -127,6 +127,69 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         after.Should().Be(before, "fail-closed verification must not repair schema or advance readiness/journal state");
     }
 
+    [SkippableFact]
+    public async Task CanonicalRunner_WhenMetadataSchemaIsConfigured_AppliesAndVerifiesGuardedFloorThere()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the configured-schema lane.");
+
+        const string schema = "honua_guard_custom";
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enableSpatialExtensions: true);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
+            .Build();
+        var guard = new PostgresCoreSchemaGuard(configuration);
+        var runner = new PostgresDatabaseMigrationRunner(guard, configuration: configuration);
+
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+
+        result.Successful.Should().BeTrue(
+            $"the canonical migration roots and guard must use the configured schema. Error: {result.ErrorMessage}");
+        var verify = () => guard.VerifyAsync(connectionString);
+        await verify.Should().NotThrowAsync();
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)::int
+            FROM information_schema.tables
+            WHERE table_schema = @schema
+              AND table_name IN (
+                  'raster_data',
+                  'raster_tiles',
+                  'raster_layer_statistics',
+                  'metadata_v2_snapshots',
+                  'sta_thing')
+            """;
+        command.Parameters.AddWithValue("schema", schema);
+        (await command.ExecuteScalarAsync()).Should().Be(5);
+    }
+
+    [SkippableFact]
+    public async Task Guard_WhenJournaledRasterDataTableIsMissing_FullVerificationFailsWithoutMutation()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enableSpatialExtensions: true);
+        var guard = new PostgresCoreSchemaGuard();
+        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var migrationResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        migrationResult.Successful.Should().BeTrue(
+            $"the test requires a canonical journal/schema baseline. Error: {migrationResult.ErrorMessage}");
+
+        await ExecuteAsync(connectionString, "DROP TABLE honua.raster_data CASCADE;");
+        var before = await CaptureStateAsync(connectionString);
+
+        var act = () => guard.VerifyAsync(connectionString);
+        var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterExternalStorageMigration);
+        exception.Which.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
+        exception.Which.Detail.Should().Contain("honua.raster_data");
+
+        var after = await CaptureStateAsync(connectionString);
+        after.Should().Be(before, "full startup/DR verification must be read-only when a restored table is missing");
+    }
+
     private static async Task ExecuteAsync(string connectionString, string sql)
     {
         await using var connection = new NpgsqlConnection(connectionString);

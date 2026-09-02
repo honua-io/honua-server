@@ -784,11 +784,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             await createParent.ExecuteNonQueryAsync();
         }
 
-        // The shipped migration hard-codes the honua.* schema (matching the runtime deployment).
-        // Retarget it to the isolated test schema so this round-trip stays parallel-safe and does
-        // not collide with the shared honua schema other tests use.
+        // Substitute the same configured-schema variable used by the production DbUp runner so
+        // this round-trip stays parallel-safe and does not collide with the shared honua schema.
         var migrationSql = (await ReadEmbeddedMigrationAsync("060_AddRasterSensorMetadata.sql"))
-            .Replace("honua.", $"{_schemaName}.", StringComparison.Ordinal);
+            .Replace("$HonuaSchema$", _schemaName, StringComparison.Ordinal);
         await using (var apply = connection.CreateCommand())
         {
             apply.CommandText = $"SET search_path TO {_schemaName}, public; {migrationSql}";
