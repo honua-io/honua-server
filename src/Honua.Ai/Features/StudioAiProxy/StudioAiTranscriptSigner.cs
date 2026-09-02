@@ -89,7 +89,7 @@ internal sealed class StudioAiTranscriptSigner(
     {
         ValidateGovernedToolTargets(request.Certification!, events);
         var issuedAt = timeProvider.GetUtcNow();
-        var requestBytes = Canonicalize(JsonSerializer.SerializeToUtf8Bytes(
+        var requestBytes = Canonicalize(request.AcceptedRequestJson ?? JsonSerializer.SerializeToUtf8Bytes(
             request, StudioAiProxyJsonContext.Default.StudioAiChatRequest));
         var eventBytes = Canonicalize(JsonSerializer.SerializeToUtf8Bytes(
             events.ToList(), StudioAiProxyJsonContext.Default.ListStudioAiChatEvent));
@@ -263,9 +263,29 @@ internal sealed class StudioAiTranscriptSigner(
                 foreach (var item in value.EnumerateArray()) WriteCanonical(writer, item);
                 writer.WriteEndArray();
                 break;
-            default:
-                value.WriteTo(writer);
+            case JsonValueKind.String:
+                writer.WriteStringValue(value.GetString());
                 break;
+            case JsonValueKind.Number when value.TryGetInt64(out var integer):
+                writer.WriteNumberValue(integer);
+                break;
+            case JsonValueKind.Number when value.TryGetDecimal(out var decimalValue):
+                writer.WriteRawValue(decimalValue.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+                break;
+            case JsonValueKind.Number:
+                writer.WriteNumberValue(value.GetDouble());
+                break;
+            case JsonValueKind.True:
+                writer.WriteBooleanValue(true);
+                break;
+            case JsonValueKind.False:
+                writer.WriteBooleanValue(false);
+                break;
+            case JsonValueKind.Null:
+                writer.WriteNullValue();
+                break;
+            default:
+                throw new JsonException($"Unsupported JSON value kind '{value.ValueKind}'.");
         }
     }
 

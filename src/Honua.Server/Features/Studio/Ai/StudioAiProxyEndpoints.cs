@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text;
 using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
@@ -80,7 +81,7 @@ internal static class StudioAiProxyEndpoints
             return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
         }
 
-        var (httpRequest, requestTooLarge, readError) = await ReadRequestAsync(
+        var (httpRequest, acceptedRequestJson, requestTooLarge, readError) = await ReadRequestAsync(
             context.Request,
             options.Value.MaxRequestBytes,
             cancellationToken).ConfigureAwait(false);
@@ -108,7 +109,8 @@ internal static class StudioAiProxyEndpoints
 
         var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
             httpRequest,
-            allowCallerOverrides);
+            allowCallerOverrides,
+            acceptedRequestJson);
         if (mappingError is not null || domainRequest is null)
         {
             return BadRequest(context, mappingError ?? "Invalid request.");
@@ -165,14 +167,14 @@ internal static class StudioAiProxyEndpoints
         return Results.Empty;
     }
 
-    private static async Task<(StudioAiChatHttpRequest? Request, bool TooLarge, string? Error)> ReadRequestAsync(
+    private static async Task<(StudioAiChatHttpRequest? Request, byte[]? AcceptedJson, bool TooLarge, string? Error)> ReadRequestAsync(
         HttpRequest request,
         int maximumBytes,
         CancellationToken cancellationToken)
     {
         if (request.ContentLength > maximumBytes)
         {
-            return (null, true, null);
+            return (null, null, true, null);
         }
 
         await using var body = new MemoryStream(Math.Min(maximumBytes, 64 * 1024));
@@ -187,7 +189,7 @@ internal static class StudioAiProxyEndpoints
 
             if (body.Length + read > maximumBytes)
             {
-                return (null, true, null);
+                return (null, null, true, null);
             }
 
             await body.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
@@ -195,14 +197,57 @@ internal static class StudioAiProxyEndpoints
 
         try
         {
-            return (JsonSerializer.Deserialize(
-                body.GetBuffer().AsSpan(0, checked((int)body.Length)),
-                StudioAiProxyEndpointsJsonContext.Default.StudioAiChatHttpRequest), false, null);
+            using var document = JsonDocument.Parse(
+                body.GetBuffer().AsMemory(0, checked((int)body.Length)),
+                new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
+            if (FindDuplicateProperty(document.RootElement) is { } duplicate)
+            {
+                return (null, null, false, $"Duplicate JSON property '{duplicate}' is not allowed.");
+            }
+
+            var acceptedRequestJson = Encoding.UTF8.GetBytes(document.RootElement.GetRawText());
+            var httpRequest = document.RootElement.Deserialize(
+                StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest);
+            return httpRequest is null
+                ? (null, null, false, "Request body is required.")
+                : (httpRequest, acceptedRequestJson, false, null);
         }
         catch (JsonException)
         {
-            return (null, false, "Request body must be valid JSON.");
+            return (null, null, false, "Request body must be unambiguous valid JSON.");
         }
+    }
+
+    private static string? FindDuplicateProperty(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in value.EnumerateObject())
+            {
+                if (!names.Add(property.Name))
+                {
+                    return property.Name;
+                }
+
+                if (FindDuplicateProperty(property.Value) is { } nested)
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in value.EnumerateArray())
+            {
+                if (FindDuplicateProperty(item) is { } nested)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static string EventName(StudioAiChatEventType type) => type switch
