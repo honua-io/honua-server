@@ -364,6 +364,18 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
     }
 
+    [Theory]
+    [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"late\"}}]}\n\ndata: [DONE]\n\n")]
+    [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\ndata: {\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n")]
+    public async Task StreamAsync_OutputAfterTerminalMarker_EmitsTypedError(string fixture)
+    {
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        events.Last().Type.Should().Be(StudioAiChatEventType.Error);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+    }
+
     private static OpenAiCompatibleStudioAiProxyAdapter CreateAdapter(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         var handler = new StudioAiProxyMockHttpMessageHandler(responseBody, statusCode);

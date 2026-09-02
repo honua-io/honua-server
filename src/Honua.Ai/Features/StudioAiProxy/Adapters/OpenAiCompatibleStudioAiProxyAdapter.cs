@@ -154,8 +154,22 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             if (payload == "[DONE]")
             {
+                if (sawDone)
+                {
+                    yield return Error(model, "Provider returned output after [DONE].", stopwatch.ElapsedMilliseconds,
+                        StudioAiStreamGrammarValidator.InvalidStreamCode);
+                    yield break;
+                }
+
                 sawDone = true;
-                break;
+                continue;
+            }
+
+            if (sawDone)
+            {
+                yield return Error(model, "Provider returned output after [DONE].", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
             }
 
             OpenAiStreamChunk? chunk = null;
@@ -173,6 +187,13 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             if (parseFailed || chunk is null)
             {
                 yield return Error(model, "Provider returned a malformed stream frame.", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
+            }
+
+            if (sawFinishReason && chunk.Choices is { Length: > 0 })
+            {
+                yield return Error(model, "Provider returned output after the finish reason.", stopwatch.ElapsedMilliseconds,
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
             }

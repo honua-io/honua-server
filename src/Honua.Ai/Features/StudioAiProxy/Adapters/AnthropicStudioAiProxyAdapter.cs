@@ -122,7 +122,9 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         int? promptTokens = null;
         int? completionTokens = null;
         var stopReason = StudioAiStopReason.EndTurn;
+        var sawStopReason = false;
         var sawMessageStop = false;
+        var openContentBlocks = new Dictionary<int, string>();
 
         while (true)
         {
@@ -179,6 +181,25 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
                 yield break;
             }
 
+            string? stoppedContentBlockType = null;
+            if (frame.Type == "content_block_start"
+                && (frame.Index is not { } startIndex
+                    || !openContentBlocks.TryAdd(startIndex, frame.ContentBlock?.Type ?? string.Empty)))
+            {
+                yield return Error(model, "Provider returned an invalid content block start.", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
+            }
+
+            if (frame.Type == "content_block_stop"
+                && (frame.Index is not { } stopIndex
+                    || !openContentBlocks.Remove(stopIndex, out stoppedContentBlockType)))
+            {
+                yield return Error(model, "Provider returned an unmatched content block stop.", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
+            }
+
             switch (frame.Type)
             {
                 case "message_start":
@@ -202,7 +223,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
                     break;
 
                 case "content_block_start" when frame.ContentBlock?.Type == "text":
-                case "content_block_stop" when toolCallId is null:
+                case "content_block_stop" when stoppedContentBlockType == "text":
                 case "ping":
                     break;
 
@@ -220,7 +241,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
                     };
                     break;
 
-                case "content_block_stop" when toolCallId is not null:
+                case "content_block_stop" when stoppedContentBlockType == "tool_use" && toolCallId is not null:
                     var arguments = TryParse(toolArgsBuffer?.ToString());
                     if (arguments is null)
                     {
@@ -241,10 +262,28 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
                 case "message_delta":
                     completionTokens = frame.Usage?.OutputTokens ?? completionTokens;
-                    stopReason = MapStopReason(frame.Delta?.StopReason);
+                    if (!string.IsNullOrWhiteSpace(frame.Delta?.StopReason))
+                    {
+                        sawStopReason = true;
+                        stopReason = MapStopReason(frame.Delta.StopReason);
+                    }
                     break;
 
                 case "message_stop":
+                    if (openContentBlocks.Count != 0)
+                    {
+                        yield return Error(model, "Provider ended the message with an open content block.", stopwatch.ElapsedMilliseconds,
+                            StudioAiStreamGrammarValidator.InvalidStreamCode);
+                        yield break;
+                    }
+
+                    if (!sawStopReason)
+                    {
+                        yield return Error(model, "Provider ended the stream without a stop reason.", stopwatch.ElapsedMilliseconds,
+                            StudioAiStreamGrammarValidator.InvalidStreamCode);
+                        yield break;
+                    }
+
                     sawMessageStop = true;
                     yield return new StudioAiChatEvent
                     {
