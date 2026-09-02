@@ -43,7 +43,8 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
 
         var graphStore = new PostgresMetadataV2GraphStore(
             new FixtureConnectionProvider(fixture),
-            environment);
+            environment,
+            FixtureBypassDatabaseSchemaGuard.Instance);
 
         try
         {

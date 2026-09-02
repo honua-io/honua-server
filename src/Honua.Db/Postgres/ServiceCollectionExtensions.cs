@@ -191,7 +191,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>(
             serviceProvider => new Honua.Db.Postgres.Features.SensorThings.PostgresObservationStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                serviceProvider.GetService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>()));
+                serviceProvider.GetRequiredService<IDatabaseSchemaGuard>()));
 
         // Console Operate read APIs (#1168)
         services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
@@ -266,9 +266,9 @@ internal static class ServiceCollectionExtensions
             new Features.Metadata.PostgresMetadataV2GraphStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 metadataEnvironment,
+                serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
                 configuration["Database:Schema"],
-                serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>(),
-                serviceProvider.GetService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>()));
+                serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>()));
 
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.

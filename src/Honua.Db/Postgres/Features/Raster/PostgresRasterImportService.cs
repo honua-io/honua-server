@@ -10,7 +10,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
-using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -38,7 +37,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ILogger<PostgresRasterImportService> _logger;
-    private readonly PostgresCoreSchemaGuard? _schemaGuard;
+    private readonly IDatabaseSchemaGuard _schemaGuard;
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
     private readonly string _rasterTilesTable;
@@ -49,13 +48,13 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsDetectionService crsDetectionService,
         ILogger<PostgresRasterImportService> logger,
-        string? schemaName = null,
-        PostgresCoreSchemaGuard? schemaGuard = null)
+        IDatabaseSchemaGuard schemaGuard,
+        string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _schemaGuard = schemaGuard;
+        _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
 
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
@@ -96,13 +95,10 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             ReportProgress(progress, operationId, startedAt, RasterImportPhase.Ingesting, OperationStatus.Processing, "Loading raster into PostGIS");
 
             await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            if (_schemaGuard is not null)
-            {
-                await _schemaGuard.VerifyRequirementAsync(
-                    connection,
-                    CoreSchemaRequirement.RasterExternalStorage,
-                    cancellationToken).ConfigureAwait(false);
-            }
+            await _schemaGuard.VerifyRequirementAsync(
+                connection,
+                DatabaseSchemaRequirement.RasterExternalStorage,
+                cancellationToken).ConfigureAwait(false);
             await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
 
             long rasterId;

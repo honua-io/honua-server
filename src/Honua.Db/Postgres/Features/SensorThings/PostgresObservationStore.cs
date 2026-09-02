@@ -3,10 +3,10 @@
 
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.SensorThings.Abstractions;
 using Honua.Core.Features.SensorThings.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
-using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -20,27 +20,22 @@ namespace Honua.Db.Postgres.Features.SensorThings;
 internal sealed class PostgresObservationStore : IObservationStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
-    private readonly PostgresCoreSchemaGuard? _schemaGuard;
+    private readonly IDatabaseSchemaGuard _schemaGuard;
 
     public PostgresObservationStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
-        PostgresCoreSchemaGuard? schemaGuard = null)
+        IDatabaseSchemaGuard schemaGuard)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
-        _schemaGuard = schemaGuard;
+        _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
     }
 
     private async Task VerifySchemaFloorAsync(CancellationToken cancellationToken)
     {
-        if (_schemaGuard is null)
-        {
-            return;
-        }
-
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await _schemaGuard.VerifyRequirementAsync(
             lease,
-            CoreSchemaRequirement.SensorThings,
+            DatabaseSchemaRequirement.SensorThings,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -304,7 +299,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
 
         // Reserve a contiguous id block atomically. The observation id is a plain bigint
         // (the partition key participates in the PK), so a transactional MAX+offset keeps
-        // ids monotonic without a dedicated sequence and works on the self-healed schema.
+        // ids monotonic without a dedicated sequence on the journaled schema.
         long nextId;
         await using (var maxCommand = new NpgsqlCommand(
             "SELECT COALESCE(MAX(id), 0) FROM honua.sta_observation", connection, transaction))

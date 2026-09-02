@@ -197,6 +197,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             new FixtureConnectionProvider(fixture.DataSource),
             crsDetectionService,
             NullLogger<PostgresRasterImportService>.Instance,
+            FixtureBypassDatabaseSchemaGuard.Instance,
             schemaName);
     }
 

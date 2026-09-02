@@ -228,6 +228,7 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             var store = new PostgresMetadataV2GraphStore(
                 provider,
                 environment: "seed-regression",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName: "honua");
             var canonicalGraph = new MetadataV2Graph
             {

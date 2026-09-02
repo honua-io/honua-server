@@ -424,7 +424,9 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
     }
 
     private static PostgresDatabaseMigrationRunner CreateEnforcingRunner()
-        => new(Options.Create(new MigrationSafetyOptions { Enforce = true }));
+        => new(
+            new PostgresCoreSchemaGuard(),
+            Options.Create(new MigrationSafetyOptions { Enforce = true }));
 
     private static string GetEmbeddedScriptName(string assemblyName, string scriptName)
         => $"{assemblyName}.{scriptName}";
@@ -445,7 +447,11 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
                 .Build();
         }
 
-        return new PostgresDatabaseMigrationRunner(Options.Create(options), configuration, backupHookRecorder);
+        return new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(configuration),
+            Options.Create(options),
+            configuration,
+            backupHookRecorder);
     }
 
     private static string ReserveSentinelPath()
