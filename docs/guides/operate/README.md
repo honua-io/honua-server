@@ -4,11 +4,15 @@ Honua's day-2 operating model is one loop shared by humans, Console, and MCP
 agents: observe, diagnose, remediate, learn, and graduate. The server stays the
 source of truth for health, findings, proposals, approvals, and execution. Tools
 may explain or propose, but the control plane applies only deterministic,
-authorized operations.
+authorized operations. Start with the execution-verified [Operate
+scenario](scenario.md), then use the [metric inventory](metrics.md) and [evidence
+posture contract](evidence-posture.md) to decide whether a successful read is
+actually actionable.
 
-This guide describes behavior on `trunk` as of August 20, 2026. The self-operating
-platform workstream in #2552 is landed; the remaining limits are called out
-explicitly so “runs itself” never means “may mutate anything unattended.”
+This guide describes the shipped surfaces; the scenario pins its exact candidate
+and marks its unexecutable proposal/approval/actuation stages with #3411, #3430,
+#3431, and #3475. The remaining limits are called out explicitly so “runs
+itself” never means “may mutate anything unattended.”
 
 ## The loop
 

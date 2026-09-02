@@ -16,7 +16,7 @@ Process discovery is open. Omit `Prefer` for bounded synchronous execution when 
 
    Open `http://localhost:8080/ogc/processes/processes/geometry.buffer` in a browser.
 
-   `geometry.buffer` takes `wkb` (base64-encoded WKB geometry), `srid`, `distance` (meters), and an optional `geodesic` flag.
+   `geometry.buffer` takes `wkb`, `srid`, `distance`, and an optional `geodesic` flag. Despite the legacy parameter name, the OGC route accepts either base64-encoded WKB or a GeoJSON geometry object. `distance` is expressed in the input CRS units, so project geographic coordinates before requesting a metric buffer.
 
 3. Execute it. The request returns `201 Created` with a job status document and a `Location` header pointing at the job:
 

@@ -1,0 +1,10 @@
+{
+  "type": "FeatureCollection",
+  "name": "intentionally-mixed-source-crs",
+  "features": [
+    {"type":"Feature","id":"wgs84","properties":{"sourceCrs":"EPSG:4326","axisOrder":"yx"},"geometry":{"type":"Point","coordinates":[-157.8583,21.3069]}},
+    {"type":"Feature","id":"web-mercator","properties":{"sourceCrs":"EPSG:3857","axisOrder":"xy"},"geometry":{"type":"Point","coordinates":[-17572728.559,2420751.824]}},
+    {"type":"Feature","id":"utm-zone-4n","properties":{"sourceCrs":"EPSG:26904","axisOrder":"xy"},"geometry":{"type":"Point","coordinates":[617638.12,2356253.78]}},
+    {"type":"Feature","id":"crs84","properties":{"sourceCrs":"OGC:CRS84","axisOrder":"xy"},"geometry":{"type":"Point","coordinates":[179.9999,-16.5]}}
+  ]
+}
