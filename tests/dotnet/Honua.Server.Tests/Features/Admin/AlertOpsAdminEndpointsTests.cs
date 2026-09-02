@@ -157,7 +157,7 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
         migration.Successful.Should().BeTrue(migration.Error?.ToString());
         await _fixture.Postgres.DropSchemaAsync(migrationSchema);
 
-        foreach (var dispatchStatus in new short[] { 2, 4 })
+        foreach (var dispatchStatus in new short[] { 0, 1, 2, 3, 4 })
         {
             var ruleId = await SeedActiveRuleAsync(dispatchStatus);
             var eventId = await SeedRuleIncidentAsync(ruleId, dispatchStatus);
@@ -188,6 +188,18 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
             evidence.LifecycleStatus.Should().Be(3, "the resolution remains queryable");
             evidence.Actor.Should().Be("admin");
             evidence.AuditCount.Should().BeGreaterThanOrEqualTo(2, "acknowledge and resolve domain audit actions survive");
+
+            var dispatchStore = _fixture.GetService<IAlertDispatchStore>();
+            var claimed = await dispatchStore.ClaimPendingAsync(5000, DateTimeOffset.UtcNow.AddMinutes(6));
+            claimed.Should().NotContain(item => item.EventId == eventId,
+                "dispatches detached from deleted rules must not be delivered");
+
+            if (dispatchStatus == 4)
+            {
+                _ = await dispatchStore.RedriveDeadLettersAsync(DateTimeOffset.UtcNow, 5000);
+                (await ReadRetainedEvidenceAsync(eventId)).DispatchStatus.Should().Be(4,
+                    "retained dead letters detached from deleted rules must not be redriven");
+            }
         }
     }
 
@@ -217,8 +229,9 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
         });
 
         eventId.Should().NotBeNull();
-        await dispatchStore.EnqueueAsync(eventId!.Value, ImmutableArray.Create(channel));
-        return eventId!.Value;
+        var persistedEventId = eventId.GetValueOrDefault();
+        await dispatchStore.EnqueueAsync(persistedEventId, ImmutableArray.Create(channel));
+        return persistedEventId;
     }
 
     private async Task<long> SeedRuleIncidentAsync(long ruleId, short dispatchStatus)
@@ -240,7 +253,8 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
             IncidentStatus = AlertIncidentStatus.Started,
         });
         eventId.Should().NotBeNull();
-        await dispatchStore.EnqueueAsync(eventId!.Value, [AlertChannelType.Webhook]);
+        var persistedEventId = eventId.GetValueOrDefault();
+        await dispatchStore.EnqueueAsync(persistedEventId, [AlertChannelType.Webhook]);
 
         var dataSource = _fixture.GetService<NpgsqlDataSource>();
         await using var connection = await dataSource.OpenConnectionAsync();
@@ -254,9 +268,9 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
             WHERE event_id = @event_id;
             """, connection);
         command.Parameters.AddWithValue("status", dispatchStatus);
-        command.Parameters.AddWithValue("event_id", eventId.Value);
+        command.Parameters.AddWithValue("event_id", persistedEventId);
         (await command.ExecuteNonQueryAsync()).Should().Be(1);
-        return eventId.Value;
+        return persistedEventId;
     }
 
     private async Task<long> SeedActiveRuleAsync(short dispatchStatus)
