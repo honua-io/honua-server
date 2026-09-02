@@ -19,6 +19,9 @@ public enum DatabaseSchemaRequirement
 
     /// <summary>SensorThings catalog and observation storage owned by server migration 059.</summary>
     SensorThings = 3,
+
+    /// <summary>Metadata v2 release-package storage owned by server migration 034.</summary>
+    MetadataV2ReleasePackages = 4,
 }
 
 /// <summary>

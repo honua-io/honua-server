@@ -23,6 +23,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "Honua.Postgres.Migrations.003_CreateRasterLayerStatistics.sql";
     internal static readonly string MetadataV2SnapshotMigration =
         BuildServerMigrationName("031_CreateMetadataV2Snapshot.sql");
+    internal static readonly string MetadataV2ReleasePackagesMigration =
+        BuildServerMigrationName("034_CreateMetadataV2ReleasePackages.sql");
     internal static readonly string RasterExternalStorageMigration =
         BuildServerMigrationName("055_SetRasterDataExternalStorage.sql");
     internal static readonly string SensorThingsMigration =
@@ -49,6 +51,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "sta_datastream",
         "sta_observation",
         "sta_observation_default",
+    ];
+
+    private static readonly string[] _metadataV2ReleasePackageTables =
+    [
+        "metadata_v2_release_packages",
     ];
 
     private static readonly (string Table, string Column)[] _rasterLayerStatisticsColumns =
@@ -156,6 +163,23 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         ("sta_observation_default", "feature_of_interest_id"),
     ];
 
+    private static readonly (string Table, string Column)[] _metadataV2ReleasePackageColumns =
+    [
+        ("metadata_v2_release_packages", "package_id"),
+        ("metadata_v2_release_packages", "package_key"),
+        ("metadata_v2_release_packages", "package_namespace"),
+        ("metadata_v2_release_packages", "status"),
+        ("metadata_v2_release_packages", "source_environment"),
+        ("metadata_v2_release_packages", "source_revision"),
+        ("metadata_v2_release_packages", "source_etag"),
+        ("metadata_v2_release_packages", "target_environments"),
+        ("metadata_v2_release_packages", "entries"),
+        ("metadata_v2_release_packages", "package_metadata"),
+        ("metadata_v2_release_packages", "created_by"),
+        ("metadata_v2_release_packages", "created_at"),
+        ("metadata_v2_release_packages", "updated_at"),
+    ];
+
     private static readonly string[] _metadataV2Indexes =
     [
         "idx_metadata_v2_resources_name",
@@ -171,16 +195,25 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "ix_sta_observation_datastream_time",
     ];
 
+    private static readonly string[] _metadataV2ReleasePackageIndexes =
+    [
+        "idx_metadata_v2_release_packages_key",
+        "idx_metadata_v2_release_packages_created",
+        "idx_metadata_v2_release_packages_status",
+    ];
+
     private static readonly string[] _guardedIndexes =
     [
         "raster_layer_statistics_pkey",
         .. _metadataV2Indexes,
+        .. _metadataV2ReleasePackageIndexes,
         .. _sensorThingsIndexes,
     ];
 
     private static readonly string[] _guardedTables =
     [
         .. _metadataV2Tables,
+        .. _metadataV2ReleasePackageTables,
         .. _sensorThingsTables,
         "raster_layer_statistics",
         "raster_data",
@@ -245,6 +278,12 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _metadataV2Indexes);
         VerifyRequiredMigration(
             state,
+            MetadataV2ReleasePackagesMigration,
+            _metadataV2ReleasePackageTables,
+            _metadataV2ReleasePackageColumns,
+            _metadataV2ReleasePackageIndexes);
+        VerifyRequiredMigration(
+            state,
             SensorThingsMigration,
             _sensorThingsTables,
             _sensorThingsColumns,
@@ -271,6 +310,13 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _metadataV2Tables,
             _metadataV2Columns,
             _metadataV2Indexes,
+            state.CanAwaitConfiguredSchemaAdoption);
+        VerifyExclusiveMigrationConsistency(
+            state,
+            MetadataV2ReleasePackagesMigration,
+            _metadataV2ReleasePackageTables,
+            _metadataV2ReleasePackageColumns,
+            _metadataV2ReleasePackageIndexes,
             state.CanAwaitConfiguredSchemaAdoption);
         VerifyExclusiveMigrationConsistency(
             state,
@@ -320,6 +366,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 (RasterLayerStatisticsMigration, new[] { "raster_layer_statistics" }, _rasterLayerStatisticsColumns, new[] { "raster_layer_statistics_pkey" }),
             DatabaseSchemaRequirement.MetadataV2Snapshot =>
                 (MetadataV2SnapshotMigration, _metadataV2Tables, _metadataV2Columns, _metadataV2Indexes),
+            DatabaseSchemaRequirement.MetadataV2ReleasePackages =>
+                (MetadataV2ReleasePackagesMigration, _metadataV2ReleasePackageTables, _metadataV2ReleasePackageColumns, _metadataV2ReleasePackageIndexes),
             DatabaseSchemaRequirement.SensorThings =>
                 (SensorThingsMigration, _sensorThingsTables, _sensorThingsColumns, _sensorThingsIndexes),
             DatabaseSchemaRequirement.RasterExternalStorage =>

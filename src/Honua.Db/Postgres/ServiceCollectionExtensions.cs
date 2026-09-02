@@ -293,6 +293,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IMetadataReleasePackageStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataReleasePackageStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
                 configuration["Database:Schema"]));
         services.AddScoped<IStudioPackageStore>(serviceProvider =>
             new PostgresStudioPackageStore(

@@ -78,6 +78,17 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 PostgresCoreSchemaGuard.SensorThingsMigration,
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
             },
+            {
+                """
+                CREATE SCHEMA honua;
+                CREATE TABLE public.schema_versions (scriptname text NOT NULL);
+                CREATE TABLE honua.metadata_v2_release_packages (package_id uuid NOT NULL);
+                """,
+                (int)DatabaseSchemaRequirement.MetadataV2ReleasePackages,
+                (int)StoreOperation.MetadataReleasePackageRead,
+                PostgresCoreSchemaGuard.MetadataV2ReleasePackagesMigration,
+                DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
+            },
         };
 
     [SkippableTheory]
@@ -169,10 +180,11 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                   'raster_tiles',
                   'raster_layer_statistics',
                   'metadata_v2_snapshots',
+                  'metadata_v2_release_packages',
                   'sta_thing')
             """;
         command.Parameters.AddWithValue("schema", schema);
-        (await command.ExecuteScalarAsync()).Should().Be(5);
+        (await command.ExecuteScalarAsync()).Should().Be(6);
     }
 
     [SkippableFact]
@@ -229,6 +241,34 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var baseline = await baselineRunner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         baseline.Successful.Should().BeTrue(
             $"the test requires a canonical legacy baseline. Error: {baseline.ErrorMessage}");
+
+        var legacyPackageId = Guid.Parse("72c1fbc0-e898-4e04-99d5-a16534e8f714");
+        await ExecuteAsync(connectionString, $"""
+            INSERT INTO honua.metadata_v2_release_packages (
+                package_id,
+                package_key,
+                package_namespace,
+                status,
+                source_environment,
+                source_revision,
+                source_etag,
+                target_environments,
+                entries,
+                package_metadata,
+                created_by)
+            VALUES (
+                '{legacyPackageId}'::uuid,
+                'legacy-package',
+                'ops',
+                'ready',
+                'legacy',
+                42,
+                'etag-42',
+                jsonb_build_array('production'),
+                '[]'::jsonb,
+                jsonb_build_object('id', '{legacyPackageId}', 'name', 'legacy-package', 'namespace', 'ops'),
+                'upgrade-regression');
+            """);
 
         // Reproduce a pre-#3899 deployment: server migrations 031/059 were journaled in
         // public while their guarded tables landed in honua, and the provider migration
@@ -289,6 +329,15 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             .Should().ContainSingle(thing => thing.Id == 1,
                 "the adopted SensorThings rows must remain available through configured-schema runtime SQL");
 
+        var releasePackageStore = new PostgresMetadataReleasePackageStore(
+            new TestConnectionProvider(connectionString),
+            approvedGuard,
+            schema);
+        var adoptedPackage = await releasePackageStore.GetAsync(legacyPackageId);
+        adoptedPackage.Should().NotBeNull();
+        adoptedPackage!.Metadata.Name.Should().Be("legacy-package",
+            "migration 034 package rows must move with their journaled table");
+
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
@@ -302,6 +351,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                           'raster_tiles',
                           'raster_layer_statistics',
                           'metadata_v2_snapshots',
+                          'metadata_v2_release_packages',
                           'sta_thing'))::int,
                    (
                     SELECT COUNT(*)
@@ -312,6 +362,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                           'raster_tiles',
                           'raster_layer_statistics',
                           'metadata_v2_snapshots',
+                          'metadata_v2_release_packages',
                           'sta_thing'))::int,
                    EXISTS (
                     SELECT 1 FROM public.schema_versions WHERE scriptname = @adoption);
@@ -320,7 +371,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         command.Parameters.AddWithValue("adoption", PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
-        reader.GetInt32(0).Should().Be(5);
+        reader.GetInt32(0).Should().Be(6);
         reader.GetInt32(1).Should().Be(0);
         reader.GetBoolean(2).Should().BeTrue();
     }
@@ -350,6 +401,31 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
 
         (await CaptureStateAsync(connectionString)).Should().Be(before,
             "startup/DR verification must not repair a provider baseline journal gap");
+    }
+
+    [SkippableFact]
+    public async Task Guard_WhenJournaledMetadataReleasePackagesTableIsMissing_FullVerificationFailsWithoutMutation()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
+        var guard = new PostgresCoreSchemaGuard();
+        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var migrationResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        migrationResult.Successful.Should().BeTrue(
+            $"the test requires a canonical journal/schema baseline. Error: {migrationResult.ErrorMessage}");
+
+        await ExecuteAsync(connectionString, "DROP TABLE honua.metadata_v2_release_packages;");
+        var before = await CaptureStateAsync(connectionString);
+
+        var act = () => guard.VerifyAsync(connectionString);
+        var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.MetadataV2ReleasePackagesMigration);
+        exception.Which.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
+        exception.Which.Detail.Should().Contain("metadata_v2_release_packages");
+
+        (await CaptureStateAsync(connectionString)).Should().Be(before,
+            "startup/DR verification must not repair a missing release-package table");
     }
 
     [SkippableFact]
@@ -482,6 +558,11 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 await observationStore.ListThingsAsync(0, 1, CancellationToken.None);
                 return;
 
+            case StoreOperation.MetadataReleasePackageRead:
+                var releasePackageStore = new PostgresMetadataReleasePackageStore(provider, guard);
+                await releasePackageStore.GetAsync(Guid.Empty, CancellationToken.None);
+                return;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(operation), operation, null);
         }
@@ -526,6 +607,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         MetadataRead,
         RasterImportWrite,
         SensorThingsRead,
+        MetadataReleasePackageRead,
     }
 
     private sealed class TestConnectionProvider(string connectionString) : IAdoNetDatabaseConnectionProvider

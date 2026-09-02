@@ -78,6 +78,62 @@ BEGIN
 END
 $$;
 
+-- Migration 034 is a separate Metadata v2 storage capability. Keep it separate
+-- from the migration-031 family so an older deployment where 034 is still pending
+-- can create the table directly in the configured schema before this script runs.
+DO $$
+DECLARE
+    target_schema text := (
+        SELECT nspname
+        FROM pg_catalog.pg_namespace
+        WHERE oid = to_regnamespace('$HonuaSchema$'));
+    source_exists boolean;
+    target_exists boolean;
+    migration_applied boolean;
+BEGIN
+    IF target_schema = 'honua' THEN
+        RETURN;
+    END IF;
+
+    source_exists := to_regclass(format('%I.%I', 'honua', 'metadata_v2_release_packages')) IS NOT NULL;
+    target_exists := to_regclass(format('%I.%I', target_schema, 'metadata_v2_release_packages')) IS NOT NULL;
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.schema_versions
+        WHERE scriptname = 'Honua.Server.Migrations.034_CreateMetadataV2ReleasePackages.sql')
+    INTO migration_applied;
+
+    IF source_exists AND target_exists THEN
+        RAISE EXCEPTION
+            'Cannot adopt Metadata v2 release packages: target table in % coexists with legacy table in honua',
+            target_schema;
+    END IF;
+
+    IF target_exists THEN
+        RETURN;
+    END IF;
+
+    IF source_exists THEN
+        IF NOT migration_applied THEN
+            RAISE EXCEPTION
+                'Cannot adopt Metadata v2 release packages: legacy table in honua exists without migration 034 journal state';
+        END IF;
+
+        EXECUTE format(
+            'ALTER TABLE %I.%I SET SCHEMA %I',
+            'honua',
+            'metadata_v2_release_packages',
+            target_schema);
+        RETURN;
+    END IF;
+
+    IF migration_applied THEN
+        RAISE EXCEPTION
+            'Cannot adopt Metadata v2 release packages: migration 034 is journaled but its table is absent';
+    END IF;
+END
+$$;
+
 DO $$
 DECLARE
     target_schema text := (
