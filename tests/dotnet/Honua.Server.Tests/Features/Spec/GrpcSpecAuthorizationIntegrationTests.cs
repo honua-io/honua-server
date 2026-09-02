@@ -110,6 +110,9 @@ public sealed class GrpcSpecAuthorizationIntegrationTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("POST /geospatial.v1.SpecService/PlanSpec")]
+    [Endpoint("POST /geospatial.v1.SpecService/ApplySpec")]
+    [Endpoint("POST /geospatial.v1.SpecService/CancelApply")]
     public async Task AdminPolicy_AllSupportedCompositions_RetainPermissionCeiling()
     {
         var compositions = Enum.GetValues<PolicyComposition>();
