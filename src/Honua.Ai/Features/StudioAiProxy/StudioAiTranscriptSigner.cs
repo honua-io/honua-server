@@ -87,6 +87,7 @@ internal sealed class StudioAiTranscriptSigner(
         string model,
         IReadOnlyList<StudioAiChatEvent> events)
     {
+        ValidateGovernedToolTargets(request.Certification!, events);
         var issuedAt = timeProvider.GetUtcNow();
         var requestBytes = Canonicalize(JsonSerializer.SerializeToUtf8Bytes(
             request, StudioAiProxyJsonContext.Default.StudioAiChatRequest));
@@ -132,6 +133,33 @@ internal sealed class StudioAiTranscriptSigner(
             TranscriptDigest = Convert.ToHexStringLower(SHA256.HashData(canonicalTranscript)),
             Signature = Convert.ToBase64String(signature)
         };
+    }
+
+    private static void ValidateGovernedToolTargets(
+        StudioAiTranscriptCertification certification,
+        IReadOnlyList<StudioAiChatEvent> events)
+    {
+        foreach (var evt in events.Where(candidate => candidate.Type == StudioAiChatEventType.ToolCallStop))
+        {
+            var targetProperty = evt.ToolName switch
+            {
+                "honua_propose_deploy_operation" => "targetId",
+                "honua_propose_metadata_release" => "targetEnvironment",
+                _ => null
+            };
+            if (targetProperty is null)
+            {
+                continue;
+            }
+
+            if (evt.ToolArguments is not { ValueKind: JsonValueKind.Object } arguments
+                || !arguments.TryGetProperty(targetProperty, out var target)
+                || target.ValueKind != JsonValueKind.String
+                || !string.Equals(target.GetString(), certification.CandidateId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Governed tool target does not match the certified candidate.");
+            }
+        }
     }
 
     public async Task<StudioAiTranscriptSigningManifest> GetManifestAsync(CancellationToken cancellationToken)
