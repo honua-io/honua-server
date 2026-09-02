@@ -113,21 +113,23 @@ public sealed class StudioMcpOwnershipAuthorizationTests
                 Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<OperatorAuthorizationRequest>(),
                 Arg.Any<CancellationToken>())
-            .Returns(AccessDecision.Allowed("delegate grant"));
+            .Returns(callerKind is CallerKind.Owner or CallerKind.DelegatedOperator
+                ? AccessDecision.Allowed("delegate grant")
+                : AccessDecision.Forbidden("no delegate grant"));
         var authorization = BuildAuthorization(evaluator);
         var context = BuildContext(callerKind, lifecycle, validator, authorization);
         var (tool, arguments) = BuildInvocation(family, jobService);
 
         var act = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
-        var allowed = callerKind is CallerKind.Owner or CallerKind.Admin;
+        var allowed = callerKind is CallerKind.Owner or CallerKind.Admin
+            || (family == DraftToolFamily.PublicationProposal && callerKind == CallerKind.DelegatedOperator);
 
         if (allowed)
         {
             var result = await act();
             result.IsError.Should().BeFalse();
 
-            authorization.Calls.Should().HaveCount(
-                family == DraftToolFamily.PublicationProposal ? 2 : 1);
+            authorization.Calls.Should().ContainSingle();
             var call = authorization.Calls.Last();
             call.Operation.Should().Be(ExpectedStudioOperation(family));
             call.ResourceOwnerId.Should().Be(Alice);
@@ -152,10 +154,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             {
                 failure.Which.PolicyCode.Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
                 authorization.Calls.Should().ContainSingle();
-                authorization.Calls.Single().Operation.Should().Be(
-                    family == DraftToolFamily.PublicationProposal
-                        ? StudioAuthorizationOperation.ReadContentItem
-                        : ExpectedStudioOperation(family));
+                authorization.Calls.Single().Operation.Should().Be(ExpectedStudioOperation(family));
 
                 var error = McpToolHelpers.ErrorResult(failure.Which).StructuredContent!.Value;
                 error.GetProperty("code").GetString().Should().Be(McpErrorMapper.Codes.PermissionDenied);
@@ -185,11 +184,21 @@ public sealed class StudioMcpOwnershipAuthorizationTests
                 Arg.Any<CancellationToken>());
         }
 
-        if (callerKind == CallerKind.DelegatedOperator)
+        if (callerKind == CallerKind.DelegatedOperator
+            && family != DraftToolFamily.PublicationProposal)
         {
             await evaluator.DidNotReceive().EvaluateAsync(
                 Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<OperatorAuthorizationRequest>(),
+                Arg.Any<CancellationToken>());
+        }
+        else if (callerKind == CallerKind.DelegatedOperator)
+        {
+            await evaluator.Received(1).EvaluateAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Is<OperatorAuthorizationRequest>(request =>
+                    request.ResourceId == ItemId.ToString("D")
+                    && request.Operation == OperatorOperation.Publish),
                 Arg.Any<CancellationToken>());
         }
     }
