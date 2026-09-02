@@ -366,6 +366,12 @@ public sealed class StudioAiProxyServiceTests
             "honua_propose_finding",
             """{"findingId":"runtime-divergence","candidateId":"candidate-other"}""");
 
+    [UnitTest]
+    public Task StreamChatAsync_MultiTargetConvergence_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync(
+            "honua_propose_platform_release_convergence",
+            """{}""");
+
     private static async Task AssertGovernedTargetBindingFailsAsync(
         string toolName,
         string argumentJson = """{"targetId":"candidate-other"}""")

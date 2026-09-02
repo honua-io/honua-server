@@ -158,6 +158,15 @@ internal sealed class StudioAiTranscriptSigner(
                 throw new InvalidOperationException("Tool call stop event does not match a tool call start event.");
             }
 
+            if (string.Equals(
+                    toolName,
+                    "honua_propose_platform_release_convergence",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Multi-target release convergence is not eligible for candidate-certified transcripts.");
+            }
+
             var targetProperty = toolName switch
             {
                 "honua_propose_deploy_operation" => "targetId",
