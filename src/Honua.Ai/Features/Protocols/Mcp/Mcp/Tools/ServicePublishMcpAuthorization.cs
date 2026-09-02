@@ -36,28 +36,25 @@ internal static class ServicePublishMcpAuthorization
                 message: "Caller is not authorized to invoke admin operations.");
         }
 
-        if (ApprovalModel == OperationApprovalModel.OperatorGate)
-        {
-            var gate = httpContext.RequestServices.GetService<OperatorApprovalGate>()
-                ?? throw new InvalidOperationException(
-                    "The operator approval gate is unavailable in this composition.");
-            var approval = gate.CheckApproval(
-                principal,
-                new OperatorAuthorizationRequest
-                {
-                    ResourceType = OperatorResourceType.Catalog,
-                    Operation = OperatorOperation.Publish,
-                });
-            if (approval.IsRequired)
+        var gate = httpContext.RequestServices.GetService<OperatorApprovalGate>()
+            ?? throw new InvalidOperationException(
+                "The operator approval gate is unavailable in this composition.");
+        var approval = gate.CheckApproval(
+            principal,
+            new OperatorAuthorizationRequest
             {
-                if (string.IsNullOrWhiteSpace(approval.PolicyRef))
-                {
-                    throw new InvalidOperationException(
-                        "The operator approval evaluator required approval without a policy reference.");
-                }
-
-                throw new GeoprocessingApprovalRequiredException(approval.PolicyRef);
+                ResourceType = OperatorResourceType.Catalog,
+                Operation = OperatorOperation.Publish,
+            });
+        if (approval.IsRequired)
+        {
+            if (string.IsNullOrWhiteSpace(approval.PolicyRef))
+            {
+                throw new InvalidOperationException(
+                    "The operator approval evaluator required approval without a policy reference.");
             }
+
+            throw new GeoprocessingApprovalRequiredException(approval.PolicyRef);
         }
 
         return authorization.AuthorizationOutcome;
