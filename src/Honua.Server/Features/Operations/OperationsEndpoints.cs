@@ -158,11 +158,12 @@ internal static class OperationsEndpoints
             return NotFound(context, $"Operation '{id}' was not found.");
         }
 
-        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+        var authorization = await OperationAdminAuthorization.EvaluateAsync(
                 context,
                 context.User,
                 descriptor.Policy.SideEffectClass,
-                cancellationToken).ConfigureAwait(false))
+                cancellationToken).ConfigureAwait(false);
+        if (!authorization.IsAuthorized)
         {
             return Results.Forbid();
         }
@@ -192,7 +193,7 @@ internal static class OperationsEndpoints
                 PrincipalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId,
                 TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
                 SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
-                AuthorizationOutcome = "authorized",
+                AuthorizationOutcome = authorization.AuthorizationOutcome,
                 Roles = context.User.FindAll(ClaimTypes.Role)
                     .Select(claim => claim.Value)
                     .ToArray(),
