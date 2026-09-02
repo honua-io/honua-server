@@ -617,6 +617,23 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         // this test owns a dedicated database, that schema is fully private — no advisory lock or
         // cross-collection serialization is required to keep the mutation off the deadlock path.
         await using var connection = await OpenSchemaConnectionAsync();
+        await using (var metadataPointers = connection.CreateCommand())
+        {
+            metadataPointers.CommandText = """
+                INSERT INTO honua.metadata_v2_snapshots
+                    (environment, revision, schema_version, api_version, document, etag, generated_at)
+                VALUES
+                    ('default', 42, '2.0.0-alpha.1', 'metadata.honua.io/v2alpha1', '{}'::jsonb, 'default-etag', now()),
+                    ('unrelated', 42, '2.0.0-alpha.1', 'metadata.honua.io/v2alpha1', '{}'::jsonb, 'unrelated-etag', now());
+
+                INSERT INTO honua.metadata_v2_current (environment, revision, etag)
+                VALUES
+                    ('default', 42, 'default-etag'),
+                    ('unrelated', 42, 'unrelated-etag');
+                """;
+            await metadataPointers.ExecuteNonQueryAsync();
+        }
+
         await ExecuteSeedFileAsync(connection, baselineSeedPath);
         await ExecuteSeedFileAsync(connection, conflictSeedPath);
 
@@ -629,6 +646,19 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             """;
         var featureCount = (long)(await countCmd.ExecuteScalarAsync())!;
         featureCount.Should().Be(5, "mobile offline baseline should seed the deterministic edit and context records");
+
+        await using var metadataPointerCmd = connection.CreateCommand();
+        metadataPointerCmd.CommandText = """
+            SELECT environment
+            FROM honua.metadata_v2_current
+            ORDER BY environment
+            """;
+        await using (var metadataPointerReader = await metadataPointerCmd.ExecuteReaderAsync())
+        {
+            (await metadataPointerReader.ReadAsync()).Should().BeTrue();
+            metadataPointerReader.GetString(0).Should().Be("unrelated");
+            (await metadataPointerReader.ReadAsync()).Should().BeFalse();
+        }
 
         await using var conflictCmd = connection.CreateCommand();
         conflictCmd.CommandText = """
@@ -664,16 +694,17 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         await using var storageCmd = connection.CreateCommand();
         storageCmd.CommandText = """
             SELECT COUNT(*)
-            FROM honua.layers
-            WHERE layer_id IN (68910, 68920)
-              AND table_schema = current_schema()
-              AND table_name = 'features'
-              AND primary_key_column = 'objectid'
-              AND geometry_column = 'geometry'
-              AND storage_srid = 4326
+            FROM honua.layers l
+            JOIN pg_namespace n ON n.nspname = l.table_schema
+            JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = l.table_name
+            WHERE l.layer_id IN (68910, 68920)
+              AND l.table_name = 'features'
+              AND l.primary_key_column = 'objectid'
+              AND l.geometry_column = 'geometry'
+              AND l.storage_srid = 4326
             """;
         var storageBindingCount = (long)(await storageCmd.ExecuteScalarAsync())!;
-        storageBindingCount.Should().Be(2, "fixture layers should declare provider-ready storage bindings that resolve features to the active schema");
+        storageBindingCount.Should().Be(2, "fixture layers should declare provider-ready storage bindings that resolve the physical features table");
     }
 
     [Fact]

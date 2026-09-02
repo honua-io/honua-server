@@ -29,6 +29,11 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required." >&2
+  exit 1
+fi
+
 export COMPOSE_PROJECT_NAME="${HONUA_MOBILE_OFFLINE_DEMO_PROJECT:-honua-mobile-offline-demo}"
 export HONUA_HTTP_PORT="${HONUA_MOBILE_OFFLINE_DEMO_HTTP_PORT:-18081}"
 export HONUA_GRPC_PORT="${HONUA_MOBILE_OFFLINE_DEMO_GRPC_PORT:-18082}"
@@ -84,7 +89,7 @@ restart_honua() {
 smoke_fixture() {
   curl -fsS "${SERVICE_URL}" >/dev/null
   curl -fsS "${LAYER_URL}" >/dev/null
-  curl -fsS "${QUERY_URL}" >/dev/null
+  curl -fsS "${QUERY_URL}" | jq -e '.features | length > 0' >/dev/null
 }
 
 echo "Starting isolated mobile offline demo stack (${COMPOSE_PROJECT_NAME}) on ${BASE_URL}."

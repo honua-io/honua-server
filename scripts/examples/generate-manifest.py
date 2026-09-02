@@ -20,9 +20,9 @@ CUSTOMER_PATHS = {
     "scripts/demos/run-mobile-offline-demo.sh": "mobile-offline",
     "scripts/demos/run-stac-ops-demo.sh": "stac-ops",
 }
-CANDIDATE_IMAGE = "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72"
-CANDIDATE_SOURCE_REVISION = "ac30266fbd153363bebdbed13130accc8ab0c94a"
-EVIDENCE_RECORDED_AT = "2026-09-01T15:14:00Z"
+CANDIDATE_IMAGE = "ghcr.io/honua-io/honua-server@sha256:23db1ca7bf7e7d03ddddbe58831d492a5ad44cf44c6a28eea696df4bc1f7761e"
+CANDIDATE_SOURCE_REVISION = "de08538a9e6fb59b8bd046343d24ea06f178a455"
+EVIDENCE_RECORDED_AT = "2026-09-01T23:15:12Z"
 QUICKSTART_PASSED_BLOCKS = {
     2: "b7dcc487442e5bb18398ef9fd8fadd9fa9d3a430aec1df890251059be3f5f76a",
     3: "063c2dd6d7247f175aa58232a57c5d2908f8dd56b4628a2427204e0a5dcf9c1b",
@@ -78,12 +78,11 @@ def entry(kind: str, path: str, suffix: str = "", **extra: object) -> dict[str, 
         }
     elif path == "scripts/demos/run-mobile-offline-demo.sh":
         validation = {
-            "status": "blocked",
-            "reason": "Candidate returned an empty feature collection for seeded layer 68910.",
+            "status": "passed",
+            "reason": "Seeded service and layer metadata loaded, and layer 68910 returned three features.",
             "runner": "scripts/examples/validate-customer-paths.sh",
             "scenario": "mobile-offline",
             "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh mobile-offline",
-            "blockedBy": ["https://github.com/honua-io/honua-server/issues/3836"],
         }
     elif path == "scripts/demos/run-stac-ops-demo.sh":
         validation = {
