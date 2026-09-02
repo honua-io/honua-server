@@ -271,7 +271,10 @@ public static class CapabilityKeyCatalog
         .. RoutedExperimentalKeys,
         .. RoutedPreviewKeys,
         .. DescriptiveKeys,
-        .. FeatureCatalog.All.Select(static feature => new CapabilityKeyDefinition(
+        .. FeatureCatalog.All
+            .Where(static feature => !RoutedPreviewKeys.Any(
+                preview => string.Equals(preview.Key, feature.Key, StringComparison.Ordinal)))
+            .Select(static feature => new CapabilityKeyDefinition(
             feature.Key,
             feature.DisplayName,
             feature.Category,

@@ -402,7 +402,10 @@ internal sealed class CapabilityManifestService(
             Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
             Capability("admin.multi-tenancy", "control-plane", context,
                 maturity: CapabilityMaturity.Preview,
-                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("admin.multi-tenancy")),
+                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("admin.multi-tenancy")
+                    && options.TenantSchemaRoutingEnabled,
+                entitlementKey: FeatureCatalog.MultiTenancyKey,
+                requiresAuthentication: true),
             Capability("realtime.feature-streams", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("realtime.feature-streams"),
@@ -565,6 +568,12 @@ internal sealed class CapabilityManifestService(
                 EntitlementKey = FeatureCatalog.FieldOpsOfflineSyncKey,
                 PolicyCapability = "features.edit",
                 RequiresWorkspace = true,
+            },
+            ["admin.multi-tenancy"] = new()
+            {
+                Configured = options.TenantSchemaRoutingEnabled,
+                EntitlementKey = FeatureCatalog.MultiTenancyKey,
+                RequiresAuthentication = true,
             },
             ["realtime.feature-streams"] = new() { EntitlementKey = "streaming.feature-subscriptions" },
             ["alerts.geofence"] = new() { EntitlementKey = "alerts.enter-exit", Configured = alertsConfigured },
