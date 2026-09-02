@@ -22,6 +22,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
 using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Authorization;
@@ -32,6 +33,7 @@ using Microsoft.Extensions.Options;
 using NSubstitute;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -39,7 +41,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// Unit coverage for the server-side MCP platform-ops adapter (#2566).
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
-public sealed class McpPlatformOpsReaderTests
+[Collection("Redis")]
+public sealed class McpPlatformOpsReaderTests(RedisFixture redis)
 {
     [Theory]
     [InlineData(ProposeDeployOperationTool.ToolName, OperationClass.Deploy)]
@@ -91,22 +94,11 @@ public sealed class McpPlatformOpsReaderTests
             Convert.FromBase64String(transcript.RootElement.GetProperty("providerEvents").GetString()!),
             StudioAiProxyJsonContext.Default.ListStudioAiChatEvent)!;
         var verifiedCall = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStop);
-        verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStart).ToolName.Should().Be(toolName);
+        var verifiedToolName = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStart).ToolName;
 
-        OperationProposal? persisted = null;
-        var proposalStore = Substitute.For<IOperationProposalStore>();
-        proposalStore.TryCreateAsync(
-                Arg.Do<OperationProposal>(proposal => persisted = proposal),
-                Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(true);
-        proposalStore.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => persisted);
-        proposalStore.TrySetAsync(
-                Arg.Do<OperationProposal>(proposal => persisted = proposal),
-                Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(true);
-        proposalStore.ListActiveAsync(Arg.Any<OperationClass?>(), Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<OperationProposal>());
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var proposalStore = new RedisOperationProposalStore(
+            multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
         var ladder = Substitute.For<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>();
         var decision = new GuardrailDecision(GuardrailTier.RequiresApproval, operationClass, HonuaEdition.Enterprise, "model-proposal");
         ladder.Resolve(operationClass).Returns(decision);
@@ -120,15 +112,20 @@ public sealed class McpPlatformOpsReaderTests
         var reader = CreateReader(services: readerServices);
         using var toolServices = new ServiceCollection().AddSingleton<IMcpPlatformOpsReader>(reader).BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = toolServices, User = CreatePrincipal() };
-        IMcpTool tool = toolName == ProposeDeployOperationTool.ToolName
-            ? new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance)
-            : new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance);
+        IMcpTool tool = verifiedToolName switch
+        {
+            ProposeDeployOperationTool.ToolName => new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            ProposeMetadataReleaseTool.ToolName => new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
+            _ => throw new InvalidOperationException($"Verified tool '{verifiedToolName}' is not a governed proposal tool.")
+        };
 
         var result = await tool.InvokeAsync(context, verifiedCall.ToolArguments, CancellationToken.None);
 
         result.IsError.Should().BeFalse();
         result.StructuredContent!.Value.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
-        persisted.Should().NotBeNull();
+        var proposalId = result.StructuredContent.Value.GetProperty("proposalId").GetString();
+        var persisted = await proposalStore.GetAsync(proposalId!);
+        persisted.Should().NotBeNull("the real Redis store must round-trip the sealed proposal");
         persisted!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
         persisted.Kind.Should().Be(operationClass);
         persisted.Plan.ExecutionPayload.Should().Contain("candidate-a");
