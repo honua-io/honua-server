@@ -2,9 +2,11 @@
 
 `manifest.json` inventories every Markdown fence in the repository documentation,
 every asset under `samples/`, every asset in a documentation `examples/` directory,
-and the quickstart-adjacent demo/sample scripts. Each entry has a candidate-bound
-verdict: `passed` is observed execution, `blocked` requires an issue link, and
-`not-executable` identifies supporting material without making a green claim.
+and the quickstart-adjacent demo/sample scripts. Each `passed` or `blocked` entry
+has its own immutable candidate evidence, so retained verdicts remain attributed
+to the image they actually exercised. `passed` is observed execution, `blocked`
+requires an issue link, and `not-executable` identifies supporting material
+without making a green claim.
 
 Regenerate and verify the inventory with:
 

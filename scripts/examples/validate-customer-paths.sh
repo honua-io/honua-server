@@ -21,7 +21,6 @@ run_stac_ops() {
     bash "${ROOT_DIR}/scripts/demos/run-stac-ops-demo.sh" baseline
   curl -fsS http://127.0.0.1:18080/stac | jq -e '.links | length > 0' >/dev/null
   curl -fsS http://127.0.0.1:18080/stac/collections | jq -e '.collections | length == 2' >/dev/null
-  curl -fsS http://127.0.0.1:18080/samples/stac-ops/ | grep -q '<!DOCTYPE html>'
 }
 
 run_mobile_offline() {

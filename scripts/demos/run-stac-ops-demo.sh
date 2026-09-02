@@ -111,7 +111,11 @@ cat <<EOF
 STAC ops demo is ready.
 
 Scenario: ${SCENARIO}
-Sample URL: ${SAMPLE_URL}
+STAC landing page: ${BASE_URL}/stac
+STAC collections: ${BASE_URL}/stac/collections
+
+The hosted dashboard at ${SAMPLE_URL} is an optional development image surface and is
+not part of the release-image sample contract.
 
 Expected signals:
 - baseline: one healthy collection, one warning collection, passing search/paging probes.
