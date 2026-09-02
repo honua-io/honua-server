@@ -47,20 +47,24 @@ internal sealed partial class AlertDispatchWriter
     /// Appends each pending alert event and enqueues its channel dispatch. Events that the event store
     /// reports as duplicates are logged and skipped without enqueuing a dispatch.
     /// </summary>
+    /// <param name="states">Evaluator state to commit atomically with the events.</param>
     /// <param name="pendingDispatches">The pending dispatches to persist, in evaluation order.</param>
     /// <param name="cancellationToken">A token to observe while awaiting the persistence operations.</param>
     public async Task PersistAsync(
+        IReadOnlyCollection<AlertStateSnapshot> states,
         IReadOnlyList<PendingAlertDispatch> pendingDispatches,
         CancellationToken cancellationToken)
     {
-        foreach (var pendingDispatch in pendingDispatches)
+        var entries = pendingDispatches
+            .Select(static pending => new AlertOutboxEntry(pending.AlertEvent, pending.Channels))
+            .ToArray();
+
+        var inserted = await _outboxWriter.CommitEvaluationAsync(states, entries, cancellationToken).ConfigureAwait(false);
+
+        for (var index = 0; index < pendingDispatches.Count; index++)
         {
-            // Atomic: the event append and its dispatch enqueue commit together (or not at all),
-            // so a crash can never leave a persisted event with no delivery enqueued.
-            var eventId = await _outboxWriter
-                .AppendAndEnqueueAsync(pendingDispatch.AlertEvent, pendingDispatch.Channels, cancellationToken)
-                .ConfigureAwait(false);
-            if (!eventId.HasValue)
+            var pendingDispatch = pendingDispatches[index];
+            if (!inserted[index])
             {
                 LogEventDeduplicated(
                     _logger,

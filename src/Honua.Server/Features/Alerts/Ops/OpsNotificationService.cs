@@ -71,7 +71,7 @@ internal sealed partial class OpsNotificationService
         var channels = ResolveChannels(ops.Channels, notification.Source, DateTimeOffset.UtcNow);
         var envelope = BuildEnvelope(notification);
         await _dispatchWriter
-            .PersistAsync([new PendingAlertDispatch(envelope, channels)], cancellationToken)
+            .PersistAsync([], [new PendingAlertDispatch(envelope, channels)], cancellationToken)
             .ConfigureAwait(false);
 
         if (channels.IsDefaultOrEmpty)

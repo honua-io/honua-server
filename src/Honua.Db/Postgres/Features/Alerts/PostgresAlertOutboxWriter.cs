@@ -7,6 +7,7 @@ using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Alerts;
 
@@ -20,11 +21,32 @@ namespace Honua.Db.Postgres.Features.Alerts;
 /// </summary>
 internal sealed class PostgresAlertOutboxWriter : IAlertOutboxWriter
 {
-    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private const string UpsertStateSql = """
+        INSERT INTO honua.alert_state (
+            rule_id, layer_id, objectid, inside, entered_at, last_evaluated_at,
+            last_alert_at, last_generation, threshold_state)
+        VALUES (
+            @rule_id, @layer_id, @objectid, @inside, @entered_at, now(),
+            @last_alert_at, @last_generation, @threshold_state::jsonb)
+        ON CONFLICT (rule_id, layer_id, objectid)
+        DO UPDATE SET
+            inside = EXCLUDED.inside,
+            entered_at = EXCLUDED.entered_at,
+            last_evaluated_at = now(),
+            last_alert_at = EXCLUDED.last_alert_at,
+            last_generation = EXCLUDED.last_generation,
+            threshold_state = EXCLUDED.threshold_state
+        """;
 
-    public PostgresAlertOutboxWriter(IAdoNetDatabaseConnectionProvider connectionProvider)
+    private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly Action<AlertEvaluationCommitBoundary>? _faultInjector;
+
+    public PostgresAlertOutboxWriter(
+        IAdoNetDatabaseConnectionProvider connectionProvider,
+        Action<AlertEvaluationCommitBoundary>? faultInjector = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
+        _faultInjector = faultInjector;
     }
 
     public async Task<long?> AppendAndEnqueueAsync(
@@ -64,4 +86,75 @@ internal sealed class PostgresAlertOutboxWriter : IAlertOutboxWriter
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return eventId;
     }
+
+    public async Task<ImmutableArray<bool>> CommitEvaluationAsync(
+        IReadOnlyCollection<AlertStateSnapshot> states,
+        IReadOnlyList<AlertOutboxEntry> dispatches,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(states);
+        ArgumentNullException.ThrowIfNull(dispatches);
+
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        NpgsqlConnection connection = lease;
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var inserted = ImmutableArray.CreateBuilder<bool>(dispatches.Count);
+
+        foreach (var state in states)
+        {
+            await using var stateCommand = new NpgsqlCommand(UpsertStateSql, connection, transaction);
+            stateCommand.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, state.RuleId);
+            stateCommand.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, state.LayerId);
+            stateCommand.Parameters.AddWithValue("objectid", NpgsqlDbType.Bigint, state.ObjectId);
+            stateCommand.Parameters.AddWithValue("inside", NpgsqlDbType.Boolean, state.Inside);
+            stateCommand.Parameters.AddWithValue("entered_at", NpgsqlDbType.TimestampTz, (object?)state.EnteredAt ?? DBNull.Value);
+            stateCommand.Parameters.AddWithValue("last_alert_at", NpgsqlDbType.TimestampTz, (object?)state.LastAlertAt ?? DBNull.Value);
+            stateCommand.Parameters.AddWithValue("last_generation", NpgsqlDbType.Bigint, state.LastGeneration);
+            stateCommand.Parameters.AddWithValue("threshold_state", NpgsqlDbType.Text, state.ThresholdStateJson);
+            _ = await stateCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        _faultInjector?.Invoke(AlertEvaluationCommitBoundary.StateWritten);
+
+        foreach (var dispatch in dispatches)
+        {
+            long? eventId;
+            await using (var appendCommand = new NpgsqlCommand(AlertOutboxCommands.AppendEventSql, connection, transaction))
+            {
+                AlertOutboxCommands.BindAppendEvent(appendCommand, dispatch.AlertEvent);
+                eventId = await appendCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as long?;
+            }
+
+            if (!eventId.HasValue)
+            {
+                inserted.Add(false);
+                continue;
+            }
+
+            inserted.Add(true);
+            _faultInjector?.Invoke(AlertEvaluationCommitBoundary.EventWritten);
+
+            var channelTypes = AlertOutboxCommands.ChannelDbValues(dispatch.Channels);
+            if (channelTypes.Length == 0)
+            {
+                continue;
+            }
+
+            await using var enqueueCommand = new NpgsqlCommand(AlertOutboxCommands.EnqueueDispatchSql, connection, transaction);
+            AlertOutboxCommands.BindEnqueue(enqueueCommand, eventId.Value, channelTypes);
+            _ = await enqueueCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            _faultInjector?.Invoke(AlertEvaluationCommitBoundary.DispatchWritten);
+        }
+
+        _faultInjector?.Invoke(AlertEvaluationCommitBoundary.BeforeCommit);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
+        return inserted.MoveToImmutable();
+    }
+}
+
+internal enum AlertEvaluationCommitBoundary
+{
+    StateWritten,
+    EventWritten,
+    DispatchWritten,
+    BeforeCommit
 }

@@ -641,6 +641,16 @@ public sealed class OperationGatewayAutonomyTests
     {
         public List<AlertEventEnvelope> Events { get; } = [];
 
+        public Task<System.Collections.Immutable.ImmutableArray<bool>> CommitEvaluationAsync(
+            IReadOnlyCollection<AlertStateSnapshot> states,
+            IReadOnlyList<AlertOutboxEntry> dispatches,
+            CancellationToken cancellationToken = default)
+        {
+            Events.AddRange(dispatches.Select(static dispatch => dispatch.AlertEvent));
+            return Task.FromResult(System.Collections.Immutable.ImmutableArray.CreateRange(
+                Enumerable.Repeat(true, dispatches.Count)));
+        }
+
         public Task<long?> AppendAndEnqueueAsync(
             AlertEventEnvelope alertEvent,
             System.Collections.Immutable.ImmutableArray<AlertChannelType> channels,
