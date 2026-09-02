@@ -60,7 +60,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         string[]? entitlements = null,
         HonuaEdition edition = HonuaEdition.Pro,
         bool manifestFromRegistry = false,
-        bool experimentalGlobalEnabled = true)
+        bool experimentalGlobalEnabled = true,
+        bool tenantSchemaRoutingEnabled = false)
         => new WebAppFixture()
             .WithTestLicense(edition, entitlements: entitlements)
             .ConfigureServices(services =>
@@ -90,6 +91,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                         ["Grpc:StreamBatchSize"] = "42",
                         ["Capabilities:ManifestFromRegistry"] = manifestFromRegistry ? "true" : "false",
                         ["Capabilities:Experimental:Enabled"] = experimentalGlobalEnabled ? "true" : "false",
+                        ["MultiTenancy:SchemaRouting:Enabled"] = tenantSchemaRoutingEnabled ? "true" : "false",
                     });
                 });
             });
@@ -116,6 +118,67 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();
                 capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
             }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_MultiTenancy_ReflectsRuntimeLicenseAndAuthentication()
+    {
+        foreach (var fromRegistry in new[] { false, true })
+        {
+            var fixture = CreateManifestFixture(
+                edition: HonuaEdition.Enterprise,
+                manifestFromRegistry: fromRegistry,
+                tenantSchemaRoutingEnabled: true);
+            await fixture.InitializeAsync();
+
+            try
+            {
+                using var anonymousClient = fixture.CreateClient();
+                using var anonymousResponse = await anonymousClient.GetAsync("/api/v1/capabilities/manifest");
+                using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
+                var anonymousCapability = GetCapability(anonymousDocument.RootElement, "admin.multi-tenancy");
+                anonymousCapability.GetProperty("available").GetBoolean().Should().BeFalse();
+                anonymousCapability.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
+                anonymousCapability.GetProperty("entitlementKey").GetString().Should().Be(FeatureCatalog.MultiTenancyKey);
+                anonymousCapability.GetProperty("minimumEdition").GetString().Should().Be("Enterprise");
+
+                using var adminClient = fixture.CreateAdminClient();
+                using var adminResponse = await adminClient.GetAsync("/api/v1/capabilities/manifest");
+                using var adminDocument = await ReadDocumentAsync(adminResponse);
+                GetCapability(adminDocument.RootElement, "admin.multi-tenancy")
+                    .GetProperty("available").GetBoolean().Should().BeTrue();
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_MultiTenancyWithoutSchemaRouting_IsDisabledByConfiguration()
+    {
+        var fixture = CreateManifestFixture(
+            edition: HonuaEdition.Enterprise,
+            manifestFromRegistry: true,
+            tenantSchemaRoutingEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            using var document = await ReadDocumentAsync(response);
+            var capability = GetCapability(document.RootElement, "admin.multi-tenancy");
+            capability.GetProperty("available").GetBoolean().Should().BeFalse();
+            capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
         }
         finally
         {

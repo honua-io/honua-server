@@ -10,6 +10,7 @@ using Honua.Import.FileImport;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
 using Honua.Infrastructure.Events;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Capabilities.Models;
 using Honua.Server.Features.Protocols.Grpc;
@@ -40,6 +41,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         IOptions<RbacOptions> rbacOptions,
         IOptions<CapabilityFlagOptions> capabilityFlagOptions,
         IOptions<CapabilityManifestFeatureOptions> manifestFeatureOptions,
+        IOptions<TenantSchemaOptions> tenantSchemaOptions,
         DeploymentCapabilityProfile deploymentProfile,
         DeploymentIdentity deploymentIdentity,
         IOptions<DurableJobSubstrateOptions>? durableJobSubstrateOptions = null,
@@ -58,6 +60,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         ArgumentNullException.ThrowIfNull(rbacOptions);
         ArgumentNullException.ThrowIfNull(capabilityFlagOptions);
         ArgumentNullException.ThrowIfNull(manifestFeatureOptions);
+        ArgumentNullException.ThrowIfNull(tenantSchemaOptions);
         ArgumentNullException.ThrowIfNull(deploymentProfile);
         ArgumentNullException.ThrowIfNull(deploymentIdentity);
 
@@ -73,6 +76,7 @@ internal sealed class CapabilityManifestOptionsSnapshot
         Rbac = rbacOptions.Value;
         ExperimentalCapabilityFlags = capabilityFlagOptions.Value;
         ManifestFromRegistry = manifestFeatureOptions.Value.FromRegistry;
+        TenantSchemaRoutingEnabled = tenantSchemaOptions.Value.Enabled;
         DurableJobSubstrateCause = (durableJobSubstrateOptions?.Value ?? new DurableJobSubstrateOptions())
             .Classify(executionJobStore is not null, jobQueue is not null);
         DurableJobRuntimeAvailable =
@@ -120,6 +124,9 @@ internal sealed class CapabilityManifestOptionsSnapshot
     /// <c>Capabilities:ManifestFromRegistry</c> switch is turned on.
     /// </summary>
     public bool ManifestFromRegistry { get; }
+
+    /// <summary>Whether schema-per-tenant data routing is active for this deployment.</summary>
+    public bool TenantSchemaRoutingEnabled { get; }
 
     /// <summary>
     /// Whether the COMPLETE durable job substrate was composed at startup (honua-release#202):

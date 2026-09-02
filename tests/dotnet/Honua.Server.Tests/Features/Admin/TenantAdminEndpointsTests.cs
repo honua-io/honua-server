@@ -5,9 +5,11 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -30,6 +32,7 @@ public sealed class TenantAdminEndpointsTests : IAsyncLifetime
     {
         _fixture = new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
+            .WithTestLicense(HonuaEdition.Enterprise)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -125,5 +128,33 @@ public sealed class TenantAdminEndpointsTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
         doc.RootElement.GetProperty("data").GetProperty("records").ValueKind.Should().Be(JsonValueKind.Array);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/tenants")]
+    public async Task ListTenants_WithProLicense_ReturnsPaymentRequired()
+    {
+        var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateClient(
+                options => options.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            using var response = await client.GetAsync("/api/v1/admin/tenants");
+
+            response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 }
