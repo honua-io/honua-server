@@ -6,6 +6,8 @@
 -- their tables were created in honua; move the complete legacy families without
 -- copying data or changing object identity. Partial or duplicate families fail the
 -- transaction closed for operator reconciliation.
+-- honua:migration-phase contract
+-- honua:compatibility-review reason=#3899 requires old nodes drained before guarded tables move schemas
 
 CREATE SCHEMA IF NOT EXISTS $HonuaSchema$;
 

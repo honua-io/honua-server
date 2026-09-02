@@ -419,7 +419,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
 
         var verify = () => guard.VerifyAsync(_connectionString);
         var exception = await verify.Should().ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
-        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterExternalStorageMigration);
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterTablesMigration);
         exception.Which.FailureKind.Should().Be(
             Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
         exception.Which.Message.Should().Contain("required raster table(s) are absent");

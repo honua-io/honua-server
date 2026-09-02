@@ -227,6 +227,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         if (state.RequiresRasterFloor)
         {
+            VerifyRequiredRasterTablesMigration(state);
             VerifyRequiredMigration(
                 state,
                 RasterLayerStatisticsMigration,
@@ -425,6 +426,29 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 RasterExternalStorageMigration,
                 DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
                 $"journal claims the migration is applied, but EXTERNAL storage is absent for {string.Join(", ", missingEffects)}.");
+        }
+    }
+
+    private static void VerifyRequiredRasterTablesMigration(SchemaState state)
+    {
+        if (!state.IsApplied(RasterTablesMigration))
+        {
+            var kind = state.HasAnyRasterStorageTarget
+                ? DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
+                : DatabaseSchemaFloorFailureKind.MigrationNotApplied;
+            throw CreateFailure(
+                RasterTablesMigration,
+                kind,
+                "the raster provider baseline migration is not recorded in public.schema_versions.");
+        }
+
+        var missingTables = state.MissingRasterStorageTables();
+        if (missingTables.Count > 0)
+        {
+            throw CreateFailure(
+                RasterTablesMigration,
+                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                $"journal claims the provider baseline is applied, but required raster table(s) are absent: {string.Join(", ", missingTables)}.");
         }
     }
 

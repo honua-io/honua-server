@@ -55,6 +55,10 @@ For deployments using a non-default `Database:Schema`, migration 109 moves a
 complete legacy Metadata v2, SensorThings, or raster family out of `honua` into
 the configured schema. It aborts transactionally on partial or coexisting
 families so operators can reconcile ambiguous state without an automatic merge.
+Because older nodes still query the legacy schema, this move is a contract-phase
+migration: drain older nodes, review the deploy preflight, and provide the
+one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce reported by the migration gate
+before applying it.
 
 The preflight result is available via `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true` in the `databaseCompatibility` field.
 

@@ -4,8 +4,10 @@
 using System.Data;
 using System.Data.Common;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Metadata;
@@ -247,17 +249,41 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         plan.Successful.Should().BeTrue(
             $"the one forward adoption migration must be reachable before the configured-schema floor is enforced. Error: {plan.ErrorMessage}");
         plan.PendingScripts.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+        plan.HasContractScripts.Should().BeTrue("moving guarded tables is a contract-phase operation");
+        plan.ContractScriptNames.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
 
-        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        var beforeBlockedRun = await CaptureStateAsync(connectionString);
+        var blockedResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        blockedResult.Successful.Should().BeFalse(
+            "schema adoption must not run while older nodes may still target the legacy schema");
+        blockedResult.ErrorMessage.Should().Contain(MigrationSafetyOptions.ApproveContractMigrationsKey);
+        (await CaptureStateAsync(connectionString)).Should().Be(beforeBlockedRun,
+            "the upgrade gate must block before moving tables or advancing either migration root");
+
+        var approvalNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(
+            [PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration]);
+        var approvedConfiguration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Database:Schema"] = schema,
+                [MigrationSafetyOptions.ApproveContractMigrationsKey] = approvalNonce,
+            })
+            .Build();
+        var approvedGuard = new PostgresCoreSchemaGuard(approvedConfiguration);
+        var approvedRunner = new PostgresDatabaseMigrationRunner(
+            approvedGuard,
+            configuration: approvedConfiguration);
+
+        var result = await approvedRunner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
 
         result.Successful.Should().BeTrue(
             $"the journaled forward migration must adopt complete legacy families. Error: {result.ErrorMessage}");
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
-        await guard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
+        await approvedGuard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
 
         var observationStore = new PostgresObservationStore(
             new TestConnectionProvider(connectionString),
-            guard,
+            approvedGuard,
             schema);
         (await observationStore.ListThingsAsync(0, 10, CancellationToken.None))
             .Should().ContainSingle(thing => thing.Id == 1,
@@ -297,6 +323,33 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         reader.GetInt32(0).Should().Be(5);
         reader.GetInt32(1).Should().Be(0);
         reader.GetBoolean(2).Should().BeTrue();
+    }
+
+    [SkippableFact]
+    public async Task Guard_WhenRasterBaselineJournalEntryIsMissing_FullVerificationFailsWithoutMutation()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var guard = new PostgresCoreSchemaGuard();
+        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var migrationResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        migrationResult.Successful.Should().BeTrue(
+            $"the test requires a canonical journal/schema baseline. Error: {migrationResult.ErrorMessage}");
+
+        await ExecuteAsync(connectionString, $"""
+            DELETE FROM public.schema_versions
+            WHERE scriptname = '{PostgresCoreSchemaGuard.RasterTablesMigration}';
+            """);
+        var before = await CaptureStateAsync(connectionString);
+
+        var act = () => guard.VerifyAsync(connectionString);
+        var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterTablesMigration);
+        exception.Which.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
+
+        (await CaptureStateAsync(connectionString)).Should().Be(before,
+            "startup/DR verification must not repair a provider baseline journal gap");
     }
 
     [SkippableFact]
@@ -349,7 +402,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
 
         var act = () => guard.VerifyAsync(connectionString);
         var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
-        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterExternalStorageMigration);
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterTablesMigration);
         exception.Which.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
         exception.Which.Detail.Should().Contain("honua.raster_data");
 
@@ -441,6 +494,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT jsonb_build_object(
+                'schema_exists', to_regnamespace(@schema) IS NOT NULL,
                 'tables', COALESCE((
                     SELECT jsonb_agg(c.relname ORDER BY c.relname)
                     FROM pg_catalog.pg_class c
