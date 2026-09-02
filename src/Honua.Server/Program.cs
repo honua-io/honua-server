@@ -1691,7 +1691,46 @@ async Task RunDatabaseMigrationsAsync()
     if (builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"))
     {
         Honua.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
-        migrationState.MarkSkipped("Migrations skipped by configuration.");
+        var schemaGuard = app.Services.GetService<IDatabaseSchemaGuard>();
+        if (schemaGuard is null)
+        {
+            migrationState.MarkSkipped("Migrations skipped by configuration; no schema guard is registered for the active provider.");
+            return;
+        }
+
+        var skippedMigrationSecretResolver =
+            app.Services.GetService<Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver>();
+        var skippedMigrationConnectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
+            builder.Configuration,
+            skippedMigrationSecretResolver,
+            app.Lifetime.ApplicationStopping);
+        if (string.IsNullOrEmpty(skippedMigrationConnectionString))
+        {
+            migrationState.MarkFailed("Migrations were skipped, but the schema guard could not run without a database connection string.");
+            if (!app.Environment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    "Database schema verification is required when HONUA_SKIP_MIGRATIONS=true, but no connection string is configured.");
+            }
+            return;
+        }
+
+        try
+        {
+            await schemaGuard.VerifyAsync(
+                skippedMigrationConnectionString,
+                app.Lifetime.ApplicationStopping);
+            migrationState.MarkSkipped("Migrations skipped by configuration; journal/schema consistency verified.");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            migrationState.MarkFailed("Database schema diverges from the migration journal.");
+            Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
+            if (!app.Environment.IsDevelopment())
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+            }
+        }
         return;
     }
 

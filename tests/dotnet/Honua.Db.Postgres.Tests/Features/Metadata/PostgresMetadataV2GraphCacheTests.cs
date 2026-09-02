@@ -37,6 +37,7 @@ public sealed class PostgresMetadataV2GraphCacheTests(PostgresFixture fixture, I
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphCacheTests));
         try
         {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var connectionProvider = new TestConnectionProvider(fixture.DataSource, schema);
             var cache = new MetadataV2GraphSnapshotCache(
                 Options.Create(new CacheOptions { MetadataGraphCacheEnabled = true, MetadataGraphTtlSeconds = 3600 }));
@@ -78,6 +79,7 @@ public sealed class PostgresMetadataV2GraphCacheTests(PostgresFixture fixture, I
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphCacheTests));
         try
         {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var connectionProvider = new TestConnectionProvider(fixture.DataSource, schema);
             var seedStore = new PostgresMetadataV2GraphStore(connectionProvider, Environment, schema);
             await seedStore.SaveAsync(BuildGraph(revision: 1, serviceCount: 60), expectedEtag: null);

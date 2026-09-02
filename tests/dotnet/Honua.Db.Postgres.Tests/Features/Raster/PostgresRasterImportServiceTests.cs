@@ -130,13 +130,12 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
-    public async Task ImportAsync_StoresRasterPayloadWithExternalToastStorage()
+    public async Task ImportAsync_WhenMigration055Applied_PreservesExternalToastStorage()
     {
         // Regression guard for #1625: the monolithic raster payload must be stored EXTERNAL
         // (out-of-line, uncompressed) so dynamic tile/terrain/statistics reads fetch only the
-        // chunks they touch instead of detoasting and decompressing the whole row. The import
-        // path flips the column storage before inserting, even on a schema created with the
-        // PostGIS default ("main") storage strategy.
+        // chunks they touch instead of detoasting and decompressing the whole row. Migration
+        // 055 owns that policy; the import path must consume it without issuing its own ALTER.
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterImportServiceTests));
         var filePath = await CreatePngRasterFileAsync();
         try
@@ -144,15 +143,17 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             await CreateRasterImportSchemaAsync(schemaName);
             await InsertLayerAsync(schemaName);
 
-            // A schema created with the PostGIS default raster storage strategy is not EXTERNAL
-            // ('e'); prove the import flips the column to EXTERNAL so reads avoid decompression.
-            (await GetRasterColumnStorageAsync(schemaName)).Should().NotBe('e');
+            (await GetRasterColumnStorageAsync(schemaName)).Should().Be(
+                'e',
+                "the test fixture applies canonical migration 055 before ordinary writes");
 
             var service = CreateService(schemaName);
             var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326));
 
             result.Success.Should().BeTrue();
-            (await GetRasterColumnStorageAsync(schemaName)).Should().Be('e');
+            (await GetRasterColumnStorageAsync(schemaName)).Should().Be(
+                'e',
+                "an ordinary import must not replace the migration-owned storage policy");
         }
         finally
         {
@@ -267,6 +268,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             );
             """;
         await command.ExecuteNonQueryAsync();
+        await CoreMigrationTestFixture.ApplyRasterExternalStorageAsync(fixture, schemaName);
     }
 
     private async Task InsertLayerAsync(string schemaName)
