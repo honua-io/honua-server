@@ -328,6 +328,18 @@ public interface IAlertDispatchStore
 public interface IAlertOutboxWriter
 {
     /// <summary>
+    /// Atomically persists evaluator state, alert events, and their dispatch rows for one
+    /// source change. A replay may observe all of this commit or none of it.
+    /// </summary>
+    /// <param name="states">Evaluator state produced by the source change.</param>
+    /// <param name="dispatches">Events and deliverable channels produced by the same change.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ImmutableArray<bool>> CommitEvaluationAsync(
+        IReadOnlyCollection<AlertStateSnapshot> states,
+        IReadOnlyList<AlertOutboxEntry> dispatches,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Appends the event (deduplicating on its dedupe key) and, when a new event row was written,
     /// enqueues one dispatch row per deliverable channel — both in the same transaction.
     /// </summary>
@@ -340,6 +352,15 @@ public interface IAlertOutboxWriter
         ImmutableArray<AlertChannelType> channels,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Describes one immutable alert event and the channels to enqueue with it.
+/// </summary>
+/// <param name="AlertEvent">Event to append.</param>
+/// <param name="Channels">Deliverable channels to enqueue.</param>
+public readonly record struct AlertOutboxEntry(
+    AlertEventEnvelope AlertEvent,
+    ImmutableArray<AlertChannelType> Channels);
 
 /// <summary>
 /// Stores and retrieves durable worker checkpoints.

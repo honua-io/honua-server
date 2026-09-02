@@ -21,20 +21,19 @@ public sealed class OpsNotificationServiceTests
     public async Task NotifyAsync_WhenEnabled_EnqueuesOpsEventToConfiguredChannel()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        outbox.AppendAndEnqueueAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>())
-            .Returns(42L);
 
         var sut = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
         // Ops event appended AND its dispatch enqueued atomically, with the ops source discriminator.
-        await outbox.Received(1).AppendAndEnqueueAsync(
-            Arg.Is<AlertEventEnvelope>(e =>
-                e.Source == AlertEventSources.Ops &&
-                e.RuleId == 0 &&
-                e.DedupeKey == "ops:deploy-workflow:op-1:Failed"),
-            Arg.Is<ImmutableArray<AlertChannelType>>(c => c.Contains(AlertChannelType.Webhook)),
+        await outbox.Received(1).CommitEvaluationAsync(
+            Arg.Is<IReadOnlyCollection<AlertStateSnapshot>>(states => states.Count == 0),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].AlertEvent.Source == AlertEventSources.Ops &&
+                entries[0].AlertEvent.RuleId == 0 &&
+                entries[0].AlertEvent.DedupeKey == "ops:deploy-workflow:op-1:Failed" &&
+                entries[0].Channels.Contains(AlertChannelType.Webhook)),
             Arg.Any<CancellationToken>());
     }
 
@@ -66,8 +65,6 @@ public sealed class OpsNotificationServiceTests
     public async Task NotifyAsync_EditionGating_DropsDisallowedChannels()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        outbox.AppendAndEnqueueAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>())
-            .Returns(7L);
 
         var sut = Create(
             outbox,
@@ -82,10 +79,11 @@ public sealed class OpsNotificationServiceTests
 
         await sut.NotifyAsync(Notification(AlertSeverity.Critical), CancellationToken.None);
 
-        await outbox.Received(1).AppendAndEnqueueAsync(
-            Arg.Any<AlertEventEnvelope>(),
-            Arg.Is<ImmutableArray<AlertChannelType>>(c =>
-                c.Contains(AlertChannelType.Webhook) && !c.Contains(AlertChannelType.Slack)),
+        await outbox.Received(1).CommitEvaluationAsync(
+            Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].Channels.Contains(AlertChannelType.Webhook) &&
+                !entries[0].Channels.Contains(AlertChannelType.Slack)),
             Arg.Any<CancellationToken>());
     }
 
@@ -93,8 +91,6 @@ public sealed class OpsNotificationServiceTests
     public async Task NotifyAsync_WhenChannelCircuitOpen_PersistsEvidenceWithoutDispatch()
     {
         var outbox = Substitute.For<IAlertOutboxWriter>();
-        outbox.AppendAndEnqueueAsync(Arg.Any<AlertEventEnvelope>(), Arg.Any<ImmutableArray<AlertChannelType>>(), Arg.Any<CancellationToken>())
-            .Returns(9L);
 
         // Threshold 1 so a single dead-letter trips the breaker for the webhook channel.
         var sut = Create(outbox, out _, out var breaker, enabled: true, channels: ["webhook"], circuitThreshold: 1);
@@ -104,9 +100,11 @@ public sealed class OpsNotificationServiceTests
 
         // The tripped channel gets no dispatch row (bounded dead-letter volume), but the ops event
         // remains durable so operators can still reconstruct what the autonomous system did.
-        await outbox.Received(1).AppendAndEnqueueAsync(
-            Arg.Is<AlertEventEnvelope>(alertEvent => alertEvent.Source == AlertEventSources.Ops),
-            Arg.Is<ImmutableArray<AlertChannelType>>(channels => channels.IsEmpty),
+        await outbox.Received(1).CommitEvaluationAsync(
+            Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].AlertEvent.Source == AlertEventSources.Ops &&
+                entries[0].Channels.IsEmpty),
             Arg.Any<CancellationToken>());
     }
 
@@ -129,6 +127,13 @@ public sealed class OpsNotificationServiceTests
         AlertSeverity minSeverity = AlertSeverity.Info,
         int circuitThreshold = 5)
     {
+        outbox.CommitEvaluationAsync(
+                Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+                Arg.Any<IReadOnlyList<AlertOutboxEntry>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => ImmutableArray.CreateRange(
+                Enumerable.Repeat(true, call.ArgAt<IReadOnlyList<AlertOutboxEntry>>(1).Count)));
+
         var writer = new AlertDispatchWriter(outbox, TestTelemetry.CreateAlertPipelineMetrics(), NullLogger<AlertDispatchWriter>.Instance);
         editionPolicy = Substitute.For<IAlertEditionPolicy>();
         editionPolicy.IsChannelAllowed(Arg.Any<AlertChannelType>()).Returns(true);

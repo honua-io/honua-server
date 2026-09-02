@@ -132,12 +132,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
                 }
             }
 
-            if (pendingStateUpdates.Count > 0)
-            {
-                await _stateStore.UpsertManyAsync(pendingStateUpdates, cancellationToken).ConfigureAwait(false);
-            }
-
-            await _dispatchWriter.PersistAsync(pendingDispatches, cancellationToken).ConfigureAwait(false);
+            await _dispatchWriter.PersistAsync(pendingStateUpdates, pendingDispatches, cancellationToken).ConfigureAwait(false);
         }
 
         return maxGeneration;
@@ -214,12 +209,7 @@ internal sealed partial class AlertPipeline : IAlertPipeline
             evaluated++;
         }
 
-        if (pendingStateUpdates.Count > 0)
-        {
-            await _stateStore.UpsertManyAsync(pendingStateUpdates, cancellationToken).ConfigureAwait(false);
-        }
-
-        await _dispatchWriter.PersistAsync(pendingDispatches, cancellationToken).ConfigureAwait(false);
+        await _dispatchWriter.PersistAsync(pendingStateUpdates, pendingDispatches, cancellationToken).ConfigureAwait(false);
 
         return evaluated;
     }
