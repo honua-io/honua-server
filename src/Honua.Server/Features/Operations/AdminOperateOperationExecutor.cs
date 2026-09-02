@@ -14,13 +14,13 @@ namespace Honua.Server.Features.Operations;
 internal sealed class AdminOperateOperationExecutor : IOperationExecutor
 {
     public const string HttpClientName = "admin-operate-operation-loopback";
-    private readonly AdminOperateOperationCatalog.Definition _definition;
+    private readonly IAdminHttpOperationDefinition _definition;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAdminApiKeyStore? _adminApiKeyStore;
     private readonly TimeProvider _clock;
 
-    public AdminOperateOperationExecutor(AdminOperateOperationCatalog.Definition definition, IHttpClientFactory httpClientFactory,
+    public AdminOperateOperationExecutor(IAdminHttpOperationDefinition definition, IHttpClientFactory httpClientFactory,
         IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore? adminApiKeyStore, TimeProvider clock)
     {
         _definition = definition;
