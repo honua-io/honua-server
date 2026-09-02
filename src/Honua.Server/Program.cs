@@ -808,10 +808,14 @@ if (!isTestEnvironment)
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
 }
 
-builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
-    new Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore(
-        sp.GetService<IDistributedCache>(),
-        sp.GetRequiredService<ILogger<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
+var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "sync.offline");
+if (offlineSyncEnabled)
+{
+    builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
+        new Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore(
+            sp.GetService<IDistributedCache>(),
+            sp.GetRequiredService<ILogger<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
+}
 // Replica/change-tracking services are provider-specific: Postgres registers concrete
 // implementations; DuckDB and MySQL (both read-only) register no-op stubs via their own
 // AddXxxServices extensions. Skip the Postgres registration for those providers so the
@@ -822,12 +826,15 @@ var replicaProvider = DataProviderNames.Normalize(
 if (replicaProvider != DataProviderNames.DuckDb &&
     replicaProvider != DataProviderNames.MySql)
 {
-    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
-        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
-            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
-    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaConflictRepository>(sp =>
-        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaConflictRepository(
-            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
+    if (offlineSyncEnabled)
+    {
+        builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
+            new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
+                sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
+        builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaConflictRepository>(sp =>
+            new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaConflictRepository(
+                sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
+    }
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
@@ -864,16 +871,15 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
         sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionJobStore>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
-builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
-    new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
-        sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
-        sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
-// Canonical replica-upload synchronization pipeline (#1272). Conflict detection runs against the
-// provider's change log; conflict-record writes use the durable conflict store when supported and
-// otherwise fall back to last-write-wins. Available for all providers since IChangeTracker and
-// IReplicaConflictRepository are always registered (read-only providers register no-op stubs).
-builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
-    Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+if (offlineSyncEnabled)
+{
+    builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
+        new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
+            sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
+            sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
+        Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+}
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations
 //      (Startup/ImportExportTileOperationsRegistration.cs)
@@ -1478,19 +1484,32 @@ app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
 app.MapAdminLayerAuthoringEndpoints();
 app.MapAdminLayerFilterConfigurationEndpoints();
-app.MapReplicaManagementEndpoints();
+if (offlineSyncEnabled)
+{
+    app.MapReplicaManagementEndpoints();
+}
 app.MapAdminLayerValidationEndpoints();
 app.MapAdminStyleSuggestionEndpoints();
 app.MapAdminSldStyleEndpoints();
 
 // Configure admin alerting zone/rule endpoints
-app.MapAlertAdminEndpoints();
+var geofenceAlertsEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "alerts.geofence");
+if (geofenceAlertsEnabled)
+{
+    app.MapAlertAdminEndpoints();
+}
 
 // Configure alert dispatch self-healing ops endpoints (dead-letter redrive, channel pause/resume) (#2561)
-app.MapAlertOpsAdminEndpoints();
+if (geofenceAlertsEnabled)
+{
+    app.MapAlertOpsAdminEndpoints();
+}
 
 // Configure Console Operate observability endpoints (#1168)
-app.MapObservabilityAlertEndpoints();
+if (geofenceAlertsEnabled)
+{
+    app.MapObservabilityAlertEndpoints();
+}
 app.MapObservabilityAuditEndpoints();
 app.MapObservabilityEventEndpoints();
 app.MapInvestigationEndpoints();
@@ -1650,7 +1669,10 @@ app.MapOperationsProgressEndpoints();
 app.MapFeatureChangeEventsEndpoints();
 app.MapCollaborationEndpoints();
 app.MapMobileExceptionIngestionEndpoints();
-app.MapFieldCollectionSyncEndpoints();
+if (offlineSyncEnabled)
+{
+    app.MapFieldCollectionSyncEndpoints();
+}
 app.MapTileOperationsEndpoints();
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)

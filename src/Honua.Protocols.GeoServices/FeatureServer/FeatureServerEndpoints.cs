@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System;
+using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
@@ -248,6 +249,13 @@ internal static partial class FeatureServerEndpoints
         .Produces(400)
         .Produces(404);
 
+        // Disconnected-sync routes share the canonical Preview lifecycle opt-in with
+        // service composition and manifest availability (#3910).
+        var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
+            endpoints.ServiceProvider.GetRequiredService<IConfiguration>(),
+            "sync.offline");
+        if (offlineSyncEnabled)
+        {
         // Replication endpoints
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/replicas", HandleReplicas)
             .WithDisplayName("List Replicas")
@@ -313,6 +321,7 @@ internal static partial class FeatureServerEndpoints
             .Produces<SuccessResponse>(200, "application/json")
             .Produces(400)
             .Produces(404);
+        }
 
         // Maintenance/utility endpoints
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/append", HandleServiceAppend)

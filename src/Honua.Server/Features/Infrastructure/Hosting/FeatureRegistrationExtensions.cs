@@ -129,7 +129,10 @@ internal static class FeatureRegistrationExtensions
         services.AddGeometryService();
         services.AddHonuaGrpc(configuration);
         services.AddObservability(configuration, redisCacheEntitled);
-        services.AddAlerts(configuration);
+        if (CapabilityFlagOptions.IsExperimentalEnabled(configuration, "alerts.geofence"))
+        {
+            services.AddAlerts(configuration);
+        }
         services.AddFieldCollectionAutomations(configuration);
         services.AddNlQuery(configuration);
         services.AddStudioAiProxy(configuration);
@@ -142,13 +145,24 @@ internal static class FeatureRegistrationExtensions
         }
         services.AddStaticMap();
         services.AddTerrain();
-        services.AddScene(configuration);
-        services.AddPostgresSceneRegistry(configuration);
+        var sceneCatalogEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "scene.catalog");
+        var scene3dTilesEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.3d-tiles-scene");
+        var sceneI3sEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "serve.i3s-scene");
+        var sceneBimEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "scene.bim-ingest");
+        var scenePointCloudEnabled = CapabilityFlagOptions.IsExperimentalEnabled(configuration, "scene.pointcloud-ingest");
+        if (sceneCatalogEnabled || scene3dTilesEnabled || sceneI3sEnabled || sceneBimEnabled || scenePointCloudEnabled)
+        {
+            services.AddScene(configuration);
+            services.AddPostgresSceneRegistry(configuration);
+        }
         // Read-through local materialization cache for hosted scene assets so a
         // scene published on one node is servable from any node (#2459, ADR-0060).
-        services.AddSceneAssetHydration();
+        if (scene3dTilesEnabled || sceneI3sEnabled)
+        {
+            services.AddSceneAssetHydration();
+        }
         services.AddElevation();
-        services.AddSceneGeneration(configuration);
+        services.AddSceneGeneration(configuration, scene3dTilesEnabled, sceneBimEnabled, scenePointCloudEnabled);
         services.AddPrintingTools();
         services.AddGeoprocessing(configuration);
         // Routing subsystem (#1266): selects pgRouting or the mock provider via
@@ -267,10 +281,21 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapAttachmentEndpoints();
         endpoints.MapTileJsonEndpoints();
         endpoints.MapTerrainEndpoints();
-        endpoints.MapSceneDiscoveryEndpoints();
-        endpoints.MapSceneEndpoints();
-        endpoints.MapI3sSceneServerEndpoints();
-        endpoints.MapSceneDatasetEndpoints();
+        var lifecycleConfiguration = endpoints.ServiceProvider.GetRequiredService<IConfiguration>();
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "scene.catalog"))
+        {
+            endpoints.MapSceneDiscoveryEndpoints();
+            endpoints.MapSceneDatasetEndpoints();
+        }
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "serve.3d-tiles-scene"))
+        {
+            endpoints.MapSceneEndpoints();
+            endpoints.MapSceneGenerationEndpoints();
+        }
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "serve.i3s-scene"))
+        {
+            endpoints.MapI3sSceneServerEndpoints();
+        }
         endpoints.MapNetworkDatasetAdminEndpoints();
         endpoints.MapNetworkTopologyEditAdminEndpoints();
         Honua.Server.Features.Admin.Routing.NetworkTopologyRebuildAdminEndpoints.MapNetworkTopologyRebuildAdminEndpoints(endpoints);
@@ -278,9 +303,14 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapElevationEndpoints();
         endpoints.MapSceneAnalysisEndpoints();
         endpoints.MapVisibilityAnalysisEndpoints();
-        endpoints.MapSceneGenerationEndpoints();
-        endpoints.MapSceneBimIngestEndpoints();
-        endpoints.MapScenePointCloudIngestEndpoints();
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "scene.bim-ingest"))
+        {
+            endpoints.MapSceneBimIngestEndpoints();
+        }
+        if (CapabilityFlagOptions.IsExperimentalEnabled(lifecycleConfiguration, "scene.pointcloud-ingest"))
+        {
+            endpoints.MapScenePointCloudIngestEndpoints();
+        }
         endpoints.MapPMTilesProxyEndpoints();
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcCoveragesEndpoints();
