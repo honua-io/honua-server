@@ -36,6 +36,21 @@ on:
         description: 'Promote: publish SDKs (real) + retag the RC image. Requires a green validator verdict.'
         type: boolean
         default: false
+      realtime_sdk_revision:
+        description: 'Exact honua-sdk-js commit that produced the retained realtime Preview receipt'
+        required: true
+      realtime_sdk_package:
+        description: 'Exact SDK package identity used by the realtime Preview run'
+        required: true
+      realtime_sdk_run_id:
+        description: 'Successful honua-sdk-js realtime Preview workflow run id'
+        required: true
+      realtime_sdk_run_attempt:
+        description: 'Exact honua-sdk-js realtime Preview workflow attempt'
+        required: true
+      realtime_sdk_artifact_id:
+        description: 'Immutable Actions artifact id containing the realtime Preview receipt'
+        required: true
 
 permissions:
   contents: read
@@ -282,12 +297,31 @@ jobs:
           path: sdk-evidence.ndjson
           if-no-files-found: warn
 
+  realtime-preview-qualification:
+    name: Realtime Preview exact-candidate gate
+    needs: rc-image
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/realtime-preview-qualification.yml
+    with:
+      candidate_revision: ${{ needs.rc-image.outputs.server_sha }}
+      candidate_image: ${{ needs.rc-image.outputs.image_digest }}
+      candidate_environment: ${{ github.event.inputs.release_id }}
+      sdk_revision: ${{ github.event.inputs.realtime_sdk_revision }}
+      sdk_package: ${{ github.event.inputs.realtime_sdk_package }}
+      sdk_run_id: ${{ github.event.inputs.realtime_sdk_run_id }}
+      sdk_run_attempt: ${{ github.event.inputs.realtime_sdk_run_attempt }}
+      sdk_artifact_id: ${{ github.event.inputs.realtime_sdk_artifact_id }}
+    secrets:
+      release_bundle_token: ${{ secrets.RELEASE_BUNDLE_TOKEN }}
+
   aggregate:
     name: Assemble manifest & validate train
-    needs: [release-context, rc-image, integration, sdk-cut]
+    needs: [release-context, rc-image, integration, sdk-cut, realtime-preview-qualification]
     # Off-trunk runs deliberately stop at the unambiguous test image/evidence channel.
     # No candidate manifest is produced for the downstream release validator to accept.
-    if: ${{ always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' }}
+    if: ${{ always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
