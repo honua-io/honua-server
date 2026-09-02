@@ -267,6 +267,15 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         // provider migration 001 establishes the same storage policy before 055 journals it.
         if (state.IsApplied(RasterExternalStorageMigration) && state.HasAnyRasterStorageTarget)
         {
+            var missingTables = state.MissingRasterStorageTables();
+            if (missingTables.Count > 0)
+            {
+                throw CreateFailure(
+                    RasterExternalStorageMigration,
+                    DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                    $"journal claims the migration is applied, but required raster table(s) are absent: {string.Join(", ", missingTables)}.");
+            }
+
             var missingEffects = state.MissingExternalStorageEffects();
             if (missingEffects.Count > 0)
             {
@@ -312,12 +321,13 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         if (requirement == DatabaseSchemaRequirement.RasterExternalStorage)
         {
-            if (!state.HasRasterData)
+            var missingTables = state.MissingRasterStorageTables();
+            if (missingTables.Count > 0)
             {
                 throw CreateFailure(
                     migration,
                     DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
-                    $"required table '{_schemaName}.raster_data' is absent.");
+                    $"required raster table(s) are absent: {string.Join(", ", missingTables)}.");
             }
 
             var missingEffects = state.MissingExternalStorageEffects();
@@ -379,6 +389,15 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 RasterExternalStorageMigration,
                 DatabaseSchemaFloorFailureKind.MigrationNotApplied,
                 "the required numbered migration is not recorded in public.schema_versions.");
+        }
+
+        var missingTables = state.MissingRasterStorageTables();
+        if (missingTables.Count > 0)
+        {
+            throw CreateFailure(
+                RasterExternalStorageMigration,
+                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                $"journal claims the migration is applied, but required raster table(s) are absent: {string.Join(", ", missingTables)}.");
         }
 
         var missingEffects = state.MissingExternalStorageEffects();
@@ -554,6 +573,22 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         public bool HasAnyRasterStorageTarget => HasRasterData || Tables.Contains("raster_tiles");
 
         public bool IsApplied(string migration) => AppliedScripts.Contains(migration);
+
+        public List<string> MissingRasterStorageTables()
+        {
+            var missing = new List<string>();
+            if (!Tables.Contains("raster_data"))
+            {
+                missing.Add($"{SchemaName}.raster_data");
+            }
+
+            if (!Tables.Contains("raster_tiles"))
+            {
+                missing.Add($"{SchemaName}.raster_tiles");
+            }
+
+            return missing;
+        }
 
         public List<string> MissingExternalStorageEffects()
         {

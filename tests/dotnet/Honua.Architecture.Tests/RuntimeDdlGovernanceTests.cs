@@ -51,7 +51,7 @@ public sealed partial class RuntimeDdlGovernanceTests
     public void ProductionRuntimeDdl_ShouldBeLimitedToExplicitlyOwnedNonCoreTargets()
     {
         var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
-        var sourceRoot = Path.Combine(projectRoot, "src");
+        var sourceRoot = Path.Join(projectRoot, "src");
         var observed = Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
             .Select(path => new
             {
@@ -89,7 +89,7 @@ public sealed partial class RuntimeDdlGovernanceTests
         var current = new DirectoryInfo(startDirectory);
         while (current is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "Honua.sln")))
+            if (File.Exists(Path.Join(current.FullName, "Honua.sln")))
             {
                 return current.FullName;
             }
