@@ -90,6 +90,10 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
             {
                 continue;
             }
+            if (AdminMcpOperationExclusions.ContainsOperation(descriptor.OperationId))
+            {
+                continue;
+            }
 
             // Deterministic mode: only publish AI-free descriptors.
             if (options.DeterministicOnly
