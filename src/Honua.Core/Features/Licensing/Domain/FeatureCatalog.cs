@@ -87,7 +87,15 @@ public static class FeatureCatalog
 
         /// <summary>High availability and disaster recovery — backup automation, failover, RTO/RPO reporting.</summary>
         public const string DisasterRecovery = "DisasterRecovery";
+
+        /// <summary>Tenant administration and other platform control-plane capabilities.</summary>
+        public const string ControlPlane = "ControlPlane";
     }
+
+    /// <summary>
+    /// Entitlement key for multi-tenant lifecycle administration and schema-per-tenant routing.
+    /// </summary>
+    public const string MultiTenancyKey = "admin.multi-tenancy";
 
     /// <summary>
     /// Entitlement key for automated PostgreSQL backups — scheduled base backups plus
@@ -557,5 +565,9 @@ public static class FeatureCatalog
             HonuaEdition.Enterprise, "Backup and restore Redis cache state so warm cache contents survive a regional failover."),
         new(RecoveryReportingKey, "RTO/RPO Reporting", Categories.DisasterRecovery,
             HonuaEdition.Enterprise, "Track recovery time and recovery point objectives and report recovery readiness, last successful backup, and restorable point."),
+
+        // Control plane — Enterprise Preview
+        new(MultiTenancyKey, "Multi-Tenant Operation", Categories.ControlPlane,
+            HonuaEdition.Enterprise, "Administer tenant lifecycles and isolate tenant data through schema-per-tenant routing."),
     ];
 }

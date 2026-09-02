@@ -429,7 +429,10 @@ internal sealed class CapabilityManifestService(
                 requiresWorkspace: true),
             Capability("admin.multi-tenancy", "control-plane", context,
                 maturity: CapabilityMaturity.Preview,
-                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("admin.multi-tenancy")),
+                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("admin.multi-tenancy")
+                    && options.TenantSchemaRoutingEnabled,
+                entitlementKey: FeatureCatalog.MultiTenancyKey,
+                requiresAuthentication: true),
             Capability("realtime.feature-streams", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("realtime.feature-streams"),
@@ -615,6 +618,12 @@ internal sealed class CapabilityManifestService(
             ["scene.catalog"] = new(),
             ["scene.bim-ingest"] = new() { EntitlementKey = FeatureCatalog.SceneBimIngestKey },
             ["scene.pointcloud-ingest"] = new() { EntitlementKey = FeatureCatalog.ScenePointCloudIngestKey },
+            ["admin.multi-tenancy"] = new()
+            {
+                Configured = options.TenantSchemaRoutingEnabled,
+                EntitlementKey = FeatureCatalog.MultiTenancyKey,
+                RequiresAuthentication = true,
+            },
             ["realtime.feature-streams"] = new() { EntitlementKey = "streaming.feature-subscriptions" },
             ["alerts.geofence"] = new() { EntitlementKey = "alerts.enter-exit", Configured = alertsConfigured },
             ["jobs.runner"] = new() { Supported = jobsSupported, RequiresAuthentication = true, RequiresDurableJobStore = true },
