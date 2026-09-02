@@ -408,6 +408,36 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task RequestRollbackAsync_ReconcilerAdvancesClaimBeforeProviderThrows_RemainsRetryable()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RollbackRaceDeployBackend(
+            blockRollback: true,
+            throwRollbackOnce: true,
+            observeRollbackInProgress: true);
+        var service = CreateService(store, backend);
+        var operation = CreateOperationRecord(status: WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+
+        var firstAttempt = service.RequestRollbackAsync(operation.OperationId, "alice", "first");
+        await backend.RollbackEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var reconciler = CreateReconciler(store, backend);
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.ReleaseRollback();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => firstAttempt);
+        var retryable = await store.GetAsync(operation.OperationId);
+        retryable!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        retryable.CurrentPhase.Should().Contain("retry is allowed");
+
+        var retried = await service.RequestRollbackAsync(operation.OperationId, "alice", "retry");
+
+        retried!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        backend.RollbackCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task Reconciler_StaleObservationThrowsAfterRollbackClaim_DoesNotOverwriteClaim()
     {
         var store = new TestWorkflowOperationStore();
@@ -1615,7 +1645,8 @@ public sealed class DeployWorkflowServiceTests
     private sealed class RollbackRaceDeployBackend(
         bool blockRollback = false,
         bool throwRollbackOnce = false,
-        bool throwStaleObserve = false) : IDeployBackend
+        bool throwStaleObserve = false,
+        bool observeRollbackInProgress = false) : IDeployBackend
     {
         private readonly TaskCompletionSource _releaseObserve = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _releaseRollback = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1664,9 +1695,13 @@ public sealed class DeployWorkflowServiceTests
 
             return new DeployObservation
             {
-                Status = WorkflowOperationStatus.RolledBack,
+                Status = observeRollbackInProgress
+                    ? WorkflowOperationStatus.RollbackRequested
+                    : WorkflowOperationStatus.RolledBack,
                 ObservedRevision = operation.Deploy!.CurrentRevision,
-                Message = "Exact prior revision observed"
+                Message = observeRollbackInProgress
+                    ? "Rollback convergence is still in progress"
+                    : "Exact prior revision observed"
             };
         }
 

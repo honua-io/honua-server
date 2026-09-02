@@ -701,13 +701,7 @@ internal sealed partial class DeployWorkflowService
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException)
                 {
-                    var retryable = rollbackClaim with
-                    {
-                        UpdatedAt = DateTimeOffset.UtcNow,
-                        CurrentPhase = RollbackSubmissionRetryablePhase,
-                        ErrorMessage = $"Rollback provider submission was not confirmed ({ex.GetType().Name})."
-                    };
-                    await _workflowStore.TrySetAsync(retryable, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    await MarkRollbackSubmissionRetryableAsync(rollbackClaim, ex).ConfigureAwait(false);
                     throw;
                 }
                 updated = rollbackClaim with
@@ -739,6 +733,42 @@ internal sealed partial class DeployWorkflowService
         }
 
         return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task MarkRollbackSubmissionRetryableAsync(
+        WorkflowOperationRecord rollbackClaim,
+        Exception submissionException)
+    {
+        var workflowStore = _workflowStore;
+        if (workflowStore == null)
+        {
+            return;
+        }
+
+        var current = rollbackClaim;
+        while (current.Status == WorkflowOperationStatus.RollbackRequested &&
+               !string.Equals(current.CurrentPhase, RollbackSubmissionRetryablePhase, StringComparison.Ordinal))
+        {
+            var retryable = current with
+            {
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = RollbackSubmissionRetryablePhase,
+                ErrorMessage = $"Rollback provider submission was not confirmed ({submissionException.GetType().Name})."
+            };
+
+            if (await workflowStore.TrySetAsync(retryable, cancellationToken: CancellationToken.None).ConfigureAwait(false))
+            {
+                return;
+            }
+
+            var persisted = await workflowStore.GetAsync(current.OperationId, CancellationToken.None).ConfigureAwait(false);
+            if (persisted == null)
+            {
+                return;
+            }
+
+            current = persisted;
+        }
     }
 
     private async Task<WorkflowOperationRecord> RequestMetadataReleaseRollbackAsync(
