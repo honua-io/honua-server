@@ -294,14 +294,17 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             ? BuildStagingTableName(tableName)
             : tableName;
 
-        if (request.OverwriteExisting)
-        {
-            await DropTableAsync(connection, targetSchema, loadTableName, cancellationToken).ConfigureAwait(false);
-        }
-
         var stagingPromoted = false;
+        var overwriteLockAcquired = false;
         try
         {
+            if (request.OverwriteExisting)
+            {
+                await AcquireOverwriteLockAsync(connection, targetSchema, tableName, cancellationToken).ConfigureAwait(false);
+                overwriteLockAcquired = true;
+                await DropTableAsync(connection, targetSchema, loadTableName, cancellationToken).ConfigureAwait(false);
+            }
+
             await CreateTableAsync(connection, targetSchema, loadTableName, fields, resource.GeometryType, srid, cancellationToken).ConfigureAwait(false);
 
             var inserted = 0;
@@ -394,8 +397,6 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                 Log.BatchInserted(_logger, resource.Name, pageNumber, pageInserted, pageFailed, inserted);
             }
 
-            await CreateSpatialIndexAsync(connection, targetSchema, loadTableName, cancellationToken).ConfigureAwait(false);
-
             if (mixedGeometryDetected)
             {
                 perTypeWarnings.Add("Source features contained mixed geometry types; coercion to declared geometry type may have occurred.");
@@ -405,6 +406,12 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             {
                 perTypeWarnings.Add($"{failed} feature(s) failed to insert.");
                 classification = MigrationFidelityAutomationStatuses.ManualReview;
+            }
+
+            if (!request.OverwriteExisting ||
+                string.Equals(classification, MigrationFidelityAutomationStatuses.Automated, StringComparison.Ordinal))
+            {
+                await CreateSpatialIndexAsync(connection, targetSchema, loadTableName, cancellationToken).ConfigureAwait(false);
             }
 
             if (request.OverwriteExisting)
@@ -441,9 +448,19 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         }
         finally
         {
-            if (request.OverwriteExisting && !stagingPromoted)
+            try
             {
-                await DropTableAsync(connection, targetSchema, loadTableName, CancellationToken.None).ConfigureAwait(false);
+                if (request.OverwriteExisting && !stagingPromoted)
+                {
+                    await DropTableAsync(connection, targetSchema, loadTableName, CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                if (overwriteLockAcquired)
+                {
+                    await ReleaseOverwriteLockAsync(connection, targetSchema, tableName).ConfigureAwait(false);
+                }
             }
         }
     }
@@ -688,12 +705,35 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
     private static string BuildStagingTableName(string tableName)
     {
-        const int suffixLength = 2 + 12;
+        const string stagingPrefix = "__honua_wfs_stage_";
         const int maxTableLengthWithIndexSuffix = 54;
-        var prefix = tableName.Length > maxTableLengthWithIndexSuffix - suffixLength
-            ? tableName[..(maxTableLengthWithIndexSuffix - suffixLength)]
+        var prefix = tableName.Length > maxTableLengthWithIndexSuffix - stagingPrefix.Length
+            ? tableName[..(maxTableLengthWithIndexSuffix - stagingPrefix.Length)]
             : tableName;
-        return $"{prefix}__{Guid.NewGuid():N}"[..Math.Min(maxTableLengthWithIndexSuffix, prefix.Length + suffixLength)];
+        return stagingPrefix + prefix;
+    }
+
+    private static async Task AcquireOverwriteLockAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT pg_advisory_lock(hashtextextended(@target, 0))";
+        command.Parameters.AddWithValue("target", $"wfs-overwrite:{schemaName}.{tableName}");
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task ReleaseOverwriteLockAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT pg_advisory_unlock(hashtextextended(@target, 0))";
+        command.Parameters.AddWithValue("target", $"wfs-overwrite:{schemaName}.{tableName}");
+        await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     private static async Task PromoteStagingTableAsync(

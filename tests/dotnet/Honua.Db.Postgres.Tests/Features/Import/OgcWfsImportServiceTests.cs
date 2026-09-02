@@ -336,6 +336,41 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
     }
 
     [Fact]
+    public async Task ImportFeaturesAsync_Overwrite_ReapsOrphanedStagingTableFromPriorAttempt()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_atomic_orphan");
+        try
+        {
+            await using (var connection = await fixture.GetConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"CREATE TABLE {QuoteIdentifier(schemaName)}.\"__honua_wfs_stage_wfs_cities\" (obsolete text)";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            using var client = new HttpClient(new FakeWfsHandler(
+                BuildPointFeatureCollection(("Replacement", 99, -155.08, 19.71))));
+            var result = await CreateService(client, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
+            {
+                ServiceUrl = DefaultServiceUrl,
+                TargetSchema = schemaName,
+                ApplyMode = true,
+                AllowUnsafeLocalUrls = true,
+                OverwriteExisting = true,
+            });
+
+            result.FeaturesCopied.Should().Be(1);
+            (await ReadCityRowsAsync(schemaName, "wfs_cities")).Should().ContainSingle()
+                .Which.Name.Should().Be("Replacement");
+            (await FindTablesLikeAsync(schemaName, "__honua_wfs_stage_%")).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [Fact]
     public async Task ImportFeaturesAsync_SchemaSurfacedFromInventoryDrivesPostgresColumnTypes()
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_schema");
