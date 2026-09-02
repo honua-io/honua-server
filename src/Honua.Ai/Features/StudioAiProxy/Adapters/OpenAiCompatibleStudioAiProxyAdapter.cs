@@ -54,7 +54,22 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         // A local endpoint (Ollama/vLLM/LM Studio) typically needs no key; a hosted gateway does.
         // Absence here is not itself a configuration error — the provider will reject the call with
         // an auth error if a key really was required, and that surfaces as a normal Error event.
-        var apiKey = await _apiKeyResolver.ResolveAsync(ProviderLabel, options, cancellationToken).ConfigureAwait(false);
+        string? apiKey = null;
+        var credentialUnavailable = false;
+        try
+        {
+            apiKey = await _apiKeyResolver.ResolveAsync(ProviderLabel, options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (StudioAiProxyCredentialUnavailableException)
+        {
+            credentialUnavailable = true;
+        }
+
+        if (credentialUnavailable)
+        {
+            yield return Error(model, "Provider credentials are unavailable.", errorCode: StudioAiProxyApiKeyResolver.CredentialUnavailableCode);
+            yield break;
+        }
 
         var proxyRequest = BuildRequest(options, request, model);
 

@@ -407,7 +407,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     private static StudioAiProxyProviderOptions DefaultOptions() => new()
     {
         Kind = StudioAiProxyConfiguration.OpenAiKind,
-        Endpoint = "https://openrouter.ai/api/v1",
+        Endpoint = "https://localhost/api/v1",
         Model = "anthropic/claude-sonnet-4.5",
         ApiKey = "test-key",
         MaxTokens = 1024,

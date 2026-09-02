@@ -114,6 +114,10 @@ public sealed class StudioAiProxyProviderOptions
     /// </summary>
     public string ApiKey { get; set; } = string.Empty;
 
+    // Set only by the environment fallback in PostConfigure so the resolver can distinguish a
+    // trusted environment-bound credential from a hosted inline literal.
+    internal bool ApiKeyFromEnvironment { get; set; }
+
     /// <summary>HTTP request timeout in seconds, applied as a ceiling over the whole streamed call.</summary>
     public int TimeoutSeconds { get; set; } = 120;
 
