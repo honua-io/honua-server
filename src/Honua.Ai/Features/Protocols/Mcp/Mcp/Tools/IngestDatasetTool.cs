@@ -4,13 +4,13 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Ai.Protocols.Mcp.Location;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -58,12 +58,10 @@ internal sealed partial class IngestDatasetTool : IMcpTool
     private const string CsvFormat = "csv";
     private const string GeoJsonFormat = "geojson";
 
-    private readonly IGeoprocessingJobService _jobService;
     private readonly ILogger<IngestDatasetTool> _logger;
 
-    public IngestDatasetTool(IGeoprocessingJobService jobService, ILogger<IngestDatasetTool> logger)
+    public IngestDatasetTool(ILogger<IngestDatasetTool> logger)
     {
-        _jobService = jobService;
         _logger = logger;
     }
 
@@ -104,9 +102,13 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
-        await _jobService
-            .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.Workspace, OperatorOperation.Create, cancellationToken)
-            .ConfigureAwait(false);
+        if (!await ImportAdminAuthorization.IsAuthorizedAsync(
+                httpContext, principal, cancellationToken).ConfigureAwait(false))
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "Caller requires admin write authority to import a dataset.");
+        }
 
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpIngestDatasetArgument);
         var validated = ValidateArguments(argument);

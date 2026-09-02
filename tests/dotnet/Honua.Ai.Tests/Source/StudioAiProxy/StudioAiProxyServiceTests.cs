@@ -8,6 +8,7 @@ using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -345,6 +346,77 @@ public sealed class StudioAiProxyServiceTests
 
         events.Last().Type.Should().Be(StudioAiChatEventType.Error);
         summary.Succeeded.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public Task StreamChatAsync_DeployTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync("honua_propose_deploy_operation");
+
+    [UnitTest]
+    public Task StreamChatAsync_DeployPlanTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync("honua_propose_deploy_plan");
+
+    [UnitTest]
+    public Task StreamChatAsync_RollbackTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync("honua_propose_rollback");
+
+    [UnitTest]
+    public Task StreamChatAsync_FindingCandidateBindingFails_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync(
+            "honua_propose_finding",
+            """{"findingId":"runtime-divergence","candidateId":"candidate-other"}""");
+
+    [UnitTest]
+    public Task StreamChatAsync_MultiTargetConvergence_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync(
+            "honua_propose_platform_release_convergence",
+            """{}""");
+
+    private static async Task AssertGovernedTargetBindingFailsAsync(
+        string toolName,
+        string argumentJson = """{"targetId":"candidate-other"}""")
+    {
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.TranscriptSigning.KeyId = "test-key";
+        config.TranscriptSigning.PrivateKeyReference = "secret://studio-key";
+        var secrets = Substitute.For<ISecretProvider>();
+        secrets.IsSecretReference("secret://studio-key").Returns(true);
+        secrets.GetSecretOrDefaultAsync("secret://studio-key", null, Arg.Any<CancellationToken>())
+            .Returns(Convert.ToBase64String(new byte[32]));
+        using var arguments = JsonDocument.Parse(argumentJson);
+        var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true, request => Events(
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "claude-sonnet-4-5" },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = toolName },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolArguments = arguments.RootElement.Clone() },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }));
+        var service = new StudioAiProxyService(
+            Options.Create(config),
+            [adapter],
+            new StudioAiTranscriptSigner(Options.Create(config), TimeProvider.System, secrets),
+            NullLogger<StudioAiProxyService>.Instance);
+        var summary = new StudioAiProxyCallSummary();
+        var request = new StudioAiChatRequest
+        {
+            Certification = new StudioAiTranscriptCertification
+            {
+                CandidateId = "candidate-7",
+                ReleaseId = "release-9",
+                EndpointIdentity = "candidate-proxy",
+                ActionId = "deploy",
+                RunNonce = "nonce"
+            },
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "deploy" }]
+        };
+
+        var events = await CollectAsync(service, request, summary);
+
+        events.Last().Should().Match<StudioAiChatEvent>(evt =>
+            evt.Type == StudioAiChatEventType.Error
+            && evt.ErrorCode == "studio_ai/provenance_validation_failed");
+        events.Should().NotContain(evt => evt.Type == StudioAiChatEventType.MessageStop);
+        summary.Succeeded.Should().BeFalse();
+        summary.StopReason.Should().Be(StudioAiStopReason.Error);
+        summary.ErrorMessage.Should().Be("Transcript provenance validation failed.");
     }
 
     public static IEnumerable<object[]> InvalidStreamFixtures()

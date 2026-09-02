@@ -371,14 +371,10 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 ErrorCode = StudioAiStreamGrammarValidator.InvalidStreamCode,
                 ErrorMessage = "The provider adapter ended the stream unexpectedly."
             };
-        }
-        else
-        {
-            ApplySummary(summary, providerName, successfulTerminal);
-            yield return successfulTerminal;
+            yield break;
         }
 
-        if (signingKey is not null && summary.Succeeded)
+        if (signingKey is not null)
         {
             if (string.IsNullOrWhiteSpace(providerReportedModel))
             {
@@ -395,12 +391,39 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 yield break;
             }
 
-            yield return new StudioAiChatEvent
+            StudioAiSignedTranscript? provenance = null;
+            try
             {
-                Type = StudioAiChatEventType.TranscriptProvenance,
-                Provenance = _transcriptSigner.Sign(signingKey, request, providerName, providerReportedModel, transcriptEvents!)
-            };
+                provenance = _transcriptSigner.Sign(
+                    signingKey, request, providerName, providerReportedModel, transcriptEvents!);
+            }
+            catch (InvalidOperationException)
+            {
+                summary.Succeeded = false;
+                summary.StopReason = StudioAiStopReason.Error;
+                summary.ErrorMessage = "Transcript provenance validation failed.";
+            }
+
+            if (provenance is null)
+            {
+                yield return new StudioAiChatEvent
+                {
+                    Type = StudioAiChatEventType.Error,
+                    Model = model,
+                    ErrorCode = "studio_ai/provenance_validation_failed",
+                    ErrorMessage = "Transcript provenance validation failed."
+                };
+                yield break;
+            }
+
+            ApplySummary(summary, providerName, successfulTerminal);
+            yield return successfulTerminal;
+            yield return new StudioAiChatEvent { Type = StudioAiChatEventType.TranscriptProvenance, Provenance = provenance };
+            yield break;
         }
+
+        ApplySummary(summary, providerName, successfulTerminal);
+        yield return successfulTerminal;
     }
 
     private static long EventCharacterCount(StudioAiChatEvent evt)
