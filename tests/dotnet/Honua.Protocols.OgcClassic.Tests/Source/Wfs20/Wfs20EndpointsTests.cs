@@ -179,7 +179,7 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
-    public async Task Wfs_GetCapabilities_AdvertisedCrs84IdentifiersAreAcceptedByGetFeature()
+    public async Task Wfs_GetCapabilities_AdvertisedCrs84IdentifiersAreAcceptedAndPreservedByGetFeature()
     {
         var capabilitiesResponse = await _fixture.Client.GetAsync(
             "/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
@@ -217,8 +217,23 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
             var content = await response.Content.ReadAsStringAsync();
 
             response.StatusCode.Should().Be(HttpStatusCode.OK, $"GetFeature should accept advertised CRS '{crs84Identifier}': {content}");
-            content.Should().Contain("srsName=\"urn:ogc:def:crs:OGC:1.3:CRS84\"");
+            content.Should().Contain($"srsName=\"{crs84Identifier}\"");
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_RejectsSrsNameThatOnlyContainsCrs84()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&COUNT=1&SRSNAME=CRS84%22%20injected%3D%22true");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        content.Should().Contain("InvalidParameterValue");
+        content.Should().NotContain("injected=\"true");
     }
 
     [IntegrationTest]

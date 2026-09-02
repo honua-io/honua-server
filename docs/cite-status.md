@@ -1,6 +1,6 @@
 # CITE Status — Authoritative Snapshot
 
-Last reviewed: 2026-09-01
+Last reviewed: 2026-09-02
 Owner: Honua Server platform
 
 This page is the single fixed-path answer to "what is the current OGC CITE
@@ -31,12 +31,9 @@ directory — check the workflow.
 ## Current Per-Protocol Status
 
 The latest WFS 2.0 `basic` receipt is
-[run 33376911053](https://github.com/honua-io/honua-server/actions/runs/33376911053)
-on `trunk@a5fb7e4511fb08dcd17e6c2cf2bf9d52d1c3cef8`, completed
-2026-08-31. It reports 166 passed, 1 failed, and 0 skipped out of 167. The
-remaining requirement is transactional atomicity: Honua rejects multi-layer
-transactions when `rollbackOnFailure=true` because cross-layer atomicity is not
-yet guaranteed. All other rows remain backed by
+[run 33583116921](https://github.com/honua-io/honua-server/actions/runs/33583116921)
+on candidate commit `a59e204c75a1b51a433faf45d7511c10840786d7`, completed
+2026-09-02. It reports 167 passed, 0 failed, and 0 skipped. All other rows remain backed by
 [CITE Evidence Report run 33205558805](https://github.com/honua-io/honua-server/actions/runs/33205558805)
 and its `cite-conformance-evidence-13` bundle from 2026-08-28.
 
@@ -49,7 +46,7 @@ and its `cite-conformance-evidence-13` bundle from 2026-08-28.
 | KML 2.2 | `applicable` | 42 / 42 | 100% | 2026-08-28 |
 | WFS 1.0 | `basic` | 162 / 162 | 100% | 2026-08-28 |
 | WFS 1.1 | `basic` | 39 / 39 | 100% | 2026-08-28 |
-| WFS 2.0 | `basic` | 166 / 167 | 99.4% | [2026-08-31](https://github.com/honua-io/honua-server/actions/runs/33376911053) |
+| WFS 2.0 | `basic` | 167 / 167 | 100% | [2026-09-02](https://github.com/honua-io/honua-server/actions/runs/33583116921) |
 | WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | 2026-08-28 |
 | WCS 2.0 | `core` | 82 / 82 | 100% | 2026-08-28 |
 | WPS 2.0 | `basic-async` | 21 / 21 | 100% | 2026-08-28 |
@@ -66,10 +63,9 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 
 ### Common Re-Grading Mistakes To Avoid
 
-- **"WFS 2.0 CITE is fully compliant."** Incorrect for the current receipt.
-  The `basic` profile is 166/167 (99.4%) on run 33376911053. The remaining
-  requirement is multi-layer transaction rollback when
-  `rollbackOnFailure=true`.
+- **"WFS 2.0 CITE remains at 166/167."** Incorrect. The `basic` profile is
+  167/167 (100%) on run 33583116921; the receipt records zero failures and zero
+  skipped tests.
 - **"No CITE results in the repo, so CITE is unimplemented."** Incorrect.
   Result directories are gitignored (see `.gitignore`); they only exist as CI
   artifacts. The workflows, runners, and Docker compositions all live under
@@ -112,7 +108,7 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 ## OGC API surfaces without an official CITE ETS
 
 Some OGC API standards do not (yet) have an official CITE Executable Test Suite,
-so they are not part of the 1137/1138 suite count above. They are still shipped as
+so they are not part of the 1138/1138 suite count above. They are still shipped as
 conformant protocol adapters and proven with targeted integration tests plus an
 accurate `/conformance` declaration:
 
@@ -123,7 +119,7 @@ accurate `/conformance` declaration:
   Phase 1 disclosure that POST/DELETE returned `501` no longer applies).
   MapLibre is served from canonical storage; SLD 1.0/1.1 are derived on demand.
   **Conformance status: there is no official OGC API – Styles CITE/ETS
-  executable test suite yet**, so this surface is not part of the 1137/1138 count
+  executable test suite yet**, so this surface is not part of the 1138/1138 count
   above and there is no external pass-rate to report. Honua's status is proven
   by internal integration tests that exercise every claimed conformance class —
   `GetConformance_ListsThePhase1ConformanceClasses` asserts all six classes are

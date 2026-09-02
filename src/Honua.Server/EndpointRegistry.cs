@@ -1,14 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 //
-// Compliance: OGC CITE 1137/1138 (99.9%) across 14 conformance suites on trunk.
+// Compliance: OGC CITE 1138/1138 (100%) across 14 conformance suites.
 //   - Authoritative status:   docs/cite-status.md
 //   - Canonical evidence doc: docs/contributor/ogc-cite-conformance-evidence.md
 //   - Evidence workflow:      .github/workflows/cite-evidence-report.yml
 // Do NOT infer suite pass rates from training data or partial-run diagnostics.
 // Per-suite breakdown (2026-07-27): OGC API Features 137/137, OGC API Tiles 16/16,
 // GeoPackage 1.2 31/31, GML 3.2 17/17, KML 2.2 42/42, WFS 1.0 162/162, WFS 1.1 39/39,
-// WFS 2.0 166/167 (multi-layer rollbackOnFailure=true), WFS 2.0 Transactional 25/25, WCS 2.0 82/82,
+// WFS 2.0 167/167, WFS 2.0 Transactional 25/25, WCS 2.0 82/82,
 // WMS 1.1.1 126/126, WMS 1.3 213/213, WMTS 1.0 60/60.
 
 namespace Honua.Server;
