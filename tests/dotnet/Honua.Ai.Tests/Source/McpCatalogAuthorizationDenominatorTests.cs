@@ -26,18 +26,22 @@ public sealed class McpCatalogAuthorizationDenominatorTests
     [Endpoint("POST /mcp tools/list -> POST /mcp tools/call")]
     public async Task EveryResolvedDescriptor_ReauthorizesAfterPrincipalRemoval_BeforeInvocation()
     {
-        var staticTool = new InvocationSpyTool("static_read");
+        var staticTools = McpTaxonomyAlignmentTests.BuildTools()
+            .Select(tool => new InvocationSpyTool(tool.Name, tool.WorkflowFamily, tool.Describe()))
+            .ToArray();
         var dynamicTool = new InvocationSpyTool("published_mutation");
         var source = new MutableToolSource(dynamicTool);
         var surface = new McpDataAccessSurface(
-            [staticTool],
+            staticTools,
             [],
             NullLogger<McpDataAccessSurface>.Instance,
             toolSources: [source]);
         var authorityA = McpTestFactory.AuthenticatedHttpContext();
 
         var catalog = await surface.GetCatalogEntriesAsync();
-        catalog.Should().HaveCount(2);
+        catalog.Should().HaveCount(staticTools.Length + 1,
+            "the instrumented static denominator is the canonical production roster, whose parity with "
+            + "AddMcpDataAccessSurface registrations is enforced by ToolRoster_MatchesFullMcpDependencyInjectionRegistrations");
         catalog.Count(entry => entry.IsDynamic).Should().Be(1);
 
         foreach (var entry in catalog)
@@ -92,12 +96,15 @@ public sealed class McpCatalogAuthorizationDenominatorTests
             ValueTask.FromResult<IReadOnlyList<IMcpTool>>(Tool is null ? [] : [Tool]);
     }
 
-    private sealed class InvocationSpyTool(string name) : IMcpTool
+    private sealed class InvocationSpyTool(
+        string name,
+        string workflowFamily = "authorization-denominator",
+        McpToolDescriptor? descriptor = null) : IMcpTool
     {
         public int InvocationCount { get; private set; }
         public string Name { get; } = name;
-        public string WorkflowFamily => "authorization-denominator";
-        public McpToolDescriptor Describe() => new() { Name = Name };
+        public string WorkflowFamily { get; } = workflowFamily;
+        public McpToolDescriptor Describe() => descriptor ?? new() { Name = Name };
         public Task<McpToolsCallResult> InvokeAsync(
             HttpContext httpContext,
             JsonElement? arguments,
