@@ -207,7 +207,8 @@ internal sealed partial class Wfs20Handler
             plans.Add(new LayerQueryPlan(
                 featureType,
                 query with { Offset = layerOffset, Limit = layerLimit },
-                layerMatched));
+                layerMatched,
+                srsName));
 
             remainingCount -= layerLimit;
         }
@@ -1241,7 +1242,10 @@ internal sealed partial class Wfs20Handler
     /// GML path routes through here; WFS 1.0.0/1.1.0 serialize geometry themselves
     /// and are labelled at that writer.
     /// </remarks>
-    private static string RelabelCrs84SrsName(string geometryGml, FeatureQuery query)
+    private static string RelabelCrs84SrsName(
+        string geometryGml,
+        FeatureQuery query,
+        string? requestedSrsName = null)
     {
         var outputSrid = query.OutputSrid ?? query.SpatialReferenceSrid;
         if (query.OutputAxisOrder != AxisOrder.EastNorth ||
@@ -1252,7 +1256,7 @@ internal sealed partial class Wfs20Handler
 
         return geometryGml.Replace(
             $"srsName=\"{FormatCrs(SpatialReference.WGS84.Wkid)}\"",
-            $"srsName=\"{Crs84Urn}\"",
+            $"srsName=\"{(IsCrs84Request(requestedSrsName) ? requestedSrsName : Crs84Urn)}\"",
             StringComparison.Ordinal);
     }
 
@@ -1308,7 +1312,7 @@ internal sealed partial class Wfs20Handler
                 FeatureNamespacePrefix,
                 XmlConvert.EncodeLocalName(geometryPropertyName),
                 FeatureNamespaceUri);
-            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query));
+            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query, plan.RequestedSrsName));
             writer.WriteEndElement();
         }
 
@@ -2022,7 +2026,8 @@ internal sealed partial class Wfs20Handler
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,
         FeatureQuery Query,
-        long MatchedCount);
+        long MatchedCount,
+        string? RequestedSrsName = null);
 
     private readonly record struct LayerQueryPlanSet(
         ImmutableArray<LayerQueryPlan> Plans,

@@ -512,7 +512,8 @@ internal sealed partial class Wfs20Handler
                 plans.Add(new LayerQueryPlan(
                     featureType,
                     query with { Offset = layerOffset, Limit = layerLimit },
-                    layerMatched));
+                    layerMatched,
+                    xmlQuery.SrsName ?? fallbackSrsName));
 
                 remainingCount -= layerLimit;
             }
