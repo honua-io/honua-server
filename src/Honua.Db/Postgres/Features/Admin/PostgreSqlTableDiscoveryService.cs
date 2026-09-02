@@ -100,6 +100,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 'geometry' as column_type
             FROM geometry_columns
             WHERE f_table_schema <> ALL(@metadataSchemas)
+              AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
               AND (
                   f_table_schema = ANY(@discoverySchemas)
                   OR (
@@ -119,6 +120,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 'geography' as column_type
             FROM geography_columns
             WHERE f_table_schema <> ALL(@metadataSchemas)
+              AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
               AND (
                   f_table_schema = ANY(@discoverySchemas)
                   OR (
@@ -212,6 +214,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 WHERE lower(f_table_schema) = lower(@schema)
                   AND lower(f_table_name) = lower(@table)
                   AND f_table_schema <> ALL(@metadataSchemas)
+                  AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
                   AND (
                       f_table_schema = ANY(@discoverySchemas)
                       OR (
@@ -232,6 +235,7 @@ internal sealed class PostgreSqlTableDiscoveryService(
                 WHERE lower(f_table_schema) = lower(@schema)
                   AND lower(f_table_name) = lower(@table)
                   AND f_table_schema <> ALL(@metadataSchemas)
+                  AND f_table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
                   AND (
                       f_table_schema = ANY(@discoverySchemas)
                       OR (
