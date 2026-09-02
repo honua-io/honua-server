@@ -50,9 +50,9 @@ public sealed class DigestAlertDeliverySinkTests
 
         await service.FlushAsync(CancellationToken.None);
 
-        await dispatchStore.Received(1).MarkDeliveredAsync(11, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
-        await dispatchStore.Received(1).MarkDeliveredAsync(12, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
-        await dispatchStore.DidNotReceiveWithAnyArgs().MarkFailedAsync(default, default, default, default, default, default);
+        await dispatchStore.Received(1).MarkDeliveredAsync(11, dispatchItems[0].ClaimToken, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await dispatchStore.Received(1).MarkDeliveredAsync(12, dispatchItems[1].ClaimToken, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await dispatchStore.DidNotReceiveWithAnyArgs().MarkFailedAsync(default, default, default, default, default, default, default);
         handler.RequestBody.Should().Contain("evt-101");
         handler.RequestBody.Should().Contain("evt-102");
         handler.EventTimestampHeader.Should().NotBeNullOrWhiteSpace();
@@ -94,12 +94,13 @@ public sealed class DigestAlertDeliverySinkTests
 
         await dispatchStore.Received(1).MarkFailedAsync(
             21,
+            dispatchItem.ClaimToken,
             Arg.Any<DateTimeOffset>(),
             Arg.Any<DateTimeOffset>(),
             false,
             Arg.Is<string?>(value => value != null && value.Contains("500", StringComparison.Ordinal)),
             Arg.Any<CancellationToken>());
-        await dispatchStore.DidNotReceiveWithAnyArgs().MarkDeliveredAsync(default, default, default);
+        await dispatchStore.DidNotReceiveWithAnyArgs().MarkDeliveredAsync(default, default, default, default);
     }
 
     [UnitTest]
@@ -138,6 +139,7 @@ public sealed class DigestAlertDeliverySinkTests
         // Blocked (nothing was sent) but scheduled for another attempt rather than dead-lettered.
         await dispatchStore.Received(1).MarkFailedAsync(
             31,
+            dispatchItem.ClaimToken,
             Arg.Any<DateTimeOffset>(),
             Arg.Any<DateTimeOffset>(),
             false,
@@ -179,6 +181,7 @@ public sealed class DigestAlertDeliverySinkTests
         // Retries stay bounded by MaxAttempts: a permanently broken resolver still dead-letters.
         await dispatchStore.Received(1).MarkFailedAsync(
             32,
+            dispatchItem.ClaimToken,
             Arg.Any<DateTimeOffset>(),
             Arg.Any<DateTimeOffset>(),
             true,
@@ -218,6 +221,7 @@ public sealed class DigestAlertDeliverySinkTests
 
         await dispatchStore.Received(1).MarkFailedAsync(
             33,
+            dispatchItem.ClaimToken,
             Arg.Any<DateTimeOffset>(),
             Arg.Any<DateTimeOffset>(),
             true,
