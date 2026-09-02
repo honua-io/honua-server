@@ -129,12 +129,11 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_MultiTenancy_ReflectsRuntimeLicenseAndAuthentication()
     {
-        foreach (var fromRegistry in new[] { false, true })
+        foreach (var fixture in new[] { false, true }.Select(fromRegistry => CreateManifestFixture(
+                     edition: HonuaEdition.Enterprise,
+                     manifestFromRegistry: fromRegistry,
+                     tenantSchemaRoutingEnabled: true)))
         {
-            var fixture = CreateManifestFixture(
-                edition: HonuaEdition.Enterprise,
-                manifestFromRegistry: fromRegistry,
-                tenantSchemaRoutingEnabled: true);
             await fixture.InitializeAsync();
 
             try
