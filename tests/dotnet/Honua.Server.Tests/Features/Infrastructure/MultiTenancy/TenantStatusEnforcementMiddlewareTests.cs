@@ -107,6 +107,7 @@ public sealed class TenantStatusEnforcementMiddlewareTests
         }
 
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton<ITenantContext>(new StubTenantContext(tenantId));
         services.AddSingleton<ITenantCatalog>(catalog);
         context.RequestServices = services.BuildServiceProvider();
