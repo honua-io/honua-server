@@ -518,8 +518,62 @@ public sealed class StudioAiProxyServiceTests
         summary.Succeeded.Should().BeFalse();
     }
 
+    [UnitTest]
+    public async Task StreamChatAsync_ProvenanceOverEventByteLimit_EmitsOnlyFailureTerminal()
+    {
+        var start = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "provider-model" };
+        var stop = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn };
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.MaxEventBytes = new[] { start, stop }.Max(evt =>
+            JsonSerializer.SerializeToUtf8Bytes(evt, StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length);
+        var service = CreateSigningService(config, new FakeAdapter(
+            StudioAiProxyConfiguration.AnthropicKind, true, _ => Events(start, stop)));
+        var summary = new StudioAiProxyCallSummary();
+
+        var events = await CollectAsync(service, CertifiedRequest(), summary);
+
+        events.Should().ContainSingle(evt => evt.Type == StudioAiChatEventType.Error
+            && evt.ErrorCode == "studio_ai/provider_output_too_large");
+        events.Should().NotContain(evt => evt.Type == StudioAiChatEventType.MessageStop
+            || evt.Type == StudioAiChatEventType.TranscriptProvenance);
+        summary.Succeeded.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task StreamChatAsync_ProvenanceOverEventCountLimit_EmitsOnlyFailureTerminal()
+    {
+        var start = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "provider-model" };
+        var stop = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn };
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.MaxResponseEventCount = 2;
+        var service = CreateSigningService(config, new FakeAdapter(
+            StudioAiProxyConfiguration.AnthropicKind, true, _ => Events(start, stop)));
+        var summary = new StudioAiProxyCallSummary();
+
+        var events = await CollectAsync(service, CertifiedRequest(), summary);
+
+        events.Should().ContainSingle(evt => evt.Type == StudioAiChatEventType.Error
+            && evt.ErrorCode == "studio_ai/provider_output_too_large");
+        events.Should().NotContain(evt => evt.Type == StudioAiChatEventType.MessageStop
+            || evt.Type == StudioAiChatEventType.TranscriptProvenance);
+        summary.Succeeded.Should().BeFalse();
+    }
+
     private static StudioAiChatRequest Request() => new()
     {
+        Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+    };
+
+    private static StudioAiChatRequest CertifiedRequest() => new()
+    {
+        Certification = new StudioAiTranscriptCertification
+        {
+            CandidateId = "candidate-7",
+            ReleaseId = "release-9",
+            EndpointIdentity = "candidate-proxy",
+            ActionId = "compose-map",
+            RunNonce = "nonce"
+        },
         Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
     };
 
@@ -584,6 +638,23 @@ public sealed class StudioAiProxyServiceTests
             adapters,
             new StudioAiTranscriptSigner(Options.Create(configuration), TimeProvider.System),
             NullLogger<StudioAiProxyService>.Instance);
+
+    private static StudioAiProxyService CreateSigningService(
+        StudioAiProxyConfiguration configuration,
+        params IStudioAiProxyAdapter[] adapters)
+    {
+        configuration.TranscriptSigning.KeyId = "test-key";
+        configuration.TranscriptSigning.PrivateKeyReference = "secret://studio-key";
+        var secrets = Substitute.For<ISecretProvider>();
+        secrets.IsSecretReference("secret://studio-key").Returns(true);
+        secrets.GetSecretOrDefaultAsync("secret://studio-key", null, Arg.Any<CancellationToken>())
+            .Returns(Convert.ToBase64String(new byte[32]));
+        return new StudioAiProxyService(
+            Options.Create(configuration),
+            adapters,
+            new StudioAiTranscriptSigner(Options.Create(configuration), TimeProvider.System, secrets),
+            NullLogger<StudioAiProxyService>.Instance);
+    }
 
     private static StudioAiProxyConfiguration ConfigWithOneAnthropicProvider(string name, bool isDefault) => new()
     {

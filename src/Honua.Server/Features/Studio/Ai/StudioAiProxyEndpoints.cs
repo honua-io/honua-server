@@ -49,7 +49,8 @@ internal static class StudioAiProxyEndpoints
             .Accepts<StudioAiChatHttpRequest>("application/json")
             .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
             .Produces(StatusCodes.Status400BadRequest)
-            .Produces(StatusCodes.Status413PayloadTooLarge);
+            .Produces(StatusCodes.Status413PayloadTooLarge)
+            .Produces(StatusCodes.Status415UnsupportedMediaType);
     }
 
     private static async Task<IResult> HandleGetCapabilities(
@@ -73,6 +74,11 @@ internal static class StudioAiProxyEndpoints
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
+
+        if (!context.Request.HasJsonContentType())
+        {
+            return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
 
         var (httpRequest, requestTooLarge, readError) = await ReadRequestAsync(
             context.Request,

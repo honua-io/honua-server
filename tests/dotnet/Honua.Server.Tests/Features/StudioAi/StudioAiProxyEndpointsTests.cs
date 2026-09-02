@@ -127,6 +127,27 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         _audit.Recorded.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("text/plain")]
+    [InlineData("application/octet-stream")]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_UnsupportedContentType_Returns415BeforeReadingOrAuditing(string? contentType)
+    {
+        var client = _fixture.CreateAdminClient();
+        using var content = new ByteArrayContent(Encoding.UTF8.GetBytes(
+            """{"messages":[{"role":"user","content":"hi"}]}"""));
+        if (contentType is not null)
+        {
+            content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        }
+
+        using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        _audit.Recorded.Should().BeEmpty();
+    }
+
     [IntegrationTest]
     [Endpoint("GET /api/v1/studio/ai/capabilities")]
     [Endpoint("POST /api/v1/studio/ai/chat")]

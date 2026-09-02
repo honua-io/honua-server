@@ -450,9 +450,34 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 yield break;
             }
 
+            var provenanceEvent = new StudioAiChatEvent
+            {
+                Type = StudioAiChatEventType.TranscriptProvenance,
+                Provenance = provenance
+            };
+            var provenanceBytes = JsonSerializer.SerializeToUtf8Bytes(
+                provenanceEvent,
+                StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length;
+            if (provenanceBytes > _configuration.MaxEventBytes
+                || responseBytes + provenanceBytes > _configuration.MaxResponseBytes
+                || responseEventCount + 1 > _configuration.MaxResponseEventCount)
+            {
+                summary.Succeeded = false;
+                summary.StopReason = StudioAiStopReason.Error;
+                summary.ErrorMessage = "Transcript provenance exceeded a configured response limit.";
+                yield return new StudioAiChatEvent
+                {
+                    Type = StudioAiChatEventType.Error,
+                    Model = model,
+                    ErrorCode = "studio_ai/provider_output_too_large",
+                    ErrorMessage = "Transcript provenance exceeded a configured response limit."
+                };
+                yield break;
+            }
+
             ApplySummary(summary, providerName, successfulTerminal);
             yield return successfulTerminal;
-            yield return new StudioAiChatEvent { Type = StudioAiChatEventType.TranscriptProvenance, Provenance = provenance };
+            yield return provenanceEvent;
             yield break;
         }
 
