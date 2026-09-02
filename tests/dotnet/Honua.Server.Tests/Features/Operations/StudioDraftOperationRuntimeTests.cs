@@ -69,6 +69,54 @@ public sealed class StudioDraftOperationRuntimeTests
             default, default, default, default, default, default);
     }
 
+    [UnitTest]
+    public async Task PublicationRequestActuation_RejectsInvalidSavedVersion()
+    {
+        var itemId = Guid.NewGuid();
+        var versionId = Guid.NewGuid();
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetVersionAsync(itemId, versionId, Arg.Any<CancellationToken>()).Returns(
+            new StudioContentVersion
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                VersionNumber = 1,
+                PackageKey = "parcels",
+                ContentHash = "saved-hash",
+                Envelope = new StudioPackageEnvelope { Family = StudioPackageFamily.Map, SchemaVersion = "1.0" },
+                Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Invalid },
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+        lifecycle.CreatePublicationRequestAsync(
+                itemId, versionId, Arg.Any<StudioPublicationIntent?>(), Arg.Any<string?>(),
+                Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(new StudioPublicationRequest
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = itemId,
+                VersionId = versionId,
+                Status = StudioPublicationRequestStatus.Rejected,
+                Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Invalid },
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+        var executor = new StudioCreatePublicationRequestExecutor(lifecycle, TimeProvider.System);
+        var payload = JsonSerializer.Serialize(
+            new StudioPublicationRequestPayload
+            {
+                ItemId = itemId,
+                VersionId = versionId,
+                ContentHash = "saved-hash",
+            },
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.CreatePublicationRequest, payload),
+            Context("rejected-publication"));
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.ResourceIds.Should().NotContainKey("activeUrl");
+    }
+
     [Theory]
     [InlineData(StudioDraftOperations.Validate)]
     [InlineData(StudioDraftOperations.PreviewPlan)]
