@@ -90,9 +90,8 @@ internal static class AdminOperateOperationCatalog
     private static OperationDescriptor[] BuildDescriptors() =>
         Definitions.Select(definition => BuildDescriptor(RequestContract, definition)).ToArray();
 
-    internal static JsonElement GetInputContract(string operationId, string name)
+    internal static JsonElement GetInputContract(IAdminHttpOperationDefinition definition, string name)
     {
-        var definition = Definitions.Single(item => item.OperationId == operationId);
         var operation = FindOperation(RequestContract, definition.OpenApiOperationId);
         if (operation.TryGetProperty("parameters", out var parameters))
         {
@@ -109,7 +108,7 @@ internal static class AdminOperateOperationCatalog
                 return ResolveInputContract(property);
             if (name == "body") return body;
         }
-        throw new InvalidOperationException($"Input contract '{operationId}.{name}' was not found.");
+        throw new InvalidOperationException($"Input contract '{definition.OperationId}.{name}' was not found.");
     }
 
     internal static JsonElement ResolveInputContract(JsonElement schema) => Resolve(RequestContract, schema);

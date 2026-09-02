@@ -16,17 +16,20 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
 {
     public const string HttpClientName = "admin-operate-operation-loopback";
     private readonly IAdminHttpOperationDefinition _definition;
+    private readonly IOperationDescriptor _descriptor;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAdminApiKeyStore? _adminApiKeyStore;
     private readonly TimeProvider _clock;
     private readonly OperationLineageAttestationStore _lineageAttestationStore;
 
-    public AdminOperateOperationExecutor(IAdminHttpOperationDefinition definition, IHttpClientFactory httpClientFactory,
+    public AdminOperateOperationExecutor(IAdminHttpOperationDefinition definition, IOperationDescriptor descriptor,
+        IHttpClientFactory httpClientFactory,
         IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore? adminApiKeyStore, TimeProvider clock,
         OperationLineageAttestationStore lineageAttestationStore)
     {
         _definition = definition;
+        _descriptor = descriptor;
         _httpClientFactory = httpClientFactory;
         _httpContextAccessor = httpContextAccessor;
         _adminApiKeyStore = adminApiKeyStore;
@@ -39,19 +42,23 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
     public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var descriptor = AdminOperateOperationCatalog.Descriptors.Single(item => item.OperationId == OperationId);
+        var routeNames = RouteNames(_definition.Path);
         var messages = new List<string>();
-        foreach (var parameter in descriptor.InputSchema)
+        foreach (var parameter in _descriptor.InputSchema)
         {
             var value = request.Parameters.GetValueOrDefault(parameter.Name);
             if (string.IsNullOrWhiteSpace(value))
             {
                 if (parameter.Required)
-                    messages.Add($"Required parameter '{parameter.Name}' is missing.");
+                {
+                    messages.Add(routeNames.Contains(parameter.Name)
+                        ? $"Required route parameter '{parameter.Name}' is missing."
+                        : $"Required parameter '{parameter.Name}' is missing.");
+                }
                 continue;
             }
 
-            var schema = AdminOperateOperationCatalog.GetInputContract(OperationId, parameter.Name);
+            var schema = AdminOperateOperationCatalog.GetInputContract(_definition, parameter.Name);
             if (parameter.Schema.Type == WorkflowSchemaValueType.Text)
             {
                 ValidateText(value, schema, parameter.Name, messages);
