@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "issue": "honua-server#3886",
+  "limits": {
+    "httpRequestBytes": 1048576,
+    "canonicalPromptCharacters": 32000,
+    "messages": 256,
+    "tools": 128,
+    "assistantToolCalls": 256,
+    "componentCharacters": 64000,
+    "responseBytes": 4194304,
+    "eventBytes": 262144,
+    "responseEvents": 4096,
+    "toolArgumentBytesPerCall": 262144
+  },
+  "memoryBound": "request <= MaxRequestBytes plus a 16 KiB read buffer; output accounting retains no payload beyond adapter-owned current event unless certification capture is enabled",
+  "denominator": 4,
+  "executed": 4,
+  "skipped": 0,
+  "cases": [
+    {
+      "dimension": "http-request-bytes",
+      "encoding": "binary/invalid-json",
+      "transferMode": "content-length",
+      "configuredThreshold": 1048576,
+      "measuredRequestBytes": 1048577,
+      "status": 413,
+      "providerRequestCount": 0,
+      "auditCount": 0,
+      "provenanceCount": 0,
+      "downstreamDispatchCount": 0
+    },
+    {
+      "dimension": "http-request-bytes",
+      "encoding": "binary/invalid-json",
+      "transferMode": "chunked",
+      "configuredThreshold": 1048576,
+      "measuredRequestBytes": 1048577,
+      "status": 413,
+      "providerRequestCount": 0,
+      "auditCount": 0,
+      "provenanceCount": 0,
+      "downstreamDispatchCount": 0
+    },
+    {
+      "dimension": "per-event-utf8-bytes",
+      "encoding": "multibyte-utf8",
+      "boundary": "exact",
+      "eventSequence": ["textDelta", "messageStop"],
+      "upstreamDisposed": true,
+      "auditOutcome": "success"
+    },
+    {
+      "dimension": "per-event-utf8-bytes",
+      "encoding": "multibyte-utf8",
+      "boundary": "plus-one",
+      "eventSequence": ["error"],
+      "errorCode": "studio_ai/provider_output_too_large",
+      "upstreamDisposed": true,
+      "auditOutcome": "failure",
+      "provenanceCount": 0,
+      "downstreamDispatchCount": 0
+    }
+  ],
+  "transcripts": {
+    "service": { "passed": 21, "failed": 0, "skipped": 0 },
+    "realRoute": { "passed": 2, "failed": 0, "skipped": 0 }
+  }
+}
