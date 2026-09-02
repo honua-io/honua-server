@@ -256,6 +256,11 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/api/v1/admin/tenants",
+      "capability": "admin.multi-tenancy"
+    },
+    {
+      "family": "Admin API",
       "capability": "admin.control-plane"
     },
     {

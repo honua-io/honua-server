@@ -30,10 +30,11 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 375,
-      "provingTestCount": 1138,
+      "entryCount": 368,
+      "provingTestCount": 1129,
       "maturity": {
-        "implemented": 375
+        "implemented": 366,
+        "preview": 2
       },
       "noSurface": null,
       "cite": [],
@@ -50,6 +51,24 @@
           }
         }
       ],
+      "geobench": []
+    },
+    {
+      "key": "admin.multi-tenancy",
+      "displayName": "Multi-Tenant Operation",
+      "category": "ControlPlane",
+      "edition": "Enterprise",
+      "status": "preview",
+      "entryCount": 7,
+      "provingTestCount": 11,
+      "maturity": {
+        "preview": 7
+      },
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
       "geobench": []
     },
     {
@@ -675,7 +694,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 27,
+      "provingTestCount": 29,
       "maturity": {
         "implemented": 2
       },
@@ -2151,7 +2170,7 @@
       "entryCount": 15,
       "provingTestCount": 29,
       "maturity": {
-        "implemented": 15
+        "preview": 15
       },
       "noSurface": null,
       "cite": [],
@@ -2495,7 +2514,8 @@
       "entryCount": 5,
       "provingTestCount": 94,
       "maturity": {
-        "implemented": 5
+        "implemented": 3,
+        "preview": 2
       },
       "noSurface": null,
       "cite": [],

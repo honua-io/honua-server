@@ -400,6 +400,9 @@ internal sealed class CapabilityManifestService(
             Capability("temporal.animation-api", "temporal", context, entitlementKey: "temporal.animation-api"),
 
             Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
+            Capability("admin.multi-tenancy", "control-plane", context,
+                maturity: CapabilityMaturity.Preview,
+                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("admin.multi-tenancy")),
             Capability("realtime.feature-streams", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("realtime.feature-streams"),
