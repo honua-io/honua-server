@@ -64,7 +64,22 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         ArgumentNullException.ThrowIfNull(request);
 
         var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
-        var apiKey = await _apiKeyResolver.ResolveAsync(ProviderLabel, options, cancellationToken).ConfigureAwait(false);
+        string? apiKey = null;
+        var credentialUnavailable = false;
+        try
+        {
+            apiKey = await _apiKeyResolver.ResolveAsync(ProviderLabel, options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (StudioAiProxyCredentialUnavailableException)
+        {
+            credentialUnavailable = true;
+        }
+
+        if (credentialUnavailable)
+        {
+            yield return Error(model, "Provider credentials are unavailable.", errorCode: StudioAiProxyApiKeyResolver.CredentialUnavailableCode);
+            yield break;
+        }
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             yield return Error(model, "Anthropic API key is not configured.");

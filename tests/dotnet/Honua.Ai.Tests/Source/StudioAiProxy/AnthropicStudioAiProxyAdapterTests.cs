@@ -422,7 +422,7 @@ public sealed class AnthropicStudioAiProxyAdapterTests
     private static StudioAiProxyProviderOptions DefaultOptions() => new()
     {
         Kind = StudioAiProxyConfiguration.AnthropicKind,
-        Endpoint = "https://api.anthropic.com",
+        Endpoint = "https://localhost",
         Model = "claude-sonnet-4-5",
         ApiKey = "test-key",
         MaxTokens = 1024,
