@@ -10,6 +10,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -47,6 +48,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
+    private readonly PostgresCoreSchemaGuard? _schemaGuard;
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
     private readonly string _rasterLayerStatisticsTable;
@@ -59,10 +61,12 @@ internal sealed class PostgresRasterStore : IRasterStore
     public PostgresRasterStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresRasterStore> logger,
-        string? schemaName = null)
+        string? schemaName = null,
+        PostgresCoreSchemaGuard? schemaGuard = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _schemaGuard = schemaGuard;
 
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
@@ -2633,6 +2637,14 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
+        if (_schemaGuard is not null)
+        {
+            await _schemaGuard.VerifyRequirementAsync(
+                connection,
+                CoreSchemaRequirement.RasterLayerStatistics,
+                cancellationToken).ConfigureAwait(false);
+        }
+
         // Mosaic statistics are keyed by (layer, merge strategy, raster-id set) so any change
         // to the layer's raster membership invalidates the persisted rows automatically.
         var signature = CreateMosaicSignature(rasterIds);
@@ -2742,12 +2754,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         string signature,
         CancellationToken cancellationToken)
     {
-        // Self-provision the snapshot table so already-registered datasets backfill without a
-        // manual migration (same pattern as PostgresMetadataV2GraphStore.EnsureSchemaAsync â€”
-        // a no-op once 003_CreateRasterLayerStatistics.sql has been applied). Best-effort: a
-        // read-only connection simply keeps the legacy compute path below.
-        await TryEnsureLayerStatisticsTableAsync(connection, cancellationToken).ConfigureAwait(false);
-
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         await AcquireBackfillLockAsync(connection, transaction, LayerStatisticsLockNamespace, layerId, cancellationToken).ConfigureAwait(false);
 
@@ -2990,42 +2996,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         return stats;
-    }
-
-    private async Task TryEnsureLayerStatisticsTableAsync(DbConnection connection, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"""
-            CREATE TABLE IF NOT EXISTS {_rasterLayerStatisticsTable} (
-                layer_id INTEGER NOT NULL,
-                merge_strategy VARCHAR(32) NOT NULL,
-                raster_signature TEXT NOT NULL,
-                band_number INTEGER NOT NULL,
-                min_value DOUBLE PRECISION,
-                max_value DOUBLE PRECISION,
-                mean_value DOUBLE PRECISION,
-                std_dev DOUBLE PRECISION,
-                valid_pixel_count BIGINT,
-                nodata_pixel_count BIGINT,
-                computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (layer_id, merge_strategy, raster_signature, band_number)
-            )
-            """;
-
-        try
-        {
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (PostgresException ex) when (
-            ex.SqlState is PostgresErrorCodes.UniqueViolation
-                or PostgresErrorCodes.DuplicateTable
-                or PostgresErrorCodes.DuplicateObject
-                or PostgresErrorCodes.InsufficientPrivilege
-                or PostgresErrorCodes.ReadOnlySqlTransaction)
-        {
-            // Concurrent CREATE TABLE IF NOT EXISTS race, or a read-only deployment.
-            // Both are tolerated: the read path treats a missing table as a cache miss.
-        }
     }
 
     private static async Task AcquireBackfillLockAsync(
