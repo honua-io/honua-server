@@ -74,6 +74,7 @@ public sealed class CapabilityRegistryConformanceTests
         "ai.spec-apply",
         "ai.grounding",
         "gitops.release-manifest",
+        "admin.multi-tenancy",
         "transport.grpc",
         "transport.grpc-web",
         "transport.native-grpc",

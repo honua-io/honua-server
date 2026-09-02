@@ -9,7 +9,15 @@
       "displayName": "Admin Control Plane",
       "category": "ControlPlane",
       "edition": "Community",
-      "description": "General administrative CRUD surfaces (connections, metadata, services, tenants, users, roles, configuration) with no dedicated entitlement of their own."
+      "description": "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own."
+    },
+    {
+      "key": "admin.multi-tenancy",
+      "displayName": "Multi-Tenant Operation",
+      "category": "ControlPlane",
+      "edition": "Enterprise",
+      "description": "Preview tenant lifecycle, schema routing, and usage surfaces. Honua 2026.1 GA deployments are single-tenant; Preview status never lowers the security severity of cross-tenant disclosure.",
+      "status": "preview"
     },
     {
       "key": "ai.agent-operations",
