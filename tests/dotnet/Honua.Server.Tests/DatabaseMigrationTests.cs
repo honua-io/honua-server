@@ -373,10 +373,27 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         result.Successful.Should().BeTrue(
             $"both numbered migration roots should apply through the canonical runner. Error: {result.ErrorMessage}");
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLayerStatisticsMigration);
+        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.MetadataV2SnapshotMigration);
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterExternalStorageMigration);
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.SensorThingsMigration);
-        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+        result.AppliedScripts.Should().NotContain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration,
+            "the contract-gated adoption script has no work in the default schema");
+
+        var existingDatabasePlan = await runner.PlanMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+        existingDatabasePlan.Successful.Should().BeTrue();
+        existingDatabasePlan.PendingScripts.Should().NotContain(
+            PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+        existingDatabasePlan.HasContractScripts.Should().BeFalse(
+            "an existing default-schema deployment must not require an adoption nonce for a no-op");
+
+        var restart = await runner.RunMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+        restart.Successful.Should().BeTrue();
+        restart.AppliedScripts.Should().BeEmpty();
 
         await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -386,10 +403,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             FROM public.schema_versions
             WHERE scriptname IN (
                 'Honua.Postgres.Migrations.003_CreateRasterLayerStatistics.sql',
+                'Honua.Postgres.Migrations.005_CompleteLateRasterProvisioning.sql',
                 'Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql',
                 'Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql',
-                'Honua.Server.Migrations.059_CreateSensorThings.sql',
-                'Honua.Server.Migrations.109_AdoptConfiguredGuardedSchema.sql')
+                'Honua.Server.Migrations.059_CreateSensorThings.sql')
             """;
         (await command.ExecuteScalarAsync()).Should().Be(5,
             "upgrade and restore receipts use one journal denominator for both numbered roots");

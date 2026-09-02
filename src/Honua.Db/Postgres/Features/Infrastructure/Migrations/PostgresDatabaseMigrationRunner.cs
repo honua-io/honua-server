@@ -33,6 +33,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
     private readonly string? _contractApprovalToken;
     private readonly string _metadataSchemaVariable;
+    private readonly bool _includeConfiguredSchemaAdoption;
     private readonly IDatabaseSchemaGuard _schemaGuard;
 
     public PostgresDatabaseMigrationRunner(
@@ -45,10 +46,14 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
         _backupHookRecorder = backupHookRecorder;
         var configuredMetadataSchema = configuration?["Database:Schema"];
-        _metadataSchemaVariable = SchemaSearchPath.ValidateAndQuote(
-            string.IsNullOrWhiteSpace(configuredMetadataSchema)
-                ? PostgresSchemaConfiguration.DefaultMetadataSchema
-                : configuredMetadataSchema);
+        var metadataSchema = string.IsNullOrWhiteSpace(configuredMetadataSchema)
+            ? PostgresSchemaConfiguration.DefaultMetadataSchema
+            : configuredMetadataSchema.Trim();
+        _metadataSchemaVariable = SchemaSearchPath.ValidateAndQuote(metadataSchema);
+        _includeConfiguredSchemaAdoption = !string.Equals(
+            metadataSchema,
+            PostgresSchemaConfiguration.DefaultMetadataSchema,
+            StringComparison.Ordinal);
 
         // The contract-apply approval is an explicit top-level operator signal
         // (HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>), read via the IConfiguration indexer (Abstractions
@@ -85,7 +90,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 BuildMigrationConnectionString(connectionString),
                 migrationsAssembly,
                 _metadataSchemaVariable,
-                includeRasterProviderMigrations);
+                includeRasterProviderMigrations,
+                _includeConfiguredSchemaAdoption);
             var scripts = upgrader.GetScriptsToExecute();
             var pendingScripts = scripts.Select(script => script.Name).ToArray();
             var classifications = ClassifyScripts(scripts);
@@ -244,7 +250,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 migrationConnectionString,
                 migrationsAssembly,
                 _metadataSchemaVariable,
-                includeRasterProviderMigrations);
+                includeRasterProviderMigrations,
+                _includeConfiguredSchemaAdoption);
             if (usesCanonicalMigrationRoots)
             {
                 await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
@@ -325,7 +332,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         string connectionString,
         Assembly migrationsAssembly,
         string metadataSchemaVariable,
-        bool includeRasterProviderMigrations)
+        bool includeRasterProviderMigrations,
+        bool includeConfiguredSchemaAdoption)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -342,7 +350,17 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             : new[] { migrationsAssembly };
 
         return builder
-            .WithScriptsEmbeddedInAssemblies(migrationAssemblies)
+            .WithScriptsEmbeddedInAssemblies(
+                migrationAssemblies,
+                // Migration 109 is a contract-phase move that only has meaning for a
+                // non-default Database:Schema. Omitting it at discovery time keeps an
+                // existing default-schema upgrade out of the nonce gate altogether.
+                name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) &&
+                    (includeConfiguredSchemaAdoption ||
+                     !string.Equals(
+                         name,
+                         PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration,
+                         StringComparison.Ordinal)))
             .WithScriptNameComparer(_migrationScriptNameComparer)
             .Build();
     }

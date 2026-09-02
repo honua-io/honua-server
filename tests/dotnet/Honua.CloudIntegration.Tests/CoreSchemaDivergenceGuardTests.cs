@@ -230,6 +230,53 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
     }
 
     [SkippableFact]
+    public async Task CanonicalRunner_WhenRasterIsEnabledAfterVectorOnlyBoot_CompletesJournaledNoOpTables()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the late-raster lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
+        var guard = new PostgresCoreSchemaGuard();
+        var runner = new PostgresDatabaseMigrationRunner(guard);
+
+        var vectorBaseline = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        vectorBaseline.Successful.Should().BeTrue(
+            $"the vector-only baseline must migrate cleanly. Error: {vectorBaseline.ErrorMessage}");
+        vectorBaseline.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterOverviewsMigration);
+        vectorBaseline.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterFootprintsMigration);
+        vectorBaseline.AppliedScripts.Should().NotContain(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
+        (await CountTablesAsync(connectionString, "honua", "raster_overviews", "raster_footprints"))
+            .Should().Be(0, "server migrations 063/064 are intentional no-ops without postgis_raster");
+
+        await ExecuteAsync(connectionString, "CREATE EXTENSION postgis_raster;");
+
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue(
+            $"the provider root must be plannable over journaled server no-ops. Error: {plan.ErrorMessage}");
+        plan.PendingScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
+        plan.HasContractScripts.Should().BeFalse();
+
+        var rasterUpgrade = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        rasterUpgrade.Successful.Should().BeTrue(
+            $"late raster enablement must provision every guarded table. Error: {rasterUpgrade.ErrorMessage}");
+        rasterUpgrade.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
+        (await CountTablesAsync(connectionString, "honua", "raster_overviews", "raster_footprints"))
+            .Should().Be(2);
+        await guard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
+
+        await ExecuteAsync(connectionString, $"""
+            DELETE FROM public.schema_versions
+            WHERE scriptname = '{PostgresCoreSchemaGuard.RasterLateProvisioningMigration}';
+            """);
+        var beforeDivergenceCheck = await CaptureStateAsync(connectionString);
+        var verifyDivergence = () => guard.VerifyAsync(connectionString);
+        var exception = await verifyDivergence.Should().ThrowAsync<DatabaseSchemaFloorException>();
+        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
+        exception.Which.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
+        (await CaptureStateAsync(connectionString)).Should().Be(beforeDivergenceCheck,
+            "late-raster verification must never recreate a journal receipt");
+    }
+
+    [SkippableFact]
     public async Task CanonicalRunner_OnLegacyConfiguredSchema_AdoptsJournaledGuardedFamiliesForward()
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the configured-schema upgrade lane.");
@@ -493,6 +540,25 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<int> CountTablesAsync(
+        string connectionString,
+        string schema,
+        params string[] tables)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)::int
+            FROM information_schema.tables
+            WHERE table_schema = @schema
+              AND table_name = ANY(@tables)
+            """;
+        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue("tables", tables);
+        return (int)(await command.ExecuteScalarAsync())!;
     }
 
     private static async Task ExecuteOrdinaryStoreOperationAsync(

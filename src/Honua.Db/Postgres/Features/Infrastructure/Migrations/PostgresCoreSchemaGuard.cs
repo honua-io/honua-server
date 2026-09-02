@@ -21,6 +21,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "Honua.Postgres.Migrations.001_CreateRasterTables.sql";
     internal const string RasterLayerStatisticsMigration =
         "Honua.Postgres.Migrations.003_CreateRasterLayerStatistics.sql";
+    internal const string RasterLateProvisioningMigration =
+        "Honua.Postgres.Migrations.005_CompleteLateRasterProvisioning.sql";
     internal static readonly string MetadataV2SnapshotMigration =
         BuildServerMigrationName("031_CreateMetadataV2Snapshot.sql");
     internal static readonly string MetadataV2ReleasePackagesMigration =
@@ -29,6 +31,10 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         BuildServerMigrationName("055_SetRasterDataExternalStorage.sql");
     internal static readonly string SensorThingsMigration =
         BuildServerMigrationName("059_CreateSensorThings.sql");
+    internal static readonly string RasterOverviewsMigration =
+        BuildServerMigrationName("063_CreateRasterOverviews.sql");
+    internal static readonly string RasterFootprintsMigration =
+        BuildServerMigrationName("064_CreateRasterFootprints.sql");
     internal static readonly string ConfiguredSchemaAdoptionMigration =
         BuildServerMigrationName("109_AdoptConfiguredGuardedSchema.sql");
 
@@ -71,6 +77,50 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         ("raster_layer_statistics", "valid_pixel_count"),
         ("raster_layer_statistics", "nodata_pixel_count"),
         ("raster_layer_statistics", "computed_at"),
+    ];
+
+    private static readonly string[] _rasterOverviewsTables =
+    [
+        "raster_overviews",
+    ];
+
+    private static readonly (string Table, string Column)[] _rasterOverviewsColumns =
+    [
+        ("raster_overviews", "id"),
+        ("raster_overviews", "raster_data_id"),
+        ("raster_overviews", "overview_factor"),
+        ("raster_overviews", "raster"),
+        ("raster_overviews", "ground_resolution"),
+        ("raster_overviews", "created_at"),
+    ];
+
+    private static readonly string[] _rasterOverviewsIndexes =
+    [
+        "raster_overviews_pkey",
+        "raster_overviews_unique_factor",
+        "idx_raster_overviews_raster_data_id",
+        "idx_raster_overviews_lookup",
+    ];
+
+    private static readonly string[] _rasterFootprintsTables =
+    [
+        "raster_footprints",
+    ];
+
+    private static readonly (string Table, string Column)[] _rasterFootprintsColumns =
+    [
+        ("raster_footprints", "raster_data_id"),
+        ("raster_footprints", "footprint"),
+        ("raster_footprints", "seamline"),
+        ("raster_footprints", "srid"),
+        ("raster_footprints", "created_at"),
+        ("raster_footprints", "updated_at"),
+    ];
+
+    private static readonly string[] _rasterFootprintsIndexes =
+    [
+        "raster_footprints_pkey",
+        "idx_raster_footprints_footprint",
     ];
 
     private static readonly (string Table, string Column)[] _metadataV2Columns =
@@ -205,6 +255,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     private static readonly string[] _guardedIndexes =
     [
         "raster_layer_statistics_pkey",
+        .. _rasterOverviewsIndexes,
+        .. _rasterFootprintsIndexes,
         .. _metadataV2Indexes,
         .. _metadataV2ReleasePackageIndexes,
         .. _sensorThingsIndexes,
@@ -218,6 +270,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "raster_layer_statistics",
         "raster_data",
         "raster_tiles",
+        .. _rasterOverviewsTables,
+        .. _rasterFootprintsTables,
     ];
 
     private static readonly string[] _rasterTables =
@@ -225,6 +279,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "raster_layer_statistics",
         "raster_data",
         "raster_tiles",
+        .. _rasterOverviewsTables,
+        .. _rasterFootprintsTables,
     ];
 
     private readonly string _schemaName;
@@ -268,6 +324,19 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 _rasterLayerStatisticsColumns,
                 ["raster_layer_statistics_pkey"]);
             VerifyRequiredExternalStorageMigration(state);
+            VerifyRequiredLateRasterProvisioningMigration(state);
+            VerifyRequiredMigration(
+                state,
+                RasterOverviewsMigration,
+                _rasterOverviewsTables,
+                _rasterOverviewsColumns,
+                _rasterOverviewsIndexes);
+            VerifyRequiredMigration(
+                state,
+                RasterFootprintsMigration,
+                _rasterFootprintsTables,
+                _rasterFootprintsColumns,
+                _rasterFootprintsIndexes);
         }
 
         VerifyRequiredMigration(
@@ -296,6 +365,26 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         ArgumentNullException.ThrowIfNull(connection);
         var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        if (state.RequiresRasterFloor)
+        {
+            var canAwaitLateRasterProvisioning = !state.IsApplied(RasterLateProvisioningMigration);
+            VerifyExclusiveMigrationConsistency(
+                state,
+                RasterOverviewsMigration,
+                _rasterOverviewsTables,
+                _rasterOverviewsColumns,
+                _rasterOverviewsIndexes,
+                state.CanAwaitConfiguredSchemaAdoption || canAwaitLateRasterProvisioning);
+            VerifyExclusiveMigrationConsistency(
+                state,
+                RasterFootprintsMigration,
+                _rasterFootprintsTables,
+                _rasterFootprintsColumns,
+                _rasterFootprintsIndexes,
+                state.CanAwaitConfiguredSchemaAdoption || canAwaitLateRasterProvisioning);
+            VerifyLateRasterProvisioningConsistency(state);
+        }
 
         VerifyExclusiveMigrationConsistency(
             state,
@@ -406,6 +495,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                     $"EXTERNAL storage is absent for {string.Join(", ", missingEffects)}.");
             }
 
+            VerifyRequiredLateRasterProvisioningMigration(state);
             return;
         }
 
@@ -474,6 +564,83 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 RasterExternalStorageMigration,
                 DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
                 $"journal claims the migration is applied, but EXTERNAL storage is absent for {string.Join(", ", missingEffects)}.");
+        }
+    }
+
+    private static void VerifyRequiredLateRasterProvisioningMigration(SchemaState state)
+    {
+        VerifyRequiredMigration(
+            state,
+            RasterLateProvisioningMigration,
+            [.. _rasterOverviewsTables, .. _rasterFootprintsTables],
+            [.. _rasterOverviewsColumns, .. _rasterFootprintsColumns],
+            [.. _rasterOverviewsIndexes, .. _rasterFootprintsIndexes]);
+
+        if (state.MissingOverviewExternalStorageEffect)
+        {
+            throw CreateFailure(
+                RasterLateProvisioningMigration,
+                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                $"journal claims the migration is applied, but EXTERNAL storage is absent for {state.SchemaName}.raster_overviews.raster.");
+        }
+    }
+
+    private static void VerifyLateRasterProvisioningConsistency(SchemaState state)
+    {
+        if (state.IsApplied(RasterLateProvisioningMigration))
+        {
+            if (state.CanAwaitConfiguredSchemaAdoption &&
+                !_rasterOverviewsTables.Concat(_rasterFootprintsTables).Any(state.Tables.Contains))
+            {
+                return;
+            }
+
+            VerifyRequiredLateRasterProvisioningMigration(state);
+            return;
+        }
+
+        // Migration 063/064 may already own either complete table: both were intentionally
+        // journaled as no-ops while raster was disabled. Migration 005 adopts those complete
+        // objects into its provider receipt and creates only the missing tables. It cannot
+        // safely repair a malformed object hidden behind CREATE TABLE IF NOT EXISTS.
+        VerifyPendingLateRasterTable(
+            state,
+            _rasterOverviewsTables,
+            _rasterOverviewsColumns,
+            _rasterOverviewsIndexes);
+        VerifyPendingLateRasterTable(
+            state,
+            _rasterFootprintsTables,
+            _rasterFootprintsColumns,
+            _rasterFootprintsIndexes);
+
+        if (state.Tables.Contains("raster_overviews") && state.MissingOverviewExternalStorageEffect)
+        {
+            throw CreateFailure(
+                RasterLateProvisioningMigration,
+                DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal,
+                $"migration adoption candidate is incomplete: EXTERNAL storage is absent for {state.SchemaName}.raster_overviews.raster.");
+        }
+    }
+
+    private static void VerifyPendingLateRasterTable(
+        SchemaState state,
+        string[] requiredTables,
+        (string Table, string Column)[] requiredColumns,
+        string[] requiredIndexes)
+    {
+        if (!requiredTables.Any(state.Tables.Contains))
+        {
+            return;
+        }
+
+        var missing = FindMissingPhysicalState(state, requiredTables, requiredColumns, requiredIndexes);
+        if (missing.Length > 0)
+        {
+            throw CreateFailure(
+                RasterLateProvisioningMigration,
+                DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal,
+                $"migration adoption candidate is incomplete: {string.Join(", ", missing)}.");
         }
     }
 
@@ -652,7 +819,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                     var column = reader.GetString(1);
                     columns.Add((table, column));
                     if ((table == "raster_data" && column == "raster") ||
-                        (table == "raster_tiles" && column == "tile_data"))
+                        (table == "raster_tiles" && column == "tile_data") ||
+                        (table == "raster_overviews" && column == "raster"))
                     {
                         storage[(table, column)] = reader.GetFieldValue<char>(2);
                     }
@@ -681,6 +849,10 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         public bool HasRasterData => Tables.Contains("raster_data");
 
         public bool HasAnyRasterStorageTarget => HasRasterData || Tables.Contains("raster_tiles");
+
+        public bool MissingOverviewExternalStorageEffect =>
+            Tables.Contains("raster_overviews") &&
+            (!Storage.TryGetValue(("raster_overviews", "raster"), out var storageKind) || storageKind != 'e');
 
         public bool RequiresRasterFloor =>
             HasPostGisRaster ||
