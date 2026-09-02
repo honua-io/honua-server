@@ -44,8 +44,7 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 /// Core handler for WFS 2.0 operations backed by the shared catalog and feature stores.
 /// </summary>
 /// <remarks>
-/// CITE conformance: 166/167 (WFS 2.0 `basic` profile on trunk); multi-layer
-/// rollbackOnFailure=true transactions remain the failing requirement.
+/// CITE conformance: 167/167 (WFS 2.0 `basic` profile, run 33583116921).
 /// Authoritative status: <see href="../../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
 /// </remarks>
 internal sealed partial class Wfs20Handler
