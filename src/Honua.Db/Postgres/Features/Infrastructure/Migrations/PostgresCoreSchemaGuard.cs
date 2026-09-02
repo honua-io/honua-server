@@ -381,6 +381,14 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 "the required numbered migration is not recorded in public.schema_versions.");
         }
 
+        if (!state.HasRasterData)
+        {
+            throw CreateFailure(
+                RasterExternalStorageMigration,
+                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                $"journal claims the migration is applied, but required table '{state.SchemaName}.raster_data' is absent.");
+        }
+
         var missingEffects = state.MissingExternalStorageEffects();
         if (missingEffects.Count > 0)
         {
