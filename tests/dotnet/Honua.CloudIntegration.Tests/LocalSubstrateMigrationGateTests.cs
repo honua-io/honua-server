@@ -7,6 +7,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Honua.Server.Startup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -424,7 +425,10 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
     }
 
     private static PostgresDatabaseMigrationRunner CreateEnforcingRunner()
-        => new(Options.Create(new MigrationSafetyOptions { Enforce = true }));
+        => new(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
+            ServerCoreSchemaMigrations.Manifest,
+            Options.Create(new MigrationSafetyOptions { Enforce = true }));
 
     private static string GetEmbeddedScriptName(string assemblyName, string scriptName)
         => $"{assemblyName}.{scriptName}";
@@ -445,7 +449,12 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
                 .Build();
         }
 
-        return new PostgresDatabaseMigrationRunner(Options.Create(options), configuration, backupHookRecorder);
+        return new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration),
+            ServerCoreSchemaMigrations.Manifest,
+            Options.Create(options),
+            configuration,
+            backupHookRecorder);
     }
 
     private static string ReserveSentinelPath()
