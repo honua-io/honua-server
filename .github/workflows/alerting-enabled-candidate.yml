@@ -18,8 +18,13 @@ on:
         description: Exact 40-character candidate commit SHA
         required: true
         type: string
+      evidence_run_id:
+        description: Actions run id that produced the exact-candidate hosted evidence artifact
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
   packages: read
 
@@ -67,46 +72,13 @@ jobs:
           CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+      - name: Download exact-candidate hosted evidence
+        uses: actions/download-artifact@v5
         with:
-          dotnet-version: 10.0.x
-
-      - name: Authenticate package restore
-        env:
-          NUGET_AUTH_TOKEN: ${{ github.token }}
-        run: |
-          dotnet nuget update source github-honua \
-            --username "${{ github.actor }}" \
-            --password "${NUGET_AUTH_TOKEN}" \
-            --store-password-in-clear-text
-          mkdir -p artifacts/alerting-enabled-candidate/evidence
-
-      - name: Package the exact candidate
-        id: package
-        run: |
-          dotnet publish src/Honua.Server/Honua.Server.csproj --configuration Release \
-            --output artifacts/alerting-enabled-candidate/package
-          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
-            -cf artifacts/alerting-enabled-candidate/honua-server.tar \
-            -C artifacts/alerting-enabled-candidate/package .
-          digest="sha256:$(sha256sum artifacts/alerting-enabled-candidate/honua-server.tar | cut -d' ' -f1)"
-          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
-
-      - name: Run enabled Postgres webhook qualification scenarios
-        env:
-          HONUA_ALERT_CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
-          HONUA_ALERT_CANDIDATE_ARTIFACT: ${{ github.workspace }}/artifacts/alerting-enabled-candidate/honua-server.tar
-          HONUA_ALERT_CANDIDATE_ARTIFACT_DIGEST: ${{ steps.package.outputs.digest }}
-          HONUA_ALERT_CANDIDATE_EVIDENCE: ${{ github.workspace }}/artifacts/alerting-enabled-candidate
-          HONUA_ALERT_CANDIDATE_WORKFLOW: .github/workflows/alerting-enabled-candidate.yml
-        run: |
-          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
-            --configuration Release \
-            --filter 'FullyQualifiedName~AlertWebhookDeliveryE2eTests' \
-            --logger 'trx;LogFileName=alerting-enabled-candidate.trx' \
-            --results-directory artifacts/alerting-enabled-candidate \
-            -m:1 /nodeReuse:false
+          name: alerting-hosted-evidence-${{ steps.candidate.outputs.sha }}
+          path: artifacts/alerting-enabled-candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.evidence_run_id }}
 
       - name: Count selected tests
         id: tests
