@@ -1,0 +1,95 @@
+name: Lambda Preview Certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_image:
+        description: Exact GHCR Lambda AOT tag from the platform manifest
+        required: true
+        type: string
+      source_digest:
+        description: Exact GHCR Lambda manifest digest (sha256:<64hex>)
+        required: true
+        type: string
+      server_revision:
+        description: Exact 40-character server revision bound to the image
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  packages: read
+
+concurrency:
+  group: lambda-preview-certification
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    name: Real deploy, invoke, verify, teardown
+    runs-on: ubuntu-24.04
+    environment: cert
+    timeout-minutes: 25
+    env:
+      AWS_REGION: ${{ vars.REALAWS_CERT_REGION || 'us-east-1' }}
+      HONUA_LAMBDA_SOURCE_IMAGE: ${{ inputs.source_image }}
+      HONUA_LAMBDA_SOURCE_DIGEST: ${{ inputs.source_digest }}
+      HONUA_LAMBDA_SERVER_REVISION: ${{ inputs.server_revision }}
+      HONUA_LAMBDA_PREVIEW_REPOSITORY: ${{ vars.REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY }}
+      HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN: ${{ vars.REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN }}
+      HONUA_LAMBDA_PREVIEW_RECEIPT: evidence/lambda-preview-receipt.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Require the certified bootstrap
+        shell: bash
+        env:
+          ROLE_ARN: ${{ vars.REALAWS_CERT_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          required=(ROLE_ARN HONUA_LAMBDA_PREVIEW_REPOSITORY HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN)
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing cert bootstrap variable: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Configure certified AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
+        with:
+          role-to-assume: ${{ vars.REALAWS_CERT_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: honua-lambda-preview-certification
+
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Standing limits (release#210, verbatim): plan summaries to the evidence thread BEFORE apply, STOP on any destroy beyond the lane's own teardown-of-what-it-created, no IAM trust widening, fingerprints only.
+      - name: Deploy, invoke, verify, and tear down the exact Lambda artifact
+        shell: bash
+        run: scripts/cloud/certify-lambda-preview.sh
+
+      - name: Publish fingerprint-only receipt
+        if: ${{ always() && hashFiles('evidence/lambda-preview-receipt.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: lambda-preview-certification-receipt
+          path: evidence/lambda-preview-receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Receipt handoff
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          digest="$(jq -er '.artifact.ecrDigest' evidence/lambda-preview-receipt.json)"
+          echo "### Lambda Preview receipt" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Result: pass" >> "$GITHUB_STEP_SUMMARY"
+          echo "- True ECR artifact digest: \`${digest}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Release handoff: replace \`honua-server.awsLambdaEcrDigest\` sentinel with this digest in the platform manifest." >> "$GITHUB_STEP_SUMMARY"
