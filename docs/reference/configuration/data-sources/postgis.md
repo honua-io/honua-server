@@ -36,6 +36,11 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS unaccent;
 ```
 
+Honua never creates `postgis_raster` from application startup. When the
+extension is absent, the canonical migration runner leaves the optional raster
+migration root unjournaled and verifies the non-raster core floor. Provisioning
+the extension later makes that root eligible on the next migration run.
+
 ## Startup validation
 
 Honua performs a PostGIS preflight check at startup:
@@ -45,6 +50,11 @@ Honua performs a PostGIS preflight check at startup:
 3. Logs engine and PostGIS versions for operator visibility.
 4. Non-Development environments fail fast (CrashLoopBackOff) if PostGIS is missing.
 5. Development mode logs a warning and continues. Missing `postgis_raster` warns but never blocks startup.
+
+For deployments using a non-default `Database:Schema`, migration 109 moves a
+complete legacy Metadata v2, SensorThings, or raster family out of `honua` into
+the configured schema. It aborts transactionally on partial or coexisting
+families so operators can reconcile ambiguous state without an automatic merge.
 
 The preflight result is available via `GET /api/v1/admin/deploy/preflight?includeDiagnostics=true` in the `databaseCompatibility` field.
 

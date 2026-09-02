@@ -3,11 +3,66 @@
 -- Version: 1.0
 -- Date: 2026-02-08
 
--- Enable PostGIS raster extension if not already enabled
-CREATE EXTENSION IF NOT EXISTS postgis_raster;
+-- postgis_raster is provisioned by infrastructure. The canonical runner includes
+-- this raster migration root only when that optional extension is already installed;
+-- migrations never attempt a privileged extension install on application startup.
 
 -- Ensure the configured metadata schema exists (matches SchemaSearchPath.QualifyTable).
 CREATE SCHEMA IF NOT EXISTS $HonuaSchema$;
+
+-- Before this root joined the canonical public journal, raster provisioning and
+-- runtime fallbacks always targeted honua. Adopt those tables before any IF NOT EXISTS
+-- statement can create an empty configured-schema twin. A mixed source/target state is
+-- ambiguous and must be reconciled by an operator rather than merged silently.
+DO $$
+DECLARE
+    target_schema text := (
+        SELECT nspname
+        FROM pg_catalog.pg_namespace
+        WHERE oid = to_regnamespace('$HonuaSchema$'));
+    family text[] := ARRAY[
+        'raster_data',
+        'raster_statistics',
+        'raster_tiles',
+        'raster_layer_statistics',
+        'raster_sensor_metadata',
+        'raster_overviews',
+        'raster_footprints'];
+    source_count integer;
+    target_count integer;
+    table_name text;
+BEGIN
+    IF target_schema = 'honua' THEN
+        RETURN;
+    END IF;
+
+    SELECT count(*) INTO source_count
+    FROM unnest(family) AS item(table_name)
+    WHERE to_regclass(format('%I.%I', 'honua', item.table_name)) IS NOT NULL;
+
+    SELECT count(*) INTO target_count
+    FROM unnest(family) AS item(table_name)
+    WHERE to_regclass(format('%I.%I', target_schema, item.table_name)) IS NOT NULL;
+
+    IF source_count > 0 AND target_count > 0 THEN
+        RAISE EXCEPTION
+            'Cannot adopt raster schema: % target table(s) in % coexist with % legacy table(s) in honua',
+            target_count,
+            target_schema,
+            source_count;
+    END IF;
+
+    IF source_count = 0 THEN
+        RETURN;
+    END IF;
+
+    FOREACH table_name IN ARRAY family LOOP
+        IF to_regclass(format('%I.%I', 'honua', table_name)) IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', 'honua', table_name, target_schema);
+        END IF;
+    END LOOP;
+END
+$$;
 
 -- Create raster_data table for storing raster datasets.
 -- NOTE: acquisition_date and its supporting indexes are added by 002_AddRasterAcquisitionDate.sql

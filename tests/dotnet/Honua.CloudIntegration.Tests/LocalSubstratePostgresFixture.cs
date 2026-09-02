@@ -67,7 +67,9 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
     /// migration scenario runs against its own database so the DbUp journal and applied objects never
     /// cross-contaminate between tests.
     /// </summary>
-    public async Task<string> CreateFreshDatabaseAsync(bool enableSpatialExtensions = false)
+    public async Task<string> CreateFreshDatabaseAsync(
+        bool enablePostGis = false,
+        bool enablePostGisRaster = false)
     {
         var databaseName = $"honua_ci_{Guid.NewGuid():N}";
 
@@ -84,15 +86,17 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
             Database = databaseName
         }.ConnectionString;
 
-        if (enableSpatialExtensions)
+        if (enablePostGis || enablePostGisRaster)
         {
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
-            command.CommandText = """
-                CREATE EXTENSION IF NOT EXISTS postgis;
-                CREATE EXTENSION IF NOT EXISTS postgis_raster;
-                """;
+            command.CommandText = enablePostGisRaster
+                ? """
+                    CREATE EXTENSION IF NOT EXISTS postgis;
+                    CREATE EXTENSION IF NOT EXISTS postgis_raster;
+                    """
+                : "CREATE EXTENSION IF NOT EXISTS postgis;";
             await command.ExecuteNonQueryAsync();
         }
 

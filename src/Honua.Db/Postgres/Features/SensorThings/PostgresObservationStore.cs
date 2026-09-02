@@ -21,7 +21,11 @@ internal sealed class PostgresObservationStore : IObservationStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IDatabaseSchemaGuard _schemaGuard;
-    private readonly string _schema;
+    private readonly string _thingTable;
+    private readonly string _sensorTable;
+    private readonly string _observedPropertyTable;
+    private readonly string _datastreamTable;
+    private readonly string _observationTable;
 
     public PostgresObservationStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
@@ -30,10 +34,11 @@ internal sealed class PostgresObservationStore : IObservationStore
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
-        _schema = SchemaSearchPath.ValidateAndQuote(
-            string.IsNullOrWhiteSpace(schemaName)
-                ? PostgresSchemaConfiguration.DefaultMetadataSchema
-                : schemaName);
+        _thingTable = SchemaSearchPath.QualifyTable("sta_thing", schemaName);
+        _sensorTable = SchemaSearchPath.QualifyTable("sta_sensor", schemaName);
+        _observedPropertyTable = SchemaSearchPath.QualifyTable("sta_observed_property", schemaName);
+        _datastreamTable = SchemaSearchPath.QualifyTable("sta_datastream", schemaName);
+        _observationTable = SchemaSearchPath.QualifyTable("sta_observation", schemaName);
     }
 
     private async Task VerifySchemaFloorAsync(CancellationToken cancellationToken)
@@ -52,16 +57,17 @@ internal sealed class PostgresObservationStore : IObservationStore
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $@"
+        var sql = $"""
 SELECT d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
        d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id,
        MIN(o.phenomenon_time) AS pt_start, MAX(o.phenomenon_time) AS pt_end
-FROM {_schema}.sta_datastream d
-LEFT JOIN {_schema}.sta_observation o ON o.datastream_id = d.id
+FROM {_datastreamTable} d
+LEFT JOIN {_observationTable} o ON o.datastream_id = d.id
 GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
          d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id
 ORDER BY d.id
-OFFSET @skip LIMIT @top";
+OFFSET @skip LIMIT @top
+""";
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
@@ -82,15 +88,16 @@ OFFSET @skip LIMIT @top";
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $@"
+        var sql = $"""
 SELECT d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
        d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id,
        MIN(o.phenomenon_time) AS pt_start, MAX(o.phenomenon_time) AS pt_end
-FROM {_schema}.sta_datastream d
-LEFT JOIN {_schema}.sta_observation o ON o.datastream_id = d.id
+FROM {_datastreamTable} d
+LEFT JOIN {_observationTable} o ON o.datastream_id = d.id
 WHERE d.id = @id
 GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_symbol,
-         d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id";
+         d.unit_definition, d.thing_id, d.sensor_id, d.observed_property_id
+""";
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
@@ -104,7 +111,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, description FROM {_schema}.sta_thing ORDER BY id OFFSET @skip LIMIT @top";
+        var sql = $"SELECT id, name, description FROM {_thingTable} ORDER BY id OFFSET @skip LIMIT @top";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("skip", NpgsqlDbType.Integer, skip);
@@ -129,7 +136,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, description FROM {_schema}.sta_thing WHERE id = @id";
+        var sql = $"SELECT id, name, description FROM {_thingTable} WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
@@ -152,7 +159,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, description, encoding_type, metadata FROM {_schema}.sta_sensor ORDER BY id OFFSET @skip LIMIT @top";
+        var sql = $"SELECT id, name, description, encoding_type, metadata FROM {_sensorTable} ORDER BY id OFFSET @skip LIMIT @top";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("skip", NpgsqlDbType.Integer, skip);
@@ -172,7 +179,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, description, encoding_type, metadata FROM {_schema}.sta_sensor WHERE id = @id";
+        var sql = $"SELECT id, name, description, encoding_type, metadata FROM {_sensorTable} WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
@@ -188,7 +195,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, definition, description FROM {_schema}.sta_observed_property ORDER BY id OFFSET @skip LIMIT @top";
+        var sql = $"SELECT id, name, definition, description FROM {_observedPropertyTable} ORDER BY id OFFSET @skip LIMIT @top";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("skip", NpgsqlDbType.Integer, skip);
@@ -208,7 +215,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     {
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
-        var sql = $"SELECT id, name, definition, description FROM {_schema}.sta_observed_property WHERE id = @id";
+        var sql = $"SELECT id, name, definition, description FROM {_observedPropertyTable} WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
@@ -224,7 +231,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = new System.Text.StringBuilder(
-            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM {_schema}.sta_observation");
+            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM {_observationTable}");
 
         var conditions = new List<string>();
         if (query.DatastreamId.HasValue)
@@ -278,7 +285,7 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
         var sql =
-            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM {_schema}.sta_observation WHERE id = @id";
+            $"SELECT id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id FROM {_observationTable} WHERE id = @id";
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
@@ -308,16 +315,17 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
         // ids monotonic without a dedicated sequence on the journaled schema.
         long nextId;
         await using (var maxCommand = new NpgsqlCommand(
-            $"SELECT COALESCE(MAX(id), 0) FROM {_schema}.sta_observation", connection, transaction))
+            $"SELECT COALESCE(MAX(id), 0) FROM {_observationTable}", connection, transaction))
         {
             var max = (long)(await maxCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
             nextId = max + 1;
         }
 
         var results = new List<SensorThingsObservation>(rows.Count);
-        var insertSql = $@"
-INSERT INTO {_schema}.sta_observation (id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
-VALUES (@id, @datastream_id, @phenomenon_time, @result_time, @result, @feature_of_interest_id)";
+        var insertSql = $"""
+INSERT INTO {_observationTable} (id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
+VALUES (@id, @datastream_id, @phenomenon_time, @result_time, @result, @feature_of_interest_id)
+""";
 
         foreach (var row in rows)
         {
@@ -364,18 +372,19 @@ VALUES (@id, @datastream_id, @phenomenon_time, @result_time, @result, @feature_o
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         var thingId = await UpsertRelatedAsync(
-            connection, transaction, "sta_thing", request.Thing, cancellationToken).ConfigureAwait(false);
+            connection, transaction, _thingTable, request.Thing, cancellationToken).ConfigureAwait(false);
         var sensorId = await UpsertSensorAsync(
             connection, transaction, request.Sensor, cancellationToken).ConfigureAwait(false);
         var observedPropertyId = await UpsertObservedPropertyAsync(
             connection, transaction, request.ObservedProperty, cancellationToken).ConfigureAwait(false);
 
-        var datastreamId = await NextIdAsync(connection, transaction, "sta_datastream", cancellationToken).ConfigureAwait(false);
+        var datastreamId = await NextIdAsync(connection, transaction, _datastreamTable, cancellationToken).ConfigureAwait(false);
 
-        var insertSql = $@"
-INSERT INTO {_schema}.sta_datastream
+        var insertSql = $"""
+INSERT INTO {_datastreamTable}
     (id, name, description, observation_type, unit_name, unit_symbol, unit_definition, thing_id, sensor_id, observed_property_id)
-VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @unit_definition, @thing_id, @sensor_id, @observed_property_id)";
+VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @unit_definition, @thing_id, @sensor_id, @observed_property_id)
+""";
 
         await using (var command = new NpgsqlCommand(insertSql, connection, transaction))
         {
@@ -409,18 +418,18 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
         };
     }
 
-    private async Task<long> NextIdAsync(
+    private static async Task<long> NextIdAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string table,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(
-            $"SELECT COALESCE(MAX(id), 0) + 1 FROM {_schema}.{table}", connection, transaction);
+            $"SELECT COALESCE(MAX(id), 0) + 1 FROM {table}", connection, transaction);
         return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 1L);
     }
 
-    private async Task<bool> ExistsAsync(
+    private static async Task<bool> ExistsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string table,
@@ -428,12 +437,12 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(
-            $"SELECT 1 FROM {_schema}.{table} WHERE id = @id", connection, transaction);
+            $"SELECT 1 FROM {table} WHERE id = @id", connection, transaction);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
-    private async Task<long> UpsertRelatedAsync(
+    private static async Task<long> UpsertRelatedAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string table,
@@ -447,7 +456,7 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
 
         var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, table, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(
-            $"INSERT INTO {_schema}.{table} (id, name, description) VALUES (@id, @name, @description)", connection, transaction);
+            $"INSERT INTO {table} (id, name, description) VALUES (@id, @name, @description)", connection, transaction);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
         command.Parameters.AddWithValue("name", NpgsqlDbType.Text, entity.Name ?? $"Thing {id}");
         command.Parameters.AddWithValue("description", NpgsqlDbType.Text, entity.Description ?? string.Empty);
@@ -461,14 +470,14 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
         RelatedEntityRef entity,
         CancellationToken cancellationToken)
     {
-        if (entity.Id > 0 && await ExistsAsync(connection, transaction, "sta_sensor", entity.Id, cancellationToken).ConfigureAwait(false))
+        if (entity.Id > 0 && await ExistsAsync(connection, transaction, _sensorTable, entity.Id, cancellationToken).ConfigureAwait(false))
         {
             return entity.Id;
         }
 
-        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, "sta_sensor", cancellationToken).ConfigureAwait(false);
+        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, _sensorTable, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(
-            $"INSERT INTO {_schema}.sta_sensor (id, name, description, encoding_type, metadata) VALUES (@id, @name, @description, 'application/pdf', '')",
+            $"INSERT INTO {_sensorTable} (id, name, description, encoding_type, metadata) VALUES (@id, @name, @description, 'application/pdf', '')",
             connection,
             transaction);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);
@@ -484,14 +493,14 @@ VALUES (@id, @name, @description, @observation_type, @unit_name, @unit_symbol, @
         RelatedEntityRef entity,
         CancellationToken cancellationToken)
     {
-        if (entity.Id > 0 && await ExistsAsync(connection, transaction, "sta_observed_property", entity.Id, cancellationToken).ConfigureAwait(false))
+        if (entity.Id > 0 && await ExistsAsync(connection, transaction, _observedPropertyTable, entity.Id, cancellationToken).ConfigureAwait(false))
         {
             return entity.Id;
         }
 
-        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, "sta_observed_property", cancellationToken).ConfigureAwait(false);
+        var id = entity.Id > 0 ? entity.Id : await NextIdAsync(connection, transaction, _observedPropertyTable, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(
-            $"INSERT INTO {_schema}.sta_observed_property (id, name, definition, description) VALUES (@id, @name, '', @description)",
+            $"INSERT INTO {_observedPropertyTable} (id, name, definition, description) VALUES (@id, @name, '', @description)",
             connection,
             transaction);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Bigint, id);

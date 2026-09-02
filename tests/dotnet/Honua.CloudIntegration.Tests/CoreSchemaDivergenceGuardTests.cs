@@ -133,7 +133,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the configured-schema lane.");
 
         const string schema = "honua_guard_custom";
-        var connectionString = await postgres.CreateFreshDatabaseAsync(enableSpatialExtensions: true);
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
             .Build();
@@ -151,8 +151,9 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             new TestConnectionProvider(connectionString),
             guard,
             schema);
-        var things = await observationStore.ListThingsAsync(0, 1, CancellationToken.None);
-        things.Should().BeEmpty("SensorThings runtime queries must target the configured schema");
+        var things = await observationStore.ListThingsAsync(0, 10, CancellationToken.None);
+        things.Should().ContainSingle(thing => thing.Id == 1,
+            "runtime SensorThings SQL must read from the same configured schema the guard verified");
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -173,11 +174,170 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
     }
 
     [SkippableFact]
+    public async Task CanonicalRunner_WithoutOptionalRasterExtension_DoesNotInstallOrJournalRasterRoot()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the optional-raster lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
+        var guard = new PostgresCoreSchemaGuard();
+        var runner = new PostgresDatabaseMigrationRunner(guard);
+
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+
+        result.Successful.Should().BeTrue(
+            $"a vector-only PostgreSQL deployment must not require postgis_raster. Error: {result.ErrorMessage}");
+        result.AppliedScripts.Should().NotContain(PostgresCoreSchemaGuard.RasterTablesMigration);
+        await guard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                    SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'postgis_raster'),
+                   EXISTS (
+                    SELECT 1 FROM public.schema_versions
+                    WHERE scriptname LIKE 'Honua.Postgres.Migrations.%'),
+                   to_regclass('honua.raster_data') IS NOT NULL;
+            """;
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetBoolean(0).Should().BeFalse(
+                "the application migration root must preserve postgis_raster as an infrastructure choice");
+            reader.GetBoolean(1).Should().BeFalse("the skipped provider root must not be journaled");
+            reader.GetBoolean(2).Should().BeFalse("the skipped provider root must not create raster tables");
+        }
+
+        var rasterRequirement = async () =>
+            await guard.VerifyRequirementAsync(connection, DatabaseSchemaRequirement.RasterExternalStorage);
+        await rasterRequirement.Should().ThrowAsync<DatabaseSchemaFloorException>(
+            "full startup readiness may omit raster, but a raster operation must still fail closed");
+    }
+
+    [SkippableFact]
+    public async Task CanonicalRunner_OnLegacyConfiguredSchema_AdoptsJournaledGuardedFamiliesForward()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the configured-schema upgrade lane.");
+
+        const string schema = "honua_guard_adopted";
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var baselineGuard = new PostgresCoreSchemaGuard();
+        var baselineRunner = new PostgresDatabaseMigrationRunner(baselineGuard);
+        var baseline = await baselineRunner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        baseline.Successful.Should().BeTrue(
+            $"the test requires a canonical legacy baseline. Error: {baseline.ErrorMessage}");
+
+        // Reproduce a pre-#3899 deployment: server migrations 031/059 were journaled in
+        // public while their guarded tables landed in honua, and the provider migration
+        // root plus the forward adoption migration were not yet part of that journal.
+        await ExecuteAsync(connectionString, $"""
+            DELETE FROM public.schema_versions
+            WHERE scriptname LIKE 'Honua.Postgres.Migrations.%'
+               OR scriptname = '{PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration}';
+            """);
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
+            .Build();
+        var guard = new PostgresCoreSchemaGuard(configuration);
+        var runner = new PostgresDatabaseMigrationRunner(guard, configuration: configuration);
+
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue(
+            $"the one forward adoption migration must be reachable before the configured-schema floor is enforced. Error: {plan.ErrorMessage}");
+        plan.PendingScripts.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+
+        result.Successful.Should().BeTrue(
+            $"the journaled forward migration must adopt complete legacy families. Error: {result.ErrorMessage}");
+        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+        await guard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
+
+        var observationStore = new PostgresObservationStore(
+            new TestConnectionProvider(connectionString),
+            guard,
+            schema);
+        (await observationStore.ListThingsAsync(0, 10, CancellationToken.None))
+            .Should().ContainSingle(thing => thing.Id == 1,
+                "the adopted SensorThings rows must remain available through configured-schema runtime SQL");
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT (
+                    SELECT COUNT(*)
+                    FROM information_schema.tables
+                    WHERE table_schema = @schema
+                      AND table_name IN (
+                          'raster_data',
+                          'raster_tiles',
+                          'raster_layer_statistics',
+                          'metadata_v2_snapshots',
+                          'sta_thing'))::int,
+                   (
+                    SELECT COUNT(*)
+                    FROM information_schema.tables
+                    WHERE table_schema = 'honua'
+                      AND table_name IN (
+                          'raster_data',
+                          'raster_tiles',
+                          'raster_layer_statistics',
+                          'metadata_v2_snapshots',
+                          'sta_thing'))::int,
+                   EXISTS (
+                    SELECT 1 FROM public.schema_versions WHERE scriptname = @adoption);
+            """;
+        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue("adoption", PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt32(0).Should().Be(5);
+        reader.GetInt32(1).Should().Be(0);
+        reader.GetBoolean(2).Should().BeTrue();
+    }
+
+    [SkippableFact]
+    public async Task CanonicalRunner_OnPartialConfiguredAdoptionTarget_FailsClosedWithoutMutation()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the configured-schema divergence lane.");
+
+        const string schema = "honua_guard_partial";
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
+        var baselineRunner = new PostgresDatabaseMigrationRunner(new PostgresCoreSchemaGuard());
+        var baseline = await baselineRunner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        baseline.Successful.Should().BeTrue();
+        await ExecuteAsync(connectionString, $"""
+            DELETE FROM public.schema_versions
+            WHERE scriptname = '{PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration}';
+            CREATE SCHEMA {schema};
+            CREATE TABLE {schema}.sta_thing (id bigint PRIMARY KEY, name text, description text);
+            """);
+        var before = await CaptureStateAsync(connectionString, schema);
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
+            .Build();
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(configuration),
+            configuration: configuration);
+
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+
+        plan.Successful.Should().BeFalse("a partial adoption target is ambiguous and must require operator repair");
+        plan.Error.Should().BeOfType<DatabaseSchemaFloorException>();
+        (await CaptureStateAsync(connectionString, schema)).Should().Be(before,
+            "adoption preflight must neither move tables nor advance the journal when target state is partial");
+    }
+
+    [SkippableFact]
     public async Task Guard_WhenJournaledRasterDataTableIsMissing_FullVerificationFailsWithoutMutation()
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
 
-        var connectionString = await postgres.CreateFreshDatabaseAsync(enableSpatialExtensions: true);
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
         var guard = new PostgresCoreSchemaGuard();
         var runner = new PostgresDatabaseMigrationRunner(guard);
         var migrationResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
@@ -274,7 +434,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         }
     }
 
-    private static async Task<string> CaptureStateAsync(string connectionString)
+    private static async Task<string> CaptureStateAsync(string connectionString, string schemaName = "honua")
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -285,7 +445,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                     SELECT jsonb_agg(c.relname ORDER BY c.relname)
                     FROM pg_catalog.pg_class c
                     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                    WHERE n.nspname = 'honua' AND c.relkind IN ('r', 'p')
+                    WHERE n.nspname = @schema AND c.relkind IN ('r', 'p')
                 ), '[]'::jsonb),
                 'journal', COALESCE((
                     SELECT jsonb_agg(scriptname ORDER BY scriptname)
@@ -296,12 +456,13 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                     FROM pg_catalog.pg_class c
                     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                     JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
-                    WHERE n.nspname = 'honua'
+                    WHERE n.nspname = @schema
                       AND a.attnum > 0
                       AND NOT a.attisdropped
                 ), '[]'::jsonb)
             )::text;
             """;
+        command.Parameters.AddWithValue("schema", schemaName);
         return (string)(await command.ExecuteScalarAsync())!;
     }
 

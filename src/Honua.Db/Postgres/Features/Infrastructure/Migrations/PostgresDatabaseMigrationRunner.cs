@@ -70,16 +70,22 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             ValidateArguments(connectionString, migrationsAssembly);
             cancellationToken.ThrowIfCancellationRequested();
 
-            var upgrader = BuildUpgrader(
-                BuildMigrationConnectionString(connectionString),
-                migrationsAssembly,
-                _metadataSchemaVariable);
-            if (UsesCanonicalMigrationRoots(migrationsAssembly))
+            var usesCanonicalMigrationRoots = UsesCanonicalMigrationRoots(migrationsAssembly);
+            var includeRasterProviderMigrations = false;
+            if (usesCanonicalMigrationRoots)
             {
                 await using var connection = new NpgsqlConnection(connectionString);
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                includeRasterProviderMigrations = await HasPostGisRasterAsync(connection, cancellationToken)
+                    .ConfigureAwait(false);
                 await _schemaGuard.VerifyConsistencyAsync(connection, cancellationToken).ConfigureAwait(false);
             }
+
+            var upgrader = BuildUpgrader(
+                BuildMigrationConnectionString(connectionString),
+                migrationsAssembly,
+                _metadataSchemaVariable,
+                includeRasterProviderMigrations);
             var scripts = upgrader.GetScriptsToExecute();
             var pendingScripts = scripts.Select(script => script.Name).ToArray();
             var classifications = ClassifyScripts(scripts);
@@ -229,11 +235,16 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             return DatabaseMigrationResult.Failed(error, error.Message);
         }
 
-        var upgrader = BuildUpgrader(migrationConnectionString, migrationsAssembly, _metadataSchemaVariable);
-
         try
         {
             var usesCanonicalMigrationRoots = UsesCanonicalMigrationRoots(migrationsAssembly);
+            var includeRasterProviderMigrations = usesCanonicalMigrationRoots &&
+                await HasPostGisRasterAsync(lockConnection, cancellationToken).ConfigureAwait(false);
+            var upgrader = BuildUpgrader(
+                migrationConnectionString,
+                migrationsAssembly,
+                _metadataSchemaVariable,
+                includeRasterProviderMigrations);
             if (usesCanonicalMigrationRoots)
             {
                 await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
@@ -313,7 +324,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private static UpgradeEngine BuildUpgrader(
         string connectionString,
         Assembly migrationsAssembly,
-        string metadataSchemaVariable)
+        string metadataSchemaVariable,
+        bool includeRasterProviderMigrations)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -325,10 +337,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         // Production has two canonical numbered roots: provider schema and server schema.
         // Synthetic migration assemblies used by the safety-gate tests remain intentionally
         // isolated and must not pull PostGIS migrations into their plain-PostgreSQL fixture.
-        var migrationAssemblies = string.Equals(
-            migrationsAssembly.GetName().Name,
-            "Honua.Server",
-            StringComparison.Ordinal)
+        var migrationAssemblies = includeRasterProviderMigrations
             ? new[] { typeof(PostgresDatabaseMigrationRunner).Assembly, migrationsAssembly }
             : new[] { migrationsAssembly };
 
@@ -343,6 +352,20 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             migrationsAssembly.GetName().Name,
             "Honua.Server",
             StringComparison.Ordinal);
+
+    private static async Task<bool> HasPostGisRasterAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_extension
+                WHERE extname = 'postgis_raster')
+            """;
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
+    }
 
     private sealed partial class MigrationScriptNameComparer : IComparer<string>
     {

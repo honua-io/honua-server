@@ -376,6 +376,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.MetadataV2SnapshotMigration);
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterExternalStorageMigration);
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.SensorThingsMigration);
+        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
 
         await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -387,9 +388,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
                 'Honua.Postgres.Migrations.003_CreateRasterLayerStatistics.sql',
                 'Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql',
                 'Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql',
-                'Honua.Server.Migrations.059_CreateSensorThings.sql')
+                'Honua.Server.Migrations.059_CreateSensorThings.sql',
+                'Honua.Server.Migrations.109_AdoptConfiguredGuardedSchema.sql')
             """;
-        (await command.ExecuteScalarAsync()).Should().Be(4,
+        (await command.ExecuteScalarAsync()).Should().Be(5,
             "upgrade and restore receipts use one journal denominator for both numbered roots");
 
         var guard = new PostgresCoreSchemaGuard();

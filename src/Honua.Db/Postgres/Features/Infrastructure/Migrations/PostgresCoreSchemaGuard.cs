@@ -17,6 +17,8 @@ namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 /// </summary>
 internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 {
+    internal const string RasterTablesMigration =
+        "Honua.Postgres.Migrations.001_CreateRasterTables.sql";
     internal const string RasterLayerStatisticsMigration =
         "Honua.Postgres.Migrations.003_CreateRasterLayerStatistics.sql";
     internal static readonly string MetadataV2SnapshotMigration =
@@ -25,6 +27,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         BuildServerMigrationName("055_SetRasterDataExternalStorage.sql");
     internal static readonly string SensorThingsMigration =
         BuildServerMigrationName("059_CreateSensorThings.sql");
+    internal static readonly string ConfiguredSchemaAdoptionMigration =
+        BuildServerMigrationName("109_AdoptConfiguredGuardedSchema.sql");
 
     private static readonly string[] _metadataV2Tables =
     [
@@ -183,6 +187,13 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "raster_tiles",
     ];
 
+    private static readonly string[] _rasterTables =
+    [
+        "raster_layer_statistics",
+        "raster_data",
+        "raster_tiles",
+    ];
+
     private readonly string _schemaName;
 
     public PostgresCoreSchemaGuard(IConfiguration? configuration = null)
@@ -214,12 +225,17 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         ArgumentNullException.ThrowIfNull(connection);
         var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
 
-        VerifyRequiredMigration(
-            state,
-            RasterLayerStatisticsMigration,
-            ["raster_layer_statistics"],
-            _rasterLayerStatisticsColumns,
-            ["raster_layer_statistics_pkey"]);
+        if (state.RequiresRasterFloor)
+        {
+            VerifyRequiredMigration(
+                state,
+                RasterLayerStatisticsMigration,
+                ["raster_layer_statistics"],
+                _rasterLayerStatisticsColumns,
+                ["raster_layer_statistics_pkey"]);
+            VerifyRequiredExternalStorageMigration(state);
+        }
+
         VerifyRequiredMigration(
             state,
             MetadataV2SnapshotMigration,
@@ -232,7 +248,6 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _sensorThingsTables,
             _sensorThingsColumns,
             _sensorThingsIndexes);
-        VerifyRequiredExternalStorageMigration(state);
     }
 
     public async Task VerifyConsistencyAsync(
@@ -247,19 +262,22 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             RasterLayerStatisticsMigration,
             ["raster_layer_statistics"],
             _rasterLayerStatisticsColumns,
-            ["raster_layer_statistics_pkey"]);
+            ["raster_layer_statistics_pkey"],
+            state.CanAwaitConfiguredSchemaAdoption);
         VerifyExclusiveMigrationConsistency(
             state,
             MetadataV2SnapshotMigration,
             _metadataV2Tables,
             _metadataV2Columns,
-            _metadataV2Indexes);
+            _metadataV2Indexes,
+            state.CanAwaitConfiguredSchemaAdoption);
         VerifyExclusiveMigrationConsistency(
             state,
             SensorThingsMigration,
             _sensorThingsTables,
             _sensorThingsColumns,
-            _sensorThingsIndexes);
+            _sensorThingsIndexes,
+            state.CanAwaitConfiguredSchemaAdoption);
 
         // Migration 055 was deliberately a no-op when raster support had not been provisioned.
         // When either target table exists, however, a journal row claiming 055 must agree with
@@ -415,7 +433,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         string migration,
         string[] requiredTables,
         (string Table, string Column)[] requiredColumns,
-        string[] requiredIndexes)
+        string[] requiredIndexes,
+        bool allowCompletelyMissingUntilConfiguredSchemaAdoption = false)
     {
         var present = requiredTables.Where(state.Tables.Contains).ToArray();
         var applied = state.IsApplied(migration);
@@ -425,6 +444,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             var missing = FindMissingPhysicalState(state, requiredTables, requiredColumns, requiredIndexes);
             if (missing.Length > 0)
             {
+                if (allowCompletelyMissingUntilConfiguredSchemaAdoption && present.Length == 0)
+                {
+                    return;
+                }
+
                 throw CreateFailure(
                     migration,
                     DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
@@ -484,6 +508,19 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 // A genuinely fresh database has neither a journal nor guarded migration objects.
                 // The consistency checks below distinguish that from unjournaled partial schema.
             }
+        }
+
+        var hasPostGisRaster = false;
+        await using (var extensionCommand = connection.CreateCommand())
+        {
+            extensionCommand.CommandText = """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_catalog.pg_extension
+                    WHERE extname = 'postgis_raster')
+                """;
+            hasPostGisRaster = (bool)(
+                await extensionCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
         }
 
         var tables = new HashSet<string>(StringComparer.Ordinal);
@@ -551,7 +588,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             }
         }
 
-        return new SchemaState(appliedScripts, tables, columns, indexes, storage, _schemaName);
+        return new SchemaState(appliedScripts, tables, columns, indexes, storage, _schemaName, hasPostGisRaster);
     }
 
     private static DatabaseSchemaFloorException CreateFailure(
@@ -566,11 +603,22 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         HashSet<(string Table, string Column)> Columns,
         HashSet<string> Indexes,
         Dictionary<(string Table, string Column), char> Storage,
-        string SchemaName)
+        string SchemaName,
+        bool HasPostGisRaster)
     {
         public bool HasRasterData => Tables.Contains("raster_data");
 
         public bool HasAnyRasterStorageTarget => HasRasterData || Tables.Contains("raster_tiles");
+
+        public bool RequiresRasterFloor =>
+            HasPostGisRaster ||
+            IsApplied(RasterTablesMigration) ||
+            IsApplied(RasterLayerStatisticsMigration) ||
+            _rasterTables.Any(Tables.Contains);
+
+        public bool CanAwaitConfiguredSchemaAdoption =>
+            !string.Equals(SchemaName, PostgresSchemaConfiguration.DefaultMetadataSchema, StringComparison.Ordinal) &&
+            !IsApplied(ConfiguredSchemaAdoptionMigration);
 
         public bool IsApplied(string migration) => AppliedScripts.Contains(migration);
 
