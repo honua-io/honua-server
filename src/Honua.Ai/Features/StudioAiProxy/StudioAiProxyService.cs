@@ -365,11 +365,32 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 yield break;
             }
 
-            yield return new StudioAiChatEvent
+            StudioAiSignedTranscript? provenance = null;
+            try
             {
-                Type = StudioAiChatEventType.TranscriptProvenance,
-                Provenance = _transcriptSigner.Sign(signingKey, request, providerName, providerReportedModel, transcriptEvents!)
-            };
+                provenance = _transcriptSigner.Sign(
+                    signingKey, request, providerName, providerReportedModel, transcriptEvents!);
+            }
+            catch (InvalidOperationException)
+            {
+                summary.Succeeded = false;
+                summary.StopReason = StudioAiStopReason.Error;
+                summary.ErrorMessage = "Transcript provenance validation failed.";
+            }
+
+            if (provenance is null)
+            {
+                yield return new StudioAiChatEvent
+                {
+                    Type = StudioAiChatEventType.Error,
+                    Model = model,
+                    ErrorCode = "studio_ai/provenance_validation_failed",
+                    ErrorMessage = "Transcript provenance validation failed."
+                };
+                yield break;
+            }
+
+            yield return new StudioAiChatEvent { Type = StudioAiChatEventType.TranscriptProvenance, Provenance = provenance };
         }
     }
 

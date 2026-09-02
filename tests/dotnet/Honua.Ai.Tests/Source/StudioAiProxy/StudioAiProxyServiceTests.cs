@@ -8,6 +8,7 @@ using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -345,6 +346,51 @@ public sealed class StudioAiProxyServiceTests
 
         events.Last().Type.Should().Be(StudioAiChatEventType.Error);
         summary.Succeeded.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task StreamChatAsync_GovernedTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
+    {
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.TranscriptSigning.KeyId = "test-key";
+        config.TranscriptSigning.PrivateKeyReference = "secret://studio-key";
+        var secrets = Substitute.For<ISecretProvider>();
+        secrets.IsSecretReference("secret://studio-key").Returns(true);
+        secrets.GetSecretOrDefaultAsync("secret://studio-key", null, Arg.Any<CancellationToken>())
+            .Returns(Convert.ToBase64String(new byte[32]));
+        using var arguments = JsonDocument.Parse("""{"targetId":"candidate-other"}""");
+        var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true, request => Events(
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "claude-sonnet-4-5" },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = "honua_propose_deploy_operation" },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolArguments = arguments.RootElement.Clone() },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }));
+        var service = new StudioAiProxyService(
+            Options.Create(config),
+            [adapter],
+            new StudioAiTranscriptSigner(Options.Create(config), TimeProvider.System, secrets),
+            NullLogger<StudioAiProxyService>.Instance);
+        var summary = new StudioAiProxyCallSummary();
+        var request = new StudioAiChatRequest
+        {
+            Certification = new StudioAiTranscriptCertification
+            {
+                CandidateId = "candidate-7",
+                ReleaseId = "release-9",
+                EndpointIdentity = "candidate-proxy",
+                ActionId = "deploy",
+                RunNonce = "nonce"
+            },
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "deploy" }]
+        };
+
+        var events = await CollectAsync(service, request, summary);
+
+        events.Last().Should().Match<StudioAiChatEvent>(evt =>
+            evt.Type == StudioAiChatEventType.Error
+            && evt.ErrorCode == "studio_ai/provenance_validation_failed");
+        summary.Succeeded.Should().BeFalse();
+        summary.StopReason.Should().Be(StudioAiStopReason.Error);
+        summary.ErrorMessage.Should().Be("Transcript provenance validation failed.");
     }
 
     private static async IAsyncEnumerable<StudioAiChatEvent> ThrowingEvents(StudioAiChatRequest request)

@@ -45,8 +45,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
 {
     [Theory]
-    [Trait("Category", "Integration")]
-    [Trait("Tier", Tiers.Integration)]
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     [InlineData(ProposeDeployOperationTool.ToolName, OperationClass.Deploy)]
     [InlineData(ProposeMetadataReleaseTool.ToolName, OperationClass.MetadataRelease)]
     public async Task VerifiedModelToolCall_SealsAwaitingApproval_WithoutActuation(
