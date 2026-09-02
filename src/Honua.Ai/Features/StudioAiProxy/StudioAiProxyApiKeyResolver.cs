@@ -18,6 +18,9 @@ namespace Honua.Ai.StudioAiProxy;
 /// </summary>
 public sealed class StudioAiProxyApiKeyResolver
 {
+    /// <summary>Stable error code returned when configured provider credentials are unavailable.</summary>
+    public const string CredentialUnavailableCode = "studio_ai/provider_credential_unavailable";
+
     private readonly ISecretProvider? _secretProvider;
 
     public StudioAiProxyApiKeyResolver(ISecretProvider? secretProvider = null)
@@ -37,25 +40,53 @@ public sealed class StudioAiProxyApiKeyResolver
     {
         var configured = options.ApiKey;
 
-        if (!string.IsNullOrWhiteSpace(configured)
-            && _secretProvider is not null
-            && _secretProvider.IsSecretReference(configured))
-        {
-            var resolved = await _secretProvider
-                .GetSecretOrDefaultAsync(configured, defaultValue: null, cancellationToken)
-                .ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(resolved))
-            {
-                return resolved;
-            }
-        }
-
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            return configured;
+            var isReference = _secretProvider?.IsSecretReference(configured) == true;
+            if (isReference)
+            {
+                try
+                {
+                    var resolved = await _secretProvider!
+                        .GetSecretOrDefaultAsync(configured, defaultValue: null, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(resolved))
+                    {
+                        return resolved;
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException)
+                {
+                    // Collapse provider details: exception messages can contain the reference or value.
+                }
+
+                throw new StudioAiProxyCredentialUnavailableException();
+            }
+
+            if (IsLoopbackEndpoint(options.Endpoint))
+            {
+                return configured;
+            }
+
+            throw new StudioAiProxyCredentialUnavailableException();
         }
 
         var fromEnv = Environment.GetEnvironmentVariable(EnvVarName(providerName));
         return string.IsNullOrWhiteSpace(fromEnv) ? string.Empty : fromEnv;
+    }
+
+    private static bool IsLoopbackEndpoint(string endpoint)
+        => Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) && uri.IsLoopback;
+}
+
+internal sealed class StudioAiProxyCredentialUnavailableException : Exception
+{
+    public StudioAiProxyCredentialUnavailableException()
+        : base("Provider credentials are unavailable.")
+    {
     }
 }
