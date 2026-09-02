@@ -136,12 +136,8 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static IResult FormatOgcError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        return ProblemDetailsHelpers.CreateProblem(
-            context,
-            type: "about:blank",
-            statusCode: errorResponse.StatusCode,
-            title: errorResponse.Title,
-            detail: BuildDetailWithExtras(errorResponse, options));
+        AddResponseHeaders(context, options);
+        return FormatProblem(context, "about:blank", errorResponse, options);
     }
 
     /// <summary>
@@ -215,7 +211,9 @@ internal static class StandardErrorResponseFormatter
     private static IResult FormatWmsAliasError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
-        var exceptionCode = MapWmsAliasCode(errorResponse);
+        var exceptionCode = string.IsNullOrWhiteSpace(options.WmsExceptionCode)
+            ? MapWmsAliasCode(errorResponse)
+            : options.WmsExceptionCode;
         var xmlContent = $$"""
             <?xml version="1.0" encoding="UTF-8"?>
             <ServiceExceptionReport xmlns="http://www.opengis.net/ogc"
@@ -245,12 +243,8 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static IResult FormatAdminError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        return ProblemDetailsHelpers.CreateProblem(
-            context,
-            type: "https://honua.io/problems/admin",
-            statusCode: errorResponse.StatusCode,
-            title: errorResponse.Title,
-            detail: BuildDetailWithExtras(errorResponse, options));
+        AddResponseHeaders(context, options);
+        return FormatProblem(context, "https://honua.io/problems/admin", errorResponse, options);
     }
 
     /// <summary>
@@ -277,7 +271,9 @@ internal static class StandardErrorResponseFormatter
             {
                 Code = bodyCode,
                 Message = errorResponse.Title,
-                Details = details?.Length > 0 ? details : null
+                Details = details?.Length > 0 ? details : null,
+                Retryable = options.Retryable,
+                RetryAfterSeconds = options.RetryAfterSeconds,
             }
         };
 
@@ -297,9 +293,31 @@ internal static class StandardErrorResponseFormatter
     private static IResult FormatGenericError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
+        return FormatProblem(context, "about:blank", errorResponse, options);
+    }
+
+    private static IResult FormatProblem(
+        HttpContext context,
+        string type,
+        StandardErrorResponse errorResponse,
+        ErrorResponseFormatterOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(options.MachineCode))
+        {
+            return ProblemDetailsHelpers.CreateProblem(
+                context,
+                type,
+                errorResponse.StatusCode,
+                errorResponse.Title,
+                BuildDetailWithExtras(errorResponse, options),
+                options.MachineCode,
+                options.Retryable,
+                options.RetryAfterSeconds);
+        }
+
         return ProblemDetailsHelpers.CreateProblem(
             context,
-            type: "about:blank",
+            type,
             statusCode: errorResponse.StatusCode,
             title: errorResponse.Title,
             detail: BuildDetailWithExtras(errorResponse, options));

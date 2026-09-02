@@ -2,17 +2,16 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Net;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
-using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.RateLimiting.Abstractions;
 using Honua.Core.Features.RateLimiting.Domain;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.RateLimiting;
 
@@ -594,27 +593,11 @@ internal sealed partial class RateLimitingMiddleware
         // RFC 9110 Retry-After: advise clients how long to wait (in whole seconds, never
         // negative) before retrying. Mirrors the X-RateLimit-Reset window boundary.
         var retryAfterSeconds = Math.Max(0, (int)Math.Ceiling((result.WindowReset - DateTimeOffset.UtcNow).TotalSeconds));
-        context.Response.Headers.RetryAfter =
-            retryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-        context.Response.StatusCode = (int)HttpStatusCode.TooManyRequests;
-        context.Response.ContentType = "application/json";
-
-        var response = new RateLimitExceededResponse
-        {
-            Error = "rate_limit_exceeded",
-            Message = "Too many requests. Please try again later.",
-            Details = new RateLimitExceededDetails
-            {
-                Limit = result.Limit,
-                WindowReset = result.WindowReset.ToUnixTimeSeconds()
-            }
-        };
-
-        await context.Response.WriteAsync(
-            System.Text.Json.JsonSerializer.Serialize(
-                response,
-                RateLimitingJsonContext.Default.RateLimitExceededResponse));
+        await BackpressureResponseWriter.WriteAsync(
+            context,
+            BackpressureKind.Throttled,
+            retryAfterSeconds,
+            context.RequestAborted).ConfigureAwait(false);
     }
 
     /// <summary>

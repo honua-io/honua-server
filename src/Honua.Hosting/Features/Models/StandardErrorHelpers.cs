@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.Infrastructure.Security;
 
 namespace Honua.Infrastructure.Models;
@@ -214,21 +215,10 @@ internal static class StandardErrorHelpers
     {
         var errorResponse = StandardErrorResponse.ServiceUnavailable(detail, retryAfterSeconds, additionalDetails);
 
-        // Add Retry-After header if specified
-        var options = new ErrorResponseFormatterOptions();
-        if (retryAfterSeconds.HasValue)
-        {
-            options = new ErrorResponseFormatterOptions
-            {
-                IncludeAdditionalDetails = options.IncludeAdditionalDetails,
-                IncludeDebugInfo = options.IncludeDebugInfo,
-                ContentType = options.ContentType,
-                AdditionalHeaders = new Dictionary<string, string>
-                {
-                    ["Retry-After"] = retryAfterSeconds.Value.ToString()
-                }
-            };
-        }
+        var options = CreateBackpressureOptions(
+            context,
+            BackpressureMetadata.ServiceUnavailableCode,
+            retryAfterSeconds);
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
     }
@@ -246,20 +236,10 @@ internal static class StandardErrorHelpers
     {
         var errorResponse = StandardErrorResponse.TooManyRequests(detail, retryAfterSeconds, additionalDetails);
 
-        var options = new ErrorResponseFormatterOptions();
-        if (retryAfterSeconds.HasValue)
-        {
-            options = new ErrorResponseFormatterOptions
-            {
-                IncludeAdditionalDetails = options.IncludeAdditionalDetails,
-                IncludeDebugInfo = options.IncludeDebugInfo,
-                ContentType = options.ContentType,
-                AdditionalHeaders = new Dictionary<string, string>
-                {
-                    ["Retry-After"] = retryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                }
-            };
-        }
+        var options = CreateBackpressureOptions(
+            context,
+            BackpressureMetadata.RateLimitExceededCode,
+            retryAfterSeconds);
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
     }
@@ -288,24 +268,19 @@ internal static class StandardErrorHelpers
     {
         var errorResponse = StandardErrorResponse.FromException(exception, includeDebugDetails);
 
-        var options = new ErrorResponseFormatterOptions
+        ErrorResponseFormatterOptions options = new()
         {
             IncludeDebugInfo = includeDebugDetails
         };
 
-        // Add special handling for ServiceUnavailableException
-        if (exception is ServiceUnavailableException serviceEx && serviceEx.RetryAfterSeconds.HasValue)
+        if (errorResponse.StatusCode == StatusCodes.Status503ServiceUnavailable)
         {
-            options = new ErrorResponseFormatterOptions
-            {
-                IncludeAdditionalDetails = options.IncludeAdditionalDetails,
-                IncludeDebugInfo = options.IncludeDebugInfo,
-                ContentType = options.ContentType,
-                AdditionalHeaders = new Dictionary<string, string>
-                {
-                    ["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString()
-                }
-            };
+            var retryAfterSeconds = (exception as ServiceUnavailableException)?.RetryAfterSeconds;
+            options = CreateBackpressureOptions(
+                context,
+                BackpressureMetadata.ServiceUnavailableCode,
+                retryAfterSeconds,
+                includeDebugDetails);
         }
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
@@ -371,4 +346,34 @@ internal static class StandardErrorHelpers
     /// <returns>A sanitized error message.</returns>
     private static string SanitizeCqlErrorMessage(string errorMessage)
         => ErrorMessageSanitizer.Sanitize(errorMessage, "Syntax error in filter expression.");
+
+    private static ErrorResponseFormatterOptions CreateBackpressureOptions(
+        HttpContext context,
+        string machineCode,
+        int? retryAfterSeconds,
+        bool includeDebugInfo = false)
+    {
+        var headers = new Dictionary<string, string>
+        {
+            ["X-Correlation-ID"] = context.TraceIdentifier,
+            ["Honua-Retryable"] = bool.TrueString.ToLowerInvariant(),
+        };
+
+        if (retryAfterSeconds.HasValue)
+        {
+            headers["Retry-After"] = retryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return new ErrorResponseFormatterOptions
+        {
+            IncludeDebugInfo = includeDebugInfo,
+            AdditionalHeaders = headers,
+            MachineCode = machineCode,
+            ODataErrorCode = machineCode,
+            WfsExceptionCode = machineCode,
+            WmsExceptionCode = machineCode,
+            Retryable = true,
+            RetryAfterSeconds = retryAfterSeconds,
+        };
+    }
 }
