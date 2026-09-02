@@ -2340,7 +2340,7 @@ internal sealed partial class Wfs20Handler
                     writer.WriteStartElement("honua", "OperationResult", FeatureNamespaceUri);
                     writer.WriteAttributeString("sequence", operation.Sequence.ToString(CultureInfo.InvariantCulture));
                     writer.WriteAttributeString("action", operation.ActionKind.ToString());
-                    writer.WriteAttributeString("committed", result.IsSuccess ? "true" : "false");
+                    writer.WriteAttributeString("committed", GetReceiptCommitState(result));
                     if (!string.IsNullOrWhiteSpace(operation.Handle))
                     {
                         writer.WriteAttributeString("handle", operation.Handle);
@@ -2370,6 +2370,11 @@ internal sealed partial class Wfs20Handler
             writer.WriteEndDocument();
         });
     }
+
+    internal static string GetReceiptCommitState(EditOperationResult result)
+        => result.IsCommitOutcomeUnknown
+            ? "unknown"
+            : result.IsSuccess ? "true" : "false";
 
 
     private static void WriteTransactionResourceId(
