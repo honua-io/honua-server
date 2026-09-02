@@ -262,9 +262,19 @@ internal sealed class ErrorResponseFormatterOptions
     public string? WfsExceptionLocator { get; init; }
 
     /// <summary>
+    /// Explicit WMS service exception code to emit instead of inferring one from the HTTP status.
+    /// </summary>
+    public string? WmsExceptionCode { get; init; }
+
+    /// <summary>
     /// Explicit OData error code to emit instead of inferring one from the HTTP status code.
     /// </summary>
     public string? ODataErrorCode { get; init; }
+
+    /// <summary>
+    /// Machine-readable code emitted by extension-capable protocol envelopes.
+    /// </summary>
+    public string? MachineCode { get; init; }
 
     /// <summary>
     /// Explicit GeoServices body error code to emit. When set, overrides the code derived from
