@@ -161,6 +161,7 @@ internal sealed class StudioAiTranscriptSigner(
             var targetProperty = toolName switch
             {
                 "honua_propose_deploy_operation" => "targetId",
+                "honua_propose_rollback" => "targetId",
                 "honua_propose_metadata_release" => "targetEnvironment",
                 _ => null
             };

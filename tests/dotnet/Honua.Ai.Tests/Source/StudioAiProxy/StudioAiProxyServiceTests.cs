@@ -349,7 +349,14 @@ public sealed class StudioAiProxyServiceTests
     }
 
     [UnitTest]
-    public async Task StreamChatAsync_GovernedTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
+    public Task StreamChatAsync_DeployTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync("honua_propose_deploy_operation");
+
+    [UnitTest]
+    public Task StreamChatAsync_RollbackTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync("honua_propose_rollback");
+
+    private static async Task AssertGovernedTargetBindingFailsAsync(string toolName)
     {
         var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
         config.TranscriptSigning.KeyId = "test-key";
@@ -361,7 +368,7 @@ public sealed class StudioAiProxyServiceTests
         using var arguments = JsonDocument.Parse("""{"targetId":"candidate-other"}""");
         var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true, request => Events(
             new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "claude-sonnet-4-5" },
-            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = "honua_propose_deploy_operation" },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = toolName },
             new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolArguments = arguments.RootElement.Clone() },
             new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }));
         var service = new StudioAiProxyService(
