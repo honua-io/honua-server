@@ -44,7 +44,6 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Collection("Redis")]
 public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
 {
-    [Theory]
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
     [InlineData(ProposeDeployOperationTool.ToolName, OperationClass.Deploy)]
