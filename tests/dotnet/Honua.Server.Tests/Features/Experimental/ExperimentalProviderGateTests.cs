@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using FluentAssertions;
+using Honua.Server.Features.Capabilities;
 using Honua.Server.Startup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +31,37 @@ namespace Honua.Server.Tests.Features.Experimental;
 [Trait("Category", "ExperimentalGate")]
 public sealed class ExperimentalProviderGateTests
 {
+    [Fact]
+    public void CapabilityManifestRegistration_ProvidesWarehouseDecisionsWithoutInfrastructureComposition()
+    {
+        var services = new ServiceCollection();
+
+        services.AddCapabilityManifest(BuildConfiguration(new Dictionary<string, string?>()));
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<WarehouseProviderDecisions>().InfrastructureCompositionApplied.Should().BeFalse();
+    }
+
+    [Fact]
+    public void CapabilityManifestRegistration_ReusesInfrastructureWarehouseDecisions()
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["DataSource:Provider"] = "postgis",
+            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test",
+        });
+        var services = new ServiceCollection();
+        InfrastructureCompositionRoot.RegisterInfrastructureServices(services, configuration);
+        var startupDecisions = services.Single(descriptor => descriptor.ServiceType == typeof(WarehouseProviderDecisions))
+            .ImplementationInstance.Should().BeOfType<WarehouseProviderDecisions>().Subject;
+
+        services.AddCapabilityManifest(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<WarehouseProviderDecisions>().Should().BeSameAs(startupDecisions);
+        startupDecisions.InfrastructureCompositionApplied.Should().BeTrue();
+    }
+
     [Theory]
     [InlineData("Redshift", "absent", "absent", false, false)]
     [InlineData("Redshift", "false", "true", true, false)]

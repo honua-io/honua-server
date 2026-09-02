@@ -40,6 +40,7 @@ internal static class InfrastructureCompositionRoot
     public static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
     {
         var warehouseProviders = new WarehouseProviderDecisions(configuration);
+        warehouseProviders.MarkInfrastructureCompositionApplied();
         services.TryAddSingleton(warehouseProviders);
         var configuredProvider = configuration.GetValue<string>("DataSource:Provider");
         var provider = DataProviderNames.Normalize(configuredProvider);
