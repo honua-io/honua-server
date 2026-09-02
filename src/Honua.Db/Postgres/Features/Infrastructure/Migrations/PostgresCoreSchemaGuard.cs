@@ -19,12 +19,12 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 {
     internal const string RasterLayerStatisticsMigration =
         "Honua.Postgres.Migrations.003_CreateRasterLayerStatistics.sql";
-    internal const string MetadataV2SnapshotMigration =
-        "Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql";
-    internal const string RasterExternalStorageMigration =
-        "Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql";
-    internal const string SensorThingsMigration =
-        "Honua.Server.Migrations.059_CreateSensorThings.sql";
+    internal static readonly string MetadataV2SnapshotMigration =
+        BuildServerMigrationName("031_CreateMetadataV2Snapshot.sql");
+    internal static readonly string RasterExternalStorageMigration =
+        BuildServerMigrationName("055_SetRasterDataExternalStorage.sql");
+    internal static readonly string SensorThingsMigration =
+        BuildServerMigrationName("059_CreateSensorThings.sql");
 
     private static readonly string[] _metadataV2Tables =
     [
@@ -194,6 +194,9 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         _ = SchemaSearchPath.ValidateAndQuote(_schemaName);
     }
+
+    private static string BuildServerMigrationName(string fileName)
+        => string.Concat("Honua", ".", "Server", ".Migrations.", fileName);
 
     public async Task VerifyAsync(string connectionString, CancellationToken cancellationToken = default)
     {
