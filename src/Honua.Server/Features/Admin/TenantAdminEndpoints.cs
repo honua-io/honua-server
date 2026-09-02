@@ -3,10 +3,12 @@
 
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.MultiTenancy.Billing;
 using Honua.Core.Features.MultiTenancy.Domain;
 using Honua.Core.Features.MultiTenancy.Lifecycle;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
@@ -43,7 +45,19 @@ internal static partial class TenantAdminEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Tenants")
-            .RequireAdminAuthorization();
+            .RequireAdminAuthorization()
+            .AddEndpointFilter((invocationContext, next) =>
+            {
+                var context = invocationContext.HttpContext;
+                var gate = LicenseGate.RequireEntitlement(
+                    context,
+                    FeatureCatalog.MultiTenancyKey,
+                    "Multi-tenant operation");
+
+                return gate is null
+                    ? next(invocationContext)
+                    : ValueTask.FromResult<object?>(gate);
+            });
 
         group.MapGet("/", HandleListTenants)
             .WithDisplayName("List Tenants")
