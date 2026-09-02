@@ -15,15 +15,18 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
 {
     public const string HttpClientName = "admin-operate-operation-loopback";
     private readonly IAdminHttpOperationDefinition _definition;
+    private readonly IOperationDescriptor _descriptor;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAdminApiKeyStore? _adminApiKeyStore;
     private readonly TimeProvider _clock;
 
-    public AdminOperateOperationExecutor(IAdminHttpOperationDefinition definition, IHttpClientFactory httpClientFactory,
+    public AdminOperateOperationExecutor(IAdminHttpOperationDefinition definition, IOperationDescriptor descriptor,
+        IHttpClientFactory httpClientFactory,
         IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore? adminApiKeyStore, TimeProvider clock)
     {
         _definition = definition;
+        _descriptor = descriptor;
         _httpClientFactory = httpClientFactory;
         _httpContextAccessor = httpContextAccessor;
         _adminApiKeyStore = adminApiKeyStore;
@@ -35,9 +38,14 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
     public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var missing = RouteNames(_definition.Path)
-            .Where(name => string.IsNullOrWhiteSpace(request.Parameters.GetValueOrDefault(name)))
-            .Select(name => $"Required route parameter '{name}' is missing.").ToArray();
+        var routeNames = RouteNames(_definition.Path);
+        var missing = _descriptor.InputSchema
+            .Where(static input => input.Required)
+            .Where(input => string.IsNullOrWhiteSpace(request.Parameters.GetValueOrDefault(input.Name)))
+            .Select(input => routeNames.Contains(input.Name)
+                ? $"Required route parameter '{input.Name}' is missing."
+                : $"Required parameter '{input.Name}' is missing.")
+            .ToArray();
         return Task.FromResult(new OperationValidation
         {
             IsValid = missing.Length == 0,

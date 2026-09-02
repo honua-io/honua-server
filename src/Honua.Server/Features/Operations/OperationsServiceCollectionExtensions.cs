@@ -179,6 +179,8 @@ internal static class OperationsServiceCollectionExtensions
 
         foreach (var definition in AdminOperateOperationCatalog.Definitions)
         {
+            var descriptor = AdminOperateOperationCatalog.Descriptors.Single(
+                item => item.OperationId == definition.OperationId);
             if (definition.ApprovalModel != Honua.Core.Features.Operations.Domain.OperationApprovalModel.None &&
                 definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
             {
@@ -187,6 +189,7 @@ internal static class OperationsServiceCollectionExtensions
             }
             services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
                 definition,
+                descriptor,
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<IHttpContextAccessor>(),
                 sp.GetService<IAdminApiKeyStore>(),

@@ -21,6 +21,8 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
             AdminAccessOperationDescriptorProvider>());
         foreach (var definition in AdminAccessOperationCatalog.Definitions)
         {
+            var descriptor = AdminAccessOperationCatalog.Descriptors.Single(
+                item => item.OperationId == definition.OperationId);
             if (definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
             {
                 services.AddSingleton<IOperationApprovalRequestMapper>(
@@ -28,6 +30,7 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
             }
             services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
                 definition,
+                descriptor,
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<IHttpContextAccessor>(),
                 sp.GetService<IAdminApiKeyStore>(),
