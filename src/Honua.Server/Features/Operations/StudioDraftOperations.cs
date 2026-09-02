@@ -148,6 +148,7 @@ internal sealed record StudioPublicationRequestPayload
 {
     public required Guid ItemId { get; init; }
     public required Guid VersionId { get; init; }
+    public required string ContentHash { get; init; }
     public StudioPublicationIntent? Intent { get; init; }
     public string? WarningAcknowledgement { get; init; }
     public string? ActorId { get; init; }
@@ -187,11 +188,11 @@ internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
 
     public abstract string OperationId { get; }
 
-    public Task<OperationValidation> ValidateAsync(
+    public virtual Task<OperationValidation> ValidateAsync(
         OperationRequest request,
         CancellationToken cancellationToken = default)
     {
-        _ = Parse(request);
+        _ = ParsePayload(request);
         return Task.FromResult(new OperationValidation
         {
             IsValid = true,
@@ -216,7 +217,7 @@ internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
         TResult result;
         try
         {
-            result = await ActuateAsync(Parse(request), cancellationToken).ConfigureAwait(false);
+            result = await ActuateAsync(ParsePayload(request), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or KeyNotFoundException)
         {
@@ -295,7 +296,7 @@ internal abstract class StudioDraftMutationExecutor<TPayload, TResult>(
     protected virtual IReadOnlyDictionary<string, string> ResourceIds(TResult result) =>
         new Dictionary<string, string>(StringComparer.Ordinal);
 
-    private TPayload Parse(OperationRequest request) => JsonSerializer.Deserialize(RequirePayload(request), PayloadType)
+    protected TPayload ParsePayload(OperationRequest request) => JsonSerializer.Deserialize(RequirePayload(request), PayloadType)
         ?? throw new ArgumentException($"The typed payload for '{OperationId}' is invalid.", nameof(request));
 
     private static string RequirePayload(OperationRequest request)
@@ -404,20 +405,95 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
             ?? throw new KeyNotFoundException($"Studio draft '{payload.DraftId:D}' was not found.");
 }
 
-internal sealed class StudioCreatePublicationRequestExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
+internal sealed class StudioCreatePublicationRequestExecutor(
+    IStudioPackageLifecycleService lifecycle,
+    TimeProvider clock,
+    IStudioPackageValidator? validator = null)
     : StudioDraftMutationExecutor<StudioPublicationRequestPayload, StudioPublicationRequest>(lifecycle, clock)
 {
     public override string OperationId => StudioDraftOperations.CreatePublicationRequest;
     protected override JsonTypeInfo<StudioPublicationRequestPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload;
     protected override JsonTypeInfo<StudioPublicationRequest> ResultType => StudioDraftOperationJsonContext.Default.StudioPublicationRequest;
 
+    public override async Task<OperationValidation> ValidateAsync(
+        OperationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = ParsePayload(request);
+        var version = await Lifecycle.GetVersionAsync(payload.ItemId, payload.VersionId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
+        var pointers = await Lifecycle.GetPointersAsync(payload.ItemId, cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio content item '{payload.ItemId:D}' was not found.");
+        if (pointers.CurrentVersionId != payload.VersionId)
+        {
+            throw new InvalidOperationException("The publication proposal must bind the current saved Studio version.");
+        }
+
+        if (!string.Equals(version.ContentHash, payload.ContentHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The supplied content hash does not match the saved Studio version.");
+        }
+
+        var intentValidation = validator?.ValidatePublicationIntent(payload.Intent);
+        if (intentValidation?.Status == StudioPackageValidationStatus.Invalid)
+        {
+            throw new ArgumentException("The publication intent is invalid.", nameof(request));
+        }
+
+        return new OperationValidation
+        {
+            IsValid = true,
+            Status = "valid",
+            ApprovalPlan = new OperationProposalPlan
+            {
+                Summary = $"Publish sealed Studio version {payload.VersionId:D} at {payload.Intent?.Route}.",
+                Diff =
+                [
+                    $"itemId={payload.ItemId:D}",
+                    $"versionId={payload.VersionId:D}",
+                    $"contentHash={payload.ContentHash}",
+                    $"route={payload.Intent?.Route}",
+                    $"visibility={payload.Intent?.Visibility}",
+                ],
+                RiskLevel = ProposalRiskLevel.Medium,
+            },
+        };
+    }
+
     protected override async Task<StudioPublicationRequest> ActuateAsync(
         StudioPublicationRequestPayload payload,
-        CancellationToken cancellationToken) => await Lifecycle
-            .CreatePublicationRequestAsync(payload.ItemId, payload.VersionId, payload.Intent,
+        CancellationToken cancellationToken)
+    {
+        var version = await Lifecycle.GetVersionAsync(payload.ItemId, payload.VersionId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
+        if (!string.Equals(version.ContentHash, payload.ContentHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The saved Studio version no longer matches the sealed content hash.");
+        }
+
+        return await Lifecycle.CreatePublicationRequestAsync(payload.ItemId, payload.VersionId, payload.Intent,
                 payload.WarningAcknowledgement, payload.ActorId, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
+    }
+
+    protected override IReadOnlyDictionary<string, string> ResourceIds(StudioPublicationRequest result)
+    {
+        var resources = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["publicationId"] = result.RequestId.ToString("D"),
+            ["itemId"] = result.ItemId.ToString("D"),
+            ["versionId"] = result.VersionId.ToString("D"),
+        };
+        if (!string.IsNullOrWhiteSpace(result.Intent?.Route))
+        {
+            resources["activeUrl"] = result.Intent.Route;
+        }
+
+        return resources;
+    }
 }
 
 internal sealed class StudioReopenVersionExecutor(IStudioPackageLifecycleService lifecycle, TimeProvider clock)
@@ -531,12 +607,19 @@ internal sealed class StudioDraftMutationRuntime(
 
     public Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
         Guid itemId, Guid versionId, StudioPublicationIntent? intent, string? warningAcknowledgement, string? actorId,
+        StudioDraftMutationContext context, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("A sealed Studio content hash is required for publication proposals.");
+
+    public Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
+        Guid itemId, Guid versionId, string contentHash, StudioPublicationIntent? intent,
+        string? warningAcknowledgement, string? actorId,
         StudioDraftMutationContext context, CancellationToken cancellationToken = default) => InvokeAsync(
             StudioDraftOperations.CreatePublicationRequest,
             new StudioPublicationRequestPayload
             {
                 ItemId = itemId,
                 VersionId = versionId,
+                ContentHash = contentHash,
                 Intent = intent,
                 WarningAcknowledgement = warningAcknowledgement,
                 ActorId = actorId,
@@ -655,6 +738,7 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             throw new ArgumentException("The Studio approval mapper requires its exact typed payload.", nameof(request));
         }
 
+        var plan = BuildPlan(payload);
         payload = SealScope(payload, context);
         return new OperationGatewayRequest
         {
@@ -666,14 +750,39 @@ internal sealed class StudioDraftApprovalRequestMapper(string operationId) : IOp
             CorrelationId = context.CorrelationId,
             IdempotencyKey = context.IdempotencyKey,
             ExecutionPayload = payload,
-            Plan = new OperationProposalPlan
+            Plan = plan with { ExecutionPayload = payload },
+        };
+    }
+
+    private OperationProposalPlan BuildPlan(string payload)
+    {
+        if (OperationId != StudioDraftOperations.CreatePublicationRequest)
+        {
+            return new OperationProposalPlan
             {
                 Summary = $"Execute {OperationId} with its accepted typed payload.",
                 RiskLevel = StudioDraftOperations.IsHighRisk(OperationId)
                     ? ProposalRiskLevel.High
                     : ProposalRiskLevel.Medium,
-                ExecutionPayload = payload,
-            },
+            };
+        }
+
+        var publication = JsonSerializer.Deserialize(
+            payload,
+            StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload)
+            ?? throw new ArgumentException("The Studio publication payload is invalid.", nameof(payload));
+        return new OperationProposalPlan
+        {
+            Summary = $"Publish sealed Studio version {publication.VersionId:D} at {publication.Intent?.Route}.",
+            Diff =
+            [
+                $"itemId={publication.ItemId:D}",
+                $"versionId={publication.VersionId:D}",
+                $"contentHash={publication.ContentHash}",
+                $"route={publication.Intent?.Route}",
+                $"visibility={publication.Intent?.Visibility}",
+            ],
+            RiskLevel = ProposalRiskLevel.Medium,
         };
     }
 
