@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
@@ -267,6 +268,9 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         StudioAiChatEvent? successfulTerminal = null;
         var transcriptEvents = signingKey is null ? null : new List<StudioAiChatEvent>();
         long transcriptCharacters = 0;
+        long responseBytes = 0;
+        var responseEventCount = 0;
+        var toolArgumentBytes = new Dictionary<string, long>(StringComparer.Ordinal);
         string? providerReportedModel = null;
 
         try
@@ -296,6 +300,36 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 }
 
                 var evt = enumerator.Current;
+                var eventBytes = JsonSerializer.SerializeToUtf8Bytes(
+                    evt,
+                    StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length;
+                responseBytes += eventBytes;
+                responseEventCount++;
+                if (evt.Type == StudioAiChatEventType.ToolCallDelta && evt.ToolArgumentsDelta is { } argumentDelta)
+                {
+                    var toolCallId = evt.ToolCallId ?? string.Empty;
+                    toolArgumentBytes.TryGetValue(toolCallId, out var accumulatedBytes);
+                    toolArgumentBytes[toolCallId] = accumulatedBytes + Encoding.UTF8.GetByteCount(argumentDelta);
+                }
+
+                if (eventBytes > _configuration.MaxEventBytes
+                    || responseBytes > _configuration.MaxResponseBytes
+                    || responseEventCount > _configuration.MaxResponseEventCount
+                    || toolArgumentBytes.Values.Any(bytes => bytes > _configuration.MaxToolArgumentBytes))
+                {
+                    summary.Succeeded = false;
+                    summary.StopReason = StudioAiStopReason.Error;
+                    summary.ErrorMessage = "Provider output exceeded a configured byte limit.";
+                    yield return new StudioAiChatEvent
+                    {
+                        Type = StudioAiChatEventType.Error,
+                        Model = model,
+                        ErrorCode = "studio_ai/provider_output_too_large",
+                        ErrorMessage = "Provider output exceeded a configured byte limit."
+                    };
+                    yield break;
+                }
+
                 if (validator.Validate(evt) is { } rejectionReason)
                 {
                     summary.Succeeded = false;
@@ -416,9 +450,34 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 yield break;
             }
 
+            var provenanceEvent = new StudioAiChatEvent
+            {
+                Type = StudioAiChatEventType.TranscriptProvenance,
+                Provenance = provenance
+            };
+            var provenanceBytes = JsonSerializer.SerializeToUtf8Bytes(
+                provenanceEvent,
+                StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length;
+            if (provenanceBytes > _configuration.MaxEventBytes
+                || responseBytes + provenanceBytes > _configuration.MaxResponseBytes
+                || responseEventCount + 1 > _configuration.MaxResponseEventCount)
+            {
+                summary.Succeeded = false;
+                summary.StopReason = StudioAiStopReason.Error;
+                summary.ErrorMessage = "Transcript provenance exceeded a configured response limit.";
+                yield return new StudioAiChatEvent
+                {
+                    Type = StudioAiChatEventType.Error,
+                    Model = model,
+                    ErrorCode = "studio_ai/provider_output_too_large",
+                    ErrorMessage = "Transcript provenance exceeded a configured response limit."
+                };
+                yield break;
+            }
+
             ApplySummary(summary, providerName, successfulTerminal);
             yield return successfulTerminal;
-            yield return new StudioAiChatEvent { Type = StudioAiChatEventType.TranscriptProvenance, Provenance = provenance };
+            yield return provenanceEvent;
             yield break;
         }
 

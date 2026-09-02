@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -10,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.RateLimiting;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Studio.Ai;
 
@@ -46,7 +48,9 @@ internal static class StudioAiProxyEndpoints
             .WithMetadata(new RateLimitAttribute(30))
             .Accepts<StudioAiChatHttpRequest>("application/json")
             .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status413PayloadTooLarge)
+            .Produces(StatusCodes.Status415UnsupportedMediaType);
     }
 
     private static async Task<IResult> HandleGetCapabilities(
@@ -63,13 +67,34 @@ internal static class StudioAiProxyEndpoints
 
     private static async Task<IResult> HandleChat(
         HttpContext context,
-        StudioAiChatHttpRequest httpRequest,
         IStudioAiProxyService service,
+        IOptions<StudioAiProxyConfiguration> options,
         IStudioAuthorizationService authorizationService,
         IAuditLog auditLog,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
+
+        if (!context.Request.HasJsonContentType())
+        {
+            return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        var (httpRequest, requestTooLarge, readError) = await ReadRequestAsync(
+            context.Request,
+            options.Value.MaxRequestBytes,
+            cancellationToken).ConfigureAwait(false);
+        if (requestTooLarge)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status413PayloadTooLarge,
+                title: "Studio AI request is too large.");
+        }
+
+        if (readError is not null || httpRequest is null)
+        {
+            return BadRequest(context, readError ?? "Invalid request.");
+        }
 
         // Model and output-token limits are operator-controlled provider boundaries: provider
         // credentials may have access to models or token ceilings the deployment did not approve
@@ -138,6 +163,46 @@ internal static class StudioAiProxyEndpoints
         }
 
         return Results.Empty;
+    }
+
+    private static async Task<(StudioAiChatHttpRequest? Request, bool TooLarge, string? Error)> ReadRequestAsync(
+        HttpRequest request,
+        int maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        if (request.ContentLength > maximumBytes)
+        {
+            return (null, true, null);
+        }
+
+        await using var body = new MemoryStream(Math.Min(maximumBytes, 64 * 1024));
+        var buffer = new byte[16 * 1024];
+        while (true)
+        {
+            var read = await request.Body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (body.Length + read > maximumBytes)
+            {
+                return (null, true, null);
+            }
+
+            await body.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            return (JsonSerializer.Deserialize(
+                body.GetBuffer().AsSpan(0, checked((int)body.Length)),
+                StudioAiProxyEndpointsJsonContext.Default.StudioAiChatHttpRequest), false, null);
+        }
+        catch (JsonException)
+        {
+            return (null, false, "Request body must be valid JSON.");
+        }
     }
 
     private static string EventName(StudioAiChatEventType type) => type switch
