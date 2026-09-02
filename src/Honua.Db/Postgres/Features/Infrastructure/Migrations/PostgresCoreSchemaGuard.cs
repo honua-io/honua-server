@@ -867,18 +867,10 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         public bool IsApplied(string migration) => AppliedScripts.Contains(migration);
 
         public List<string> MissingRasterBaselineTables()
-        {
-            var missing = new List<string>();
-            foreach (var table in _rasterBaselineTables)
-            {
-                if (!Tables.Contains(table))
-                {
-                    missing.Add($"{SchemaName}.{table}");
-                }
-            }
-
-            return missing;
-        }
+            => _rasterBaselineTables
+                .Where(table => !Tables.Contains(table))
+                .Select(table => $"{SchemaName}.{table}")
+                .ToList();
 
         public List<string> MissingExternalStorageEffects()
         {
