@@ -617,6 +617,23 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         // this test owns a dedicated database, that schema is fully private — no advisory lock or
         // cross-collection serialization is required to keep the mutation off the deadlock path.
         await using var connection = await OpenSchemaConnectionAsync();
+        await using (var metadataPointers = connection.CreateCommand())
+        {
+            metadataPointers.CommandText = """
+                INSERT INTO honua.metadata_v2_snapshots
+                    (environment, revision, schema_version, api_version, document, etag, generated_at)
+                VALUES
+                    ('default', 42, '2.0.0-alpha.1', 'metadata.honua.io/v2alpha1', '{}'::jsonb, 'default-etag', now()),
+                    ('unrelated', 42, '2.0.0-alpha.1', 'metadata.honua.io/v2alpha1', '{}'::jsonb, 'unrelated-etag', now());
+
+                INSERT INTO honua.metadata_v2_current (environment, revision, etag)
+                VALUES
+                    ('default', 42, 'default-etag'),
+                    ('unrelated', 42, 'unrelated-etag');
+                """;
+            await metadataPointers.ExecuteNonQueryAsync();
+        }
+
         await ExecuteSeedFileAsync(connection, baselineSeedPath);
         await ExecuteSeedFileAsync(connection, conflictSeedPath);
 
@@ -629,6 +646,19 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             """;
         var featureCount = (long)(await countCmd.ExecuteScalarAsync())!;
         featureCount.Should().Be(5, "mobile offline baseline should seed the deterministic edit and context records");
+
+        await using var metadataPointerCmd = connection.CreateCommand();
+        metadataPointerCmd.CommandText = """
+            SELECT environment
+            FROM honua.metadata_v2_current
+            ORDER BY environment
+            """;
+        await using (var metadataPointerReader = await metadataPointerCmd.ExecuteReaderAsync())
+        {
+            (await metadataPointerReader.ReadAsync()).Should().BeTrue();
+            metadataPointerReader.GetString(0).Should().Be("unrelated");
+            (await metadataPointerReader.ReadAsync()).Should().BeFalse();
+        }
 
         await using var conflictCmd = connection.CreateCommand();
         conflictCmd.CommandText = """

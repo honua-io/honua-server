@@ -392,9 +392,10 @@ VALUES
         )
     );
 
--- This is an isolated demo database. Invalidate the bootstrap snapshot after the
--- complete legacy fixture exists so the runtime's supported V1 compatibility projector
--- rebuilds the adopted Metadata v2 graph on restart.
-DELETE FROM honua.metadata_v2_current;
+-- Invalidate only the default metadata environment after the complete legacy fixture
+-- exists so its supported V1 compatibility projector rebuilds the adopted Metadata v2
+-- graph on restart. Other environments may share this database in staging/cloud setups.
+DELETE FROM honua.metadata_v2_current
+WHERE environment = 'default';
 
 COMMIT;
