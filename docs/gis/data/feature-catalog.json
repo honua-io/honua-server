@@ -589,8 +589,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "delete-api-v1-admin-users-id",
@@ -4142,8 +4142,8 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "get-api-v1-admin-tenants-usage",
@@ -4156,8 +4156,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantUsage_ReturnsBillingUsageEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "get-api-v1-admin-tenants-tenantid",
@@ -4170,8 +4170,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "get-api-v1-admin-tile-operations-cache-inventory",
@@ -16142,8 +16142,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "post-api-v1-admin-tenants-tenantid-resume",
@@ -16156,8 +16156,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "post-api-v1-admin-tenants-tenantid-suspend",
@@ -16170,8 +16170,8 @@
         "Honua.Server.Tests.Features.Admin.TenantAdminEndpointsTests.TenantLifecycle_CreateUseSuspendResumeDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
-      "capability": "admin.control-plane"
+      "maturity": "preview",
+      "capability": "admin.multi-tenancy"
     },
     {
       "id": "post-api-v1-admin-tile-operations-evict",

@@ -50,6 +50,9 @@ A successful admin upload persists `<LicensePath>.uploaded`, which startup reads
 
 ## Next steps
 
+- [Tenancy support](tenancy.md) — single-tenant GA defaults and the opt-in
+  multi-tenant Preview configuration/security floor.
+
 - [Environment variable reference](../../reference/configuration/environment-variables.md)
 - [Deploy with Docker Compose](docker-compose.md)
 - [Deploy on Kubernetes](kubernetes.md)
