@@ -52,7 +52,6 @@ public sealed class TenantDenialContractMatrixTests
         }
     }
 
-    [Fact]
     [UnitTest]
     public void ContractCells_ContainsExactEightByFourDenominator()
     {
@@ -63,7 +62,8 @@ public sealed class TenantDenialContractMatrixTests
 
     [Theory]
     [MemberData(nameof(ContractCells))]
-    [IntegrationTest]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Integration")]
     [Operation(Operations.Security)]
     [Endpoint("GET|POST tenant denial protocol matrix")]
     public async Task TenantDenial_RouteAndCause_UsesNativeEnvelopeWithoutHandlerSideEffects(
