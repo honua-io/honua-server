@@ -90,9 +90,15 @@ internal static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services">Service collection</param>
     /// <param name="configuration">Configuration to get connection string from</param>
+    /// <param name="coreSchemaMigrations">Application-owned migration identities to verify</param>
     /// <returns>Updated service collection</returns>
-    public static IServiceCollection AddPostgreSqlServices(this IServiceCollection services, IConfiguration configuration)
+    internal static IServiceCollection AddPostgreSqlServices(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        PostgresCoreSchemaMigrationManifest coreSchemaMigrations)
     {
+        ArgumentNullException.ThrowIfNull(coreSchemaMigrations);
+
         // Request-scoped schema mode is required by per-test schema headers AND by
         // schema-per-tenant routing (#346); both share the same SET search_path mechanism.
         var schemaHeadersEnabled = Honua.Core.Configuration.RequestScopedSchemaConfiguration.IsEnabled(configuration);
@@ -419,7 +425,11 @@ internal static class ServiceCollectionExtensions
         // Register the read-only journal/physical-schema guard and migration runner. Both
         // canonical numbered roots flow through this runner and its public.schema_versions
         // journal; the guard rejects divergence instead of repairing it from a store path.
-        services.AddSingleton<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>();
+        services.AddSingleton(coreSchemaMigrations);
+        services.AddSingleton(serviceProvider =>
+            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
+                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
+                configuration));
         services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
             serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
 

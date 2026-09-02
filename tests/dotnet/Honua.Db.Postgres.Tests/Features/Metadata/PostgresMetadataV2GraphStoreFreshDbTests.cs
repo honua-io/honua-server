@@ -42,7 +42,8 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
 
             var act = async () => await store.GetCurrentAsync();
             var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
-            exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.MetadataV2SnapshotMigration);
+            exception.Which.MigrationScript.Should().Be(
+                TestCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration);
         }
         finally
         {
@@ -374,9 +375,11 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
     }
 
     private static PostgresCoreSchemaGuard CreateGuard(string schema)
-        => new(new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
-            .Build());
+        => new(
+            TestCoreSchemaMigrations.Manifest,
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
+                .Build());
 
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IAdoNetDatabaseConnectionProvider
     {

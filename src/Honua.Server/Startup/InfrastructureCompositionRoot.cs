@@ -45,7 +45,10 @@ internal static class InfrastructureCompositionRoot
         {
             case DataProviderNames.Postgis:
             case DataProviderNames.PostgreSql:
-                Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, configuration);
+                Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
+                    services,
+                    configuration,
+                    ServerCoreSchemaMigrations.Manifest);
                 break;
             case DataProviderNames.DuckDb:
                 Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);

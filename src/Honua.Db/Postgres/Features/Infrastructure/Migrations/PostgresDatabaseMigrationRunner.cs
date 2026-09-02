@@ -35,14 +35,17 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private readonly string _metadataSchemaVariable;
     private readonly bool _includeConfiguredSchemaAdoption;
     private readonly IDatabaseSchemaGuard _schemaGuard;
+    private readonly PostgresCoreSchemaMigrationManifest _migrations;
 
     public PostgresDatabaseMigrationRunner(
         IDatabaseSchemaGuard schemaGuard,
+        PostgresCoreSchemaMigrationManifest migrations,
         IOptions<MigrationSafetyOptions>? safetyOptions = null,
         IConfiguration? configuration = null,
         IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null)
     {
         _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
+        _migrations = migrations ?? throw new ArgumentNullException(nameof(migrations));
         _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
         _backupHookRecorder = backupHookRecorder;
         var configuredMetadataSchema = configuration?["Database:Schema"];
@@ -91,7 +94,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 migrationsAssembly,
                 _metadataSchemaVariable,
                 includeRasterProviderMigrations,
-                _includeConfiguredSchemaAdoption);
+                _includeConfiguredSchemaAdoption,
+                _migrations.ConfiguredSchemaAdoptionMigration);
             var scripts = upgrader.GetScriptsToExecute();
             var pendingScripts = scripts.Select(script => script.Name).ToArray();
             var classifications = ClassifyScripts(scripts);
@@ -251,7 +255,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 migrationsAssembly,
                 _metadataSchemaVariable,
                 includeRasterProviderMigrations,
-                _includeConfiguredSchemaAdoption);
+                _includeConfiguredSchemaAdoption,
+                _migrations.ConfiguredSchemaAdoptionMigration);
             if (usesCanonicalMigrationRoots)
             {
                 await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
@@ -333,7 +338,8 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         Assembly migrationsAssembly,
         string metadataSchemaVariable,
         bool includeRasterProviderMigrations,
-        bool includeConfiguredSchemaAdoption)
+        bool includeConfiguredSchemaAdoption,
+        string configuredSchemaAdoptionMigration)
     {
         var builder = DeployChanges.To
             .PostgresqlDatabase(connectionString)
@@ -357,18 +363,15 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 // existing default-schema upgrade out of the nonce gate altogether.
                 name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) &&
                     (includeConfiguredSchemaAdoption ||
-                     !string.Equals(
-                         name,
-                         PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration,
-                         StringComparison.Ordinal)))
+                     !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)))
             .WithScriptNameComparer(_migrationScriptNameComparer)
             .Build();
     }
 
-    private static bool UsesCanonicalMigrationRoots(Assembly migrationsAssembly)
+    private bool UsesCanonicalMigrationRoots(Assembly migrationsAssembly)
         => string.Equals(
             migrationsAssembly.GetName().Name,
-            "Honua.Server",
+            _migrations.ApplicationMigrationAssemblyName,
             StringComparison.Ordinal);
 
     private static async Task<bool> HasPostGisRasterAsync(

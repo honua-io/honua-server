@@ -5,6 +5,7 @@ using System.Reflection;
 using DbUp;
 using FluentAssertions;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -364,7 +365,9 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     [Fact]
     public async Task CanonicalRunner_OnFreshDatabase_JournalsBothMigrationRootsAndVerifiesPhysicalFloor()
     {
-        var runner = new PostgresDatabaseMigrationRunner(new PostgresCoreSchemaGuard());
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
+            ServerCoreSchemaMigrations.Manifest);
 
         var result = await runner.RunMigrationsAsync(
             _connectionString,
@@ -374,10 +377,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             $"both numbered migration roots should apply through the canonical runner. Error: {result.ErrorMessage}");
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLayerStatisticsMigration);
         result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
-        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.MetadataV2SnapshotMigration);
-        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterExternalStorageMigration);
-        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.SensorThingsMigration);
-        result.AppliedScripts.Should().NotContain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration,
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.RasterExternalStorageMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.SensorThingsMigration);
+        result.AppliedScripts.Should().NotContain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration,
             "the contract-gated adoption script has no work in the default schema");
 
         var existingDatabasePlan = await runner.PlanMigrationsAsync(
@@ -385,7 +388,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             Assembly.GetAssembly(typeof(Program))!);
         existingDatabasePlan.Successful.Should().BeTrue();
         existingDatabasePlan.PendingScripts.Should().NotContain(
-            PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+            ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
         existingDatabasePlan.HasContractScripts.Should().BeFalse(
             "an existing default-schema deployment must not require an adoption nonce for a no-op");
 
@@ -411,7 +414,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         (await command.ExecuteScalarAsync()).Should().Be(5,
             "upgrade and restore receipts use one journal denominator for both numbered roots");
 
-        var guard = new PostgresCoreSchemaGuard();
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
         var verify = () => guard.VerifyAsync(_connectionString);
         await verify.Should().NotThrowAsync("a fully migrated restore candidate must pass the guarded DR floor");
     }
@@ -419,8 +422,8 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     [Fact]
     public async Task CoreSchemaGuard_WhenRasterDataIsMissing_RejectsJournaledMigration()
     {
-        var guard = new PostgresCoreSchemaGuard();
-        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
         var result = await runner.RunMigrationsAsync(
             _connectionString,
             Assembly.GetAssembly(typeof(Program))!);

@@ -13,6 +13,7 @@ using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.Db.Postgres.Features.SensorThings;
+using Honua.Server.Startup;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -51,7 +52,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 """,
                 (int)DatabaseSchemaRequirement.MetadataV2Snapshot,
                 (int)StoreOperation.MetadataRead,
-                PostgresCoreSchemaGuard.MetadataV2SnapshotMigration,
+                ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration,
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
             },
             {
@@ -64,7 +65,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 """,
                 (int)DatabaseSchemaRequirement.RasterExternalStorage,
                 (int)StoreOperation.RasterImportWrite,
-                PostgresCoreSchemaGuard.RasterExternalStorageMigration,
+                ServerCoreSchemaMigrations.Manifest.RasterExternalStorageMigration,
                 DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema
             },
             {
@@ -75,7 +76,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 """,
                 (int)DatabaseSchemaRequirement.SensorThings,
                 (int)StoreOperation.SensorThingsRead,
-                PostgresCoreSchemaGuard.SensorThingsMigration,
+                ServerCoreSchemaMigrations.Manifest.SensorThingsMigration,
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
             },
             {
@@ -86,7 +87,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 """,
                 (int)DatabaseSchemaRequirement.MetadataV2ReleasePackages,
                 (int)StoreOperation.MetadataReleasePackageRead,
-                PostgresCoreSchemaGuard.MetadataV2ReleasePackagesMigration,
+                ServerCoreSchemaMigrations.Manifest.MetadataV2ReleasePackagesMigration,
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
             },
         };
@@ -109,13 +110,16 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = "honua" })
             .Build();
-        var guard = new PostgresCoreSchemaGuard(configuration);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
         var requirement = (DatabaseSchemaRequirement)requirementValue;
         var storeOperation = (StoreOperation)storeOperationValue;
 
         // Upgrade/preflight receipt: planning cannot report a usable migration plan over a
         // journal/schema mismatch, and the typed cause remains available to the caller.
-        var runner = new PostgresDatabaseMigrationRunner(guard, configuration: configuration);
+        var runner = new PostgresDatabaseMigrationRunner(
+            guard,
+            ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
         var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
         plan.Successful.Should().BeFalse("upgrade preflight must reject divergent schema state");
         plan.Error.Should().BeOfType<DatabaseSchemaFloorException>();
@@ -150,8 +154,11 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
             .Build();
-        var guard = new PostgresCoreSchemaGuard(configuration);
-        var runner = new PostgresDatabaseMigrationRunner(guard, configuration: configuration);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var runner = new PostgresDatabaseMigrationRunner(
+            guard,
+            ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
 
         var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
 
@@ -193,8 +200,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the optional-raster lane.");
 
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
-        var guard = new PostgresCoreSchemaGuard();
-        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
 
         var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
 
@@ -235,14 +242,14 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the late-raster lane.");
 
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
-        var guard = new PostgresCoreSchemaGuard();
-        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
 
         var vectorBaseline = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         vectorBaseline.Successful.Should().BeTrue(
             $"the vector-only baseline must migrate cleanly. Error: {vectorBaseline.ErrorMessage}");
-        vectorBaseline.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterOverviewsMigration);
-        vectorBaseline.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterFootprintsMigration);
+        vectorBaseline.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.RasterOverviewsMigration);
+        vectorBaseline.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.RasterFootprintsMigration);
         vectorBaseline.AppliedScripts.Should().NotContain(PostgresCoreSchemaGuard.RasterLateProvisioningMigration);
         (await CountTablesAsync(connectionString, "honua", "raster_overviews", "raster_footprints"))
             .Should().Be(0, "server migrations 063/064 are intentional no-ops without postgis_raster");
@@ -283,8 +290,10 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
 
         const string schema = "honua_guard_adopted";
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
-        var baselineGuard = new PostgresCoreSchemaGuard();
-        var baselineRunner = new PostgresDatabaseMigrationRunner(baselineGuard);
+        var baselineGuard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var baselineRunner = new PostgresDatabaseMigrationRunner(
+            baselineGuard,
+            ServerCoreSchemaMigrations.Manifest);
         var baseline = await baselineRunner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         baseline.Successful.Should().BeTrue(
             $"the test requires a canonical legacy baseline. Error: {baseline.ErrorMessage}");
@@ -323,21 +332,24 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         await ExecuteAsync(connectionString, $"""
             DELETE FROM public.schema_versions
             WHERE scriptname LIKE 'Honua.Postgres.Migrations.%'
-               OR scriptname = '{PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration}';
+               OR scriptname = '{ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration}';
             """);
 
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
             .Build();
-        var guard = new PostgresCoreSchemaGuard(configuration);
-        var runner = new PostgresDatabaseMigrationRunner(guard, configuration: configuration);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var runner = new PostgresDatabaseMigrationRunner(
+            guard,
+            ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
 
         var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
         plan.Successful.Should().BeTrue(
             $"the one forward adoption migration must be reachable before the configured-schema floor is enforced. Error: {plan.ErrorMessage}");
-        plan.PendingScripts.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+        plan.PendingScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
         plan.HasContractScripts.Should().BeTrue("moving guarded tables is a contract-phase operation");
-        plan.ContractScriptNames.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+        plan.ContractScriptNames.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
 
         var beforeBlockedRun = await CaptureStateAsync(connectionString);
         var blockedResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
@@ -348,7 +360,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             "the upgrade gate must block before moving tables or advancing either migration root");
 
         var approvalNonce = MigrationSafetyClassifier.ComputeContractApprovalNonce(
-            [PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration]);
+            [ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration]);
         var approvedConfiguration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -356,16 +368,17 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 [MigrationSafetyOptions.ApproveContractMigrationsKey] = approvalNonce,
             })
             .Build();
-        var approvedGuard = new PostgresCoreSchemaGuard(approvedConfiguration);
+        var approvedGuard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, approvedConfiguration);
         var approvedRunner = new PostgresDatabaseMigrationRunner(
             approvedGuard,
+            ServerCoreSchemaMigrations.Manifest,
             configuration: approvedConfiguration);
 
         var result = await approvedRunner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
 
         result.Successful.Should().BeTrue(
             $"the journaled forward migration must adopt complete legacy families. Error: {result.ErrorMessage}");
-        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
         await approvedGuard.Awaiting(instance => instance.VerifyAsync(connectionString)).Should().NotThrowAsync();
 
         var observationStore = new PostgresObservationStore(
@@ -415,7 +428,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                     SELECT 1 FROM public.schema_versions WHERE scriptname = @adoption);
             """;
         command.Parameters.AddWithValue("schema", schema);
-        command.Parameters.AddWithValue("adoption", PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration);
+        command.Parameters.AddWithValue("adoption", ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration);
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
         reader.GetInt32(0).Should().Be(6);
@@ -429,8 +442,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
 
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
-        var guard = new PostgresCoreSchemaGuard();
-        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
         var migrationResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         migrationResult.Successful.Should().BeTrue(
             $"the test requires a canonical journal/schema baseline. Error: {migrationResult.ErrorMessage}");
@@ -456,8 +469,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
 
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
-        var guard = new PostgresCoreSchemaGuard();
-        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
         var migrationResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         migrationResult.Successful.Should().BeTrue(
             $"the test requires a canonical journal/schema baseline. Error: {migrationResult.ErrorMessage}");
@@ -467,7 +480,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
 
         var act = () => guard.VerifyAsync(connectionString);
         var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
-        exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.MetadataV2ReleasePackagesMigration);
+        exception.Which.MigrationScript.Should().Be(
+            ServerCoreSchemaMigrations.Manifest.MetadataV2ReleasePackagesMigration);
         exception.Which.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
         exception.Which.Detail.Should().Contain("metadata_v2_release_packages");
 
@@ -482,12 +496,14 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
 
         const string schema = "honua_guard_partial";
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGis: true);
-        var baselineRunner = new PostgresDatabaseMigrationRunner(new PostgresCoreSchemaGuard());
+        var baselineRunner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
+            ServerCoreSchemaMigrations.Manifest);
         var baseline = await baselineRunner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         baseline.Successful.Should().BeTrue();
         await ExecuteAsync(connectionString, $"""
             DELETE FROM public.schema_versions
-            WHERE scriptname = '{PostgresCoreSchemaGuard.ConfiguredSchemaAdoptionMigration}';
+            WHERE scriptname = '{ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration}';
             CREATE SCHEMA {schema};
             CREATE TABLE {schema}.sta_thing (id bigint PRIMARY KEY, name text, description text);
             """);
@@ -497,7 +513,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
             .Build();
         var runner = new PostgresDatabaseMigrationRunner(
-            new PostgresCoreSchemaGuard(configuration),
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration),
+            ServerCoreSchemaMigrations.Manifest,
             configuration: configuration);
 
         var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
@@ -514,8 +531,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
 
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
-        var guard = new PostgresCoreSchemaGuard();
-        var runner = new PostgresDatabaseMigrationRunner(guard);
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
         var migrationResult = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
         migrationResult.Successful.Should().BeTrue(
             $"the test requires a canonical journal/schema baseline. Error: {migrationResult.ErrorMessage}");

@@ -271,7 +271,10 @@ internal static class WebAppFixturePostgresWiringMixin
         RemoveBackgroundPollers(services);
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString);
-        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
+        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
+            services,
+            testConfiguration,
+            Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest);
         UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
@@ -310,7 +313,10 @@ internal static class WebAppFixturePostgresWiringMixin
         RemoveBackgroundPollers(services);
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString, extraConfiguration);
-        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
+        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
+            services,
+            testConfiguration,
+            Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest);
         UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
