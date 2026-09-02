@@ -61,6 +61,7 @@ public sealed class StudioAiTranscriptSignerTests
 
     [Theory]
     [InlineData("honua_propose_deploy_operation", "targetId")]
+    [InlineData("honua_propose_rollback", "targetId")]
     [InlineData("honua_propose_metadata_release", "targetEnvironment")]
     public void Sign_GovernedToolTargetDiffersFromCertifiedCandidate_RejectsBeforeSigning(
         string toolName,
