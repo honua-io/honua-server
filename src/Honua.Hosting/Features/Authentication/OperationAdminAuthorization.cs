@@ -39,6 +39,7 @@ public static class OperationAdminAuthorization
         semanticContext.Request.Method = sideEffectClass == OperationSideEffectClass.ReadOnly
             ? HttpMethods.Get
             : HttpMethods.Post;
+        semanticContext.Request.Path = transportContext.Request.Path;
 
         var result = await authorization
             .AuthorizeAsync(principal, semanticContext, AuthenticationExtensions.AdminPolicy)
@@ -52,6 +53,9 @@ public static class OperationAdminAuthorization
         // identity-provider roles. Keep persisted API-key grants as an independent
         // ceiling even in that mode; only stored keys carry api_key_id.
         return principal.FindFirst("api_key_id") is null
-            || AdminApiKeyPermission.IsAuthorized(principal, semanticContext.Request.Method);
+            || AdminApiKeyPermission.IsAuthorized(
+                principal,
+                semanticContext.Request.Method,
+                semanticContext.Request.Path.Value);
     }
 }
