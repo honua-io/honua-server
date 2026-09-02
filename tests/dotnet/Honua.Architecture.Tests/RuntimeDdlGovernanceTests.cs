@@ -20,7 +20,7 @@ public sealed partial class RuntimeDdlGovernanceTests
         new Dictionary<string, RuntimeDdlOwner>(StringComparer.Ordinal)
         {
             ["src/Honua.Db/Postgres/Features/Migration/OgcWfsImportService.cs"] =
-                new(RuntimeDdlCategory.GeneratedImportTarget, 4, "OgcWfsImportService owns rollback/drop cleanup for its generated target table."),
+                new(RuntimeDdlCategory.GeneratedImportTarget, 7, "OgcWfsImportService owns atomic staging promotion and rollback/drop cleanup for its generated target table."),
             ["src/Honua.Db/Postgres/Features/Migration/GeoservicesImportService.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 1, "GeoservicesImportService owns the generated target index in its import transaction."),
             ["src/Honua.Db/Postgres/Features/Migration/GeoservicesImportService.ImportSteps.cs"] =
