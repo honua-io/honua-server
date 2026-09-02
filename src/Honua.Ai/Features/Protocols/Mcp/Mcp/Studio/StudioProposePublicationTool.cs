@@ -1,8 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Geoprocessing;
@@ -12,26 +16,8 @@ using Honua.Ai.Protocols.Mcp.Tools;
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
 /// <summary>
-/// MCP tool that records publication intent on a Studio draft
-/// (honua-server#3002, REQ-003/REQ-009). This is the ONLY publish-adjacent
-/// tool on the agent surface, and it deliberately does not publish anything:
-/// it sets <see cref="StudioPackageEnvelope.PublicationIntent"/> on the draft
-/// through the ordinary generation-checked
-/// <see cref="IStudioPackageLifecycleService.UpdateDraftAsync"/> path — the
-/// same envelope field the Studio UI reads to render a pending-review
-/// affordance — and appends a provenance entry recording who proposed it and
-/// when.
-/// <para>
-/// It never calls <c>CreatePublicationRequestAsync</c>,
-/// <c>SaveDraftAsVersionAsync</c>, or <c>RollbackAsync</c>: those are the
-/// version-level lifecycle operations that actually move a
-/// current/published pointer (see
-/// <c>InMemoryStudioPackageStore.CreatePublicationRequestAsync</c>'s
-/// <c>Accepted</c> branch), and none of them are reachable from this or any
-/// other tool in this file. Publish/share/embed execution stays a
-/// human-confirmed action taken outside the agent tool surface (the Studio
-/// REST admin API / console UI), per REQ-009.
-/// </para>
+/// MCP bridge from an immutable Studio publication intent into the canonical
+/// typed operation/proposal/approval lifecycle.
 /// </summary>
 internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTool
 {
@@ -58,9 +44,8 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         Name = ToolName,
         Title = "Propose Studio publication",
         Description =
-            "Record publication intent (route, visibility, embed, service, schedule, job) on a Studio draft for human review. "
-            + "This tool ONLY records intent on the draft — it never publishes, shares, embeds, or moves a current/published "
-            + "pointer. Publish/share/embed execution is a human-confirmed action taken outside the agent tool surface.",
+            "Submit an exact saved Studio item/version/contentHash plus route and visibility for human approval. "
+            + "Returns canonical operation and proposal identities; no publication pointer moves before separate-principal approval.",
         InputSchema = StudioMcpSchemas.ProposePublicationArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioProposePublicationOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Propose Studio publication", destructive: false, idempotent: true)
@@ -82,63 +67,108 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         var lifecycleService = RequireLifecycleService(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioProposePublicationArgument);
-        var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
-        var generation = AddStudioLayerTool.RequireGeneration(argument.Generation);
+        var itemId = argument.ItemId is { } suppliedItemId && suppliedItemId != Guid.Empty
+            ? suppliedItemId
+            : throw new GeoprocessingValidationException("'itemId' is required.");
+        var versionId = argument.VersionId is { } suppliedVersionId && suppliedVersionId != Guid.Empty
+            ? suppliedVersionId
+            : throw new GeoprocessingValidationException("'versionId' is required.");
+        if (string.IsNullOrWhiteSpace(argument.ContentHash))
+        {
+            throw new GeoprocessingValidationException("'contentHash' is required.");
+        }
 
-        // This remains an ordinary owner-scoped draft mutation. Deliberately
-        // use UpdateDraft rather than the elevated PublishRequest operation:
-        // the tool records intent only and cannot execute publication.
-        var draft = await RequireAuthorizedDraftAsync(
+        if (string.IsNullOrWhiteSpace(argument.Route) || string.IsNullOrWhiteSpace(argument.Visibility))
+        {
+            throw new GeoprocessingValidationException("'route' and 'visibility' are required.");
+        }
+
+        var version = await lifecycleService.GetVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false)
+            ?? throw new GeoprocessingNotFoundException($"Studio content version '{versionId:D}' was not found.");
+        var pointers = await lifecycleService.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false)
+            ?? throw new GeoprocessingNotFoundException($"Studio content item '{itemId:D}' was not found.");
+        var authorization = RequireAuthorizationService(httpContext);
+        await EnsureStudioAuthorizedAsync(
             httpContext,
+            authorization,
             principal,
-            lifecycleService,
-            draftId,
-            StudioAuthorizationOperation.UpdateDraft,
+            StudioAuthorizationOperation.ReadContentItem,
+            pointers.OwnerId,
+            itemId.ToString("D"),
+            "studio-content-item",
+            OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
+        await EnsureStudioAuthorizedAsync(
+            httpContext,
+            authorization,
+            principal,
+            StudioAuthorizationOperation.PublishRequest,
+            pointers.OwnerId,
+            itemId.ToString("D"),
+            "studio-content-item",
             OperatorOperation.Create,
             cancellationToken).ConfigureAwait(false);
-        RequireAuthorizedGeneration(draft, generation);
-        var actorId = ActorIdFor(RequireAuthorizationService(httpContext), principal);
+        if (pointers.CurrentVersionId != versionId)
+        {
+            throw new GeoprocessingPreconditionFailedException("The publication proposal must bind the current saved Studio version.");
+        }
+
+        if (!string.Equals(version.ContentHash, argument.ContentHash, StringComparison.Ordinal))
+        {
+            throw new GeoprocessingPreconditionFailedException("The supplied content hash does not match the saved Studio version.");
+        }
+
+        var actorId = ActorIdFor(authorization, principal);
 
         var intent = new StudioPublicationIntent
         {
             Route = argument.Route,
             Visibility = argument.Visibility,
-            Embed = argument.Embed,
-            Service = argument.Service,
-            Schedule = argument.Schedule,
-            Job = argument.Job,
         };
 
-        var provenance = draft.Envelope.Provenance
-            .Append(new StudioProvenanceRef
+        var idempotencyKey = httpContext.Request.Headers["Idempotency-Key"].FirstOrDefault();
+        var receipt = await RequireMutationRuntime(httpContext).CreatePublicationRequestAsync(
+            itemId,
+            versionId,
+            argument.ContentHash,
+            intent,
+            argument.Note,
+            actorId,
+            new StudioDraftMutationContext
             {
-                Kind = "agent-proposal",
-                Ref = argument.Note ?? "publication proposed by agent",
-                Rel = "proposes-publication",
-                ActorId = actorId,
-                Timestamp = DateTimeOffset.UtcNow,
-            })
-            .ToArray();
-
-        var envelope = draft.Envelope with { PublicationIntent = intent, Provenance = provenance };
-
-        var updated = await ApplyUpdateAsync(
-            httpContext,
-            principal,
-            draftId,
-            EnvelopeOnlyUpdate(draft, envelope, generation, actorId),
+                PrincipalId = actorId,
+                TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+                SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+                CorrelationId = httpContext.TraceIdentifier,
+                IdempotencyKey = idempotencyKey,
+                AuthorizationOutcome = "authorized",
+                Roles = principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
+                ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
+                RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
+                    .OrderBy(static scope => scope, StringComparer.Ordinal).ToArray(),
+            },
             cancellationToken).ConfigureAwait(false);
-
-        Audit(principal, ToolName, draftId, generationBefore: generation, generationAfter: updated.Generation);
+        var operation = receipt.Operation;
+        if (operation.Status != OperationHandleStatus.RequiresApproval
+            || string.IsNullOrWhiteSpace(operation.ProposalId)
+            || string.IsNullOrWhiteSpace(operation.AuditId))
+        {
+            throw new GeoprocessingPreconditionFailedException(
+                operation.Reason ?? "Studio publication intent did not enter durable approval.");
+        }
 
         var output = new McpStudioProposePublicationOutput
         {
-            Draft = updated,
-            Recorded = true,
+            Operation = operation,
+            OperationInstanceId = operation.OperationInstanceId,
+            ProposalId = operation.ProposalId,
+            ProposalUri = McpResourceUris.ProposalUri(operation.ProposalId),
+            AuditId = operation.AuditId,
+            CorrelationId = operation.CorrelationId,
+            IdempotencyIdentity = idempotencyKey ?? operation.OperationInstanceId,
+            Status = "AwaitingApproval",
             HumanConfirmationRequired = true,
-            Message =
-                "Publication intent recorded on the draft for human review. "
-                + "No publish, share, or embed action was executed; a human must confirm publication through the Studio UI/REST admin surface.",
+            Message = "Publication proposal is awaiting approval by a separate authorized principal.",
         };
 
         return McpToolHelpers.SuccessResult(output, StudioMcpJsonContext.Default.McpStudioProposePublicationOutput);
