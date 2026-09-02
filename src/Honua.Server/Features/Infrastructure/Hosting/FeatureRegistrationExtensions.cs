@@ -129,10 +129,10 @@ internal static class FeatureRegistrationExtensions
         services.AddGeometryService();
         services.AddHonuaGrpc(configuration);
         services.AddObservability(configuration, redisCacheEntitled);
-        if (CapabilityFlagOptions.IsExperimentalEnabled(configuration, "alerts.geofence"))
-        {
-            services.AddAlerts(configuration);
-        }
+        // Alert health and streaming abstractions are shared by always-on operations
+        // surfaces. AlertOptions keeps the workers dormant when alerting is disabled;
+        // only the geofence-specific HTTP surfaces are lifecycle-gated below.
+        services.AddAlerts(configuration);
         services.AddFieldCollectionAutomations(configuration);
         services.AddNlQuery(configuration);
         services.AddStudioAiProxy(configuration);

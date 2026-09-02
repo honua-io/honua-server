@@ -1606,8 +1606,14 @@ app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
     .RequireAdminAuthorization();
-app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
-app.MapGrpcService<Honua.Scene.Grpc.HonuaTileGrpcService>();
+if (CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "scene.catalog"))
+{
+    app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
+}
+if (CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "serve.3d-tiles-scene"))
+{
+    app.MapGrpcService<Honua.Scene.Grpc.HonuaTileGrpcService>();
+}
 app.MapGrpcService<Honua.Scene.Grpc.HonuaElevationGrpcService>();
 app.MapGrpcHealthChecksService();
 

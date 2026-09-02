@@ -294,6 +294,27 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/operations/streaming/subscribers")]
+    public async Task SharedStreamingOperations_WhenAlertsPreviewDisabled_RemainAvailable()
+    {
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/admin/operations/streaming/subscribers");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK,
+                "the GA streaming operations surface depends on alert-owned shared services");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/security/client-certificates/profiles")]
     public async Task ClientCertificatesEndpoint_WhenExperimentalDisabled_Returns404ExperimentalDisabled()
     {
