@@ -92,16 +92,6 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             httpContext,
             authorization,
             principal,
-            StudioAuthorizationOperation.ReadContentItem,
-            pointers.OwnerId,
-            itemId.ToString("D"),
-            "studio-content-item",
-            OperatorOperation.Read,
-            cancellationToken).ConfigureAwait(false);
-        await EnsureStudioAuthorizedAsync(
-            httpContext,
-            authorization,
-            principal,
             StudioAuthorizationOperation.PublishRequest,
             pointers.OwnerId,
             itemId.ToString("D"),
