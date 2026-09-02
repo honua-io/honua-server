@@ -4,14 +4,14 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
-using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 using NpgsqlTypes;
 
-using Honua.Db.Postgres.Features.Infrastructure;
 namespace Honua.Db.Postgres.Features.Metadata;
 
 /// <summary>
@@ -29,7 +29,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IMetadataV2GraphCacheInvalidator? _cacheInvalidator;
-    private readonly PostgresCoreSchemaGuard? _schemaGuard;
+    private readonly IDatabaseSchemaGuard _schemaGuard;
     private readonly string _environment;
     private readonly string _schemaName;
     private readonly string _snapshotsTable;
@@ -44,9 +44,9 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     public PostgresMetadataV2GraphStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         string environment,
+        IDatabaseSchemaGuard schemaGuard,
         string? schemaName = null,
-        IMetadataV2GraphCacheInvalidator? cacheInvalidator = null,
-        PostgresCoreSchemaGuard? schemaGuard = null)
+        IMetadataV2GraphCacheInvalidator? cacheInvalidator = null)
     {
         ArgumentNullException.ThrowIfNull(connectionProvider);
         if (string.IsNullOrWhiteSpace(environment))
@@ -56,7 +56,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
 
         _connectionProvider = connectionProvider;
         _cacheInvalidator = cacheInvalidator;
-        _schemaGuard = schemaGuard;
+        _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
         _environment = environment;
         _schemaName = string.IsNullOrWhiteSpace(schemaName) ? "honua" : schemaName.Trim();
         _snapshotsTable = Infrastructure.SchemaSearchPath.QualifyTable("metadata_v2_snapshots", schemaName);
@@ -421,10 +421,10 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
     }
 
     private Task VerifySchemaFloorAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
-        => _schemaGuard?.VerifyRequirementAsync(
+        => _schemaGuard.VerifyRequirementAsync(
             connection,
-            CoreSchemaRequirement.MetadataV2Snapshot,
-            cancellationToken) ?? Task.CompletedTask;
+            DatabaseSchemaRequirement.MetadataV2Snapshot,
+            cancellationToken);
 
     private async Task<(long Revision, string Etag)?> ReadCurrentStateAsync(
         NpgsqlConnection connection,

@@ -33,17 +33,17 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
     private readonly string? _contractApprovalToken;
     private readonly string _metadataSchemaVariable;
-    private readonly PostgresCoreSchemaGuard _schemaGuard;
+    private readonly IDatabaseSchemaGuard _schemaGuard;
 
     public PostgresDatabaseMigrationRunner(
+        IDatabaseSchemaGuard schemaGuard,
         IOptions<MigrationSafetyOptions>? safetyOptions = null,
         IConfiguration? configuration = null,
-        IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null,
-        PostgresCoreSchemaGuard? schemaGuard = null)
+        IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null)
     {
+        _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
         _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
         _backupHookRecorder = backupHookRecorder;
-        _schemaGuard = schemaGuard ?? new PostgresCoreSchemaGuard(configuration);
         var configuredMetadataSchema = configuration?["Database:Schema"];
         _metadataSchemaVariable = SchemaSearchPath.ValidateAndQuote(
             string.IsNullOrWhiteSpace(configuredMetadataSchema)
@@ -74,7 +74,12 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 BuildMigrationConnectionString(connectionString),
                 migrationsAssembly,
                 _metadataSchemaVariable);
-            await _schemaGuard.VerifyAsync(connectionString, cancellationToken).ConfigureAwait(false);
+            if (UsesCanonicalMigrationRoots(migrationsAssembly))
+            {
+                await using var connection = new NpgsqlConnection(connectionString);
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                await _schemaGuard.VerifyConsistencyAsync(connection, cancellationToken).ConfigureAwait(false);
+            }
             var scripts = upgrader.GetScriptsToExecute();
             var pendingScripts = scripts.Select(script => script.Name).ToArray();
             var classifications = ClassifyScripts(scripts);
@@ -228,7 +233,11 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
         try
         {
-            await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
+            var usesCanonicalMigrationRoots = UsesCanonicalMigrationRoots(migrationsAssembly);
+            if (usesCanonicalMigrationRoots)
+            {
+                await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
+            }
 
             var classifications = ClassifyScripts(upgrader.GetScriptsToExecute());
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
@@ -268,7 +277,10 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             // A successful DbUp result is not sufficient evidence by itself: guarded migrations
             // may contain conditional/idempotent SQL. Reconcile the journal with required physical
             // objects/effects before reporting readiness or an upgrade receipt.
-            await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
+            if (usesCanonicalMigrationRoots)
+            {
+                await _schemaGuard.VerifyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
+            }
 
             return DatabaseMigrationResult.Succeeded(appliedScripts);
         }
@@ -325,6 +337,12 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             .WithScriptNameComparer(_migrationScriptNameComparer)
             .Build();
     }
+
+    private static bool UsesCanonicalMigrationRoots(Assembly migrationsAssembly)
+        => string.Equals(
+            migrationsAssembly.GetName().Name,
+            "Honua.Server",
+            StringComparison.Ordinal);
 
     private sealed partial class MigrationScriptNameComparer : IComparer<string>
     {

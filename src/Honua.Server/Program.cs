@@ -368,11 +368,13 @@ builder.Host.UseSerilog((context, services, config) =>
 // Standalone Python/JS harnesses can opt back in with HONUA_REGISTER_TEST_INFRASTRUCTURE=true;
 // a self-migrating standalone Test image that enables the Operate observability fixture also
 // opts in automatically so the seed endpoint's providers resolve (honua-server#2350).
-if (Honua.Server.Startup.TestInfrastructureRegistrationPolicy.ShouldRegisterInfrastructure(
+var registerProviderInfrastructure =
+    Honua.Server.Startup.TestInfrastructureRegistrationPolicy.ShouldRegisterInfrastructure(
         isTestEnvironment,
         registerInfrastructureInTestEnvironment,
         operateObservabilityFixtureEnabled,
-        hostManagesOwnMigrations))
+        hostManagesOwnMigrations);
+if (registerProviderInfrastructure)
 {
     InfrastructureCompositionRoot.RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
@@ -972,6 +974,18 @@ builder.Services.AddHonuaHeadRequestSupport();
 builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
+
+// A PostgreSQL production composition is never allowed to construct an unguarded migration
+// runner or core store. Resolve the guard eagerly, before compatibility checks, migrations, or
+// endpoint activation, so an accidentally removed/overridden registration aborts host startup
+// even when no connection string is configured or migrations are run out-of-band.
+var configuredPrimaryProvider = DataProviderNames.Normalize(
+    builder.Configuration.GetValue<string>("DataSource:Provider"));
+if (registerProviderInfrastructure &&
+    configuredPrimaryProvider is DataProviderNames.Postgis or DataProviderNames.PostgreSql)
+{
+    _ = app.Services.GetRequiredService<IDatabaseSchemaGuard>();
+}
 
 HostedBlazorAssetHelpers.FilterHostedBlazorStaticAssetEndpoints(
     app,

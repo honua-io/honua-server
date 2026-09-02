@@ -10,14 +10,6 @@ using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
-internal enum CoreSchemaRequirement
-{
-    RasterLayerStatistics = 0,
-    MetadataV2Snapshot = 1,
-    RasterExternalStorage = 2,
-    SensorThings = 3,
-}
-
 /// <summary>
 /// Read-only reconciliation between the DbUp journal and the physical objects owned by the
 /// audited core migrations. This component never executes DDL: divergence is an operator-visible,
@@ -55,6 +47,133 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "sta_observation_default",
     ];
 
+    private static readonly (string Table, string Column)[] _rasterLayerStatisticsColumns =
+    [
+        ("raster_layer_statistics", "layer_id"),
+        ("raster_layer_statistics", "merge_strategy"),
+        ("raster_layer_statistics", "raster_signature"),
+        ("raster_layer_statistics", "band_number"),
+        ("raster_layer_statistics", "min_value"),
+        ("raster_layer_statistics", "max_value"),
+        ("raster_layer_statistics", "mean_value"),
+        ("raster_layer_statistics", "std_dev"),
+        ("raster_layer_statistics", "valid_pixel_count"),
+        ("raster_layer_statistics", "nodata_pixel_count"),
+        ("raster_layer_statistics", "computed_at"),
+    ];
+
+    private static readonly (string Table, string Column)[] _metadataV2Columns =
+    [
+        ("metadata_v2_snapshots", "environment"),
+        ("metadata_v2_snapshots", "revision"),
+        ("metadata_v2_snapshots", "schema_version"),
+        ("metadata_v2_snapshots", "api_version"),
+        ("metadata_v2_snapshots", "document"),
+        ("metadata_v2_snapshots", "etag"),
+        ("metadata_v2_snapshots", "generated_at"),
+        ("metadata_v2_snapshots", "created_at"),
+        ("metadata_v2_current", "environment"),
+        ("metadata_v2_current", "revision"),
+        ("metadata_v2_current", "etag"),
+        ("metadata_v2_current", "activated_at"),
+        ("metadata_v2_resources_idx", "environment"),
+        ("metadata_v2_resources_idx", "revision"),
+        ("metadata_v2_resources_idx", "resource_id"),
+        ("metadata_v2_resources_idx", "name"),
+        ("metadata_v2_resources_idx", "namespace"),
+        ("metadata_v2_resources_idx", "type"),
+        ("metadata_v2_resources_idx", "primary_storage_binding_id"),
+        ("metadata_v2_services_idx", "environment"),
+        ("metadata_v2_services_idx", "revision"),
+        ("metadata_v2_services_idx", "service_id"),
+        ("metadata_v2_services_idx", "name"),
+        ("metadata_v2_services_idx", "service_type"),
+        ("metadata_v2_services_idx", "route"),
+        ("metadata_v2_publications_idx", "environment"),
+        ("metadata_v2_publications_idx", "revision"),
+        ("metadata_v2_publications_idx", "publication_id"),
+        ("metadata_v2_publications_idx", "service_id"),
+        ("metadata_v2_publications_idx", "resource_id"),
+        ("metadata_v2_publications_idx", "storage_binding_id"),
+        ("metadata_v2_publications_idx", "publication_type"),
+        ("metadata_v2_publications_idx", "path"),
+        ("metadata_v2_publications_idx", "layer_index"),
+        ("metadata_v2_publications_idx", "service_local_id"),
+        ("metadata_v2_storage_bindings_idx", "environment"),
+        ("metadata_v2_storage_bindings_idx", "revision"),
+        ("metadata_v2_storage_bindings_idx", "storage_binding_id"),
+        ("metadata_v2_storage_bindings_idx", "resource_id"),
+        ("metadata_v2_storage_bindings_idx", "connection_id"),
+        ("metadata_v2_storage_bindings_idx", "storage_type"),
+        ("metadata_v2_storage_bindings_idx", "locator"),
+        ("metadata_v2_connections_idx", "environment"),
+        ("metadata_v2_connections_idx", "revision"),
+        ("metadata_v2_connections_idx", "connection_id"),
+        ("metadata_v2_connections_idx", "name"),
+        ("metadata_v2_connections_idx", "type"),
+        ("metadata_v2_connections_idx", "provider"),
+    ];
+
+    private static readonly (string Table, string Column)[] _sensorThingsColumns =
+    [
+        ("sta_thing", "id"),
+        ("sta_thing", "name"),
+        ("sta_thing", "description"),
+        ("sta_sensor", "id"),
+        ("sta_sensor", "name"),
+        ("sta_sensor", "description"),
+        ("sta_sensor", "encoding_type"),
+        ("sta_sensor", "metadata"),
+        ("sta_observed_property", "id"),
+        ("sta_observed_property", "name"),
+        ("sta_observed_property", "definition"),
+        ("sta_observed_property", "description"),
+        ("sta_datastream", "id"),
+        ("sta_datastream", "name"),
+        ("sta_datastream", "description"),
+        ("sta_datastream", "observation_type"),
+        ("sta_datastream", "unit_name"),
+        ("sta_datastream", "unit_symbol"),
+        ("sta_datastream", "unit_definition"),
+        ("sta_datastream", "thing_id"),
+        ("sta_datastream", "sensor_id"),
+        ("sta_datastream", "observed_property_id"),
+        ("sta_observation", "id"),
+        ("sta_observation", "datastream_id"),
+        ("sta_observation", "phenomenon_time"),
+        ("sta_observation", "result_time"),
+        ("sta_observation", "result"),
+        ("sta_observation", "feature_of_interest_id"),
+        ("sta_observation_default", "id"),
+        ("sta_observation_default", "datastream_id"),
+        ("sta_observation_default", "phenomenon_time"),
+        ("sta_observation_default", "result_time"),
+        ("sta_observation_default", "result"),
+        ("sta_observation_default", "feature_of_interest_id"),
+    ];
+
+    private static readonly string[] _metadataV2Indexes =
+    [
+        "idx_metadata_v2_resources_name",
+        "idx_metadata_v2_services_name",
+        "idx_metadata_v2_publications_service",
+        "idx_metadata_v2_publications_resource",
+        "idx_metadata_v2_storage_bindings_resource",
+    ];
+
+    private static readonly string[] _sensorThingsIndexes =
+    [
+        "ix_sta_observation_time",
+        "ix_sta_observation_datastream_time",
+    ];
+
+    private static readonly string[] _guardedIndexes =
+    [
+        "raster_layer_statistics_pkey",
+        .. _metadataV2Indexes,
+        .. _sensorThingsIndexes,
+    ];
+
     private static readonly string[] _guardedTables =
     [
         .. _metadataV2Tables,
@@ -82,10 +201,38 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await VerifyConsistencyAsync(connection, cancellationToken).ConfigureAwait(false);
+        await VerifyAsync(connection, cancellationToken).ConfigureAwait(false);
     }
 
-    internal async Task VerifyConsistencyAsync(
+    public async Task VerifyAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        VerifyRequiredMigration(
+            state,
+            RasterLayerStatisticsMigration,
+            ["raster_layer_statistics"],
+            _rasterLayerStatisticsColumns,
+            ["raster_layer_statistics_pkey"]);
+        VerifyRequiredMigration(
+            state,
+            MetadataV2SnapshotMigration,
+            _metadataV2Tables,
+            _metadataV2Columns,
+            _metadataV2Indexes);
+        VerifyRequiredMigration(
+            state,
+            SensorThingsMigration,
+            _sensorThingsTables,
+            _sensorThingsColumns,
+            _sensorThingsIndexes);
+        VerifyRequiredExternalStorageMigration(state);
+    }
+
+    public async Task VerifyConsistencyAsync(
         DbConnection connection,
         CancellationToken cancellationToken = default)
     {
@@ -95,9 +242,21 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         VerifyExclusiveMigrationConsistency(
             state,
             RasterLayerStatisticsMigration,
-            ["raster_layer_statistics"]);
-        VerifyExclusiveMigrationConsistency(state, MetadataV2SnapshotMigration, _metadataV2Tables);
-        VerifyExclusiveMigrationConsistency(state, SensorThingsMigration, _sensorThingsTables);
+            ["raster_layer_statistics"],
+            _rasterLayerStatisticsColumns,
+            ["raster_layer_statistics_pkey"]);
+        VerifyExclusiveMigrationConsistency(
+            state,
+            MetadataV2SnapshotMigration,
+            _metadataV2Tables,
+            _metadataV2Columns,
+            _metadataV2Indexes);
+        VerifyExclusiveMigrationConsistency(
+            state,
+            SensorThingsMigration,
+            _sensorThingsTables,
+            _sensorThingsColumns,
+            _sensorThingsIndexes);
 
         // Migration 055 was deliberately a no-op when raster support had not been provisioned.
         // When either target table exists, however, a journal row claiming 055 must agree with
@@ -116,24 +275,24 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
     }
 
-    internal async Task VerifyRequirementAsync(
+    public async Task VerifyRequirementAsync(
         DbConnection connection,
-        CoreSchemaRequirement requirement,
+        DatabaseSchemaRequirement requirement,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(connection);
         var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
 
-        var (migration, requiredTables) = requirement switch
+        var (migration, requiredTables, requiredColumns, requiredIndexes) = requirement switch
         {
-            CoreSchemaRequirement.RasterLayerStatistics =>
-                (RasterLayerStatisticsMigration, new[] { "raster_layer_statistics" }),
-            CoreSchemaRequirement.MetadataV2Snapshot =>
-                (MetadataV2SnapshotMigration, _metadataV2Tables),
-            CoreSchemaRequirement.SensorThings =>
-                (SensorThingsMigration, _sensorThingsTables),
-            CoreSchemaRequirement.RasterExternalStorage =>
-                (RasterExternalStorageMigration, Array.Empty<string>()),
+            DatabaseSchemaRequirement.RasterLayerStatistics =>
+                (RasterLayerStatisticsMigration, new[] { "raster_layer_statistics" }, _rasterLayerStatisticsColumns, new[] { "raster_layer_statistics_pkey" }),
+            DatabaseSchemaRequirement.MetadataV2Snapshot =>
+                (MetadataV2SnapshotMigration, _metadataV2Tables, _metadataV2Columns, _metadataV2Indexes),
+            DatabaseSchemaRequirement.SensorThings =>
+                (SensorThingsMigration, _sensorThingsTables, _sensorThingsColumns, _sensorThingsIndexes),
+            DatabaseSchemaRequirement.RasterExternalStorage =>
+                (RasterExternalStorageMigration, Array.Empty<string>(), Array.Empty<(string, string)>(), Array.Empty<string>()),
             _ => throw new ArgumentOutOfRangeException(nameof(requirement), requirement, null),
         };
 
@@ -148,7 +307,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 "the required numbered migration is not recorded in public.schema_versions.");
         }
 
-        if (requirement == CoreSchemaRequirement.RasterExternalStorage)
+        if (requirement == DatabaseSchemaRequirement.RasterExternalStorage)
         {
             if (!state.HasRasterData)
             {
@@ -170,31 +329,85 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             return;
         }
 
-        var missingTables = requiredTables.Where(table => !state.Tables.Contains(table)).ToArray();
-        if (missingTables.Length > 0)
+        var missingObjects = FindMissingPhysicalState(state, requiredTables, requiredColumns, requiredIndexes);
+        if (missingObjects.Length > 0)
         {
             throw CreateFailure(
                 migration,
                 DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
-                $"required table(s) are absent from schema '{_schemaName}': {string.Join(", ", missingTables)}.");
+                $"required physical object(s) are absent from schema '{_schemaName}': {string.Join(", ", missingObjects)}.");
+        }
+    }
+
+    private static void VerifyRequiredMigration(
+        SchemaState state,
+        string migration,
+        string[] requiredTables,
+        (string Table, string Column)[] requiredColumns,
+        string[] requiredIndexes)
+    {
+        if (!state.IsApplied(migration))
+        {
+            var present = requiredTables.Where(state.Tables.Contains).ToArray();
+            var kind = present.Length > 0
+                ? DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
+                : DatabaseSchemaFloorFailureKind.MigrationNotApplied;
+            var detail = present.Length > 0
+                ? $"migration-owned table(s) exist without a journal row: {string.Join(", ", present)}."
+                : "the required numbered migration is not recorded in public.schema_versions.";
+            throw CreateFailure(migration, kind, detail);
+        }
+
+        var missing = FindMissingPhysicalState(state, requiredTables, requiredColumns, requiredIndexes);
+        if (missing.Length > 0)
+        {
+            throw CreateFailure(
+                migration,
+                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                $"journal claims the migration is applied, but required physical object(s) are absent: {string.Join(", ", missing)}.");
+        }
+    }
+
+    private static void VerifyRequiredExternalStorageMigration(SchemaState state)
+    {
+        if (!state.IsApplied(RasterExternalStorageMigration))
+        {
+            throw CreateFailure(
+                RasterExternalStorageMigration,
+                DatabaseSchemaFloorFailureKind.MigrationNotApplied,
+                "the required numbered migration is not recorded in public.schema_versions.");
+        }
+
+        var missingEffects = state.MissingExternalStorageEffects();
+        if (missingEffects.Count > 0)
+        {
+            throw CreateFailure(
+                RasterExternalStorageMigration,
+                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                $"journal claims the migration is applied, but EXTERNAL storage is absent for {string.Join(", ", missingEffects)}.");
         }
     }
 
     private static void VerifyExclusiveMigrationConsistency(
         SchemaState state,
         string migration,
-        string[] requiredTables)
+        string[] requiredTables,
+        (string Table, string Column)[] requiredColumns,
+        string[] requiredIndexes)
     {
         var present = requiredTables.Where(state.Tables.Contains).ToArray();
         var applied = state.IsApplied(migration);
 
-        if (applied && present.Length != requiredTables.Length)
+        if (applied)
         {
-            var missing = requiredTables.Except(present, StringComparer.Ordinal).ToArray();
-            throw CreateFailure(
-                migration,
-                DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
-                $"journal claims the migration is applied, but required table(s) are absent: {string.Join(", ", missing)}.");
+            var missing = FindMissingPhysicalState(state, requiredTables, requiredColumns, requiredIndexes);
+            if (missing.Length > 0)
+            {
+                throw CreateFailure(
+                    migration,
+                    DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema,
+                    $"journal claims the migration is applied, but required physical object(s) are absent: {string.Join(", ", missing)}.");
+            }
         }
 
         if (!applied && present.Length > 0)
@@ -204,6 +417,27 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal,
                 $"migration-owned table(s) exist without a journal row: {string.Join(", ", present)}.");
         }
+    }
+
+    private static string[] FindMissingPhysicalState(
+        SchemaState state,
+        string[] requiredTables,
+        (string Table, string Column)[] requiredColumns,
+        string[] requiredIndexes)
+    {
+        var missingTables = requiredTables
+            .Where(table => !state.Tables.Contains(table))
+            .Select(table => $"table {table}");
+        var missingColumns = requiredColumns
+            .Where(column => !state.Columns.Contains(column))
+            .Select(column => $"column {column.Table}.{column.Column}");
+        var missingIndexes = requiredIndexes
+            .Where(index => !state.Indexes.Contains(index))
+            .Select(index => $"index {index}");
+        return missingTables
+            .Concat(missingColumns)
+            .Concat(missingIndexes)
+            .ToArray();
     }
 
     private async Task<SchemaState> ReadStateAsync(DbConnection connection, CancellationToken cancellationToken)
@@ -231,6 +465,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
 
         var tables = new HashSet<string>(StringComparer.Ordinal);
+        var columns = new HashSet<(string Table, string Column)>();
+        var indexes = new HashSet<string>(StringComparer.Ordinal);
         var storage = new Dictionary<(string Table, string Column), char>();
         await using (var schemaCommand = connection.CreateCommand())
         {
@@ -242,11 +478,9 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                   ON a.attrelid = c.oid
                  AND a.attnum > 0
                  AND NOT a.attisdropped
-                 AND ((c.relname = 'raster_data' AND a.attname = 'raster')
-                   OR (c.relname = 'raster_tiles' AND a.attname = 'tile_data'))
                 WHERE n.nspname = @schema
-                  AND c.relname = ANY(@tables)
-                  AND c.relkind IN ('r', 'p')
+                  AND (c.relname = ANY(@tables) OR c.relname = ANY(@indexes))
+                  AND c.relkind IN ('r', 'p', 'i', 'I')
                 """;
             var schemaParameter = schemaCommand.CreateParameter();
             schemaParameter.ParameterName = "schema";
@@ -262,19 +496,40 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             }
             schemaCommand.Parameters.Add(tablesParameter);
 
+            var indexesParameter = schemaCommand.CreateParameter();
+            indexesParameter.ParameterName = "indexes";
+            indexesParameter.Value = _guardedIndexes;
+            if (indexesParameter is NpgsqlParameter npgsqlIndexesParameter)
+            {
+                npgsqlIndexesParameter.NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text;
+            }
+            schemaCommand.Parameters.Add(indexesParameter);
+
             await using var reader = await schemaCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 var table = reader.GetString(0);
+                if (_guardedIndexes.Contains(table, StringComparer.Ordinal))
+                {
+                    indexes.Add(table);
+                    continue;
+                }
+
                 tables.Add(table);
                 if (!reader.IsDBNull(1))
                 {
-                    storage[(table, reader.GetString(1))] = reader.GetFieldValue<char>(2);
+                    var column = reader.GetString(1);
+                    columns.Add((table, column));
+                    if ((table == "raster_data" && column == "raster") ||
+                        (table == "raster_tiles" && column == "tile_data"))
+                    {
+                        storage[(table, column)] = reader.GetFieldValue<char>(2);
+                    }
                 }
             }
         }
 
-        return new SchemaState(appliedScripts, tables, storage, _schemaName);
+        return new SchemaState(appliedScripts, tables, columns, indexes, storage, _schemaName);
     }
 
     private static DatabaseSchemaFloorException CreateFailure(
@@ -286,6 +541,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     private sealed record SchemaState(
         HashSet<string> AppliedScripts,
         HashSet<string> Tables,
+        HashSet<(string Table, string Column)> Columns,
+        HashSet<string> Indexes,
         Dictionary<(string Table, string Column), char> Storage,
         string SchemaName)
     {

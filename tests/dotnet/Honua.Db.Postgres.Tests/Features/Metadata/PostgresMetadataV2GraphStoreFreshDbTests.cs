@@ -37,8 +37,8 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
             var store = new PostgresMetadataV2GraphStore(
                 provider,
                 environment: "Test",
-                schemaName: schema,
-                schemaGuard: CreateGuard(schema));
+                schemaGuard: CreateGuard(schema),
+                schemaName: schema);
 
             var act = async () => await store.GetCurrentAsync();
             var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
@@ -60,8 +60,8 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
             var store = new PostgresMetadataV2GraphStore(
                 provider,
                 environment: "Test",
-                schemaName: schema,
-                schemaGuard: CreateGuard(schema));
+                schemaGuard: CreateGuard(schema),
+                schemaName: schema);
 
             // Mirrors the publish path: no current snapshot exists, so start from an
             // empty graph and force the first write (null expectedEtag).
@@ -108,7 +108,11 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         {
             await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName: schema);
             var first = await store.SaveAsync(
                 new MetadataV2Graph
                 {
@@ -196,7 +200,11 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         {
             await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName: schema);
 
             // First, write a real snapshot at revision 1 so the schema + sidecar rows exist.
             var firstGraph = new MetadataV2Graph
@@ -229,7 +237,11 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
 
             // A fresh store instance (no in-memory cache) bootstrapping from empty and
             // forcing a first write at revision 1 again — the colliding scenario.
-            var freshStore = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var freshStore = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName: schema);
             var bootstrapGraph = new MetadataV2Graph
             {
                 Environment = "Test",
@@ -313,7 +325,11 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         {
             await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName: schema);
             var first = await store.SaveAsync(
                 new MetadataV2Graph
                 {

@@ -364,7 +364,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     [Fact]
     public async Task CanonicalRunner_OnFreshDatabase_JournalsBothMigrationRootsAndVerifiesPhysicalFloor()
     {
-        var runner = new PostgresDatabaseMigrationRunner();
+        var runner = new PostgresDatabaseMigrationRunner(new PostgresCoreSchemaGuard());
 
         var result = await runner.RunMigrationsAsync(
             _connectionString,

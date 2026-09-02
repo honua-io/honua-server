@@ -7,10 +7,10 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Infrastructure;
-using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -48,7 +48,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ILogger<PostgresRasterStore> _logger;
-    private readonly PostgresCoreSchemaGuard? _schemaGuard;
+    private readonly IDatabaseSchemaGuard _schemaGuard;
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
     private readonly string _rasterLayerStatisticsTable;
@@ -61,12 +61,12 @@ internal sealed class PostgresRasterStore : IRasterStore
     public PostgresRasterStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ILogger<PostgresRasterStore> logger,
-        string? schemaName = null,
-        PostgresCoreSchemaGuard? schemaGuard = null)
+        IDatabaseSchemaGuard schemaGuard,
+        string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _schemaGuard = schemaGuard;
+        _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
 
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
@@ -2637,13 +2637,10 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        if (_schemaGuard is not null)
-        {
-            await _schemaGuard.VerifyRequirementAsync(
-                connection,
-                CoreSchemaRequirement.RasterLayerStatistics,
-                cancellationToken).ConfigureAwait(false);
-        }
+        await _schemaGuard.VerifyRequirementAsync(
+            connection,
+            DatabaseSchemaRequirement.RasterLayerStatistics,
+            cancellationToken).ConfigureAwait(false);
 
         // Mosaic statistics are keyed by (layer, merge strategy, raster-id set) so any change
         // to the layer's raster membership invalidates the persisted rows automatically.
@@ -2888,9 +2885,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
         catch (PostgresException ex) when (transaction is null && ex.SqlState == PostgresErrorCodes.UndefinedTable)
         {
-            // Snapshot table not provisioned yet; treat as a cache miss so the backfill
-            // path can create it. Inside a transaction the error must propagate because
-            // the transaction is already aborted.
+            // Test fixtures and legacy read-only callers can deliberately bypass the production
+            // schema guard. Treat their absent snapshot table as a cache miss so the backfill
+            // path computes without persisting. Production reaches this code only after the
+            // journal/physical-schema guard has proved the migration-owned table exists.
             return [];
         }
     }

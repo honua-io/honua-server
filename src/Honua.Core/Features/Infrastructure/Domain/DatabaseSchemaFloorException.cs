@@ -4,6 +4,24 @@
 namespace Honua.Core.Features.Infrastructure.Domain;
 
 /// <summary>
+/// Identifies a migration-owned core-schema capability required by a runtime operation.
+/// </summary>
+public enum DatabaseSchemaRequirement
+{
+    /// <summary>Persisted layer-level raster statistics owned by provider migration 003.</summary>
+    RasterLayerStatistics = 0,
+
+    /// <summary>Metadata v2 snapshots and lookup projections owned by server migration 031.</summary>
+    MetadataV2Snapshot = 1,
+
+    /// <summary>External TOAST storage policy owned by server migration 055.</summary>
+    RasterExternalStorage = 2,
+
+    /// <summary>SensorThings catalog and observation storage owned by server migration 059.</summary>
+    SensorThings = 3,
+}
+
+/// <summary>
 /// Identifies why the live database schema cannot be trusted against the migration journal.
 /// </summary>
 public enum DatabaseSchemaFloorFailureKind
