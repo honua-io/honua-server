@@ -5,33 +5,28 @@ using System.Data;
 using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
 /// <summary>
-/// Regression tests for honua-server#1341 — on a fresh-DB container where migration
-/// 031 has not created the Metadata v2 tables, the admin layer-publish path 500'd
-/// with relation "honua.metadata_v2_current" does not exist (42P01). The store now
-/// tolerates the missing relation on read and self-heals the schema on write, so the
-/// publish path bootstraps an empty graph and succeeds instead of failing.
-///
-/// CONTRACT UPDATE (#1619/#1634): a fresh DB no longer surfaces "no snapshot" as an
-/// InvalidOperationException — GetCurrentAsync now returns an empty-but-valid
-/// snapshot so every catalog surface answers 200 with zero items on a healthy,
-/// unpopulated server. The #1341 spirit (never leak a raw 42P01) is asserted
-/// against that new contract below.
+/// Metadata v2 store integration coverage. Migration 031 is provisioned explicitly by this
+/// test fixture for normal store scenarios. Missing-migration cases assert a typed schema-floor
+/// failure and prove ordinary reads/writes never self-apply the migration (#3899).
 /// </summary>
 [Collection("Database")]
 public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fixture)
 {
     [IntegrationTest]
-    public async Task GetCurrentAsync_WhenMetadataV2TablesMissing_ReturnsEmptySnapshotInsteadOfRawPostgresError()
+    public async Task GetCurrentAsync_WhenMigration031Missing_FailsWithTypedSchemaFloorError()
     {
         // Isolated schema that deliberately does NOT create the metadata_v2 tables —
         // exactly the fresh-DB shape that surfaced the 500.
@@ -39,16 +34,15 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         try
         {
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaName: schema,
+                schemaGuard: CreateGuard(schema));
 
-            // #1341: a raw PostgresException (42P01) must never bubble out as a 500.
-            // #1619: "no snapshot" is no longer an error at all — a fresh DB yields an
-            // empty-but-valid snapshot so catalog surfaces answer 200 with zero items.
-            var snapshot = await store.GetCurrentAsync();
-
-            snapshot.Should().NotBeNull();
-            snapshot.Graph.Revision.Should().Be(0, "a fresh DB has no activated snapshot");
-            snapshot.Graph.Resources.Should().BeEmpty();
+            var act = async () => await store.GetCurrentAsync();
+            var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
+            exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.MetadataV2SnapshotMigration);
         }
         finally
         {
@@ -57,13 +51,17 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
     }
 
     [IntegrationTest]
-    public async Task SaveAsync_OnFreshDbWithoutMetadataV2Tables_SelfHealsSchemaAndActivatesSnapshot()
+    public async Task SaveAsync_WhenMigration031Missing_FailsWithoutCreatingTables()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
         try
         {
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaName: schema,
+                schemaGuard: CreateGuard(schema));
 
             // Mirrors the publish path: no current snapshot exists, so start from an
             // empty graph and force the first write (null expectedEtag).
@@ -82,25 +80,19 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
                 ],
             };
 
-            var saved = await store.SaveAsync(graph, expectedEtag: null);
-            saved.Should().NotBeNull();
-
-            // The current pointer + snapshot now resolve — the publish round-trip works.
-            var current = await store.GetCurrentAsync();
-            current.Graph.Revision.Should().Be(1);
-            current.Graph.Resources.Should().ContainSingle(resource => resource.Metadata.Id == "res-layer-9000");
+            var act = () => store.SaveAsync(graph, expectedEtag: null);
+            await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
 
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = $"""
                 SELECT COUNT(*)::int
-                FROM "{schema}".metadata_v2_current c
-                JOIN "{schema}".metadata_v2_snapshots s
-                  ON s.environment = c.environment AND s.revision = c.revision
-                WHERE c.environment = 'Test';
+                FROM information_schema.tables
+                WHERE table_schema = '{schema}'
+                  AND table_name LIKE 'metadata_v2_%';
                 """;
-            var currentCount = (int)(await command.ExecuteScalarAsync())!;
-            currentCount.Should().Be(1, "SaveAsync must create and activate the snapshot on a fresh DB");
+            var tableCount = (int)(await command.ExecuteScalarAsync())!;
+            tableCount.Should().Be(0, "SaveAsync must not replay migration 031 or create partial schema");
         }
         finally
         {
@@ -114,6 +106,7 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
         try
         {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
             var first = await store.SaveAsync(
@@ -201,6 +194,7 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
         try
         {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
 
@@ -282,6 +276,7 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
         try
         {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             await using var committedConnection = (NpgsqlConnection)await provider.OpenConnectionAsync();
             await using var committedTransaction = await committedConnection.BeginTransactionAsync();
@@ -316,6 +311,7 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
         try
         {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
             var first = await store.SaveAsync(
@@ -360,6 +356,11 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
             await fixture.DropSchemaAsync(schema);
         }
     }
+
+    private static PostgresCoreSchemaGuard CreateGuard(string schema)
+        => new(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = schema })
+            .Build());
 
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource, string schemaName) : IAdoNetDatabaseConnectionProvider
     {

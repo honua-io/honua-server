@@ -4,6 +4,7 @@
 using System.Reflection;
 using DbUp;
 using FluentAssertions;
+using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -358,6 +359,42 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             reader.GetString(0).Should().Be("transient-custom-id");
             (await reader.ReadAsync()).Should().BeFalse();
         }
+    }
+
+    [Fact]
+    public async Task CanonicalRunner_OnFreshDatabase_JournalsBothMigrationRootsAndVerifiesPhysicalFloor()
+    {
+        var runner = new PostgresDatabaseMigrationRunner();
+
+        var result = await runner.RunMigrationsAsync(
+            _connectionString,
+            Assembly.GetAssembly(typeof(Program))!);
+
+        result.Successful.Should().BeTrue(
+            $"both numbered migration roots should apply through the canonical runner. Error: {result.ErrorMessage}");
+        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterLayerStatisticsMigration);
+        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.MetadataV2SnapshotMigration);
+        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.RasterExternalStorageMigration);
+        result.AppliedScripts.Should().Contain(PostgresCoreSchemaGuard.SensorThingsMigration);
+
+        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)::int
+            FROM public.schema_versions
+            WHERE scriptname IN (
+                'Honua.Postgres.Migrations.003_CreateRasterLayerStatistics.sql',
+                'Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql',
+                'Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql',
+                'Honua.Server.Migrations.059_CreateSensorThings.sql')
+            """;
+        (await command.ExecuteScalarAsync()).Should().Be(4,
+            "upgrade and restore receipts use one journal denominator for both numbered roots");
+
+        var guard = new PostgresCoreSchemaGuard();
+        var verify = () => guard.VerifyAsync(_connectionString);
+        await verify.Should().NotThrowAsync("a fully migrated restore candidate must pass the guarded DR floor");
     }
 
     [Fact]

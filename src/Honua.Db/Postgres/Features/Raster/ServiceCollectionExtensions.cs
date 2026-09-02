@@ -27,7 +27,8 @@ internal static class ServiceCollectionExtensions
             new PostgresRasterStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresRasterStore>>(),
-                schemaName));
+                schemaName,
+                provider.GetService<Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>()));
 
         // Register the map renderer implementation
         services.AddScoped<IRasterMapRenderer>(provider =>
@@ -42,7 +43,8 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ICrsDetectionService>(),
                 provider.GetRequiredService<ILogger<PostgresRasterImportService>>(),
-                schemaName));
+                schemaName,
+                provider.GetService<Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>()));
 
         // Register COG catalog store
         services.AddScoped<ICogStore>(provider =>

@@ -25,9 +25,9 @@
 -- statement; pre-existing rows keep their current TOAST until rewritten.  The
 -- accompanying VACUUM FULL is intentionally NOT issued here (it takes an exclusive
 -- lock and can be very slow on large tables); operators who want existing rows
--- converted can run "VACUUM FULL honua.raster_data;" during a maintenance window,
--- and the import path re-applies this storage class before inserting each new row
--- so freshly imported rasters are always stored EXTERNAL.
+-- converted can run "VACUUM FULL honua.raster_data;" during a maintenance window.
+-- The import path verifies this journaled storage floor before inserting and fails
+-- closed when it is absent; it never issues an unjournaled ALTER TABLE.
 --
 -- Guarded with to_regclass so this is a safe no-op on databases where the raster
 -- schema has not been provisioned.

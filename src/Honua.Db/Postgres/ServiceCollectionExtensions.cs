@@ -190,7 +190,8 @@ internal static class ServiceCollectionExtensions
         // OGC SensorThings API observations store (#1747)
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>(
             serviceProvider => new Honua.Db.Postgres.Features.SensorThings.PostgresObservationStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>()));
 
         // Console Operate read APIs (#1168)
         services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
@@ -266,7 +267,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 metadataEnvironment,
                 configuration["Database:Schema"],
-                serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>()));
+                serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>(),
+                serviceProvider.GetService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>()));
 
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.
@@ -411,6 +413,13 @@ internal static class ServiceCollectionExtensions
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
+
+        // Register the read-only journal/physical-schema guard and migration runner. Both
+        // canonical numbered roots flow through this runner and its public.schema_versions
+        // journal; the guard rejects divergence instead of repairing it from a store path.
+        services.AddSingleton<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>();
+        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
+            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
 
         // Register migration runner for schema upgrades
         services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();
