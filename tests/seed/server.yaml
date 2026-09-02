@@ -1476,6 +1476,7 @@ sql:
           last_attempt_at TIMESTAMPTZ,
           delivered_at TIMESTAMPTZ,
           last_error TEXT,
+          claim_token UUID,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           CONSTRAINT alert_dispatch_valid_channel CHECK (channel_type BETWEEN 1 AND 10),
@@ -1483,6 +1484,7 @@ sql:
           CONSTRAINT alert_dispatch_valid_attempts CHECK (attempts >= 0),
           CONSTRAINT alert_dispatch_valid_max_attempts CHECK (max_attempts > 0)
       );
+  - "ALTER TABLE honua.alert_dispatch ADD COLUMN IF NOT EXISTS claim_token UUID;"
   - |
       CREATE TABLE IF NOT EXISTS honua.alert_channel_state (
           channel_type SMALLINT PRIMARY KEY,
