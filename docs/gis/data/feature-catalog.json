@@ -20792,6 +20792,7 @@
       "protocol": "mixed-surface",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Spec.GrpcSpecAuthorizationIntegrationTests.SpecAuthorization_RealTransportMatrix_MatchesRestAndStopsDeniedCalls",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Apply_BlankNodeId_Returns400WithoutOpeningStream",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Apply_CommunityEdition_RunsDirectlyWithoutGuardrailGate",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Apply_Cycle_Returns400WithoutOpeningStream",
@@ -20823,6 +20824,7 @@
       "protocol": "mixed-surface",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Spec.GrpcSpecAuthorizationIntegrationTests.SpecAuthorization_RealTransportMatrix_MatchesRestAndStopsDeniedCalls",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Cancel_MissingToken_Returns400",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Cancel_UnknownToken_Returns404WithApplyTokenUnknown"
       ],
@@ -20838,6 +20840,7 @@
       "protocol": "mixed-surface",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Spec.GrpcSpecAuthorizationIntegrationTests.SpecAuthorization_RealTransportMatrix_MatchesRestAndStopsDeniedCalls",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Plan_BlankNodeId_Returns400WithInvalidNodeId",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Plan_Cycle_Returns400WithDagCycleCode",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Plan_LinearChain_ReturnsDagWithContentHashesInTopologicalOrder",
