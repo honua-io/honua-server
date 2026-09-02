@@ -45,8 +45,8 @@ public sealed class AdminOperationParityExportTests
             return;
 
         var directory = RepositoryPaths.Resolve("docs", "gis", "data");
-        File.WriteAllText(Path.Combine(directory, OpenApiExport), GenerateOpenApiExport(), new UTF8Encoding(false));
-        File.WriteAllText(Path.Combine(directory, McpExport), GenerateMcpExport(), new UTF8Encoding(false));
+        File.WriteAllText(Path.Join(directory, OpenApiExport), GenerateOpenApiExport(), new UTF8Encoding(false));
+        File.WriteAllText(Path.Join(directory, McpExport), GenerateMcpExport(), new UTF8Encoding(false));
     }
 
     private static string GenerateOpenApiExport()
