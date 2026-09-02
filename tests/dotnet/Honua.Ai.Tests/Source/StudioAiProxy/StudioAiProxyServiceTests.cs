@@ -353,6 +353,10 @@ public sealed class StudioAiProxyServiceTests
         => AssertGovernedTargetBindingFailsAsync("honua_propose_deploy_operation");
 
     [UnitTest]
+    public Task StreamChatAsync_DeployPlanTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync("honua_propose_deploy_plan");
+
+    [UnitTest]
     public Task StreamChatAsync_RollbackTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
         => AssertGovernedTargetBindingFailsAsync("honua_propose_rollback");
 
