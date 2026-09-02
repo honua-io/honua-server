@@ -102,6 +102,11 @@ Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), Op
 
 ## Key capabilities
 
+Honua 2026.1 is GA for single-tenant deployments. Multi-tenant operation remains
+Preview for explicitly configured environments such as the demo area; it carries
+no GA operational, SLA, or scale promise. Cross-tenant disclosure remains a
+full-severity security defect. See [Tenancy support](docs/guides/deploy/tenancy.md).
+
 - **Query and edit** — FeatureServer query/applyEdits/attachments/related records, OGC API Features CRUD with CQL2, WFS 2.0 transactions, OData CRUD with spatial functions (`geo.distance`, `geo.intersects`, `$batch`). FeatureServer applyEdits is **(Pro)**; edits through the open protocols (OGC API Features, WFS-T, OData, gRPC) stay Community. Output as JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow.
 - **Esri migration and coexistence** — Honua provides protocol-level compatibility for selected, operation-scoped ArcGIS Pro and Esri SDK workflows, bounded by the published [GeoServices parity matrix](docs/reference/compatibility/geoservices-parity.md) and [cross-client certification matrix](docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md). Import public ArcGIS REST and GeoServer services into PostGIS (service imports are **(Enterprise)**); scan ArcGIS Server and GeoServer for deterministic migration inventories. See [Migrate from ArcGIS Server](docs/guides/migrate/from-arcgis-server.md) and [from GeoServer](docs/guides/migrate/from-geoserver.md).
 - **No GDAL required on the server** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase (`.gdb.zip`), and GeoParquet directly, with CRS auto-detection and PostGIS reprojection; the serving container ships no GDAL, while optional geoprocessing worker images bundle it separately.

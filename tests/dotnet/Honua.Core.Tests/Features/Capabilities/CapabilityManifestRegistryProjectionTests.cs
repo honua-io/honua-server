@@ -57,6 +57,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "ai.spec-apply",
         "ai.grounding",
         "gitops.release-manifest",
+        "admin.multi-tenancy",
         "transport.grpc",
         "transport.grpc-web",
         "transport.native-grpc",
@@ -130,6 +131,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
     private static readonly string[] PreviewManifestCapabilityIds =
     [
         "serve.ogc-api-edr",
+        "admin.multi-tenancy",
         "sync.offline",
         "alerts.geofence",
         "realtime.feature-streams",

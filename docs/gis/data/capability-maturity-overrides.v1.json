@@ -7,12 +7,13 @@
     "planned": "Planned but not yet built; declared for roadmap visibility only.",
     "deferred": "Deferred out of the current release scope by an owner decision; present and serving on trunk but not advertised as part of this release's GA surface.",
     "experimental": "Implemented but off by default and gated behind an explicitly-named configuration flag, so it is not part of the default advertised surface.",
-    "preview": "Available for opt-in evaluation, but not a GA contract in the current release.",
+    "preview": "Implemented and available through explicit operator opt-in, but outside the GA operational, SLA, and scale commitments.",
     "partial": "Partially implemented — a subset of the capability is served."
   },
   "reasonCodes": {
     "release-deferred": "An owner decision moved the capability out of the current release; the code ships but the claim does not.",
-    "config-gated-off-by-default": "Served only when a named, default-off configuration flag is set; not part of the default advertised surface."
+    "config-gated-off-by-default": "Served only when a named, default-off configuration flag is set; not part of the default advertised surface.",
+    "release-preview": "A shipped opt-in capability outside the current release's GA operational, SLA, and scale commitments."
   },
   "overrides": [
     {
@@ -35,6 +36,13 @@
       "reasonCode": "release-deferred",
       "reason": "The 2026-09-03 operator ruling makes offline sync Preview in 2026.1. Replica, field-collection, form-offline, and replica-review projections must not advertise GA while non-security parity work is deferred to release/2026.2.",
       "decision": "honua-release#266 / #264 operator ruling (2026-09-03)"
+    },
+    {
+      "capability": "admin.multi-tenancy",
+      "maturity": "preview",
+      "reasonCode": "release-preview",
+      "reason": "Honua 2026.1 GA is single-tenant. Multi-tenant tenant lifecycle, schema routing, and usage surfaces remain enabled for the demo area as Preview, without GA operational, SLA, or scale claims. Cross-tenant disclosure remains a full-severity security defect regardless of lifecycle status.",
+      "decision": "honua-release#210 operator ruling (2026-09-02); honua-server#3906"
     },
     {
       "capability": "demo.showcase",

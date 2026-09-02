@@ -108,9 +108,11 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var id in new[] { "admin.multi-tenancy", "realtime.feature-streams", "serve.sensorthings" })
             {
                 var capability = GetCapability(document.RootElement, id);
+                capability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();
                 capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
             }
