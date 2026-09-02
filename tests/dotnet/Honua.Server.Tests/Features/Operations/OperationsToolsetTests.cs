@@ -386,6 +386,79 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task LaneC_AccessOperations_RoundTrip_FromOpenApiCatalog_ToEligiblePublishedTools()
+    {
+        var catalog = new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System);
+        var mappers = AdminAccessOperationCatalog.Definitions
+            .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
+            .Select(static definition => new AdminOperateOperationApprovalRequestMapper(definition))
+            .ToArray();
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: mappers);
+
+        var descriptors = (await catalog.GetSnapshotAsync(CancellationToken.None)).Operations;
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+        var expected = descriptors
+            .Where(descriptor => !AdminMcpOperationExclusions.ContainsOperation(descriptor.OperationId))
+            .Select(descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId));
+
+        descriptors.Should().HaveCount(AdminAccessOperationCatalog.Definitions.Count);
+        tools.Select(static tool => tool.Name).Should().BeEquivalentTo(expected);
+        tools.Select(static tool => tool.Name).Should().Contain(
+            "honua_admin_api_key_list", "honua_admin_api_key_effective_permissions");
+        tools.Select(static tool => tool.Name).Should().NotContain(
+            "honua_admin_api_key_create", "honua_admin_api_key_rotate", "honua_admin_oauth_client_register");
+    }
+
+    [UnitTest]
+    public void LaneC_DescriptorsAndExclusions_DiffAgainstCurrentAdminOpenApi()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+        var openApiIds = document.RootElement.GetProperty("paths").EnumerateObject()
+            .SelectMany(static path => path.Value.EnumerateObject())
+            .Where(static method => method.Value.ValueKind == JsonValueKind.Object &&
+                method.Value.TryGetProperty("operationId", out _))
+            .Select(static method => method.Value.GetProperty("operationId").GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var definition in AdminAccessOperationCatalog.Definitions)
+        {
+            openApiIds.Should().Contain(definition.OpenApiOperationId);
+            AdminAccessOperationCatalog.Descriptors.Should().ContainSingle(
+                descriptor => descriptor.OperationId == definition.OperationId);
+        }
+
+        AdminMcpOperationExclusions.All.Select(static exclusion => exclusion.OpenApiOperationId)
+            .Should().OnlyContain(openApiId => openApiIds.Contains(openApiId));
+        AdminMcpOperationExclusions.Digest.Should().MatchRegex("^[0-9a-f]{64}$");
+    }
+
+    [UnitTest]
+    public void LaneC_EachDescriptorHasOneExecutor_AndEachMutationHasOneReplayMapper()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddAdminAccessOperations().AddAdminAccessOperations();
+        using var provider = services.BuildServiceProvider();
+
+        using var scope = provider.CreateScope();
+        scope.ServiceProvider.GetServices<IOperationExecutor>()
+            .Select(static executor => executor.OperationId)
+            .Should().BeEquivalentTo(AdminAccessOperationCatalog.Definitions.Select(static definition => definition.OperationId));
+        services.Where(static descriptor => descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+                descriptor.ImplementationInstance is AdminOperateOperationApprovalRequestMapper)
+            .Select(static descriptor => ((IOperationApprovalRequestMapper)descriptor.ImplementationInstance!).OperationId)
+            .Should().BeEquivalentTo(AdminAccessOperationCatalog.Definitions
+                .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
+                .Select(static definition => definition.OperationId));
+    }
+
+    [UnitTest]
     public void LaneD_DescriptorSchemas_DiffCleanlyAgainstAdminApiComponents()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(

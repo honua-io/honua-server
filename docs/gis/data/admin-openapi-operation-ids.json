@@ -154,7 +154,7 @@
     },
     {
       "operationId": "createAdminApiKey",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.api-key.create",
       "method": "POST",
       "path": "/api-keys"
     },
@@ -214,7 +214,7 @@
     },
     {
       "operationId": "createFieldMaskPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.field-mask-policy.create",
       "method": "POST",
       "path": "/field-mask-policies"
     },
@@ -250,25 +250,25 @@
     },
     {
       "operationId": "createOidcProvider",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oidc-provider.create",
       "method": "POST",
       "path": "/oidc/providers"
     },
     {
       "operationId": "createRateLimitPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rate-limit-policy.create",
       "method": "POST",
       "path": "/rate-limits"
     },
     {
       "operationId": "createRlsPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rls-policy.create",
       "method": "POST",
       "path": "/rls-policies"
     },
     {
       "operationId": "createRole",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.role.create",
       "method": "POST",
       "path": "/roles"
     },
@@ -280,7 +280,7 @@
     },
     {
       "operationId": "createTenant",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.tenant.create",
       "method": "POST",
       "path": "/tenants"
     },
@@ -298,7 +298,7 @@
     },
     {
       "operationId": "defineOAuthScope",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oauth-scope.define",
       "method": "PUT",
       "path": "/oauth-scopes"
     },
@@ -322,7 +322,7 @@
     },
     {
       "operationId": "deleteFieldMaskPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.field-mask-policy.delete",
       "method": "DELETE",
       "path": "/field-mask-policies/{id}"
     },
@@ -340,37 +340,37 @@
     },
     {
       "operationId": "deleteOAuthClient",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oauth-client.delete",
       "method": "DELETE",
       "path": "/oauth-clients/{id}"
     },
     {
       "operationId": "deleteOAuthScope",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oauth-scope.delete",
       "method": "DELETE",
       "path": "/oauth-scopes/{scope}"
     },
     {
       "operationId": "deleteOidcProvider",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oidc-provider.delete",
       "method": "DELETE",
       "path": "/oidc/providers/{id}"
     },
     {
       "operationId": "deleteRateLimitPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rate-limit-policy.delete",
       "method": "DELETE",
       "path": "/rate-limits/{id}"
     },
     {
       "operationId": "deleteRlsPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rls-policy.delete",
       "method": "DELETE",
       "path": "/rls-policies/{id}"
     },
     {
       "operationId": "deleteRole",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.role.delete",
       "method": "DELETE",
       "path": "/roles/{id}"
     },
@@ -382,13 +382,13 @@
     },
     {
       "operationId": "deleteTenant",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.tenant.delete",
       "method": "DELETE",
       "path": "/tenants/{tenantId}"
     },
     {
       "operationId": "deprovisionManagedUser",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.user.deprovision",
       "method": "DELETE",
       "path": "/users/{id}"
     },
@@ -484,7 +484,7 @@
     },
     {
       "operationId": "exportTenantUsage",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.tenant.usage.export",
       "method": "GET",
       "path": "/tenants/usage"
     },
@@ -502,7 +502,7 @@
     },
     {
       "operationId": "getAdminApiKeyEffectivePermissions",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.api-key.effective-permissions",
       "method": "GET",
       "path": "/api-keys/{id}/effective-permissions"
     },
@@ -820,7 +820,7 @@
     },
     {
       "operationId": "getFieldMaskPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.field-mask-policy.get",
       "method": "GET",
       "path": "/field-mask-policies/{id}"
     },
@@ -940,13 +940,13 @@
     },
     {
       "operationId": "getManagedUser",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.user.get",
       "method": "GET",
       "path": "/users/{id}"
     },
     {
       "operationId": "getManagedUserEffectivePermissions",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.user.effective-permissions",
       "method": "GET",
       "path": "/users/{id}/effective-permissions"
     },
@@ -1036,7 +1036,7 @@
     },
     {
       "operationId": "getOAuthClient",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oauth-client.get",
       "method": "GET",
       "path": "/oauth-clients/{id}"
     },
@@ -1048,7 +1048,7 @@
     },
     {
       "operationId": "getOidcProvider",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oidc-provider.get",
       "method": "GET",
       "path": "/oidc/providers/{id}"
     },
@@ -1144,13 +1144,13 @@
     },
     {
       "operationId": "getRateLimitPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rate-limit-policy.get",
       "method": "GET",
       "path": "/rate-limits/{id}"
     },
     {
       "operationId": "getRateLimitStatus",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rate-limit-policy.status",
       "method": "GET",
       "path": "/rate-limits/status"
     },
@@ -1162,19 +1162,19 @@
     },
     {
       "operationId": "getRlsPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rls-policy.get",
       "method": "GET",
       "path": "/rls-policies/{id}"
     },
     {
       "operationId": "getRole",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.role.get",
       "method": "GET",
       "path": "/roles/{id}"
     },
     {
       "operationId": "getRolePermissions",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.role.permissions.get",
       "method": "GET",
       "path": "/roles/{id}/permissions"
     },
@@ -1234,7 +1234,7 @@
     },
     {
       "operationId": "getTenant",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.tenant.get",
       "method": "GET",
       "path": "/tenants/{tenantId}"
     },
@@ -1348,7 +1348,7 @@
     },
     {
       "operationId": "listAdminApiKeys",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.api-key.list",
       "method": "GET",
       "path": "/api-keys"
     },
@@ -1438,7 +1438,7 @@
     },
     {
       "operationId": "listFieldMaskPolicies",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.field-mask-policy.list",
       "method": "GET",
       "path": "/field-mask-policies"
     },
@@ -1486,7 +1486,7 @@
     },
     {
       "operationId": "listManagedUsers",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.user.list",
       "method": "GET",
       "path": "/users"
     },
@@ -1534,13 +1534,13 @@
     },
     {
       "operationId": "listOAuthClients",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oauth-client.list",
       "method": "GET",
       "path": "/oauth-clients"
     },
     {
       "operationId": "listOAuthScopes",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oauth-scope.list",
       "method": "GET",
       "path": "/oauth-scopes"
     },
@@ -1558,7 +1558,7 @@
     },
     {
       "operationId": "listOidcProviders",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oidc-provider.list",
       "method": "GET",
       "path": "/oidc/providers"
     },
@@ -1600,19 +1600,19 @@
     },
     {
       "operationId": "listRateLimitPolicies",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rate-limit-policy.list",
       "method": "GET",
       "path": "/rate-limits"
     },
     {
       "operationId": "listRlsPolicies",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rls-policy.list",
       "method": "GET",
       "path": "/rls-policies"
     },
     {
       "operationId": "listRoles",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.role.list",
       "method": "GET",
       "path": "/roles"
     },
@@ -1654,7 +1654,7 @@
     },
     {
       "operationId": "listTenants",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.tenant.list",
       "method": "GET",
       "path": "/tenants"
     },
@@ -1840,7 +1840,7 @@
     },
     {
       "operationId": "registerOAuthClient",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oauth-client.register",
       "method": "POST",
       "path": "/oauth-clients"
     },
@@ -1936,7 +1936,7 @@
     },
     {
       "operationId": "resumeTenant",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.tenant.resume",
       "method": "POST",
       "path": "/tenants/{tenantId}/resume"
     },
@@ -1954,7 +1954,7 @@
     },
     {
       "operationId": "revokeAdminApiKey",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.api-key.revoke",
       "method": "POST",
       "path": "/api-keys/{id}/revoke"
     },
@@ -1984,7 +1984,7 @@
     },
     {
       "operationId": "rotateAdminApiKey",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.api-key.rotate",
       "method": "POST",
       "path": "/api-keys/{id}/rotate"
     },
@@ -2068,7 +2068,7 @@
     },
     {
       "operationId": "setRolePermissions",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.role.permissions.set",
       "method": "PUT",
       "path": "/roles/{id}/permissions"
     },
@@ -2140,7 +2140,7 @@
     },
     {
       "operationId": "suspendTenant",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.tenant.suspend",
       "method": "POST",
       "path": "/tenants/{tenantId}/suspend"
     },
@@ -2170,7 +2170,7 @@
     },
     {
       "operationId": "testOidcProvider",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oidc-provider.test",
       "method": "POST",
       "path": "/oidc/providers/{id}/test"
     },
@@ -2272,7 +2272,7 @@
     },
     {
       "operationId": "updateManagedUserRoles",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.user.roles.update",
       "method": "PUT",
       "path": "/users/{id}/roles"
     },
@@ -2284,19 +2284,19 @@
     },
     {
       "operationId": "updateOidcProvider",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.oidc-provider.update",
       "method": "PUT",
       "path": "/oidc/providers/{id}"
     },
     {
       "operationId": "updateRateLimitPolicy",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.rate-limit-policy.update",
       "method": "PUT",
       "path": "/rate-limits/{id}"
     },
     {
       "operationId": "updateRole",
-      "catalogOperationId": null,
+      "catalogOperationId": "admin.role.update",
       "method": "PUT",
       "path": "/roles/{id}"
     },
