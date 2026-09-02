@@ -264,6 +264,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
 
         var enumerator = adapter.StreamAsync(providerOptions, request, cancellationToken).GetAsyncEnumerator(cancellationToken);
         var sawTerminalEvent = false;
+        StudioAiChatEvent? deferredSuccessTerminal = null;
         var transcriptEvents = signingKey is null ? null : new List<StudioAiChatEvent>();
         long transcriptCharacters = 0;
         string? providerReportedModel = null;
@@ -323,6 +324,11 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 {
                     sawTerminalEvent = true;
                     ApplySummary(summary, providerName, evt);
+                    if (signingKey is not null && evt.Type == StudioAiChatEventType.MessageStop)
+                    {
+                        deferredSuccessTerminal = evt;
+                        continue;
+                    }
                 }
 
                 yield return evt;
@@ -390,6 +396,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 yield break;
             }
 
+            yield return deferredSuccessTerminal!;
             yield return new StudioAiChatEvent { Type = StudioAiChatEventType.TranscriptProvenance, Provenance = provenance };
         }
     }

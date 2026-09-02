@@ -388,6 +388,7 @@ public sealed class StudioAiProxyServiceTests
         events.Last().Should().Match<StudioAiChatEvent>(evt =>
             evt.Type == StudioAiChatEventType.Error
             && evt.ErrorCode == "studio_ai/provenance_validation_failed");
+        events.Should().NotContain(evt => evt.Type == StudioAiChatEventType.MessageStop);
         summary.Succeeded.Should().BeFalse();
         summary.StopReason.Should().Be(StudioAiStopReason.Error);
         summary.ErrorMessage.Should().Be("Transcript provenance validation failed.");
