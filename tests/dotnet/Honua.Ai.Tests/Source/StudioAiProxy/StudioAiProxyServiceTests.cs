@@ -474,6 +474,78 @@ public sealed class StudioAiProxyServiceTests
         adapter.DisposeCount.Should().Be(1, fixtureId);
     }
 
+    [UnitTest]
+    public async Task StreamChatAsync_OutputAtExactEventByteLimit_Succeeds()
+    {
+        var start = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "provider-model" };
+        var delta = new StudioAiChatEvent { Type = StudioAiChatEventType.TextDelta, Text = "é" };
+        var stop = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn };
+        var exactBytes = new[] { start, delta, stop }.Max(evt =>
+            JsonSerializer.SerializeToUtf8Bytes(evt, StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length);
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.MaxEventBytes = exactBytes;
+        var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true, _ => Events(
+            start,
+            delta,
+            stop));
+        var service = CreateService(config, adapter);
+
+        var events = await CollectAsync(service, Request(), new StudioAiProxyCallSummary());
+
+        events.Should().Contain(delta);
+        events.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
+    }
+
+    [UnitTest]
+    public async Task StreamChatAsync_OutputOneByteOverLimit_CancelsDisposesAndEmitsOnlyFailureTerminal()
+    {
+        var state = new DisposalState();
+        var oversized = new StudioAiChatEvent { Type = StudioAiChatEventType.TextDelta, Text = "é" };
+        var eventBytes = JsonSerializer.SerializeToUtf8Bytes(oversized, StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length;
+        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
+        config.MaxEventBytes = eventBytes - 1;
+        var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true, _ => DisposableEvents(state, oversized));
+        var service = CreateService(config, adapter);
+        var summary = new StudioAiProxyCallSummary();
+
+        var events = await CollectAsync(service, Request(), summary);
+
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error
+            && e.ErrorCode == "studio_ai/provider_output_too_large");
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop
+            || e.Type == StudioAiChatEventType.TranscriptProvenance);
+        state.Disposed.Should().BeTrue();
+        summary.Succeeded.Should().BeFalse();
+    }
+
+    private static StudioAiChatRequest Request() => new()
+    {
+        Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+    };
+
+    private static async IAsyncEnumerable<StudioAiChatEvent> DisposableEvents(
+        DisposalState state,
+        params StudioAiChatEvent[] events)
+    {
+        try
+        {
+            foreach (var evt in events)
+            {
+                yield return evt;
+                await Task.Yield();
+            }
+        }
+        finally
+        {
+            state.Disposed = true;
+        }
+    }
+
+    private sealed class DisposalState
+    {
+        public bool Disposed { get; set; }
+    }
+
     private static async IAsyncEnumerable<StudioAiChatEvent> ThrowingEvents(StudioAiChatRequest request)
     {
         await Task.Yield();
