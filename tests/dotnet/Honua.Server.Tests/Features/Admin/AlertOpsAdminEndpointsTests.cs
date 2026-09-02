@@ -258,18 +258,28 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
 
         var dataSource = _fixture.GetService<NpgsqlDataSource>();
         await using var connection = await dataSource.OpenConnectionAsync();
+        var claimToken = Guid.NewGuid();
         await using var command = new NpgsqlCommand("""
+            UPDATE honua.alert_dispatch
+            SET status = 1,
+                claim_token = @claim_token,
+                updated_at = now()
+            WHERE event_id = @event_id AND @status <> 0;
+
             UPDATE honua.alert_dispatch
             SET status = @status,
                 attempts = CASE WHEN @status = 4 THEN max_attempts ELSE 1 END,
                 delivered_at = CASE WHEN @status = 2 THEN now() ELSE NULL END,
                 last_error = CASE WHEN @status = 4 THEN 'provider exhausted' ELSE NULL END,
+                claim_token = NULL,
                 updated_at = now()
-            WHERE event_id = @event_id;
+            WHERE event_id = @event_id AND @status IN (2, 3, 4);
             """, connection);
         command.Parameters.AddWithValue("status", dispatchStatus);
         command.Parameters.AddWithValue("event_id", persistedEventId);
-        (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        command.Parameters.AddWithValue("claim_token", claimToken);
+        var expectedUpdates = dispatchStatus is 0 ? 0 : dispatchStatus is 1 ? 1 : 2;
+        (await command.ExecuteNonQueryAsync()).Should().Be(expectedUpdates);
         return persistedEventId;
     }
 
