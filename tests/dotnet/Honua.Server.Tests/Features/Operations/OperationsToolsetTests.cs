@@ -459,6 +459,38 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task LaneC_Validation_RejectsMissingRequiredBodyParametersBeforeApproval()
+    {
+        var definition = AdminAccessOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.api-key.create");
+        var descriptor = AdminAccessOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var executor = new AdminOperateOperationExecutor(
+            definition,
+            descriptor,
+            Substitute.For<IHttpClientFactory>(),
+            Substitute.For<IHttpContextAccessor>(),
+            null,
+            TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
+
+        var invalid = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?>()
+        });
+        var valid = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?> { ["name"] = "automation" }
+        });
+
+        invalid.IsValid.Should().BeFalse();
+        invalid.Messages.Should().Contain("Required parameter 'name' is missing.");
+        valid.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void LaneD_DescriptorSchemas_DiffCleanlyAgainstAdminApiComponents()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(
@@ -1513,6 +1545,8 @@ public sealed class OperationsToolsetTests
     {
         var definition = AdminOperateOperationCatalog.Definitions.Should()
             .ContainSingle(item => item.OperationId == operationId).Subject;
+        var descriptor = AdminOperateOperationCatalog.Descriptors.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
         var context = new DefaultHttpContext();
@@ -1525,6 +1559,7 @@ public sealed class OperationsToolsetTests
         accessor.HttpContext.Returns(context);
         return new AdminOperateOperationExecutor(
             definition,
+            descriptor,
             factory,
             accessor,
             credentialStore ?? new InMemoryAdminApiKeyStore(TimeProvider.System),
