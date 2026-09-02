@@ -59,6 +59,38 @@ public sealed class StudioAiTranscriptSignerTests
             "post-signature mutation must invalidate the detached signature");
     }
 
+    [Theory]
+    [InlineData("honua_propose_deploy_operation", "targetId")]
+    [InlineData("honua_propose_rollback", "targetId")]
+    [InlineData("honua_propose_metadata_release", "targetEnvironment")]
+    public void Sign_GovernedToolTargetDiffersFromCertifiedCandidate_RejectsBeforeSigning(
+        string toolName,
+        string targetProperty)
+    {
+        var privateKey = new Ed25519PrivateKeyParameters(new byte[Ed25519PrivateKeyParameters.KeySize], 0);
+        var key = new StudioAiTranscriptSigner.SigningKey(
+            "test-key", privateKey, privateKey.GeneratePublicKey().GetEncoded());
+        using var arguments = JsonDocument.Parse($$"""{"{{targetProperty}}":"candidate-other"}""");
+        var events = new StudioAiChatEvent[]
+        {
+            new() { Type = StudioAiChatEventType.MessageStart, Model = "model-v1" },
+            new() { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = toolName },
+            new()
+            {
+                Type = StudioAiChatEventType.ToolCallStop,
+                ToolCallId = "call-1",
+                ToolArguments = arguments.RootElement.Clone()
+            },
+            new() { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }
+        };
+
+        var sign = () => CreateSigner(Substitute.For<ISecretProvider>())
+            .Sign(key, Request(), "provider-a", "model-v1", events);
+
+        sign.Should().Throw<InvalidOperationException>()
+            .WithMessage("*does not match the certified candidate*");
+    }
+
     [Fact]
     public async Task ResolveKey_MissingOrInlineMaterial_ReturnsNull()
     {

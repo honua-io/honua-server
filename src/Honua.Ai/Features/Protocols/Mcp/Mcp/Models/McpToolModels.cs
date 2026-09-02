@@ -164,6 +164,9 @@ internal sealed class McpProposeFindingArgument
 {
     [JsonPropertyName("findingId")]
     public string? FindingId { get; set; }
+
+    [JsonPropertyName("candidateId")]
+    public string? CandidateId { get; set; }
 }
 
 internal sealed class McpDeployMutationArgument

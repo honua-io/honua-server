@@ -87,6 +87,7 @@ internal sealed class StudioAiTranscriptSigner(
         string model,
         IReadOnlyList<StudioAiChatEvent> events)
     {
+        ValidateGovernedToolTargets(request.Certification!, events);
         var issuedAt = timeProvider.GetUtcNow();
         var requestBytes = Canonicalize(JsonSerializer.SerializeToUtf8Bytes(
             request, StudioAiProxyJsonContext.Default.StudioAiChatRequest));
@@ -132,6 +133,62 @@ internal sealed class StudioAiTranscriptSigner(
             TranscriptDigest = Convert.ToHexStringLower(SHA256.HashData(canonicalTranscript)),
             Signature = Convert.ToBase64String(signature)
         };
+    }
+
+    private static void ValidateGovernedToolTargets(
+        StudioAiTranscriptCertification certification,
+        IReadOnlyList<StudioAiChatEvent> events)
+    {
+        var toolNamesByCallId = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var evt in events.Where(candidate => candidate.Type == StudioAiChatEventType.ToolCallStart))
+        {
+            if (string.IsNullOrWhiteSpace(evt.ToolCallId)
+                || string.IsNullOrWhiteSpace(evt.ToolName)
+                || !toolNamesByCallId.TryAdd(evt.ToolCallId, evt.ToolName))
+            {
+                throw new InvalidOperationException("Tool call start events must have unique IDs and names.");
+            }
+        }
+
+        foreach (var evt in events.Where(candidate => candidate.Type == StudioAiChatEventType.ToolCallStop))
+        {
+            if (string.IsNullOrWhiteSpace(evt.ToolCallId)
+                || !toolNamesByCallId.TryGetValue(evt.ToolCallId, out var toolName))
+            {
+                throw new InvalidOperationException("Tool call stop event does not match a tool call start event.");
+            }
+
+            if (string.Equals(
+                    toolName,
+                    "honua_propose_platform_release_convergence",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Multi-target release convergence is not eligible for candidate-certified transcripts.");
+            }
+
+            var targetProperty = toolName switch
+            {
+                "honua_propose_deploy_operation" => "targetId",
+                "honua_propose_deploy_plan" => "targetId",
+                "honua_propose_rollback" => "targetId",
+                "honua_propose_finding" => "candidateId",
+                "honua_propose_metadata_release" => "targetEnvironment",
+                _ => null
+            };
+            if (targetProperty is null)
+            {
+                continue;
+            }
+
+            if (evt.ToolArguments is not { ValueKind: JsonValueKind.Object } arguments
+                || !arguments.TryGetProperty(targetProperty, out var target)
+                || target.ValueKind != JsonValueKind.String
+                || !string.Equals(target.GetString(), certification.CandidateId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Governed tool target does not match the certified candidate.");
+            }
+        }
     }
 
     public async Task<StudioAiTranscriptSigningManifest> GetManifestAsync(CancellationToken cancellationToken)
