@@ -21,6 +21,8 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed partial class DeployWorkflowService
 {
+    private const string RollbackSubmissionPendingPhase = "Rollback request accepted; submitting to deploy backend.";
+    private const string RollbackSubmissionRetryablePhase = "Rollback provider submission was not confirmed; retry is allowed.";
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IDeployTargetRegistry _targetRegistry;
     private readonly IWorkflowOperationStore? _workflowStore;
@@ -616,8 +618,13 @@ internal sealed partial class DeployWorkflowService
             throw new InvalidOperationException("Rollback is only supported for deploy workflow operations.");
         }
 
-        if (operation.Status is WorkflowOperationStatus.RollbackRequested
-            or WorkflowOperationStatus.RolledBack
+        if (operation.Status == WorkflowOperationStatus.RollbackRequested &&
+            !string.Equals(operation.CurrentPhase, RollbackSubmissionRetryablePhase, StringComparison.Ordinal))
+        {
+            return operation;
+        }
+
+        if (operation.Status is WorkflowOperationStatus.RolledBack
             or WorkflowOperationStatus.ManualInterventionRequired
             or WorkflowOperationStatus.Failed)
         {
@@ -670,7 +677,7 @@ internal sealed partial class DeployWorkflowService
                     Status = WorkflowOperationStatus.RollbackRequested,
                     UpdatedAt = DateTimeOffset.UtcNow,
                     CompletedAt = null,
-                    CurrentPhase = "Rollback request accepted; submitting to deploy backend.",
+                    CurrentPhase = RollbackSubmissionPendingPhase,
                     ErrorMessage = null,
                     Audit = operation.Audit with
                     {
@@ -687,7 +694,22 @@ internal sealed partial class DeployWorkflowService
                 // TrySetAsync increments the durable version. Carry that token into the provider-result
                 // CAS without an extra read; another writer, if any, will make this CAS lose safely.
                 rollbackClaim = rollbackClaim with { Version = operation.Version + 1 };
-                var observation = await backend.RollbackAsync(rollbackClaim, cancellationToken).ConfigureAwait(false);
+                DeployObservation observation;
+                try
+                {
+                    observation = await backend.RollbackAsync(rollbackClaim, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    var retryable = rollbackClaim with
+                    {
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                        CurrentPhase = RollbackSubmissionRetryablePhase,
+                        ErrorMessage = $"Rollback provider submission was not confirmed ({ex.GetType().Name})."
+                    };
+                    await _workflowStore.TrySetAsync(retryable, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    throw;
+                }
                 updated = rollbackClaim with
                 {
                     Status = observation.Status,

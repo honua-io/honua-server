@@ -386,6 +386,49 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task RequestRollbackAsync_UnconfirmedProviderSubmission_CanBeRetried()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RollbackRaceDeployBackend(throwRollbackOnce: true);
+        var service = CreateService(store, backend);
+        var operation = CreateOperationRecord(status: WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.RequestRollbackAsync(operation.OperationId, "alice", "first"));
+
+        var retryable = await store.GetAsync(operation.OperationId);
+        retryable!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        retryable.CurrentPhase.Should().Contain("retry is allowed");
+
+        var retried = await service.RequestRollbackAsync(operation.OperationId, "alice", "retry");
+
+        retried!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        backend.RollbackCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Reconciler_StaleObservationThrowsAfterRollbackClaim_DoesNotOverwriteClaim()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RollbackRaceDeployBackend(throwStaleObserve: true);
+        var service = CreateService(store, backend);
+        var operation = CreateOperationRecord(status: WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend);
+
+        var staleReconcile = reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        await backend.ObserveEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await service.RequestRollbackAsync(operation.OperationId, "bob", "race");
+        backend.ReleaseStaleObserve();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => staleReconcile);
+        var persisted = await store.GetAsync(operation.OperationId);
+        persisted!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        backend.RollbackCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Reconciler_TransitionsSubmittedOperation_ToSucceeded()
     {
         var store = new TestWorkflowOperationStore();
@@ -1569,7 +1612,10 @@ public sealed class DeployWorkflowServiceTests
         }
     }
 
-    private sealed class RollbackRaceDeployBackend(bool blockRollback = false) : IDeployBackend
+    private sealed class RollbackRaceDeployBackend(
+        bool blockRollback = false,
+        bool throwRollbackOnce = false,
+        bool throwStaleObserve = false) : IDeployBackend
     {
         private readonly TaskCompletionSource _releaseObserve = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _releaseRollback = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1603,6 +1649,11 @@ public sealed class DeployWorkflowServiceTests
             {
                 ObserveEntered.TrySetResult();
                 await _releaseObserve.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                if (throwStaleObserve)
+                {
+                    throw new InvalidOperationException("stale provider observation failed");
+                }
+
                 return new DeployObservation
                 {
                     Status = WorkflowOperationStatus.Succeeded,
@@ -1623,11 +1674,16 @@ public sealed class DeployWorkflowServiceTests
             WorkflowOperationRecord operation,
             CancellationToken cancellationToken = default)
         {
-            Interlocked.Increment(ref _rollbackCount);
+            var attempt = Interlocked.Increment(ref _rollbackCount);
             RollbackEntered.TrySetResult();
             if (blockRollback)
             {
                 await _releaseRollback.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (throwRollbackOnce && attempt == 1)
+            {
+                throw new InvalidOperationException("provider response was not confirmed");
             }
 
             return new DeployObservation
