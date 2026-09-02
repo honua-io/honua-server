@@ -9,7 +9,10 @@ using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Tests.Features.StudioAiProxy.Fakes;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
@@ -92,6 +95,40 @@ public sealed class StudioAiProxyApiKeyResolverTests
         var action = () => resolver.ResolveAsync("provider", options);
 
         await action.Should().ThrowAsync<StudioAiProxyCredentialUnavailableException>();
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_HostedEnvironmentCredential_IsAllowed()
+    {
+        const string providerName = "hosted-environment-provider";
+        var envVarName = StudioAiProxyApiKeyResolver.EnvVarName(providerName);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{StudioAiProxyConfiguration.SectionName}:Providers:{providerName}:Kind"] = StudioAiProxyConfiguration.OpenAiKind,
+                [$"{StudioAiProxyConfiguration.SectionName}:Providers:{providerName}:Endpoint"] = "https://provider.example",
+                [$"{StudioAiProxyConfiguration.SectionName}:Providers:{providerName}:Model"] = "model"
+            })
+            .Build();
+
+        Environment.SetEnvironmentVariable(envVarName, "environment-key");
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddStudioAiProxy(configuration);
+            await using var serviceProvider = services.BuildServiceProvider();
+            var options = serviceProvider.GetRequiredService<IOptions<StudioAiProxyConfiguration>>()
+                .Value.Providers[providerName];
+
+            options.ApiKeyFromEnvironment.Should().BeTrue();
+            var result = await new StudioAiProxyApiKeyResolver().ResolveAsync(providerName, options);
+            result.Should().Be("environment-key");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envVarName, null);
+        }
     }
 
     [UnitTest]

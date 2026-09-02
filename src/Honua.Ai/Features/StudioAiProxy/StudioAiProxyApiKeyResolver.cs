@@ -67,7 +67,7 @@ public sealed class StudioAiProxyApiKeyResolver
                 throw new StudioAiProxyCredentialUnavailableException();
             }
 
-            if (IsLoopbackEndpoint(options.Endpoint))
+            if (options.ApiKeyFromEnvironment || IsLoopbackEndpoint(options.Endpoint))
             {
                 return configured;
             }
