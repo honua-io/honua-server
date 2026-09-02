@@ -94,75 +94,75 @@ public sealed class TenantDenialContractMatrixTests
         {
             case "OGC API":
             case "Admin":
-            {
-                response.StatusCode.Should().Be(denial.HttpStatus);
-                response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-                using var document = JsonDocument.Parse(body);
-                var problem = document.RootElement;
-                problem.GetProperty("code").GetString().Should().Be(denial.Code);
-                problem.GetProperty("correlationId").GetString().Should().Be(CorrelationId);
-                break;
-            }
+                {
+                    response.StatusCode.Should().Be(denial.HttpStatus);
+                    response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+                    using var document = JsonDocument.Parse(body);
+                    var problem = document.RootElement;
+                    problem.GetProperty("code").GetString().Should().Be(denial.Code);
+                    problem.GetProperty("correlationId").GetString().Should().Be(CorrelationId);
+                    break;
+                }
 
             case "OData":
-            {
-                response.StatusCode.Should().Be(denial.HttpStatus);
-                response.Headers.GetValues("OData-Version").Should().ContainSingle("4.01");
-                using var document = JsonDocument.Parse(body);
-                var error = document.RootElement.GetProperty("error");
-                error.GetProperty("code").GetString().Should().Be(denial.Code);
-                error.GetProperty("details").EnumerateArray().Should().Contain(detail =>
-                    detail.GetProperty("code").GetString() == "CorrelationId"
-                    && detail.GetProperty("message").GetString() == CorrelationId);
-                break;
-            }
+                {
+                    response.StatusCode.Should().Be(denial.HttpStatus);
+                    response.Headers.GetValues("OData-Version").Should().ContainSingle("4.01");
+                    using var document = JsonDocument.Parse(body);
+                    var error = document.RootElement.GetProperty("error");
+                    error.GetProperty("code").GetString().Should().Be(denial.Code);
+                    error.GetProperty("details").EnumerateArray().Should().Contain(detail =>
+                        detail.GetProperty("code").GetString() == "CorrelationId"
+                        && detail.GetProperty("message").GetString() == CorrelationId);
+                    break;
+                }
 
             case "GeoServices":
-            {
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                using var document = JsonDocument.Parse(body);
-                var error = document.RootElement.GetProperty("error");
-                error.GetProperty("code").GetInt32().Should().Be(
-                    denial.HttpStatus == HttpStatusCode.Unauthorized ? 499 : 403);
-                var details = error.GetProperty("details").EnumerateArray()
-                    .Select(value => value.GetString())
-                    .ToArray();
-                details.Should().Contain($"Code: {denial.Code}");
-                details.Should().Contain($"CorrelationId: {CorrelationId}");
-                break;
-            }
+                {
+                    response.StatusCode.Should().Be(HttpStatusCode.OK);
+                    using var document = JsonDocument.Parse(body);
+                    var error = document.RootElement.GetProperty("error");
+                    error.GetProperty("code").GetInt32().Should().Be(
+                        denial.HttpStatus == HttpStatusCode.Unauthorized ? 499 : 403);
+                    var details = error.GetProperty("details").EnumerateArray()
+                        .Select(value => value.GetString())
+                        .ToArray();
+                    details.Should().Contain($"Code: {denial.Code}");
+                    details.Should().Contain($"CorrelationId: {CorrelationId}");
+                    break;
+                }
 
             case "WFS":
-            {
-                response.StatusCode.Should().Be(denial.HttpStatus);
-                response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-                body.Should().Contain($"exceptionCode=\"{denial.XmlCode}\"");
-                body.Should().Contain($"CorrelationId: {CorrelationId}");
-                break;
-            }
+                {
+                    response.StatusCode.Should().Be(denial.HttpStatus);
+                    response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+                    body.Should().Contain($"exceptionCode=\"{denial.XmlCode}\"");
+                    body.Should().Contain($"CorrelationId: {CorrelationId}");
+                    break;
+                }
 
             case "WMS alias":
-            {
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-                body.Should().Contain($"code=\"{denial.XmlCode}\"");
-                body.Should().Contain($"CorrelationId: {CorrelationId}");
-                break;
-            }
+                {
+                    response.StatusCode.Should().Be(HttpStatusCode.OK);
+                    response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+                    body.Should().Contain($"code=\"{denial.XmlCode}\"");
+                    body.Should().Contain($"CorrelationId: {CorrelationId}");
+                    break;
+                }
 
             case "MCP JSON-RPC":
-            {
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                using var document = JsonDocument.Parse(body);
-                var root = document.RootElement;
-                root.GetProperty("jsonrpc").GetString().Should().Be("2.0");
-                root.GetProperty("id").GetInt32().Should().Be(3904);
-                var error = root.GetProperty("error");
-                error.GetProperty("code").GetInt32().Should().Be(-32000);
-                error.GetProperty("data").GetProperty("code").GetString().Should().Be(denial.Code);
-                error.GetProperty("data").GetProperty("correlationId").GetString().Should().Be(CorrelationId);
-                break;
-            }
+                {
+                    response.StatusCode.Should().Be(HttpStatusCode.OK);
+                    using var document = JsonDocument.Parse(body);
+                    var root = document.RootElement;
+                    root.GetProperty("jsonrpc").GetString().Should().Be("2.0");
+                    root.GetProperty("id").GetInt32().Should().Be(3904);
+                    var error = root.GetProperty("error");
+                    error.GetProperty("code").GetInt32().Should().Be(-32000);
+                    error.GetProperty("data").GetProperty("code").GetString().Should().Be(denial.Code);
+                    error.GetProperty("data").GetProperty("correlationId").GetString().Should().Be(CorrelationId);
+                    break;
+                }
 
             case "gRPC":
                 response.StatusCode.Should().Be(HttpStatusCode.OK);
