@@ -302,25 +302,23 @@ internal static class StandardErrorResponseFormatter
         StandardErrorResponse errorResponse,
         ErrorResponseFormatterOptions options)
     {
-        if (!string.IsNullOrWhiteSpace(options.MachineCode))
-        {
-            return ProblemDetailsHelpers.CreateProblem(
+        var detail = BuildDetailWithExtras(errorResponse, options);
+        return string.IsNullOrWhiteSpace(options.MachineCode)
+            ? ProblemDetailsHelpers.CreateProblem(
                 context,
                 type,
                 errorResponse.StatusCode,
                 errorResponse.Title,
-                BuildDetailWithExtras(errorResponse, options),
-                options.MachineCode,
+                detail)
+            : ProblemDetailsHelpers.CreateProblem(
+                context,
+                type,
+                errorResponse.StatusCode,
+                errorResponse.Title,
+                detail,
+                options.MachineCode!,
                 options.Retryable,
                 options.RetryAfterSeconds);
-        }
-
-        return ProblemDetailsHelpers.CreateProblem(
-            context,
-            type,
-            statusCode: errorResponse.StatusCode,
-            title: errorResponse.Title,
-            detail: BuildDetailWithExtras(errorResponse, options));
     }
 
     /// <summary>
@@ -334,6 +332,11 @@ internal static class StandardErrorResponseFormatter
         if (!string.IsNullOrWhiteSpace(errorResponse.Detail))
         {
             detailsList.Add(errorResponse.Detail);
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.MachineCode))
+        {
+            detailsList.Add($"Code: {options.MachineCode}");
         }
 
         // Include additional details if requested
