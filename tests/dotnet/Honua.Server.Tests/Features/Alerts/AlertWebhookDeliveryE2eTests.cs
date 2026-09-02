@@ -189,6 +189,28 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
     }
 
     [IntegrationTest]
+    public async Task PreUpgradeWorker_CannotBypassClaimFencing()
+    {
+        await using var harness = await CreateHarnessAsync(ReserveUnavailableHttpsUrl(), maxAttempts: 3);
+        await harness.EvaluateOnlyAsync();
+
+        await FluentActions.Awaiting(harness.LegacyClaimAsync)
+            .Should().ThrowAsync<PostgresException>()
+            .WithMessage("*Processing alert dispatches require a claim token*");
+
+        var winner = (await harness.DispatchStore.ClaimPendingAsync(1, DateTimeOffset.UtcNow))
+            .Should().ContainSingle().Subject;
+        (await harness.DispatchStore.MarkDeliveredAsync(
+            winner.DispatchId, winner.ClaimToken, DateTimeOffset.UtcNow)).Should().BeTrue();
+
+        await FluentActions.Awaiting(() => harness.LegacyMarkFailedAsync(winner.DispatchId))
+            .Should().ThrowAsync<PostgresException>()
+            .WithMessage("*Alert dispatch terminal transitions require a fenced Processing claim*");
+
+        (await harness.GetDispatchRowAsync()).Status.Should().Be(AlertDispatchStatus.Delivered);
+    }
+
+    [IntegrationTest]
     public async Task AcceptedWebhook_WhenAcknowledgementIsNotPersisted_ReplaysWithStableIdempotencyAndConverges()
     {
         await using var receiver = await WebhookReceiver.StartAsync();
@@ -489,6 +511,27 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
             await using var command = new NpgsqlCommand(
                 "UPDATE honua.alert_dispatch SET updated_at = now() - INTERVAL '6 minutes' WHERE dispatch_id = @dispatch_id;",
                 connection);
+            command.Parameters.AddWithValue("dispatch_id", NpgsqlDbType.Bigint, dispatchId);
+            _ = await command.ExecuteNonQueryAsync();
+        }
+
+        public async Task LegacyClaimAsync()
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand(
+                "UPDATE honua.alert_dispatch SET status = 1, updated_at = now() WHERE status = 0;",
+                connection);
+            _ = await command.ExecuteNonQueryAsync();
+        }
+
+        public async Task LegacyMarkFailedAsync(long dispatchId)
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand("""
+                UPDATE honua.alert_dispatch
+                SET status = 4, attempts = attempts + 1, last_error = 'legacy failure', updated_at = now()
+                WHERE dispatch_id = @dispatch_id;
+                """, connection);
             command.Parameters.AddWithValue("dispatch_id", NpgsqlDbType.Bigint, dispatchId);
             _ = await command.ExecuteNonQueryAsync();
         }
