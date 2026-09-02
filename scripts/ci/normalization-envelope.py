@@ -23,6 +23,8 @@ COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 OUTPUT_LIMITS = {
     "docs/gis/data/feature-catalog.json": 4 * 1024 * 1024,
+    "docs/gis/data/admin-openapi-operation-ids.json": 128 * 1024,
+    "docs/gis/data/admin-mcp-projection-manifest.json": 64 * 1024,
     "docs/gis/data/geoservices-rest-parity.json": 1024 * 1024,
     "docs/gis/data/capability-matrix.v1.json": 1024 * 1024,
 }

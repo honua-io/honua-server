@@ -1,0 +1,2412 @@
+{
+  "schemaVersion": "1.0.0",
+  "authority": "docs/developer/api-specs/admin-api.json",
+  "generatedCliFields": [
+    "status",
+    "operationId",
+    "operationInstanceId",
+    "proposalId",
+    "correlationId",
+    "auditId",
+    "authorizationOutcome",
+    "policyOutcome",
+    "jobId",
+    "message",
+    "details",
+    "resourceIds",
+    "evidenceRefs"
+  ],
+  "generatedConsoleFields": [
+    "status",
+    "operationId",
+    "operationInstanceId",
+    "proposalId",
+    "correlationId",
+    "auditId",
+    "authorizationOutcome",
+    "policyOutcome",
+    "jobId",
+    "message",
+    "details",
+    "resourceIds",
+    "evidenceRefs"
+  ],
+  "operations": [
+    {
+      "operationId": "acknowledgeObservabilityAlert",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/observability/alerts/{eventId}/acknowledge"
+    },
+    {
+      "operationId": "addClientCertificateRevocation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/security/client-certificates/profiles/{profileId}/revocations"
+    },
+    {
+      "operationId": "addInvestigationLink",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/investigations/{investigationId}/links"
+    },
+    {
+      "operationId": "addInvestigationPin",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/investigations/{investigationId}/pins"
+    },
+    {
+      "operationId": "allocateNetworkTopologyDraftGeneration",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/network-datasets/{id}/generations"
+    },
+    {
+      "operationId": "applyNetworkTopologyEditBatch",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/network-datasets/{id}/generations/{generation}/edits"
+    },
+    {
+      "operationId": "approveCoordinatedReleaseGate",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/metadata/coordinated-releases/operations/{operationId}/approve/{gate}"
+    },
+    {
+      "operationId": "approveOperationProposal",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/proposals/{id}/approve"
+    },
+    {
+      "operationId": "assignFieldWorkflowSubmission",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/field-workflows/submissions/{submissionId}/assignment"
+    },
+    {
+      "operationId": "cancelConsoleJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "cancelGeoServerImportJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/geoserver/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "cancelGeoservicesImportJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/geoservices/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "cancelImportJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "cancelImportUpload",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/uploads/{uploadId}/cancel"
+    },
+    {
+      "operationId": "cancelMigrationRun",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/migration/runs/{runId}/cancel"
+    },
+    {
+      "operationId": "cancelOperation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/operations/{operationId}/cancel"
+    },
+    {
+      "operationId": "cancelTileOperationJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/tile-operations/jobs/{jobId}/cancel"
+    },
+    {
+      "operationId": "commentFieldWorkflowSubmission",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/field-workflows/submissions/{submissionId}/comments"
+    },
+    {
+      "operationId": "completeMigrationRun",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/migration/runs/{runId}/complete"
+    },
+    {
+      "operationId": "convergePlatformRelease",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/platform-release/converge"
+    },
+    {
+      "operationId": "createAdminApiKey",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/api-keys"
+    },
+    {
+      "operationId": "createAdminAuthAuthorizeUrl",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/auth/providers/{providerKey}/authorize-url"
+    },
+    {
+      "operationId": "createAlertRule",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/alerts/rules"
+    },
+    {
+      "operationId": "createAlertZone",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/alerts/zones"
+    },
+    {
+      "operationId": "createClientCertificatePrincipalMapping",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/security/client-certificates/profiles/{profileId}/mappings"
+    },
+    {
+      "operationId": "createClientCertificateTrustProfile",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/security/client-certificates/profiles"
+    },
+    {
+      "operationId": "createConnection",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections"
+    },
+    {
+      "operationId": "createCoordinatedReleaseOperation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/metadata/coordinated-releases/operations"
+    },
+    {
+      "operationId": "createDeployOperation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/deploy/operations"
+    },
+    {
+      "operationId": "createEmbedKey",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/embed/keys"
+    },
+    {
+      "operationId": "createFieldMaskPolicy",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/field-mask-policies"
+    },
+    {
+      "operationId": "createFieldWorkflowExport",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/field-workflows/exports"
+    },
+    {
+      "operationId": "createFormPackageDraft",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/forms/packages"
+    },
+    {
+      "operationId": "createInvestigation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/investigations"
+    },
+    {
+      "operationId": "createMetadataReleaseOperation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/metadata/releases/operations"
+    },
+    {
+      "operationId": "createMetadataReleasePackage",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/metadata/release-packages"
+    },
+    {
+      "operationId": "createOidcProvider",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/oidc/providers"
+    },
+    {
+      "operationId": "createRateLimitPolicy",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/rate-limits"
+    },
+    {
+      "operationId": "createRlsPolicy",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/rls-policies"
+    },
+    {
+      "operationId": "createRole",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/roles"
+    },
+    {
+      "operationId": "createShareExport",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/share/exports"
+    },
+    {
+      "operationId": "createTenant",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/tenants"
+    },
+    {
+      "operationId": "deactivateSceneDataset",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/scenes/{id}"
+    },
+    {
+      "operationId": "decideFieldWorkflowSubmission",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/field-workflows/submissions/{submissionId}/decision"
+    },
+    {
+      "operationId": "defineOAuthScope",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/oauth-scopes"
+    },
+    {
+      "operationId": "deleteAlertRule",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/alerts/rules/{ruleId}"
+    },
+    {
+      "operationId": "deleteAlertZone",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/alerts/zones/{zoneId}"
+    },
+    {
+      "operationId": "deleteConnection",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/connections/{id}"
+    },
+    {
+      "operationId": "deleteFieldMaskPolicy",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/field-mask-policies/{id}"
+    },
+    {
+      "operationId": "deleteImportedRaster",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/import/raster/{rasterId}"
+    },
+    {
+      "operationId": "deleteNetworkDataset",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/network-datasets/{id}"
+    },
+    {
+      "operationId": "deleteOAuthClient",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/oauth-clients/{id}"
+    },
+    {
+      "operationId": "deleteOAuthScope",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/oauth-scopes/{scope}"
+    },
+    {
+      "operationId": "deleteOidcProvider",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/oidc/providers/{id}"
+    },
+    {
+      "operationId": "deleteRateLimitPolicy",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/rate-limits/{id}"
+    },
+    {
+      "operationId": "deleteRlsPolicy",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/rls-policies/{id}"
+    },
+    {
+      "operationId": "deleteRole",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/roles/{id}"
+    },
+    {
+      "operationId": "deleteShareExport",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/share/exports/{exportId}"
+    },
+    {
+      "operationId": "deleteTenant",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/tenants/{tenantId}"
+    },
+    {
+      "operationId": "deprovisionManagedUser",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/users/{id}"
+    },
+    {
+      "operationId": "disableClientCertificatePrincipalMapping",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/security/client-certificates/profiles/{profileId}/mappings/{mappingId}"
+    },
+    {
+      "operationId": "disableClientCertificateTrustProfile",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/security/client-certificates/profiles/{profileId}"
+    },
+    {
+      "operationId": "disconnectFeatureStreamSession",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/streaming/features/sessions/{sessionId}"
+    },
+    {
+      "operationId": "disconnectOperationsStreamingSubscriber",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/operations/streaming/subscribers/{subscriberId}"
+    },
+    {
+      "operationId": "discoverConfiguration",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/configuration/discover"
+    },
+    {
+      "operationId": "discoverExternalService",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/external-services/discover"
+    },
+    {
+      "operationId": "discoverGeoServerService",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/geoserver/discover"
+    },
+    {
+      "operationId": "discoverGeoservicesService",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/geoservices/discover"
+    },
+    {
+      "operationId": "evaluateResidencyPolicy",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/compliance/residency/evaluate"
+    },
+    {
+      "operationId": "evictTileCache",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/tile-operations/evict"
+    },
+    {
+      "operationId": "exportComplianceReport",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/compliance/report"
+    },
+    {
+      "operationId": "exportLayerSldStyle",
+      "catalogOperationId": "admin.layer.style.export-sld",
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/style/export-sld"
+    },
+    {
+      "operationId": "exportObservabilityAudit",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/audit/export"
+    },
+    {
+      "operationId": "exportOgcTileCache",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/ogc-tiles/export"
+    },
+    {
+      "operationId": "exportServiceLayer",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceName}/layers/{layerId}/export"
+    },
+    {
+      "operationId": "exportTenantUsage",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/tenants/usage"
+    },
+    {
+      "operationId": "generateScene",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/scenes/generate"
+    },
+    {
+      "operationId": "getActiveImportJobs",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/jobs"
+    },
+    {
+      "operationId": "getAdminApiKeyEffectivePermissions",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/api-keys/{id}/effective-permissions"
+    },
+    {
+      "operationId": "getAdminAuthConfig",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/auth/config"
+    },
+    {
+      "operationId": "getAdminAuthLogoutUrl",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/auth/providers/{providerKey}/logout-url"
+    },
+    {
+      "operationId": "getAdminAuthSession",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/auth/session"
+    },
+    {
+      "operationId": "getAdminCacheStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/cache/status"
+    },
+    {
+      "operationId": "getAdminCapabilities",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/capabilities"
+    },
+    {
+      "operationId": "getAdminLayerDrawingInfo",
+      "catalogOperationId": "admin.layer.drawing-info.get",
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/drawing-info"
+    },
+    {
+      "operationId": "getAdminLayerFields",
+      "catalogOperationId": "admin.layer.fields.get",
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/fields"
+    },
+    {
+      "operationId": "getAdminLayerFilter",
+      "catalogOperationId": "admin.layer.filter.get",
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/filter"
+    },
+    {
+      "operationId": "getAdminLayerPopupInfo",
+      "catalogOperationId": "admin.layer.popup-info.get",
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/popup-info"
+    },
+    {
+      "operationId": "getAdminLayerRelationships",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/relationships"
+    },
+    {
+      "operationId": "getAdminLayerStyle",
+      "catalogOperationId": "admin.layer.style.get",
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/style"
+    },
+    {
+      "operationId": "getAdminLayerValidation",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/layers/{layerId}/validation"
+    },
+    {
+      "operationId": "getAdminOpenApi",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/openapi.json"
+    },
+    {
+      "operationId": "getAdminVersion",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/version"
+    },
+    {
+      "operationId": "getAlertRule",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/alerts/rules/{ruleId}"
+    },
+    {
+      "operationId": "getAlertRuleHealth",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/alerts/rules/{ruleId}/health"
+    },
+    {
+      "operationId": "getAlertZone",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/alerts/zones/{zoneId}"
+    },
+    {
+      "operationId": "getArcGisMigrationManifest",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/arcgis/migrations/{runId}/manifest"
+    },
+    {
+      "operationId": "getArcGisMigrationParity",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/arcgis/migrations/{runId}/parity"
+    },
+    {
+      "operationId": "getClientCertificateTrustProfile",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/security/client-certificates/profiles/{profileId}"
+    },
+    {
+      "operationId": "getCloudRaster",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/cloud-rasters/{id}"
+    },
+    {
+      "operationId": "getComplianceDashboard",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/compliance/dashboard"
+    },
+    {
+      "operationId": "getConfiguration",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/config"
+    },
+    {
+      "operationId": "getConfigurationAuditInfo",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/configuration/audit"
+    },
+    {
+      "operationId": "getConfigurationAutoDocumentation",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/configuration/auto-documentation"
+    },
+    {
+      "operationId": "getConfigurationDiscoveryMetadata",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/configuration/metadata"
+    },
+    {
+      "operationId": "getConfigurationSummary",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/configuration/summary"
+    },
+    {
+      "operationId": "getConnection",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/connections/{id}"
+    },
+    {
+      "operationId": "getConnectionTables",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/connections/{id}/tables"
+    },
+    {
+      "operationId": "getConnections",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/connections"
+    },
+    {
+      "operationId": "getConsoleJob",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/jobs/{jobId}"
+    },
+    {
+      "operationId": "getConsoleJobActions",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/jobs/{jobId}/actions"
+    },
+    {
+      "operationId": "getConsoleJobArtifacts",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/jobs/{jobId}/artifacts"
+    },
+    {
+      "operationId": "getConsoleJobLogs",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/jobs/{jobId}/logs"
+    },
+    {
+      "operationId": "getConsoleJobSteps",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/jobs/{jobId}/steps"
+    },
+    {
+      "operationId": "getCoordinatedReleaseOperation",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/coordinated-releases/{packageId}/operation"
+    },
+    {
+      "operationId": "getCurrentFormPackage",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/forms/packages/{formId}"
+    },
+    {
+      "operationId": "getDatabaseQueryCacheStatistics",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/database/query-cache/statistics"
+    },
+    {
+      "operationId": "getDeployOperation",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/deploy/operations/{operationId}"
+    },
+    {
+      "operationId": "getDeployPreflight",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/deploy/preflight"
+    },
+    {
+      "operationId": "getEmbedKey",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/embed/keys/{id}"
+    },
+    {
+      "operationId": "getEmbedUsage",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/embed/usage"
+    },
+    {
+      "operationId": "getEnhancedCacheEffectiveness",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/enhanced/cache/effectiveness"
+    },
+    {
+      "operationId": "getEnhancedCacheStatistics",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/enhanced/cache/statistics"
+    },
+    {
+      "operationId": "getEnhancedExceptionStatistics",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/enhanced/exceptions/statistics"
+    },
+    {
+      "operationId": "getEnhancedPerformanceSummary",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/enhanced/summary"
+    },
+    {
+      "operationId": "getEnhancedPotentialResourceLeaks",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/enhanced/resources/potential-leaks"
+    },
+    {
+      "operationId": "getEnhancedQueryPerformanceStatistics",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/enhanced/database/query-performance"
+    },
+    {
+      "operationId": "getEnhancedRecentExceptions",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/enhanced/exceptions/recent"
+    },
+    {
+      "operationId": "getEnhancedResourceTracking",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/enhanced/resources/tracking"
+    },
+    {
+      "operationId": "getEnhancedSlowQueries",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/performance/enhanced/database/slow-queries"
+    },
+    {
+      "operationId": "getFeatureOverview",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/features"
+    },
+    {
+      "operationId": "getFieldMaskPolicy",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/field-mask-policies/{id}"
+    },
+    {
+      "operationId": "getFieldWorkflowSubmission",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/field-workflows/submissions/{submissionId}"
+    },
+    {
+      "operationId": "getFormPackageVersion",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/forms/packages/{formId}/versions/{packageVersion}"
+    },
+    {
+      "operationId": "getGeoServerImportJob",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoserver/jobs/{jobId}"
+    },
+    {
+      "operationId": "getGeocodingProviders",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/geocoding/providers"
+    },
+    {
+      "operationId": "getGeoprocessingToolUsageRanking",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/geoprocessing/tools/usage-ranking"
+    },
+    {
+      "operationId": "getGeoservicesImportJob",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoservices/jobs/{jobId}"
+    },
+    {
+      "operationId": "getIdentityProviders",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/identity/providers"
+    },
+    {
+      "operationId": "getImportFormats",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/formats"
+    },
+    {
+      "operationId": "getImportJobStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/jobs/{jobId}"
+    },
+    {
+      "operationId": "getImportLimits",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/limits"
+    },
+    {
+      "operationId": "getImportUploadProgress",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/uploads/{uploadId}/progress"
+    },
+    {
+      "operationId": "getInvestigation",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/investigations/{investigationId}"
+    },
+    {
+      "operationId": "getLatestMigrationPerformanceEvidence",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/migration/performance-evidence/latest"
+    },
+    {
+      "operationId": "getLayerShareTrafficSeries",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceName}/layers/{layerId}/share/traffic/series"
+    },
+    {
+      "operationId": "getLayerShareTrafficSummary",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceName}/layers/{layerId}/share/traffic"
+    },
+    {
+      "operationId": "getLicenseCapacityState",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/license/capacity"
+    },
+    {
+      "operationId": "getLicenseEntitlements",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/license/entitlements"
+    },
+    {
+      "operationId": "getLicenseFeatures",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/license/features"
+    },
+    {
+      "operationId": "getLicenseStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/license"
+    },
+    {
+      "operationId": "getManagedUser",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/users/{id}"
+    },
+    {
+      "operationId": "getManagedUserEffectivePermissions",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/users/{id}/effective-permissions"
+    },
+    {
+      "operationId": "getMetadataReleaseGitOpsManifest",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/release-packages/{packageId}/gitops-manifest"
+    },
+    {
+      "operationId": "getMetadataReleaseOperationByPackageId",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/releases/{packageId}/operation"
+    },
+    {
+      "operationId": "getMetadataReleasePackage",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/release-packages/{packageId}"
+    },
+    {
+      "operationId": "getMetadataSemanticInventory",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/environments/{environment}/inventory"
+    },
+    {
+      "operationId": "getMigrationBatch",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/migrations/{batchId}"
+    },
+    {
+      "operationId": "getMigrationPerformanceEvidenceById",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/migration/performance-evidence/{evidenceId}"
+    },
+    {
+      "operationId": "getMigrationRun",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/migration/runs/{runId}"
+    },
+    {
+      "operationId": "getMigrationRunEvidencePack",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/migration/runs/{runId}/evidence-pack"
+    },
+    {
+      "operationId": "getMigrationRunScorecard",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/migration/runs/{runId}/scorecard"
+    },
+    {
+      "operationId": "getMigrationStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/migrations"
+    },
+    {
+      "operationId": "getMultidimCoverage",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/multidim-coverages/{id}"
+    },
+    {
+      "operationId": "getMultidimCoverageScanJob",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/multidim-coverages/jobs/{jobId}"
+    },
+    {
+      "operationId": "getNetworkDataset",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/network-datasets/{id}"
+    },
+    {
+      "operationId": "getNetworkTopologyRebuildAttempt",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/network-datasets/{id}/generations/{generation}/rebuild/{attempt}"
+    },
+    {
+      "operationId": "getOAuthClient",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/oauth-clients/{id}"
+    },
+    {
+      "operationId": "getObservabilityAlert",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/alerts/{eventId}"
+    },
+    {
+      "operationId": "getOidcProvider",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/oidc/providers/{id}"
+    },
+    {
+      "operationId": "getOperationProposal",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/proposals/{id}"
+    },
+    {
+      "operationId": "getOperationStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/{operationId}"
+    },
+    {
+      "operationId": "getOperationsByType",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/type/{operationType}"
+    },
+    {
+      "operationId": "getOperationsCacheHealth",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/cache/health"
+    },
+    {
+      "operationId": "getOperationsCacheRedisMetrics",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/cache/redis"
+    },
+    {
+      "operationId": "getOperationsCacheStatistics",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/cache/statistics"
+    },
+    {
+      "operationId": "getOperationsGeocodingConfiguration",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/geocoding/configuration"
+    },
+    {
+      "operationId": "getOperationsGeocodingProviders",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/geocoding/providers"
+    },
+    {
+      "operationId": "getOpsAutonomyPolicy",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/autonomy/policies/{rule}"
+    },
+    {
+      "operationId": "getOpsAutonomySettings",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/autonomy/settings"
+    },
+    {
+      "operationId": "getOpsHealthHistory",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/ops-health/history"
+    },
+    {
+      "operationId": "getOpsHealthSnapshot",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/ops-health"
+    },
+    {
+      "operationId": "getPlatformLicenseStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/license/status"
+    },
+    {
+      "operationId": "getPublishedLayers",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/connections/{id}/layers"
+    },
+    {
+      "operationId": "getRasterImportFormats",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/raster/formats"
+    },
+    {
+      "operationId": "getRateLimitPolicy",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/rate-limits/{id}"
+    },
+    {
+      "operationId": "getRateLimitStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/rate-limits/status"
+    },
+    {
+      "operationId": "getRecentErrors",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/errors"
+    },
+    {
+      "operationId": "getRlsPolicy",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/rls-policies/{id}"
+    },
+    {
+      "operationId": "getRole",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/roles/{id}"
+    },
+    {
+      "operationId": "getRolePermissions",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/roles/{id}/permissions"
+    },
+    {
+      "operationId": "getSceneDataset",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/scenes/{id}"
+    },
+    {
+      "operationId": "getServiceReplica",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceId}/replicas/{replicaId}"
+    },
+    {
+      "operationId": "getServiceReplicaConflict",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}"
+    },
+    {
+      "operationId": "getServiceSettings",
+      "catalogOperationId": "admin.services.settings.get",
+      "method": "GET",
+      "path": "/services/{serviceName}/settings"
+    },
+    {
+      "operationId": "getShareExport",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/share/exports/{exportId}"
+    },
+    {
+      "operationId": "getShareExportRun",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/share/exports/{exportId}/runs/{runId}"
+    },
+    {
+      "operationId": "getShareTrafficSeries",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/share/traffic/series"
+    },
+    {
+      "operationId": "getShareTrafficSummary",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/share/traffic"
+    },
+    {
+      "operationId": "getTelemetryStatus",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/telemetry"
+    },
+    {
+      "operationId": "getTenant",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/tenants/{tenantId}"
+    },
+    {
+      "operationId": "getTileCacheInventory",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/tile-operations/cache/inventory"
+    },
+    {
+      "operationId": "getTileOperationJob",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/tile-operations/jobs/{jobId}"
+    },
+    {
+      "operationId": "getZarrStore",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/zarr-stores/{id}"
+    },
+    {
+      "operationId": "importGeocoderReferenceData",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/geocoding/reference-data/import"
+    },
+    {
+      "operationId": "importLayerSldStyle",
+      "catalogOperationId": "admin.layer.style.import-sld",
+      "method": "POST",
+      "path": "/metadata/layers/{layerId}/style/import-sld"
+    },
+    {
+      "operationId": "importOgcApiFeaturesCollection",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/ogc-api-features/collection"
+    },
+    {
+      "operationId": "importOgcCoverages",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/ogc/coverages/import"
+    },
+    {
+      "operationId": "importOgcWcsCoverages",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/ogc-wcs/import"
+    },
+    {
+      "operationId": "importRasterFile",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/raster"
+    },
+    {
+      "operationId": "importTileCachePackage",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/tile-package"
+    },
+    {
+      "operationId": "ingestCityGmlScene",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/scenes/ingest/citygml"
+    },
+    {
+      "operationId": "ingestPointCloudScene",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/scenes/ingest/pointcloud"
+    },
+    {
+      "operationId": "invalidateAdminCache",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/cache/invalidate"
+    },
+    {
+      "operationId": "invalidateEnhancedQueryResultCache",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/performance/enhanced/cache/invalidate"
+    },
+    {
+      "operationId": "invalidateOperationsCache",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/operations/cache/invalidate"
+    },
+    {
+      "operationId": "issueAdminOperatorBearer",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/auth/bearer"
+    },
+    {
+      "operationId": "listActiveImportUploads",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/uploads"
+    },
+    {
+      "operationId": "listActiveOperations",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/active"
+    },
+    {
+      "operationId": "listAdminApiKeys",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/api-keys"
+    },
+    {
+      "operationId": "listAlertChannelStates",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/alerts/channels"
+    },
+    {
+      "operationId": "listAlertRuleEvents",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/alerts/rules/{ruleId}/events"
+    },
+    {
+      "operationId": "listAlertRules",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/alerts/rules"
+    },
+    {
+      "operationId": "listAlertZones",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/alerts/zones"
+    },
+    {
+      "operationId": "listArcGisMigrationRuns",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/arcgis/migrations"
+    },
+    {
+      "operationId": "listClientCertificatePrincipalMappings",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/security/client-certificates/profiles/{profileId}/mappings"
+    },
+    {
+      "operationId": "listClientCertificateRevocations",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/security/client-certificates/profiles/{profileId}/revocations"
+    },
+    {
+      "operationId": "listClientCertificateTrustProfiles",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/security/client-certificates/profiles"
+    },
+    {
+      "operationId": "listCloudRasters",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/cloud-rasters"
+    },
+    {
+      "operationId": "listConsoleJobs",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/jobs"
+    },
+    {
+      "operationId": "listDeployOperations",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/deploy/operations"
+    },
+    {
+      "operationId": "listEmbedKeys",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/embed/keys"
+    },
+    {
+      "operationId": "listFeatureStreamSessions",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/streaming/features/sessions"
+    },
+    {
+      "operationId": "listFederationSources",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/federation/sources"
+    },
+    {
+      "operationId": "listFieldMaskPolicies",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/field-mask-policies"
+    },
+    {
+      "operationId": "listFieldWorkflowExports",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/field-workflows/exports"
+    },
+    {
+      "operationId": "listFieldWorkflowSubmissions",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/field-workflows/submissions"
+    },
+    {
+      "operationId": "listFormPackageVersions",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/forms/packages/{formId}/versions"
+    },
+    {
+      "operationId": "listFormPackages",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/forms/packages"
+    },
+    {
+      "operationId": "listGeoServerImportJobs",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoserver/jobs"
+    },
+    {
+      "operationId": "listGeoservicesImportJobs",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoservices/jobs"
+    },
+    {
+      "operationId": "listInvestigations",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/investigations"
+    },
+    {
+      "operationId": "listManagedUsers",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/users"
+    },
+    {
+      "operationId": "listMetadataReleasePackages",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/metadata/release-packages"
+    },
+    {
+      "operationId": "listMigrationPerformanceEvidenceHistory",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/migration/performance-evidence/history"
+    },
+    {
+      "operationId": "listMigrationRuns",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/migration/runs"
+    },
+    {
+      "operationId": "listMultidimCoverages",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/multidim-coverages"
+    },
+    {
+      "operationId": "listNetworkDatasets",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/network-datasets"
+    },
+    {
+      "operationId": "listNetworkTopologyGenerations",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/network-datasets/{id}/generations"
+    },
+    {
+      "operationId": "listNetworkTopologyPromotions",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/network-datasets/{id}/promotions"
+    },
+    {
+      "operationId": "listOAuthClients",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/oauth-clients"
+    },
+    {
+      "operationId": "listOAuthScopes",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/oauth-scopes"
+    },
+    {
+      "operationId": "listObservabilityAlerts",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/alerts"
+    },
+    {
+      "operationId": "listObservabilityAuditEntries",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/audit"
+    },
+    {
+      "operationId": "listOidcProviders",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/oidc/providers"
+    },
+    {
+      "operationId": "listOperateEvents",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/events"
+    },
+    {
+      "operationId": "listOperateLogs",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/logs"
+    },
+    {
+      "operationId": "listOperationProposals",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/proposals"
+    },
+    {
+      "operationId": "listOperationsStreamingSubscribers",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/streaming/subscribers"
+    },
+    {
+      "operationId": "listOpsAutonomyPolicies",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/autonomy/policies"
+    },
+    {
+      "operationId": "listOpsFindings",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/findings"
+    },
+    {
+      "operationId": "listRateLimitPolicies",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/rate-limits"
+    },
+    {
+      "operationId": "listRlsPolicies",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/rls-policies"
+    },
+    {
+      "operationId": "listRoles",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/roles"
+    },
+    {
+      "operationId": "listSceneDatasets",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/scenes"
+    },
+    {
+      "operationId": "listServiceReplicaConflicts",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceId}/replicas/{replicaId}/conflicts"
+    },
+    {
+      "operationId": "listServiceReplicas",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/services/{serviceId}/replicas"
+    },
+    {
+      "operationId": "listServices",
+      "catalogOperationId": "admin.services.list",
+      "method": "GET",
+      "path": "/services"
+    },
+    {
+      "operationId": "listShareExportRuns",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/share/exports/{exportId}/runs"
+    },
+    {
+      "operationId": "listShareExports",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/share/exports"
+    },
+    {
+      "operationId": "listTenants",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/tenants"
+    },
+    {
+      "operationId": "listTileOperationJobs",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/tile-operations/jobs"
+    },
+    {
+      "operationId": "listZarrStores",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/zarr-stores"
+    },
+    {
+      "operationId": "logoutAdminAuthSession",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/auth/logout"
+    },
+    {
+      "operationId": "pauseAlertChannel",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/alerts/channels/{channel}/pause"
+    },
+    {
+      "operationId": "pauseShareExport",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/share/exports/{exportId}/pause"
+    },
+    {
+      "operationId": "planDeployOperation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/deploy/plan"
+    },
+    {
+      "operationId": "planFederationSourceQuery",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/federation/sources/{id}/plan"
+    },
+    {
+      "operationId": "prevalidateMetadataReleasePackageCompatibility",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/metadata/prevalidate"
+    },
+    {
+      "operationId": "previewImportFile",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/preview"
+    },
+    {
+      "operationId": "previewImportFileFromUrl",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/preview-url"
+    },
+    {
+      "operationId": "previewPackage",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/packages/preview"
+    },
+    {
+      "operationId": "promoteDeployOperation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/deploy/operations/{operationId}/promote"
+    },
+    {
+      "operationId": "promoteNetworkTopologyGeneration",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/network-datasets/{id}/promote"
+    },
+    {
+      "operationId": "proposeOpsFinding",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/observability/findings/{findingId}/propose"
+    },
+    {
+      "operationId": "publishFormPackageVersion",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/forms/packages/{formId}/versions/{packageVersion}/publish"
+    },
+    {
+      "operationId": "publishLayer",
+      "catalogOperationId": "admin.layer.publish",
+      "method": "POST",
+      "path": "/connections/{id}/layers"
+    },
+    {
+      "operationId": "queryMetadataEnvironmentBindings",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/metadata/environment-bindings/query"
+    },
+    {
+      "operationId": "recordArcGisMigrationManifest",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/arcgis/migrations/{runId}/manifest"
+    },
+    {
+      "operationId": "recordArcGisMigrationParity",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/arcgis/migrations/{runId}/parity"
+    },
+    {
+      "operationId": "recordMigrationRunScorecard",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/migration/runs/{runId}/scorecard"
+    },
+    {
+      "operationId": "recordMigrationRunStarted",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/migration/runs"
+    },
+    {
+      "operationId": "redriveAlertDeadLetters",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/alerts/dispatch/redrive"
+    },
+    {
+      "operationId": "refreshCloudRaster",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/cloud-rasters/{id}/refresh"
+    },
+    {
+      "operationId": "refreshConnectionLayerExtents",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections/{id}/layers/extents/refresh"
+    },
+    {
+      "operationId": "refreshConnectionLayerFeatures",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections/{id}/layers/{layerId}/features/refresh"
+    },
+    {
+      "operationId": "refreshMultidimCoverage",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/multidim-coverages/{id}/refresh"
+    },
+    {
+      "operationId": "refreshZarrStore",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/zarr-stores/{id}/refresh"
+    },
+    {
+      "operationId": "registerCloudRaster",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/cloud-rasters"
+    },
+    {
+      "operationId": "registerMultidimCoverage",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/multidim-coverages"
+    },
+    {
+      "operationId": "registerNetworkDataset",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/network-datasets"
+    },
+    {
+      "operationId": "registerOAuthClient",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/oauth-clients"
+    },
+    {
+      "operationId": "registerSceneDataset",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/scenes"
+    },
+    {
+      "operationId": "registerZarrStore",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/zarr-stores"
+    },
+    {
+      "operationId": "rejectOperationProposal",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/proposals/{id}/reject"
+    },
+    {
+      "operationId": "removeClientCertificateRevocation",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/security/client-certificates/profiles/{profileId}/revocations/{revocationId}"
+    },
+    {
+      "operationId": "removeInvestigationLink",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/investigations/{investigationId}/links/{linkId}"
+    },
+    {
+      "operationId": "removeInvestigationPin",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/investigations/{investigationId}/pins/{pinId}"
+    },
+    {
+      "operationId": "reopenFormPackageVersion",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/forms/packages/{formId}/versions/{packageVersion}/reopen"
+    },
+    {
+      "operationId": "replayFeatureChangeEvents",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/feature-events/replay"
+    },
+    {
+      "operationId": "requestAdminAuthToken",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/auth/providers/{providerKey}/token"
+    },
+    {
+      "operationId": "resetFeatureStreamConformanceSource",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/streaming/conformance/reset"
+    },
+    {
+      "operationId": "resolveObservabilityAlert",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/observability/alerts/{eventId}/resolve"
+    },
+    {
+      "operationId": "resolveSceneDataset",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/scenes/{id}/resolve"
+    },
+    {
+      "operationId": "resolveServiceReplicaConflict",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve"
+    },
+    {
+      "operationId": "resumeAlertChannel",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/alerts/channels/{channel}/resume"
+    },
+    {
+      "operationId": "resumeShareExport",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/share/exports/{exportId}/resume"
+    },
+    {
+      "operationId": "resumeTenant",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/tenants/{tenantId}/resume"
+    },
+    {
+      "operationId": "retryConsoleJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/jobs/{jobId}/retry"
+    },
+    {
+      "operationId": "retryTileOperationJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/tile-operations/jobs/{jobId}/retry"
+    },
+    {
+      "operationId": "revokeAdminApiKey",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/api-keys/{id}/revoke"
+    },
+    {
+      "operationId": "revokeEmbedKey",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/embed/keys/{id}/revoke"
+    },
+    {
+      "operationId": "rollbackCoordinatedReleaseOperation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/metadata/coordinated-releases/operations/{operationId}/rollback"
+    },
+    {
+      "operationId": "rollbackDeployOperation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/deploy/operations/{operationId}/rollback"
+    },
+    {
+      "operationId": "rollbackNetworkTopologyGeneration",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/network-datasets/{id}/rollback"
+    },
+    {
+      "operationId": "rotateAdminApiKey",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/api-keys/{id}/rotate"
+    },
+    {
+      "operationId": "rotateComplianceEncryptionKey",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/compliance/encryption/rotate-key"
+    },
+    {
+      "operationId": "rotateConnectionEncryptionKey",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections/encryption/rotate-key"
+    },
+    {
+      "operationId": "rotateEmbedKey",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/embed/keys/{id}/rotate"
+    },
+    {
+      "operationId": "scanEnhancedResourceLeaks",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/performance/enhanced/resources/scan-leaks"
+    },
+    {
+      "operationId": "scanMigrationSource",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/scan"
+    },
+    {
+      "operationId": "setAdminLayerDrawingInfo",
+      "catalogOperationId": "admin.layer.drawing-info.set",
+      "method": "PUT",
+      "path": "/metadata/layers/{layerId}/drawing-info"
+    },
+    {
+      "operationId": "setAdminLayerPopupInfo",
+      "catalogOperationId": "admin.layer.popup-info.set",
+      "method": "PUT",
+      "path": "/metadata/layers/{layerId}/popup-info"
+    },
+    {
+      "operationId": "setAdminLayerRelationships",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/metadata/layers/{layerId}/relationships"
+    },
+    {
+      "operationId": "setAlertRuleEnabled",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/alerts/rules/{ruleId}/enabled"
+    },
+    {
+      "operationId": "setLayerEnabled",
+      "catalogOperationId": "admin.layer.set-enabled",
+      "method": "PUT",
+      "path": "/connections/{id}/layers/{layerId}/enabled"
+    },
+    {
+      "operationId": "setLicenseCapacitySurgeMode",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/license/capacity/surge"
+    },
+    {
+      "operationId": "setOpsAutonomyPolicy",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/observability/autonomy/policies/{rule}"
+    },
+    {
+      "operationId": "setOpsAutonomySettings",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/observability/autonomy/settings"
+    },
+    {
+      "operationId": "setRolePermissions",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/roles/{id}/permissions"
+    },
+    {
+      "operationId": "setServiceLayersEnabled",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/connections/{id}/layers/enabled"
+    },
+    {
+      "operationId": "startGeoServerImport",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/geoserver/start"
+    },
+    {
+      "operationId": "startGeoservicesImport",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/geoservices/start"
+    },
+    {
+      "operationId": "startMigrationBatch",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/migrations"
+    },
+    {
+      "operationId": "startOgcWfsImport",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/ogc-wfs/start"
+    },
+    {
+      "operationId": "startTileOperationJob",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/tile-operations/jobs"
+    },
+    {
+      "operationId": "streamOperationsAlerts",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/operations/streaming/alerts"
+    },
+    {
+      "operationId": "submitDeployOperation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/deploy/operations/{operationId}/submit"
+    },
+    {
+      "operationId": "submitNetworkTopologyRebuild",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/network-datasets/{id}/generations/{generation}/rebuild"
+    },
+    {
+      "operationId": "suggestLayerStyle",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/metadata/layers/{layerId}/suggest-style"
+    },
+    {
+      "operationId": "suppressObservabilityAlert",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/observability/alerts/{eventId}/suppress"
+    },
+    {
+      "operationId": "suspendTenant",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/tenants/{tenantId}/suspend"
+    },
+    {
+      "operationId": "testAlertRule",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/alerts/rules/test"
+    },
+    {
+      "operationId": "testConnection",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections/{id}/test"
+    },
+    {
+      "operationId": "testDraftConnection",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections/test"
+    },
+    {
+      "operationId": "testIdentityProviderConnectivity",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/identity/providers/{providerType}/test"
+    },
+    {
+      "operationId": "testOidcProvider",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/oidc/providers/{id}/test"
+    },
+    {
+      "operationId": "triggerShareExport",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/share/exports/{exportId}/trigger"
+    },
+    {
+      "operationId": "unregisterCloudRaster",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/cloud-rasters/{id}"
+    },
+    {
+      "operationId": "unregisterMultidimCoverage",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/multidim-coverages/{id}"
+    },
+    {
+      "operationId": "unregisterZarrStore",
+      "catalogOperationId": null,
+      "method": "DELETE",
+      "path": "/zarr-stores/{id}"
+    },
+    {
+      "operationId": "updateAdminLayerFields",
+      "catalogOperationId": "admin.layer.fields.set",
+      "method": "PUT",
+      "path": "/metadata/layers/{layerId}/fields"
+    },
+    {
+      "operationId": "updateAdminLayerFilter",
+      "catalogOperationId": "admin.layer.filter.set",
+      "method": "PUT",
+      "path": "/metadata/layers/{layerId}/filter"
+    },
+    {
+      "operationId": "updateAdminLayerStyle",
+      "catalogOperationId": "admin.layer.style.set",
+      "method": "PUT",
+      "path": "/metadata/layers/{layerId}/style"
+    },
+    {
+      "operationId": "updateAlertRule",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/alerts/rules/{ruleId}"
+    },
+    {
+      "operationId": "updateAlertZone",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/alerts/zones/{zoneId}"
+    },
+    {
+      "operationId": "updateClientCertificatePrincipalMapping",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/security/client-certificates/profiles/{profileId}/mappings/{mappingId}"
+    },
+    {
+      "operationId": "updateClientCertificateTrustProfile",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/security/client-certificates/profiles/{profileId}"
+    },
+    {
+      "operationId": "updateConnection",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/connections/{id}"
+    },
+    {
+      "operationId": "updateFormPackageDraft",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/forms/packages/{formId}/versions/{packageVersion}"
+    },
+    {
+      "operationId": "updateImportedRaster",
+      "catalogOperationId": null,
+      "method": "PATCH",
+      "path": "/import/raster/{rasterId}"
+    },
+    {
+      "operationId": "updateInvestigation",
+      "catalogOperationId": null,
+      "method": "PATCH",
+      "path": "/investigations/{investigationId}"
+    },
+    {
+      "operationId": "updateLayerMetadata",
+      "catalogOperationId": "admin.services.layer-metadata.set",
+      "method": "PUT",
+      "path": "/services/{serviceName}/layers/{layerId}/metadata"
+    },
+    {
+      "operationId": "updateManagedUserRoles",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/users/{id}/roles"
+    },
+    {
+      "operationId": "updateNetworkDataset",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/network-datasets/{id}"
+    },
+    {
+      "operationId": "updateOidcProvider",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/oidc/providers/{id}"
+    },
+    {
+      "operationId": "updateRateLimitPolicy",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/rate-limits/{id}"
+    },
+    {
+      "operationId": "updateRole",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/roles/{id}"
+    },
+    {
+      "operationId": "updateSceneDataset",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/scenes/{id}"
+    },
+    {
+      "operationId": "updateServiceAccessPolicy",
+      "catalogOperationId": "admin.services.access-policy.set",
+      "method": "PUT",
+      "path": "/services/{serviceName}/access-policy"
+    },
+    {
+      "operationId": "updateServiceMapServer",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/services/{serviceName}/mapserver"
+    },
+    {
+      "operationId": "updateServiceProtocols",
+      "catalogOperationId": "admin.services.protocols.set",
+      "method": "PUT",
+      "path": "/services/{serviceName}/protocols"
+    },
+    {
+      "operationId": "updateServiceTimeInfo",
+      "catalogOperationId": "admin.services.timeinfo.set",
+      "method": "PUT",
+      "path": "/services/{serviceName}/timeinfo"
+    },
+    {
+      "operationId": "updateShareExport",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/share/exports/{exportId}"
+    },
+    {
+      "operationId": "uploadImportFile",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/upload"
+    },
+    {
+      "operationId": "uploadImportFileFromUrl",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/upload-url"
+    },
+    {
+      "operationId": "uploadLicense",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/license"
+    },
+    {
+      "operationId": "uploadLicenseFile",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/license/upload"
+    },
+    {
+      "operationId": "validateClientCertificate",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/security/client-certificates/validate"
+    },
+    {
+      "operationId": "validateConfigurationSecrets",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/configuration/secrets/validate"
+    },
+    {
+      "operationId": "validateConnectionEncryption",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections/encryption/validate"
+    },
+    {
+      "operationId": "validateConnectionTableForPublish",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/connections/{id}/tables/validate"
+    },
+    {
+      "operationId": "validateFormPackageVersion",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/forms/packages/{formId}/versions/{packageVersion}/validate"
+    },
+    {
+      "operationId": "validatePackage",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/packages/validate"
+    },
+    {
+      "operationId": "validateToolboxTranslation",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/import/toolbox/translation/validate"
+    },
+    {
+      "operationId": "verifyObservabilityAudit",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/observability/audit/verify"
+    }
+  ]
+}

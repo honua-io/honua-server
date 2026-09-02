@@ -213,7 +213,7 @@ class EnvelopeTests(unittest.TestCase):
                 root, root, REPOSITORY, PR, HEAD, TREE, BASE, RUN_ID, ATTEMPT
             )
             validated = MODULE.validate_envelope(raw(built), **expected())
-            self.assertEqual(3, len(validated["outputs"]))
+            self.assertEqual(len(MODULE.OUTPUT_LIMITS), len(validated["outputs"]))
 
 
 if __name__ == "__main__":
