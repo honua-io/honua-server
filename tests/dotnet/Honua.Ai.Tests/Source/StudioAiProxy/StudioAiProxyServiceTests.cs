@@ -347,6 +347,61 @@ public sealed class StudioAiProxyServiceTests
         summary.Succeeded.Should().BeFalse();
     }
 
+    public static IEnumerable<object[]> InvalidStreamFixtures()
+    {
+        var start = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "provider-model" };
+        var stop = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn };
+        var toolStart = new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = "lookup" };
+        var toolDelta = new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallDelta, ToolCallId = "call-1", ToolArgumentsDelta = "{" };
+        var toolStop = new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolArguments = JsonDocument.Parse("{}").RootElement.Clone() };
+        var fixtures = new (string Id, StudioAiChatEvent[] Events)[]
+        {
+            ("missing-message-start", [new() { Type = StudioAiChatEventType.TextDelta, Text = "x" }, stop]),
+            ("missing-provider-model", [new() { Type = StudioAiChatEventType.MessageStart }, stop]),
+            ("tool-delta-without-start", [start, new() { Type = StudioAiChatEventType.ToolCallDelta, ToolCallId = "call-1", ToolArgumentsDelta = "{}" }, stop]),
+            ("duplicate-tool-id", [start, toolStart, toolStop, toolStart, toolStop, stop]),
+            ("tool-stop-without-start", [start, toolStop, stop]),
+            ("invalid-tool-json", [start, toolStart, new() { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1" }, stop]),
+            ("truncated-tool-json", [start, toolStart, toolDelta, stop]),
+            ("message-stop-before-tool-stop", [start, toolStart, stop]),
+            ("duplicate-message-stop", [start, stop, stop]),
+            ("error-after-message-stop", [start, stop, new() { Type = StudioAiChatEventType.Error, ErrorMessage = "late" }]),
+            ("text-after-message-stop", [start, stop, new() { Type = StudioAiChatEventType.TextDelta, Text = "late" }]),
+            ("tool-after-message-stop", [start, stop, toolStart]),
+            ("adapter-provenance", [start, new() { Type = StudioAiChatEventType.TranscriptProvenance }, stop])
+        };
+
+        foreach (var kind in new[] { StudioAiProxyConfiguration.OpenAiKind, StudioAiProxyConfiguration.AnthropicKind, StudioAiProxyConfiguration.BedrockKind })
+        {
+            foreach (var fixture in fixtures)
+            {
+                yield return [kind, fixture.Id, fixture.Events];
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidStreamFixtures))]
+    public async Task StreamChatAsync_InvalidProviderGrammar_RejectsBeforeSuccessfulTerminal(
+        string providerKind,
+        string fixtureId,
+        StudioAiChatEvent[] providerEvents)
+    {
+        var config = ConfigWithProvider(providerKind);
+        var adapter = new TrackingAdapter(providerKind, providerEvents);
+        var service = CreateService(config, adapter);
+        var summary = new StudioAiProxyCallSummary();
+
+        var events = await CollectAsync(service, ValidRequest(), summary);
+
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error, fixtureId);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop, fixtureId);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.TranscriptProvenance, fixtureId);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode, fixtureId);
+        summary.Succeeded.Should().BeFalse(fixtureId);
+        adapter.DisposeCount.Should().Be(1, fixtureId);
+    }
+
     private static async IAsyncEnumerable<StudioAiChatEvent> ThrowingEvents(StudioAiChatRequest request)
     {
         await Task.Yield();
@@ -404,6 +459,29 @@ public sealed class StudioAiProxyServiceTests
         }
     };
 
+    private static StudioAiProxyConfiguration ConfigWithProvider(string kind) => new()
+    {
+        Enabled = true,
+        DefaultProvider = "provider",
+        Providers =
+        {
+            ["provider"] = new StudioAiProxyProviderOptions
+            {
+                Kind = kind,
+                Endpoint = "https://provider.example",
+                Model = "provider-model",
+                ApiKey = "test-key",
+                MaxTokens = 4096,
+                TimeoutSeconds = 60
+            }
+        }
+    };
+
+    private static StudioAiChatRequest ValidRequest() => new()
+    {
+        Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
+    };
+
     private sealed class FakeAdapter : IStudioAiProxyAdapter
     {
         private readonly bool _isConfigured;
@@ -423,5 +501,37 @@ public sealed class StudioAiProxyServiceTests
         public IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
             StudioAiProxyProviderOptions options, StudioAiChatRequest request, CancellationToken cancellationToken)
             => _stream is null ? Events() : _stream(request);
+    }
+
+    private sealed class TrackingAdapter(string kind, StudioAiChatEvent[] events) : IStudioAiProxyAdapter
+    {
+        public string Kind { get; } = kind;
+
+        public int DisposeCount { get; private set; }
+
+        public bool IsConfigured(string providerName, StudioAiProxyProviderOptions options) => true;
+
+        public IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
+            StudioAiProxyProviderOptions options,
+            StudioAiChatRequest request,
+            CancellationToken cancellationToken) => Stream(cancellationToken);
+
+        private async IAsyncEnumerable<StudioAiChatEvent> Stream(
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            try
+            {
+                foreach (var evt in events)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await Task.Yield();
+                    yield return evt;
+                }
+            }
+            finally
+            {
+                DisposeCount++;
+            }
+        }
     }
 }
