@@ -1,0 +1,11 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type":"Feature","id":"duplicate-member","id":"duplicate-member-last-wins","properties":{"case":"duplicate-json-member"},"geometry":{"type":"Point","coordinates":[-157.8,21.3]}},
+    {"type":"Feature","id":"wrong-coordinate-shape","properties":{"case":"scalar-coordinate"},"geometry":{"type":"Point","coordinates":42}},
+    {"type":"Feature","id":"unknown-geometry","properties":{"case":"unknown-geometry-type"},"geometry":{"type":"Rhombus","coordinates":[[0,0],[1,0],[0,1],[0,0]]}},
+    {"type":"Feature","id":"string-number","properties":{"case":"numeric-string","height":"12.5"},"geometry":null},
+    {"type":"Feature","id":"missing-properties","geometry":{"type":"Point","coordinates":[]}}
+  ],
+  "unexpectedTopLevelMember": true
+}

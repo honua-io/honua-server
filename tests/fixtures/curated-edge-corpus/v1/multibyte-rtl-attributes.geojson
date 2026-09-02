@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type":"Feature","id":"arabic","properties":{"language":"ar","label":"مرحبا بالعالم","mixed":"Honua — خريطة ١٢٣","direction":"rtl"},"geometry":{"type":"Point","coordinates":[35.2137,31.7683]}},
+    {"type":"Feature","id":"hebrew","properties":{"language":"he","label":"שלום עולם","mixed":"מפה Honua 123","direction":"rtl"},"geometry":{"type":"Point","coordinates":[34.7818,32.0853]}},
+    {"type":"Feature","id":"persian","properties":{"language":"fa","label":"نقشهٔ هونوا","mixed":"نسخه ۲۰۲۶٫۱","direction":"rtl"},"geometry":{"type":"Point","coordinates":[51.389,35.6892]}},
+    {"type":"Feature","id":"multibyte","properties":{"language":"mixed","label":"Hāna 東京 🌺","decomposed":"Café","isolated":"Honua ⁧مرحبا⁩ map","direction":"mixed"},"geometry":{"type":"Point","coordinates":[139.6917,35.6895]}}
+  ]
+}

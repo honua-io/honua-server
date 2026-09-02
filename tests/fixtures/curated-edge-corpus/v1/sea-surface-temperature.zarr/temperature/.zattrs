@@ -1,0 +1,6 @@
+{
+  "_ARRAY_DIMENSIONS": ["time", "latitude", "longitude"],
+  "coordinates": "time latitude longitude",
+  "standard_name": "sea_surface_temperature",
+  "units": "degC"
+}

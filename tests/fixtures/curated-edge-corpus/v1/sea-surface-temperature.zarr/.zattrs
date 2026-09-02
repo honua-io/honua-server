@@ -1,0 +1,5 @@
+{
+  "Conventions": "CF-1.8",
+  "crs": "EPSG:4326",
+  "title": "Synthetic two-time-slice sea surface temperature"
+}
