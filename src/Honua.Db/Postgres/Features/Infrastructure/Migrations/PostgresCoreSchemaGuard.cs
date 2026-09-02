@@ -248,14 +248,20 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         .. _sensorThingsIndexes,
     ];
 
+    private static readonly string[] _rasterBaselineTables =
+    [
+        "raster_data",
+        "raster_statistics",
+        "raster_tiles",
+    ];
+
     private static readonly string[] _guardedTables =
     [
         .. _metadataV2Tables,
         .. _metadataV2ReleasePackageTables,
         .. _sensorThingsTables,
         "raster_layer_statistics",
-        "raster_data",
-        "raster_tiles",
+        .. _rasterBaselineTables,
         .. _rasterOverviewsTables,
         .. _rasterFootprintsTables,
     ];
@@ -263,8 +269,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     private static readonly string[] _rasterTables =
     [
         "raster_layer_statistics",
-        "raster_data",
-        "raster_tiles",
+        .. _rasterBaselineTables,
         .. _rasterOverviewsTables,
         .. _rasterFootprintsTables,
     ];
@@ -403,12 +408,13 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             state.CanAwaitConfiguredSchemaAdoption);
 
         // Migration 055 was deliberately a no-op when raster support had not been provisioned.
-        // When either target table exists, however, a journal row claiming 055 must agree with
-        // the physical storage policy. Absence of the journal row is a normal pending migration:
-        // provider migration 001 establishes the same storage policy before 055 journals it.
-        if (state.IsApplied(_migrations.RasterExternalStorageMigration) && state.HasAnyRasterStorageTarget)
+        // Once any provider-baseline table exists, however, a journal row claiming 055 must
+        // agree with the complete baseline and physical storage policy. Absence of the journal
+        // row is a normal pending migration: provider migration 001 establishes the same storage
+        // policy before 055 journals it.
+        if (state.IsApplied(_migrations.RasterExternalStorageMigration) && state.HasAnyRasterBaselineTable)
         {
-            var missingTables = state.MissingRasterStorageTables();
+            var missingTables = state.MissingRasterBaselineTables();
             if (missingTables.Count > 0)
             {
                 throw CreateFailure(
@@ -464,7 +470,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         if (requirement == DatabaseSchemaRequirement.RasterExternalStorage)
         {
-            var missingTables = state.MissingRasterStorageTables();
+            var missingTables = state.MissingRasterBaselineTables();
             if (missingTables.Count > 0)
             {
                 throw CreateFailure(
@@ -535,7 +541,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 "the required numbered migration is not recorded in public.schema_versions.");
         }
 
-        var missingTables = state.MissingRasterStorageTables();
+        var missingTables = state.MissingRasterBaselineTables();
         if (missingTables.Count > 0)
         {
             throw CreateFailure(
@@ -635,7 +641,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         if (!state.IsApplied(RasterTablesMigration))
         {
-            var kind = state.HasAnyRasterStorageTarget
+            var kind = state.HasAnyRasterBaselineTable
                 ? DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
                 : DatabaseSchemaFloorFailureKind.MigrationNotApplied;
             throw CreateFailure(
@@ -644,7 +650,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 "the raster provider baseline migration is not recorded in public.schema_versions.");
         }
 
-        var missingTables = state.MissingRasterStorageTables();
+        var missingTables = state.MissingRasterBaselineTables();
         if (missingTables.Count > 0)
         {
             throw CreateFailure(
@@ -842,9 +848,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         bool HasPostGisRaster,
         string ConfiguredSchemaAdoptionMigration)
     {
-        public bool HasRasterData => Tables.Contains("raster_data");
-
-        public bool HasAnyRasterStorageTarget => HasRasterData || Tables.Contains("raster_tiles");
+        public bool HasAnyRasterBaselineTable => _rasterBaselineTables.Any(Tables.Contains);
 
         public bool MissingOverviewExternalStorageEffect =>
             Tables.Contains("raster_overviews") &&
@@ -862,17 +866,15 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         public bool IsApplied(string migration) => AppliedScripts.Contains(migration);
 
-        public List<string> MissingRasterStorageTables()
+        public List<string> MissingRasterBaselineTables()
         {
             var missing = new List<string>();
-            if (!Tables.Contains("raster_data"))
+            foreach (var table in _rasterBaselineTables)
             {
-                missing.Add($"{SchemaName}.raster_data");
-            }
-
-            if (!Tables.Contains("raster_tiles"))
-            {
-                missing.Add($"{SchemaName}.raster_tiles");
+                if (!Tables.Contains(table))
+                {
+                    missing.Add($"{SchemaName}.{table}");
+                }
             }
 
             return missing;

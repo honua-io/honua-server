@@ -525,8 +525,11 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             "adoption preflight must neither move tables nor advance the journal when target state is partial");
     }
 
-    [SkippableFact]
-    public async Task Guard_WhenJournaledRasterDataTableIsMissing_FullVerificationFailsWithoutMutation()
+    [SkippableTheory]
+    [InlineData("raster_data")]
+    [InlineData("raster_statistics")]
+    public async Task Guard_WhenJournaledRasterBaselineTableIsMissing_FullVerificationFailsWithoutMutation(
+        string missingTable)
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
 
@@ -537,14 +540,14 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         migrationResult.Successful.Should().BeTrue(
             $"the test requires a canonical journal/schema baseline. Error: {migrationResult.ErrorMessage}");
 
-        await ExecuteAsync(connectionString, "DROP TABLE honua.raster_data CASCADE;");
+        await ExecuteAsync(connectionString, $"DROP TABLE honua.{missingTable} CASCADE;");
         var before = await CaptureStateAsync(connectionString);
 
         var act = () => guard.VerifyAsync(connectionString);
         var exception = await act.Should().ThrowAsync<DatabaseSchemaFloorException>();
         exception.Which.MigrationScript.Should().Be(PostgresCoreSchemaGuard.RasterTablesMigration);
         exception.Which.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema);
-        exception.Which.Detail.Should().Contain("honua.raster_data");
+        exception.Which.Detail.Should().Contain($"honua.{missingTable}");
 
         var after = await CaptureStateAsync(connectionString);
         after.Should().Be(before, "full startup/DR verification must be read-only when a restored table is missing");
