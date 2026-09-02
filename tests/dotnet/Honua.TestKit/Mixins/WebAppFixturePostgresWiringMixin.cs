@@ -272,7 +272,7 @@ internal static class WebAppFixturePostgresWiringMixin
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString);
         Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
-        DisableProductionSchemaGuard(services);
+        UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
 
@@ -311,7 +311,7 @@ internal static class WebAppFixturePostgresWiringMixin
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString, extraConfiguration);
         Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
-        DisableProductionSchemaGuard(services);
+        UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
 
@@ -336,13 +336,14 @@ internal static class WebAppFixturePostgresWiringMixin
 
     /// <summary>
     /// Test hosts deliberately skip DbUp and provision isolated schemas through SeedRunner.
-    /// Remove the production journal guard explicitly so those test-only fixture schemas are
-    /// not mistaken for a production journal divergence. Production registrations remain
-    /// fail-closed; direct guard integration tests opt back in deliberately.
+    /// Replace the production journal guard explicitly so those test-only fixture schemas are
+    /// not mistaken for a production journal divergence. The replacement lives only in the
+    /// Honua.TestKit assembly; production registrations remain required and fail closed.
     /// </summary>
-    private static void DisableProductionSchemaGuard(IServiceCollection services)
+    private static void UseFixtureSchemaGuardBypass(IServiceCollection services)
     {
         services.RemoveAll<IDatabaseSchemaGuard>();
         services.RemoveAll<Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>();
+        services.AddSingleton<IDatabaseSchemaGuard>(Honua.TestKit.FixtureBypassDatabaseSchemaGuard.Instance);
     }
 }

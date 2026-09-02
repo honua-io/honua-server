@@ -43,12 +43,21 @@ public sealed class PostgresMetadataV2GraphCacheTests(PostgresFixture fixture, I
                 Options.Create(new CacheOptions { MetadataGraphCacheEnabled = true, MetadataGraphTtlSeconds = 3600 }));
 
             // Read surface: the store wired to invalidate the shared cache on write.
-            var store = new PostgresMetadataV2GraphStore(connectionProvider, Environment, schema, cache);
+            var store = new PostgresMetadataV2GraphStore(
+                connectionProvider,
+                Environment,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schema,
+                cache);
             var provider = new CachingMetadataV2GraphProvider(store, cache, Environment);
 
             // A second store WITHOUT the invalidator simulates a mutation from another node — it
             // updates the database but does not touch this node's in-process cache.
-            var otherNodeStore = new PostgresMetadataV2GraphStore(connectionProvider, Environment, schema);
+            var otherNodeStore = new PostgresMetadataV2GraphStore(
+                connectionProvider,
+                Environment,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schema);
 
             var snap1 = await store.SaveAsync(BuildGraph(revision: 1, serviceCount: 3), expectedEtag: null);
 
@@ -81,7 +90,11 @@ public sealed class PostgresMetadataV2GraphCacheTests(PostgresFixture fixture, I
         {
             await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var connectionProvider = new TestConnectionProvider(fixture.DataSource, schema);
-            var seedStore = new PostgresMetadataV2GraphStore(connectionProvider, Environment, schema);
+            var seedStore = new PostgresMetadataV2GraphStore(
+                connectionProvider,
+                Environment,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schema);
             await seedStore.SaveAsync(BuildGraph(revision: 1, serviceCount: 60), expectedEtag: null);
 
             const int iterations = 200;
@@ -91,7 +104,11 @@ public sealed class PostgresMetadataV2GraphCacheTests(PostgresFixture fixture, I
             var uncached = Stopwatch.StartNew();
             for (var i = 0; i < iterations; i++)
             {
-                var perCallStore = new PostgresMetadataV2GraphStore(connectionProvider, Environment, schema);
+                var perCallStore = new PostgresMetadataV2GraphStore(
+                    connectionProvider,
+                    Environment,
+                    FixtureBypassDatabaseSchemaGuard.Instance,
+                    schema);
                 _ = await perCallStore.GetCurrentAsync();
             }
 
@@ -101,7 +118,14 @@ public sealed class PostgresMetadataV2GraphCacheTests(PostgresFixture fixture, I
             var cache = new MetadataV2GraphSnapshotCache(
                 Options.Create(new CacheOptions { MetadataGraphCacheEnabled = true, MetadataGraphTtlSeconds = 3600 }));
             var provider = new CachingMetadataV2GraphProvider(
-                new PostgresMetadataV2GraphStore(connectionProvider, Environment, schema, cache), cache, Environment);
+                new PostgresMetadataV2GraphStore(
+                    connectionProvider,
+                    Environment,
+                    FixtureBypassDatabaseSchemaGuard.Instance,
+                    schema,
+                    cache),
+                cache,
+                Environment);
 
             var cached = Stopwatch.StartNew();
             for (var i = 0; i < iterations; i++)

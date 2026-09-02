@@ -301,6 +301,7 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
+            FixtureBypassDatabaseSchemaGuard.Instance,
             schemaName);
 
     // A 2x2 raster whose four pixels are 0, 100, 200, 300 so a stretch has a real range to map.

@@ -45,7 +45,8 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
 
         var graphStore = new PostgresMetadataV2GraphStore(
             new FixtureConnectionProvider(fixture),
-            environment);
+            environment,
+            FixtureBypassDatabaseSchemaGuard.Instance);
 
         try
         {

@@ -191,7 +191,11 @@ public sealed class PostgresRasterStoreCrudTests(PostgresFixture fixture)
     }
 
     private PostgresRasterStore CreateStore(string schemaName)
-        => new(new FixtureConnectionProvider(fixture.DataSource), NullLogger<PostgresRasterStore>.Instance, schemaName);
+        => new(
+            new FixtureConnectionProvider(fixture.DataSource),
+            NullLogger<PostgresRasterStore>.Instance,
+            FixtureBypassDatabaseSchemaGuard.Instance,
+            schemaName);
 
     private async Task CreateRasterSchemaAsync(string schemaName)
     {

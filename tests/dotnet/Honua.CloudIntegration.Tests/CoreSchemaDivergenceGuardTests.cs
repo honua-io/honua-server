@@ -36,7 +36,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 CREATE TABLE public.schema_versions (scriptname text NOT NULL);
                 CREATE TABLE honua.raster_layer_statistics (layer_id integer NOT NULL);
                 """,
-                (int)CoreSchemaRequirement.RasterLayerStatistics,
+                (int)DatabaseSchemaRequirement.RasterLayerStatistics,
                 (int)StoreOperation.RasterStatisticsRead,
                 PostgresCoreSchemaGuard.RasterLayerStatisticsMigration,
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
@@ -47,7 +47,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 CREATE TABLE public.schema_versions (scriptname text NOT NULL);
                 CREATE TABLE honua.metadata_v2_snapshots (environment text NOT NULL);
                 """,
-                (int)CoreSchemaRequirement.MetadataV2Snapshot,
+                (int)DatabaseSchemaRequirement.MetadataV2Snapshot,
                 (int)StoreOperation.MetadataRead,
                 PostgresCoreSchemaGuard.MetadataV2SnapshotMigration,
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
@@ -60,7 +60,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 INSERT INTO public.schema_versions (scriptname)
                 VALUES ('Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql');
                 """,
-                (int)CoreSchemaRequirement.RasterExternalStorage,
+                (int)DatabaseSchemaRequirement.RasterExternalStorage,
                 (int)StoreOperation.RasterImportWrite,
                 PostgresCoreSchemaGuard.RasterExternalStorageMigration,
                 DatabaseSchemaFloorFailureKind.JournalClaimsMissingSchema
@@ -71,7 +71,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 CREATE TABLE public.schema_versions (scriptname text NOT NULL);
                 CREATE TABLE honua.sta_thing (id bigint NOT NULL);
                 """,
-                (int)CoreSchemaRequirement.SensorThings,
+                (int)DatabaseSchemaRequirement.SensorThings,
                 (int)StoreOperation.SensorThingsRead,
                 PostgresCoreSchemaGuard.SensorThingsMigration,
                 DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal
@@ -97,16 +97,13 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = "honua" })
             .Build();
         var guard = new PostgresCoreSchemaGuard(configuration);
-        var requirement = (CoreSchemaRequirement)requirementValue;
+        var requirement = (DatabaseSchemaRequirement)requirementValue;
         var storeOperation = (StoreOperation)storeOperationValue;
 
         // Upgrade/preflight receipt: planning cannot report a usable migration plan over a
         // journal/schema mismatch, and the typed cause remains available to the caller.
-        var runner = new PostgresDatabaseMigrationRunner(configuration: configuration, schemaGuard: guard);
-        var migrationAssembly = SyntheticMigrationsCompiler.Compile(
-            $"honua_schema_divergence_{Guid.NewGuid():N}",
-            ("999_noop.sql", "SELECT 1;"));
-        var plan = await runner.PlanMigrationsAsync(connectionString, migrationAssembly);
+        var runner = new PostgresDatabaseMigrationRunner(guard, configuration: configuration);
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
         plan.Successful.Should().BeFalse("upgrade preflight must reject divergent schema state");
         plan.Error.Should().BeOfType<DatabaseSchemaFloorException>();
 
@@ -151,8 +148,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                 var rasterStore = new PostgresRasterStore(
                     provider,
                     NullLogger<PostgresRasterStore>.Instance,
-                    schemaName: "honua",
-                    schemaGuard: guard);
+                    guard,
+                    schemaName: "honua");
                 await rasterStore.GetMosaicStatisticsAsync(1, [1], RasterMergeStrategy.Newest);
                 return;
 
@@ -172,11 +169,11 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
                     await File.WriteAllBytesAsync(filePath, Convert.FromBase64String(
                         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
                     var importService = new PostgresRasterImportService(
-                        provider,
-                        new StubCrsDetectionService(),
-                        NullLogger<PostgresRasterImportService>.Instance,
-                        schemaName: "honua",
-                        schemaGuard: guard);
+                            provider,
+                            new StubCrsDetectionService(),
+                            NullLogger<PostgresRasterImportService>.Instance,
+                            guard,
+                            schemaName: "honua");
                     await importService.ImportAsync(new RasterImportRequest
                     {
                         LayerId = 1,
