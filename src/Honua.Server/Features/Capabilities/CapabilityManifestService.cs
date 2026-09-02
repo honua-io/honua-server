@@ -32,6 +32,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Startup;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Capabilities;
@@ -57,6 +58,7 @@ internal sealed class CapabilityManifestService(
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     CapabilityManifestRuntimeInventory runtimeInventory,
+    WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
@@ -393,6 +395,8 @@ internal sealed class CapabilityManifestService(
             Capability("package.map", "packages", context, policyCapability: "studio.edit"),
             Capability("package.app", "packages", context, policyCapability: "studio.edit"),
 
+            .. BuildWarehouseCapabilities(context),
+
             Capability("temporal.filtering", "temporal", context, entitlementKey: "temporal.filtering"),
             Capability("temporal.extent-discovery", "temporal", context, entitlementKey: "temporal.extent-discovery"),
             Capability("temporal.histogram", "temporal", context, entitlementKey: "temporal.histogram"),
@@ -524,6 +528,17 @@ internal sealed class CapabilityManifestService(
                 requiresAuthentication: true),
         ];
 
+    private CapabilityManifestCapability[] BuildWarehouseCapabilities(CapabilityPolicyContext context)
+        => warehouseProviders.All
+            .Select(decision => Capability(
+                decision.CapabilityId,
+                "provider",
+                context,
+                maturity: CapabilityMaturity.Experimental,
+                supported: decision.Supported,
+                configured: IsWarehouseProviderRegistered(decision)))
+            .ToArray();
+
     /// <summary>
     /// The per-capability config knobs the registry descriptor does not carry, keyed by
     /// descriptor id. Ids absent from the map use <see cref="ManifestCapabilitySpec.Default"/>.
@@ -545,6 +560,10 @@ internal sealed class CapabilityManifestService(
             ["package.gitops-manifest"] = new() { PolicyCapability = "catalog.publish", RequiresEnvironment = true },
             ["package.map"] = new() { PolicyCapability = "studio.edit" },
             ["package.app"] = new() { PolicyCapability = "studio.edit" },
+
+            ["provider.redshift"] = WarehouseSpec(warehouseProviders.Redshift),
+            ["provider.snowflake"] = WarehouseSpec(warehouseProviders.Snowflake),
+            ["provider.databricks"] = WarehouseSpec(warehouseProviders.Databricks),
 
             ["temporal.filtering"] = new() { EntitlementKey = "temporal.filtering" },
             ["temporal.extent-discovery"] = new() { EntitlementKey = "temporal.extent-discovery" },
@@ -601,6 +620,26 @@ internal sealed class CapabilityManifestService(
                 RequiresAuthentication = true,
             },
         };
+    }
+
+    private ManifestCapabilitySpec WarehouseSpec(WarehouseProviderDecision decision)
+        => new()
+        {
+            Supported = decision.Supported,
+            Configured = IsWarehouseProviderRegistered(decision),
+        };
+
+    private bool IsWarehouseProviderRegistered(WarehouseProviderDecision decision)
+    {
+        var registered = runtimeInventory.FeatureDataProviders.Contains(decision.ProviderName);
+        if (registered != decision.Enabled)
+        {
+            throw new InvalidOperationException(
+                $"Warehouse provider inventory drift: {decision.ProviderName} decision enabled={decision.Enabled} " +
+                $"but runtime registration present={registered}.");
+        }
+
+        return registered;
     }
 
     private CapabilityGateContext BuildGateContext(HonuaEdition edition, string? environment)
