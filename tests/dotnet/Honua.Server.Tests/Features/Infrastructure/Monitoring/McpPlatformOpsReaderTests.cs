@@ -77,7 +77,7 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
         {
             new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "claude-sonnet-4-5" },
             new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = toolName },
-            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolName = toolName, ToolArguments = signedArguments },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolArguments = signedArguments },
             new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }
         };
         var privateKey = new Ed25519PrivateKeyParameters(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray(), 0);

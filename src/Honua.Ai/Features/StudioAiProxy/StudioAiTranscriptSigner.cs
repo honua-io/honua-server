@@ -139,9 +139,26 @@ internal sealed class StudioAiTranscriptSigner(
         StudioAiTranscriptCertification certification,
         IReadOnlyList<StudioAiChatEvent> events)
     {
+        var toolNamesByCallId = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var evt in events.Where(candidate => candidate.Type == StudioAiChatEventType.ToolCallStart))
+        {
+            if (string.IsNullOrWhiteSpace(evt.ToolCallId)
+                || string.IsNullOrWhiteSpace(evt.ToolName)
+                || !toolNamesByCallId.TryAdd(evt.ToolCallId, evt.ToolName))
+            {
+                throw new InvalidOperationException("Tool call start events must have unique IDs and names.");
+            }
+        }
+
         foreach (var evt in events.Where(candidate => candidate.Type == StudioAiChatEventType.ToolCallStop))
         {
-            var targetProperty = evt.ToolName switch
+            if (string.IsNullOrWhiteSpace(evt.ToolCallId)
+                || !toolNamesByCallId.TryGetValue(evt.ToolCallId, out var toolName))
+            {
+                throw new InvalidOperationException("Tool call stop event does not match a tool call start event.");
+            }
+
+            var targetProperty = toolName switch
             {
                 "honua_propose_deploy_operation" => "targetId",
                 "honua_propose_metadata_release" => "targetEnvironment",

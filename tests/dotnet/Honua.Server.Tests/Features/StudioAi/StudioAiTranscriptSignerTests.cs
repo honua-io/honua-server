@@ -78,7 +78,6 @@ public sealed class StudioAiTranscriptSignerTests
             {
                 Type = StudioAiChatEventType.ToolCallStop,
                 ToolCallId = "call-1",
-                ToolName = toolName,
                 ToolArguments = arguments.RootElement.Clone()
             },
             new() { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }
