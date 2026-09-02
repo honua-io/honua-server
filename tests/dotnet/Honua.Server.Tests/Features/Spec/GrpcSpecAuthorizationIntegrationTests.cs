@@ -185,6 +185,7 @@ public sealed class GrpcSpecAuthorizationIntegrationTests
                     {
                         await foreach (var _ in call.ResponseStream.ReadAllAsync())
                         {
+                            // Drain the response stream so the authorization result reflects a completed RPC.
                         }
                     }
                     break;
@@ -355,9 +356,11 @@ public sealed class GrpcSpecAuthorizationIntegrationTests
             {
                 var addresses = factory.Services.GetRequiredService<IServer>()
                     .Features.Get<IServerAddressesFeature>()
-                    ?.Addresses;
+                    ?.Addresses
+                    ?? throw new InvalidOperationException(
+                        "The native Kestrel test host did not expose its server addresses feature.");
                 addresses.Should().ContainSingle("the native Kestrel test host must expose its bound loopback address");
-                restClient.BaseAddress = new Uri(addresses!.Single());
+                restClient.BaseAddress = new Uri(addresses.Single());
             }
             var channel = transport is GrpcTransport.Native
                 ? GrpcChannel.ForAddress(restClient.BaseAddress!, new GrpcChannelOptions
