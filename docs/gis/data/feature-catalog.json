@@ -28,7 +28,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.DeleteRule_NonexistentRuleId_Returns404",
-        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
+        "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle",
+        "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.DeleteRule_AfterDeliveredOrDeadLetterIncident_RetainsHistoricalEvidence"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
