@@ -356,7 +356,15 @@ public sealed class StudioAiProxyServiceTests
     public Task StreamChatAsync_RollbackTargetBindingFails_AppendsTypedErrorAndCorrectsSummary()
         => AssertGovernedTargetBindingFailsAsync("honua_propose_rollback");
 
-    private static async Task AssertGovernedTargetBindingFailsAsync(string toolName)
+    [UnitTest]
+    public Task StreamChatAsync_FindingCandidateBindingFails_AppendsTypedErrorAndCorrectsSummary()
+        => AssertGovernedTargetBindingFailsAsync(
+            "honua_propose_finding",
+            """{"findingId":"runtime-divergence","candidateId":"candidate-other"}""");
+
+    private static async Task AssertGovernedTargetBindingFailsAsync(
+        string toolName,
+        string argumentJson = """{"targetId":"candidate-other"}""")
     {
         var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
         config.TranscriptSigning.KeyId = "test-key";
@@ -365,7 +373,7 @@ public sealed class StudioAiProxyServiceTests
         secrets.IsSecretReference("secret://studio-key").Returns(true);
         secrets.GetSecretOrDefaultAsync("secret://studio-key", null, Arg.Any<CancellationToken>())
             .Returns(Convert.ToBase64String(new byte[32]));
-        using var arguments = JsonDocument.Parse("""{"targetId":"candidate-other"}""");
+        using var arguments = JsonDocument.Parse(argumentJson);
         var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true, request => Events(
             new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "claude-sonnet-4-5" },
             new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = toolName },

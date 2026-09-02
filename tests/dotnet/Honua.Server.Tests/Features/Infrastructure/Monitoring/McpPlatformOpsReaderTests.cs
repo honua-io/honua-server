@@ -148,6 +148,25 @@ public sealed class McpPlatformOpsReaderTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_DeployTargetMismatch_IsRejected()
+    {
+        var payload = new DeployExecutionPayload
+        {
+            TargetId = "candidate-b",
+            DesiredRevision = "sha256:release-b"
+        }.Serialize();
+
+        var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(
+            OperationClass.Deploy,
+            payload,
+            "candidate-a");
+
+        act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>()
+            .WithMessage("*does not match the certified candidate*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task GetPlatformReleaseStatus_Authorized_UsesOpsReadPolicyAndReturnsProjection()
     {
         var principal = CreatePrincipal();

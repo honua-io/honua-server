@@ -107,7 +107,7 @@ internal static class McpPlatformOpsSchemas
 
     public static readonly JsonElement ProposeFindingInputSchema = Parse(
         """
-        {"type":"object","required":["findingId"],"properties":{"findingId":{"type":"string","minLength":1,"maxLength":256}},"additionalProperties":false}
+        {"type":"object","required":["findingId","candidateId"],"properties":{"findingId":{"type":"string","minLength":1,"maxLength":256},"candidateId":{"type":"string","minLength":1,"maxLength":256}},"additionalProperties":false}
         """);
 
     public static readonly JsonElement DeployMutationInputSchema = Parse(
