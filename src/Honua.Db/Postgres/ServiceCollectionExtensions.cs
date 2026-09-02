@@ -191,7 +191,8 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>(
             serviceProvider => new Honua.Db.Postgres.Features.SensorThings.PostgresObservationStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
-                serviceProvider.GetRequiredService<IDatabaseSchemaGuard>()));
+                serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
+                configuration["Database:Schema"]));
 
         // Console Operate read APIs (#1168)
         services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();

@@ -147,6 +147,13 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         var verify = () => guard.VerifyAsync(connectionString);
         await verify.Should().NotThrowAsync();
 
+        var observationStore = new PostgresObservationStore(
+            new TestConnectionProvider(connectionString),
+            guard,
+            schema);
+        var things = await observationStore.ListThingsAsync(0, 1, CancellationToken.None);
+        things.Should().BeEmpty("SensorThings runtime queries must target the configured schema");
+
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
