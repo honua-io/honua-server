@@ -20,9 +20,16 @@ CUSTOMER_PATHS = {
     "scripts/demos/run-mobile-offline-demo.sh": "mobile-offline",
     "scripts/demos/run-stac-ops-demo.sh": "stac-ops",
 }
-CANDIDATE_IMAGE = "ghcr.io/honua-io/honua-server@sha256:23db1ca7bf7e7d03ddddbe58831d492a5ad44cf44c6a28eea696df4bc1f7761e"
-CANDIDATE_SOURCE_REVISION = "de08538a9e6fb59b8bd046343d24ea06f178a455"
-EVIDENCE_RECORDED_AT = "2026-09-01T23:15:12Z"
+PRIOR_EVIDENCE = {
+    "recordedAt": "2026-09-01T15:14:00Z",
+    "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+    "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a",
+}
+STAC_OPS_EVIDENCE = {
+    "recordedAt": "2026-09-01T23:15:12Z",
+    "candidateImage": "ghcr.io/honua-io/honua-server@sha256:23db1ca7bf7e7d03ddddbe58831d492a5ad44cf44c6a28eea696df4bc1f7761e",
+    "candidateSourceRevision": "de08538a9e6fb59b8bd046343d24ea06f178a455",
+}
 QUICKSTART_PASSED_BLOCKS = {
     2: "b7dcc487442e5bb18398ef9fd8fadd9fa9d3a430aec1df890251059be3f5f76a",
     3: "063c2dd6d7247f175aa58232a57c5d2908f8dd56b4628a2427204e0a5dcf9c1b",
@@ -75,6 +82,7 @@ def entry(kind: str, path: str, suffix: str = "", **extra: object) -> dict[str, 
             "runner": "scripts/examples/validate-customer-paths.sh",
             "scenario": "gp-local-dev",
             "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh gp-local-dev",
+            "evidence": PRIOR_EVIDENCE,
         }
     elif path == "scripts/demos/run-mobile-offline-demo.sh":
         validation = {
@@ -84,6 +92,7 @@ def entry(kind: str, path: str, suffix: str = "", **extra: object) -> dict[str, 
             "scenario": "mobile-offline",
             "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh mobile-offline",
             "blockedBy": ["https://github.com/honua-io/honua-server/issues/3836"],
+            "evidence": PRIOR_EVIDENCE,
         }
     elif path == "scripts/demos/run-stac-ops-demo.sh":
         validation = {
@@ -92,6 +101,7 @@ def entry(kind: str, path: str, suffix: str = "", **extra: object) -> dict[str, 
             "runner": "scripts/examples/validate-customer-paths.sh",
             "scenario": "stac-ops",
             "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh stac-ops",
+            "evidence": STAC_OPS_EVIDENCE,
         }
     result: dict[str, object] = {
         "id": stable_id(kind, path, suffix),
@@ -136,6 +146,7 @@ def docs_entries() -> list[dict[str, object]]:
                         "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
                         "runner": "scripts/docs-validation/validate-quickstart.sh",
                         "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+                        "evidence": PRIOR_EVIDENCE,
                     }
                 elif (
                     is_quickstart
@@ -147,6 +158,7 @@ def docs_entries() -> list[dict[str, object]]:
                         "reason": "Optional Console surface has no compatible shipped image in this candidate lane.",
                         "check": "docs-validation annotation mode=skip",
                         "blockedBy": [QUICKSTART_BLOCKED_BLOCKS[ordinal][1]],
+                        "evidence": PRIOR_EVIDENCE,
                     }
                 elif is_quickstart and (
                     ordinal in QUICKSTART_PASSED_BLOCKS or ordinal in QUICKSTART_BLOCKED_BLOCKS
@@ -192,12 +204,8 @@ def build_manifest() -> dict[str, object]:
         status = str(item["validation"]["status"])  # type: ignore[index]
         counts[status] = counts.get(status, 0) + 1
     return {
-        "schemaVersion": 1,
-        "evidence": {
-            "recordedAt": EVIDENCE_RECORDED_AT,
-            "candidateImage": CANDIDATE_IMAGE,
-            "candidateSourceRevision": CANDIDATE_SOURCE_REVISION,
-        },
+        "schemaVersion": 2,
+        "generatedAt": STAC_OPS_EVIDENCE["recordedAt"],
         "scope": {
             "docs": "Every fenced block in README.md and docs/**/*.md",
             "samples": "Every file below samples/",
@@ -220,12 +228,14 @@ def render() -> str:
 
 
 def validate(manifest: dict[str, object]) -> None:
-    evidence = manifest["evidence"]  # type: ignore[index]
-    image = str(evidence["candidateImage"])  # type: ignore[index]
-    if "@sha256:" not in image:
-        raise ValueError("candidateImage must be digest-pinned")
     for item in manifest["entries"]:  # type: ignore[index]
         validation = item["validation"]
+        if validation["status"] in {"passed", "blocked"}:
+            evidence = validation.get("evidence")
+            if not evidence:
+                raise ValueError(f"candidate-bound verdict lacks evidence: {item['id']}")
+            if "@sha256:" not in str(evidence["candidateImage"]):
+                raise ValueError(f"candidateImage must be digest-pinned: {item['id']}")
         if validation["status"] == "blocked" and not validation.get("blockedBy"):
             raise ValueError(f"blocked entry lacks blockedBy: {item['id']}")
 

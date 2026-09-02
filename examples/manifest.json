@@ -1,10 +1,6 @@
 {
-  "schemaVersion": 1,
-  "evidence": {
-    "recordedAt": "2026-09-01T23:15:12Z",
-    "candidateImage": "ghcr.io/honua-io/honua-server@sha256:23db1ca7bf7e7d03ddddbe58831d492a5ad44cf44c6a28eea696df4bc1f7761e",
-    "candidateSourceRevision": "de08538a9e6fb59b8bd046343d24ea06f178a455"
-  },
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-01T23:15:12Z",
   "scope": {
     "docs": "Every fenced block in README.md and docs/**/*.md",
     "samples": "Every file below samples/",
@@ -3703,7 +3699,12 @@
         "check": "docs-validation annotation mode=skip",
         "blockedBy": [
           "https://github.com/honua-io/honua-server/issues/3364"
-        ]
+        ],
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 4,
       "line": 41,
@@ -3720,7 +3721,12 @@
         "check": "docs-validation annotation mode=skip",
         "blockedBy": [
           "https://github.com/honua-io/honua-server/issues/3364"
-        ]
+        ],
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 5,
       "line": 48,
@@ -3735,7 +3741,12 @@
         "status": "passed",
         "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
         "runner": "scripts/docs-validation/validate-quickstart.sh",
-        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh"
+        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 3,
       "line": 34,
@@ -3764,7 +3775,12 @@
         "status": "passed",
         "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
         "runner": "scripts/docs-validation/validate-quickstart.sh",
-        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh"
+        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 7,
       "line": 74,
@@ -3779,7 +3795,12 @@
         "status": "passed",
         "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
         "runner": "scripts/docs-validation/validate-quickstart.sh",
-        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh"
+        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 10,
       "line": 138,
@@ -3794,7 +3815,12 @@
         "status": "passed",
         "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
         "runner": "scripts/docs-validation/validate-quickstart.sh",
-        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh"
+        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 2,
       "line": 19,
@@ -3809,7 +3835,12 @@
         "status": "passed",
         "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
         "runner": "scripts/docs-validation/validate-quickstart.sh",
-        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh"
+        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 9,
       "line": 110,
@@ -3824,7 +3855,12 @@
         "status": "passed",
         "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
         "runner": "scripts/docs-validation/validate-quickstart.sh",
-        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh"
+        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 6,
       "line": 55,
@@ -3839,7 +3875,12 @@
         "status": "passed",
         "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
         "runner": "scripts/docs-validation/validate-quickstart.sh",
-        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh"
+        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 8,
       "line": 85,
@@ -3854,7 +3895,12 @@
         "status": "passed",
         "reason": "Executed by the extracted quickstart journey; all postconditions passed.",
         "runner": "scripts/docs-validation/validate-quickstart.sh",
-        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh"
+        "check": "HONUA_SERVER_IMAGE=<candidate> bash scripts/docs-validation/validate-quickstart.sh",
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       },
       "fence": 12,
       "line": 171,
@@ -13658,7 +13704,12 @@
         "reason": "Submitted geometry.buffer, reached successful, fetched GeoJSON, and cleaned up.",
         "runner": "scripts/examples/validate-customer-paths.sh",
         "scenario": "gp-local-dev",
-        "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh gp-local-dev"
+        "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh gp-local-dev",
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       }
     },
     {
@@ -13753,7 +13804,12 @@
         "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh mobile-offline",
         "blockedBy": [
           "https://github.com/honua-io/honua-server/issues/3836"
-        ]
+        ],
+        "evidence": {
+          "recordedAt": "2026-09-01T15:14:00Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
+          "candidateSourceRevision": "ac30266fbd153363bebdbed13130accc8ab0c94a"
+        }
       }
     },
     {
@@ -13765,7 +13821,12 @@
         "reason": "Release-scope STAC operational checks passed for the landing page and two seeded collections; the optional hosted dashboard is outside the release-image contract.",
         "runner": "scripts/examples/validate-customer-paths.sh",
         "scenario": "stac-ops",
-        "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh stac-ops"
+        "check": "HONUA_EXAMPLES_CANDIDATE_IMAGE=<candidate> bash scripts/examples/validate-customer-paths.sh stac-ops",
+        "evidence": {
+          "recordedAt": "2026-09-01T23:15:12Z",
+          "candidateImage": "ghcr.io/honua-io/honua-server@sha256:23db1ca7bf7e7d03ddddbe58831d492a5ad44cf44c6a28eea696df4bc1f7761e",
+          "candidateSourceRevision": "de08538a9e6fb59b8bd046343d24ea06f178a455"
+        }
       }
     },
     {
