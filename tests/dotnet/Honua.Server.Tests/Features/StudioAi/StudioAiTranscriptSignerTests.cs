@@ -40,6 +40,19 @@ public sealed class StudioAiTranscriptSignerTests
     }
 
     [Fact]
+    public void Canonicalize_ArbitraryPrecisionNumbers_RemainDistinctAndLossless()
+    {
+        var tiny = StudioAiTranscriptSigner.Canonicalize("{\"number\":1e-400}"u8);
+        var zero = StudioAiTranscriptSigner.Canonicalize("{\"number\":0}"u8);
+        var large = StudioAiTranscriptSigner.Canonicalize("{\"number\":123456789012345678901234567890123456789}"u8);
+        var adjacent = StudioAiTranscriptSigner.Canonicalize("{\"number\":123456789012345678901234567890123456788}"u8);
+
+        System.Text.Encoding.UTF8.GetString(tiny).Should().Be("{\"number\":1e-400}");
+        tiny.Should().NotEqual(zero);
+        large.Should().NotEqual(adjacent);
+    }
+
+    [Fact]
     public async Task Sign_UsesResolvedThrowawayKey_AndBindsEveryCertificationIdentity()
     {
         var seed = new byte[Ed25519PrivateKeyParameters.KeySize];

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Buffers;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -209,14 +210,8 @@ internal sealed class StudioAiTranscriptSigner(
             case JsonValueKind.String:
                 writer.WriteStringValue(value.GetString());
                 break;
-            case JsonValueKind.Number when value.TryGetInt64(out var integer):
-                writer.WriteNumberValue(integer);
-                break;
-            case JsonValueKind.Number when value.TryGetDecimal(out var decimalValue):
-                writer.WriteRawValue(decimalValue.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
-                break;
             case JsonValueKind.Number:
-                writer.WriteNumberValue(value.GetDouble());
+                writer.WriteRawValue(CanonicalizeNumber(value.GetRawText()), skipInputValidation: true);
                 break;
             case JsonValueKind.True:
                 writer.WriteBooleanValue(true);
@@ -230,6 +225,56 @@ internal sealed class StudioAiTranscriptSigner(
             default:
                 throw new JsonException($"Unsupported JSON value kind '{value.ValueKind}'.");
         }
+    }
+
+    private static string CanonicalizeNumber(string raw)
+    {
+        var negative = raw[0] == '-';
+        var unsigned = negative ? raw.AsSpan(1) : raw.AsSpan();
+        var exponentIndex = unsigned.IndexOfAny('e', 'E');
+        var significand = exponentIndex >= 0 ? unsigned[..exponentIndex] : unsigned;
+        var exponent = exponentIndex >= 0
+            ? BigInteger.Parse(unsigned[(exponentIndex + 1)..], System.Globalization.CultureInfo.InvariantCulture)
+            : BigInteger.Zero;
+        var decimalIndex = significand.IndexOf('.');
+        var fractionalDigits = decimalIndex >= 0 ? significand.Length - decimalIndex - 1 : 0;
+        var digits = decimalIndex >= 0
+            ? string.Concat(significand[..decimalIndex], significand[(decimalIndex + 1)..])
+            : significand.ToString();
+
+        digits = digits.TrimStart('0');
+        if (digits.Length == 0)
+        {
+            return "0";
+        }
+
+        var trailingZeros = digits.Length - digits.TrimEnd('0').Length;
+        if (trailingZeros > 0)
+        {
+            digits = digits[..^trailingZeros];
+        }
+
+        exponent = exponent - fractionalDigits + trailingZeros;
+        var scientificExponent = exponent + digits.Length - 1;
+        var sign = negative ? "-" : string.Empty;
+        if (scientificExponent >= -6 && scientificExponent <= 20)
+        {
+            var decimalPosition = checked((int)(digits.Length + exponent));
+            if (decimalPosition <= 0)
+            {
+                return $"{sign}0.{new string('0', -decimalPosition)}{digits}";
+            }
+
+            if (decimalPosition >= digits.Length)
+            {
+                return $"{sign}{digits}{new string('0', decimalPosition - digits.Length)}";
+            }
+
+            return $"{sign}{digits[..decimalPosition]}.{digits[decimalPosition..]}";
+        }
+
+        var fraction = digits.Length == 1 ? string.Empty : $".{digits[1..]}";
+        return $"{sign}{digits[0]}{fraction}e{scientificExponent}";
     }
 
     internal sealed record SigningKey(string KeyId, Ed25519PrivateKeyParameters PrivateKey, byte[] PublicKey);

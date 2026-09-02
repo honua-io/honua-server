@@ -71,6 +71,11 @@ internal static class StudioAiProxyEndpoints
     {
         SetNoStore(context);
 
+        if (!context.Request.HasJsonContentType())
+        {
+            return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
+
         StudioAiChatHttpRequest? httpRequest;
         byte[] acceptedRequestJson;
         try
@@ -79,7 +84,7 @@ internal static class StudioAiProxyEndpoints
                 context.Request.Body,
                 new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow },
                 cancellationToken).ConfigureAwait(false);
-            if (FindDuplicateProperty(document.RootElement) is { } duplicate)
+            if (FindDuplicateProperty(document.RootElement, StringComparer.OrdinalIgnoreCase) is { } duplicate)
             {
                 return BadRequest(context, $"Duplicate JSON property '{duplicate}' is not allowed.");
             }
@@ -168,11 +173,11 @@ internal static class StudioAiProxyEndpoints
         return Results.Empty;
     }
 
-    private static string? FindDuplicateProperty(JsonElement value)
+    private static string? FindDuplicateProperty(JsonElement value, StringComparer comparer)
     {
         if (value.ValueKind == JsonValueKind.Object)
         {
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var names = new HashSet<string>(comparer);
             foreach (var property in value.EnumerateObject())
             {
                 if (!names.Add(property.Name))
@@ -180,7 +185,10 @@ internal static class StudioAiProxyEndpoints
                     return property.Name;
                 }
 
-                if (FindDuplicateProperty(property.Value) is { } nested)
+                var nestedComparer = IsOpaqueJsonProperty(property.Name)
+                    ? StringComparer.Ordinal
+                    : comparer;
+                if (FindDuplicateProperty(property.Value, nestedComparer) is { } nested)
                 {
                     return nested;
                 }
@@ -190,7 +198,7 @@ internal static class StudioAiProxyEndpoints
         {
             foreach (var item in value.EnumerateArray())
             {
-                if (FindDuplicateProperty(item) is { } nested)
+                if (FindDuplicateProperty(item, comparer) is { } nested)
                 {
                     return nested;
                 }
@@ -199,6 +207,12 @@ internal static class StudioAiProxyEndpoints
 
         return null;
     }
+
+    private static bool IsOpaqueJsonProperty(string propertyName)
+        => propertyName.Equals("inputSchema", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("annotations", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("outputSchema", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("arguments", StringComparison.OrdinalIgnoreCase);
 
     private static string EventName(StudioAiChatEventType type) => type switch
     {

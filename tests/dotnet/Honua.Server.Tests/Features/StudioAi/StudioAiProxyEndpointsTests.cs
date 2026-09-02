@@ -220,6 +220,38 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_NonJsonContentType_Returns415BeforeProviderOrAudit()
+    {
+        using var client = _fixture.CreateAdminClient();
+        using var content = new StringContent(
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
+            Encoding.UTF8,
+            "text/plain");
+
+        using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        _audit.Recorded.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_OpaqueJsonAllowsCaseDistinctPropertyNames()
+    {
+        using var client = _fixture.CreateAdminClient();
+        using var content = new StringContent(
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"tools\":[{\"name\":\"lookup\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"id\":{},\"ID\":{}}}}]}",
+            Encoding.UTF8,
+            "application/json");
+
+        using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("event: error");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/studio/ai/capabilities")]
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOn_ClientCredentialsBearerReturns403()
