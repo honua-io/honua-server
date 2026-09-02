@@ -38,22 +38,25 @@ using StackExchange.Redis;
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
 /// <summary>
-/// Unit coverage for the server-side MCP platform-ops adapter (#2566).
+/// Redis-backed integration coverage for signed MCP platform-ops proposals (#3888).
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Redis")]
-public sealed class McpPlatformOpsReaderTests(RedisFixture redis)
+public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
 {
     [Theory]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", Tiers.Integration)]
     [InlineData(ProposeDeployOperationTool.ToolName, OperationClass.Deploy)]
     [InlineData(ProposeMetadataReleaseTool.ToolName, OperationClass.MetadataRelease)]
     public async Task VerifiedModelToolCall_SealsAwaitingApproval_WithoutActuation(
         string toolName,
         OperationClass operationClass)
     {
+        var idempotencyKey = $"signed-transcript-{Guid.NewGuid():N}";
         var argumentJson = toolName == ProposeDeployOperationTool.ToolName
-            ? """{"targetId":"candidate-a","desiredRevision":"sha256:release-a","idempotencyKey":"signed-transcript-1"}"""
-            : """{"packageId":"package-a","targetEnvironment":"candidate-a","resourceSemanticId":"roads","newFieldName":"speed_limit","idempotencyKey":"signed-transcript-1"}""";
+            ? $$"""{"targetId":"candidate-a","desiredRevision":"sha256:release-a","idempotencyKey":"{{idempotencyKey}}"}"""
+            : $$"""{"packageId":"package-a","targetEnvironment":"candidate-a","resourceSemanticId":"roads","newFieldName":"speed_limit","idempotencyKey":"{{idempotencyKey}}"}""";
         using var argumentDocument = JsonDocument.Parse(argumentJson);
         var signedArguments = argumentDocument.RootElement.Clone();
         var request = new StudioAiChatRequest
@@ -108,10 +111,14 @@ public sealed class McpPlatformOpsReaderTests(RedisFixture redis)
         actuator.PlanAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>())
             .Returns(new OperationProposalPlan());
         var gateway = CanonicalOperationGatewayTestComposition.Build(proposalStore, ladder, [actuator]);
-        using var readerServices = CreateServices(gateway);
-        var reader = CreateReader(services: readerServices);
+        using var readerServices = McpPlatformOpsReaderTests.CreateServices(gateway);
+        var reader = McpPlatformOpsReaderTests.CreateReader(services: readerServices);
         using var toolServices = new ServiceCollection().AddSingleton<IMcpPlatformOpsReader>(reader).BuildServiceProvider();
-        var context = new DefaultHttpContext { RequestServices = toolServices, User = CreatePrincipal() };
+        var context = new DefaultHttpContext
+        {
+            RequestServices = toolServices,
+            User = McpPlatformOpsReaderTests.CreatePrincipal()
+        };
         IMcpTool tool = verifiedToolName switch
         {
             ProposeDeployOperationTool.ToolName => new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
@@ -132,7 +139,14 @@ public sealed class McpPlatformOpsReaderTests(RedisFixture redis)
         await actuator.DidNotReceive().ExecuteAsync(
             Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
+}
 
+/// <summary>
+/// Unit coverage for the server-side MCP platform-ops adapter (#2566).
+/// </summary>
+[Protocol(TestProtocols.TestQuality)]
+public sealed class McpPlatformOpsReaderTests
+{
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task GetPlatformReleaseStatus_Authorized_UsesOpsReadPolicyAndReturnsProjection()
@@ -457,7 +471,7 @@ public sealed class McpPlatformOpsReaderTests(RedisFixture redis)
         gateway.RouteCalls.Should().Be(0);
     }
 
-    private static McpPlatformOpsReader CreateReader(
+    internal static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,
         IWorkflowOperationStore? store = null,
         IAuthorizationService? authorization = null,
@@ -494,7 +508,7 @@ public sealed class McpPlatformOpsReaderTests(RedisFixture redis)
         return authorization;
     }
 
-    private static ServiceProvider CreateServices(
+    internal static ServiceProvider CreateServices(
         IOperationGateway? gateway = null,
         IOperationExecutorCatalog? catalog = null)
     {
@@ -529,7 +543,7 @@ public sealed class McpPlatformOpsReaderTests(RedisFixture redis)
         return services.BuildServiceProvider();
     }
 
-    private static ClaimsPrincipal CreatePrincipal()
+    internal static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "ops-agent"),
