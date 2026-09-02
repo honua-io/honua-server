@@ -633,7 +633,7 @@ internal sealed class CapabilityManifestService(
     private bool IsWarehouseProviderRegistered(WarehouseProviderDecision decision)
     {
         var registered = runtimeInventory.FeatureDataProviders.Contains(decision.ProviderName);
-        if (registered != decision.Enabled)
+        if (warehouseProviders.InfrastructureCompositionApplied && registered != decision.Enabled)
         {
             throw new InvalidOperationException(
                 $"Warehouse provider inventory drift: {decision.ProviderName} decision enabled={decision.Enabled} " +

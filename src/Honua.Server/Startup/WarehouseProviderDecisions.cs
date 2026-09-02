@@ -40,6 +40,9 @@ internal sealed class WarehouseProviderDecisions
     public WarehouseProviderDecision Snowflake { get; }
     public WarehouseProviderDecision Databricks { get; }
     public IReadOnlyList<WarehouseProviderDecision> All { get; }
+    public bool InfrastructureCompositionApplied { get; private set; }
+
+    public void MarkInfrastructureCompositionApplied() => InfrastructureCompositionApplied = true;
 
     private static WarehouseProviderDecision Resolve(
         IConfiguration configuration,
