@@ -325,6 +325,67 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task RequestRollbackAsync_DuringStaleReconcile_RollbackIntentWinsCasAndSurvivesRestart()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RollbackRaceDeployBackend();
+        var service = CreateService(store, backend);
+        var operation = CreateOperationRecord(status: WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+
+        var firstReconciler = CreateReconciler(store, backend);
+        var staleReconcile = firstReconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        await backend.ObserveEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var accepted = await service.RequestRollbackAsync(
+            operation.OperationId,
+            requestedBy: "bob",
+            reason: "deterministic race");
+
+        accepted.Should().NotBeNull();
+        accepted!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        backend.RollbackCount.Should().Be(1);
+
+        backend.ReleaseStaleObserve();
+        await staleReconcile;
+
+        var afterConflict = await store.GetAsync(operation.OperationId);
+        afterConflict!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested,
+            "the stale successful observation must lose its versioned write");
+
+        // A new reconciler instance models process restart. It must retain the operation in the
+        // active set and settle the already-requested rollback without issuing another mutation.
+        var restartedReconciler = CreateReconciler(store, backend);
+        await restartedReconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+
+        var settled = await store.GetAsync(operation.OperationId);
+        settled!.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        settled.ObservedState.Should().Be(operation.Deploy!.CurrentRevision);
+        backend.RollbackCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RequestRollbackAsync_ConcurrentDuplicateRequests_ExactlyOneCallsProvider()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new RollbackRaceDeployBackend(blockRollback: true);
+        var service = CreateService(store, backend);
+        var operation = CreateOperationRecord(status: WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+
+        var first = service.RequestRollbackAsync(operation.OperationId, "alice", "first");
+        await backend.RollbackEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var duplicate = await service.RequestRollbackAsync(operation.OperationId, "bob", "duplicate");
+
+        duplicate!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        backend.RollbackCount.Should().Be(1);
+
+        backend.ReleaseRollback();
+        await first;
+        backend.RollbackCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Reconciler_TransitionsSubmittedOperation_ToSucceeded()
     {
         var store = new TestWorkflowOperationStore();
@@ -1506,5 +1567,79 @@ public sealed class DeployWorkflowServiceTests
                 Message = "Telemetry gate passed: error-rate signal is within threshold."
             });
         }
+    }
+
+    private sealed class RollbackRaceDeployBackend(bool blockRollback = false) : IDeployBackend
+    {
+        private readonly TaskCompletionSource _releaseObserve = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseRollback = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _observeCount;
+        private int _rollbackCount;
+
+        public TaskCompletionSource ObserveEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource RollbackEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int RollbackCount => Volatile.Read(ref _rollbackCount);
+
+        public string BackendName => "honua-gitops-kubernetes";
+
+        public DeployTargetKind TargetKind => DeployTargetKind.Kubernetes;
+
+        public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployBackendCapabilities { SupportsRollback = true });
+
+        public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default)
+            => Task.FromResult(new DeployPlan { IsReadyToSubmit = true });
+
+        public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public async Task<DeployObservation> ObserveAsync(
+            WorkflowOperationRecord operation,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _observeCount) == 1 && operation.Status == WorkflowOperationStatus.Reconciling)
+            {
+                ObserveEntered.TrySetResult();
+                await _releaseObserve.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.Succeeded,
+                    ObservedRevision = operation.Deploy!.DesiredRevision,
+                    Message = "Stale candidate success"
+                };
+            }
+
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.RolledBack,
+                ObservedRevision = operation.Deploy!.CurrentRevision,
+                Message = "Exact prior revision observed"
+            };
+        }
+
+        public async Task<DeployObservation> RollbackAsync(
+            WorkflowOperationRecord operation,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _rollbackCount);
+            RollbackEntered.TrySetResult();
+            if (blockRollback)
+            {
+                await _releaseRollback.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.RollbackRequested,
+                ObservedRevision = operation.Deploy!.CurrentRevision,
+                Message = "Provider accepted rollback"
+            };
+        }
+
+        public void ReleaseStaleObserve() => _releaseObserve.TrySetResult();
+
+        public void ReleaseRollback() => _releaseRollback.TrySetResult();
     }
 }
