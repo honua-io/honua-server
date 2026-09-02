@@ -473,10 +473,16 @@ internal sealed class StudioCreatePublicationRequestExecutor(
             throw new InvalidOperationException("The saved Studio version no longer matches the sealed content hash.");
         }
 
-        return await Lifecycle.CreatePublicationRequestAsync(payload.ItemId, payload.VersionId, payload.Intent,
+        var publication = await Lifecycle.CreatePublicationRequestAsync(payload.ItemId, payload.VersionId, payload.Intent,
                 payload.WarningAcknowledgement, payload.ActorId, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Studio content version '{payload.VersionId:D}' was not found.");
+        if (publication.Status == StudioPublicationRequestStatus.Rejected)
+        {
+            throw new InvalidOperationException("The saved Studio version failed publication validation.");
+        }
+
+        return publication;
     }
 
     protected override IReadOnlyDictionary<string, string> ResourceIds(StudioPublicationRequest result)
