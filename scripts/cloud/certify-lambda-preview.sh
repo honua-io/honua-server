@@ -91,11 +91,11 @@ trap cleanup EXIT
 
 source_manifest="$(docker buildx imagetools inspect --raw "$source_ref")"
 source_config="$(jq -er '.config.digest' <<<"$source_manifest")"
-docker pull --platform linux/amd64 "$source_ref"
+docker pull --platform linux/arm64 "$source_ref"
 source_revision="$(docker image inspect "$source_ref" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
 source_architecture="$(docker image inspect "$source_ref" --format '{{ .Architecture }}')"
-if [[ "$source_revision" != "$HONUA_LAMBDA_SERVER_REVISION" || "$source_architecture" != "amd64" ]]; then
-  echo "source image config does not match the declared server revision and x86_64 architecture" >&2
+if [[ "$source_revision" != "$HONUA_LAMBDA_SERVER_REVISION" || "$source_architecture" != "arm64" ]]; then
+  echo "source image config does not match the declared server revision and arm64 architecture" >&2
   exit 3
 fi
 docker run --rm --entrypoint /bin/sh "$source_ref" -c \
@@ -139,12 +139,23 @@ aws logs create-log-group --log-group-name "$log_group"
 log_group_created=true
 aws logs put-retention-policy --log-group-name "$log_group" --retention-in-days 1
 
+cert_environment="$(jq -cn \
+  --arg admin_password "honua-cert-${run_token}" \
+  --arg master_key "honua-cert-master-key-${run_token}-isolated" \
+  '{Variables:{
+    ConnectionStrings__DefaultConnection:"Host=127.0.0.1;Database=honua_cert;Username=honua_cert;Password=not-used",
+    HONUA_ADMIN_PASSWORD:$admin_password,
+    HONUA_SKIP_MIGRATIONS:"true",
+    Security__ConnectionEncryption__MasterKey:$master_key
+  }}')"
+
 create_json="$(aws lambda create-function \
   --function-name "$function_name" \
   --package-type Image \
   --code "ImageUri=${HONUA_LAMBDA_PREVIEW_REPOSITORY}@${ecr_digest}" \
   --role "$HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN" \
-  --architectures x86_64 \
+  --architectures arm64 \
+  --environment "$cert_environment" \
   --memory-size 1024 \
   --timeout 60 \
   --tags "honua-cert-run=${run_token}" "honua-purpose=lambda-preview-certification")"
@@ -225,7 +236,7 @@ jq -n \
   --arg function_fingerprint "$(fingerprint "$function_name")" \
   --arg request_fingerprint "$(fingerprint "$request_id")" \
   --arg run_url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID}" \
-  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourceConfigDigest:$source_config_digest,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:"x86_64"},verification:{operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
+  '{schema:$schema,result:"pass",serverRevision:$server_revision,artifact:{sourceDigest:$source_digest,sourceConfigDigest:$source_config_digest,ecrDigest:$ecr_digest,repositoryFingerprint:$repository_fingerprint,runtimeAdapterVerified:true},deployment:{regionFingerprint:$region_fingerprint,accountFingerprint:$account_fingerprint,functionFingerprint:$function_fingerprint,architecture:"arm64"},verification:{operation:"GET /healthz/live",httpStatus:200,responseVerified:true,cloudWatchLogsVerified:true,requestFingerprint:$request_fingerprint},teardown:{functionDeleted:true,logGroupDeleted:true},runUrl:$run_url}' \
   > "$HONUA_LAMBDA_PREVIEW_RECEIPT"
 
 jq -e '.result == "pass" and (.artifact.ecrDigest | test("^sha256:[0-9a-f]{64}$")) and .verification.responseVerified and .verification.cloudWatchLogsVerified and .teardown.functionDeleted and .teardown.logGroupDeleted' \

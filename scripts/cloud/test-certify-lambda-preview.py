@@ -36,6 +36,21 @@ class LambdaPreviewLaneContractTests(unittest.TestCase):
             self.assertIn(fragment, SCRIPT)
         self.assertNotIn("pending-ecr-mirror", SCRIPT)
 
+    def test_certifies_the_documented_arm64_lambda_artifact(self):
+        self.assertIn('docker pull --platform linux/arm64 "$source_ref"', SCRIPT)
+        self.assertIn('source_architecture" != "arm64"', SCRIPT)
+        self.assertIn('--architectures arm64', SCRIPT)
+        self.assertIn('architecture:"arm64"', SCRIPT)
+        self.assertNotIn('linux/amd64', SCRIPT)
+        self.assertNotIn('x86_64', SCRIPT)
+
+    def test_supplies_isolated_production_startup_configuration(self):
+        self.assertIn('--environment "$cert_environment"', SCRIPT)
+        self.assertIn('ConnectionStrings__DefaultConnection:', SCRIPT)
+        self.assertIn('HONUA_ADMIN_PASSWORD:$admin_password', SCRIPT)
+        self.assertIn('HONUA_SKIP_MIGRATIONS:"true"', SCRIPT)
+        self.assertIn('Security__ConnectionEncryption__MasterKey:$master_key', SCRIPT)
+
     def test_standing_limits_are_preserved_verbatim(self):
         limits = (
             "plan summaries to the evidence thread BEFORE apply, STOP on any destroy beyond the "
