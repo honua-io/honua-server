@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using System.Net;
@@ -129,6 +130,93 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         recovered.Should().ContainSingle();
         recovered[0].DispatchId.Should().Be(firstClaim[0].DispatchId);
         recovered[0].Attempts.Should().Be(0, "a worker crash does not consume the provider retry budget");
+    }
+
+    [IntegrationTest]
+    public async Task OverlappingClaims_StaleWorkerCannotOverwriteWinningTerminalState_InAnyCompletionOrder()
+    {
+        await using var harness = await CreateHarnessAsync(ReserveUnavailableHttpsUrl(), maxAttempts: 3);
+        await harness.EvaluateOnlyAsync();
+
+        foreach (var winnerDelivered in new[] { true, false })
+        {
+            foreach (var staleCompletesFirst in new[] { true, false })
+            {
+                await harness.ResetDispatchAsync();
+                var workerA = (await harness.DispatchStore.ClaimPendingAsync(1, DateTimeOffset.UtcNow)).Should().ContainSingle().Subject;
+                await harness.ExpireClaimAsync(workerA.DispatchId);
+                var workerB = (await harness.SecondDispatchStore.ClaimPendingAsync(1, DateTimeOffset.UtcNow)).Should().ContainSingle().Subject;
+
+                workerB.DispatchId.Should().Be(workerA.DispatchId);
+                workerB.ClaimToken.Should().NotBe(workerA.ClaimToken);
+
+                async Task<bool> CompleteStaleAsync() => winnerDelivered
+                    ? await harness.DispatchStore.MarkFailedAsync(
+                        workerA.DispatchId, workerA.ClaimToken, DateTimeOffset.UtcNow,
+                        DateTimeOffset.UtcNow, deadLetter: true, "stale failure")
+                    : await harness.DispatchStore.MarkDeliveredAsync(
+                        workerA.DispatchId, workerA.ClaimToken, DateTimeOffset.UtcNow);
+
+                async Task<bool> CompleteWinnerAsync() => winnerDelivered
+                    ? await harness.SecondDispatchStore.MarkDeliveredAsync(
+                        workerB.DispatchId, workerB.ClaimToken, DateTimeOffset.UtcNow)
+                    : await harness.SecondDispatchStore.MarkFailedAsync(
+                        workerB.DispatchId, workerB.ClaimToken, DateTimeOffset.UtcNow,
+                        DateTimeOffset.UtcNow, deadLetter: true, "winning failure");
+
+                if (staleCompletesFirst)
+                {
+                    (await CompleteStaleAsync()).Should().BeFalse();
+                    (await CompleteWinnerAsync()).Should().BeTrue();
+                }
+                else
+                {
+                    (await CompleteWinnerAsync()).Should().BeTrue();
+                    (await CompleteStaleAsync()).Should().BeFalse();
+                }
+
+                var row = await harness.GetDispatchRowAsync();
+                row.Status.Should().Be(winnerDelivered ? AlertDispatchStatus.Delivered : AlertDispatchStatus.DeadLetter);
+                row.Attempts.Should().Be(winnerDelivered ? 0 : 1, "only the winning failure may consume an attempt");
+                row.LastError.Should().Be(winnerDelivered ? null : "winning failure");
+                row.ClaimToken.Should().BeNull();
+                if (winnerDelivered)
+                {
+                    row.DeliveredAt.Should().NotBeNull();
+                }
+            }
+        }
+    }
+
+    [IntegrationTest]
+    public async Task AcceptedWebhook_WhenAcknowledgementIsNotPersisted_ReplaysWithStableIdempotencyAndConverges()
+    {
+        await using var receiver = await WebhookReceiver.StartAsync();
+        await using var harness = await CreateHarnessAsync(receiver.Url, maxAttempts: 3, receiver.Certificate);
+        await harness.EvaluateOnlyAsync();
+
+        var workerA = (await harness.DispatchStore.ClaimPendingAsync(1, DateTimeOffset.UtcNow)).Should().ContainSingle().Subject;
+        var alertEvent = await harness.EventStore.GetAsync(workerA.EventId);
+        alertEvent.Should().NotBeNull();
+
+        (await harness.Sink.DeliverAsync(workerA, alertEvent!)).Succeeded.Should().BeTrue();
+        await harness.ExpireClaimAsync(workerA.DispatchId);
+
+        var workerB = (await harness.SecondDispatchStore.ClaimPendingAsync(1, DateTimeOffset.UtcNow)).Should().ContainSingle().Subject;
+        (await harness.Sink.DeliverAsync(workerB, alertEvent!)).Succeeded.Should().BeTrue();
+        (await harness.SecondDispatchStore.MarkDeliveredAsync(
+            workerB.DispatchId, workerB.ClaimToken, DateTimeOffset.UtcNow)).Should().BeTrue();
+
+        var attempts = await receiver.WaitForRequestsAsync(2, TimeSpan.FromSeconds(10));
+        attempts.Select(static request => request.Headers["Idempotency-Key"])
+            .Should().OnlyContain(key => key == alertEvent!.DedupeKey);
+        receiver.LogicalNotificationCount.Should().Be(1, "the receiver deduplicates the ambiguous replay by its stable key");
+
+        var row = await harness.GetDispatchRowAsync();
+        row.Status.Should().Be(AlertDispatchStatus.Delivered);
+        row.Attempts.Should().Be(0, "an acknowledged delivery does not consume the failure budget");
+        row.LastError.Should().BeNull();
+        row.DeliveredAt.Should().NotBeNull();
     }
 
     private async Task<AlertE2eHarness> CreateHarnessAsync(
@@ -297,7 +385,7 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
 
         return new AlertE2eHarness(
             pipeline, dispatcher, outbox, eventStore, dispatchStore, lifecycleStore,
-            database.DataSource, provider, client, maxAttempts);
+            database.DataSource, provider, client, sink, maxAttempts);
     }
 
     private static string ReserveUnavailableHttpsUrl()
@@ -319,10 +407,16 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         NpgsqlDataSource dataSource,
         ServiceProvider provider,
         HttpClient client,
+        WebhookAlertDeliverySink sink,
         int maxAttempts) : IAsyncDisposable
     {
         public IAlertDispatchStore DispatchStore { get; } = dispatchStore;
+        public IAlertDispatchStore SecondDispatchStore { get; } = new PostgresAlertDispatchStore(
+            new TestConnectionProvider(dataSource),
+            NullLogger<PostgresAlertDispatchStore>.Instance);
+        public IAlertEventStore EventStore { get; } = eventStore;
         public PostgresAlertLifecycleStore Lifecycle { get; } = lifecycle;
+        public WebhookAlertDeliverySink Sink { get; } = sink;
         public long EventId { get; private set; }
 
         public async Task FireRuleAsync()
@@ -356,11 +450,38 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
         public Task<long> CountDispatchesAsync() => ScalarAsync<long>("SELECT COUNT(*) FROM honua.alert_dispatch;");
         public async Task<long?> PersistDuplicateAsync()
         {
-            var alertEvent = await eventStore.GetAsync(EventId);
+            var alertEvent = await EventStore.GetAsync(EventId);
             return await outbox.AppendAndEnqueueAsync(alertEvent!, ImmutableArray.Create(AlertChannelType.Webhook));
         }
         public Task<int> GetAttemptsAsync() => ScalarAsync<int>("SELECT attempts FROM honua.alert_dispatch LIMIT 1;");
         public Task<string> GetLastErrorAsync() => ScalarAsync<string>("SELECT last_error FROM honua.alert_dispatch LIMIT 1;");
+
+        public async Task ResetDispatchAsync()
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand("""
+                UPDATE honua.alert_dispatch
+                SET status = 0, attempts = 0, next_attempt_at = now(), last_attempt_at = NULL,
+                    delivered_at = NULL, last_error = NULL, claim_token = NULL, updated_at = now();
+                """, connection);
+            _ = await command.ExecuteNonQueryAsync();
+        }
+
+        public async Task<DispatchRow> GetDispatchRowAsync()
+        {
+            await using var connection = await dataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand(
+                "SELECT status, attempts, last_error, delivered_at, claim_token FROM honua.alert_dispatch LIMIT 1;",
+                connection);
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            return new DispatchRow(
+                (AlertDispatchStatus)reader.GetInt16(0),
+                reader.GetInt32(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+                reader.IsDBNull(4) ? null : reader.GetGuid(4));
+        }
 
         public async Task ExpireClaimAsync(long dispatchId)
         {
@@ -392,6 +513,13 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
             client.Dispose();
         }
     }
+
+    private sealed record DispatchRow(
+        AlertDispatchStatus Status,
+        int Attempts,
+        string? LastError,
+        DateTimeOffset? DeliveredAt,
+        Guid? ClaimToken);
 
     private sealed class TestConnectionProvider(NpgsqlDataSource dataSource) : IAdoNetDatabaseConnectionProvider
     {
@@ -426,9 +554,13 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
     private sealed class WebhookReceiver(WebApplication app, string url, X509Certificate2 certificate) : IAsyncDisposable
     {
         private readonly TaskCompletionSource<ReceivedWebhook> _request = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly ConcurrentQueue<ReceivedWebhook> _requests = new();
+        private readonly ConcurrentDictionary<string, byte> _logicalNotifications = new(StringComparer.Ordinal);
+        private readonly SemaphoreSlim _requestSignal = new(0);
 
         public string Url { get; } = url + "/alerts";
         public X509Certificate2 Certificate { get; } = certificate;
+        public int LogicalNotificationCount => _logicalNotifications.Count;
 
         public static async Task<WebhookReceiver> StartAsync()
         {
@@ -446,10 +578,14 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
                     static pair => pair.Key,
                     static pair => pair.Value.ToString(),
                     StringComparer.OrdinalIgnoreCase);
-                receiver!._request.TrySetResult(new ReceivedWebhook(
+                var received = new ReceivedWebhook(
                     body,
                     context.Request.ContentType ?? string.Empty,
-                    headers));
+                    headers);
+                receiver!._requests.Enqueue(received);
+                receiver._logicalNotifications.TryAdd(headers["Idempotency-Key"], 0);
+                receiver._requestSignal.Release();
+                receiver._request.TrySetResult(received);
                 context.Response.StatusCode = StatusCodes.Status202Accepted;
             });
             await app.StartAsync();
@@ -468,10 +604,22 @@ public sealed class AlertWebhookDeliveryE2eTests(DatabaseFixtureAdapter database
             return await _request.Task.WaitAsync(cts.Token);
         }
 
+        public async Task<IReadOnlyList<ReceivedWebhook>> WaitForRequestsAsync(int count, TimeSpan timeout)
+        {
+            using var cts = new CancellationTokenSource(timeout);
+            while (_requests.Count < count)
+            {
+                await _requestSignal.WaitAsync(cts.Token);
+            }
+
+            return _requests.ToArray();
+        }
+
         public async ValueTask DisposeAsync()
         {
             await app.StopAsync();
             await app.DisposeAsync();
+            _requestSignal.Dispose();
             Certificate.Dispose();
         }
 
