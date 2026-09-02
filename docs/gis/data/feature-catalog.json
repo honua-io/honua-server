@@ -12880,7 +12880,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeStoredQueries_ReturnsGetFeatureByIdDefinition",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DescribeStoredQueries_WithExplicitlyRejectedXmlAccept_ReturnsNotAcceptable",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_DropStoredQuery_WithExistingQuery_ReturnsOk",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_AdvertisedCrs84IdentifiersAreAcceptedByGetFeature",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_AdvertisedCrs84IdentifiersAreAcceptedAndPreservedByGetFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_AdvertisesStoredQueryManagementWithoutVersioningConformance",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_InvalidAcceptVersions_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_SectionsFeatureTypeList_ReturnsRequestedSectionOnly",
@@ -12908,6 +12908,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_MultiTypeUnqualifiedResourceId_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_NotValueReferenceFilter_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_NullAttribute_EmitsXsiNilNotEmptyString",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_RejectsSrsNameThatOnlyContainsCrs84",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_ResultTypeHits_ReturnsCountWithoutFeatures",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_UnknownStoredQuery_ReturnsInvalidParameterValueException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_UnknownTypeNames_ReturnsExceptionReport",
@@ -20791,6 +20792,7 @@
       "protocol": "mixed-surface",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Spec.GrpcSpecAuthorizationIntegrationTests.SpecAuthorization_RealTransportMatrix_MatchesRestAndStopsDeniedCalls",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Apply_BlankNodeId_Returns400WithoutOpeningStream",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Apply_CommunityEdition_RunsDirectlyWithoutGuardrailGate",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Apply_Cycle_Returns400WithoutOpeningStream",
@@ -20822,6 +20824,7 @@
       "protocol": "mixed-surface",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Spec.GrpcSpecAuthorizationIntegrationTests.SpecAuthorization_RealTransportMatrix_MatchesRestAndStopsDeniedCalls",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Cancel_MissingToken_Returns400",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Cancel_UnknownToken_Returns404WithApplyTokenUnknown"
       ],
@@ -20837,6 +20840,7 @@
       "protocol": "mixed-surface",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Spec.GrpcSpecAuthorizationIntegrationTests.SpecAuthorization_RealTransportMatrix_MatchesRestAndStopsDeniedCalls",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Plan_BlankNodeId_Returns400WithInvalidNodeId",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Plan_Cycle_Returns400WithDagCycleCode",
         "Honua.Server.Tests.Features.Spec.SpecEndpointsTests.Plan_LinearChain_ReturnsDagWithContentHashesInTopologicalOrder",

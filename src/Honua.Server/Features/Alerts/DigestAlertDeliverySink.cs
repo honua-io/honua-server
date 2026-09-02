@@ -105,7 +105,7 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             if (alertEvent is null)
             {
                 await dispatchStore
-                    .MarkFailedAsync(item.DispatchId, now, now, deadLetter: true, "Alert event not found.", cancellationToken)
+                    .MarkFailedAsync(item.DispatchId, item.ClaimToken, now, now, deadLetter: true, "Alert event not found.", cancellationToken)
                     .ConfigureAwait(false);
                 continue;
             }
@@ -188,7 +188,7 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             {
                 foreach (var (dispatchItem, _) in batchItems)
                 {
-                    await dispatchStore.MarkDeliveredAsync(dispatchItem.DispatchId, now, cancellationToken).ConfigureAwait(false);
+                    await dispatchStore.MarkDeliveredAsync(dispatchItem.DispatchId, dispatchItem.ClaimToken, now, cancellationToken).ConfigureAwait(false);
                 }
 
                 return;
@@ -236,7 +236,7 @@ internal sealed partial class DigestFlushBackgroundService : BackgroundService
             var exhausted = dispatchItem.Attempts + 1 >= dispatchItem.MaxAttempts || !retryable;
 
             await dispatchStore
-                .MarkFailedAsync(dispatchItem.DispatchId, attemptedAt, nextAttempt, exhausted, error, cancellationToken)
+                .MarkFailedAsync(dispatchItem.DispatchId, dispatchItem.ClaimToken, attemptedAt, nextAttempt, exhausted, error, cancellationToken)
                 .ConfigureAwait(false);
         }
 

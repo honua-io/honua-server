@@ -263,8 +263,8 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         }
 
         var enumerator = adapter.StreamAsync(providerOptions, request, cancellationToken).GetAsyncEnumerator(cancellationToken);
-        var sawTerminalEvent = false;
-        StudioAiChatEvent? deferredSuccessTerminal = null;
+        var validator = new StudioAiStreamGrammarValidator();
+        StudioAiChatEvent? successfulTerminal = null;
         var transcriptEvents = signingKey is null ? null : new List<StudioAiChatEvent>();
         long transcriptCharacters = 0;
         string? providerReportedModel = null;
@@ -284,9 +284,9 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                     {
                         Type = StudioAiChatEventType.Error,
                         Model = model,
+                        ErrorCode = StudioAiStreamGrammarValidator.InvalidStreamCode,
                         ErrorMessage = "The provider adapter failed unexpectedly."
                     };
-                    sawTerminalEvent = true;
                     yield break;
                 }
 
@@ -296,6 +296,21 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 }
 
                 var evt = enumerator.Current;
+                if (validator.Validate(evt) is { } rejectionReason)
+                {
+                    summary.Succeeded = false;
+                    summary.StopReason = StudioAiStopReason.Error;
+                    summary.ErrorMessage = "Provider returned an invalid event stream.";
+                    yield return new StudioAiChatEvent
+                    {
+                        Type = StudioAiChatEventType.Error,
+                        Model = model,
+                        ErrorCode = StudioAiStreamGrammarValidator.InvalidStreamCode,
+                        ErrorMessage = $"Provider stream rejected: {rejectionReason}."
+                    };
+                    yield break;
+                }
+
                 if (transcriptEvents is not null)
                 {
                     transcriptCharacters += EventCharacterCount(evt);
@@ -320,18 +335,20 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                         providerReportedModel = evt.Model;
                     }
                 }
-                if (evt.Type is StudioAiChatEventType.MessageStop or StudioAiChatEventType.Error)
+                if (evt.Type == StudioAiChatEventType.MessageStop)
                 {
-                    sawTerminalEvent = true;
-                    ApplySummary(summary, providerName, evt);
-                    if (signingKey is not null && evt.Type == StudioAiChatEventType.MessageStop)
-                    {
-                        deferredSuccessTerminal = evt;
-                        continue;
-                    }
+                    // Hold successful termination until EOF. This makes duplicate and post-terminal
+                    // events ineligible for both messageStop and provenance signing.
+                    successfulTerminal = evt;
+                    continue;
                 }
 
                 yield return evt;
+                if (evt.Type == StudioAiChatEventType.Error)
+                {
+                    ApplySummary(summary, providerName, evt);
+                    yield break;
+                }
             }
         }
         finally
@@ -339,7 +356,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             await enumerator.DisposeAsync().ConfigureAwait(false);
         }
 
-        if (!sawTerminalEvent)
+        if (successfulTerminal is null)
         {
             // Contract violation guard: an adapter that ends its sequence without a terminal event
             // (see IStudioAiProxyAdapter remarks) still gets exactly one Error event and one audit
@@ -351,10 +368,13 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             {
                 Type = StudioAiChatEventType.Error,
                 Model = model,
+                ErrorCode = StudioAiStreamGrammarValidator.InvalidStreamCode,
                 ErrorMessage = "The provider adapter ended the stream unexpectedly."
             };
+            yield break;
         }
-        else if (signingKey is not null && summary.Succeeded)
+
+        if (signingKey is not null)
         {
             if (string.IsNullOrWhiteSpace(providerReportedModel))
             {
@@ -396,9 +416,14 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 yield break;
             }
 
-            yield return deferredSuccessTerminal!;
+            ApplySummary(summary, providerName, successfulTerminal);
+            yield return successfulTerminal;
             yield return new StudioAiChatEvent { Type = StudioAiChatEventType.TranscriptProvenance, Provenance = provenance };
+            yield break;
         }
+
+        ApplySummary(summary, providerName, successfulTerminal);
+        yield return successfulTerminal;
     }
 
     private static long EventCharacterCount(StudioAiChatEvent evt)

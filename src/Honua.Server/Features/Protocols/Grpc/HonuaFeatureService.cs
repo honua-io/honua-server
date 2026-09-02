@@ -19,7 +19,6 @@ using Honua.ServiceDefaults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
-using AccessPolicy = Honua.Core.Features.Security.Domain.AccessPolicy;
 using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
@@ -246,7 +245,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
-        await EnsureWriteAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
 
         // gRPC ApplyEdits is an open-protocol edit surface and remains Community (#1591).
         // Validation, authz, eventing, and telemetry still run through the shared edit pipeline.
@@ -260,6 +258,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
         }
+
+        await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
 
         // RLS / permanent-filter enforcement runs only on the read path; the edit SQL
         // filters by (layer_id, objectid) with no row-level predicate. So every update/delete
@@ -721,46 +721,47 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private static async Task EnsureWriteAccessAsync(
         ServerCallContext context,
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Resource resource,
+        FeatureEditBatch editBatch)
     {
         var httpContext = context.GetHttpContext();
 
-        // Layer-scoped write keys (#1637) are enforced here in the shared pipeline:
-        // a scoped key authorizes the gRPC edit only when one of its grants matches
-        // the target (service, layer). Scoped keys never fall through to the coarse
-        // role / AccessPolicy checks used for ordinary principals.
-        if (LayerScopedWriteKey.IsScopedWritePrincipal(httpContext.User))
+        // Match the REST ApplyEdits seam: conversion first establishes the bounded
+        // set of requested edit kinds, then every present kind must independently
+        // pass the canonical resource data-editor gate before reads, outbox
+        // resolution, or writes begin.
+        if (!editBatch.Creates.IsEmpty)
         {
-            ThrowIfAccessDenied(ServiceDataEditorAuthorization.EvaluateScopedWriteKeyDecision(
+            await EnsureOperationAccessAsync(AuthorizationOperation.Insert).ConfigureAwait(false);
+        }
+
+        if (!editBatch.Updates.IsEmpty)
+        {
+            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
+        }
+
+        if (!editBatch.Deletes.IsEmpty)
+        {
+            await EnsureOperationAccessAsync(AuthorizationOperation.Delete).ConfigureAwait(false);
+        }
+
+        // Preserve the prior authorization ceiling for an empty no-op request.
+        if (editBatch.Creates.IsEmpty && editBatch.Updates.IsEmpty && editBatch.Deletes.IsEmpty)
+        {
+            await EnsureOperationAccessAsync(AuthorizationOperation.Update).ConfigureAwait(false);
+        }
+
+        async Task EnsureOperationAccessAsync(AuthorizationOperation operation)
+        {
+            var decision = await ServiceDataEditorAuthorization.EvaluateResourceDataEditorAsync(
                 httpContext,
-                service.Metadata.Name,
-                resource.Metadata.Name));
-            return;
+                resource,
+                service,
+                operation,
+                context.CancellationToken).ConfigureAwait(false);
+
+            ThrowIfAccessDenied(decision);
         }
-
-        // Per-operation RBAC grants are consulted first (#1376); when a grant
-        // matches the request is authorized directly. Otherwise we fall through
-        // to the coarse AccessPolicy + scoped data-editor behavior unchanged.
-        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
-            httpContext,
-            resource,
-            service,
-            AuthorizationOperation.Update,
-            context.CancellationToken).ConfigureAwait(false);
-
-        ThrowIfAccessDenied(decision);
-
-        if (HasExplicitWritePolicy(resource.AccessPolicy) || HasExplicitWritePolicy(service.AccessPolicy))
-        {
-            return;
-        }
-
-        var rbacDecision = await ServiceDataEditorAuthorization.EvaluateServiceAccessAsync(
-            httpContext,
-            service.Metadata.Name,
-            context.CancellationToken).ConfigureAwait(false);
-
-        ThrowIfAccessDenied(rbacDecision);
     }
 
     private static async Task EnsureReadAccessAsync(
@@ -795,12 +796,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 ? AccessPolicyHelpers.AuthRequiredMessage
                 : AccessPolicyHelpers.AccessForbiddenMessage));
     }
-
-    private static bool HasExplicitWritePolicy(AccessPolicy? policy)
-        => policy is not null &&
-           (policy.AllowAnonymousWrite ||
-            policy.AllowedWriteRoles is { Length: > 0 } ||
-            policy.AllowedRoles is { Length: > 0 });
 
     private static bool IsGrpcEnabled(MetadataV2Service service)
         => service.Protocols.Any(enabled =>

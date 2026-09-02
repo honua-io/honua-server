@@ -100,10 +100,11 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             )
             UPDATE honua.alert_dispatch d
             SET status = 1,
+                claim_token = gen_random_uuid(),
                 updated_at = now()
             FROM claim c
             WHERE d.dispatch_id = c.dispatch_id
-            RETURNING d.dispatch_id, d.event_id, d.channel_type, d.destination,
+            RETURNING d.dispatch_id, d.event_id, d.channel_type, d.destination, d.claim_token,
                       d.status, d.attempts, d.max_attempts, d.next_attempt_at
             """;
 
@@ -130,10 +131,11 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                     EventId = reader.GetInt64(1),
                     ChannelType = AlertStoreConversions.ToChannelType(reader.GetInt16(2)),
                     Destination = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    Status = AlertStoreConversions.ToDispatchStatus(reader.GetInt16(4)),
-                    Attempts = reader.GetInt32(5),
-                    MaxAttempts = reader.GetInt32(6),
-                    NextAttemptAt = reader.GetFieldValue<DateTimeOffset>(7)
+                    ClaimToken = reader.GetGuid(4),
+                    Status = AlertStoreConversions.ToDispatchStatus(reader.GetInt16(5)),
+                    Attempts = reader.GetInt32(6),
+                    MaxAttempts = reader.GetInt32(7),
+                    NextAttemptAt = reader.GetFieldValue<DateTimeOffset>(8)
                 });
             }
         }
@@ -143,8 +145,9 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         return rows;
     }
 
-    public async Task MarkDeliveredAsync(
+    public async Task<bool> MarkDeliveredAsync(
         long dispatchId,
+        Guid claimToken,
         DateTimeOffset deliveredAt,
         CancellationToken cancellationToken = default)
     {
@@ -153,19 +156,22 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             SET status = 2,
                 delivered_at = @delivered_at,
                 last_attempt_at = @delivered_at,
+                claim_token = NULL,
                 updated_at = now()
-            WHERE dispatch_id = @dispatch_id
+            WHERE dispatch_id = @dispatch_id AND status = 1 AND claim_token = @claim_token
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("dispatch_id", NpgsqlDbType.Bigint, dispatchId);
+        command.Parameters.AddWithValue("claim_token", NpgsqlDbType.Uuid, claimToken);
         command.Parameters.AddWithValue("delivered_at", NpgsqlDbType.TimestampTz, deliveredAt);
-        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
-    public async Task MarkFailedAsync(
+    public async Task<bool> MarkFailedAsync(
         long dispatchId,
+        Guid claimToken,
         DateTimeOffset attemptedAt,
         DateTimeOffset nextAttemptAt,
         bool deadLetter,
@@ -179,20 +185,27 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                 next_attempt_at = @next_attempt_at,
                 last_attempt_at = @attempted_at,
                 last_error = @last_error,
+                claim_token = NULL,
                 updated_at = now()
-            WHERE dispatch_id = @dispatch_id
+            WHERE dispatch_id = @dispatch_id AND status = 1 AND claim_token = @claim_token
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
 
         command.Parameters.AddWithValue("dispatch_id", NpgsqlDbType.Bigint, dispatchId);
+        command.Parameters.AddWithValue("claim_token", NpgsqlDbType.Uuid, claimToken);
         command.Parameters.AddWithValue("status", NpgsqlDbType.Smallint, deadLetter ? AlertDispatchStatus.DeadLetter.ToDbValue() : AlertDispatchStatus.Failed.ToDbValue());
         command.Parameters.AddWithValue("next_attempt_at", NpgsqlDbType.TimestampTz, nextAttemptAt);
         command.Parameters.AddWithValue("attempted_at", NpgsqlDbType.TimestampTz, attemptedAt);
         command.Parameters.AddWithValue("last_error", NpgsqlDbType.Text, (object?)errorMessage ?? DBNull.Value);
 
-        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        var changed = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
+
+        if (!changed)
+        {
+            return false;
+        }
 
         if (deadLetter)
         {
@@ -202,10 +215,13 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
         {
             AlertLog.DispatchFailed(_logger, dispatchId, deadLetter);
         }
+
+        return true;
     }
 
-    public async Task RescheduleAsync(
+    public async Task<bool> RescheduleAsync(
         long dispatchId,
+        Guid claimToken,
         DateTimeOffset nextAttemptAt,
         CancellationToken cancellationToken = default)
     {
@@ -216,15 +232,17 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
             UPDATE honua.alert_dispatch
             SET status = 0,
                 next_attempt_at = @next_attempt_at,
+                claim_token = NULL,
                 updated_at = now()
-            WHERE dispatch_id = @dispatch_id
+            WHERE dispatch_id = @dispatch_id AND status = 1 AND claim_token = @claim_token
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("dispatch_id", NpgsqlDbType.Bigint, dispatchId);
+        command.Parameters.AddWithValue("claim_token", NpgsqlDbType.Uuid, claimToken);
         command.Parameters.AddWithValue("next_attempt_at", NpgsqlDbType.TimestampTz, nextAttemptAt);
-        _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
     public async Task<AlertDispatchBacklog> GetBacklogAsync(CancellationToken cancellationToken = default)
@@ -342,6 +360,7 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                 attempts = 0,
                 next_attempt_at = @now,
                 last_error = NULL,
+                claim_token = NULL,
                 updated_at = now()
             FROM candidates c
             WHERE d.dispatch_id = c.dispatch_id
