@@ -22,12 +22,24 @@ namespace Honua.Db.Postgres.Features.Alerts;
 internal sealed class PostgresAlertOutboxWriter : IAlertOutboxWriter
 {
     private const string UpsertStateSql = """
+        WITH payload(rule_id, layer_id, objectid, inside, entered_at, last_alert_at, last_generation, threshold_state) AS (
+            SELECT *
+            FROM unnest(@rule_ids, @layer_ids, @object_ids, @inside, @entered_at, @last_alert_at, @last_generation, @threshold_state)
+        )
         INSERT INTO honua.alert_state (
             rule_id, layer_id, objectid, inside, entered_at, last_evaluated_at,
             last_alert_at, last_generation, threshold_state)
-        VALUES (
-            @rule_id, @layer_id, @objectid, @inside, @entered_at, now(),
-            @last_alert_at, @last_generation, @threshold_state::jsonb)
+        SELECT
+            payload.rule_id,
+            payload.layer_id,
+            payload.objectid,
+            payload.inside,
+            payload.entered_at,
+            now(),
+            payload.last_alert_at,
+            payload.last_generation,
+            payload.threshold_state::jsonb
+        FROM payload
         ON CONFLICT (rule_id, layer_id, objectid)
         DO UPDATE SET
             inside = EXCLUDED.inside,
@@ -100,17 +112,22 @@ internal sealed class PostgresAlertOutboxWriter : IAlertOutboxWriter
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var inserted = ImmutableArray.CreateBuilder<bool>(dispatches.Count);
 
-        foreach (var state in states)
+        if (states.Count > 0)
         {
+            var normalizedStates = states
+                .GroupBy(static state => new AlertStateLookupKey(state.RuleId, state.LayerId, state.ObjectId))
+                .Select(static group => group.Last())
+                .ToArray();
+
             await using var stateCommand = new NpgsqlCommand(UpsertStateSql, connection, transaction);
-            stateCommand.Parameters.AddWithValue("rule_id", NpgsqlDbType.Bigint, state.RuleId);
-            stateCommand.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, state.LayerId);
-            stateCommand.Parameters.AddWithValue("objectid", NpgsqlDbType.Bigint, state.ObjectId);
-            stateCommand.Parameters.AddWithValue("inside", NpgsqlDbType.Boolean, state.Inside);
-            stateCommand.Parameters.AddWithValue("entered_at", NpgsqlDbType.TimestampTz, (object?)state.EnteredAt ?? DBNull.Value);
-            stateCommand.Parameters.AddWithValue("last_alert_at", NpgsqlDbType.TimestampTz, (object?)state.LastAlertAt ?? DBNull.Value);
-            stateCommand.Parameters.AddWithValue("last_generation", NpgsqlDbType.Bigint, state.LastGeneration);
-            stateCommand.Parameters.AddWithValue("threshold_state", NpgsqlDbType.Text, state.ThresholdStateJson);
+            stateCommand.Parameters.AddWithValue("rule_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint, normalizedStates.Select(static state => state.RuleId).ToArray());
+            stateCommand.Parameters.AddWithValue("layer_ids", NpgsqlDbType.Array | NpgsqlDbType.Integer, normalizedStates.Select(static state => state.LayerId).ToArray());
+            stateCommand.Parameters.AddWithValue("object_ids", NpgsqlDbType.Array | NpgsqlDbType.Bigint, normalizedStates.Select(static state => state.ObjectId).ToArray());
+            stateCommand.Parameters.AddWithValue("inside", NpgsqlDbType.Array | NpgsqlDbType.Boolean, normalizedStates.Select(static state => state.Inside).ToArray());
+            stateCommand.Parameters.AddWithValue("entered_at", NpgsqlDbType.Array | NpgsqlDbType.TimestampTz, normalizedStates.Select(static state => state.EnteredAt).ToArray());
+            stateCommand.Parameters.AddWithValue("last_alert_at", NpgsqlDbType.Array | NpgsqlDbType.TimestampTz, normalizedStates.Select(static state => state.LastAlertAt).ToArray());
+            stateCommand.Parameters.AddWithValue("last_generation", NpgsqlDbType.Array | NpgsqlDbType.Bigint, normalizedStates.Select(static state => state.LastGeneration).ToArray());
+            stateCommand.Parameters.AddWithValue("threshold_state", NpgsqlDbType.Array | NpgsqlDbType.Text, normalizedStates.Select(static state => state.ThresholdStateJson).ToArray());
             _ = await stateCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
         _faultInjector?.Invoke(AlertEvaluationCommitBoundary.StateWritten);
