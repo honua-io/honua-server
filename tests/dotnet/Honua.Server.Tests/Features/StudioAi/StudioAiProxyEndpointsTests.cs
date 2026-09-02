@@ -194,6 +194,32 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_AmbiguousRawJson_Returns400BeforeProviderOrAudit()
+    {
+        using var client = _fixture.CreateAdminClient();
+        string[] fixtures =
+        [
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"one\"}],\"messages\":[{\"role\":\"user\",\"content\":\"two\"}]}",
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"one\",\"content\":\"two\"}]}",
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"tools\":[{\"name\":\"lookup\",\"inputSchema\":{\"type\":\"object\",\"type\":\"array\"}}]}",
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"certification\":{\"candidateId\":\"one\",\"candidateId\":\"two\"}}",
+            "{\"Messages\":[{\"role\":\"user\",\"content\":\"one\"}],\"messages\":[{\"role\":\"user\",\"content\":\"two\"}]}"
+        ];
+
+        foreach (var rawJson in fixtures)
+        {
+            using var content = new StringContent(rawJson, Encoding.UTF8, "application/json");
+            using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, rawJson);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Duplicate JSON property", rawJson);
+        }
+
+        _audit.Recorded.Should().BeEmpty("ambiguous input is rejected before a provider call exists to audit");
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/studio/ai/capabilities")]
     [Endpoint("POST /api/v1/studio/ai/chat")]
     public async Task StudioAiProxy_FlagOn_ClientCredentialsBearerReturns403()

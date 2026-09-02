@@ -23,7 +23,8 @@ public static class StudioAiChatRequestMapper
     /// </summary>
     public static (StudioAiChatRequest? Request, string? Error) ToDomain(
         StudioAiChatHttpRequest http,
-        bool allowCallerOverrides = true)
+        bool allowCallerOverrides = true,
+        byte[]? acceptedRequestJson = null)
     {
         ArgumentNullException.ThrowIfNull(http);
 
@@ -167,6 +168,7 @@ public static class StudioAiChatRequestMapper
 
         var request = new StudioAiChatRequest
         {
+            AcceptedRequestJson = acceptedRequestJson,
             Certification = http.Certification,
             Provider = http.Provider,
             Model = allowCallerOverrides ? http.Model : null,

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -63,13 +64,39 @@ internal static class StudioAiProxyEndpoints
 
     private static async Task<IResult> HandleChat(
         HttpContext context,
-        StudioAiChatHttpRequest httpRequest,
         IStudioAiProxyService service,
         IStudioAuthorizationService authorizationService,
         IAuditLog auditLog,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
+
+        StudioAiChatHttpRequest? httpRequest;
+        byte[] acceptedRequestJson;
+        try
+        {
+            using var document = await JsonDocument.ParseAsync(
+                context.Request.Body,
+                new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow },
+                cancellationToken).ConfigureAwait(false);
+            if (FindDuplicateProperty(document.RootElement) is { } duplicate)
+            {
+                return BadRequest(context, $"Duplicate JSON property '{duplicate}' is not allowed.");
+            }
+
+            acceptedRequestJson = Encoding.UTF8.GetBytes(document.RootElement.GetRawText());
+            httpRequest = document.RootElement.Deserialize(
+                Honua.Ai.StudioAiProxy.StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest);
+        }
+        catch (JsonException)
+        {
+            return BadRequest(context, "Request body must be unambiguous valid JSON.");
+        }
+
+        if (httpRequest is null)
+        {
+            return BadRequest(context, "Request body is required.");
+        }
 
         // Model and output-token limits are operator-controlled provider boundaries: provider
         // credentials may have access to models or token ceilings the deployment did not approve
@@ -83,7 +110,8 @@ internal static class StudioAiProxyEndpoints
 
         var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
             httpRequest,
-            allowCallerOverrides);
+            allowCallerOverrides,
+            acceptedRequestJson);
         if (mappingError is not null || domainRequest is null)
         {
             return BadRequest(context, mappingError ?? "Invalid request.");
@@ -138,6 +166,38 @@ internal static class StudioAiProxyEndpoints
         }
 
         return Results.Empty;
+    }
+
+    private static string? FindDuplicateProperty(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in value.EnumerateObject())
+            {
+                if (!names.Add(property.Name))
+                {
+                    return property.Name;
+                }
+
+                if (FindDuplicateProperty(property.Value) is { } nested)
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in value.EnumerateArray())
+            {
+                if (FindDuplicateProperty(item) is { } nested)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static string EventName(StudioAiChatEventType type) => type switch
