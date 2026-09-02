@@ -2187,6 +2187,7 @@ internal sealed partial class Wfs20Handler
     {
         var inserted = new List<(PreparedTransactionOperation Operation, EditOperationResult Result)>();
         var replaced = new List<(PreparedTransactionOperation Operation, EditOperationResult Result)>();
+        var receipts = new List<(PreparedTransactionOperation Operation, EditOperationResult Result)>();
         var updatedCount = 0;
         var deletedCount = 0;
         var createResultIndex = 0;
@@ -2203,6 +2204,7 @@ internal sealed partial class Wfs20Handler
                             ? editResult.CreateResults[createResultIndex]
                             : default;
                         createResultIndex++;
+                        receipts.Add((operation, result));
 
                         if (result.IsSuccess && result.ObjectId.HasValue)
                         {
@@ -2218,6 +2220,7 @@ internal sealed partial class Wfs20Handler
                             ? editResult.UpdateResults[updateResultIndex]
                             : default;
                         updateResultIndex++;
+                        receipts.Add((operation, result));
 
                         if (!result.IsSuccess || !result.ObjectId.HasValue)
                         {
@@ -2242,6 +2245,7 @@ internal sealed partial class Wfs20Handler
                             ? editResult.DeleteResults[deleteResultIndex]
                             : default;
                         deleteResultIndex++;
+                        receipts.Add((operation, result));
 
                         if (result.IsSuccess)
                         {
@@ -2318,6 +2322,44 @@ internal sealed partial class Wfs20Handler
                     }
 
                     WriteTransactionResourceId(writer, operation.Descriptor, objectId);
+                    writer.WriteEndElement();
+                }
+
+                writer.WriteEndElement();
+            }
+
+            // ISO 19142's TransactionResponse reports successful inserts/replaces and aggregate
+            // counts, but has no per-operation failure shape for best-effort transactions. Emit
+            // an explicitly namespaced extension whenever failures exist so a retrying client can
+            // account for every submitted operation without inferring failures from omissions.
+            if (receipts.Any(static receipt => !receipt.Result.IsSuccess))
+            {
+                writer.WriteStartElement("honua", "OperationResults", FeatureNamespaceUri);
+                foreach (var (operation, result) in receipts.OrderBy(static receipt => receipt.Operation.Sequence))
+                {
+                    writer.WriteStartElement("honua", "OperationResult", FeatureNamespaceUri);
+                    writer.WriteAttributeString("sequence", operation.Sequence.ToString(CultureInfo.InvariantCulture));
+                    writer.WriteAttributeString("action", operation.ActionKind.ToString());
+                    writer.WriteAttributeString("committed", result.IsSuccess ? "true" : "false");
+                    if (!string.IsNullOrWhiteSpace(operation.Handle))
+                    {
+                        writer.WriteAttributeString("handle", operation.Handle);
+                    }
+
+                    if (result.ObjectId.HasValue)
+                    {
+                        WriteTransactionResourceId(writer, operation.Descriptor, result.ObjectId.Value);
+                    }
+
+                    if (!result.IsSuccess)
+                    {
+                        writer.WriteElementString(
+                            "honua",
+                            "Error",
+                            FeatureNamespaceUri,
+                            result.ErrorMessage ?? "Operation failed.");
+                    }
+
                     writer.WriteEndElement();
                 }
 
