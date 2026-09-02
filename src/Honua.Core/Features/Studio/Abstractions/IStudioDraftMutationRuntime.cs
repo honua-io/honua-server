@@ -45,6 +45,13 @@ public interface IStudioDraftMutationRuntime
         Guid itemId, Guid versionId, StudioPublicationIntent? intent, string? warningAcknowledgement, string? actorId,
         StudioDraftMutationContext context, CancellationToken cancellationToken = default);
 
+    Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
+        Guid itemId, Guid versionId, string contentHash, StudioPublicationIntent? intent,
+        string? warningAcknowledgement, string? actorId,
+        StudioDraftMutationContext context, CancellationToken cancellationToken = default)
+        => CreatePublicationRequestAsync(
+            itemId, versionId, intent, warningAcknowledgement, actorId, context, cancellationToken);
+
     Task<StudioDraftMutationReceipt<StudioPackageDraft>> ReopenVersionAsync(
         Guid itemId, Guid versionId, string? actorId, StudioDraftMutationContext context,
         CancellationToken cancellationToken = default);

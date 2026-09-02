@@ -538,19 +538,19 @@ internal sealed class McpStudioRemoveControlArgument
 // -----------------------------------------------------------------------
 
 /// <summary>
-/// Arguments for <c>honua_studio_propose_publication</c>. Records publication
-/// intent ON THE DRAFT ONLY — it never calls the publish-request/rollback
-/// lifecycle endpoints and never moves a current/published pointer (REQ-003,
-/// REQ-009: publish/share/embed execution stays a human-confirmed action
-/// outside the agent tool surface).
+/// Arguments for <c>honua_studio_propose_publication</c>. Binds publication
+/// intent to an exact immutable saved version for canonical human approval.
 /// </summary>
 internal sealed class McpStudioProposePublicationArgument
 {
-    [JsonPropertyName("draftId")]
-    public Guid? DraftId { get; set; }
+    [JsonPropertyName("itemId")]
+    public Guid? ItemId { get; set; }
 
-    [JsonPropertyName("generation")]
-    public long? Generation { get; set; }
+    [JsonPropertyName("versionId")]
+    public Guid? VersionId { get; set; }
+
+    [JsonPropertyName("contentHash")]
+    public string? ContentHash { get; set; }
 
     [JsonPropertyName("route")]
     public string? Route { get; set; }
@@ -558,41 +558,41 @@ internal sealed class McpStudioProposePublicationArgument
     [JsonPropertyName("visibility")]
     public string? Visibility { get; set; }
 
-    [JsonPropertyName("embed")]
-    public bool? Embed { get; set; }
-
-    [JsonPropertyName("service")]
-    public string? Service { get; set; }
-
-    [JsonPropertyName("schedule")]
-    public string? Schedule { get; set; }
-
-    [JsonPropertyName("job")]
-    public string? Job { get; set; }
-
     /// <summary>Human-readable rationale recorded alongside the intent for reviewer context.</summary>
     [JsonPropertyName("note")]
     public string? Note { get; set; }
 }
 
 /// <summary>
-/// Output for <c>honua_studio_propose_publication</c>. Carries the updated
-/// draft (with the recorded <see cref="StudioPackageEnvelope.PublicationIntent"/>)
-/// plus an explicit, structural confirmation that only intent was recorded.
+/// Output for <c>honua_studio_propose_publication</c>. Carries canonical
+/// proposal and operation identities for polling and approval.
 /// </summary>
 internal sealed class McpStudioProposePublicationOutput
 {
-    [JsonPropertyName("draft")]
-    public required StudioPackageDraft Draft { get; init; }
+    [JsonPropertyName("operation")]
+    public required OperationHandle Operation { get; init; }
 
-    /// <summary>Always <see langword="true"/> on success: intent was recorded on the draft.</summary>
-    [JsonPropertyName("recorded")]
-    public bool Recorded { get; init; } = true;
+    [JsonPropertyName("operationInstanceId")]
+    public required string OperationInstanceId { get; init; }
 
-    /// <summary>
-    /// Always <see langword="true"/>: publish/share/embed execution requires a
-    /// separate human-confirmed action outside this tool surface.
-    /// </summary>
+    [JsonPropertyName("proposalId")]
+    public required string ProposalId { get; init; }
+
+    [JsonPropertyName("proposalUri")]
+    public required string ProposalUri { get; init; }
+
+    [JsonPropertyName("auditId")]
+    public required string AuditId { get; init; }
+
+    [JsonPropertyName("correlationId")]
+    public required string CorrelationId { get; init; }
+
+    [JsonPropertyName("idempotencyIdentity")]
+    public required string IdempotencyIdentity { get; init; }
+
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
     [JsonPropertyName("humanConfirmationRequired")]
     public bool HumanConfirmationRequired { get; init; } = true;
 

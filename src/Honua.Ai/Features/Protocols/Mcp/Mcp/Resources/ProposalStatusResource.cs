@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,6 +80,15 @@ internal sealed class ProposalStatusResource : IMcpResource
         var actor = McpAuthorizationHelper.ResolveActorId(principal);
         var isProposer = !string.IsNullOrWhiteSpace(proposal.RequestedBy)
             && string.Equals(proposal.RequestedBy, actor, StringComparison.Ordinal);
+        if (proposal.OperationId == "studio.content.create-publication-request" && !isProposer)
+        {
+            throw new GeoprocessingAuthorizationException(
+                requiresAuthentication: false,
+                message: "The caller is not authorized to read this Studio publication proposal.",
+                resourceType: OperatorResourceType.StudioDraft,
+                operation: OperatorOperation.Read);
+        }
+
         if (!isProposer)
         {
             var authorization = httpContext.RequestServices.GetService<IGeoprocessingJobService>()
@@ -98,11 +109,21 @@ internal sealed class ProposalStatusResource : IMcpResource
             }
         }
 
+        var operation = proposal.Audit.OperationInstanceId is { Length: > 0 } operationInstanceId
+            ? await (httpContext.RequestServices.GetService<IOperationInstanceStore>()
+                ?? throw new InvalidOperationException("The canonical operation instance store is unavailable."))
+                .GetAsync(operationInstanceId, cancellationToken).ConfigureAwait(false)
+            : null;
+        var isStudioPublication = proposal.OperationId == "studio.content.create-publication-request";
+        var isActive = isStudioPublication && proposal.Status == OperationProposalStatus.Succeeded;
         var resource = new McpProposalResource
         {
             ProposalId = proposal.ProposalId,
+            OperationInstanceId = proposal.Audit.OperationInstanceId,
+            AuditId = proposal.Audit.AuditId,
+            CorrelationId = proposal.Audit.CorrelationId,
             Kind = proposal.Kind.ToString(),
-            Status = proposal.Status.ToString(),
+            Status = isActive ? "Active" : proposal.Status.ToString(),
             Summary = proposal.Plan.Summary,
             RiskLevel = proposal.Plan.RiskLevel.ToString(),
             Diff = proposal.Plan.Diff,
@@ -112,6 +133,12 @@ internal sealed class ProposalStatusResource : IMcpResource
             ResolvedBy = proposal.ResolvedBy,
             ResolutionReason = proposal.ResolutionReason,
             ExecutionOperationId = proposal.ExecutionOperationId,
+            PublicationId = isActive && operation?.ResourceIds.TryGetValue("publicationId", out var publicationId) == true
+                ? publicationId
+                : null,
+            ActiveUrl = isActive && operation?.ResourceIds.TryGetValue("activeUrl", out var activeUrl) == true
+                ? activeUrl
+                : null,
             CreatedAt = proposal.CreatedAt,
             UpdatedAt = proposal.UpdatedAt,
         };
