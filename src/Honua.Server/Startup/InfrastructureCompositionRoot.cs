@@ -39,6 +39,8 @@ internal static class InfrastructureCompositionRoot
     /// </summary>
     public static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
     {
+        var warehouseProviders = new WarehouseProviderDecisions(configuration);
+        services.TryAddSingleton(warehouseProviders);
         var configuredProvider = configuration.GetValue<string>("DataSource:Provider");
         var provider = DataProviderNames.Normalize(configuredProvider);
         switch (provider)
@@ -88,22 +90,9 @@ internal static class InfrastructureCompositionRoot
         // speaks the PostgreSQL wire protocol (Npgsql) and is AOT-friendly, so it needs no AOT carve-out.
         // Experimental gate (PA-181): Redshift requires the experimental feature flag.
         // Fail closed if the operator explicitly enables Redshift without opting into the experimental gate.
-        var redshiftExperimental = configuration.GetValue<bool>("Experimental:Features:RedshiftProvider", false);
-        var redshiftExplicitlyEnabled = string.Equals(configuration["Redshift:Enabled"], "true", StringComparison.OrdinalIgnoreCase);
-        if (redshiftExperimental)
+        if (warehouseProviders.Redshift.Enabled)
         {
-            if (configuration.GetValue("Redshift:Enabled", true))
-            {
-                Honua.Db.Redshift.ServiceCollectionExtensions.AddRedshiftFeatureProvider(services, configuration);
-            }
-        }
-        else if (redshiftExplicitlyEnabled)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: Redshift:Enabled is set to true but the experimental gate " +
-                "'Experimental:Features:RedshiftProvider' is not enabled (PA-181). " +
-                "Set Experimental__Features__RedshiftProvider=true to opt in to this experimental provider, " +
-                "or set Redshift__Enabled=false to disable it.");
+            Honua.Db.Redshift.ServiceCollectionExtensions.AddRedshiftFeatureProvider(services, configuration);
         }
 
         // Register the federated ArcGIS REST read-through provider (#1251). Metadata v2 publications whose
@@ -141,22 +130,9 @@ internal static class InfrastructureCompositionRoot
         // Experimental gate (PA-182): Snowflake requires the experimental feature flag.
         // Fail closed if the operator explicitly enables Snowflake without opting into the experimental gate.
 #if !HONUA_SKIP_SNOWFLAKE
-        var snowflakeExperimental = configuration.GetValue<bool>("Experimental:Features:SnowflakeProvider", false);
-        var snowflakeExplicitlyEnabled = string.Equals(configuration["Snowflake:Enabled"], "true", StringComparison.OrdinalIgnoreCase);
-        if (snowflakeExperimental)
+        if (warehouseProviders.Snowflake.Enabled)
         {
-            if (configuration.GetValue("Snowflake:Enabled", true))
-            {
-                Honua.Snowflake.ServiceCollectionExtensions.AddSnowflakeFeatureProvider(services, configuration);
-            }
-        }
-        else if (snowflakeExplicitlyEnabled)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: Snowflake:Enabled is set to true but the experimental gate " +
-                "'Experimental:Features:SnowflakeProvider' is not enabled (PA-182). " +
-                "Set Experimental__Features__SnowflakeProvider=true to opt in to this experimental provider, " +
-                "or set Snowflake__Enabled=false to disable it.");
+            Honua.Snowflake.ServiceCollectionExtensions.AddSnowflakeFeatureProvider(services, configuration);
         }
 #endif
 
@@ -170,22 +146,9 @@ internal static class InfrastructureCompositionRoot
         // only one of the three warehouse providers an operator could enable without opting in —
         // configuring Databricks:Host was enough — while the identical action on Redshift threw.
         // Fail closed if the operator explicitly enables Databricks without opting into the gate.
-        var databricksExperimental = configuration.GetValue<bool>("Experimental:Features:DatabricksProvider", false);
-        var databricksExplicitlyEnabled = string.Equals(configuration["Databricks:Enabled"], "true", StringComparison.OrdinalIgnoreCase);
-        if (databricksExperimental)
+        if (warehouseProviders.Databricks.Enabled)
         {
-            if (configuration.GetValue("Databricks:Enabled", true))
-            {
-                Honua.Db.Databricks.ServiceCollectionExtensions.AddDatabricksFeatureProvider(services, configuration);
-            }
-        }
-        else if (databricksExplicitlyEnabled)
-        {
-            throw new InvalidOperationException(
-                "Configuration conflict: Databricks:Enabled is set to true but the experimental gate " +
-                "'Experimental:Features:DatabricksProvider' is not enabled (#2436). " +
-                "Set Experimental__Features__DatabricksProvider=true to opt in to this experimental provider, " +
-                "or set Databricks__Enabled=false to disable it.");
+            Honua.Db.Databricks.ServiceCollectionExtensions.AddDatabricksFeatureProvider(services, configuration);
         }
 
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>

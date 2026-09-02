@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using FluentAssertions;
 using Honua.Server.Startup;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Honua.Server.Tests.Features.Experimental;
@@ -29,6 +30,55 @@ namespace Honua.Server.Tests.Features.Experimental;
 [Trait("Category", "ExperimentalGate")]
 public sealed class ExperimentalProviderGateTests
 {
+    [Theory]
+    [InlineData("Redshift", "absent", "absent", false, false)]
+    [InlineData("Redshift", "false", "true", true, false)]
+    [InlineData("Redshift", "true", "false", false, false)]
+    [InlineData("Redshift", "true", "absent", false, true)]
+    [InlineData("Snowflake", "absent", "absent", false, false)]
+    [InlineData("Snowflake", "false", "true", true, false)]
+    [InlineData("Snowflake", "true", "false", false, false)]
+    [InlineData("Snowflake", "true", "absent", false, true)]
+    [InlineData("Databricks", "absent", "absent", false, false)]
+    [InlineData("Databricks", "false", "true", true, false)]
+    [InlineData("Databricks", "true", "false", false, false)]
+    [InlineData("Databricks", "true", "absent", false, true)]
+    public void WarehouseProviderStateMatrix_UsesOneDecision(
+        string provider,
+        string gate,
+        string enabled,
+        bool throws,
+        bool registered)
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["DataSource:Provider"] = "postgis",
+            ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test",
+        };
+        if (gate != "absent") values[$"Experimental:Features:{provider}Provider"] = gate;
+        if (enabled != "absent") values[$"{provider}:Enabled"] = enabled;
+        var services = new ServiceCollection();
+
+        var act = () => InfrastructureCompositionRoot.RegisterInfrastructureServices(
+            services,
+            BuildConfiguration(values));
+
+        if (throws)
+        {
+            act.Should().Throw<InvalidOperationException>();
+            return;
+        }
+
+        act.Should().NotThrow();
+        var decisions = services.Single(descriptor => descriptor.ServiceType == typeof(WarehouseProviderDecisions))
+            .ImplementationInstance.Should().BeOfType<WarehouseProviderDecisions>().Subject;
+        var decision = decisions.All.Single(item => item.ConfigurationSection == provider);
+        decision.Enabled.Should().Be(registered);
+        services.Any(descriptor =>
+                IsProviderType(descriptor.ServiceType, provider) || IsProviderType(descriptor.ImplementationType, provider))
+            .Should().Be(registered, "runtime registration must equal the canonical decision");
+    }
+
     // ---- Redshift fail-closed ----
 
     [Fact]
@@ -225,6 +275,9 @@ public sealed class ExperimentalProviderGateTests
 
     private static bool IsDatabricksType(Type? type) =>
         type?.FullName?.StartsWith("Honua.Db.Databricks.", StringComparison.Ordinal) == true;
+
+    private static bool IsProviderType(Type? type, string provider) =>
+        type?.FullName?.Contains(provider, StringComparison.OrdinalIgnoreCase) == true;
 
     private static IConfiguration BuildConfiguration(Dictionary<string, string?> values) =>
         new ConfigurationBuilder()
