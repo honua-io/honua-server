@@ -174,7 +174,9 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
             if (parseFailed || frame is null)
             {
-                continue;
+                yield return Error(model, "Provider returned a malformed stream frame.", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
             }
 
             switch (frame.Type)
@@ -199,6 +201,11 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
                     };
                     break;
 
+                case "content_block_start" when frame.ContentBlock?.Type == "text":
+                case "content_block_stop" when toolCallId is null:
+                case "ping":
+                    break;
+
                 case "content_block_delta" when frame.Delta?.Type == "text_delta" && frame.Delta.Text is { Length: > 0 } text:
                     yield return new StudioAiChatEvent { Type = StudioAiChatEventType.TextDelta, Text = text };
                     break;
@@ -214,11 +221,19 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
                     break;
 
                 case "content_block_stop" when toolCallId is not null:
+                    var arguments = TryParse(toolArgsBuffer?.ToString());
+                    if (arguments is null)
+                    {
+                        yield return Error(model, "Provider returned invalid or incomplete tool arguments.", stopwatch.ElapsedMilliseconds,
+                            StudioAiStreamGrammarValidator.InvalidStreamCode);
+                        yield break;
+                    }
+
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.ToolCallStop,
                         ToolCallId = toolCallId,
-                        ToolArguments = TryParse(toolArgsBuffer?.ToString())
+                        ToolArguments = arguments
                     };
                     toolCallId = null;
                     toolArgsBuffer = null;
@@ -240,6 +255,11 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
                         LatencyMs = stopwatch.ElapsedMilliseconds
                     };
                     break;
+
+                default:
+                    yield return Error(model, "Provider returned an unknown or invalid stream event.", stopwatch.ElapsedMilliseconds,
+                        StudioAiStreamGrammarValidator.InvalidStreamCode);
+                    yield break;
             }
         }
 
@@ -390,10 +410,11 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         }
     }
 
-    private static StudioAiChatEvent Error(string model, string message, long? latencyMs = null) => new()
+    private static StudioAiChatEvent Error(string model, string message, long? latencyMs = null, string? errorCode = null) => new()
     {
         Type = StudioAiChatEventType.Error,
         Model = model,
+        ErrorCode = errorCode,
         ErrorMessage = message,
         LatencyMs = latencyMs
     };

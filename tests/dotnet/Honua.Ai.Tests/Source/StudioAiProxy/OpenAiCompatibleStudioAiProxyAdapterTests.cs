@@ -351,6 +351,19 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         toolChoice.GetProperty("function").GetProperty("name").GetString().Should().Be("list_incidents");
     }
 
+    [Theory]
+    [InlineData("data: {not-json}\n\ndata: [DONE]\n\n")]
+    [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\ndata: {bad}\n\ndata: [DONE]\n\n")]
+    [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n")]
+    public async Task StreamAsync_MalformedOrDoneWithoutFinishReason_EmitsTypedError(string fixture)
+    {
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+    }
+
     private static OpenAiCompatibleStudioAiProxyAdapter CreateAdapter(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         var handler = new StudioAiProxyMockHttpMessageHandler(responseBody, statusCode);

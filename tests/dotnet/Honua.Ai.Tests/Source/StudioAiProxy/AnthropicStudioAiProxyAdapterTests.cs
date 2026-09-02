@@ -364,6 +364,19 @@ public sealed class AnthropicStudioAiProxyAdapterTests
         handler.CapturedRequestBody.Should().Contain("\"system\":\"You are a GIS analyst.\\n\\nBe terse.\"");
     }
 
+    [Theory]
+    [InlineData("data: {not-json}\n\n")]
+    [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {bad}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
+    [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {\"type\":\"future_event\"}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
+    public async Task StreamAsync_MalformedOrUnknownFrame_EmitsTypedError(string fixture)
+    {
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+    }
+
     private static AnthropicStudioAiProxyAdapter CreateAdapter(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         var handler = new StudioAiProxyMockHttpMessageHandler(responseBody, statusCode);

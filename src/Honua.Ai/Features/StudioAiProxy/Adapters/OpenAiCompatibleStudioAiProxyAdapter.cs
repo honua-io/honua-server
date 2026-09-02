@@ -172,7 +172,9 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             if (parseFailed || chunk is null)
             {
-                continue;
+                yield return Error(model, "Provider returned a malformed stream frame.", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
             }
 
             if (!emittedMessageStart)
@@ -229,21 +231,33 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             }
         }
 
+        if (!sawFinishReason)
+        {
+            yield return Error(model, sawDone
+                ? "Provider ended the stream without a finish reason."
+                : "Provider stream ended before a finish reason was received.", stopwatch.ElapsedMilliseconds,
+                StudioAiStreamGrammarValidator.InvalidStreamCode);
+            yield break;
+        }
+
         foreach (var accumulator in toolCalls.Values)
         {
+            var arguments = accumulator.TryParse();
+            if (arguments is null)
+            {
+                yield return Error(model, "Provider returned invalid or incomplete tool arguments.", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
+            }
+
             yield return new StudioAiChatEvent
             {
                 Type = StudioAiChatEventType.ToolCallStop,
                 ToolCallId = accumulator.Id,
-                ToolArguments = accumulator.TryParse()
+                ToolArguments = arguments
             };
         }
 
-        if (!sawFinishReason && !sawDone)
-        {
-            yield return Error(model, "Provider stream ended before a finish reason was received.", stopwatch.ElapsedMilliseconds);
-            yield break;
-        }
 
         yield return new StudioAiChatEvent
         {
@@ -341,10 +355,11 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         _ => StudioAiStopReason.EndTurn
     };
 
-    private static StudioAiChatEvent Error(string model, string message, long? latencyMs = null) => new()
+    private static StudioAiChatEvent Error(string model, string message, long? latencyMs = null, string? errorCode = null) => new()
     {
         Type = StudioAiChatEventType.Error,
         Model = model,
+        ErrorCode = errorCode,
         ErrorMessage = message,
         LatencyMs = latencyMs
     };
