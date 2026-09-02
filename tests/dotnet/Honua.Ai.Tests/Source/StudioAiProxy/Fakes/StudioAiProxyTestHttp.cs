@@ -55,3 +55,62 @@ internal sealed class StudioAiProxyMockHttpClientFactory : IHttpClientFactory, I
 
     public void Dispose() => _client.Dispose();
 }
+
+internal sealed class StudioAiProxySequenceHttpMessageHandler : HttpMessageHandler
+{
+    private readonly Queue<Func<HttpResponseMessage>> _responses;
+
+    public StudioAiProxySequenceHttpMessageHandler(params Func<HttpResponseMessage>[] responses)
+        => _responses = new Queue<Func<HttpResponseMessage>>(responses);
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        => Task.FromResult(_responses.Dequeue()());
+}
+
+internal sealed class StudioAiProxyStallingStream : Stream
+{
+    private readonly byte[] _prefix;
+    private int _position;
+
+    public StudioAiProxyStallingStream(string prefix) => _prefix = Encoding.UTF8.GetBytes(prefix);
+
+    public bool WasDisposed { get; private set; }
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => _position; set => throw new NotSupportedException(); }
+
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        if (_position < _prefix.Length)
+        {
+            var count = Math.Min(buffer.Length, _prefix.Length - _position);
+            _prefix.AsMemory(_position, count).CopyTo(buffer);
+            _position += count;
+            return count;
+        }
+
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        return 0;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        WasDisposed = true;
+        base.Dispose(disposing);
+    }
+
+    public override ValueTask DisposeAsync()
+    {
+        WasDisposed = true;
+        return base.DisposeAsync();
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    public override void Flush() => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+}
