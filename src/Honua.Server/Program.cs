@@ -1585,7 +1585,8 @@ app.MapServerFeatureEndpoints();
 // Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
-app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>();
+app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
+    .RequireAdminAuthorization();
 app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
 app.MapGrpcService<Honua.Scene.Grpc.HonuaTileGrpcService>();
 app.MapGrpcService<Honua.Scene.Grpc.HonuaElevationGrpcService>();
