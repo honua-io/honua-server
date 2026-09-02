@@ -2,7 +2,6 @@
 """Fail-closed roster and field-equality gate for Admin operation projections."""
 
 import json
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]

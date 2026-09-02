@@ -28,7 +28,7 @@ OUTPUT_LIMITS = {
     "docs/gis/data/geoservices-rest-parity.json": 1024 * 1024,
     "docs/gis/data/capability-matrix.v1.json": 1024 * 1024,
 }
-MAX_TOTAL_OUTPUT_BYTES = 6 * 1024 * 1024
+MAX_TOTAL_OUTPUT_BYTES = sum(OUTPUT_LIMITS.values())
 MAX_ENVELOPE_BYTES = 9 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 10 * 1024 * 1024
 
@@ -38,9 +38,11 @@ GENERATOR_INPUTS = (
     "Directory.Packages.props",
     "NuGet.config",
     "scripts/generate-feature-catalog.sh",
+    "scripts/generate-admin-operation-parity-exports.sh",
     "scripts/generate-geoservices-parity.sh",
     "scripts/ci/capability-impact.py",
     "scripts/ci/generate-capability-matrix.py",
+    "scripts/ci/verify-admin-operation-parity.py",
     "tests/dotnet/Honua.Architecture.Tests/ArchitectureTestHelpers.cs",
     "tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj",
     "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/CapabilityRouteMapper.cs",
@@ -51,6 +53,7 @@ GENERATOR_INPUTS = (
     "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
     "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityModels.cs",
     "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesRouteRoster.cs",
+    "tests/dotnet/Honua.Server.Tests/Features/Operations/AdminOperationParityExportTests.cs",
     "docs/gis/data/capability-route-mapping.v1.json",
     "docs/gis/data/geoservices-parity-judgment.json",
     "docs/gis/data/public-interface-proof.json",
