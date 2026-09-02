@@ -26,19 +26,21 @@ public sealed class McpCatalogAuthorizationDenominatorTests
     [Endpoint("POST /mcp tools/list -> POST /mcp tools/call")]
     public async Task EveryResolvedDescriptor_ReauthorizesAfterPrincipalRemoval_BeforeInvocation()
     {
-        var staticTool = new InvocationSpyTool("static_read");
         var dynamicTool = new InvocationSpyTool("published_mutation");
         var source = new MutableToolSource(dynamicTool);
         var surface = new McpDataAccessSurface(
-            [staticTool],
+            McpTaxonomyAlignmentTests.BuildTools(),
             [],
             NullLogger<McpDataAccessSurface>.Instance,
             toolSources: [source]);
         var authorityA = McpTestFactory.AuthenticatedHttpContext();
 
         var catalog = await surface.GetCatalogEntriesAsync();
-        catalog.Should().HaveCount(2);
+        catalog.Should().HaveCountGreaterThan(2);
         catalog.Count(entry => entry.IsDynamic).Should().Be(1);
+        catalog.Where(entry => !entry.IsDynamic).Select(entry => entry.Tool.GetType()).Should().BeEquivalentTo(
+            McpTaxonomyAlignmentTests.BuildTools().Select(tool => tool.GetType()),
+            "the exercised denominator is the roster parity-checked against AddMcpDataAccessSurface registrations");
 
         foreach (var entry in catalog)
         {
@@ -53,9 +55,16 @@ public sealed class McpCatalogAuthorizationDenominatorTests
                 CancellationToken.None);
 
             response.Should().NotBeNull();
-            ((InvocationSpyTool)entry.Tool).InvocationCount.Should().Be(0,
-                "current call-time authority must be checked before any static or dynamic tool seam");
+            response.Error.Should().BeNull();
+            var denied = response.Result!.Value;
+            denied.GetProperty("isError").GetBoolean().Should().BeTrue(
+                "removed authority must reject every exact-catalog descriptor");
+            denied.GetProperty("structuredContent").GetProperty("code").GetString()
+                .Should().Be(McpErrorMapper.Codes.Unauthenticated);
         }
+
+        dynamicTool.InvocationCount.Should().Be(0,
+            "current call-time authority must be checked before the dynamic invocation seam");
     }
 
     [UnitTest]
