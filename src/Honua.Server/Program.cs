@@ -828,15 +828,15 @@ var replicaProvider = DataProviderNames.Normalize(
 if (replicaProvider != DataProviderNames.DuckDb &&
     replicaProvider != DataProviderNames.MySql)
 {
-    if (offlineSyncEnabled)
-    {
-        builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
-            new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
-                sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
-        builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaConflictRepository>(sp =>
-            new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaConflictRepository(
-                sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
-    }
+    // Keep the durable repositories resolvable independently of the HTTP sync surface. The
+    // conflict-resolution service is part of the base composition and its dependencies must not
+    // disappear when sync.offline is disabled; route registration remains flag-gated below.
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaConflictRepository>(sp =>
+        new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaConflictRepository(
+            sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IChangeTracker>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresChangeTracker(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
