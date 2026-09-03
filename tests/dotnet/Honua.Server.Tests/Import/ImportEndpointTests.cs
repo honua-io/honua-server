@@ -16,7 +16,9 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -946,10 +948,15 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent(uploadId), "UploadId");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/import/upload") { Content = content };
-        request.Headers.TryAddWithoutValidation("X-Honua-Operation-Instance-Id", "opinst-import-exact");
-        request.Headers.TryAddWithoutValidation("X-Correlation-ID", "corr-import-exact");
-        request.Headers.TryAddWithoutValidation("X-Honua-Audit-Id", "audit-import-exact");
-        request.Headers.TryAddWithoutValidation("X-Honua-Proposal-Id", "proposal-import-exact");
+        var lineage = new OperationPolicyContext
+        {
+            OperationInstanceId = "opinst-import-exact",
+            CorrelationId = "corr-import-exact",
+            AuditId = "audit-import-exact",
+            ProposalId = "proposal-import-exact",
+        };
+        var attestationStore = _fixture.Services.GetRequiredService<OperationLineageAttestationStore>();
+        OperationLineageHeaders.Apply(request, lineage, attestationStore);
         using var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
