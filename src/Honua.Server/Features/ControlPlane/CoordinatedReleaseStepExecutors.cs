@@ -80,7 +80,7 @@ internal sealed class CoordinatedContainerStepExecutor(
             Outcome = MapOutcome(deploy.Status),
             ChildOperationId = childOperationId,
             Detail = deploy.CurrentPhase,
-            ObservedRevision = deploy.ObservedState
+            ObservedRevision = deploy.Deploy?.CurrentRevision ?? deploy.ObservedState
         };
     }
 

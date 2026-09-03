@@ -176,7 +176,8 @@ internal sealed partial class CoordinatedReleaseReconciler(
                 CoordinatedReleaseStepStatus.Succeeded, observed.Detail ?? "Container rollout promoted.",
                 stepToComplete: CoordinatedReleaseStep.ContainerRollout),
             CoordinatedStepOutcome.RolledBack => WithStepRolledBack(operation, CoordinatedReleaseStep.ContainerRollout,
-                observed.Detail ?? "Container rollout already rolled back; starting coordinated unwind."),
+                observed.Detail ?? "Container rollout already rolled back; starting coordinated unwind.",
+                containerPriorRevision: observed.ObservedRevision),
             CoordinatedStepOutcome.Failed => RequestUnwind(operation, CoordinatedReleaseStep.ContainerRollout,
                 observed.Detail ?? "Container rollout failed."),
             _ => operation
@@ -240,8 +241,8 @@ internal sealed partial class CoordinatedReleaseReconciler(
         {
             if (string.IsNullOrWhiteSpace(context.MetadataOperationId))
             {
-                return RequireManualIntervention(operation,
-                    "Metadata/schema rollback cannot settle because its child operation id is missing.");
+                return WithStepRolledBack(operation, CoordinatedReleaseStep.MetadataAndSchema,
+                    "Metadata/schema step had no child operation to roll back; continuing coordinated unwind.");
             }
 
             await metadataStep.RollbackAsync(context.MetadataOperationId!, cancellationToken).ConfigureAwait(false);
@@ -273,8 +274,8 @@ internal sealed partial class CoordinatedReleaseReconciler(
         {
             if (string.IsNullOrWhiteSpace(context.ContainerOperationId))
             {
-                return RequireManualIntervention(operation,
-                    "Container rollback cannot settle because its child operation id is missing.");
+                return WithStepRolledBack(operation, CoordinatedReleaseStep.ContainerRollout,
+                    "Container step had no child operation to roll back; continuing coordinated unwind.");
             }
 
             await containerStep.RollbackAsync(context.ContainerOperationId!, cancellationToken).ConfigureAwait(false);
@@ -291,11 +292,14 @@ internal sealed partial class CoordinatedReleaseReconciler(
             }
 
             var observed = await containerStep.ObserveAsync(context.ContainerOperationId!, cancellationToken).ConfigureAwait(false);
+            var expectedPriorRevision = context.Container.CurrentImage ?? observed.ObservedRevision;
             if (observed.Outcome == CoordinatedStepOutcome.RolledBack &&
-                string.Equals(observed.ObservedRevision, context.Container.CurrentImage, StringComparison.Ordinal))
+                !string.IsNullOrWhiteSpace(expectedPriorRevision) &&
+                string.Equals(observed.ObservedRevision, expectedPriorRevision, StringComparison.Ordinal))
             {
                 return WithStepRolledBack(operation, CoordinatedReleaseStep.ContainerRollout,
-                    observed.Detail ?? "Reversed container rollout: exact prior image observed.");
+                    observed.Detail ?? "Reversed container rollout: exact prior image observed.",
+                    containerPriorRevision: expectedPriorRevision);
             }
 
             if (observed.Outcome is CoordinatedStepOutcome.Failed or CoordinatedStepOutcome.RolledBack)
@@ -494,7 +498,8 @@ internal sealed partial class CoordinatedReleaseReconciler(
     private static WorkflowOperationRecord WithStepRolledBack(
         WorkflowOperationRecord operation,
         CoordinatedReleaseStep step,
-        string phase)
+        string phase,
+        string? containerPriorRevision = null)
     {
         var context = operation.CoordinatedRelease!;
         var steps = UpsertStep(context.Steps, step, CoordinatedReleaseStepStatus.RolledBack, phase);
@@ -504,7 +509,14 @@ internal sealed partial class CoordinatedReleaseReconciler(
             Status = WorkflowOperationStatus.RollbackRequested,
             UpdatedAt = DateTimeOffset.UtcNow,
             CurrentPhase = phase,
-            CoordinatedRelease = context with { CurrentStep = CoordinatedReleaseStep.RollingBack, Steps = steps }
+            CoordinatedRelease = context with
+            {
+                CurrentStep = CoordinatedReleaseStep.RollingBack,
+                Steps = steps,
+                Container = string.IsNullOrWhiteSpace(containerPriorRevision)
+                    ? context.Container
+                    : context.Container with { CurrentImage = containerPriorRevision }
+            }
         };
     }
 
