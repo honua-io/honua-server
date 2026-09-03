@@ -1,6 +1,8 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+-- honua:compatibility-review reason=Import replacement deliberately drops the generated target before recreating it.
+
 -- Import helper functions to keep application SQL text static while safely handling identifiers.
 
 CREATE SCHEMA IF NOT EXISTS honua;
