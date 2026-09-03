@@ -19,10 +19,14 @@ description: >
   caused the 2026-06-18 runner-starvation spiral. This action must stay cheap: ONE runner, no GitHub
   `services:` orchestration, no matrix.
 
-  The Testcontainers-backed Server Governance/Drift assertions are deliberately
-  outside this required gate. They run intact on the trailing trunk matrix in
-  ci.yml, where a deterministic failure still fails CI Gate and sets the fleet
-  brake, but no longer adds a PostgreSQL boot to every PR (#3213).
+  ONE bounded exception (#2882): the "Server Governance/Drift" step boots
+  EndpointRegistryDriftTests, which must enumerate the REAL deployed route table
+  to catch #2862-class registry drift. That route set is store-gated, so the test
+  needs the full host + its Testcontainers PostgreSQL — one ephemeral container on
+  the same single runner (NOT a `services:` block, NOT the provider matrix).
+  The first step pre-pulls its image in the background so a cold runner pays no
+  image-fetch stall on the required gate's critical path. The step itself stays
+  in this required gate; only its image pull is overlapped with the build.
 
 inputs:
   trx-prefix:
@@ -80,9 +84,32 @@ inputs:
       no restore or compilation work.
     required: false
     default: '2'
+  prepull-postgis:
+    description: >
+      Start the fixture-derived PostGIS image pull before restore/build. PR Gate
+      enables this to overlap the cold pull with its build; other callers keep
+      the existing Testcontainers behavior.
+    required: false
+    default: 'false'
+  governance-timeout-minutes:
+    description: >
+      Cap for the Server-project governance/drift tests. This step boots a
+      Testcontainers PostgreSQL; the pre-pull runs in the background at the
+      start of the action and is awaited immediately before this test.
+    required: false
+    default: '15'
 runs:
   using: composite
   steps:
+    # Start before restore/build so a cold runner's PostGIS image download
+    # overlaps useful gate work. The helper resolves the exact image from the
+    # Testcontainers fixture and is best-effort; a failed pull leaves the test's
+    # existing on-demand behavior unchanged.
+    - name: Pre-pull Testcontainers PostGIS image (background)
+      if: inputs.prepull-postgis == 'true'
+      shell: bash
+      run: scripts/ci/prepull-testcontainers-postgis.sh
+
     - name: Validate lean-gate command contract
       shell: bash
       run: python3 scripts/ci/fixtures/validate-lean-gate.py
@@ -246,5 +273,27 @@ runs:
             --configuration Release \
             --filter "FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests" \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-mcp-roster.trx" \
+            --logger "console;verbosity=minimal" \
+            --results-directory ./tests/TestResults
+
+    # Server-project governance/drift tests. These Category=Architecture tests
+    # enumerate the real deployed route table, requiring the Testcontainers
+    # PostGIS fixture. Keep this step on the required PR Gate path; the
+    # pre-pull above only removes the cold image-fetch stall.
+    - name: Await Testcontainers PostGIS pre-pull
+      if: inputs.prepull-postgis == 'true'
+      shell: bash
+      run: scripts/ci/prepull-testcontainers-postgis.sh --await
+
+    - name: Run .NET Tests (Server Governance/Drift)
+      shell: bash
+      run: |
+        timeout "${{ inputs.governance-timeout-minutes }}m" \
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --no-build \
+            --no-restore \
+            --configuration Release \
+            --filter "Category=Architecture" \
+            --logger "trx;LogFileName=${{ inputs.trx-prefix }}-server-governance.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
