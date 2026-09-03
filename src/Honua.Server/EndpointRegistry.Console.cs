@@ -59,6 +59,7 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/console/catalog-endpoints/{workspaceId}/{endpointKey}/items/{itemId}"),
         new("POST", "/api/v1/admin/packages/validate"),
         new("POST", "/api/v1/admin/packages/preview"),
+        new("POST", "/api/v1/admin/packages"),
         new("GET", "/api/v1/console/workflow-node-registry"),
         new("GET", "/api/v1/console/workflow-node-registry/{nodeTypeId}"),
 
