@@ -26,7 +26,7 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
 
     [Fact]
     [Operation(Operations.Security)]
-    [Endpoint("FeatureServer operation query allowlists")]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
     public void EsriOperationAllowlists_AcceptPortalTokenParameter()
     {
         var tokenBearingOperations = new[]
