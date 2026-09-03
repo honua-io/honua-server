@@ -17,6 +17,33 @@ public sealed class DefaultAlertEvaluatorTests
     private static readonly WKBWriter WkbWriter = new();
 
     [UnitTest]
+    public async Task EvaluateAsync_CopiesExplicitFeatureEventLineageWithoutReplacement()
+    {
+        var evaluator = new DefaultAlertEvaluator();
+        var evaluatedAt = DateTimeOffset.UtcNow;
+        var rule = CreateRule(AlertTriggerType.Threshold, conditionsJson: """{"field":"speed","operator":">","value":50}""");
+        var change = CreateChange(rule, 100, evaluatedAt) with
+        {
+            SourceEventId = "event-exact",
+            OperationInstanceId = "opinst-exact",
+            CorrelationId = "corr-exact",
+            AuditId = "audit-exact",
+            ProposalId = "proposal-exact",
+        };
+
+        var result = await evaluator.EvaluateAsync(
+            change, CreateFeatureWithAttributes(100, ("speed", 65.0)), rule, null, null, evaluatedAt);
+
+        var alert = result.Events.Should().ContainSingle().Subject;
+        alert.SourceEventId.Should().Be(change.SourceEventId);
+        alert.OperationInstanceId.Should().Be(change.OperationInstanceId);
+        alert.CorrelationId.Should().Be(change.CorrelationId);
+        alert.AuditId.Should().Be(change.AuditId);
+        alert.ProposalId.Should().Be(change.ProposalId);
+        alert.PayloadJson.Should().Contain("\"sourceEventId\":\"event-exact\"");
+    }
+
+    [UnitTest]
     public async Task EvaluateAsync_EnterRuleWhileStillInside_DoesNotEmitOngoingEnterEvent()
     {
         var evaluator = new DefaultAlertEvaluator();

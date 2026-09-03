@@ -7,7 +7,9 @@ using Honua.Alerts;
 using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -17,6 +19,64 @@ namespace Honua.Server.Tests.Features.Alerts;
 
 public sealed class OpsNotificationServiceTests
 {
+    [UnitTest]
+    public async Task JobTerminalCallback_FailedJobPreservesCanonicalLineageVerbatim()
+    {
+        var outbox = Substitute.For<IAlertOutboxWriter>();
+        var notificationService = Create(outbox, out _, out _, enabled: true, channels: ["webhook"]);
+        var options = Options.Create(new AlertOptions
+        {
+            Enabled = true,
+            Ops = new AlertOpsOptions
+            {
+                Enabled = true,
+                Channels = ["webhook"],
+            },
+        });
+        var services = new ServiceCollection();
+        services.AddSingleton(notificationService);
+        await using var provider = services.BuildServiceProvider();
+        var callback = new OpsJobTerminalCallback(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            options,
+            NullLogger<OpsJobTerminalCallback>.Instance);
+        var now = DateTimeOffset.UtcNow;
+        var job = new ExecutionJobRecord
+        {
+            OperationId = "job-exact",
+            Status = ExecutionJobStatus.Failed,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
+            Audit = new OperationAuditInfo
+            {
+                OperationInstanceId = "opinst-exact",
+                CorrelationId = "corr-exact",
+                AuditId = "audit-exact",
+                ProposalId = "proposal-exact",
+            },
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "test",
+                WorkloadName = "lineage-test",
+            },
+        };
+
+        await callback.OnTerminalAsync(job, CancellationToken.None);
+
+        await outbox.Received(1).CommitEvaluationAsync(
+            Arg.Any<IReadOnlyCollection<AlertStateSnapshot>>(),
+            Arg.Is<IReadOnlyList<AlertOutboxEntry>>(entries => entries.Count == 1 &&
+                entries[0].AlertEvent.JobId == "job-exact" &&
+                entries[0].AlertEvent.OperationInstanceId == "opinst-exact" &&
+                entries[0].AlertEvent.CorrelationId == "corr-exact" &&
+                entries[0].AlertEvent.AuditId == "audit-exact" &&
+                entries[0].AlertEvent.ProposalId == "proposal-exact"),
+            Arg.Any<CancellationToken>());
+    }
+
     [UnitTest]
     public async Task NotifyAsync_WhenEnabled_EnqueuesOpsEventToConfiguredChannel()
     {
@@ -33,6 +93,11 @@ public sealed class OpsNotificationServiceTests
                 entries[0].AlertEvent.Source == AlertEventSources.Ops &&
                 entries[0].AlertEvent.RuleId == 0 &&
                 entries[0].AlertEvent.DedupeKey == "ops:deploy-workflow:op-1:Failed" &&
+                entries[0].AlertEvent.JobId == "job-exact" &&
+                entries[0].AlertEvent.OperationInstanceId == "opinst-exact" &&
+                entries[0].AlertEvent.CorrelationId == "corr-exact" &&
+                entries[0].AlertEvent.AuditId == "audit-exact" &&
+                entries[0].AlertEvent.ProposalId == "proposal-exact" &&
                 entries[0].Channels.Contains(AlertChannelType.Webhook)),
             Arg.Any<CancellationToken>());
     }
@@ -116,6 +181,11 @@ public sealed class OpsNotificationServiceTests
             Title = "Deploy Failed: op-1",
             Body = "Deploy operation 'op-1' reached terminal status Failed.",
             DedupeIdentifier = "op-1:Failed",
+            JobId = "job-exact",
+            OperationInstanceId = "opinst-exact",
+            CorrelationId = "corr-exact",
+            AuditId = "audit-exact",
+            ProposalId = "proposal-exact",
         };
 
     private static OpsNotificationService Create(
