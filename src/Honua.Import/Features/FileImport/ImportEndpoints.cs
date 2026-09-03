@@ -611,6 +611,10 @@ internal static partial class ImportEndpoints
 
             var importRequest = new ImportRequest
             {
+                OperationInstanceId = ReadLineageHeader(context, "X-Honua-Operation-Instance-Id"),
+                CorrelationId = context.TraceIdentifier,
+                AuditId = ReadLineageHeader(context, "X-Honua-Audit-Id"),
+                ProposalId = ReadLineageHeader(context, "X-Honua-Proposal-Id"),
                 CloudFileId = cloudFileId,
                 LocalFilePath = cloudFileId == null ? request.File.LocalFilePath : null,
                 FileName = request.File.FileName,
@@ -663,7 +667,11 @@ internal static partial class ImportEndpoints
                     Message = "File queued for background processing",
                     StatusUrl = $"/api/v1/admin/import/jobs/{jobId}",
                     CancelUrl = $"/api/v1/admin/import/jobs/{jobId}/cancel",
-                    UploadId = uploadId
+                    UploadId = uploadId,
+                    OperationInstanceId = importRequest.OperationInstanceId,
+                    CorrelationId = importRequest.CorrelationId,
+                    AuditId = importRequest.AuditId,
+                    ProposalId = importRequest.ProposalId
                 };
 
                 IResult result = Results.Json(
@@ -1617,6 +1625,11 @@ internal static partial class ImportEndpoints
         public static partial void SnapshotRefreshed(ILogger logger, string tableName, int layerCount);
     }
 
+    private static string? ReadLineageHeader(HttpContext context, string name)
+        => context.Request.Headers.TryGetValue(name, out var values) && values.Count > 0
+            ? values[0]
+            : null;
+
 }
 
 /// <summary>
@@ -1657,6 +1670,11 @@ internal sealed record BackgroundImportResponse
     /// Upload ID for tracking file upload progress (optional)
     /// </summary>
     public string? UploadId { get; init; }
+
+    public string? OperationInstanceId { get; init; }
+    public string? CorrelationId { get; init; }
+    public string? AuditId { get; init; }
+    public string? ProposalId { get; init; }
 }
 
 internal sealed record PreviewUrlImportRequest

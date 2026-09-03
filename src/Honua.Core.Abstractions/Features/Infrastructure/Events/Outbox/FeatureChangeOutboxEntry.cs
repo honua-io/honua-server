@@ -43,6 +43,18 @@ public sealed record FeatureChangeOutboxEntry
     /// preserve at-least-once-with-idempotency semantics.</summary>
     public required string EventId { get; init; }
 
+    /// <summary>Canonical governed operation instance, when supplied by the mutation.</summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>Canonical correlation identity, independent of <see cref="RequestId"/>.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Durable acceptance-audit identity.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>Approved proposal identity, when applicable.</summary>
+    public string? ProposalId { get; init; }
+
     /// <summary>Serialized canonical event payload (full <c>FeatureChangeEventRequest</c>).
     /// Stored as <c>jsonb</c> on Postgres and <c>nvarchar(max)</c> on SQL Server.</summary>
     public required string EventPayload { get; init; }

@@ -172,6 +172,8 @@ public sealed class OperationDispatcher : IOperationInvoker
             {
                 OperationInstanceId = envelope.OperationInstanceId,
                 CorrelationId = envelope.CorrelationId,
+                AuditId = acceptanceAuditId,
+                ProposalId = context.ApprovedProposalId,
             };
             createdAt = envelope.CreatedAt;
         }
@@ -193,6 +195,8 @@ public sealed class OperationDispatcher : IOperationInvoker
             {
                 OperationInstanceId = envelope.OperationInstanceId,
                 CorrelationId = envelope.CorrelationId,
+                AuditId = envelope.AuditId,
+                ProposalId = envelope.ProposalId,
             };
             acceptanceAuditId = envelope.AuditId;
             createdAt = envelope.CreatedAt;

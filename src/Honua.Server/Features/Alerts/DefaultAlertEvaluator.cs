@@ -163,6 +163,11 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             ["zoneName"] = zone?.ZoneName,
             ["featurePresent"] = feature.HasValue
         };
+        AddLineage(payload, "sourceEventId", change.SourceEventId);
+        AddLineage(payload, "operationInstanceId", change.OperationInstanceId);
+        AddLineage(payload, "correlationId", change.CorrelationId);
+        AddLineage(payload, "auditId", change.AuditId);
+        AddLineage(payload, "proposalId", change.ProposalId);
 
         return new AlertEventEnvelope
         {
@@ -178,8 +183,21 @@ internal sealed class DefaultAlertEvaluator : IAlertEvaluator
             OccurredAt = occurredAt,
             PayloadJson = payload.ToJsonString(),
             IncidentStatus = incidentStatus,
-            IncidentDurationMs = incidentDurationMs
+            IncidentDurationMs = incidentDurationMs,
+            SourceEventId = change.SourceEventId,
+            OperationInstanceId = change.OperationInstanceId,
+            CorrelationId = change.CorrelationId,
+            AuditId = change.AuditId,
+            ProposalId = change.ProposalId
         };
+    }
+
+    private static void AddLineage(JsonObject payload, string name, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            payload[name] = value;
+        }
     }
 
     private static bool DetermineInside(

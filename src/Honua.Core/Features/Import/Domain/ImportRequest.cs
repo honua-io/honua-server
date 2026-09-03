@@ -36,6 +36,18 @@ public enum ImportLoadMode
 /// </summary>
 public sealed record ImportRequest
 {
+    /// <summary>Canonical governed operation instance that accepted this import.</summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>Canonical request correlation identity; never derived from job metadata.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Durable acceptance-audit identity for the governed import.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>Approved proposal identity when this import is an approved replay.</summary>
+    public string? ProposalId { get; init; }
+
     /// <summary>
     /// File stream to import (optional if CloudFileId is provided)
     /// </summary>

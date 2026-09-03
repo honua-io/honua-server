@@ -78,7 +78,11 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             request.SourceKind,
             request.SourceUrl,
             request.CloudFileId,
-            request.UploadId);
+            request.UploadId,
+            operationInstanceId: request.OperationInstanceId,
+            correlationId: request.CorrelationId,
+            auditId: request.AuditId,
+            proposalId: request.ProposalId);
 
         // Store initial progress in the unified store. The write is retried a bounded number of
         // times for transient store failures; cancellation propagates and an unreachable store
@@ -234,7 +238,14 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             }
 
             progressWriter = new SerializedImportProgressWriter(_progressStore, _logger, jobId);
-            var progress = new Progress<ImportProgress>(p => progressWriter.Report(p with { JobId = jobId }));
+            var progress = new Progress<ImportProgress>(p => progressWriter.Report(p with
+            {
+                JobId = jobId,
+                OperationInstanceId = request.OperationInstanceId,
+                CorrelationId = request.CorrelationId,
+                AuditId = request.AuditId,
+                ProposalId = request.ProposalId,
+            }));
 
             using var scope = _scopeFactory.CreateScope();
             var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();

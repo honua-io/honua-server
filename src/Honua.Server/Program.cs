@@ -1361,6 +1361,11 @@ app.UseApiKeyAuthentication();
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
 
+// Canonical governed-lineage headers are accepted only when accompanied by a
+// one-use, process-local attestation issued by an operation loopback executor.
+// Public callers cannot attach mutations or audit evidence to unrelated operations.
+app.UseOperationLineageAttestation();
+
 // MCP bearer credentials must be fully validated before tenant context, schema
 // routing, or tenant status observes the request. The endpoint filter remains
 // defense-in-depth for non-standard hosting pipelines.
