@@ -75,17 +75,7 @@ internal static class StandardErrorResponseFormatter
 
         if (ProtocolRequestClassifier.IsWmtsAlias(path))
         {
-            return FormatWmtsError(context, errorResponse, options);
-        }
-
-        if (ProtocolRequestClassifier.IsWcs(path))
-        {
-            return FormatWcsError(context, errorResponse, options);
-        }
-
-        if (ProtocolRequestClassifier.IsWps(path))
-        {
-            return FormatWcsError(context, errorResponse, options);
+            return FormatWmtsAliasError(context, errorResponse, options);
         }
 
         if (ProtocolRequestClassifier.IsOgcServiceAlias(path))
@@ -101,6 +91,16 @@ internal static class StandardErrorResponseFormatter
         if (ProtocolRequestClassifier.IsWfs(path))
         {
             return FormatWfsError(context, errorResponse, options);
+        }
+
+        if (ProtocolRequestClassifier.IsWps(path))
+        {
+            return FormatWpsError(context, errorResponse, options);
+        }
+
+        if (ProtocolRequestClassifier.IsWcs(path))
+        {
+            return FormatWcsError(context, errorResponse, options);
         }
 
         if (ProtocolRequestClassifier.IsAdmin(path))
@@ -250,9 +250,37 @@ internal static class StandardErrorResponseFormatter
     }
 
     /// <summary>
-    /// Formats WMTS errors using the OWS 1.1 exception contract required by WMTS 1.0.0.
+    /// Formats WPS 2.0.2 errors using the service's OWS 2.0 exception contract.
     /// </summary>
-    private static IResult FormatWmtsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    private static IResult FormatWpsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
+        AddResponseHeaders(context, options);
+        var exceptionCode = string.IsNullOrWhiteSpace(options.WpsExceptionCode)
+            ? MapWfsCode(errorResponse)
+            : options.WpsExceptionCode;
+        var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
+            ? string.Empty
+            : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
+        var xmlContent = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/2.0" version="2.0.0">
+              <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
+                <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
+              </ows:Exception>
+            </ows:ExceptionReport>
+            """;
+
+        return Results.Content(
+            xmlContent,
+            "application/xml",
+            System.Text.Encoding.UTF8,
+            errorResponse.StatusCode);
+    }
+
+    /// <summary>
+    /// Formats WMTS 1.0 errors using the service's OWS 1.1 exception contract.
+    /// </summary>
+    private static IResult FormatWmtsAliasError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
         var exceptionCode = string.IsNullOrWhiteSpace(options.WmtsExceptionCode)
@@ -558,6 +586,16 @@ internal static class StandardErrorResponseFormatter
         if (ProtocolRequestClassifier.IsOData(path))
         {
             return ("OData", false);
+        }
+
+        if (ProtocolRequestClassifier.IsWmtsAlias(path))
+        {
+            return ("WMTS", false);
+        }
+
+        if (ProtocolRequestClassifier.IsWps(path))
+        {
+            return ("WPS", false);
         }
 
         if (ProtocolRequestClassifier.IsOgcServiceAlias(path))

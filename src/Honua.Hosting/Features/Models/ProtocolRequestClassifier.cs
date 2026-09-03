@@ -68,6 +68,8 @@ internal static class ProtocolRequestClassifier
 
     internal static bool IsWfs(PathString path) => path.StartsWithSegments("/wfs");
 
+    internal static bool IsWps(PathString path) => path.StartsWithSegments("/wps");
+
     internal static bool IsWcs(PathString path)
     {
         if (path.StartsWithSegments("/ogc/services", out var remaining))
@@ -87,8 +89,6 @@ internal static class ProtocolRequestClassifier
 
         return false;
     }
-
-    internal static bool IsWps(PathString path) => path.StartsWithSegments("/wps");
 
     internal static bool IsAdmin(PathString path)
     {

@@ -267,6 +267,11 @@ internal sealed class ErrorResponseFormatterOptions
     public string? WcsExceptionCode { get; init; }
 
     /// <summary>
+    /// Explicit WPS service exception code to emit instead of inferring one from the HTTP status.
+    /// </summary>
+    public string? WpsExceptionCode { get; init; }
+
+    /// <summary>
     /// Explicit WMTS service exception code to emit instead of inferring one from the HTTP status.
     /// </summary>
     public string? WmtsExceptionCode { get; init; }

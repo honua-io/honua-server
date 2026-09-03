@@ -17188,7 +17188,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpNotification_SuppressesJsonRpcResponseWithoutHandlerSideEffects",
+        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpAllNotificationBatch_ReturnsAcceptedWithoutBody",
+        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpBatch_PreservesArrayIdsAndSuppressesNotificationElements",
+        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpDataMethodWithoutId_ReturnsErrorInsteadOfSuppressingResponse",
+        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpInvalidRequestId_NormalizesResponseIdToNull",
+        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpNotificationMethod_SuppressesJsonRpcResponseWithoutHandlerSideEffects",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_AnonymousToolCallWithTenantHeader_FailsClosedBeforeToolExecution",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_AuthorizedTenantOverride_BindsSessionToEffectiveHeaderTenant",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_BearerUnauthorizedTenantOverride_FailsBeforeEndpointExecution",
