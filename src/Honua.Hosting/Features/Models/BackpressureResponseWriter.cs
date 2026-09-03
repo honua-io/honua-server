@@ -29,7 +29,7 @@ internal static class BackpressureResponseWriter
 
         AddTransportHeaders(context, retryAfterSeconds);
 
-        if (IsMcp(context.Request.Path))
+        if (IsMcpPost(context))
         {
             await WriteMcpAsync(context, kind, retryAfterSeconds, cancellationToken).ConfigureAwait(false);
             return;
@@ -188,13 +188,25 @@ internal static class BackpressureResponseWriter
 
             isBatch = IsJsonArray(buffer.AsSpan(0, bytesRead));
             var ids = new List<JsonElement?>();
-            using var document = JsonDocument.Parse(buffer.AsMemory(0, bytesRead));
-            if (isBatch && document.RootElement.ValueKind == JsonValueKind.Array)
-                ids.AddRange(document.RootElement.EnumerateArray().Select(ReadRequestId));
-            else if (!isBatch && document.RootElement.ValueKind == JsonValueKind.Object)
-                ids.Add(ReadRequestId(document.RootElement));
+            try
+            {
+                using var document = JsonDocument.Parse(buffer.AsMemory(0, bytesRead));
+                if (isBatch && document.RootElement.ValueKind == JsonValueKind.Array)
+                    ids.AddRange(document.RootElement.EnumerateArray().Select(ReadRequestId));
+                else if (!isBatch && document.RootElement.ValueKind == JsonValueKind.Object)
+                    ids.Add(ReadRequestId(document.RootElement));
 
-            return new McpRequestInspection(isBatch, ids);
+                return new McpRequestInspection(isBatch, ids);
+            }
+            catch (JsonException)
+            {
+                List<JsonElement?> prefixIds = bytesRead == MaxMcpInspectionBytes
+                    ? ReadRequestIdsFromPrefix(buffer.AsSpan(0, bytesRead), isBatch)
+                    : [];
+                return new McpRequestInspection(
+                    isBatch,
+                    prefixIds);
+            }
         }
         catch (JsonException)
         {
@@ -212,6 +224,135 @@ internal static class BackpressureResponseWriter
         => request.ValueKind == JsonValueKind.Object && request.TryGetProperty("id", out var id)
             ? id.Clone()
             : null;
+
+    private static List<JsonElement?> ReadRequestIdsFromPrefix(
+        ReadOnlySpan<byte> payload,
+        bool isBatch)
+    {
+        var ids = new List<JsonElement?>();
+        var reader = new Utf8JsonReader(payload, isFinalBlock: false, state: default);
+
+        try
+        {
+            if (!reader.Read())
+            {
+                return ids;
+            }
+
+            if (!isBatch)
+            {
+                if (reader.TokenType != JsonTokenType.StartObject)
+                {
+                    return ids;
+                }
+
+                var hasId = false;
+                JsonElement? id = null;
+                while (reader.Read())
+                {
+                    if (reader.TokenType != JsonTokenType.PropertyName
+                        || reader.CurrentDepth != 1
+                        || !reader.ValueTextEquals("id"u8))
+                    {
+                        continue;
+                    }
+
+                    if (!reader.Read() || !TryReadJsonValue(ref reader, out var value))
+                    {
+                        break;
+                    }
+
+                    id = value;
+                    hasId = true;
+                }
+
+                if (hasId)
+                {
+                    ids.Add(id);
+                }
+
+                return ids;
+            }
+
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                return ids;
+            }
+
+            var activeItem = false;
+            var activeItemHasId = false;
+            JsonElement? activeItemId = null;
+            while (reader.Read())
+            {
+                if (!activeItem && reader.CurrentDepth == 1)
+                {
+                    if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
+                    {
+                        activeItem = true;
+                        activeItemHasId = false;
+                        activeItemId = null;
+                    }
+                    else if (reader.TokenType is not JsonTokenType.EndArray)
+                    {
+                        ids.Add(null);
+                    }
+
+                    continue;
+                }
+
+                if (activeItem
+                    && reader.CurrentDepth == 2
+                    && reader.TokenType == JsonTokenType.PropertyName
+                    && reader.ValueTextEquals("id"u8))
+                {
+                    if (!reader.Read() || !TryReadJsonValue(ref reader, out var value))
+                    {
+                        break;
+                    }
+
+                    activeItemId = value;
+                    activeItemHasId = true;
+                    continue;
+                }
+
+                if (activeItem
+                    && reader.CurrentDepth == 1
+                    && reader.TokenType is JsonTokenType.EndObject or JsonTokenType.EndArray)
+                {
+                    ids.Add(activeItemHasId ? activeItemId : null);
+                    activeItem = false;
+                }
+            }
+
+            // A bounded prefix may end inside the final item. A complete id property
+            // is still enough to correlate that visible request in the denial envelope.
+            if (activeItem && activeItemHasId)
+            {
+                ids.Add(activeItemId);
+            }
+        }
+        catch (JsonException)
+        {
+            // Keep IDs already observed before malformed or incomplete input.
+        }
+
+        return ids;
+    }
+
+    private static bool TryReadJsonValue(ref Utf8JsonReader reader, out JsonElement value)
+    {
+        try
+        {
+            using var document = JsonDocument.ParseValue(ref reader);
+            value = document.RootElement.Clone();
+            return true;
+        }
+        catch (JsonException)
+        {
+            value = default;
+            return false;
+        }
+    }
 
     private static bool IsJsonArray(ReadOnlySpan<byte> payload)
     {
@@ -257,8 +398,10 @@ internal static class BackpressureResponseWriter
         ? BackpressureMetadata.RateLimitExceededCode
         : BackpressureMetadata.ServiceUnavailableCode;
 
-    private static bool IsMcp(PathString path)
-        => path.Equals(new PathString("/mcp"));
+    private static bool IsMcpPost(HttpContext context)
+        => HttpMethods.IsPost(context.Request.Method)
+            && (context.Request.Path.Equals(new PathString("/mcp"))
+                || context.Request.Path.Equals(new PathString("/mcp/")));
 
     private static bool IsGrpc(HttpContext context)
         => context.Request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) == true

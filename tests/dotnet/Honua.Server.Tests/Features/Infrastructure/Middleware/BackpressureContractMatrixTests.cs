@@ -178,6 +178,7 @@ public sealed class BackpressureContractMatrixTests
     {
         var context = new DefaultHttpContext();
         context.TraceIdentifier = CorrelationId;
+        context.Request.Method = HttpMethods.Post;
         context.Request.Path = "/mcp";
         var payload = Encoding.UTF8.GetBytes(
             "{\"jsonrpc\":\"2.0\",\"id\":3905,\"padding\":\"" +
@@ -189,6 +190,106 @@ public sealed class BackpressureContractMatrixTests
         await BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, 17);
 
         body.BytesRead.Should().BeLessOrEqualTo(16 * 1024);
+        await context.Response.CompleteAsync();
+        context.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(context.Response.Body);
+        document.RootElement.GetProperty("id").GetInt32().Should().Be(3905);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /mcp/")]
+    public async Task McpBackpressure_TrailingSlashPreservesNativeEnvelope()
+    {
+        var context = CreateMcpContext(HttpMethods.Post, "/mcp/");
+        context.Request.Body = new MemoryStream(
+            Encoding.UTF8.GetBytes("{\"jsonrpc\":\"2.0\",\"id\":3905,\"method\":\"tools/list\"}"));
+
+        await BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, SaturationDelaySeconds);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        await context.Response.CompleteAsync();
+        context.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(context.Response.Body);
+        document.RootElement.GetProperty("id").GetInt32().Should().Be(3905);
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("DELETE")]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("GET /mcp")]
+    [Endpoint("DELETE /mcp")]
+    public async Task McpBackpressure_NonPostUsesTransportResponseWithoutInspectingBody(string method)
+    {
+        var context = CreateMcpContext(method, "/mcp");
+        context.RequestServices = new ServiceCollection().AddLogging().AddRouting().BuildServiceProvider();
+        var body = new CountingRequestBody(
+            Encoding.UTF8.GetBytes("{\"jsonrpc\":\"2.0\",\"id\":3905,\"method\":\"tools/list\"}"));
+        context.Request.Body = body;
+
+        await BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, SaturationDelaySeconds);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        context.Response.ContentType.Should().Be("application/problem+json");
+        body.BytesRead.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /mcp")]
+    public async Task McpBackpressure_WhenInspectionIsCapped_PreservesVisibleBatchIds()
+    {
+        var context = CreateMcpContext(HttpMethods.Post, "/mcp");
+        var payload = Encoding.UTF8.GetBytes(
+            "[{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"tools/list\"}," +
+            "{\"jsonrpc\":\"2.0\",\"id\":\"second\",\"method\":\"tools/list\",\"padding\":\"" +
+            new string('x', 32 * 1024) + "\"}]");
+        var body = new CountingRequestBody(payload);
+        context.Request.Body = body;
+
+        await BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, SaturationDelaySeconds);
+
+        body.BytesRead.Should().BeLessOrEqualTo(16 * 1024);
+        await context.Response.CompleteAsync();
+        context.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(context.Response.Body);
+        var responses = document.RootElement;
+        responses.ValueKind.Should().Be(JsonValueKind.Array);
+        responses.GetArrayLength().Should().Be(2);
+        responses[0].GetProperty("id").GetInt32().Should().Be(11);
+        responses[1].GetProperty("id").GetString().Should().Be("second");
+    }
+
+    [Theory]
+    [InlineData("{\"jsonrpc\":\"2.0\",\"id\":3905,\"method\":", false)]
+    [InlineData("[{\"jsonrpc\":\"2.0\",\"id\":3905,\"method\":\"tools/list\"},", true)]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /mcp")]
+    public async Task McpBackpressure_WhenInputEndsBeforeInspectionCap_DoesNotRecoverPrefixIds(
+        string payload,
+        bool isBatch)
+    {
+        var context = CreateMcpContext(HttpMethods.Post, "/mcp");
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(payload));
+
+        await BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, SaturationDelaySeconds);
+
+        await context.Response.CompleteAsync();
+        context.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(context.Response.Body);
+        var response = isBatch ? document.RootElement[0] : document.RootElement;
+        response.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    private static DefaultHttpContext CreateMcpContext(string method, string path)
+    {
+        var context = new DefaultHttpContext();
+        context.TraceIdentifier = CorrelationId;
+        context.Request.Method = method;
+        context.Request.Path = path;
+        context.Response.Body = new MemoryStream();
+        return context;
     }
 
     private static void AssertNativeContract(
