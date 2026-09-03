@@ -752,15 +752,20 @@ internal sealed partial class Wfs20Handler
         TransactionFeatureChanges changes,
         CancellationToken cancellationToken)
     {
-        // WFS-T Update changes only the properties named in the request. Preserve that
-        // delta for the writer instead of materializing a stale full-row snapshot; the
-        // prepared adapter applies it with EditUpdateMode.Merge, preventing concurrent
-        // updates to disjoint attributes from overwriting one another (#33).
+        // The shared feature writer currently replaces both geometry and attributes; it
+        // does not carry EditUpdateMode through to the provider. Materialize the merged
+        // row here so a property-only WFS-T update cannot clear omitted fields or geometry.
+        var mergedAttributes = existing.Attributes.ToBuilder();
+        foreach (var (name, value) in changes.Attributes)
+        {
+            mergedAttributes[name] = value;
+        }
+
         return await CreateTransactionFeatureAsync(
             resource,
             existing.Id,
-            changes.GeometrySpecified ? changes.Geometry : null,
-            changes.Attributes,
+            changes.GeometrySpecified ? changes.Geometry : existing.Geometry,
+            mergedAttributes.ToImmutable(),
             cancellationToken).ConfigureAwait(false);
     }
 

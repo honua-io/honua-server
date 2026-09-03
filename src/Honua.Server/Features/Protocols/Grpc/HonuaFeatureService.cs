@@ -278,12 +278,12 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 ?? "anonymous";
             var scopedKey = $"{request.ServiceId ?? ""}:{request.LayerId}:{principalId}:{idempotencyKey}";
             idempotencyLease = await _idempotencyStore.EnterAsync(scopedKey, context.CancellationToken).ConfigureAwait(false);
-            if (idempotencyLease.Response is not null)
-            {
-                return idempotencyLease.Response;
-            }
         }
         using var heldIdempotencyLease = idempotencyLease;
+        if (idempotencyLease?.Response is not null)
+        {
+            return idempotencyLease.Response;
+        }
 
         // RLS / permanent-filter enforcement runs only on the read path; the edit SQL
         // filters by (layer_id, objectid) with no row-level predicate. So every update/delete

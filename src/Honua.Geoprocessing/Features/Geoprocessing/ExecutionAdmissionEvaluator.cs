@@ -356,12 +356,14 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         {
             try
             {
-                const string script = "local cutoff=tonumber(ARGV[1])-tonumber(ARGV[2]); redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',cutoff); local count=redis.call('ZCARD',KEYS[1]); if count >= tonumber(ARGV[3]) then return count end; redis.call('ZADD',KEYS[1],ARGV[1],ARGV[4]); redis.call('EXPIRE',KEYS[1],math.ceil(tonumber(ARGV[2])/1000)); return count+1";
+                // Return a negative count when the cap is reached: the boundary value
+                // is otherwise indistinguishable from a successful final claim.
+                const string script = "local cutoff=tonumber(ARGV[1])-tonumber(ARGV[2]); redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',cutoff); local count=redis.call('ZCARD',KEYS[1]); if count >= tonumber(ARGV[3]) then return -count end; redis.call('ZADD',KEYS[1],ARGV[1],ARGV[4]); redis.call('EXPIRE',KEYS[1],math.ceil(tonumber(ARGV[2])/1000)); return count+1";
                 var redisKey = $"honua:execution-admission:rate:{key}";
                 var nowMs = now.ToUnixTimeMilliseconds();
                 var result = (long)await _redis.ScriptEvaluateAsync(script, [new RedisKey(redisKey)],
                     [nowMs, (long)window.TotalMilliseconds, options.MaxSubmissionsPerWindow, $"{nowMs}:{Guid.NewGuid():N}"]).ConfigureAwait(false);
-                return (result <= options.MaxSubmissionsPerWindow, (int)result);
+                return (result >= 0, (int)Math.Abs(result));
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
