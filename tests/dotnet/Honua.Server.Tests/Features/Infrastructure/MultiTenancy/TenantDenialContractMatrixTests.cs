@@ -27,7 +27,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 
 /// <summary>
-/// Full tenant-middleware denial matrix for the eight release protocol families (issue #3904).
+/// Full tenant-middleware denial matrix for the nine release protocol families (issue #3904).
 /// Each cell proves the denial is native, correlated, and terminates before the route handler.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
@@ -53,11 +53,11 @@ public sealed class TenantDenialContractMatrixTests
     }
 
     [UnitTest]
-    public void ContractCells_ContainsExactEightByFourDenominator()
+    public void ContractCells_ContainsExactNineByFourDenominator()
     {
-        Routes.Should().HaveCount(8);
+        Routes.Should().HaveCount(9);
         Denials.Should().HaveCount(4);
-        ContractCells.Count.Should().Be(32);
+        ContractCells.Count.Should().Be(36);
     }
 
     [Theory]
@@ -82,6 +82,48 @@ public sealed class TenantDenialContractMatrixTests
         handlerCalls.Value.Should().Be(0, "tenant denial must terminate before endpoint execution");
         response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle(CorrelationId);
         AssertNativeContract(route, denial, response, body);
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("DELETE")]
+    [Operation(Operations.Security)]
+    [Endpoint("GET|DELETE /mcp tenant denial")]
+    public async Task TenantDenial_McpTransportMethods_KeepHttpFailureSemantics(string method)
+    {
+        var route = Routes.Single(candidate => candidate.Name == "MCP JSON-RPC");
+        var denial = Denials.Single(candidate => candidate.Name == "suspended tenant");
+        await using var app = await CreateAppAsync(route, denial, new StrongBox<int>());
+        using var request = new HttpRequestMessage(new HttpMethod(method), route.Path);
+
+        var response = await app.GetTestClient().SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType.Should().BeNull();
+        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /mcp notification tenant denial")]
+    public async Task TenantDenial_McpNotification_ReturnsAcceptedWithoutJsonRpcBody()
+    {
+        var route = Routes.Single(candidate => candidate.Name == "MCP JSON-RPC");
+        var denial = Denials.Single(candidate => candidate.Name == "suspended tenant");
+        await using var app = await CreateAppAsync(route, denial, new StrongBox<int>());
+        using var request = new HttpRequestMessage(HttpMethod.Post, route.Path)
+        {
+            Content = new StringContent(
+                "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{}}",
+                Encoding.UTF8,
+                "application/json")
+        };
+
+        var response = await app.GetTestClient().SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        response.Content.Headers.ContentType.Should().BeNull();
+        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
     }
 
     private static void AssertNativeContract(
@@ -137,6 +179,16 @@ public sealed class TenantDenialContractMatrixTests
                     response.StatusCode.Should().Be(denial.HttpStatus);
                     response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
                     body.Should().Contain($"exceptionCode=\"{denial.XmlCode}\"");
+                    body.Should().Contain($"CorrelationId: {CorrelationId}");
+                    break;
+                }
+
+            case "WCS":
+                {
+                    response.StatusCode.Should().Be(denial.HttpStatus);
+                    response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+                    body.Should().Contain("<ows:ExceptionReport");
+                    body.Should().Contain("exceptionCode=\"NoApplicableCode\"");
                     body.Should().Contain($"CorrelationId: {CorrelationId}");
                     break;
                 }
@@ -264,6 +316,7 @@ public sealed class TenantDenialContractMatrixTests
     [
         new("OGC API", "/ogc/features/collections"),
         new("WFS", "/wfs"),
+        new("WCS", "/rest/services/0/ImageServer/WCS"),
         new("WMS alias", "/ogc/services/example/wms"),
         new("OData", "/odata/Features"),
         new("GeoServices", "/rest/services/example/FeatureServer"),

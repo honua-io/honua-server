@@ -37,7 +37,9 @@ internal static class TenantDenialResponseWriter
         context.Response.Headers[CorrelationHeaderName] = context.TraceIdentifier;
         if (IsMcpRequest(context.Request.Path))
         {
-            return WriteMcpAsync(context, denial);
+            return HttpMethods.IsPost(context.Request.Method)
+                ? WriteMcpAsync(context, denial)
+                : WriteMcpTransportDenial(context, denial);
         }
 
         if (IsGrpcRequest(context.Request))
@@ -112,16 +114,22 @@ internal static class TenantDenialResponseWriter
 
     private static async Task WriteMcpAsync(HttpContext context, TenantDenialKind denial)
     {
-        var requestId = await ReadMcpRequestIdAsync(context.Request, context.RequestAborted).ConfigureAwait(false);
+        var requestInfo = await ReadMcpRequestAsync(context.Request, context.RequestAborted).ConfigureAwait(false);
+        if (requestInfo.IsNotification)
+        {
+            context.Response.StatusCode = StatusCodes.Status202Accepted;
+            return;
+        }
+
         var output = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(output))
         {
             writer.WriteStartObject();
             writer.WriteString("jsonrpc", "2.0");
             writer.WritePropertyName("id");
-            if (requestId.HasValue)
+            if (requestInfo.RequestId.HasValue)
             {
-                requestId.Value.WriteTo(writer);
+                requestInfo.RequestId.Value.WriteTo(writer);
             }
             else
             {
@@ -149,29 +157,45 @@ internal static class TenantDenialResponseWriter
         await context.Response.Body.WriteAsync(output.WrittenMemory, context.RequestAborted).ConfigureAwait(false);
     }
 
-    private static async Task<JsonElement?> ReadMcpRequestIdAsync(
+    private static Task WriteMcpTransportDenial(HttpContext context, TenantDenialKind denial)
+    {
+        context.Response.StatusCode = denial == TenantDenialKind.AuthenticationRequired
+            ? StatusCodes.Status401Unauthorized
+            : StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
+    }
+
+    private static async Task<McpRequestInfo> ReadMcpRequestAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
         if (request.ContentLength == 0)
         {
-            return null;
+            return default;
         }
 
         try
         {
             using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("id", out var id)
-                    ? id.Clone()
-                    : null;
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return default;
+            }
+
+            var hasId = document.RootElement.TryGetProperty("id", out var id);
+            var isNotification = !hasId
+                && document.RootElement.TryGetProperty("method", out var method)
+                && method.ValueKind == JsonValueKind.String;
+            return new McpRequestInfo(isNotification, hasId ? id.Clone() : null);
         }
         catch (JsonException)
         {
-            return null;
+            return default;
         }
     }
+
+    private readonly record struct McpRequestInfo(bool IsNotification, JsonElement? RequestId);
 
     private static void WriteGrpc(HttpContext context, TenantDenialKind denial)
     {
