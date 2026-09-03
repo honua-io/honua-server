@@ -143,6 +143,15 @@ test('the reviewer turn budget scales with the staged diff and stays capped', ()
   assert.match(source, /--max-turns \$\{\{ steps\.diff\.outputs\.max_turns \}\}/);
 });
 
+test('the staged diff is verified against the resolved exact head', () => {
+  assert.doesNotMatch(source, /gh pr diff "\$\{PR\}"/);
+  assert.match(source, /refs\/pull\/\$\{PR\}\/head:pr-head/);
+  assert.match(source, /fetched_head="\$\(git -C \.pr-diff-src rev-parse pr-head\)"/);
+  assert.match(source, /\[ "\$\{fetched_head\}" != "\$\{BOUND_HEAD\}" \]/);
+  assert.match(source, /not the bound head \$\{BOUND_HEAD\}; not staging a mismatched diff/);
+  assert.match(source, /git -C \.pr-diff-src diff --patch "\$\{merge_base\}" pr-head/);
+});
+
 test('an exhausted review posts the explicit fallback without widening token permissions', () => {
   assert.match(source, /steps\.claude\.outcome == 'failure'/);
   assert.match(source, /\.subtype == "error_max_turns"/);
