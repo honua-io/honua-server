@@ -203,6 +203,9 @@ internal sealed partial class AdminRealtimeBroadcaster : BackgroundService
             TargetId: transition.TargetId,
             ReleaseId: transition.ReleaseId,
             CorrelationId: transition.CorrelationId,
+            OperationInstanceId: transition.Operation.Audit.OperationInstanceId,
+            AuditId: transition.Operation.Audit.AuditId,
+            ProposalId: transition.Operation.Audit.ProposalId,
             OccurredAt: transition.OccurredAt);
     }
 

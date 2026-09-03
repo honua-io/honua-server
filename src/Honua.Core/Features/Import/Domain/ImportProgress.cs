@@ -45,6 +45,18 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
     /// </summary>
     public required string JobId { get; init; }
 
+    /// <summary>Canonical governed operation instance that accepted this job.</summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>Canonical request correlation identity.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Durable acceptance-audit identity.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>Approved proposal identity, when applicable.</summary>
+    public string? ProposalId { get; init; }
+
     /// <summary>
     /// Current status of the import.
     /// </summary>
@@ -212,10 +224,18 @@ public sealed record ImportProgress : IOperationProgress, ICancellableOperationP
         string? sourceUrl = null,
         string? cloudFileId = null,
         string? uploadId = null,
-        IReadOnlyList<string>? warnings = null)
+        IReadOnlyList<string>? warnings = null,
+        string? operationInstanceId = null,
+        string? correlationId = null,
+        string? auditId = null,
+        string? proposalId = null)
         => new()
         {
             JobId = jobId,
+            OperationInstanceId = operationInstanceId,
+            CorrelationId = correlationId,
+            AuditId = auditId,
+            ProposalId = proposalId,
             Status = ImportStatus.Queued,
             TableName = tableName,
             FileName = fileName,
