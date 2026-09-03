@@ -315,6 +315,9 @@ internal sealed class McpPlatformOpsReader(
                     "An evidence-bound proposal requires an execution payload.");
             }
 
+            await EnsureEvidenceProposerCanBeRevalidatedAsync(actor!, cancellationToken)
+                .ConfigureAwait(false);
+
             byte[] canonicalPayload;
             try
             {
@@ -371,6 +374,27 @@ internal sealed class McpPlatformOpsReader(
             SupportedKinds = ResolveSupportedKinds(),
             Message = result.Message
         };
+    }
+
+    private async Task EnsureEvidenceProposerCanBeRevalidatedAsync(
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        const string marker = ":api-key:";
+        var markerIndex = actor.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (markerIndex <= 0
+            || !Guid.TryParse(actor[(markerIndex + marker.Length)..], out var apiKeyId))
+        {
+            throw new GeoprocessingValidationException(
+                "Evidence-bound proposals require a stored API-key proposer that can be revalidated at approval time.");
+        }
+
+        var apiKeys = _services.GetService<IAdminApiKeyStore>();
+        if (apiKeys is null || await apiKeys.GetAsync(apiKeyId, cancellationToken).ConfigureAwait(false) is null)
+        {
+            throw new GeoprocessingValidationException(
+                "Evidence-bound proposals require a stored API-key proposer that can be revalidated at approval time.");
+        }
     }
 
     private async Task<RollbackRevisionSelection> ResolveRollbackRevisionAsync(

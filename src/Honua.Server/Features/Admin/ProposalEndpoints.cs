@@ -261,9 +261,11 @@ internal static class ProposalEndpoints
         [FromBody] RejectProposalRequest? request,
         [FromServices] IPermissionResolver permissionResolver,
         HttpContext context,
-        [FromServices] IOperationGateway? gateway = null)
+        [FromServices] IOperationGateway? gateway = null,
+        [FromServices] IOperationProposalStore? proposalStore = null,
+        [FromServices] ITenantContext? tenantContext = null)
     {
-        if (gateway is null)
+        if (gateway is null || proposalStore is null)
         {
             return ControlPlaneUnavailable(context);
         }
@@ -278,6 +280,13 @@ internal static class ProposalEndpoints
         if (denied != null)
         {
             return denied;
+        }
+
+        var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+        if (proposal is null || (proposal.Evidence is not null
+                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal)))
+        {
+            return Results.NotFound();
         }
 
         try
