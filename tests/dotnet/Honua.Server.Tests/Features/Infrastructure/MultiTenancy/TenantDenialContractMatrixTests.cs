@@ -65,7 +65,8 @@ public sealed class TenantDenialContractMatrixTests
     [Trait("Category", "Integration")]
     [Trait("Tier", "Integration")]
     [Operation(Operations.Security)]
-    [Endpoint("GET|POST tenant denial protocol matrix")]
+    [Endpoint("GET /tenant-denial/protocol-matrix")]
+    [Endpoint("POST /tenant-denial/protocol-matrix")]
     public async Task TenantDenial_RouteAndCause_UsesNativeEnvelopeWithoutHandlerSideEffects(
         string routeName,
         string denialName)
@@ -88,7 +89,8 @@ public sealed class TenantDenialContractMatrixTests
     [InlineData("GET")]
     [InlineData("DELETE")]
     [Operation(Operations.Security)]
-    [Endpoint("GET|DELETE /mcp tenant denial")]
+    [Endpoint("GET /mcp")]
+    [Endpoint("DELETE /mcp")]
     public async Task TenantDenial_McpTransportMethods_KeepHttpFailureSemantics(string method)
     {
         var route = Routes.Single(candidate => candidate.Name == "MCP JSON-RPC");
