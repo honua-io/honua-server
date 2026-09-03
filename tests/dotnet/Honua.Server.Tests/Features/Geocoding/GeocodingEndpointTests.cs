@@ -46,13 +46,13 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
         using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
+        using var postContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["singleLine"] = "1600 Pennsylvania Ave NW",
+            ["f"] = "json",
+        });
         using var postResponse = await client.PostAsync(
-            "/rest/services/GeocodeServer/findAddressCandidates",
-            new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["singleLine"] = "1600 Pennsylvania Ave NW",
-                ["f"] = "json",
-            }));
+            "/rest/services/GeocodeServer/findAddressCandidates", postContent);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);

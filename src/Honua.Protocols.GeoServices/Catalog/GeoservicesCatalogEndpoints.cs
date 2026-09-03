@@ -831,13 +831,9 @@ internal static class GeoservicesCatalogEndpoints
     {
         var result = new List<ServiceDirectoryEntry>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in source.OrderBy(static entry => entry, Comparer<ServiceDirectoryEntry>.Create(ServiceDirectoryEntryComparer)))
-        {
-            if (seen.Add($"{entry.Name}\u0000{entry.Type}"))
-            {
-                result.Add(entry);
-            }
-        }
+        result.AddRange(source
+            .OrderBy(static entry => entry, Comparer<ServiceDirectoryEntry>.Create(ServiceDirectoryEntryComparer))
+            .Where(entry => seen.Add($"{entry.Name}\u0000{entry.Type}")));
 
         return result;
     }
