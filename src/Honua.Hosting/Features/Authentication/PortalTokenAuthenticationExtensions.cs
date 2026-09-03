@@ -155,8 +155,10 @@ public static class PortalTokenAuthenticationExtensions
         // #1888). Singletons mirror the in-memory IAdminApiKeyStore pattern: no
         // parallel durable token store (ADR-0049). They are additive — the flag-gated
         // Increment-1 client_credentials path keeps working via the API-key fallback.
-        services.TryAddSingleton<IOAuthClientStore>(
-            sp => new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
+        services.TryAddSingleton<IOAuthClientStore>(sp =>
+            sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
+                ? new RedisOAuthClientStore(redis, sp.GetService<TimeProvider>())
+                : new InMemoryOAuthClientStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton<IOAuthScopeCatalogue, InMemoryOAuthScopeCatalogue>();
 
         // Portal community-group + item-sharing surface (#1868). In-memory singletons

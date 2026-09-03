@@ -547,7 +547,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
 
         var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         // Must have written CancellationRequestedAt, not terminal Cancelled.
         await _jobStore.Received().TrySetAsync(

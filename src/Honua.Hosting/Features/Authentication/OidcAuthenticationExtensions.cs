@@ -294,6 +294,9 @@ public static class OidcAuthenticationExtensions
                 AuthenticationExtensions.TemporalRollbackExecutePolicy,
                 adminRoles,
                 schemes);
+
+            UpdateRolePolicy(authzOptions, AuthenticationExtensions.OpsReadPolicy, adminRoles, schemes);
+            UpdateRolePolicy(authzOptions, AuthenticationExtensions.ConformanceMutatePolicy, adminRoles, schemes);
         });
 
         return services;

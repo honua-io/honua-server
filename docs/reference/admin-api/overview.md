@@ -34,7 +34,7 @@ Each capability record reports:
 |---|---|
 | `supported` | The server build registers the backing implementation. |
 | `available` | Usable for this request after configuration, environment, authentication, license, and policy checks. |
-| `reasonCode` | Present only when unavailable; stable values include `unsupported`, `disabled-by-configuration`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. |
+| `reasonCode` | Present only when unavailable; stable values include `unsupported`, `experimental-disabled`, `disabled-by-configuration`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. Preview surfaces are opt-in through `Capabilities:Experimental:<capability-id>:Enabled=true`. |
 | `lifecycle` | Product lifecycle classification. Realtime feature streams and SensorThings report `preview` until exact-candidate qualification passes. |
 | `optInRequired` | Whether the capability must be explicitly enabled. Preview realtime capabilities remain declared but unavailable with `disabled-by-configuration` until opted in. |
 

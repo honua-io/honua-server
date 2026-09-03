@@ -9,6 +9,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
 using Honua.ServiceDefaults;
+using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Rendering;
 
@@ -60,7 +61,10 @@ internal static class VectorTileExecution
             serviceId ?? string.Empty,
             layerId ?? storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             tileMatrixSetId ?? DefaultTileMatrixSetId);
-        var cacheControl = $"public, max-age={ttlSeconds}";
+        var credentialed = context.User.Identity?.IsAuthenticated == true
+            || context.Request.Headers.ContainsKey(HeaderNames.Authorization)
+            || context.Request.Headers.ContainsKey("X-API-Key");
+        var cacheControl = $"{(credentialed ? "private" : "public")}, max-age={ttlSeconds}";
 
         var tileData = await tileProvider.GetMvtTileAsync(
             storageLayerId,
@@ -77,13 +81,22 @@ internal static class VectorTileExecution
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            context.Response.Headers["Cache-Control"] = cacheControl;
+            SetCacheHeaders(context, cacheControl, credentialed);
             return Results.NoContent();
         }
 
         activity?.SetStatus(ActivityStatusCode.Ok);
         activity?.SetTag("honua.tile.bytes", tileData.Length);
-        context.Response.Headers["Cache-Control"] = cacheControl;
+        SetCacheHeaders(context, cacheControl, credentialed);
         return Results.Bytes(tileData, MvtContentType);
+    }
+
+    private static void SetCacheHeaders(HttpContext context, string cacheControl, bool credentialed)
+    {
+        context.Response.Headers[HeaderNames.CacheControl] = cacheControl;
+        if (credentialed)
+        {
+            context.Response.Headers[HeaderNames.Vary] = "Authorization, X-API-Key";
+        }
     }
 }

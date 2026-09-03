@@ -4,6 +4,8 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -211,8 +213,12 @@ internal sealed class InMemoryOAuthClientStore(TimeProvider? timeProvider = null
             }
 
             var updated = record with { LastUsedAt = now, UpdatedAt = now };
-            _clients[record.Id] = updated;
-            return Task.FromResult<OAuthClientRecord?>(updated);
+            if (_clients.TryUpdate(record.Id, updated, record))
+            {
+                return Task.FromResult<OAuthClientRecord?>(updated);
+            }
+
+            continue;
         }
 
         return Task.FromResult<OAuthClientRecord?>(null);
@@ -248,4 +254,70 @@ internal sealed class InMemoryOAuthClientStore(TimeProvider? timeProvider = null
     }
 
     private static byte[] HashSecret(string secret) => SHA256.HashData(Encoding.UTF8.GetBytes(secret));
+}
+
+/// <summary>Redis-backed OAuth client registry shared by all server instances.</summary>
+internal sealed class RedisOAuthClientStore(IConnectionMultiplexer redis, TimeProvider? timeProvider = null) : IOAuthClientStore
+{
+    private const string Prefix = "honua:auth:oauth-client:";
+    private const string IdsKey = Prefix + "ids";
+    private readonly IDatabase _database = redis.GetDatabase();
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
+    public async Task<IReadOnlyList<OAuthClientRecord>> ListAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var ids = await _database.SetMembersAsync(IdsKey).ConfigureAwait(false);
+        var values = ids.Length == 0 ? Array.Empty<RedisValue>() : await _database.StringGetAsync(ids.Select(id => (RedisKey)BuildKey(id.ToString())).ToArray()).ConfigureAwait(false);
+        return values.Select(Read).Where(static value => value is not null).Cast<OAuthClientRecord>().OrderBy(client => client.CreatedAt).ToArray();
+    }
+
+    public async Task<OAuthClientCreateResult> CreateAsync(OAuthClientRegistration registration, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var now = _timeProvider.GetUtcNow();
+        var clientId = GenerateOpaque("client_", 18);
+        var secret = registration.ClientType == OAuthClientType.Confidential ? GenerateOpaque("secret_", 32) : null;
+        var record = new OAuthClientRecord(Guid.NewGuid(), clientId, registration.ClientType, registration.Name, secret?[..Math.Min(14, secret.Length)], secret is null ? null : SHA256.HashData(Encoding.UTF8.GetBytes(secret)), Normalize(registration.AllowedGrantTypes), Normalize(registration.RedirectUris), Normalize(registration.AllowedScopes), now, now, registration.ExpiresAt, null, null, registration.CreatedBy);
+        await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record), ResolveTtl(record.ExpiresAt), When.NotExists).ConfigureAwait(false);
+        await _database.SetAddAsync(IdsKey, record.Id.ToString("D")).ConfigureAwait(false);
+        return new(record, secret);
+    }
+
+    public async Task<OAuthClientRecord?> GetAsync(Guid id, CancellationToken cancellationToken) => await ReadAsync(id, cancellationToken).ConfigureAwait(false);
+
+    public async Task<OAuthClientRecord?> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var record = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
+        if (record is null) return null;
+        await _database.KeyDeleteAsync(BuildKey(id)).ConfigureAwait(false);
+        await _database.SetRemoveAsync(IdsKey, id.ToString("D")).ConfigureAwait(false);
+        return record;
+    }
+
+    public async Task<OAuthClientRecord?> ValidateSecretAsync(string clientId, string clientSecret, CancellationToken cancellationToken)
+    {
+        foreach (var client in await ListAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (!string.Equals(client.ClientId, clientId, StringComparison.Ordinal) || client.SecretHash is null || client.RevokedAt is not null || client.ExpiresAt <= _timeProvider.GetUtcNow()) continue;
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(clientSecret));
+            if (!CryptographicOperations.FixedTimeEquals(hash, client.SecretHash)) return null;
+            var updated = client with { LastUsedAt = _timeProvider.GetUtcNow(), UpdatedAt = _timeProvider.GetUtcNow() };
+            await _database.StringSetAsync(BuildKey(client.Id), JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
+            return updated;
+        }
+        return null;
+    }
+
+    private async Task<OAuthClientRecord?> ReadAsync(Guid id, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Read(await _database.StringGetAsync(BuildKey(id)).ConfigureAwait(false));
+    }
+
+    private static OAuthClientRecord? Read(RedisValue value) => value.HasValue ? JsonSerializer.Deserialize<OAuthClientRecord>((string)value!) : null;
+    private static string BuildKey(Guid id) => $"{Prefix}{id:D}";
+    private static string GenerateOpaque(string prefix, int bytes) => prefix + Convert.ToBase64String(RandomNumberGenerator.GetBytes(bytes)).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+    private static string[] Normalize(IReadOnlyList<string>? values) => values?.Select(value => value?.Trim() ?? string.Empty).Where(value => value.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? [];
+    private static TimeSpan ResolveTtl(DateTimeOffset? expiresAt) => expiresAt is { } value && value > DateTimeOffset.UtcNow ? value - DateTimeOffset.UtcNow : TimeSpan.FromDays(3650);
 }

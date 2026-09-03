@@ -114,7 +114,11 @@ In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/proc
         {
           "kind": "geoprocess",
           "processId": "geometry.buffer",
-          "inputs": { "layerId": "0", "distance": "100" }
+          "inputs": {
+            "wkb": "<base64-encoded-point-or-polygon-wkb>",
+            "srid": 4326,
+            "distance": 100
+          }
         }
       ]
     }
@@ -122,6 +126,11 @@ In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/proc
   "response": "document"
 }
 ```
+
+The direct `honua-geoprocessing` endpoint accepts one executable catalog step;
+the `geometry.buffer` example therefore supplies the catalog's required `wkb`
+and `srid` inputs. Multi-step DAG plans are submitted through the durable plan
+runner when that surface is enabled, not through this direct execution path.
 
 ## OGC API Records
 

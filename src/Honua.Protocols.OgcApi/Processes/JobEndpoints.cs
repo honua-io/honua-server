@@ -706,7 +706,8 @@ internal static class JobEndpoints
                     ResolveOgcProcessId(job),
                     baseUrl),
                 OgcProcessesJsonContext.Default.OgcStatusInfo,
-                MediaTypes.Json);
+                MediaTypes.Json,
+                StatusCodes.Status202Accepted);
 
     private static string ResolveOgcProcessId(ExecutionJobRecord job)
         => job.Spec.Parameters.TryGetValue("protocolProcessId", out var protocolProcessId)

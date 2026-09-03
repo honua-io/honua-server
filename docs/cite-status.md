@@ -54,9 +54,9 @@ and its `cite-conformance-evidence-13` bundle from 2026-08-28.
 | WMS 1.3 | `default` | 213 / 213 | 100% | 2026-08-28 |
 | WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-08-28 |
 
-The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures the
-Transaction + LockFeature conformance classes independently from the `basic`
-leg. WMS 1.1.1 is likewise a first-class evidence leg (`cite-wms11-results`);
+The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures
+TransactionalWFS independently from the `basic` leg; LockFeature is not
+advertised by this server and is not part of the profile. WMS 1.1.1 is likewise a first-class evidence leg (`cite-wms11-results`);
 the runner exercises version negotiation, 1.1.1 axis order,
 `WMT_MS_Capabilities`, `application/vnd.ogc.se_xml` exceptions, `X`/`Y`
 GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
@@ -96,8 +96,8 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
   spatial filters, response paging, and managed stored queries for the
   advertised profile. Locking, feature versioning, and spatial joins are not
   advertised by the `basic` profile and not in scope.
-- **WFS 2.0 `transactional`** — the dedicated Transaction + LockFeature
-  conformance-class leg.
+- **WFS 2.0 `transactional`** — the dedicated TransactionalWFS
+  conformance-class leg. Locking is not advertised by this server.
 - **WCS 2.0 `core`** — official ETS core profile, with preflight on
   `GetCapabilities`, `DescribeCoverage`, and `GetCoverage`.
 - **WPS 2.0 `basic-async`** — official ETS Basic and Asynchronous conformance

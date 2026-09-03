@@ -14,7 +14,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 internal sealed partial class FeatureDataAccess
 {
     public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken)
-        => QueryRelatedAsync(layerId, query, originEnforcedFilter: null, relatedEnforcedFilter: null, cancellationToken);
+        => QueryRelatedAsync(layerId, query, originEnforcedFilter: null, relatedEnforcedFilter: null, relatedMaskedFields: null, cancellationToken);
 
     /// <summary>
     /// Postgres-specific overload that enforces permanent (row-visibility) filters
@@ -27,6 +27,7 @@ internal sealed partial class FeatureDataAccess
         RelatedQuery query,
         SqlFragment? originEnforcedFilter,
         SqlFragment? relatedEnforcedFilter,
+        ImmutableArray<string>? relatedMaskedFields,
         CancellationToken cancellationToken)
     {
         if (query.ObjectIds.Length == 0)
@@ -172,6 +173,18 @@ internal sealed partial class FeatureDataAccess
                         RelatedQuery.OriginObjectIdsAttribute,
                         originObjectIds)
                 };
+            }
+
+            if (relatedMaskedFields is { IsDefaultOrEmpty: false } maskedFields)
+            {
+                var attributes = feature.Attributes;
+                foreach (var key in attributes.Keys.Where(key => maskedFields.Any(
+                    masked => string.Equals(masked, key, StringComparison.OrdinalIgnoreCase))))
+                {
+                    attributes = attributes.Remove(key);
+                }
+
+                feature = feature with { Attributes = attributes };
             }
 
             features.Add(feature);
