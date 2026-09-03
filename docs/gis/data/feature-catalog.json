@@ -15638,7 +15638,9 @@
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [],
+      "proving_tests": [
+        "Honua.Server.Tests.Features.PackageReview.PackageReviewEndpointTests.PublishMapPackage_WithoutPackage_ReturnsBadRequest"
+      ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
