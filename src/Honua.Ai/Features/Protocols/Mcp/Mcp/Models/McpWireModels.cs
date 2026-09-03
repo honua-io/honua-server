@@ -426,6 +426,9 @@ internal sealed class McpToolsCallParams
 
     [JsonPropertyName("arguments")]
     public JsonElement? Arguments { get; set; }
+
+    [JsonPropertyName("_meta")]
+    public JsonElement? Meta { get; set; }
 }
 
 /// <summary>

@@ -2,11 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Ai.StudioAiProxy;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -21,8 +24,10 @@ using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -295,6 +300,40 @@ internal sealed class McpPlatformOpsReader(
         var scopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal);
         var scopes = OperatorScopeCatalog.CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray();
         var authorizationOutcome = scopeGoverned ? "admin-policy-and-oauth-scope-authorized" : "admin-policy-authorized";
+        var evidence = _services.GetService<IHttpContextAccessor>()?.HttpContext?.Items[
+            ProposalEvidenceVerifier.HttpContextItemKey] as OperationProposalEvidence;
+        if (evidence is not null && evidence.OperationId != LegacyOperationIds.For(kind))
+        {
+            throw new GeoprocessingValidationException(
+                "The verified proposal evidence does not match the routed operation descriptor.");
+        }
+        if (evidence is not null)
+        {
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                throw new GeoprocessingValidationException(
+                    "An evidence-bound proposal requires an execution payload.");
+            }
+
+            byte[] canonicalPayload;
+            try
+            {
+                canonicalPayload = StudioAiTranscriptSigner.Canonicalize(
+                    Encoding.UTF8.GetBytes(payload));
+            }
+            catch (JsonException)
+            {
+                throw new GeoprocessingValidationException(
+                    "The evidence-bound execution payload is not valid canonicalizable JSON.");
+            }
+
+            evidence = evidence with
+            {
+                AuthorizationDecision = authorizationOutcome,
+                PayloadDigest = Convert.ToHexStringLower(SHA256.HashData(canonicalPayload)),
+                CanonicalPayload = Convert.ToBase64String(canonicalPayload),
+            };
+        }
         var accepted = await envelopeFactory.CreateAcceptedAsync($"control-plane.{kind.ToString().ToLowerInvariant()}", new OperationPolicyContext
         {
             PrincipalId = actor,
@@ -310,6 +349,7 @@ internal sealed class McpPlatformOpsReader(
         {
             OperationInstanceId = accepted.OperationInstanceId,
             CorrelationId = accepted.CorrelationId,
+            OperationId = LegacyOperationIds.For(kind),
             Kind = kind,
             ActionDiscriminator = actionDiscriminator,
             RequestedBy = actor,
@@ -319,6 +359,7 @@ internal sealed class McpPlatformOpsReader(
             ExecutionPayload = payload,
             ScopeGoverned = scopeGoverned,
             RecognizedScopes = scopes,
+            Evidence = evidence,
         }, cancellationToken).ConfigureAwait(false);
         return new McpProposeOperationOutput
         {
