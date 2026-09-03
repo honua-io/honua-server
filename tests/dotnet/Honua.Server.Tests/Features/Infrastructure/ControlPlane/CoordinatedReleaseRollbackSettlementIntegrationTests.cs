@@ -736,7 +736,7 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
         private static string FindRepositoryRoot()
         {
             var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
-            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+            while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
             {
                 directory = directory.Parent;
             }
