@@ -15828,6 +15828,7 @@
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.ApproveAndRejectProposal_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.RejectProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_EvidenceBoundToAnotherTenant_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithReason_MarksRejected",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithoutReason_ReturnsBadRequest"
       ],
@@ -16978,8 +16979,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_AmbiguousRawJson_Returns400BeforeProviderOrAudit",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.FullProposalEvidenceJourney_EmitsExactDenominator_WithZeroSkippedScenarios",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_AmbiguousRawJson_Returns400BeforeProviderOrAudit",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_ChunkedOneByteOverLimit_Returns413BeforeAuditOrProviderPhase",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_ContentLengthOneByteOverLimit_Returns413BeforeAuditOrProviderPhase",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_NonJsonContentType_Returns415BeforeProviderOrAudit",
@@ -17367,6 +17368,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_McpNotification_SuppressesJsonRpcResponseWithoutHandlerSideEffects",
+        "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.EvidenceBoundProposal_BootstrapAdminIsRejectedBeforePersistence",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.FullProposalEvidenceJourney_EmitsExactDenominator_WithZeroSkippedScenarios",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_AnonymousToolCallWithTenantHeader_FailsClosedBeforeToolExecution",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Post_AuthorizedTenantOverride_BindsSessionToEffectiveHeaderTenant",

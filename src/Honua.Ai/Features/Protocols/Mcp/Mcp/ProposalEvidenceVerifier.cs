@@ -260,9 +260,8 @@ internal sealed class ProposalEvidenceVerifier(
 
         if (schema.TryGetProperty("required", out var required))
         {
-            foreach (var item in required.EnumerateArray())
+            foreach (var name in required.EnumerateArray().Select(item => item.GetString()!))
             {
-                var name = item.GetString()!;
                 if (!arguments.TryGetProperty(name, out _))
                 {
                     throw Invalid($"Invocation is missing required property '{name}'.");
