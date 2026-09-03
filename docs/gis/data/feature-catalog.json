@@ -16798,8 +16798,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_AmbiguousRawJson_Returns400BeforeProviderOrAudit",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_ChunkedOneByteOverLimit_Returns413BeforeAuditOrProviderPhase",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_ContentLengthOneByteOverLimit_Returns413BeforeAuditOrProviderPhase",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_NonJsonContentType_Returns415BeforeProviderOrAudit",
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.Chat_OpaqueJsonAllowsCaseDistinctPropertyNames",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_Anonymous_Returns401",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_CertificationWithoutSigningKey_FailsClosedWithTypedSseError",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_KnownButUnreachableProvider_StreamsErrorEventAndRecordsOneFailureAudit",

@@ -156,6 +156,8 @@ public sealed class StudioAiToolChoice
 /// </summary>
 public sealed class StudioAiChatRequest
 {
+    internal byte[]? AcceptedRequestJson { get; init; }
+
     /// <summary>Release-certification bindings that require a signed transcript.</summary>
     public StudioAiTranscriptCertification? Certification { get; init; }
     /// <summary>
