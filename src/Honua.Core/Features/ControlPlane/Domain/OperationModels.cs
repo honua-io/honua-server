@@ -403,6 +403,9 @@ public sealed record OperationAuditInfo
     /// </summary>
     public string? CorrelationId { get; init; }
 
+    /// <summary>Approved proposal identity explicitly joined to this operation.</summary>
+    public string? ProposalId { get; init; }
+
     /// <summary>
     /// Stable fingerprint of the deploy request payload used to validate idempotent replays.
     /// </summary>
