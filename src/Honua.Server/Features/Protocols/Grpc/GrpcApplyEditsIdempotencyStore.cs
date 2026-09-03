@@ -71,11 +71,7 @@ internal sealed class GrpcApplyEditsIdempotencyStore(IConnectionMultiplexer? mul
             {
                 _redis.StringSet(RedisPrefix + key, response.ToByteArray(), Window);
             }
-            catch (OutOfMemoryException)
-            {
-                throw;
-            }
-            catch (Exception)
+            catch (RedisException)
             {
                 // The edit has already committed; a Redis outage must not turn that
                 // successful operation into a retry-triggering gRPC failure.
