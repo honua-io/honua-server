@@ -202,6 +202,10 @@ public sealed class FeatureStreamPublisherTests : IDisposable
             Operation = "delete",
             Protocol = "ogc",
             RequestId = "req-1",
+            OperationInstanceId = "opinst-1",
+            CorrelationId = "corr-1",
+            AuditId = "audit-1",
+            ProposalId = "proposal-1",
             PropertiesJson = """{"name":"Test Park","area":42.5}""",
             GeometryJson = """{"type":"Point","coordinates":[-157.8,21.3]}""",
             GeometrySrid = 4326,
@@ -222,6 +226,10 @@ public sealed class FeatureStreamPublisherTests : IDisposable
         Assert.Equal(evt.Operation, envelope.Operation);
         Assert.Equal(evt.Protocol, envelope.Protocol);
         Assert.Equal(evt.RequestId, envelope.RequestId);
+        Assert.Equal(evt.OperationInstanceId, envelope.OperationInstanceId);
+        Assert.Equal(evt.CorrelationId, envelope.CorrelationId);
+        Assert.Equal(evt.AuditId, envelope.AuditId);
+        Assert.Equal(evt.ProposalId, envelope.ProposalId);
         Assert.Equal("Point", envelope.Geometry!.Value.GetProperty("type").GetString());
         Assert.Equal("EPSG:4326", envelope.GeometryCrs);
         Assert.Equal("Test Park", envelope.Attributes!["name"].GetString());

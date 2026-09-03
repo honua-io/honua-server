@@ -58,6 +58,10 @@ internal sealed class InMemoryFeatureChangeEventStore(
         if ARGV[15] ~= '' then
             event.GeometrySrid = tonumber(ARGV[15])
         end
+        if ARGV[19] ~= '' then event.OperationInstanceId = ARGV[19] end
+        if ARGV[20] ~= '' then event.CorrelationId = ARGV[20] end
+        if ARGV[21] ~= '' then event.AuditId = ARGV[21] end
+        if ARGV[22] ~= '' then event.ProposalId = ARGV[22] end
         local minimumCursor = tonumber(ARGV[18])
         if minimumCursor and cursor <= minimumCursor then
             cursor = minimumCursor + 1
@@ -138,6 +142,10 @@ internal sealed class InMemoryFeatureChangeEventStore(
                         request.PropertiesJson,
                         request.GeometryJson,
                         request.GeometrySrid,
+                        request.OperationInstanceId,
+                        request.CorrelationId,
+                        request.AuditId,
+                        request.ProposalId,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -199,7 +207,11 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 request.GeometryEnvelope,
                 request.PropertiesJson,
                 request.GeometryJson,
-                request.GeometrySrid);
+                request.GeometrySrid,
+                request.OperationInstanceId,
+                request.CorrelationId,
+                request.AuditId,
+                request.ProposalId);
 
             _events.Add(created);
             _eventsById[normalizedEventId] = created;
@@ -500,6 +512,10 @@ internal sealed class InMemoryFeatureChangeEventStore(
         string? propertiesJson,
         string? geometryJson,
         int? geometrySrid,
+        string? operationInstanceId,
+        string? correlationId,
+        string? auditId,
+        string? proposalId,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -534,7 +550,11 @@ internal sealed class InMemoryFeatureChangeEventStore(
                     geometrySrid.HasValue ? geometrySrid.Value.ToString(CultureInfo.InvariantCulture) : string.Empty,
                     EventKeyPrefix,
                     (long)Retention.TotalSeconds,
-                    localCursorFloor
+                    localCursorFloor,
+                    operationInstanceId ?? string.Empty,
+                    correlationId ?? string.Empty,
+                    auditId ?? string.Empty,
+                    proposalId ?? string.Empty
                 ])
             .ConfigureAwait(false);
         var resultArray = (RedisResult[])cursorResult!;
@@ -557,7 +577,11 @@ internal sealed class InMemoryFeatureChangeEventStore(
                 geometryEnvelope,
                 propertiesJson,
                 geometryJson,
-                geometrySrid);
+                geometrySrid,
+                operationInstanceId,
+                correlationId,
+                auditId,
+                proposalId);
         await TrimRedisAsync(cancellationToken).ConfigureAwait(false);
         _redisUnavailable = false;
         return created;
@@ -735,7 +759,11 @@ internal sealed class InMemoryFeatureChangeEventStore(
         double[]? geometryEnvelope = null,
         string? propertiesJson = null,
         string? geometryJson = null,
-        int? geometrySrid = null)
+        int? geometrySrid = null,
+        string? operationInstanceId = null,
+        string? correlationId = null,
+        string? auditId = null,
+        string? proposalId = null)
         => new()
         {
             EventId = eventId,
@@ -748,6 +776,10 @@ internal sealed class InMemoryFeatureChangeEventStore(
             Operation = operation,
             Protocol = protocol,
             RequestId = requestId,
+            OperationInstanceId = operationInstanceId,
+            CorrelationId = correlationId,
+            AuditId = auditId,
+            ProposalId = proposalId,
             ChangedAttributes = changedAttributes,
             GeometryChanged = geometryChanged,
             GeometryEnvelope = geometryEnvelope,

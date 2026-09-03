@@ -33,6 +33,12 @@ internal sealed record OpsNotification
     /// </summary>
     public required string DedupeIdentifier { get; init; }
 
+    public string? JobId { get; init; }
+    public string? OperationInstanceId { get; init; }
+    public string? CorrelationId { get; init; }
+    public string? AuditId { get; init; }
+    public string? ProposalId { get; init; }
+
     /// <summary>Optional structured identifiers (operationId, workload, status, phase).</summary>
     public IReadOnlyDictionary<string, string>? Attributes { get; init; }
 }
@@ -61,6 +67,21 @@ internal sealed record OpsAlertPayload
     /// <summary>Structured identifiers, when present.</summary>
     [JsonPropertyName("attributes")]
     public IReadOnlyDictionary<string, string>? Attributes { get; init; }
+
+    [JsonPropertyName("jobId")]
+    public string? JobId { get; init; }
+
+    [JsonPropertyName("operationInstanceId")]
+    public string? OperationInstanceId { get; init; }
+
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; init; }
+
+    [JsonPropertyName("auditId")]
+    public string? AuditId { get; init; }
+
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; init; }
 }
 
 /// <summary>
