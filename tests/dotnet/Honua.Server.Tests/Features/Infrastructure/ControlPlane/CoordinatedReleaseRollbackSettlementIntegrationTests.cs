@@ -135,6 +135,10 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                 afterRestartPoll.CoordinatedRelease.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
                     .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
                 childAfterRestartPoll.Should().BeNull("a missing child record must not be treated as a successful rollback");
+                if (childAfterRestartPoll is not null)
+                {
+                    throw new InvalidOperationException("The child operation unexpectedly remained in the store.");
+                }
                 afterRestartPoll.ErrorMessage.Should().Contain("could not be read back");
                 runtime.RunRequests.Should().HaveCount(2, "the missing child must not trigger a second provider rollback");
                 ledger.FinalSplitStateReason = afterRestartPoll.ErrorMessage;
@@ -144,7 +148,8 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                 afterRestartPoll.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
                 afterRestartPoll.CoordinatedRelease.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
                     .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
-                childAfterRestartPoll!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+                var pendingChildAfterRestart = childAfterRestartPoll ?? throw new InvalidOperationException("The pending child operation could not be read back.");
+                pendingChildAfterRestart.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
 
                 await restarted.ReconcileCoordinatedReleaseAsync(operation.OperationId);
                 await ledger.CaptureAsync(store, operation.OperationId, "child-settled-after-pending-poll");
@@ -175,15 +180,17 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                 var final = (await store.GetAsync(operation.OperationId))!;
                 final.Status.Should().Be(WorkflowOperationStatus.RolledBack);
                 final.CompletedAt.Should().NotBeNull();
-                ledger.FunctionalBodyReceipt.At.Should().BeOnOrBefore(final.CompletedAt.Value);
+                var parentCompletedAt = final.CompletedAt ?? throw new InvalidOperationException("The rolled-back parent did not record completion.");
+                ledger.FunctionalBodyReceipt.At.Should().BeOnOrBefore(parentCompletedAt);
                 ledger.FinalSplitStateReason = null;
             }
             else
             {
                 afterRestartPoll.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
                 childAfterRestartPoll.Should().NotBeNull();
-                childAfterRestartPoll!.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
-                childAfterRestartPoll.ObservedState.Should().Be(DesiredRevision, "the ledger must preserve that the failed revision remained observed");
+                var manualChildAfterRestart = childAfterRestartPoll ?? throw new InvalidOperationException("The manual child operation could not be read back.");
+                manualChildAfterRestart.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+                manualChildAfterRestart.ObservedState.Should().Be(DesiredRevision, "the ledger must preserve that the failed revision remained observed");
                 afterRestartPoll.CoordinatedRelease.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
                     .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
                 afterRestartPoll.ErrorMessage.Should().Contain("operator action");
@@ -717,11 +724,11 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
             var root = Environment.GetEnvironmentVariable("HONUA_SERVER_TEST_RESULTS_DIR");
             if (string.IsNullOrWhiteSpace(root))
             {
-                root = Path.Combine(FindRepositoryRoot(), "tests", "TestResults");
+                root = Path.Join(FindRepositoryRoot(), "tests", "TestResults");
             }
 
             Directory.CreateDirectory(root);
-            var path = Path.Combine(root, $"coordinated-release-rollback-{Scenario}-{Guid.NewGuid():N}.json");
+            var path = Path.Join(root, $"coordinated-release-rollback-{Scenario}-{Guid.NewGuid():N}.json");
             await File.WriteAllTextAsync(path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
             return path;
         }

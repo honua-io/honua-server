@@ -192,8 +192,9 @@ public sealed class CoordinatedReleaseReconcilerTests
             }
         }
 
-        pending!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
-        pending.CoordinatedRelease!.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
+        var pendingAfterDrive = pending ?? throw new InvalidOperationException("The coordinated release did not produce a pending operation.");
+        pendingAfterDrive.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        pendingAfterDrive.CoordinatedRelease!.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
             .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
         container.RollbackCalls.Should().Be(1);
 
