@@ -350,8 +350,9 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
                 }]
             };
 
-            using var firstClient = new HttpClient(new FakeWfsHandler(
-                BuildPointFeatureCollection(("first", 1, -157.85, 21.30))));
+            var response = await File.ReadAllTextAsync(Path.Combine(
+                AppContext.BaseDirectory, "TestData", "ImportAdversarial", "wfs-long-name.geojson"));
+            using var firstClient = new HttpClient(new FakeWfsHandler(response));
             var firstResult = await CreateService(firstClient, inventory).ImportFeaturesAsync(new OgcWfsImportRequest
             {
                 ServiceUrl = DefaultServiceUrl,
@@ -361,8 +362,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
             });
             firstResult.Success.Should().BeTrue();
 
-            using var secondHandler = new FakeWfsHandler(
-                BuildPointFeatureCollection(("second", 2, -155.08, 19.71)));
+            using var secondHandler = new FakeWfsHandler(response);
             using var secondClient = new HttpClient(secondHandler);
             var secondResult = await CreateService(secondClient, inventory).ImportFeaturesAsync(new OgcWfsImportRequest
             {
