@@ -149,12 +149,14 @@ runs:
             dotnet build "${GATE_BUILD_FILTER}" \
               --no-restore \
               --configuration Release \
+              -graphBuild \
               /p:TreatWarningsAsErrors=true
         else
           timeout "${{ inputs.build-timeout-minutes }}m" \
             dotnet build Honua.sln \
               --no-restore \
               --configuration Release \
+              -graphBuild \
               /p:TreatWarningsAsErrors=true
         fi
 
