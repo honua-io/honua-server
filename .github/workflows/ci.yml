@@ -104,6 +104,9 @@ concurrency:
 
 env:
   DOTNET_VERSION: '10.0.x'
+  # Keep one persistent MSBuild server alive across restore/build/test calls in
+  # each job. Roslyn shared compilation remains enabled by default.
+  DOTNET_CLI_USE_MSBUILD_SERVER: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   PYTHON_VERSION: '3.11'
@@ -742,11 +745,13 @@ jobs:
             dotnet build ${{ steps.affected.outputs.projects }} \
               --no-restore \
               --configuration Release \
+              -graphBuild \
               /p:TreatWarningsAsErrors=true
           else
             dotnet build Honua.sln \
               --no-restore \
               --configuration Release \
+              -graphBuild \
               /p:TreatWarningsAsErrors=true
           fi
 
@@ -1178,6 +1183,7 @@ jobs:
           dotnet build "${csproj}" \
             --no-restore \
             --configuration Release \
+            -graphBuild \
             /p:RunAnalyzers=false
 
       - name: Package shard-local cache payload
