@@ -13,10 +13,11 @@ internal static partial class ImportEndpoints
     {
         // These routes deliberately point at the same downloader, validator, queue, and
         // progress store as /import/upload-url; they are real import operations, not aliases.
-        var importsGroup = app.MapGroup("/api/v{version:apiVersion}/admin/imports");
-        importsGroup.WithApiVersionSet().HasApiVersion(1, 0);
-        importsGroup.WithTags("Admin", "Import");
-        importsGroup.RequireAdminAuthorization();
+        var importsGroup = app.MapGroup("/api/v{version:apiVersion}/admin/imports")
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
+            .WithTags("Admin", "Import")
+            .RequireAdminAuthorization();
 
         importsGroup.MapPost(string.Empty, HandleImportFileFromUrl)
             .WithSummary("Create and queue an import job from a source URL.");
