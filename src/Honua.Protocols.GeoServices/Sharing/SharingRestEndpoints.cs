@@ -255,9 +255,9 @@ public static class SharingRestEndpoints
         if (verified is null)
         {
             PortalTokenLog.TokenIssuanceRejected(logger, "invalid credentials");
-            return StandardErrorHelpers.CreateUnauthorized(
+            return StandardErrorHelpers.CreateBadRequest(
                 context,
-                "Username or password is incorrect.");
+                "Unable to generate token.");
         }
 
         var ttlMinutes = ResolveExpirationMinutes(expirationMinutes, settings);

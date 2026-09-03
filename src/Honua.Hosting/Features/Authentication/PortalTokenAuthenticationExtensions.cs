@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -27,6 +28,7 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 public static class PortalTokenAuthenticationExtensions
 {
+    internal static readonly object AuthenticationFailureKey = new();
     /// <summary>
     /// Authentication scheme name for ArcGIS-compatible portal tokens.
     /// </summary>
@@ -82,6 +84,27 @@ public static class PortalTokenAuthenticationExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<PortalTokenAuthenticationMiddleware>();
+    }
+
+    /// <summary>
+    /// Rejects invalid portal tokens after the shared audit and rate-limit middleware has
+    /// entered the request. This preserves the Esri 498 response while ensuring repeated
+    /// invalid credentials consume the configured source-IP rate-limit bucket.
+    /// </summary>
+    public static IApplicationBuilder UsePortalTokenAuthenticationRejection(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Use(async (context, next) =>
+        {
+            if (!context.Items.TryGetValue(AuthenticationFailureKey, out var failure) || failure is not true)
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+            await StandardErrorHelpers.CreateInvalidToken(context).ExecuteAsync(context).ConfigureAwait(false);
+        });
     }
 
     private static void TryAddSingletonPortalTokenIssuer(this IServiceCollection services)
@@ -241,6 +264,10 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             {
                 context.User = result.Principal;
             }
+            else if (!result.Succeeded && result.Failure is not null && IsGeoServicesPortalRequest(context))
+            {
+                context.Items[PortalTokenAuthenticationExtensions.AuthenticationFailureKey] = true;
+            }
         }
 
         await _next(context).ConfigureAwait(false);
@@ -282,6 +309,19 @@ internal sealed class PortalTokenAuthenticationMiddleware(
         }
 
         return false;
+    }
+
+    private static bool IsGeoServicesPortalRequest(HttpContext context)
+    {
+        if (context.Request.Path.StartsWithSegments("/rest"))
+        {
+            return true;
+        }
+
+        // OAuth2 uses `token` as an operation operand on revoke/introspect, so an
+        // unknown operand must not be mistaken for an invalid request credential.
+        return context.Request.Path.StartsWithSegments("/sharing/rest") &&
+            !context.Request.Path.StartsWithSegments("/sharing/rest/oauth2");
     }
 
     private static bool HasBearerPrefix(Microsoft.Extensions.Primitives.StringValues values)
