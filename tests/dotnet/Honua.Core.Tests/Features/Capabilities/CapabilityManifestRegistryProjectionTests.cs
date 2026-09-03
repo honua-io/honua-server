@@ -32,6 +32,9 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "package.gitops-manifest",
         "package.map",
         "package.app",
+        "provider.redshift",
+        "provider.snowflake",
+        "provider.databricks",
         "temporal.filtering",
         "temporal.extent-discovery",
         "temporal.histogram",
@@ -87,6 +90,9 @@ public sealed class CapabilityManifestRegistryProjectionTests
     // experimental-disabled, so the registry-derived manifest omits them.
     private static readonly string[] ExperimentalManifestCapabilityIds =
     [
+        "provider.redshift",
+        "provider.snowflake",
+        "provider.databricks",
         "serve.3d-tiles-scene",
         "serve.i3s-scene",
         "scene.catalog",
