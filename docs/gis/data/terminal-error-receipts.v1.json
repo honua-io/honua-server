@@ -76,7 +76,7 @@
       "geoServicesCode": 429,
       "grpcStatus": { "name": "RESOURCE_EXHAUSTED", "number": 8 },
       "kind": "throttled",
-      "code": "rate_limited",
+      "code": "rate_limit_exceeded",
       "retryable": true,
       "retryAfterSeconds": 30,
       "detail": "Request capacity is temporarily exhausted."
@@ -109,19 +109,15 @@
         "code",
         "message",
         "details",
-        "kind",
-        "machineCode",
-        "correlationId",
         "retryable",
-        "retryAfterSeconds",
-        "errors"
+        "retryAfterSeconds"
       ]
     },
     "grpc": {
-      "correlationKeys": ["x-correlation-id", "honua-request-id", "x-request-id"],
+      "correlationKeys": ["x-correlation-id", "honua-request-id", "x-request-id", "honua-correlation-id"],
       "machineCodeKey": "honua-error-code",
       "kindKey": "honua-error-kind",
-      "retryableKey": "honua-error-retryable",
+      "retryableKey": "honua-retryable",
       "retryKey": "retry-after",
       "structuredErrorsKey": "honua-error-details",
       "retainInitialMetadata": true,
