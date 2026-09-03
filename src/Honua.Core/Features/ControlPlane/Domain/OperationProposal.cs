@@ -163,6 +163,38 @@ public sealed record OperationProposalAutonomyMetadata
 }
 
 /// <summary>
+/// Security-critical evidence sealed onto a model-originated proposal. Every value is
+/// independently verified at the MCP boundary and revalidated before approval replay.
+/// </summary>
+public sealed record OperationProposalEvidence
+{
+    public required string ToolName { get; init; }
+    public required string OperationId { get; init; }
+    public required string CandidateId { get; init; }
+    public required string TenantId { get; init; }
+    public required string TargetId { get; init; }
+    public required string DescriptorRevision { get; init; }
+    public required string PolicyRevision { get; init; }
+    public required string AuthorizationDecision { get; init; }
+    public required string RequestDigest { get; init; }
+    public required string CanonicalRequest { get; init; }
+    public required string PayloadDigest { get; init; }
+    public required string CanonicalPayload { get; init; }
+    public required string TranscriptDigest { get; init; }
+    public required string TranscriptKeyId { get; init; }
+    public required string CanonicalTranscript { get; init; }
+    public required string TranscriptSignature { get; init; }
+    public required string ReleaseId { get; init; }
+    public required string ActionId { get; init; }
+    public required string RunNonce { get; init; }
+    public required string McpSessionId { get; init; }
+    public required string McpCallId { get; init; }
+    public required DateTimeOffset IssuedAt { get; init; }
+    public required DateTimeOffset ExpiresAt { get; init; }
+    public string VerifierDecision { get; init; } = "verified";
+}
+
+/// <summary>
 /// Durable, protocol-neutral record of an agent- or operator-proposed mutating
 /// operation that a human can later review and approve or reject. Generalizes the
 /// bespoke Deploy <c>AwaitingApproval</c> flow across all in-scope operation
@@ -238,6 +270,9 @@ public sealed record OperationProposal
     /// This excludes the opaque execution payload, which remains confined to <see cref="Plan"/>.
     /// </summary>
     public OperationProposalAutonomyMetadata? AutonomyMetadata { get; init; }
+
+    /// <summary>Verified model transcript and MCP call binding, when model-originated.</summary>
+    public OperationProposalEvidence? Evidence { get; init; }
 
     /// <summary>
     /// Stable identifier of the underlying execution operation created when the

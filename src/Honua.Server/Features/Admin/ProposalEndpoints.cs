@@ -12,8 +12,10 @@ using Honua.Server.Features.Console;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using CanonicalOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 
 namespace Honua.Server.Features.Admin;
@@ -115,7 +117,8 @@ internal static class ProposalEndpoints
         [FromQuery] string? kind,
         [FromQuery] string? requestedBy,
         HttpContext context,
-        [FromServices] IOperationProposalStore? proposalStore = null)
+        [FromServices] IOperationProposalStore? proposalStore = null,
+        [FromServices] ITenantContext? tenantContext = null)
     {
         if (proposalStore is null)
         {
@@ -131,6 +134,12 @@ internal static class ProposalEndpoints
         var proposals = await proposalStore.ListActiveAsync(kindFilter, context.RequestAborted).ConfigureAwait(false);
         var filtered = proposals.Where(proposal =>
         {
+            if (proposal.Evidence is not null
+                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
             if (!string.IsNullOrWhiteSpace(status) &&
                 !string.Equals(proposal.Status.ToString(), status, StringComparison.OrdinalIgnoreCase))
             {
@@ -157,7 +166,8 @@ internal static class ProposalEndpoints
     private static async Task<IResult> HandleGetProposal(
         string id,
         HttpContext context,
-        [FromServices] IOperationProposalStore? proposalStore = null)
+        [FromServices] IOperationProposalStore? proposalStore = null,
+        [FromServices] ITenantContext? tenantContext = null)
     {
         if (proposalStore is null)
         {
@@ -165,7 +175,8 @@ internal static class ProposalEndpoints
         }
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
-        return proposal == null
+        return proposal == null || (proposal.Evidence is not null
+                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal))
             ? Results.NotFound()
             : Results.Json(ToDetail(proposal), ProposalJsonContext.Default.ProposalDetailResponse);
     }
@@ -176,7 +187,8 @@ internal static class ProposalEndpoints
         HttpContext context,
         [FromServices] IOperationGateway? gateway = null,
         [FromServices] IOperationProposalStore? proposalStore = null,
-        [FromServices] IEnumerable<CanonicalOperationExecutor>? operationExecutors = null)
+        [FromServices] IEnumerable<CanonicalOperationExecutor>? operationExecutors = null,
+        [FromServices] ITenantContext? tenantContext = null)
     {
         if (gateway is null || proposalStore is null)
         {
@@ -212,7 +224,27 @@ internal static class ProposalEndpoints
 
         try
         {
-            var resolved = await gateway.ApplyApprovedProposalAsync(id, actor!, context.RequestAborted)
+            if (proposal?.Evidence is not null && string.IsNullOrWhiteSpace(tenantContext?.TenantId))
+            {
+                return Results.Problem(
+                    detail: "A resolved tenant is required to approve this proposal.",
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
+
+            // Preserve the established actor identity for legacy proposals. Evidence-bound
+            // proposals use the same scheme-qualified actor stamped at the MCP boundary so
+            // separation-of-duties and credential revocation revalidation compare like-for-like.
+            var approvalActor = proposal?.Evidence is null
+                ? actor!
+                : AuditContextResolver.ResolveActor(context, out _);
+            var resolved = await gateway.ApplyApprovedProposalAsync(
+                id,
+                new OperationProposalApprovalContext
+                {
+                    ApprovedBy = approvalActor,
+                    TenantId = tenantContext?.TenantId ?? string.Empty,
+                },
+                context.RequestAborted)
                 .ConfigureAwait(false);
             return resolved == null
                 ? Results.NotFound()

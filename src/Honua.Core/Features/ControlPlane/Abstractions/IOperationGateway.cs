@@ -142,6 +142,9 @@ public sealed record OperationGatewayRequest
     /// directly under the rule's policy and guardrails.
     /// </summary>
     public OperationGatewayAutonomyContext? AutonomyContext { get; init; }
+
+    /// <summary>Verified model/MCP evidence that must survive durable approval replay.</summary>
+    public OperationProposalEvidence? Evidence { get; init; }
 }
 
 /// <summary>
@@ -234,7 +237,7 @@ public interface IOperationGateway
     /// <c>operation.proposed</c> audit, pending notification, and idempotency handling
     /// as the ladder-routed approval path, so the resulting proposal is surfaced and
     /// resolved through the same <c>honua://proposals/{id}</c> resource and
-    /// <see cref="ApplyApprovedProposalAsync"/> / <see cref="RejectProposalAsync"/>
+    /// <see cref="ApplyApprovedProposalAsync(string,string,CancellationToken)"/> / <see cref="RejectProposalAsync"/>
     /// path. Used when the caller has already determined the operation must be gated
     /// and only needs it persisted for human resolution (ADR-0064, #2814).
     /// </summary>
@@ -264,6 +267,13 @@ public interface IOperationGateway
         string approvedBy,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Applies a proposal with the current request tenant and principal authority context.</summary>
+    Task<OperationProposal?> ApplyApprovedProposalAsync(
+        string proposalId,
+        OperationProposalApprovalContext approval,
+        CancellationToken cancellationToken = default)
+        => ApplyApprovedProposalAsync(proposalId, approval.ApprovedBy, cancellationToken);
+
     /// <summary>
     /// Rejects a previously created proposal with a required reason.
     /// </summary>
@@ -276,6 +286,22 @@ public interface IOperationGateway
         string proposalId,
         string rejectedBy,
         string reason,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>Current, independently authenticated approval context.</summary>
+public sealed record OperationProposalApprovalContext
+{
+    public required string ApprovedBy { get; init; }
+    public required string TenantId { get; init; }
+}
+
+/// <summary>Revalidates a durable evidence seal immediately before the execution claim.</summary>
+public interface IOperationProposalEvidenceValidator
+{
+    Task ValidateApprovalAsync(
+        OperationProposal proposal,
+        OperationProposalApprovalContext approval,
         CancellationToken cancellationToken = default);
 }
 

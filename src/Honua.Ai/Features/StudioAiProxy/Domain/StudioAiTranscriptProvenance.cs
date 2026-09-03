@@ -9,6 +9,7 @@ namespace Honua.Ai.StudioAiProxy.Domain;
 public sealed class StudioAiTranscriptCertification
 {
     [JsonPropertyName("candidateId")] public string CandidateId { get; init; } = string.Empty;
+    [JsonPropertyName("tenantId")] public string TenantId { get; init; } = string.Empty;
     [JsonPropertyName("releaseId")] public string ReleaseId { get; init; } = string.Empty;
     [JsonPropertyName("endpointIdentity")] public string EndpointIdentity { get; init; } = string.Empty;
     [JsonPropertyName("actionId")] public string ActionId { get; init; } = string.Empty;

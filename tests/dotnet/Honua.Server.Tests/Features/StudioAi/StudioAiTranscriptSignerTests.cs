@@ -45,6 +45,7 @@ public sealed class StudioAiTranscriptSignerTests
         using var envelope = JsonDocument.Parse(canonical);
         var root = envelope.RootElement;
         root.GetProperty("candidateId").GetString().Should().Be("candidate-7");
+        root.GetProperty("tenantId").GetString().Should().Be("tenant-7");
         root.GetProperty("releaseId").GetString().Should().Be("release-9");
         root.GetProperty("endpointIdentity").GetString().Should().Be("honua.example/api/v1/studio/ai/chat");
         root.GetProperty("actionId").GetString().Should().Be("compose-map");
@@ -176,6 +177,7 @@ public sealed class StudioAiTranscriptSignerTests
         Certification = new StudioAiTranscriptCertification
         {
             CandidateId = "candidate-7",
+            TenantId = "tenant-7",
             ReleaseId = "release-9",
             EndpointIdentity = "honua.example/api/v1/studio/ai/chat",
             ActionId = "compose-map",
