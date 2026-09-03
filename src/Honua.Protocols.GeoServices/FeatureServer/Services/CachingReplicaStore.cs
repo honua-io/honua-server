@@ -199,6 +199,7 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         ReplicaId = state.ReplicaId,
         ReplicaName = state.ReplicaName,
         ServiceId = state.ServiceId,
+        OwnerId = state.OwnerId,
         SyncModel = state.SyncModel,
         LayerIds = state.LayerIds,
         CreatedAt = state.CreatedAt,
@@ -213,7 +214,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         record.ServiceId,
         record.SyncModel,
         record.LayerIds,
-        record.CreatedAt)
+        record.CreatedAt,
+        record.OwnerId)
     {
         LastSyncTime = record.LastSyncTime,
         LastSyncGeneration = record.LastSyncGeneration,
