@@ -12,6 +12,8 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Import;
 
@@ -124,6 +126,62 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         finally
         {
             await Task.WhenAll(firstFixture.DisposeAsync(), secondFixture.DisposeAsync());
+        }
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    [Endpoint("GET /api/v1/admin/import/migrations/{batchId}")]
+    public async Task RequestOverrides_DisposedFixtureDoesNotLeakIntoNextFixture()
+    {
+        var batchId = $"override-{Guid.NewGuid():N}";
+        var leakedCatalog = new InMemoryMigrationBatchRunCatalog();
+        leakedCatalog.Seed(new MigrationBatchRunRecord
+        {
+            BatchId = batchId,
+            SourceKind = "fixture-leak-probe",
+            Status = MigrationBatchRunStatus.Succeeded,
+            StartedAt = DateTimeOffset.UtcNow,
+        });
+
+        var firstFixture = new WebAppFixture()
+            .ReplaceRequestService<IMigrationBatchRunCatalog>(leakedCatalog)
+            .ReplaceRequestService<IMigrationBatchOrchestrator>(
+                new RecordingMigrationBatchOrchestrator(leakedCatalog));
+        string? scopeId = null;
+
+        try
+        {
+            // Model one test class ending before the next class starts. The registry entry
+            // must be removed before the shared host can serve the next fixture.
+            await firstFixture.InitializeAsync();
+            scopeId = firstFixture.Client.DefaultRequestHeaders
+                .GetValues(ScopedServiceOverrideRegistry.HeaderName)
+                .Single();
+            using (var firstResponse = await firstFixture.Client.GetAsync(
+                $"/api/v1/admin/import/migrations/{batchId}"))
+            {
+                firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            }
+        }
+        finally
+        {
+            await firstFixture.DisposeAsync();
+        }
+
+        var nextFixture = new WebAppFixture();
+        try
+        {
+            await nextFixture.InitializeAsync();
+
+            // The next class shares the same host, so cleanup must remove the old opaque
+            // scope ID from the registry before this fixture is initialized.
+            var registry = nextFixture.Services.GetRequiredService<ScopedServiceOverrideRegistry>();
+            registry.TryGet(scopeId!, out _).Should().BeFalse();
+        }
+        finally
+        {
+            await nextFixture.DisposeAsync();
         }
     }
 

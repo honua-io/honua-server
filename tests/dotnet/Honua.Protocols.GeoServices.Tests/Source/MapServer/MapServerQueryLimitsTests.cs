@@ -28,7 +28,7 @@ public sealed class MapServerQueryLimitsTests : IClassFixture<MapServerQueryLimi
         };
 
         public WebAppFixture App { get; } =
-            new WebAppFixture().ReplaceService<IOptions<LimitsOptions>>(Options.Create(Limits));
+            new WebAppFixture().ReplaceRequestService<IOptions<LimitsOptions>>(Options.Create(Limits));
 
         public Task InitializeAsync() => App.InitializeAsync();
 

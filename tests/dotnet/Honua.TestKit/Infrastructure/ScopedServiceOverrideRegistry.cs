@@ -18,7 +18,13 @@ internal sealed class ScopedServiceOverrideRegistry
 
     internal void Add(string scopeId, IReadOnlyDictionary<Type, object> overrides)
     {
-        if (!_scopes.TryAdd(scopeId, overrides))
+        ArgumentException.ThrowIfNullOrWhiteSpace(scopeId);
+        ArgumentNullException.ThrowIfNull(overrides);
+
+        // Publish an immutable snapshot. The fixture's local builder must not be able to
+        // change an override set after it has been made visible to request processing.
+        var snapshot = new Dictionary<Type, object>(overrides);
+        if (!_scopes.TryAdd(scopeId, snapshot))
         {
             throw new InvalidOperationException($"A test service override scope named '{scopeId}' already exists.");
         }
