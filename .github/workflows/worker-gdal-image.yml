@@ -65,16 +65,6 @@ jobs:
     timeout-minutes: 45
     outputs:
       sarif-created: ${{ steps.sarif.outputs.created }}
-    services:
-      redis:
-        image: redis:7.2-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -109,6 +99,17 @@ jobs:
           cache-to: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:worker-gdal-boundary,mode=max' || '' }}
           provenance: false
           sbom: false
+
+      - name: Start attested Redis for worker smoke test
+        run: >-
+          docker run --detach --name worker-redis --network host redis:7.2-alpine
+          redis-server --appendonly yes --appendfsync always --save ""
+          --maxmemory-policy noeviction
+
+      - name: Wait for attested Redis
+        run: >-
+          timeout 30 sh -c
+          'until docker exec worker-redis redis-cli ping; do sleep 1; done'
 
       - name: Verify native tools and smoke the real worker entrypoint
         run: >-
