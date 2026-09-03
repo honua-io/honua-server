@@ -4,7 +4,10 @@
 using System.Buffers;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
@@ -35,6 +38,11 @@ internal static class TenantDenialResponseWriter
         ArgumentNullException.ThrowIfNull(context);
 
         context.Response.Headers[CorrelationHeaderName] = context.TraceIdentifier;
+        if (denial == TenantDenialKind.AuthenticationRequired)
+        {
+            AddAuthenticationChallenge(context);
+        }
+
         if (IsMcpJsonRpcRequest(context.Request))
         {
             return WriteMcpAsync(context, denial);
@@ -61,6 +69,7 @@ internal static class TenantDenialResponseWriter
             ODataErrorCode = machineCode,
             WfsExceptionCode = GetXmlCode(denial),
             WcsExceptionCode = GetXmlCode(denial),
+            WmtsExceptionCode = GetXmlCode(denial),
             WmsExceptionCode = GetXmlCode(denial),
             GeoServicesBodyCode = denial == TenantDenialKind.AuthenticationRequired
                 ? GeoServicesErrorCodes.TokenRequired
@@ -97,16 +106,12 @@ internal static class TenantDenialResponseWriter
                     request.Body,
                     cancellationToken: request.HttpContext.RequestAborted)
                 .ConfigureAwait(false);
-            if (document.RootElement.ValueKind != JsonValueKind.Object
-                || !document.RootElement.TryGetProperty("method", out var methodElement)
-                || methodElement.ValueKind != JsonValueKind.String)
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
             {
-                return false;
+                return document.RootElement.EnumerateArray().Any(IsTenantBoundMcpElement);
             }
 
-            var method = methodElement.GetString();
-            return string.Equals(method, "tools/call", StringComparison.Ordinal)
-                || string.Equals(method, "resources/read", StringComparison.Ordinal);
+            return IsTenantBoundMcpElement(document.RootElement);
         }
         catch (JsonException)
         {
@@ -124,7 +129,40 @@ internal static class TenantDenialResponseWriter
     private static async Task WriteMcpAsync(HttpContext context, TenantDenialKind denial)
     {
         var request = await ReadMcpRequestIdentityAsync(context.Request, context.RequestAborted).ConfigureAwait(false);
+        if (request.IsBatch)
+        {
+            await WriteMcpBatchAsync(context, denial, request.BatchItems!).ConfigureAwait(false);
+            return;
+        }
+
         if (request.IsNotification)
+        {
+            context.Response.StatusCode = StatusCodes.Status202Accepted;
+            return;
+        }
+
+        var output = BuildMcpError(request.Id, context, denial);
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.ContentType = "application/json";
+        await context.Response.Body.WriteAsync(output, context.RequestAborted).ConfigureAwait(false);
+    }
+
+    private static async Task WriteMcpBatchAsync(
+        HttpContext context,
+        TenantDenialKind denial,
+        IReadOnlyList<McpBatchItem> items)
+    {
+        if (items.Count == 0)
+        {
+            var emptyBatchError = BuildMcpError(null, context, denial);
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            context.Response.ContentType = "application/json";
+            await context.Response.Body.WriteAsync(emptyBatchError, context.RequestAborted).ConfigureAwait(false);
+            return;
+        }
+
+        var responseItems = items.Where(static item => !item.IsNotification).ToArray();
+        if (responseItems.Length == 0)
         {
             context.Response.StatusCode = StatusCodes.Status202Accepted;
             return;
@@ -133,12 +171,32 @@ internal static class TenantDenialResponseWriter
         var output = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(output))
         {
+            writer.WriteStartArray();
+            foreach (var item in responseItems)
+            {
+                using var itemDocument = JsonDocument.Parse(BuildMcpError(item.Id, context, denial));
+                itemDocument.RootElement.WriteTo(writer);
+            }
+
+            writer.WriteEndArray();
+        }
+
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        context.Response.ContentType = "application/json";
+        await context.Response.Body.WriteAsync(output.WrittenMemory, context.RequestAborted).ConfigureAwait(false);
+    }
+
+    private static byte[] BuildMcpError(JsonElement? id, HttpContext context, TenantDenialKind denial)
+    {
+        var output = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(output))
+        {
             writer.WriteStartObject();
             writer.WriteString("jsonrpc", "2.0");
             writer.WritePropertyName("id");
-            if (request.Id.HasValue)
+            if (id.HasValue)
             {
-                request.Id.Value.WriteTo(writer);
+                id.Value.WriteTo(writer);
             }
             else
             {
@@ -161,9 +219,7 @@ internal static class TenantDenialResponseWriter
             writer.WriteEndObject();
         }
 
-        context.Response.StatusCode = StatusCodes.Status200OK;
-        context.Response.ContentType = "application/json";
-        await context.Response.Body.WriteAsync(output.WrittenMemory, context.RequestAborted).ConfigureAwait(false);
+        return output.WrittenMemory.ToArray();
     }
 
     private static async Task<McpRequestIdentity> ReadMcpRequestIdentityAsync(
@@ -179,19 +235,17 @@ internal static class TenantDenialResponseWriter
         {
             using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
             {
-                return default;
+                var items = document.RootElement.EnumerateArray()
+                    .Select(ParseMcpBatchItem)
+                    .ToArray();
+                return new McpRequestIdentity(null, false, true, items);
             }
 
-            if (document.RootElement.TryGetProperty("id", out var id))
-            {
-                return new McpRequestIdentity(id.Clone(), IsNotification: false);
-            }
-
-            var isNotification = document.RootElement.TryGetProperty("method", out var method)
-                && method.ValueKind == JsonValueKind.String;
-            return new McpRequestIdentity(null, isNotification);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                ? ParseMcpRequestIdentity(document.RootElement)
+                : default;
         }
         catch (JsonException)
         {
@@ -201,6 +255,54 @@ internal static class TenantDenialResponseWriter
 
     private static bool IsMcpJsonRpcRequest(HttpRequest request)
         => HttpMethods.IsPost(request.Method) && IsMcpRequest(request.Path);
+
+    private static McpRequestIdentity ParseMcpRequestIdentity(JsonElement element)
+    {
+        var hasId = element.TryGetProperty("id", out var id);
+        var method = element.TryGetProperty("method", out var methodElement)
+            && methodElement.ValueKind == JsonValueKind.String
+            ? methodElement.GetString()
+            : null;
+        var isNotification = !hasId
+            && method?.StartsWith("notifications/", StringComparison.Ordinal) == true;
+        JsonElement? normalizedId = hasId && IsValidMcpRequestId(id) ? id.Clone() : null;
+        return new McpRequestIdentity(normalizedId, isNotification, false, null);
+    }
+
+    private static McpBatchItem ParseMcpBatchItem(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return new McpBatchItem(null, false);
+        }
+
+        var identity = ParseMcpRequestIdentity(element);
+        return new McpBatchItem(identity.Id, identity.IsNotification);
+    }
+
+    private static bool IsTenantBoundMcpElement(JsonElement element)
+        => element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty("method", out var method)
+            && method.ValueKind == JsonValueKind.String
+            && (string.Equals(method.GetString(), "tools/call", StringComparison.Ordinal)
+                || string.Equals(method.GetString(), "resources/read", StringComparison.Ordinal));
+
+    private static bool IsValidMcpRequestId(JsonElement id)
+    {
+        if (id.ValueKind == JsonValueKind.String)
+        {
+            return true;
+        }
+
+        if (id.ValueKind != JsonValueKind.Number)
+        {
+            return false;
+        }
+
+        var raw = id.GetRawText().AsSpan();
+        var start = raw.Length > 0 && raw[0] == '-' ? 1 : 0;
+        return start < raw.Length && raw[start..].IndexOfAny('.', 'e', 'E') < 0;
+    }
 
     private static void WriteGrpc(HttpContext context, TenantDenialKind denial)
     {
@@ -220,7 +322,32 @@ internal static class TenantDenialResponseWriter
     private static bool IsGrpcRequest(HttpRequest request)
         => request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) == true;
 
-    private readonly record struct McpRequestIdentity(JsonElement? Id, bool IsNotification);
+    private readonly record struct McpRequestIdentity(
+        JsonElement? Id,
+        bool IsNotification,
+        bool IsBatch,
+        IReadOnlyList<McpBatchItem>? BatchItems);
+
+    private readonly record struct McpBatchItem(JsonElement? Id, bool IsNotification);
+
+    private static void AddAuthenticationChallenge(HttpContext context)
+    {
+        const string bearerChallenge = "Bearer";
+        var challenge = bearerChallenge;
+        if (IsMcpRequest(context.Request.Path))
+        {
+            var oidc = context.RequestServices.GetService<IOptions<OidcAuthenticationOptions>>()?.Value;
+            if (oidc is { Enabled: true }
+                && OidcProviderCatalog.GetProviders(oidc).Any(static provider =>
+                    provider.IsValid && !string.IsNullOrWhiteSpace(provider.Authority)))
+            {
+                var metadata = $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/.well-known/oauth-protected-resource/mcp";
+                challenge = $"{bearerChallenge} resource_metadata=\"{metadata}\"";
+            }
+        }
+
+        context.Response.Headers.Append("WWW-Authenticate", challenge);
+    }
 
     private static string GetMachineCode(TenantDenialKind denial) => denial switch
     {

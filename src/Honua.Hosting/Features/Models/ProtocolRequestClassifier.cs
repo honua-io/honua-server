@@ -88,6 +88,8 @@ internal static class ProtocolRequestClassifier
         return false;
     }
 
+    internal static bool IsWps(PathString path) => path.StartsWithSegments("/wps");
+
     internal static bool IsAdmin(PathString path)
     {
         if (!path.StartsWithSegments("/api", out var remaining))

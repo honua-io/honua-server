@@ -106,6 +106,69 @@ public sealed class TenantDenialContractMatrixTests
         body.Should().Contain($"CorrelationId: {CorrelationId}");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /wps")]
+    public async Task TenantDenial_Wps_UsesOws20EnvelopeWithoutHandlerSideEffects()
+    {
+        var route = new RouteCase("WPS", "/wps");
+        var denial = Denials.Single(candidate => candidate.Name == "unauthorized override");
+        var handlerCalls = new StrongBox<int>();
+        await using var app = await CreateAppAsync(route, denial, handlerCalls);
+        using var request = CreateRequest(route, denial);
+
+        var response = await app.GetTestClient().SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        handlerCalls.Value.Should().Be(0);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        body.Should().Contain("http://www.opengis.net/ows/2.0");
+        body.Should().Contain("exceptionCode=\"AccessDenied\"");
+        body.Should().Contain($"CorrelationId: {CorrelationId}");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /ogc/services/{id}/wmts")]
+    public async Task TenantDenial_Wmts_UsesOws10EnvelopeWithoutHandlerSideEffects()
+    {
+        var route = new RouteCase("WMTS", "/ogc/services/example/wmts");
+        var denial = Denials.Single(candidate => candidate.Name == "unauthorized override");
+        var handlerCalls = new StrongBox<int>();
+        await using var app = await CreateAppAsync(route, denial, handlerCalls);
+        using var request = CreateRequest(route, denial);
+
+        var response = await app.GetTestClient().SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        handlerCalls.Value.Should().Be(0);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        body.Should().Contain("http://www.opengis.net/ows/1.1");
+        body.Should().Contain("version=\"1.0.0\"");
+        body.Should().Contain("exceptionCode=\"AccessDenied\"");
+        body.Should().Contain($"CorrelationId: {CorrelationId}");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /ogc/features/collections")]
+    public async Task TenantDenial_AuthenticationRequired_AdvertisesBearerChallenge()
+    {
+        var route = Routes.Single(candidate => candidate.Name == "OGC API");
+        var denial = Denials.Single(candidate => candidate.Name == "missing bearer tenant");
+        var handlerCalls = new StrongBox<int>();
+        await using var app = await CreateAppAsync(route, denial, handlerCalls);
+        using var request = CreateRequest(route, denial);
+
+        var response = await app.GetTestClient().SendAsync(request);
+
+        handlerCalls.Value.Should().Be(0);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.GetValues("WWW-Authenticate").Should().Contain("Bearer");
+    }
+
     [IntegrationTheory]
     [InlineData("GET", "unauthorized override")]
     [InlineData("GET", "missing bearer tenant")]
@@ -152,7 +215,7 @@ public sealed class TenantDenialContractMatrixTests
         using var request = new HttpRequestMessage(HttpMethod.Post, route.Path)
         {
             Content = new StringContent(
-                "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"honua_query_features\",\"arguments\":{}}}",
+                "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}",
                 Encoding.UTF8,
                 "application/json"),
         };
@@ -165,6 +228,37 @@ public sealed class TenantDenialContractMatrixTests
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle(CorrelationId);
         body.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /mcp batch")]
+    public async Task TenantDenial_McpBatch_PreservesResponseFramingAndRequestIds()
+    {
+        var route = Routes.Single(candidate => candidate.Name == "MCP JSON-RPC");
+        var denial = Denials.Single(candidate => candidate.Name == "unauthorized override");
+        var handlerCalls = new StrongBox<int>();
+        await using var app = await CreateAppAsync(route, denial, handlerCalls);
+        using var request = new HttpRequestMessage(HttpMethod.Post, route.Path)
+        {
+            Content = new StringContent(
+                "[{\"jsonrpc\":\"2.0\",\"id\":\"first\",\"method\":\"tools/call\"},{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"},{\"jsonrpc\":\"2.0\",\"id\":true,\"method\":\"tools/call\"},{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\"}]",
+                Encoding.UTF8,
+                "application/json"),
+        };
+        request.Headers.Add(TenantContextOptions.TenantHeaderName, "tenant-target");
+
+        var response = await app.GetTestClient().SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        handlerCalls.Value.Should().Be(0);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(body);
+        var responses = document.RootElement.EnumerateArray().ToArray();
+        responses.Should().HaveCount(3);
+        responses[0].GetProperty("id").GetString().Should().Be("first");
+        responses[1].GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+        responses[2].GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     private static void AssertNativeContract(

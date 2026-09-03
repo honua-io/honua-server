@@ -73,6 +73,21 @@ internal static class StandardErrorResponseFormatter
             return FormatWmsAliasError(context, errorResponse, options);
         }
 
+        if (ProtocolRequestClassifier.IsWmtsAlias(path))
+        {
+            return FormatWmtsError(context, errorResponse, options);
+        }
+
+        if (ProtocolRequestClassifier.IsWcs(path))
+        {
+            return FormatWcsError(context, errorResponse, options);
+        }
+
+        if (ProtocolRequestClassifier.IsWps(path))
+        {
+            return FormatWcsError(context, errorResponse, options);
+        }
+
         if (ProtocolRequestClassifier.IsOgcServiceAlias(path))
         {
             return FormatWfsError(context, errorResponse, options);
@@ -86,11 +101,6 @@ internal static class StandardErrorResponseFormatter
         if (ProtocolRequestClassifier.IsWfs(path))
         {
             return FormatWfsError(context, errorResponse, options);
-        }
-
-        if (ProtocolRequestClassifier.IsWcs(path))
-        {
-            return FormatWcsError(context, errorResponse, options);
         }
 
         if (ProtocolRequestClassifier.IsAdmin(path))
@@ -226,6 +236,37 @@ internal static class StandardErrorResponseFormatter
                                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                                  version="2.0.0"
                                  xsi:schemaLocation="http://www.opengis.net/ows/2.0 http://schemas.opengis.net/ows/2.0/owsExceptionReport.xsd">
+              <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
+                <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
+              </ows:Exception>
+            </ows:ExceptionReport>
+            """;
+
+        return Results.Content(
+            xmlContent,
+            "application/xml",
+            System.Text.Encoding.UTF8,
+            errorResponse.StatusCode);
+    }
+
+    /// <summary>
+    /// Formats WMTS errors using the OWS 1.1 exception contract required by WMTS 1.0.0.
+    /// </summary>
+    private static IResult FormatWmtsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
+        AddResponseHeaders(context, options);
+        var exceptionCode = string.IsNullOrWhiteSpace(options.WmtsExceptionCode)
+            ? MapWfsCode(errorResponse)
+            : options.WmtsExceptionCode;
+        var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
+            ? string.Empty
+            : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
+        var xmlContent = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1"
+                                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                 version="1.0.0"
+                                 xsi:schemaLocation="http://www.opengis.net/ows/1.1 http://schemas.opengis.net/ows/1.1.0/owsExceptionReport.xsd">
               <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
                 <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
               </ows:Exception>
