@@ -1739,6 +1739,16 @@ async Task RunDatabaseMigrationsAsync()
     if (builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"))
     {
         Honua.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
+
+        // Explicitly opted-in Test hosts wire their own isolated providers and schema. The
+        // production PostgreSQL guard cannot validate that externally managed fixture shape;
+        // requiring it here makes the Python compatibility harness exit before its tests run.
+        if (isTestEnvironment && registerInfrastructureInTestEnvironment)
+        {
+            migrationState.MarkSkipped("Migrations skipped; the opted-in test infrastructure owns schema preparation.");
+            return;
+        }
+
         var schemaGuard = app.Services.GetService<IDatabaseSchemaGuard>();
         if (schemaGuard is null)
         {

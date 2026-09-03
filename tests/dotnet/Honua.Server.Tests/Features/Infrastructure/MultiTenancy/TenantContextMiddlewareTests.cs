@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Security.Claims;
+using System.Text.Json;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Middleware;
@@ -153,8 +154,9 @@ public class TenantContextMiddlewareTests
         var client = await CreateAppAsync(principal);
         var response = await client.GetAsync("/tenant");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("authentication_required", document.RootElement.GetProperty("code").GetString());
     }
 
     [IntegrationTest]
@@ -216,8 +218,9 @@ public class TenantContextMiddlewareTests
         var client = await CreateAppAsync(principal);
         var response = await client.GetAsync("/api/v1/admin/metadata/layers/7/fields");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("authentication_required", document.RootElement.GetProperty("code").GetString());
     }
 
     [IntegrationTest]
@@ -232,8 +235,9 @@ public class TenantContextMiddlewareTests
         var client = await CreateAppAsync(principal);
         var response = await client.GetAsync("/tenant");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Equal(string.Empty, await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("authentication_required", document.RootElement.GetProperty("code").GetString());
     }
 
     [IntegrationTest]

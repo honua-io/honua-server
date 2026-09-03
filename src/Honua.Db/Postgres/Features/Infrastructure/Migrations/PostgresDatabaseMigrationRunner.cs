@@ -86,7 +86,13 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
                 includeRasterProviderMigrations = await HasPostGisRasterAsync(connection, cancellationToken)
                     .ConfigureAwait(false);
-                await _schemaGuard.VerifyConsistencyAsync(connection, cancellationToken).ConfigureAwait(false);
+                // A compatibility seed may provision physical tables before the canonical
+                // DbUp journal exists. Let the canonical migrations establish that journal;
+                // once a journal exists, every physical/journal mismatch remains fail-closed.
+                if (await MigrationJournalExistsAsync(connection, cancellationToken).ConfigureAwait(false))
+                {
+                    await _schemaGuard.VerifyConsistencyAsync(connection, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             var upgrader = BuildUpgrader(
@@ -259,7 +265,12 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 _migrations.ConfiguredSchemaAdoptionMigration);
             if (usesCanonicalMigrationRoots)
             {
-                await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
+                // See the planning path above: an unjournaled compatibility seed is a valid
+                // bootstrap input, while an existing journal still requires strict reconciliation.
+                if (await MigrationJournalExistsAsync(lockConnection, cancellationToken).ConfigureAwait(false))
+                {
+                    await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             var classifications = ClassifyScripts(upgrader.GetScriptsToExecute());
@@ -385,6 +396,15 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 FROM pg_catalog.pg_extension
                 WHERE extname = 'postgis_raster')
             """;
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
+    }
+
+    private static async Task<bool> MigrationJournalExistsAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT to_regclass('public.schema_versions') IS NOT NULL";
         return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
     }
 
