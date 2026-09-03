@@ -834,7 +834,7 @@ internal sealed class CapabilityManifestService(
                 Transport("mcp", supported: true, available: true),
                 Transport("qgis", supported: true, available: true),
                 Transport("mtls", supported: true, available: mtlsAvailable,
-                    mtlsAvailable ? null : CapabilityReasonCodes.ExperimentalDisabled)
+                    mtlsAvailable ? null : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled)
             ]
         };
     }

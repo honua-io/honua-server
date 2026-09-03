@@ -42,9 +42,8 @@ internal static class LayerScopedWriteKey
     private static readonly string[] AdminGrants = ["admin", "*"];
 
     /// <summary>
-    /// Prefix for administrative permission grants. Scoped admin grants remain
-    /// non-admin for data-plane authorization; only exact full-admin grants
-    /// confer that role.
+    /// Prefix for administrative permission grants. Only the explicitly supported
+    /// full-admin sub-grants confer that role; narrower grants remain scoped.
     /// </summary>
     private const string AdminGrantPrefix = "admin:";
 
@@ -81,8 +80,8 @@ internal static class LayerScopedWriteKey
     /// password-based bootstrap admin and the development bypass authenticate with
     /// <see langword="null"/> permissions, and the key store normalizes an empty
     /// grant set to <c>admin:*</c>) or when at least one grant is a full-admin grant
-    /// (<c>admin</c>, <c>*</c>, or any <c>admin:</c>-prefixed grant such as
-    /// <c>admin:*</c>).
+    /// (<c>admin</c>, <c>*</c>, <c>admin:*</c>, <c>admin:write</c>, or
+    /// <c>admin:manage</c>).
     /// </summary>
     /// <remarks>
     /// A key whose grants are genuinely scoped — neither a full-admin grant nor a
@@ -99,10 +98,7 @@ internal static class LayerScopedWriteKey
         {
             // Unscoped: bootstrap admin / dev bypass (null) and empty grant sets
             // (normalized to admin:* by the key store) retain full admin authority.
-            var subGrant = permission[AdminGrantPrefix.Length..].Trim();
-            return subGrant.Equals("*", StringComparison.OrdinalIgnoreCase)
-                || subGrant.Equals("write", StringComparison.OrdinalIgnoreCase)
-                || subGrant.Equals("manage", StringComparison.OrdinalIgnoreCase);
+            return true;
         }
 
         var hasMeaningfulGrant = false;
@@ -245,7 +241,10 @@ internal static class LayerScopedWriteKey
 
         if (permission.StartsWith(AdminGrantPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return true;
+            var subGrant = permission[AdminGrantPrefix.Length..].Trim();
+            return subGrant.Equals("*", StringComparison.OrdinalIgnoreCase)
+                || subGrant.Equals("write", StringComparison.OrdinalIgnoreCase)
+                || subGrant.Equals("manage", StringComparison.OrdinalIgnoreCase);
         }
 
         return AdminGrants.Any(grant => string.Equals(permission, grant, StringComparison.OrdinalIgnoreCase));

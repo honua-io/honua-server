@@ -31,17 +31,23 @@ public sealed class RedisJobQueueTests
         database.StringSetAsync(
                 Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
             .Returns(true);
+        database.StringSetAsync(
+                Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<When>())
+            .Returns(true);
         database.SortedSetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<double>(), Arg.Any<SortedSetWhen>(), Arg.Any<CommandFlags>())
             .Returns(true);
         database.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<ExpireWhen>(), Arg.Any<CommandFlags>())
             .Returns(true);
         var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase().Returns(database);
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
 
         var store = new RedisExecutionJobStore(redis, NullLogger<RedisExecutionJobStore>.Instance);
         await store.TryCreateAsync(CreateQueuedJob("job-index-ttl", OperationPriority.Normal), TimeSpan.FromMinutes(5));
 
-        Assert.True(database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.KeyExpireAsync)) >= 3);
+        var expiryCalls = database.ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IDatabase.KeyExpireAsync));
+        Assert.True(expiryCalls >= 3, $"Expected at least 3 secondary-index expirations, got {expiryCalls}.");
     }
 
     [UnitTest]

@@ -365,7 +365,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                _logger.LogWarning(ex, "Distributed execution-admission rate limiting unavailable; using process-local fallback.");
+                ExecutionAdmissionLog.RedisUnavailable(_logger, ex);
             }
         }
         var bucket = _rateBuckets.GetOrAdd(key, static _ => new RateBucket());

@@ -5,7 +5,7 @@ using Honua.Core.Exceptions;
 using Honua.Server.Features.Operations;
 using Xunit;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsUnavailable;
 
 public sealed class UnavailableOperationInstanceStoreTests
 {
@@ -18,6 +18,8 @@ public sealed class UnavailableOperationInstanceStoreTests
             () => store.GetAsync("operation-1"));
 
         Assert.Equal("redis", exception.MissingDependency);
-        Assert.Contains("caching.redis", exception.Message);
+        // A missing Redis connection is distinct from an unentitled Redis deployment;
+        // the refusal must identify the dependency without conflating those remedies.
+        Assert.DoesNotContain("caching.redis", exception.Message);
     }
 }

@@ -77,22 +77,18 @@ internal static partial class ImportEndpoints
         // Control-plane compatibility route. This deliberately points at the same
         // downloader, validator, queue, and progress store as /import/upload-url;
         // it is a real import operation, not a receipt-only alias.
-        app.MapPost("/api/v{version:apiVersion}/admin/imports", HandleImportFileFromUrl)
+        var importsGroup = app.MapGroup("/api/v{version:apiVersion}/admin/imports")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Admin", "Import")
-            .RequireAdminAuthorization()
+            .RequireAdminAuthorization();
+
+        importsGroup.MapPost(string.Empty, HandleImportFileFromUrl)
             .WithSummary("Create and queue an import job from a source URL.");
 
-        app.MapGet("/api/v{version:apiVersion}/admin/imports/jobs", HandleGetActiveJobs)
-            .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Import")
-            .RequireAdminAuthorization();
-        app.MapGet("/api/v{version:apiVersion}/admin/imports/jobs/{jobId}", HandleGetImportJobStatus)
-            .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Import")
-            .RequireAdminAuthorization();
-        app.MapPost("/api/v{version:apiVersion}/admin/imports/jobs/{jobId}/cancel", HandleCancelImportJob)
-            .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Import")
-            .RequireAdminAuthorization();
+        importsGroup.MapGet("/jobs", HandleGetActiveJobs);
+        importsGroup.MapGet("/jobs/{jobId}", HandleGetImportJobStatus);
+        importsGroup.MapPost("/jobs/{jobId}/cancel", HandleCancelImportJob);
     }
 
     /// <summary>

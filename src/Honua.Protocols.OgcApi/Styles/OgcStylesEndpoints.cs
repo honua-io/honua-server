@@ -12,6 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Styles.Handlers;
 using Honua.Protocols.Ogc.Api.Styles.Models;
 using Honua.Protocols.Ogc.Common;
