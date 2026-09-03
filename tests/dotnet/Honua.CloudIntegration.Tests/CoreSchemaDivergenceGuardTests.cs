@@ -145,6 +145,38 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
     }
 
     [SkippableFact]
+    public async Task CanonicalRunner_WhenJournalTableIsMissingButGuardedSchemaExists_FailsClosed()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the schema-divergence lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
+            ServerCoreSchemaMigrations.Manifest);
+        var baseline = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        baseline.Successful.Should().BeTrue($"the test requires a canonical schema baseline. Error: {baseline.ErrorMessage}");
+
+        await ExecuteAsync(connectionString, "DROP TABLE public.schema_versions;");
+
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeFalse("a missing journal over physical guarded schema must fail preflight");
+        plan.Error.Should().BeOfType<DatabaseSchemaFloorException>();
+
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        result.Successful.Should().BeFalse("migration execution must not replay scripts over an unjournaled schema");
+        result.Error.Should().BeOfType<DatabaseSchemaFloorException>();
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT to_regclass('public.schema_versions'), to_regclass('honua.metadata_v2_snapshots');";
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.IsDBNull(0).Should().BeTrue("the failed run must not recreate the deleted journal");
+        reader.IsDBNull(1).Should().BeFalse("the physical guarded schema must remain present for diagnosis");
+    }
+
+    [SkippableFact]
     public async Task CanonicalRunner_WhenMetadataSchemaIsConfigured_AppliesAndVerifiesGuardedFloorThere()
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the configured-schema lane.");
