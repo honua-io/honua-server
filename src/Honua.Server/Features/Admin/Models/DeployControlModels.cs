@@ -229,6 +229,13 @@ public sealed class DeployPreflightMigration
     public IReadOnlyList<string> PendingScripts { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Runtime expand/contract classification for every pending migration script.
+    /// </summary>
+    [JsonPropertyName("pendingScriptClassifications")]
+    public IReadOnlyList<DeployPreflightMigrationClassification> PendingScriptClassifications { get; init; }
+        = Array.Empty<DeployPreflightMigrationClassification>();
+
+    /// <summary>
     /// Scripts previously executed against the database but no longer discovered by the current binary.
     /// </summary>
     [JsonPropertyName("executedButNotDiscoveredScripts")]
@@ -245,6 +252,30 @@ public sealed class DeployPreflightMigration
     /// </summary>
     [JsonPropertyName("backupHook")]
     public MigrationBackupHookStatus? BackupHook { get; init; }
+}
+
+/// <summary>
+/// One pending migration's runtime safety classification and exact matched rules.
+/// </summary>
+public sealed class DeployPreflightMigrationClassification
+{
+    /// <summary>
+    /// Embedded migration script name used by the runner and journal.
+    /// </summary>
+    [JsonPropertyName("scriptName")]
+    public string ScriptName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Expand/contract classifier result.
+    /// </summary>
+    [JsonPropertyName("classification")]
+    public string Classification { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Exact potentially-breaking classifier rule names matched by the script.
+    /// </summary>
+    [JsonPropertyName("breakingRules")]
+    public IReadOnlyList<string> BreakingRules { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
