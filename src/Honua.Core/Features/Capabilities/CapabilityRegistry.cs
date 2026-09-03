@@ -264,6 +264,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("package.map", "packages", null, CapabilityKind.Feature, MapPackageSchemaVersion, CapabilityMaturity.Implemented),
             ("package.app", "packages", null, CapabilityKind.Feature, AppPackageSchemaVersion, CapabilityMaturity.Implemented),
 
+            // Warehouse providers remain visible while disabled so discovery can
+            // distinguish truthful Experimental opt-in state from absent data.
+            ("provider.redshift", "provider", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("provider.snowflake", "provider", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("provider.databricks", "provider", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+
             // Temporal analytics — promoted to GA (Implemented) in #2429. Time filtering
             // (Community) + extent discovery (Community), date-bin histograms (Pro),
             // time-series tiles (Pro), and the SDK/admin animation-contract flag (Pro).
