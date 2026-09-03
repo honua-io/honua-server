@@ -58,6 +58,19 @@ runs:
       shell: bash
       run: dotnet build src/Honua.Server --configuration Release --no-restore
 
+    - name: Seed base schema
+      shell: bash
+      run: PGPASSWORD=honua psql -v ON_ERROR_STOP=1 -h localhost -U honua -d honua_test -f "$BASE_SEED_PATH"
+      env:
+        BASE_SEED_PATH: ${{ inputs.base-seed-path }}
+
+    - name: Apply additional seed data
+      if: ${{ inputs.post-seed-yaml != '' }}
+      shell: bash
+      run: bash tests/seed/apply-yaml-seed.sh "$SEED_YAML"
+      env:
+        SEED_YAML: ${{ inputs.post-seed-yaml }}
+
     - name: Start Honua Server
       shell: bash
       run: |
@@ -168,16 +181,3 @@ runs:
         Security__ConnectionEncryption__Salt: "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM="
         LOG_PATH: ${{ inputs.log-path }}
         SERVER_IMAGE: ${{ inputs.server-image }}
-
-    - name: Seed base schema
-      shell: bash
-      run: PGPASSWORD=honua psql -v ON_ERROR_STOP=1 -h localhost -U honua -d honua_test -f "$BASE_SEED_PATH"
-      env:
-        BASE_SEED_PATH: ${{ inputs.base-seed-path }}
-
-    - name: Apply additional seed data
-      if: ${{ inputs.post-seed-yaml != '' }}
-      shell: bash
-      run: bash tests/seed/apply-yaml-seed.sh "$SEED_YAML"
-      env:
-        SEED_YAML: ${{ inputs.post-seed-yaml }}
