@@ -1134,7 +1134,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetAlertZones_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListZones_WithServiceFilter_ReturnsSuccessEnvelope",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AlertsEndpoint_AfterGaPromotion_IsNotExperimentalGated"
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AlertsEndpoint_WhenPreviewDisabled_IsNotMapped"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3379,7 +3379,7 @@
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetStreamingOperationsSubscribers_WithoutAuth_Returns401",
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_AfterSubscribe_ReturnsSubscriberInfo",
         "Honua.Server.Tests.Features.Admin.StreamingOperationsEndpointsTests.ListSubscribers_WhenNone_ReturnsEmptyList",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.StreamingEndpoint_AfterGaPromotion_IsNotExperimentalGated",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.SharedStreamingOperations_WhenAlertsPreviewDisabled_RemainAvailable",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -3847,7 +3847,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminReplicaManagementDriftBackingTests.ListReplicas_ForSeededService_ReturnsOk",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ReplicasEndpoint_AfterGaPromotion_IsNotExperimentalGated",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.ReplicasEndpoint_WhenPreviewDisabled_IsNotMapped",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_AfterCreate_ReturnsRegisteredReplica",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_ForUnknownService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_WhenNoneRegistered_ReturnsEmptyCollection",
@@ -4441,8 +4441,8 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithoutDurableJobStore_ReportsJobsRunnerDependencyUnavailable",
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_OmittingManifestCapability_ReturnsNotFound",
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalDisabled_OmitsEveryExperimentalCapability",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalEnabledPerCapability_IncludesExactlyThatCapability",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenLifecycleFlagsAreEmpty_ReportsEveryAdoptedCapabilityUnavailable",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenRealtimePreviewsOptedIn_DeclaresPreviewLifecycle",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Manifest_PublishesTheImmutableRevisionUnderBothNames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_ExposesImmutableDeploymentRevisionSeparatelyFromServerVersion",
@@ -5437,6 +5437,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.StreamingEndpoint_WhenPreviewDisabled_Returns404ExperimentalDisabled",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Capabilities_AdvertiseTheConformanceContractAndTheImmutableRevision",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_CommunityEdition_DisablesStreamingMetadata",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.Capabilities_OmitsLayersTheCallerCannotAccess",
