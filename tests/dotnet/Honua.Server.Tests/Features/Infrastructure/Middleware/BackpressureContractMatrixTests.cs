@@ -65,7 +65,8 @@ public sealed class BackpressureContractMatrixTests
     [Trait("Category", "Integration")]
     [Trait("Tier", "Integration")]
     [Operation(Operations.Infrastructure)]
-    [Endpoint("GET|POST backpressure protocol matrix")]
+    [Endpoint("GET /backpressure")]
+    [Endpoint("POST /backpressure")]
     public async Task Backpressure_RouteAndCause_UsesNativeRetryableEnvelopeWithoutHandlerSideEffects(
         string routeName,
         string pressureName)
