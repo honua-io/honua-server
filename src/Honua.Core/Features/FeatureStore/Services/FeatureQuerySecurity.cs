@@ -199,16 +199,14 @@ public static class FeatureQuerySecurity
 
     private static void ThrowIfFilterReferencesMaskedField(HashSet<string> masked, string expression, string surface)
     {
-        foreach (var field in masked)
+        foreach (var field in masked.Where(field =>
+                     FieldComparisonRegex(field).IsMatch(expression) ||
+                     FieldSortRegex(field).IsMatch(expression) ||
+                     AttributeAccessorRegex(field).IsMatch(expression)))
         {
-            if (FieldComparisonRegex(field).IsMatch(expression) ||
-                FieldSortRegex(field).IsMatch(expression) ||
-                AttributeAccessorRegex(field).IsMatch(expression))
-            {
-                throw new ArgumentException(
-                    $"Field '{field}' is masked and cannot be used by {surface}.",
-                    nameof(expression));
-            }
+            throw new ArgumentException(
+                $"Field '{field}' is masked and cannot be used by {surface}.",
+                nameof(expression));
         }
     }
 
