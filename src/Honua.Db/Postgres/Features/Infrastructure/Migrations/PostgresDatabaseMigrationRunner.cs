@@ -143,7 +143,6 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
         var unannotated = classifications
             .Where(c => c.Classification == MigrationSafetyClassification.ContractUnannotated)
-            .Select(c => c.ScriptName)
             .ToArray();
 
         if (unannotated.Length == 0)
@@ -151,9 +150,13 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             return null;
         }
 
+        var details = unannotated.Select(
+            classification =>
+                $"{classification.ScriptName} [{string.Join(", ", classification.BreakingRules)}]");
+
         return new InvalidOperationException(
             "Refusing to apply potentially backward-incompatible (contract-phase) migration(s) that are " +
-            $"not declared rollout-safe: {string.Join(", ", unannotated)}. Each must carry the marker " +
+            $"not declared rollout-safe: {string.Join(", ", details)}. Each must carry the marker " +
             $"'{MigrationSafetyClassifier.CompatibilityReviewMarkerConvention}' so its expand/contract " +
             "safety is reviewed, or set 'Database:MigrationSafety:Enforce=false' to override.");
     }
