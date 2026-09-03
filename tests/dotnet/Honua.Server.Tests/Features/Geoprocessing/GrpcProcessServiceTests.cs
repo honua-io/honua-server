@@ -353,6 +353,51 @@ public sealed class GrpcProcessServiceTests
             .Should().Be("grpc-process-correlation");
     }
 
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /geospatial.v1.ProcessService/SubmitJob")]
+    public async Task SubmitJob_WhenAdmissionDenies_UsesUnavailableBackpressureTrailers()
+    {
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        jobService
+            .EnsureCallerAuthorizedAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<OperatorResourceType>(),
+                Arg.Any<OperatorOperation>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        jobService
+            .SubmitJobAsync(
+                Arg.Any<AnalysisPlan>(),
+                Arg.Any<string?>(),
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ExecutionJobRecord>(new GeoprocessingAdmissionException(
+                ExecutionAdmissionOutcome.Denied,
+                ExecutionAdmissionDimension.Concurrency,
+                "policy/concurrency",
+                "Partition capacity is exhausted.",
+                retryAfterSeconds: 12)));
+        var service = new HonuaProcessService(
+            jobService,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<HonuaProcessService>.Instance);
+        using var context = CreateCallContext();
+
+        var act = async () => await service.SubmitJob(
+            CreateSubmitJobRequest(CreateValidPlan(), "idem-saturated"),
+            context);
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.Unavailable);
+        exception.Which.Trailers.Single(entry => entry.Key == BackpressureMetadata.ErrorCodeKey).Value
+            .Should().Be(BackpressureMetadata.ServiceUnavailableCode);
+        exception.Which.Trailers.Single(entry => entry.Key == BackpressureMetadata.RetryableKey).Value
+            .Should().Be("true");
+        exception.Which.Trailers.Single(entry => entry.Key == BackpressureMetadata.RetryAfterKey).Value
+            .Should().Be("12");
+    }
+
     // -----------------------------------------------------------------------
     // GetJob
     // -----------------------------------------------------------------------

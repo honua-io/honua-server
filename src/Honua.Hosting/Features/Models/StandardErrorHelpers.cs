@@ -210,15 +210,23 @@ internal static class StandardErrorHelpers
     /// <param name="detail">The error detail message.</param>
     /// <param name="retryAfterSeconds">Optional retry-after seconds.</param>
     /// <param name="additionalDetails">Optional additional details.</param>
+    /// <param name="retryable">Whether the unavailable condition is expected to clear without operator intervention.</param>
     /// <returns>A protocol-specific Service Unavailable response.</returns>
-    internal static IResult CreateServiceUnavailable(HttpContext context, string detail, int? retryAfterSeconds = null, IReadOnlyList<string>? additionalDetails = null)
+    internal static IResult CreateServiceUnavailable(
+        HttpContext context,
+        string detail,
+        int? retryAfterSeconds = null,
+        IReadOnlyList<string>? additionalDetails = null,
+        bool retryable = false)
     {
+        retryable |= retryAfterSeconds.HasValue;
         var errorResponse = StandardErrorResponse.ServiceUnavailable(detail, retryAfterSeconds, additionalDetails);
 
         var options = CreateBackpressureOptions(
             context,
             BackpressureMetadata.ServiceUnavailableCode,
-            retryAfterSeconds);
+            retryAfterSeconds,
+            retryable);
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
     }
@@ -239,7 +247,8 @@ internal static class StandardErrorHelpers
         var options = CreateBackpressureOptions(
             context,
             BackpressureMetadata.RateLimitExceededCode,
-            retryAfterSeconds);
+            retryAfterSeconds,
+            retryable: true);
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
     }
@@ -280,7 +289,8 @@ internal static class StandardErrorHelpers
                 context,
                 BackpressureMetadata.ServiceUnavailableCode,
                 retryAfterSeconds,
-                includeDebugDetails);
+                retryable: true,
+                includeDebugInfo: includeDebugDetails);
         }
 
         return StandardErrorResponseFormatter.FormatError(context, errorResponse, options);
@@ -351,12 +361,13 @@ internal static class StandardErrorHelpers
         HttpContext context,
         string machineCode,
         int? retryAfterSeconds,
+        bool retryable,
         bool includeDebugInfo = false)
     {
         var headers = new Dictionary<string, string>
         {
             ["X-Correlation-ID"] = context.TraceIdentifier,
-            ["Honua-Retryable"] = bool.TrueString.ToLowerInvariant(),
+            ["Honua-Retryable"] = retryable.ToString().ToLowerInvariant(),
         };
 
         if (retryAfterSeconds.HasValue)
@@ -372,7 +383,7 @@ internal static class StandardErrorHelpers
             ODataErrorCode = machineCode,
             WfsExceptionCode = machineCode,
             WmsExceptionCode = machineCode,
-            Retryable = true,
+            Retryable = retryable,
             RetryAfterSeconds = retryAfterSeconds,
         };
     }

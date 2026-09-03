@@ -107,6 +107,89 @@ public sealed class BackpressureContractMatrixTests
         AssertNativeContract(route, pressure, retryAfterSeconds, response, body);
     }
 
+    [UnitTest]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /mcp")]
+    public async Task McpBatchBackpressure_PreservesBatchEnvelopeAndRequestIds()
+    {
+        await using var app = await CreateAppAsync(
+            new RouteCase("MCP", "/mcp"),
+            new PressureCase(
+                "503 saturated",
+                BackpressureKind.Saturated,
+                HttpStatusCode.ServiceUnavailable,
+                BackpressureMetadata.ServiceUnavailableCode,
+                "unavailable",
+                "14"),
+            new StrongBox<int>());
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = new StringContent(
+                "[{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"tools/list\"}," +
+                "{\"jsonrpc\":\"2.0\",\"id\":\"second\",\"method\":\"tools/list\"}]",
+                Encoding.UTF8,
+                "application/json")
+        };
+
+        using var response = await app.GetTestClient().SendAsync(request);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responses = document.RootElement;
+
+        responses.ValueKind.Should().Be(JsonValueKind.Array);
+        responses.GetArrayLength().Should().Be(2);
+        responses[0].GetProperty("id").GetInt32().Should().Be(11);
+        responses[1].GetProperty("id").GetString().Should().Be("second");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /mcp")]
+    public async Task McpBackpressure_WhenEventStreamIsAccepted_UsesMessageEvent()
+    {
+        await using var app = await CreateAppAsync(
+            new RouteCase("MCP", "/mcp"),
+            new PressureCase(
+                "503 saturated",
+                BackpressureKind.Saturated,
+                HttpStatusCode.ServiceUnavailable,
+                BackpressureMetadata.ServiceUnavailableCode,
+                "unavailable",
+                "14"),
+            new StrongBox<int>());
+
+        using var request = CreateRequest(new RouteCase("MCP", "/mcp"));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        using var response = await app.GetTestClient().SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
+        body.Should().StartWith("event: message\ndata: {");
+        body.Should().EndWith("\n\n");
+        body.Should().Contain("\"code\":\"unavailable\"");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /mcp")]
+    public async Task McpBackpressure_InspectsOnlyBoundedRequestPrefix()
+    {
+        var context = new DefaultHttpContext();
+        context.TraceIdentifier = CorrelationId;
+        context.Request.Path = "/mcp";
+        var payload = Encoding.UTF8.GetBytes(
+            "{\"jsonrpc\":\"2.0\",\"id\":3905,\"padding\":\"" +
+            new string('x', 32 * 1024) + "\"}");
+        var body = new CountingRequestBody(payload);
+        context.Request.Body = body;
+        context.Response.Body = new MemoryStream();
+
+        await BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, 17);
+
+        body.BytesRead.Should().BeLessOrEqualTo(16 * 1024);
+    }
+
     private static void AssertNativeContract(
         RouteCase route,
         PressureCase pressure,
@@ -325,4 +408,18 @@ public sealed class BackpressureContractMatrixTests
         string MachineCode,
         string McpCode,
         string GrpcStatus);
+
+    private sealed class CountingRequestBody(byte[] payload) : MemoryStream(payload)
+    {
+        public int BytesRead { get; private set; }
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            var read = base.Read(buffer.Span);
+            BytesRead += read;
+            return ValueTask.FromResult(read);
+        }
+    }
 }

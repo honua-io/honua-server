@@ -305,14 +305,20 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
                 return new RpcException(new Status(StatusCode.AlreadyExists, conflictEx.Message));
 
             case GeoprocessingAdmissionException admissionEx:
+                var admissionIsThrottled = admissionEx.Outcome ==
+                    Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome.Throttled;
                 return new RpcException(
-                    new Status(StatusCode.ResourceExhausted, admissionEx.Message),
+                    new Status(
+                        admissionIsThrottled ? StatusCode.ResourceExhausted : StatusCode.Unavailable,
+                        admissionEx.Message),
                     new global::Grpc.Core.Metadata
                     {
                         { "honua-admission-outcome", admissionEx.Outcome.ToString() },
                         { "honua-admission-dimension", admissionEx.DenyingDimension.ToString() },
                         { "honua-admission-policy-ref", admissionEx.PolicyRef },
-                        { BackpressureMetadata.ErrorCodeKey, BackpressureMetadata.RateLimitExceededCode },
+                        { BackpressureMetadata.ErrorCodeKey, admissionIsThrottled
+                            ? BackpressureMetadata.RateLimitExceededCode
+                            : BackpressureMetadata.ServiceUnavailableCode },
                         { BackpressureMetadata.RetryableKey, "true" },
                         { BackpressureMetadata.RetryAfterKey, admissionEx.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture) },
                         { BackpressureMetadata.CorrelationIdKey, context.GetHttpContext().TraceIdentifier },

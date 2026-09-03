@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Backpressure;
@@ -13,6 +14,10 @@ namespace Honua.Infrastructure.Models;
 internal static class BackpressureResponseWriter
 {
     private const int JsonRpcServerError = -32000;
+    private const int MaxMcpInspectionBytes = 16 * 1024;
+    private const string EventStreamMimeType = "text/event-stream";
+    private static readonly byte[] SsePrefix = "event: message\ndata: "u8.ToArray();
+    private static readonly byte[] SseSuffix = "\n\n"u8.ToArray();
 
     internal static async Task WriteAsync(
         HttpContext context,
@@ -60,11 +65,59 @@ internal static class BackpressureResponseWriter
         int? retryAfterSeconds,
         CancellationToken cancellationToken)
     {
-        var id = await ReadMcpRequestIdAsync(context.Request, cancellationToken).ConfigureAwait(false);
+        var request = await InspectMcpRequestAsync(context.Request, cancellationToken).ConfigureAwait(false);
         context.Response.StatusCode = StatusCodes.Status200OK;
-        context.Response.ContentType = "application/json";
+        var eventStream = AcceptsEventStream(context);
+        ArrayBufferWriter<byte>? buffered = eventStream ? new ArrayBufferWriter<byte>() : null;
+        IBufferWriter<byte> output = eventStream
+            ? (IBufferWriter<byte>)buffered!
+            : context.Response.BodyWriter;
 
-        await using var writer = new Utf8JsonWriter(context.Response.BodyWriter);
+        if (eventStream)
+        {
+            context.Response.ContentType = EventStreamMimeType;
+            context.Response.Headers["Cache-Control"] = "no-cache";
+            context.Response.Headers["Connection"] = "keep-alive";
+        }
+
+        await using var writer = new Utf8JsonWriter(output);
+        if (request.IsBatch)
+        {
+            writer.WriteStartArray();
+            foreach (var id in request.Ids.Count == 0 ? new JsonElement?[] { null } : request.Ids)
+            {
+                WriteMcpError(writer, id, kind, retryAfterSeconds, context.TraceIdentifier);
+            }
+
+            writer.WriteEndArray();
+        }
+        else
+        {
+            WriteMcpError(
+                writer,
+                request.Ids.Count == 0 ? null : request.Ids[0],
+                kind,
+                retryAfterSeconds,
+                context.TraceIdentifier);
+        }
+
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        if (buffered is not null)
+        {
+            await context.Response.Body.WriteAsync(SsePrefix, cancellationToken).ConfigureAwait(false);
+            await context.Response.Body.WriteAsync(buffered.WrittenMemory, cancellationToken).ConfigureAwait(false);
+            await context.Response.Body.WriteAsync(SseSuffix, cancellationToken).ConfigureAwait(false);
+            await context.Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static void WriteMcpError(
+        Utf8JsonWriter writer,
+        JsonElement? id,
+        BackpressureKind kind,
+        int? retryAfterSeconds,
+        string correlationId)
+    {
         writer.WriteStartObject();
         writer.WriteString("jsonrpc", "2.0");
         writer.WritePropertyName("id");
@@ -92,11 +145,10 @@ internal static class BackpressureResponseWriter
             writer.WriteNumber("retryAfterSeconds", retryAfterSeconds.Value);
         }
 
-        writer.WriteString("correlationId", context.TraceIdentifier);
+        writer.WriteString("correlationId", correlationId);
         writer.WriteEndObject();
         writer.WriteEndObject();
         writer.WriteEndObject();
-        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static void WriteGrpc(HttpContext context, BackpressureKind kind, int? retryAfterSeconds)
@@ -118,32 +170,64 @@ internal static class BackpressureResponseWriter
         }
     }
 
-    private static async Task<JsonElement?> ReadMcpRequestIdAsync(
+    private static async Task<McpRequestInspection> InspectMcpRequestAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
         request.EnableBuffering();
+        var buffer = ArrayPool<byte>.Shared.Rent(MaxMcpInspectionBytes);
+        var bytesRead = 0;
+        var isBatch = false;
         try
         {
-            using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-            if (document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("id", out var id))
-            {
-                return id.Clone();
-            }
+            bytesRead = await request.Body.ReadAtLeastAsync(
+                buffer.AsMemory(0, MaxMcpInspectionBytes),
+                minimumBytes: MaxMcpInspectionBytes,
+                throwOnEndOfStream: false,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            isBatch = IsJsonArray(buffer.AsSpan(0, bytesRead));
+            var ids = new List<JsonElement?>();
+            using var document = JsonDocument.Parse(buffer.AsMemory(0, bytesRead));
+            if (isBatch && document.RootElement.ValueKind == JsonValueKind.Array)
+                ids.AddRange(document.RootElement.EnumerateArray().Select(ReadRequestId));
+            else if (!isBatch && document.RootElement.ValueKind == JsonValueKind.Object)
+                ids.Add(ReadRequestId(document.RootElement));
+
+            return new McpRequestInspection(isBatch, ids);
         }
         catch (JsonException)
         {
             // The backpressure contract still uses a valid JSON-RPC response with a null id.
+            return new McpRequestInspection(isBatch, []);
         }
         finally
         {
             request.Body.Position = 0;
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static JsonElement? ReadRequestId(JsonElement request)
+        => request.ValueKind == JsonValueKind.Object && request.TryGetProperty("id", out var id)
+            ? id.Clone()
+            : null;
+
+    private static bool IsJsonArray(ReadOnlySpan<byte> payload)
+    {
+        var index = 0;
+        while (index < payload.Length && char.IsWhiteSpace((char)payload[index]))
+        {
+            index++;
         }
 
-        return null;
+        return index < payload.Length && payload[index] == (byte)'[';
     }
+
+    private static bool AcceptsEventStream(HttpContext context)
+        => context.Request.Headers.TryGetValue("Accept", out var accept) && accept.ToString().Split(',')
+            .Select(media => media.Split(';', 2)[0].Trim())
+            .Any(token => token.Equals(EventStreamMimeType, StringComparison.OrdinalIgnoreCase));
 
     private static void AddTransportHeaders(HttpContext context, int? retryAfterSeconds)
     {
@@ -180,6 +264,8 @@ internal static class BackpressureResponseWriter
         => context.Request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) == true
             || context.Request.Path.StartsWithSegments("/honua.v1", StringComparison.OrdinalIgnoreCase)
             || context.Request.Path.StartsWithSegments("/geospatial.v1", StringComparison.OrdinalIgnoreCase);
+
+    private sealed record McpRequestInspection(bool IsBatch, IReadOnlyList<JsonElement?> Ids);
 }
 
 /// <summary>

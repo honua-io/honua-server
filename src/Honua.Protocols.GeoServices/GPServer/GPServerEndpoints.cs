@@ -2066,7 +2066,8 @@ internal static class GPServerEndpoints
                     StandardErrorHelpers.CreateServiceUnavailable(
                         context,
                         storeEx.Message,
-                        additionalDetails: BuildCapabilityUnavailableDetails(storeEx))),
+                        additionalDetails: BuildCapabilityUnavailableDetails(storeEx),
+                        retryable: true)),
 
             GeoprocessingIdempotencyConflictException conflictEx =>
                 LogAndReturn(logger, operation, conflictEx.Message,
