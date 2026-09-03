@@ -231,6 +231,37 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         "ix_sta_observation_datastream_time",
     ];
 
+    private static readonly (string Table, string Column)[] _governedLineageColumns =
+    [
+        ("feature_change_outbox", "operation_instance_id"),
+        ("feature_change_outbox", "correlation_id"),
+        ("feature_change_outbox", "audit_id"),
+        ("feature_change_outbox", "proposal_id"),
+        ("feature_changes", "event_id"),
+        ("feature_changes", "operation_instance_id"),
+        ("feature_changes", "correlation_id"),
+        ("feature_changes", "audit_id"),
+        ("feature_changes", "proposal_id"),
+        ("alert_events", "source_event_id"),
+        ("alert_events", "job_id"),
+        ("alert_events", "operation_instance_id"),
+        ("alert_events", "correlation_id"),
+        ("alert_events", "audit_id"),
+        ("alert_events", "proposal_id"),
+    ];
+
+    private static readonly string[] _governedLineageTables =
+    [
+        "feature_change_outbox",
+        "feature_changes",
+        "alert_events",
+    ];
+
+    private static readonly string[] _governedLineageIndexes =
+    [
+        "ux_feature_changes_event_id",
+    ];
+
     private static readonly string[] _metadataV2ReleasePackageIndexes =
     [
         "idx_metadata_v2_release_packages_key",
@@ -246,6 +277,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         .. _metadataV2Indexes,
         .. _metadataV2ReleasePackageIndexes,
         .. _sensorThingsIndexes,
+        .. _governedLineageIndexes,
     ];
 
     private static readonly string[] _rasterBaselineTables =
@@ -260,6 +292,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         .. _metadataV2Tables,
         .. _metadataV2ReleasePackageTables,
         .. _sensorThingsTables,
+        .. _governedLineageTables,
         "raster_layer_statistics",
         .. _rasterBaselineTables,
         .. _rasterOverviewsTables,
@@ -349,6 +382,12 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _sensorThingsTables,
             _sensorThingsColumns,
             _sensorThingsIndexes);
+        VerifyRequiredMigration(
+            state,
+            _migrations.GovernedLineageMigration,
+            _governedLineageTables,
+            _governedLineageColumns,
+            _governedLineageIndexes);
     }
 
     public async Task VerifyConsistencyAsync(

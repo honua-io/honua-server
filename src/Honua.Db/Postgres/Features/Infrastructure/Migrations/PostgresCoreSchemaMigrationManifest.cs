@@ -18,7 +18,8 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         string sensorThingsMigration,
         string rasterOverviewsMigration,
         string rasterFootprintsMigration,
-        string configuredSchemaAdoptionMigration)
+        string configuredSchemaAdoptionMigration,
+        string governedLineageMigration)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationMigrationAssemblyName);
         ArgumentException.ThrowIfNullOrWhiteSpace(metadataV2SnapshotMigration);
@@ -28,6 +29,7 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         ArgumentException.ThrowIfNullOrWhiteSpace(rasterOverviewsMigration);
         ArgumentException.ThrowIfNullOrWhiteSpace(rasterFootprintsMigration);
         ArgumentException.ThrowIfNullOrWhiteSpace(configuredSchemaAdoptionMigration);
+        ArgumentException.ThrowIfNullOrWhiteSpace(governedLineageMigration);
 
         ApplicationMigrationAssemblyName = applicationMigrationAssemblyName;
         MetadataV2SnapshotMigration = metadataV2SnapshotMigration;
@@ -37,6 +39,7 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         RasterOverviewsMigration = rasterOverviewsMigration;
         RasterFootprintsMigration = rasterFootprintsMigration;
         ConfiguredSchemaAdoptionMigration = configuredSchemaAdoptionMigration;
+        GovernedLineageMigration = governedLineageMigration;
     }
 
     public string ApplicationMigrationAssemblyName { get; }
@@ -54,4 +57,6 @@ internal sealed class PostgresCoreSchemaMigrationManifest
     public string RasterFootprintsMigration { get; }
 
     public string ConfiguredSchemaAdoptionMigration { get; }
+
+    public string GovernedLineageMigration { get; }
 }
