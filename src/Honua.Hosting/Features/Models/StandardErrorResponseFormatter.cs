@@ -209,6 +209,37 @@ internal static class StandardErrorResponseFormatter
     }
 
     /// <summary>
+    /// Formats errors for WCS 2.0 aliases using the OWS 2.0 exception contract.
+    /// </summary>
+    private static IResult FormatWcsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
+        AddResponseHeaders(context, options);
+        var exceptionCode = string.IsNullOrWhiteSpace(options.WcsExceptionCode)
+            ? MapWfsCode(errorResponse)
+            : options.WcsExceptionCode;
+        var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
+            ? string.Empty
+            : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
+        var xmlContent = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/2.0"
+                                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                 version="2.0.0"
+                                 xsi:schemaLocation="http://www.opengis.net/ows/2.0 http://schemas.opengis.net/ows/2.0/owsExceptionReport.xsd">
+              <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
+                <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
+              </ows:Exception>
+            </ows:ExceptionReport>
+            """;
+
+        return Results.Content(
+            xmlContent,
+            "application/xml",
+            System.Text.Encoding.UTF8,
+            errorResponse.StatusCode);
+    }
+
+    /// <summary>
     /// Formats infrastructure errors on WMS alias paths (/ogc/services/{id}/wms,
     /// /rest/services/{id}/MapServer/wms) as a WMS ServiceExceptionReport with HTTP 200,
     /// matching the WMS 1.3.0 § 7.3.3.4 requirement.
@@ -229,38 +260,6 @@ internal static class StandardErrorResponseFormatter
             """;
         // WMS 1.3.0 §7.3.3.4: ServiceExceptionReport MUST be returned with HTTP 200 OK.
         return Results.Content(xmlContent, "application/xml", System.Text.Encoding.UTF8, StatusCodes.Status200OK);
-    }
-
-    /// <summary>
-    /// Formats WCS 2.0.1 errors as an OWS 2.0 ExceptionReport while preserving the
-    /// HTTP failure status advertised by the WCS endpoint.
-    /// </summary>
-    private static IResult FormatWcsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
-    {
-        AddResponseHeaders(context, options);
-        var exceptionCode = string.IsNullOrWhiteSpace(options.WcsExceptionCode)
-            ? "NoApplicableCode"
-            : options.WcsExceptionCode;
-        var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
-            ? string.Empty
-            : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
-        var xmlContent = $$"""
-            <?xml version="1.0" encoding="utf-8"?>
-            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/2.0"
-                                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                                 version="2.0.0"
-                                 xsi:schemaLocation="http://www.opengis.net/ows/2.0 http://schemas.opengis.net/ows/2.0/owsExceptionReport.xsd">
-              <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
-                <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
-              </ows:Exception>
-            </ows:ExceptionReport>
-            """;
-
-        return Results.Content(
-            xmlContent,
-            "application/xml",
-            System.Text.Encoding.UTF8,
-            errorResponse.StatusCode);
     }
 
     private static string MapWmsAliasCode(StandardErrorResponse errorResponse)
@@ -529,6 +528,11 @@ internal static class StandardErrorResponseFormatter
         if (ProtocolRequestClassifier.IsWfs(path))
         {
             return ("WFS", false);
+        }
+
+        if (ProtocolRequestClassifier.IsWcs(path))
+        {
+            return ("WCS", false);
         }
 
         if (ProtocolRequestClassifier.IsAdmin(path))

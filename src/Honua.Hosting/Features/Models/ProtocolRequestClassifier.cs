@@ -70,9 +70,9 @@ internal static class ProtocolRequestClassifier
 
     internal static bool IsWcs(PathString path)
     {
-        if (path.StartsWithSegments("/ogc/services", out var ogcRemaining))
+        if (path.StartsWithSegments("/ogc/services", out var remaining))
         {
-            var segments = ogcRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var segments = remaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
             return segments is { Length: >= 2 } &&
                    string.Equals(segments[1], "wcs", StringComparison.OrdinalIgnoreCase);
         }
@@ -82,7 +82,7 @@ internal static class ProtocolRequestClassifier
             var segments = restRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
             return segments is { Length: >= 3 } &&
                    string.Equals(segments[1], "ImageServer", StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(segments[2], "wcs", StringComparison.OrdinalIgnoreCase);
+                   string.Equals(segments[2], "WCS", StringComparison.OrdinalIgnoreCase);
         }
 
         return false;
