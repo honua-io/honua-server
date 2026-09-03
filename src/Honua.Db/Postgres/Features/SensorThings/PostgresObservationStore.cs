@@ -21,24 +21,24 @@ internal sealed class PostgresObservationStore : IObservationStore
 {
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly IDatabaseSchemaGuard _schemaGuard;
-    private readonly string _thingTable;
-    private readonly string _sensorTable;
-    private readonly string _observedPropertyTable;
-    private readonly string _datastreamTable;
-    private readonly string _observationTable;
+    private readonly ISchemaContext? _schemaContext;
+    private readonly string? _configuredSchema;
+    private string _thingTable => SchemaSearchPath.QualifyTable("sta_thing", _schemaContext?.CurrentSchema ?? _configuredSchema);
+    private string _sensorTable => SchemaSearchPath.QualifyTable("sta_sensor", _schemaContext?.CurrentSchema ?? _configuredSchema);
+    private string _observedPropertyTable => SchemaSearchPath.QualifyTable("sta_observed_property", _schemaContext?.CurrentSchema ?? _configuredSchema);
+    private string _datastreamTable => SchemaSearchPath.QualifyTable("sta_datastream", _schemaContext?.CurrentSchema ?? _configuredSchema);
+    private string _observationTable => SchemaSearchPath.QualifyTable("sta_observation", _schemaContext?.CurrentSchema ?? _configuredSchema);
 
     public PostgresObservationStore(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         IDatabaseSchemaGuard schemaGuard,
-        string? schemaName = null)
+        string? schemaName = null,
+        ISchemaContext? schemaContext = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
-        _thingTable = SchemaSearchPath.QualifyTable("sta_thing", schemaName);
-        _sensorTable = SchemaSearchPath.QualifyTable("sta_sensor", schemaName);
-        _observedPropertyTable = SchemaSearchPath.QualifyTable("sta_observed_property", schemaName);
-        _datastreamTable = SchemaSearchPath.QualifyTable("sta_datastream", schemaName);
-        _observationTable = SchemaSearchPath.QualifyTable("sta_observation", schemaName);
+        _configuredSchema = schemaName;
+        _schemaContext = schemaContext;
     }
 
     private async Task VerifySchemaFloorAsync(CancellationToken cancellationToken)

@@ -56,6 +56,11 @@ ALTER TABLE IF EXISTS honua.services
 ALTER TABLE IF EXISTS honua.services
     ADD COLUMN IF NOT EXISTS connection_id UUID;
 
+-- The canonical migration keeps service result limits in the layer/service policy
+-- graph; this legacy CI seed still exercises the older service-level column.
+ALTER TABLE IF EXISTS honua.services
+    ADD COLUMN IF NOT EXISTS max_record_count INT NOT NULL DEFAULT 1000;
+
 -- Columns from migrations 005, 007, 009, 011 — keep in sync.
 ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS table_schema TEXT NOT NULL DEFAULT current_schema();
