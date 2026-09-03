@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -74,6 +75,19 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
         apiResponse.Data.CanExecute.Should().BeFalse();
         apiResponse.Data.CanPublish.Should().BeFalse();
         apiResponse.Data.Findings.Should().ContainSingle(f => f.Code == "missing_data_binding");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /api/v1/admin/packages")]
+    public async Task PublishMapPackage_WithoutPackage_ReturnsBadRequest()
+    {
+        using var response = await _client.PostAsync(
+            "/api/v1/admin/packages",
+            new StringContent("{\"package\":null}", Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Map package is required");
     }
 
     [IntegrationTest]
