@@ -41,6 +41,30 @@ internal sealed class PostgresFeatureChangeOutboxRepository : IFeatureChangeOutb
         await using var command = BuildInsertCommand(npgsql, entry);
         command.Transaction = (NpgsqlTransaction)transaction;
         _ = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        const string joinSql = @"
+UPDATE honua.feature_changes
+SET event_id = @event_id,
+    operation_instance_id = @operation_instance_id,
+    correlation_id = @correlation_id,
+    audit_id = @audit_id,
+    proposal_id = @proposal_id
+WHERE generation = currval('honua.sync_generation')
+  AND layer_id = @layer_id
+  AND objectid = @object_id";
+        await using var join = new NpgsqlCommand(joinSql, npgsql, (NpgsqlTransaction)transaction);
+        join.Parameters.AddWithValue("event_id", NpgsqlDbType.Text, entry.EventId);
+        join.Parameters.AddWithValue("operation_instance_id", NpgsqlDbType.Text, (object?)entry.OperationInstanceId ?? DBNull.Value);
+        join.Parameters.AddWithValue("correlation_id", NpgsqlDbType.Text, (object?)entry.CorrelationId ?? DBNull.Value);
+        join.Parameters.AddWithValue("audit_id", NpgsqlDbType.Text, (object?)entry.AuditId ?? DBNull.Value);
+        join.Parameters.AddWithValue("proposal_id", NpgsqlDbType.Text, (object?)entry.ProposalId ?? DBNull.Value);
+        join.Parameters.AddWithValue("layer_id", NpgsqlDbType.Integer, entry.LayerId);
+        join.Parameters.AddWithValue("object_id", NpgsqlDbType.Bigint, entry.ObjectId);
+        var joinedRows = await join.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (joinedRows != 1)
+        {
+            throw new InvalidOperationException($"Feature event {entry.EventId} did not join exactly one change-log row.");
+        }
     }
 
     public async Task<IReadOnlyList<FeatureChangeOutboxEntry>> ClaimPendingAsync(
@@ -79,7 +103,7 @@ RETURNING
     o.outbox_id, o.service_id, o.layer_id, o.object_id, o.operation, o.protocol,
     o.source_id, o.request_id, o.event_id, o.event_payload, o.status, o.retry_count,
     o.last_error, o.created_at, o.claimed_at, o.claim_node_id, o.claim_expires_at,
-    o.dispatched_at";
+    o.dispatched_at, o.operation_instance_id, o.correlation_id, o.audit_id, o.proposal_id";
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, lease);
@@ -211,10 +235,12 @@ FROM honua.feature_change_outbox";
         const string sql = @"
 INSERT INTO honua.feature_change_outbox
     (outbox_id, service_id, layer_id, object_id, operation, protocol, source_id, request_id,
-     event_id, event_payload, status, retry_count, created_at)
+     event_id, event_payload, status, retry_count, created_at,
+     operation_instance_id, correlation_id, audit_id, proposal_id)
 VALUES
     (@outbox_id, @service_id, @layer_id, @object_id, @operation, @protocol, @source_id, @request_id,
-     @event_id, @event_payload::jsonb, @status, @retry_count, @created_at)";
+     @event_id, @event_payload::jsonb, @status, @retry_count, @created_at,
+     @operation_instance_id, @correlation_id, @audit_id, @proposal_id)";
 
         var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("outbox_id", NpgsqlDbType.Uuid, entry.OutboxId);
@@ -230,6 +256,10 @@ VALUES
         command.Parameters.AddWithValue("status", NpgsqlDbType.Text, entry.Status);
         command.Parameters.AddWithValue("retry_count", NpgsqlDbType.Integer, entry.RetryCount);
         command.Parameters.AddWithValue("created_at", NpgsqlDbType.TimestampTz, entry.CreatedAt);
+        command.Parameters.AddWithValue("operation_instance_id", NpgsqlDbType.Text, (object?)entry.OperationInstanceId ?? DBNull.Value);
+        command.Parameters.AddWithValue("correlation_id", NpgsqlDbType.Text, (object?)entry.CorrelationId ?? DBNull.Value);
+        command.Parameters.AddWithValue("audit_id", NpgsqlDbType.Text, (object?)entry.AuditId ?? DBNull.Value);
+        command.Parameters.AddWithValue("proposal_id", NpgsqlDbType.Text, (object?)entry.ProposalId ?? DBNull.Value);
         return command;
     }
 
@@ -255,6 +285,10 @@ VALUES
             ClaimNodeId = reader.IsDBNull(15) ? null : reader.GetString(15),
             ClaimExpiresAt = reader.IsDBNull(16) ? null : reader.GetFieldValue<DateTimeOffset>(16),
             DispatchedAt = reader.IsDBNull(17) ? null : reader.GetFieldValue<DateTimeOffset>(17),
+            OperationInstanceId = reader.IsDBNull(18) ? null : reader.GetString(18),
+            CorrelationId = reader.IsDBNull(19) ? null : reader.GetString(19),
+            AuditId = reader.IsDBNull(20) ? null : reader.GetString(20),
+            ProposalId = reader.IsDBNull(21) ? null : reader.GetString(21),
         };
     }
 

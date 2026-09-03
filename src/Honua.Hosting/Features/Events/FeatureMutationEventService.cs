@@ -106,6 +106,10 @@ internal sealed class FeatureMutationEventService(
 
         var resolvedSourceId = !string.IsNullOrWhiteSpace(sourceId) ? sourceId : protocol;
         var resolvedGeometryChanged = geometryChanged ?? false;
+        var operationInstanceId = ReadHeader(context, "X-Honua-Operation-Instance-Id");
+        var correlationId = context.TraceIdentifier;
+        var auditId = ReadHeader(context, "X-Honua-Audit-Id");
+        var proposalId = ReadHeader(context, "X-Honua-Proposal-Id");
 
         Dictionary<string, Queue<string>>? perOperationRequestIdQueues = null;
         if (perOperationRequestIds is { Count: > 0 })
@@ -176,7 +180,11 @@ internal sealed class FeatureMutationEventService(
                 boundRequestId,
                 snapshot,
                 layerSrid,
-                boundGeometryChanged)
+                boundGeometryChanged,
+                operationInstanceId,
+                correlationId,
+                auditId,
+                proposalId)
         };
     }
 
@@ -263,6 +271,10 @@ internal sealed class FeatureMutationEventService(
             Operation = operation,
             Protocol = protocol,
             RequestId = resolvedRequestId,
+            OperationInstanceId = ReadHeader(context, "X-Honua-Operation-Instance-Id"),
+            CorrelationId = context.TraceIdentifier,
+            AuditId = ReadHeader(context, "X-Honua-Audit-Id"),
+            ProposalId = ReadHeader(context, "X-Honua-Proposal-Id"),
             GeometryChanged = geometryChanged ?? false,
             GeometryEnvelope = geometryEnvelope,
             PropertiesJson = propertiesJson,
@@ -304,7 +316,11 @@ internal sealed class FeatureMutationEventService(
         string requestId,
         Feature? snapshot,
         int? layerSrid,
-        bool geometryChanged)
+        bool geometryChanged,
+        string? operationInstanceId,
+        string? correlationId,
+        string? auditId,
+        string? proposalId)
     {
         var enrichment = FeatureChangeEventEnrichment.FromFeatureSnapshot(snapshot, layerSrid);
         var geometryJson = enrichment.GeometryJson;
@@ -333,6 +349,10 @@ internal sealed class FeatureMutationEventService(
             Operation = operation,
             Protocol = protocol,
             RequestId = requestId,
+            OperationInstanceId = operationInstanceId,
+            CorrelationId = correlationId,
+            AuditId = auditId,
+            ProposalId = proposalId,
             Timestamp = mutationTimestamp,
             GeometryChanged = geometryChanged,
             GeometryEnvelope = enrichment.GeometryEnvelope,
@@ -356,11 +376,20 @@ internal sealed class FeatureMutationEventService(
             SourceId = sourceId,
             RequestId = requestId,
             EventId = eventId,
+            OperationInstanceId = operationInstanceId,
+            CorrelationId = correlationId,
+            AuditId = auditId,
+            ProposalId = proposalId,
             EventPayload = payload,
             Status = OutboxStatuses.Pending,
             RetryCount = 0,
             CreatedAt = mutationTimestamp,
         };
     }
+
+    private static string? ReadHeader(HttpContext context, string name)
+        => context.Request.Headers.TryGetValue(name, out var values) && values.Count > 0
+            ? values[0]
+            : null;
 
 }

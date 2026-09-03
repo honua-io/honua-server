@@ -78,6 +78,9 @@ public sealed class FeatureMutationOutboxScopeTests
         var service = new FeatureMutationEventService(publisher, outboxCapabilityProvider: capability);
 
         var context = new DefaultHttpContext { TraceIdentifier = "trace-outbox" };
+        context.Request.Headers["X-Honua-Operation-Instance-Id"] = "opinst-exact";
+        context.Request.Headers["X-Honua-Audit-Id"] = "audit-exact";
+        context.Request.Headers["X-Honua-Proposal-Id"] = "proposal-exact";
 
         var data = await service.ResolveOutboxScopeAsync(
             context,
@@ -101,10 +104,15 @@ public sealed class FeatureMutationOutboxScopeTests
             entry.Protocol.Should().Be("Grpc");
             entry.SourceId.Should().Be("svc-grpc");
             entry.RequestId.Should().Be("req-7");
+            entry.OperationInstanceId.Should().Be("opinst-exact");
+            entry.CorrelationId.Should().Be("trace-outbox");
+            entry.AuditId.Should().Be("audit-exact");
+            entry.ProposalId.Should().Be("proposal-exact");
             entry.Status.Should().Be(OutboxStatuses.Pending);
             entry.RetryCount.Should().Be(0);
             entry.EventPayload.Should().Contain("\"ObjectId\":99");
             entry.EventPayload.Should().Contain("\"Operation\":\"create\"");
+            entry.EventPayload.Should().Contain("\"CorrelationId\":\"trace-outbox\"");
         }
 
         FeatureMutationOutboxScope.Current.Should().BeNull();

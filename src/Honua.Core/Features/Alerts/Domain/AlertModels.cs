@@ -474,6 +474,21 @@ public readonly record struct AlertChange
     /// Timestamp when the change was recorded.
     /// </summary>
     public required DateTimeOffset ChangedAt { get; init; }
+
+    /// <summary>Explicit feature-event join identity.</summary>
+    public string? SourceEventId { get; init; }
+
+    /// <summary>Canonical governed operation instance.</summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>Canonical correlation identity.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Durable acceptance-audit identity.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>Approved proposal identity, when applicable.</summary>
+    public string? ProposalId { get; init; }
 }
 
 /// <summary>
@@ -687,6 +702,24 @@ public sealed record AlertEventEnvelope
     /// source), <see cref="Severity"/>, and <see cref="PayloadJson"/>.
     /// </summary>
     public string? Source { get; init; }
+
+    /// <summary>Explicit upstream feature-event join identity.</summary>
+    public string? SourceEventId { get; init; }
+
+    /// <summary>Explicit upstream execution-job join identity.</summary>
+    public string? JobId { get; init; }
+
+    /// <summary>Canonical governed operation instance.</summary>
+    public string? OperationInstanceId { get; init; }
+
+    /// <summary>Canonical correlation identity.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>Durable acceptance-audit identity.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>Approved proposal identity, when applicable.</summary>
+    public string? ProposalId { get; init; }
 }
 
 /// <summary>
