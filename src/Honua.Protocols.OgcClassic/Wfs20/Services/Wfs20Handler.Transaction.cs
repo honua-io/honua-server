@@ -475,7 +475,8 @@ internal sealed partial class Wfs20Handler
 
         distinctLayerIds.Add(descriptor.StorageLayerId);
 
-        var changes = ParseTransactionUpdateChanges(descriptor.Resource, updateElement);
+        var changes = await ParseTransactionUpdateChangesAsync(
+            descriptor.Resource, updateElement, cancellationToken).ConfigureAwait(false);
         var targetIds = await ResolveTransactionTargetObjectIdsAsync(
             descriptor,
             updateElement,
@@ -715,7 +716,8 @@ internal sealed partial class Wfs20Handler
         XElement featureElement,
         CancellationToken cancellationToken)
     {
-        var payload = ReadTransactionFeaturePayload(resource, featureElement);
+        var payload = await ReadTransactionFeaturePayloadAsync(
+            resource, featureElement, cancellationToken).ConfigureAwait(false);
 
         return await CreateTransactionFeatureAsync(
             resource,
@@ -732,7 +734,8 @@ internal sealed partial class Wfs20Handler
         XElement featureElement,
         CancellationToken cancellationToken)
     {
-        var payload = ReadTransactionFeaturePayload(resource, featureElement);
+        var payload = await ReadTransactionFeaturePayloadAsync(
+            resource, featureElement, cancellationToken).ConfigureAwait(false);
 
         return await CreateTransactionFeatureAsync(
             resource,
@@ -749,21 +752,15 @@ internal sealed partial class Wfs20Handler
         TransactionFeatureChanges changes,
         CancellationToken cancellationToken)
     {
-        var attributes = existing.Attributes.ToBuilder();
-        foreach (var (key, value) in changes.Attributes)
-        {
-            attributes[key] = value;
-        }
-
-        var geometry = changes.GeometrySpecified
-            ? changes.Geometry
-            : existing.Geometry;
-
+        // WFS-T Update changes only the properties named in the request. Preserve that
+        // delta for the writer instead of materializing a stale full-row snapshot; the
+        // prepared adapter applies it with EditUpdateMode.Merge, preventing concurrent
+        // updates to disjoint attributes from overwriting one another (#33).
         return await CreateTransactionFeatureAsync(
             resource,
             existing.Id,
-            geometry,
-            attributes.ToImmutable(),
+            changes.GeometrySpecified ? changes.Geometry : null,
+            changes.Attributes,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -796,9 +793,10 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static TransactionFeaturePayload ReadTransactionFeaturePayload(
+    private async Task<TransactionFeaturePayload> ReadTransactionFeaturePayloadAsync(
         MetadataV2Resource resource,
-        XElement featureElement)
+        XElement featureElement,
+        CancellationToken cancellationToken)
     {
         var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         var gmlAssignedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -837,7 +835,8 @@ internal sealed partial class Wfs20Handler
             if (geometryField != null &&
                 resolvedField.Field.Name.Equals(geometryField.Name, StringComparison.OrdinalIgnoreCase))
             {
-                geometry = ParseTransactionGeometryProperty(propertyElement, resource);
+                geometry = await ParseTransactionGeometryPropertyAsync(
+                    propertyElement, resource, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -860,9 +859,10 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static TransactionFeatureChanges ParseTransactionUpdateChanges(
+    private async Task<TransactionFeatureChanges> ParseTransactionUpdateChangesAsync(
         MetadataV2Resource resource,
-        XElement updateElement)
+        XElement updateElement,
+        CancellationToken cancellationToken)
     {
         var attributes = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
         var propertyElements = updateElement.Elements()
@@ -934,7 +934,8 @@ internal sealed partial class Wfs20Handler
                 geometrySpecified = true;
                 geometry = valueElement == null
                     ? null
-                    : ParseTransactionGeometryProperty(valueElement, resource);
+                    : await ParseTransactionGeometryPropertyAsync(
+                        valueElement, resource, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -1315,9 +1316,10 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static byte[]? ParseTransactionGeometryProperty(
+    private async Task<byte[]?> ParseTransactionGeometryPropertyAsync(
         XElement propertyElement,
-        MetadataV2Resource resource)
+        MetadataV2Resource resource,
+        CancellationToken cancellationToken)
     {
         if (HasNilAttribute(propertyElement))
         {
@@ -1341,7 +1343,41 @@ internal sealed partial class Wfs20Handler
 
         var defaultSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var geometry = ParseTransactionGeometry(geometryElement, defaultSrid);
+        if (geometry.SRID != defaultSrid)
+        {
+            var coordinates = geometry.Coordinates;
+            var xs = coordinates.Select(static coordinate => coordinate.X).ToArray();
+            var ys = coordinates.Select(static coordinate => coordinate.Y).ToArray();
+            if (!await _coordinateTransformService.TransformPointsAsync(
+                    xs, ys, geometry.SRID, defaultSrid, cancellationToken).ConfigureAwait(false))
+            {
+                throw new ArgumentException(
+                    $"Unable to transform transaction geometry from EPSG:{geometry.SRID} to EPSG:{defaultSrid}.");
+            }
+
+            var transformed = geometry.Copy();
+            transformed.Apply(new TransactionCoordinateRewriteFilter(xs, ys));
+            transformed.SRID = defaultSrid;
+            geometry = transformed;
+        }
+
         return GeometryWkbWriter.Write(geometry);
+    }
+
+    private sealed class TransactionCoordinateRewriteFilter(double[] xs, double[] ys) : ICoordinateSequenceFilter
+    {
+        private int _index;
+
+        public bool Done => false;
+
+        public bool GeometryChanged => true;
+
+        public void Filter(CoordinateSequence sequence, int index)
+        {
+            sequence.SetX(index, xs[_index]);
+            sequence.SetY(index, ys[_index]);
+            _index++;
+        }
     }
 
     private static string GetResourceFeatureTypeName(MetadataV2Resource resource)

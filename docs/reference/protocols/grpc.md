@@ -8,7 +8,7 @@ Honua hosts a versioned gRPC surface from the [`Geospatial.Grpc`](https://github
 | --- | --- |
 | Port | 8081, HTTP/2 cleartext (h2c) — `Kestrel:Endpoints:Grpc:Url = http://+:8081` (Docker images expose 8080 HTTP + 8081 gRPC; `HONUA_GRPC_PORT` in docker-compose). |
 | Health | gRPC health checks enabled (`grpc.health.v1.Health`). |
-| Reflection | Server reflection enabled — `grpcurl -plaintext server:8081 list`. |
+| Reflection | Server reflection enabled in Development only; production clients should use the published protobuf descriptors. |
 | Compression | gzip response compression negotiated by default. |
 | Message size | 16 MiB send/receive default; `Grpc:MaxReceiveMessageSize` / `Grpc:MaxSendMessageSize` to override. |
 | Streaming page size | `Grpc:StreamBatchSize` (default 1000 features per message). |
@@ -25,7 +25,7 @@ Honua hosts a versioned gRPC surface from the [`Geospatial.Grpc`](https://github
 | `ElevationService` | `GetElevation`, `GetElevationProfile` | Elevation point and profile queries. |
 
 ```bash
-# List services and call a query via reflection
+# In Development, list services and call a query via reflection
 grpcurl -plaintext server.example.com:8081 list
 grpcurl -plaintext -d '{"serviceId":"roads","layerId":0,"where":"1=1"}' \
   server.example.com:8081 geospatial.v1.FeatureService/QueryFeatures
@@ -74,9 +74,14 @@ Breaking changes require a new major version introduced alongside the old one: o
 
 CI enforcement: protobuf changes in the `Geospatial.Grpc` package must pass a breaking-change linter (`buf breaking`) against the latest release tag, and the server pins a specific package version so consumer breaks fail the build.
 
+The server currently pins `Geospatial.Grpc` **0.2.0-alpha.1**. The separate
+protocol package has published a 1.0.0 release, but that does not change the
+server's supported binding until the server dependency is upgraded and its
+compatibility evidence is refreshed.
+
 ### Pre-1.0 exception
 
-`Geospatial.Grpc` is still pre-1.0, and its [`VERSIONING.md` Pre-1.0 Exception](https://github.com/honua-io/geospatial-grpc/blob/main/VERSIONING.md) permits a coordinated structural break inside `geospatial.v1` while the package major version is `0.x`. The freeze described above becomes binding at `1.0.0`.
+The pinned `Geospatial.Grpc` package is still pre-1.0, and its [`VERSIONING.md` Pre-1.0 Exception](https://github.com/honua-io/geospatial-grpc/blob/main/VERSIONING.md) permits a coordinated structural break inside `geospatial.v1` while the package major version is `0.x`. The freeze described above becomes binding at `1.0.0`.
 
 One such break has been exercised. `0.2.0-alpha.1` (geospatial-grpc#48 Option A) promoted the duplicated job-lifecycle control-plane messages to `execution_types.proto` and converged `SpecService` onto them, and `0.1.0-alpha.3` unified the severity enums and widened feature-query pagination. The protobuf package stayed `geospatial.v1`, so no client support floor moved, but callers built against `0.1.x` bindings must regenerate. The changes that alter what a client reads:
 

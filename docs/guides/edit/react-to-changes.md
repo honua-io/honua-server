@@ -2,7 +2,7 @@
 
 Receive an event for every feature insert, update, and delete — pushed to your endpoint as a signed webhook or streamed live over WebSocket/SSE.
 
-**Prerequisites:** A writable layer (see [Edit features](edit-features.md)). Streaming requires a Pro or Enterprise license — Community returns `403` and advertises `enabled=false`. Webhook configuration requires restart access to the server's environment; replay and session admin require an admin API key.
+**Prerequisites:** A writable layer (see [Edit features](edit-features.md)). Streaming is a Preview surface and is disabled by default; enable `Capabilities:Experimental:realtime.feature-streams:Enabled=true` in addition to the required license. Webhook configuration requires restart access to the server's environment; replay and session admin require an admin API key.
 
 Every write — FeatureServer, OGC API Features, OData (including `$batch`), WFS 2.0 transactions, and gRPC `ApplyEdits` — publishes one normalized envelope: `eventId`, `timestamp`, `serviceId`, `layerId`, `objectId`, `operation` (`insert`|`update`|`delete`), `protocol`, `requestId`, plus geometry/attributes when available. Delivery is at-least-once on every channel; always dedupe on `eventId`.
 

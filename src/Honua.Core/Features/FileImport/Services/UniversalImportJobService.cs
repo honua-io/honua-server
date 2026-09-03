@@ -3,8 +3,10 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
+using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -249,6 +251,27 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             var importService = scope.ServiceProvider.GetRequiredService<IFileImportService>();
             var result = await importService.ImportFileAsync(request, progress, cancellationToken);
 
+            // The background path must perform the same canonical snapshot refresh as the
+            // synchronous upload path. The importer stores file targets under its physical
+            // imported_* name, while callers submit the logical table name (#22).
+            if (result.Success &&
+                scope.ServiceProvider.GetService<ILayerPublishingService>() is { } publishingService &&
+                scope.ServiceProvider.GetService<IDatabaseConnectionProvider>() is { } connectionProvider)
+            {
+                try
+                {
+                    await publishingService.RefreshMaterializedFeaturesForSourceTableAsync(
+                        connectionProvider.GetConnectionString(),
+                        request.TargetSchema,
+                        ResolvePhysicalImportedTableName(request.TableName),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
+                }
+            }
+
             if (_jobs.TryGetValue(jobId, out state))
             {
                 status = result.Success ? "completed" : "failed";
@@ -366,6 +389,15 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
 
             _jobs.TryRemove(jobId, out _);
         }
+    }
+
+    private static string ResolvePhysicalImportedTableName(string tableName)
+    {
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, "[^a-zA-Z0-9_]", "_");
+        var physical = "imported_" + sanitized.ToLowerInvariant();
+        if (physical.Length <= 40) return physical;
+        var hash = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(physical)))[..12];
+        return $"{physical[..(40 - hash.Length - 1)]}_{hash}";
     }
 
     /// <inheritdoc/>

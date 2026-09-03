@@ -222,7 +222,7 @@
       "entryCount": 18,
       "provingTestCount": 47,
       "maturity": {
-        "implemented": 18
+        "experimental": 18
       },
       "noSurface": null,
       "cite": [],
@@ -866,7 +866,7 @@
       "entryCount": 18,
       "provingTestCount": 149,
       "maturity": {
-        "implemented": 18
+        "experimental": 18
       },
       "noSurface": null,
       "cite": [],
@@ -1528,7 +1528,7 @@
       "entryCount": 1,
       "provingTestCount": 6,
       "maturity": {
-        "implemented": 1
+        "experimental": 1
       },
       "noSurface": null,
       "cite": [],
@@ -1564,7 +1564,7 @@
       "entryCount": 1,
       "provingTestCount": 10,
       "maturity": {
-        "implemented": 1
+        "experimental": 1
       },
       "noSurface": null,
       "cite": [],
@@ -1582,7 +1582,7 @@
       "entryCount": 6,
       "provingTestCount": 60,
       "maturity": {
-        "implemented": 6
+        "experimental": 6
       },
       "noSurface": null,
       "cite": [],

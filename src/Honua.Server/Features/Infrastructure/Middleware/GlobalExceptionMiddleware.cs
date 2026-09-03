@@ -133,6 +133,19 @@ internal sealed class GlobalExceptionMiddleware(
         // Add correlation ID header for traceability
         context.Response.Headers["X-Correlation-ID"] = context.TraceIdentifier;
 
+        if (exception is CapabilityUnavailableException capabilityException)
+        {
+            await ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+                    context,
+                    capabilityException.Message,
+                    capabilityException.MissingDependency,
+                    capabilityException.Remediation,
+                    capabilityException.RemediationRef)
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return;
+        }
+
         // Use standardized error handling system
         var errorResponse = StandardErrorResponse.FromException(exception, _includeDebugDetails);
 

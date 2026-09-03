@@ -569,6 +569,42 @@ internal static partial class FeatureServerEndpoints
 
         sharedOptions.F = normalizedFormat;
 
+        // Service-level callers are permitted to place the edit controls in each
+        // layer object instead of the query string. Apply the first supplied value
+        // consistently to every layer; conflicting values are rejected below rather
+        // than silently dropping the body controls.
+        var bodyOptions = layerEdits.Where(static entry => entry is not null).ToArray();
+        var bodyRollback = bodyOptions.Select(static entry => entry.RollbackOnFailure).Where(static value => value.HasValue).Select(static value => value!.Value).Distinct().ToArray();
+        var bodyGlobalIds = bodyOptions.Select(static entry => entry.UseGlobalIds).Where(static value => value.HasValue).Select(static value => value!.Value).Distinct().ToArray();
+        var bodyEditMoment = bodyOptions.Select(static entry => entry.ReturnEditMoment).Where(static value => value.HasValue).Select(static value => value!.Value).Distinct().ToArray();
+        if (bodyRollback.Length > 1 || bodyGlobalIds.Length > 1 || bodyEditMoment.Length > 1)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Conflicting service applyEdits options", ["Each layer must use the same rollbackOnFailure, useGlobalIds, and returnEditMoment values."]);
+        }
+
+        if (bodyRollback is [var rollback])
+        {
+            sharedOptions.RollbackOnFailure = rollback;
+            sharedOptions.RollbackOnFailureExplicitlySet = true;
+        }
+        if (bodyGlobalIds is [var useGlobalIds])
+        {
+            sharedOptions.UseGlobalIds = useGlobalIds;
+        }
+        if (bodyEditMoment is [var returnEditMoment])
+        {
+            sharedOptions.ReturnEditMoment = returnEditMoment;
+        }
+        var bodyVersion = bodyOptions.Select(static entry => entry.GdbVersion).Where(static value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
+        if (bodyVersion.Length > 1)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Conflicting service applyEdits options", ["Each layer must use the same gdbVersion value."]);
+        }
+        if (bodyVersion is [var gdbVersion])
+        {
+            sharedOptions.GdbVersion = gdbVersion;
+        }
+
         if (sharedOptions.UseGlobalIds)
         {
             return StandardErrorHelpers.CreateBadRequest(context,

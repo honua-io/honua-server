@@ -121,6 +121,15 @@ internal static class AdminApiKeyPermission
     }
 
     /// <summary>
+    /// Whether this principal has unrestricted administrative write authority.
+    /// Approved-operation credentials intentionally return false: their admin role
+    /// is transport-scoped to one server-issued admin request and must not bypass
+    /// feature-level write authorization.
+    /// </summary>
+    internal static bool IsFullAdminPrincipal(ClaimsPrincipal principal)
+        => ResolveAccessLevel(principal) == AdminAccessLevel.Write;
+
+    /// <summary>
     /// Determines whether a principal is authorized for an admin request whose
     /// HTTP method is <paramref name="httpMethod"/>. Safe (read) methods require at
     /// least <see cref="AdminAccessLevel.Read"/>; mutating methods require

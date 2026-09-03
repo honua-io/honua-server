@@ -110,7 +110,7 @@ internal sealed class CapabilityManifestService(
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
         var capabilities = options.ManifestFromRegistry
-            ? BuildCapabilitiesFromRegistry(policyContext, operationCapabilities)
+            ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
@@ -497,6 +497,7 @@ internal sealed class CapabilityManifestService(
     /// </summary>
     private CapabilityManifestCapability[] BuildCapabilitiesFromRegistry(
         CapabilityPolicyContext context,
+        CapabilityGateContext gateContext,
         OperationCapabilitySummary operationCapabilities)
     {
         var specs = BuildManifestCapabilitySpecs(operationCapabilities);
@@ -509,8 +510,9 @@ internal sealed class CapabilityManifestService(
             }
 
             var spec = specs.GetValueOrDefault(descriptor.Id, ManifestCapabilitySpec.Default);
+            var resolution = CapabilityGateResolver.Resolve(descriptor, gateContext);
             var lifecycleEnabled = descriptor.Maturity is not (CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
-                || options.ExperimentalCapabilityFlags.IsExperimentalEnabled(descriptor.Id);
+                || !IsExperimentalDisabled(resolution);
             var configured = spec.Configured && lifecycleEnabled;
             capabilities.Add(Capability(
                 descriptor.Id,
@@ -805,7 +807,8 @@ internal sealed class CapabilityManifestService(
     private CapabilityManifestTransports BuildTransports()
     {
         var clientCertificate = options.ClientCertificate;
-        var mtlsAvailable = clientCertificate.Mode != ClientCertificateAuthenticationMode.Disabled;
+        var mtlsAvailable = clientCertificate.Mode != ClientCertificateAuthenticationMode.Disabled &&
+            options.ExperimentalCapabilityFlags.IsExperimentalEnabled("security.mtls");
         return new CapabilityManifestTransports
         {
             MtlsMode = ToWireValue(clientCertificate.Mode),
@@ -831,7 +834,7 @@ internal sealed class CapabilityManifestService(
                 Transport("mcp", supported: true, available: true),
                 Transport("qgis", supported: true, available: true),
                 Transport("mtls", supported: true, available: mtlsAvailable,
-                    mtlsAvailable ? null : CapabilityReasonCodes.DisabledByConfiguration)
+                    mtlsAvailable ? null : CapabilityReasonCodes.ExperimentalDisabled)
             ]
         };
     }

@@ -7,6 +7,15 @@ namespace Honua.Core.Tests.Features.Infrastructure.Migrations;
 
 public sealed class MigrationSafetyClassifierTests
 {
+    [Fact]
+    public void DetectBreakingRules_DoesNotTreatDbUpVariableAsDollarQuotedBody()
+    {
+        const string sql = "SELECT $HonuaSchema$; ALTER TABLE honua.alert_dispatch DROP COLUMN legacy_value;";
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql)
+            .Should()
+            .Contain("drop-column");
+    }
     [Theory]
     [InlineData("ALTER TABLE honua.layers DROP COLUMN legacy_name;", "drop-column")]
     [InlineData("ALTER TABLE honua.layers RENAME COLUMN legacy_name TO display_name;", "rename-column")]

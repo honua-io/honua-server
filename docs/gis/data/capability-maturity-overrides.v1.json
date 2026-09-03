@@ -27,6 +27,27 @@
       "reasonCode": "release-deferred",
       "reason": "3D moved wholesale to 2026.2 by owner decision D0.2, so advertising a scene key as GA in 2026.1 contradicts the release ladder. The public scene-discovery routes (GET /api/scenes, /api/scenes/{sceneId}, /api/scenes/{sceneId}/resolve) stay registered, unauthenticated and serving exactly as before — this row changes the claim, not the surface. It also finally wires the demotion docs/gis/capability-ga-regrade-2026-07.md decided in #2946 and could only record as documentation-only, because scene.catalog has no CapabilityRegistry descriptor for CapabilityGateResolver to act on.",
       "decision": "honua-release#100 / decision D0.2; see honua-release#86 and honua-server#3279 for the rest of the scene keys"
+    },
+    {
+      "capability": "scene.bim-ingest",
+      "maturity": "experimental",
+      "reasonCode": "release-deferred",
+      "reason": "Scene ingest is outside the current release surface and is not available by default.",
+      "decision": "honua-server#24/#25 capability truth alignment"
+    },
+    {
+      "capability": "scene.pointcloud-ingest",
+      "maturity": "experimental",
+      "reasonCode": "release-deferred",
+      "reason": "Scene ingest is outside the current release surface and is not available by default.",
+      "decision": "honua-server#24/#25 capability truth alignment"
+    },
+    {
+      "capability": "serve.3d-tiles-scene",
+      "maturity": "experimental",
+      "reasonCode": "release-deferred",
+      "reason": "3D scene serving is outside the current release surface and is not available by default.",
+      "decision": "honua-server#25 capability truth alignment"
     }
   ]
 }
