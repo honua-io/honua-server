@@ -275,6 +275,7 @@ public sealed class KubernetesArgoRolloutsDeployBackendTests
             {
                 Name = RolloutName,
                 Phase = ArgoRolloutPhase.Healthy,
+                IsAborted = true,
                 PodTemplateImage = PreviousImage,
                 CurrentPodHash = "stable999",
                 StableRevisionHash = "stable999"
@@ -427,7 +428,9 @@ public sealed class KubernetesArgoRolloutsDeployBackendTests
         };
         var backend = CreateBackend(client);
 
-        var observation = await backend.RollbackAsync(CreateOperation(parameters: CanaryParameters()));
+        var observation = await backend.RollbackAsync(CreateOperation(
+            currentRevision: PreviousImage,
+            parameters: CanaryParameters()));
 
         observation.Status.Should().Be(WorkflowOperationStatus.Failed);
         observation.Message.Should().NotContain("secret-rv-999");

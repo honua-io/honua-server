@@ -189,6 +189,35 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
         updated.CurrentPhase.Should().Contain("telemetry detected canary degradation");
     }
 
+    [Fact]
+    public async Task Reconciler_WhenRollbackEvidenceNeverConverges_EscalatesAfterBoundedObservations()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new FailingRollbackBackend(
+            rollbackStatus: WorkflowOperationStatus.RollbackRequested,
+            rollbackMessage: "Provider did not prove the requested prior revision.");
+        var operation = CreateOperation(WorkflowOperationStatus.RollbackRequested);
+        await store.TryCreateAsync(operation);
+
+        var reconciler = CreateReconciler(store, backend, new StubDeployTelemetrySignalEvaluator(null));
+        WorkflowOperationRecord? updated = null;
+        for (var cycle = 0; cycle < 5; cycle++)
+        {
+            await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+            updated = await store.GetAsync(operation.OperationId);
+            if (updated is not null && IsTerminal(updated.Status))
+            {
+                break;
+            }
+        }
+
+        updated.Should().NotBeNull();
+        updated!.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        updated.ErrorMessage.Should().Contain("evidence remained incomplete after 3 observations");
+        updated.Deploy!.Parameters[DeployWorkflowReconciler.RollbackObservationAttemptsParameterKey]
+            .Should().Be("3");
+    }
+
     // ---- helpers ---------------------------------------------------------
 
     private static bool IsTerminal(WorkflowOperationStatus status)

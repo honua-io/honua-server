@@ -212,7 +212,7 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
             }
 
             Log.StateObserved(logger, target.RolloutName!, rollout.Phase.ToString(), rollout.CanaryWeight ?? -1, rollout.IsPaused);
-            var observedImage = rollout.PodTemplateImage ?? operation.ObservedState;
+            var observedImage = rollout.PodTemplateImage;
 
             if (operation.Status == WorkflowOperationStatus.RollbackRequested)
             {
@@ -360,6 +360,16 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
 
+        if (string.IsNullOrWhiteSpace(spec.CurrentRevision))
+        {
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                ProviderOperationId = operation.ProviderOperationId,
+                Message = "Rollback requires a previously observed revision, but none was captured for this operation."
+            };
+        }
+
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendRollback, operation, target);
 
         try
@@ -401,14 +411,17 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
         // stable revision: the rollout is Healthy again and the current pod hash has
         // settled back onto the stable ReplicaSet. While the controller is still draining
         // the canary the operation stays RollbackRequested.
-        var revertedToStable = rollout.Phase == ArgoRolloutPhase.Healthy && IsFullyPromoted(rollout);
+        var revertedToStable = rollout.IsAborted &&
+            rollout.Phase == ArgoRolloutPhase.Healthy &&
+            IsFullyPromoted(rollout) &&
+            ImagesMatch(observedImage, spec.CurrentRevision);
         if (revertedToStable)
         {
             return new DeployObservation
             {
                 Status = WorkflowOperationStatus.RolledBack,
                 ProviderOperationId = operation.ProviderOperationId,
-                ObservedRevision = spec.CurrentRevision ?? observedImage,
+                ObservedRevision = observedImage,
                 Message = $"Argo Rollout '{target.RolloutName}' rolled back to the stable revision."
             };
         }
@@ -425,17 +438,22 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
     // A rollout is fully promoted when the desired (current) pod hash has become the
     // stable ReplicaSet. Argo only sets stableRS == currentPodHash after the final canary
     // step completes, so this distinguishes a Healthy-but-mid-rollout state (current !=
-    // stable) from full convergence. When the controller does not report either hash,
-    // treat Healthy as converged so older Argo versions still terminate the operation.
+    // stable) from full convergence. Missing provider hashes are incomplete evidence and
+    // therefore cannot terminate a rollback.
     private static bool IsFullyPromoted(ArgoRolloutState rollout)
     {
         if (string.IsNullOrWhiteSpace(rollout.CurrentPodHash) || string.IsNullOrWhiteSpace(rollout.StableRevisionHash))
         {
-            return true;
+            return false;
         }
 
         return string.Equals(rollout.CurrentPodHash, rollout.StableRevisionHash, StringComparison.Ordinal);
     }
+
+    private static bool ImagesMatch(string? left, string? right)
+        => !string.IsNullOrWhiteSpace(left) &&
+           !string.IsNullOrWhiteSpace(right) &&
+           string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
 
     // When a canary weight is configured the rollout must be holding exactly that share
     // before promotion is recommended; otherwise any paused canary step is treated as
