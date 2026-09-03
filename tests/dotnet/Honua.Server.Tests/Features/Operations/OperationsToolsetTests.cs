@@ -485,7 +485,8 @@ public sealed class OperationsToolsetTests
         var definition = AdminApiOperationCatalog.Definitions.Single(
             item => item.OperationId == "admin.layer.set-enabled");
         var executor = new AdminApiOperationExecutor(
-            definition, factory, accessor, credentialStore, TimeProvider.System);
+            definition, factory, accessor, credentialStore, TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
 
         var handle = await executor.SubmitAsync(new OperationRequest
         {
@@ -912,7 +913,8 @@ public sealed class OperationsToolsetTests
         var definition = AdminConnectImportOperationCatalog.Definitions.Single(
             item => item.OperationId == "admin.connections.create");
         var executor = new AdminConnectImportOperationExecutor(
-            definition, factory, accessor, credentialStore, TimeProvider.System);
+            definition, factory, accessor, credentialStore, TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
 
         var handle = await executor.SubmitAsync(
             new OperationRequest
@@ -1447,7 +1449,8 @@ public sealed class OperationsToolsetTests
             factory,
             accessor,
             credentialStore ?? new InMemoryAdminApiKeyStore(TimeProvider.System),
-            TimeProvider.System);
+            TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
     }
 
     private static OperationDispatcher BuildDispatcher(

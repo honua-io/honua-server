@@ -3,6 +3,10 @@
   "issue": "honua-server#3908",
   "candidateBinding": "GITHUB_SHA",
   "sanitized": true,
+  "trustBoundaryEvidence": [
+    "OperationLineageAttestationMiddlewareTests.InvokeAsync_UnattestedPublicHeaders_AreStripped",
+    "OperationLineageAttestationMiddlewareTests.InvokeAsync_OneUseAttestation_RestoresExactCanonicalHeaders"
+  ],
   "records": [
     {
       "ordinal": 1,

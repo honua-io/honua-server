@@ -19,15 +19,18 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAdminApiKeyStore _adminApiKeyStore;
     private readonly TimeProvider _clock;
+    private readonly OperationLineageAttestationStore _lineageAttestationStore;
 
     public AdminApiOperationExecutor(AdminApiOperationCatalog.Definition definition, IHttpClientFactory httpClientFactory,
-        IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore adminApiKeyStore, TimeProvider clock)
+        IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore adminApiKeyStore, TimeProvider clock,
+        OperationLineageAttestationStore lineageAttestationStore)
     {
         _definition = definition;
         _httpClientFactory = httpClientFactory;
         _httpContextAccessor = httpContextAccessor;
         _adminApiKeyStore = adminApiKeyStore;
         _clock = clock;
+        _lineageAttestationStore = lineageAttestationStore;
     }
 
     public string OperationId => _definition.OperationId;
@@ -65,7 +68,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         if (query is { Length: > 0 }) relativePath += "?" + string.Join("&", query);
         var uri = new Uri($"{current.Request.Scheme}://{current.Request.Host}/api/v1/admin{relativePath}");
         using var message = new HttpRequestMessage(_definition.Method, uri);
-        OperationLineageHeaders.Apply(message, context);
+        OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
