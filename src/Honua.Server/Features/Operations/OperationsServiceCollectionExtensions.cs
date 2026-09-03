@@ -30,6 +30,7 @@ internal static class OperationsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(environment);
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<OperationLineageAttestationStore>();
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
         // The real verifier's constructor requires the durable proposal store, and the
         // dispatcher requires a verifier, so hosts composed without the store failed
@@ -129,7 +130,8 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
                     sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
-                    sp.GetRequiredService<TimeProvider>()));
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<OperationLineageAttestationStore>()));
             }
             services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
@@ -153,7 +155,8 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
                     sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
-                    sp.GetRequiredService<TimeProvider>()));
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<OperationLineageAttestationStore>()));
             }
             services.AddHttpClient(AdminApiOperationExecutor.HttpClientName);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
@@ -190,7 +193,8 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<IHttpContextAccessor>(),
                 sp.GetService<IAdminApiKeyStore>(),
-                sp.GetRequiredService<TimeProvider>()));
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<OperationLineageAttestationStore>()));
         }
 
         services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);

@@ -16,7 +16,8 @@ internal sealed class AdminConnectImportOperationExecutor(
     IHttpClientFactory httpClientFactory,
     IHttpContextAccessor httpContextAccessor,
     IAdminApiKeyStore adminApiKeyStore,
-    TimeProvider clock) : IOperationExecutor
+    TimeProvider clock,
+    OperationLineageAttestationStore lineageAttestationStore) : IOperationExecutor
 {
     public const string HttpClientName = "admin-connect-import-operation-loopback";
     public string OperationId => definition.OperationId;
@@ -55,6 +56,7 @@ internal sealed class AdminConnectImportOperationExecutor(
             : [];
         var uri = new Uri($"{current.Request.Scheme}://{current.Request.Host}/api/v1/admin{path}{(query.Length == 0 ? string.Empty : "?" + string.Join('&', query))}");
         using var message = new HttpRequestMessage(definition.Method, uri);
+        OperationLineageHeaders.Apply(message, context, lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {

@@ -543,11 +543,12 @@ internal sealed partial class OperationGateway : IOperationGateway
         // proposal id is derived deterministically from the key so a concurrent
         // duplicate TryCreate collides and we fetch-and-return the winner (race-safe).
         var now = DateTimeOffset.UtcNow;
+        var proposalId = hasIdempotencyKey
+            ? DeriveProposalId(request.Kind, request.OperationId, request.IdempotencyKey!)
+            : $"proposal-{Guid.NewGuid():N}";
         var proposal = new OperationProposal
         {
-            ProposalId = hasIdempotencyKey
-                ? DeriveProposalId(request.Kind, request.OperationId, request.IdempotencyKey!)
-                : $"proposal-{Guid.NewGuid():N}",
+            ProposalId = proposalId,
             OperationId = request.OperationId,
             ScopeGoverned = request.ScopeGoverned,
             RecognizedScopes = request.RecognizedScopes
@@ -575,6 +576,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 Reason = request.Reason,
                 IdempotencyKey = request.IdempotencyKey,
                 CorrelationId = request.CorrelationId,
+                ProposalId = proposalId,
             },
             CreatedAt = now,
             UpdatedAt = now,

@@ -23,6 +23,10 @@ internal sealed record FeatureChangeEvent
     public required string Operation { get; init; }
     public required string Protocol { get; init; }
     public required string RequestId { get; init; }
+    public string? OperationInstanceId { get; init; }
+    public string? CorrelationId { get; init; }
+    public string? AuditId { get; init; }
+    public string? ProposalId { get; init; }
 
     /// <summary>
     /// Optional. Changed attribute values when available. Null when the originating
@@ -73,6 +77,10 @@ internal sealed record FeatureChangeEventRequest
     public required string Operation { get; init; }
     public required string Protocol { get; init; }
     public required string RequestId { get; init; }
+    public string? OperationInstanceId { get; init; }
+    public string? CorrelationId { get; init; }
+    public string? AuditId { get; init; }
+    public string? ProposalId { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
 
     /// <summary>

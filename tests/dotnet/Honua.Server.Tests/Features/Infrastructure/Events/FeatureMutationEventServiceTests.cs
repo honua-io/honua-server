@@ -38,6 +38,9 @@ public sealed class FeatureMutationEventServiceTests
         var feature = Feature.Create(42, wkb, ImmutableDictionary<string, object?>.Empty);
 
         var context = new DefaultHttpContext { TraceIdentifier = "trace-id" };
+        context.Request.Headers["X-Honua-Operation-Instance-Id"] = "opinst-exact";
+        context.Request.Headers["X-Honua-Audit-Id"] = "audit-exact";
+        context.Request.Headers["X-Honua-Proposal-Id"] = "proposal-exact";
 
         await service.PublishAsync(
             context,
@@ -55,6 +58,10 @@ public sealed class FeatureMutationEventServiceTests
         captured!.GeometryJson.Should().NotBeNullOrEmpty();
         captured.GeometrySrid.Should().Be(4326);
         captured.GeometryEnvelope.Should().NotBeNull();
+        captured.OperationInstanceId.Should().Be("opinst-exact");
+        captured.CorrelationId.Should().Be("trace-id");
+        captured.AuditId.Should().Be("audit-exact");
+        captured.ProposalId.Should().Be("proposal-exact");
     }
 
     [UnitTest]
