@@ -474,6 +474,7 @@ public sealed class OperationsToolsetTests
         var current = new DefaultHttpContext();
         current.Request.Scheme = "https";
         current.Request.Host = new HostString("localhost");
+        current.Connection.LocalPort = 443;
         current.Request.Headers["X-API-Key"] = approver.Key;
         current.Request.Headers["X-Honua-Tenant"] = "approver-tenant";
         var accessor = Substitute.For<IHttpContextAccessor>();
@@ -501,7 +502,12 @@ public sealed class OperationsToolsetTests
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
-        executionAuthority!.Record.Permissions.Should().Equal("admin:write");
+        // Approved replays must carry an exact method/path grant; the old broad admin:write
+        // assertion described the authorization bug this test is intended to prevent.
+        executionAuthority!.Record.Permissions.Should().Equal(
+            AdminApiKeyPermission.CreateApprovedOperationGrant(
+                definition.Method.Method,
+                "/api/v1/admin/connections/connection-1/layers/7/enabled"));
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
