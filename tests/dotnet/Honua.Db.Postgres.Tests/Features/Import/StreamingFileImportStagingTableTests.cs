@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.Text;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Db.Postgres.Features.FileImport;
@@ -323,6 +324,251 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         finally
         {
             await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_ExistingTarget_WithOverwriteFalse_DoesNotReplaceLiveRows()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests) + "_overwrite_false");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            await using (var seed = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson)))
+            {
+                var seedResult = await service.ImportFileAsync(new ImportRequest
+                {
+                    FileStream = seed,
+                    FileName = "seed.geojson",
+                    TableName = "overwrite_guard",
+                    TargetSchema = schema,
+                    SourceSrid = 4326,
+                    TargetSrid = 4326,
+                    OverwriteExisting = true,
+                });
+                seedResult.Success.Should().BeTrue(seedResult.ErrorMessage);
+            }
+
+            await using var replacement = File.OpenRead(Path.Combine(
+                AppContext.BaseDirectory, "TestData", "ImportAdversarial", "overwrite-existing-false.geojson"));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = replacement,
+                FileName = "overwrite-existing-false.geojson",
+                TableName = "overwrite_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                OverwriteExisting = false,
+            });
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*)::int, COUNT(*) FILTER (WHERE properties->>'name' IN ('a', 'b'))::int FROM \"{schema}\".imported_overwrite_guard";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            using (new AssertionScope())
+            {
+                result.Success.Should().BeFalse("an explicit non-overwrite import must reject an existing target or leave it unchanged");
+                reader.GetInt32(0).Should().Be(2, "overwriteExisting=false must not replace the complete live dataset");
+                reader.GetInt32(1).Should().Be(2, "both pre-existing rows must remain visible");
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_ReplaceWithSkippedHostileFeature_DoesNotPromotePartialDataset()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests) + "_partial_replace");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var strictSkipLimits = ImportLimits.Default with
+            {
+                GeometryValidityMode = Honua.Core.Configuration.ValidationMode.Strict,
+                SkipInvalidGeometry = true,
+                ContinueOnError = true,
+            };
+            var service = new StreamingFileImportService(
+                provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance,
+                strictSkipLimits);
+
+            await using (var seed = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson)))
+            {
+                var seedResult = await service.ImportFileAsync(new ImportRequest
+                {
+                    FileStream = seed,
+                    FileName = "seed.geojson",
+                    TableName = "partial_replace_guard",
+                    TargetSchema = schema,
+                    SourceSrid = 4326,
+                    TargetSrid = 4326,
+                    LoadMode = ImportLoadMode.Replace,
+                });
+                seedResult.Success.Should().BeTrue(seedResult.ErrorMessage);
+            }
+
+            await using var hostile = File.OpenRead(Path.Combine(
+                AppContext.BaseDirectory, "TestData", "ImportAdversarial", "mixed-validity-replace.geojson"));
+            var result = await service.ImportFileAsync(new ImportRequest
+            {
+                FileStream = hostile,
+                FileName = "mixed-validity-replace.geojson",
+                TableName = "partial_replace_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+            });
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*)::int, COUNT(*) FILTER (WHERE properties->>'name' IN ('a', 'b'))::int FROM \"{schema}\".imported_partial_replace_guard";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            using (new AssertionScope())
+            {
+                result.Success.Should().BeFalse("a replace with skipped input rows must not claim a complete successful replacement");
+                result.Warnings.Should().Contain(w => w.Contains("skipped", StringComparison.OrdinalIgnoreCase));
+                reader.GetInt32(0).Should().Be(2, "a partial replacement must leave the prior complete target in place");
+                reader.GetInt32(1).Should().Be(2, "the prior rows must survive the skipped hostile feature");
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_ConcurrentReplaceImportsToSameTarget_BothPromoteCompleteDatasets()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(StreamingFileImportStagingTableTests) + "_concurrent_replace");
+        GateStream? firstStream = null;
+        Task<ImportResult>? firstTask = null;
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            var firstProvider = new TestConnectionProvider(fixture.DataSource, schema);
+            var secondProvider = new TestConnectionProvider(fixture.DataSource, schema);
+            var firstService = new StreamingFileImportService(
+                firstProvider,
+                new CrsDetectionService(firstProvider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+            var secondService = new StreamingFileImportService(
+                secondProvider,
+                new CrsDetectionService(secondProvider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            firstStream = new GateStream(await File.ReadAllBytesAsync(Path.Combine(
+                AppContext.BaseDirectory, "TestData", "ImportAdversarial", "concurrent-replace.wkt")));
+            firstTask = firstService.ImportFileAsync(new ImportRequest
+            {
+                FileStream = firstStream,
+                FileName = "concurrent-replace.wkt",
+                TableName = "concurrent_replace_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+            });
+
+            // The reader is reached only after the service has created its staging table;
+            // synchronize on that boundary instead of reconstructing the provider's hashed
+            // physical table name in the fixture.
+            await firstStream.WaitForReadStartedAsync();
+
+            await using var secondStream = new MemoryStream(Encoding.UTF8.GetBytes("POINT(20 20)"));
+            var secondTask = secondService.ImportFileAsync(new ImportRequest
+            {
+                FileStream = secondStream,
+                FileName = "concurrent-replace.wkt",
+                TableName = "concurrent_replace_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+            });
+
+            var secondResult = await secondTask;
+            firstStream.Release();
+            var firstResult = await firstTask;
+
+            firstResult.Success.Should().BeTrue("a concurrent replace must serialize rather than lose its staging table");
+            secondResult.Success.Should().BeTrue("both concurrent replace requests must return complete receipts");
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".imported_concurrent_replace_guard";
+            (await command.ExecuteScalarAsync()).Should().Be(1, "the promoted target must contain one complete dataset, not a partial or missing table");
+        }
+        finally
+        {
+            firstStream?.Release();
+            if (firstTask is not null)
+            {
+                try
+                {
+                    await firstTask;
+                }
+                catch
+                {
+                    // The assertion above owns the expected result; cleanup must still drop the isolated schema.
+                }
+            }
+
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private sealed class GateStream(byte[] bytes) : MemoryStream(bytes, writable: false)
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _readStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _release.TrySetResult();
+
+        public Task WaitForReadStartedAsync() => _readStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            _readStarted.TrySetResult();
+            _release.Task.GetAwaiter().GetResult();
+            return base.Read(buffer, offset, count);
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            _readStarted.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return await base.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            _readStarted.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return await base.ReadAsync(buffer.AsMemory(offset, count), cancellationToken);
         }
     }
 

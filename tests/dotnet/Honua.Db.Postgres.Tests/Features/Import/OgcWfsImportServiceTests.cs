@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.Net;
 using System.Text;
+using FluentAssertions.Execution;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
@@ -290,6 +291,91 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
             (await ReadCityRowsAsync(schemaName, "wfs_cities")).Should().BeEquivalentTo(before);
             (await FindTablesLikeAsync(schemaName, "wfs_cities__%"))
                 .Should().BeEmpty("failed overwrite attempts must clean their staging table");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFeaturesAsync_NonOverwritePageFailure_DoesNotLeavePartialTargetOrSuccessfulReceipt()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_partial_receipt");
+        try
+        {
+            var firstPage = await File.ReadAllTextAsync(Path.Combine(
+                AppContext.BaseDirectory, "TestData", "ImportAdversarial", "wfs-page-one.geojson"));
+            var truncatedPage = await File.ReadAllTextAsync(Path.Combine(
+                AppContext.BaseDirectory, "TestData", "ImportAdversarial", "wfs-page-two-truncated.json"));
+            using var client = new HttpClient(new SequencedWfsHandler(firstPage, truncatedPage));
+            var result = await CreateService(client, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
+            {
+                ServiceUrl = DefaultServiceUrl,
+                TargetSchema = schemaName,
+                ApplyMode = true,
+                AllowUnsafeLocalUrls = true,
+                PageSize = 1,
+            });
+
+            using (new AssertionScope())
+            {
+                result.Success.Should().BeFalse("a source-page failure must not be serialized as a successful import");
+                result.FeatureTypes.Should().ContainSingle().Which.Classification
+                    .Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
+                (await TableExistsAsync(schemaName, "wfs_cities")).Should().BeFalse(
+                    "a failed non-overwrite import must not expose its partial final table");
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFeaturesAsync_LongFeatureTypeName_IsIdempotentAcrossPostgresIdentifierLimit()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_long_name");
+        const string longFeatureTypeName = "demo:administrative_boundaries_region_alpha_identifier_overflow_abcdefghijklmnopqrstuvwxyz";
+        try
+        {
+            var inventory = BuildPointInventory();
+            inventory = inventory with
+            {
+                Resources = [inventory.Resources[0] with
+                {
+                    Id = "feature-type:" + longFeatureTypeName,
+                    Name = longFeatureTypeName,
+                }]
+            };
+
+            using var firstClient = new HttpClient(new FakeWfsHandler(
+                BuildPointFeatureCollection(("first", 1, -157.85, 21.30))));
+            var firstResult = await CreateService(firstClient, inventory).ImportFeaturesAsync(new OgcWfsImportRequest
+            {
+                ServiceUrl = DefaultServiceUrl,
+                TargetSchema = schemaName,
+                ApplyMode = true,
+                AllowUnsafeLocalUrls = true,
+            });
+            firstResult.Success.Should().BeTrue();
+
+            using var secondHandler = new FakeWfsHandler(
+                BuildPointFeatureCollection(("second", 2, -155.08, 19.71)));
+            using var secondClient = new HttpClient(secondHandler);
+            var secondResult = await CreateService(secondClient, inventory).ImportFeaturesAsync(new OgcWfsImportRequest
+            {
+                ServiceUrl = DefaultServiceUrl,
+                TargetSchema = schemaName,
+                ApplyMode = true,
+                AllowUnsafeLocalUrls = true,
+            });
+
+            secondResult.Success.Should().BeTrue();
+            secondResult.FeatureTypes.Should().ContainSingle().Which.Warnings
+                .Should().Contain(w => w.Contains("already exists", StringComparison.OrdinalIgnoreCase));
+            secondHandler.RequestUris.Should().BeEmpty("the truncated physical identifier must still be recognized on rerun");
         }
         finally
         {
