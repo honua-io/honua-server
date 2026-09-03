@@ -63,6 +63,7 @@ internal static class GrpcServiceCollectionExtensions
         });
 
         services.TryAddSingleton<GrpcExceptionInterceptor>();
+        services.TryAddSingleton<GrpcApplyEditsIdempotencyStore>();
         services.TryAddScoped<SpatialReferenceResolver>();
 
         services.AddGrpcHealthChecks();

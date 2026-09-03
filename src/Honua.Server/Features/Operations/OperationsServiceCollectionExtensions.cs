@@ -69,7 +69,9 @@ internal static class OperationsServiceCollectionExtensions
         else
         {
             services.TryAddSingleton<IOperationInstanceStore>(sp =>
-                new RedisOperationInstanceStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+                sp.GetService<IConnectionMultiplexer>() is { } redis
+                    ? new RedisOperationInstanceStore(redis)
+                    : new UnavailableOperationInstanceStore());
             if (services.Any(descriptor => descriptor.ServiceType ==
                     typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore)))
             {
@@ -155,7 +157,10 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
                     sp.GetRequiredService<TimeProvider>()));
             }
-            services.AddHttpClient(AdminApiOperationExecutor.HttpClientName);
+            services.AddHttpClient(AdminApiOperationExecutor.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 

@@ -190,7 +190,7 @@ The command should report three verified features, and the browser map should sh
 - **Tiles return 401 in the browser** — confirm the request hook still carries the local quickstart key and the layer was published to the `quickstart` service.
 - **Blank map and CORS errors in the browser console** — the page must be served from `http://localhost:3000`, not opened as a `file://` URL. Use `HONUA_DEV_CORS_ORIGIN` before `docker compose up -d` if you serve the page from another origin.
 - **Console is not needed after enabling the profile** - use `HONUA_CONSOLE_REPLICAS=0 docker compose up -d`; Redis still starts because durable jobs, proposals, and workflow state use it.
-- **Contract migration is gated on an existing database** - the quickstart sets `HONUA_CONTRACT_APPLY_POLICY=Gate`. Fresh installs still provision fully; for an upgrade with pending contract scripts, approve one run with `HONUA_APPROVE_CONTRACT_MIGRATIONS=true` and unset it afterward.
+- **Contract migration is gated on an existing database** - the quickstart sets `HONUA_CONTRACT_APPLY_POLICY=Gate`. Fresh installs still provision fully; for an upgrade with pending contract scripts, approve one run with the nonce printed by the migration safety error and unset it afterward.
 - More help: [Troubleshooting](../guides/deploy/troubleshooting.md)
 
 ## Next steps

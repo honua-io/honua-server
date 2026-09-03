@@ -48,6 +48,10 @@ namespace Honua.Geoprocessing;
 /// </remarks>
 internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 {
+    // Admission is evaluated before the durable TryCreateAsync call. Serialize that
+    // check-and-create window on each node so concurrent submissions cannot all observe
+    // the same active-job snapshot (#52). Redis-backed rate claims cover cross-node rate.
+    private static readonly SemaphoreSlim AdmissionSubmissionGate = new(1, 1);
     private readonly IExecutionJobStore? _jobStore;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IReadOnlyList<IJobCancellationNotifier> _cancellationNotifiers;
@@ -761,8 +765,18 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var costWeight = (double)Math.Max(plan.Steps.Count, 1);
         var priority = ResolvePriority(specParams);
 
-        var admission = await _dispatcher.EnsureAdmittedAsync(
-            principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
+        await AdmissionSubmissionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ExecutionAdmissionDecision? admission;
+        try
+        {
+            admission = await _dispatcher.EnsureAdmittedAsync(
+                principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            AdmissionSubmissionGate.Release();
+            throw;
+        }
 
         if (admission != null)
         {
@@ -819,6 +833,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
 
         var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+        AdmissionSubmissionGate.Release();
 
         if (!created)
         {
@@ -1290,6 +1305,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private static string? ResolvePrincipalId(ClaimsPrincipal principal)
         => principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? principal.FindFirst("sub")?.Value
+            ?? principal.FindFirst("api_key_id")?.Value
             ?? principal.Identity?.Name;
 
     private async Task EnsureApprovedAsync(

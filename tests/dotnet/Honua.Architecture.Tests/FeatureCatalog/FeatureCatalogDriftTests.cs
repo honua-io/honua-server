@@ -201,6 +201,20 @@ public sealed class FeatureCatalogDriftTests
     }
 
     [ArchitectureTest]
+    public void GatedProductionRouteFamilies_AreProjectedAsNonGa()
+    {
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/api/v1/admin/alerts/rules")
+            .Should().Be("alerts.geofence");
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute(
+                "/rest/services/{serviceId}/FeatureServer/createReplica")
+            .Should().Be("sync.offline");
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/api/v1/admin/scenes/ingest/citygml")
+            .Should().Be("scene.bim-ingest");
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/scenes/{sceneId}/tileset.json")
+            .Should().Be("serve.3d-tiles-scene");
+    }
+
+    [ArchitectureTest]
     public void CommittedCatalog_EqualsFreshlyGeneratedOutput()
     {
         var committed = File.ReadAllText(FeatureCatalogPaths.CommittedArtifactPath());

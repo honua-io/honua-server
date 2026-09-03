@@ -4,7 +4,7 @@ Install the Honua .NET SDK, point a client at your server, authenticate with an 
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), the .NET 10 SDK, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The .NET SDK ships as `Honua.Sdk` — an umbrella package over a family of `Honua.Sdk.*` libraries (`Honua.Sdk.Grpc`, `Honua.Sdk.Admin`, `Honua.Sdk.GeoServices`, `Honua.Sdk.Catalogs`, and more). It is built for dependency injection and `Microsoft.Extensions.Hosting`. The current release is **1.2.1**, targeting **net10.0**.
+The .NET SDK ships as `Honua.Sdk` — an umbrella package over a family of `Honua.Sdk.*` libraries (`Honua.Sdk.Grpc`, `Honua.Sdk.Admin`, `Honua.Sdk.GeoServices`, `Honua.Sdk.Catalogs`, and more). It is built for dependency injection and `Microsoft.Extensions.Hosting`. The current release is **1.6.2**, targeting **net10.0**.
 
 ## Steps
 

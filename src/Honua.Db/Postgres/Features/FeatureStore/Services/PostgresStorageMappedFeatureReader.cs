@@ -141,6 +141,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+
         var sql = new SqlBuilder();
         sql.Append(CultureInfo.InvariantCulture, $"SELECT {_primaryKeyColumn}::bigint FROM {_qualifiedTableName}");
         AppendFilter(sql, query);
@@ -187,7 +189,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return null;
         }
 
-        var effectiveQuery = query ?? new FeatureQuery();
+        var effectiveQuery = await ApplyReadSecurityAsync(
+            query ?? new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryExpression = BuildGeometryExpression(effectiveQuery);
         var sql = new SqlBuilder();
         sql.Append(CultureInfo.InvariantCulture, $"""
@@ -286,6 +289,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
             var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
@@ -312,6 +317,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+
         var sql = BuildFeatureSelect(query, probeLimit: false);
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateReadCommand(connection, sql);

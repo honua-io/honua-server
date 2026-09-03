@@ -293,7 +293,7 @@ internal sealed partial class FeatureQueryBuilder
     /// SQL regardless of contents. Returns the bare attributes column when nothing is
     /// masked, preserving the prior byte-identical query.
     /// </summary>
-    private static string BuildMaskedAttributesColumn(
+    internal static string BuildMaskedAttributesColumn(
         HashSet<string> maskedFields,
         ref int paramIndex,
         List<object> parameters)

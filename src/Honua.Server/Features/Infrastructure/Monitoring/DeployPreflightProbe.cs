@@ -103,7 +103,7 @@ internal sealed class DeployPreflightProbe(
                 PendingScripts = plan.PendingScripts,
                 PendingContractScripts = plan.ContractScriptNames,
                 ExecutedButNotDiscoveredScripts = plan.ExecutedButNotDiscoveredScripts,
-                PlanError = plan.Successful ? null : MigrationPlanUnavailableMessage,
+                PlanError = plan.Successful ? null : plan.ErrorMessage ?? MigrationPlanUnavailableMessage,
                 BackupHook = backupHook
             };
         }
@@ -120,7 +120,7 @@ internal sealed class DeployPreflightProbe(
                 Message = GetMigrationStatusMessage(migrationState),
                 PlanAvailable = false,
                 UpgradeRequired = false,
-                PlanError = MigrationPlanUnavailableMessage
+                PlanError = "Database migration planning failed; reconcile the migration journal and schema before retrying."
             };
         }
     }

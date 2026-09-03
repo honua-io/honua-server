@@ -42,6 +42,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private readonly SpatialReferenceResolver _spatialReferenceResolver;
     private readonly FeatureMutationEventService _mutationEventService;
     private readonly ILogger<HonuaFeatureService> _logger;
+    private readonly GrpcApplyEditsIdempotencyStore _idempotencyStore;
     private readonly GeometryLimits _geometryLimits;
     private readonly int _streamBatchSize;
 
@@ -55,7 +56,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         IFeatureChangeEventPublisher featureChangeEventPublisher,
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
-        ILogger<HonuaFeatureService> logger)
+        ILogger<HonuaFeatureService> logger,
+        GrpcApplyEditsIdempotencyStore idempotencyStore)
         : this(
             resourceValidator,
             featureReader,
@@ -66,7 +68,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             new FeatureMutationEventService(featureChangeEventPublisher),
             limitsOptions,
             grpcOptions,
-            logger)
+            logger,
+            idempotencyStore)
     {
     }
 
@@ -81,7 +84,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         FeatureMutationEventService mutationEventService,
         IOptions<LimitsOptions> limitsOptions,
         IOptions<GrpcOptions> grpcOptions,
-        ILogger<HonuaFeatureService> logger)
+        ILogger<HonuaFeatureService> logger,
+        GrpcApplyEditsIdempotencyStore idempotencyStore)
     {
         _resourceValidator = resourceValidator;
         _featureReader = featureReader;
@@ -93,6 +97,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
+        _idempotencyStore = idempotencyStore;
     }
 
     public override async Task<Proto.QueryFeaturesResponse> QueryFeatures(
@@ -104,7 +109,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
-        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
+        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken, streaming: true).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
 
@@ -261,6 +266,25 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
 
+        var idempotencyKey = request.IdempotencyKey?.Trim();
+        GrpcApplyEditsIdempotencyStore.Lease? idempotencyLease = null;
+        if (!string.IsNullOrEmpty(idempotencyKey))
+        {
+            var principal = context.GetHttpContext()?.User;
+            var principalId = principal?.FindFirst("api_key_id")?.Value
+                ?? principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? principal?.FindFirst("sub")?.Value
+                ?? principal?.Identity?.Name
+                ?? "anonymous";
+            var scopedKey = $"{request.ServiceId ?? ""}:{request.LayerId}:{principalId}:{idempotencyKey}";
+            idempotencyLease = await _idempotencyStore.EnterAsync(scopedKey, context.CancellationToken).ConfigureAwait(false);
+            if (idempotencyLease.Response is not null)
+            {
+                return idempotencyLease.Response;
+            }
+        }
+        using var heldIdempotencyLease = idempotencyLease;
+
         // RLS / permanent-filter enforcement runs only on the read path; the edit SQL
         // filters by (layer_id, objectid) with no row-level predicate. So every update/delete
         // target MUST be pre-resolved through the RLS-enforced reader and fail closed when a
@@ -308,7 +332,18 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             result,
             context).ConfigureAwait(false);
 
-        return GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+        var response = GrpcConversionHelpers.ToProtoApplyEditsResponse(result);
+        if (idempotencyLease is not null)
+        {
+            var principal = context.GetHttpContext()?.User;
+            var principalId = principal?.FindFirst("api_key_id")?.Value
+                ?? principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? principal?.FindFirst("sub")?.Value
+                ?? principal?.Identity?.Name
+                ?? "anonymous";
+            _idempotencyStore.Set($"{request.ServiceId ?? ""}:{request.LayerId}:{principalId}:{idempotencyKey}", response);
+        }
+        return response;
     }
 
     /// <summary>
@@ -553,7 +588,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private async Task<QueryContext> CreateQueryContextAsync(
         Proto.QueryFeaturesRequest request,
         GrpcLayerContext layer,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool streaming = false)
     {
         var whereValidation = _queryValidator.ValidateWhereClause(request.Where);
         if (!whereValidation.IsValid)
@@ -594,7 +630,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         {
             SpatialReferenceSrid = layer.SpatialReference.ToSrid(),
             Offset = pagination.Offset,
-            Limit = pagination.Limit
+            Limit = streaming && !requestedLimit.HasValue ? null : pagination.Limit
         };
 
         var outputSrid = query.OutputSrid;

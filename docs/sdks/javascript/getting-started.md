@@ -4,7 +4,7 @@ Install the Honua JavaScript/TypeScript SDK, construct a client, authenticate wi
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), Node.js 20 or newer, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The SDK ships as `@honua/sdk-js` on npm. It is **ESM-only** and targets **Node ≥ 20**. The current release is **0.0.14-alpha** — pin the exact version and expect breaking changes in minor releases for symbols marked experimental. A companion [MCP server](https://github.com/honua-io/honua-sdk-js) package (`@honua/mcp-server`) exposes the same surface to AI agents (see [AI agents (MCP)](../../guides/connect/ai-agents-mcp.md)). ArcGIS code migration is owned by [`honua-migrate`](https://github.com/honua-io/honua-migrate) (see [ArcGIS apps & SDKs](../../guides/migrate/arcgis-apps-and-sdks.md)).
+The SDK ships as `@honua/sdk-js` on npm. It is **ESM-only** and targets **Node ≥ 20**. The current release is **0.1.9-beta.0** — pin the exact version and expect breaking changes in minor releases for symbols marked experimental. A companion [MCP server](https://github.com/honua-io/honua-sdk-js) package (`@honua/mcp-server`) exposes the same surface to AI agents (see [AI agents (MCP)](../../guides/connect/ai-agents-mcp.md)). ArcGIS code migration is owned by [`honua-migrate`](https://github.com/honua-io/honua-migrate) (see [ArcGIS apps & SDKs](../../guides/migrate/arcgis-apps-and-sdks.md)).
 
 ## Steps
 

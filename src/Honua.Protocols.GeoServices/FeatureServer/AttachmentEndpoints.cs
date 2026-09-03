@@ -265,6 +265,13 @@ internal static partial class AttachmentEndpoints
             featureIds = Array.FindAll(featureIds, allowed.Contains);
         }
 
+        var featureReaderForVisibility = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var visibleFeatureIds = await featureReaderForVisibility.QueryObjectIdsAsync(
+            layerId,
+            new FeatureQuery { ObjectIds = featureIds, ExcludeAttributes = true },
+            cancellationToken);
+        featureIds = Array.FindAll(featureIds, visibleFeatureIds.Contains);
+
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
@@ -330,6 +337,11 @@ internal static partial class AttachmentEndpoints
         else if (!long.TryParse(objectIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
+            return;
+        }
+
+        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        {
             return;
         }
 
@@ -418,6 +430,11 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
+        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var attachmentIdRaw = form.TryGetValue("attachmentId", out var attachmentIdValue)
             ? attachmentIdValue.ToString()
             : context.Request.Query.TryGetValue("attachmentId", out var queryAttachmentId)
@@ -499,6 +516,11 @@ internal static partial class AttachmentEndpoints
         else if (!long.TryParse(objectIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
+            return;
+        }
+
+        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        {
             return;
         }
 
@@ -628,6 +650,11 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
+        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
@@ -641,6 +668,24 @@ internal static partial class AttachmentEndpoints
             context.RequestAborted);
 
         await result.ExecuteAsync(context);
+    }
+
+    private static async Task<bool> EnsureFeatureVisibleAsync(
+        HttpContext context,
+        int layerId,
+        long featureId)
+    {
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted).ConfigureAwait(false);
+        if (feature is not null)
+        {
+            return true;
+        }
+
+        await StandardErrorHelpers.CreateNotFound(
+            context,
+            $"Feature {featureId} not found").ExecuteAsync(context).ConfigureAwait(false);
+        return false;
     }
 
     private static async Task<IFormCollection?> TryReadAttachmentFormAsync(HttpContext context)

@@ -470,8 +470,14 @@ internal sealed partial class RedisExecutionJobStore(
 
         var score = job.CreatedAt.ToUnixTimeMilliseconds();
         var newKeys = GetQueryIndexKeys(job);
-        await Task.WhenAll(newKeys.Select(key => _database.SortedSetAddAsync(key, jobId, score)))
-            .ConfigureAwait(false);
+        // Index keys are derived from the job and must not outlive the payload they index.
+        // This is especially important for per-plan metadata indexes, where each OGC
+        // execution can otherwise leave a unique immortal sorted set behind (#28).
+        await Task.WhenAll(newKeys.Select(async key =>
+        {
+            await _database.SortedSetAddAsync(key, jobId, score).ConfigureAwait(false);
+            await _database.KeyExpireAsync(key, DefaultRetention).ConfigureAwait(false);
+        })).ConfigureAwait(false);
     }
 
     private async Task RemoveStaleMembersAsync(string activeKey, IReadOnlyList<RedisValue> staleIds)
