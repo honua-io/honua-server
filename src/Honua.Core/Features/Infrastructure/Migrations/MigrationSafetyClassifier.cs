@@ -272,13 +272,12 @@ public static class MigrationSafetyClassifier
                 {
                     AppendExecutableSql(contents, result, insideRoutineBody: true);
                 }
-                else if (insideRoutineBody && IsDynamicExecutePrefix(result, statementStart))
+                else if (insideRoutineBody
+                    && IsDynamicExecutePrefix(result, statementStart)
+                    && IsDynamicSqlTemplatePosition(result, statementStart))
                 {
-                    if (IsDynamicSqlTemplatePosition(result, statementStart))
-                    {
-                        AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
-                        dynamicSql.Append(' ');
-                    }
+                    AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
+                    dynamicSql.Append(' ');
                 }
 
                 result.Append(' ');
@@ -297,13 +296,12 @@ public static class MigrationSafetyClassifier
                 {
                     AppendExecutableSql(contents, result, insideRoutineBody: true);
                 }
-                else if (insideRoutineBody && IsDynamicExecutePrefix(result, statementStart))
+                else if (insideRoutineBody
+                    && IsDynamicExecutePrefix(result, statementStart)
+                    && IsDynamicSqlTemplatePosition(result, statementStart))
                 {
-                    if (IsDynamicSqlTemplatePosition(result, statementStart))
-                    {
-                        AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
-                        dynamicSql.Append(' ');
-                    }
+                    AppendExecutableSql(contents, dynamicSql, insideRoutineBody: false);
+                    dynamicSql.Append(' ');
                 }
 
                 result.Append(' ');
