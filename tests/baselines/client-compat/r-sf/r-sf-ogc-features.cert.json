@@ -5,7 +5,7 @@
   "server_version": "1.0.0",
   "server_commit": "dbb368c5d06fb744e5289e4fd6ab30acc3973698",
   "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
-  "server_config_revision": "sha256:ffa3ab8673c76d94db200b15f3105011d79f64a3afc98d481844fa7f01a25a01",
+  "server_config_revision": "sha256:1b88b3891b1b3b3fb85d47e716e9237ec8bba8e8344bb04902f8b3ce5b02f729",
   "client_lane": "r-sf",
   "client_version": "sf=1.1.2;ows4R=0.5;GDAL=3.8.4",
   "protocol": "ogc-features",
