@@ -44,6 +44,15 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         ALTER TABLE honua_ci_demo DROP COLUMN legacy_name;
         """;
 
+    private const string UnannotatedRoutineBodyContractScript =
+        """
+        CREATE FUNCTION honua.drop_legacy_table() RETURNS void LANGUAGE plpgsql AS $$
+        BEGIN
+            EXECUTE format('DROP TABLE IF EXISTS %I', 'honua_ci_demo');
+        END;
+        $$;
+        """;
+
     private const string AnnotatedContractScript =
         """
         -- honua:compatibility-review reason=legacy_name removed in the contract phase after v2 rollout
@@ -115,6 +124,24 @@ public sealed class LocalSubstrateMigrationGateTests : IClassFixture<LocalSubstr
         (await TableExistsAsync(connectionString, "honua_ci_demo")).Should().BeTrue();
         (await ColumnExistsAsync(connectionString, "honua_ci_demo", "legacy_name"))
             .Should().BeFalse("the annotated contract migration dropped the legacy column");
+    }
+
+    [SkippableFact]
+    public async Task RunMigrations_UnannotatedRoutineBodyContract_FailsClosedWithMatchedRules()
+    {
+        Skip.IfNot(_postgres.Available, "Docker/PostgreSQL is not available for the migration-gate lane.");
+
+        var connectionString = await _postgres.CreateFreshDatabaseAsync();
+        var runner = CreateEnforcingRunner();
+        var assembly = SyntheticMigrationsCompiler.Compile(
+            $"honua_synthetic_unannotated_body_{Guid.NewGuid():N}",
+            ("001_unannotated_body.sql", UnannotatedRoutineBodyContractScript));
+
+        var result = await runner.RunMigrationsAsync(connectionString, assembly);
+
+        result.Successful.Should().BeFalse("destructive DDL installed inside a routine body must fail closed");
+        result.ErrorMessage.Should().Contain("001_unannotated_body.sql");
+        result.ErrorMessage.Should().Contain("drop-table", "startup exposes the same matched rule as the classifier");
     }
 
     [SkippableFact]

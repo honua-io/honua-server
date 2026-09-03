@@ -1,6 +1,8 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+-- honua:compatibility-review reason=The revised swap retains the reviewed live-table and canonical-index rename contract.
+
 -- Keep the two canonical indexes distinct when replacing a legacy import table
 -- whose physical name is too long for idx_<table>_<kind> to fit in 63 bytes.
 CREATE OR REPLACE FUNCTION honua.import_index_name(table_name text, index_kind text)
