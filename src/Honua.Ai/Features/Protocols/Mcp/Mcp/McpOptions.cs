@@ -99,4 +99,9 @@ internal sealed class McpOptions
     /// </summary>
     public McpSessionEvictionPolicy SessionEvictionPolicy { get; set; }
         = McpSessionEvictionPolicy.EvictLeastRecentlyUsed;
+
+    /// <summary>
+    /// Delay advised when reject-new session capacity backpressure is returned. Default 5 seconds.
+    /// </summary>
+    public int SessionCapacityRetryAfterSeconds { get; set; } = 5;
 }

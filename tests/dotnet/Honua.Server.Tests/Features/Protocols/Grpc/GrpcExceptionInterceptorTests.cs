@@ -5,6 +5,7 @@ using FluentAssertions;
 using Grpc.Core;
 using Grpc.Core.Interceptors;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
@@ -102,6 +103,14 @@ public sealed class GrpcExceptionInterceptorTests
         var exception = await act.Should().ThrowAsync<RpcException>();
         exception.Which.StatusCode.Should().Be(StatusCode.Unavailable);
         exception.Which.Status.Detail.Should().Be("The service is temporarily unavailable. Please try again later.");
+        exception.Which.Trailers.Single(entry => entry.Key == BackpressureMetadata.ErrorCodeKey).Value
+            .Should().Be(BackpressureMetadata.ServiceUnavailableCode);
+        exception.Which.Trailers.Single(entry => entry.Key == BackpressureMetadata.RetryableKey).Value
+            .Should().Be("true");
+        exception.Which.Trailers.Single(entry => entry.Key == BackpressureMetadata.RetryAfterKey).Value
+            .Should().Be("10");
+        exception.Which.Trailers.Single(entry => entry.Key == BackpressureMetadata.CorrelationIdKey).Value
+            .Should().NotBeNullOrWhiteSpace();
     }
 
     private sealed class TestServerCallContext : ServerCallContext, IDisposable

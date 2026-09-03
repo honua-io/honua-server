@@ -93,6 +93,12 @@ internal sealed class McpErrorData
     [JsonPropertyName("retryable")]
     public bool? Retryable { get; set; }
 
+    [JsonPropertyName("retryAfterSeconds")]
+    public int? RetryAfterSeconds { get; set; }
+
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; set; }
+
     /// <summary>
     /// Identifier of the infrastructure dependency that was not composed (for example
     /// <c>redis</c>) when the error is a capability-unavailable refusal (honua-release#202).
