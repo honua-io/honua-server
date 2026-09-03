@@ -53,7 +53,7 @@ internal sealed class CoordinatedContainerStepExecutor(
             Outcome = MapOutcome(deploy.Status),
             ChildOperationId = deploy.OperationId,
             Detail = deploy.CurrentPhase ?? "Container rollout submitted.",
-            ObservedRevision = deploy.ObservedState ?? deploy.Deploy?.CurrentRevision
+            ObservedRevision = deploy.Deploy?.CurrentRevision ?? deploy.ObservedState
         };
     }
 
