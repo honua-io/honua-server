@@ -142,6 +142,13 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
                 callId.RootElement,
                 CancellationToken.None);
 
+        var apiKeys = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var proposer = await apiKeys.CreateAsync(
+            "proposal-evidence-proposer",
+            ["admin:operation:POST:/api/v1/admin/proposals"],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "test",
+            CancellationToken.None);
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var proposalStore = new RedisOperationProposalStore(
             multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
@@ -155,13 +162,16 @@ public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
             .Returns(new OperationProposalPlan());
         var gateway = CanonicalOperationGatewayTestComposition.Build(proposalStore, ladder, [actuator]);
         var httpContextAccessor = new HttpContextAccessor();
-        using var readerServices = McpPlatformOpsReaderTests.CreateServices(gateway, accessor: httpContextAccessor);
+        using var readerServices = McpPlatformOpsReaderTests.CreateServices(
+            gateway,
+            accessor: httpContextAccessor,
+            apiKeys: apiKeys);
         var reader = McpPlatformOpsReaderTests.CreateReader(services: readerServices);
         using var toolServices = new ServiceCollection().AddSingleton<IMcpPlatformOpsReader>(reader).BuildServiceProvider();
         var context = new DefaultHttpContext
         {
             RequestServices = toolServices,
-            User = McpPlatformOpsReaderTests.CreatePrincipal()
+            User = McpPlatformOpsReaderTests.CreateApiKeyPrincipal(proposer.Record.Id)
         };
         verifiedToolName.Should().Be(tool.Name);
         context.Items[ProposalEvidenceVerifier.HttpContextItemKey] = proposalEvidence;
@@ -579,12 +589,17 @@ public sealed class McpPlatformOpsReaderTests
     internal static ServiceProvider CreateServices(
         IOperationGateway? gateway = null,
         IOperationExecutorCatalog? catalog = null,
-        IHttpContextAccessor? accessor = null)
+        IHttpContextAccessor? accessor = null,
+        IAdminApiKeyStore? apiKeys = null)
     {
         var services = new ServiceCollection();
         if (accessor is not null)
         {
             services.AddSingleton(accessor);
+        }
+        if (apiKeys is not null)
+        {
+            services.AddSingleton(apiKeys);
         }
         var envelopeFactory = Substitute.For<IOperationEnvelopeFactory>();
         var now = DateTimeOffset.UtcNow;
@@ -623,6 +638,11 @@ public sealed class McpPlatformOpsReaderTests
                 new Claim(ClaimTypes.NameIdentifier, "ops-agent"),
             ],
             "test"));
+
+    internal static ClaimsPrincipal CreateApiKeyPrincipal(Guid apiKeyId)
+        => new(new ClaimsIdentity(
+            [new Claim("api_key_id", apiKeyId.ToString("D"))],
+            AuthenticationExtensions.ApiKeyScheme));
 
     private static bool IsOpsReadResource(object resource, ClaimsPrincipal principal)
         => resource is DefaultHttpContext context &&
