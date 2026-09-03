@@ -19,7 +19,7 @@ history="$(gh run list --repo "${repository}" --workflow gp-buffer-canary.yml --
 runs="$(jq -cn --argjson current "${current}" --argjson history "${history}" '$current + $history')"
 jq --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
   [ .[] | select(.conclusion != "skipped") ] as $runs |
-  ($runs | reduce .[] as $run (0; if $run.conclusion != "success" then 0 else . + 1 end)) as $consecutive |
+  ($runs | reduce .[] as $run ({count:0,broken:false}; if (.broken or $run.conclusion != "success") then .broken=true else .count += 1 end) | .count) as $consecutive |
   {schema:"honua.gp-buffer-canary-streak.v1",required_consecutive_green:7,
    observed_runs:($runs|length),consecutive_green:$consecutive,
    ready:(($runs|length) == 7 and $consecutive == 7),runs:$runs,generated_at:$generated_at}' <<<"${runs}" > "${output}"

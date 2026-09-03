@@ -91,7 +91,10 @@ class GpQualificationHarnessTests(unittest.TestCase):
             fake_bin = Path(directory) / "bin"
             fake_bin.mkdir()
             fake_gh = fake_bin / "gh"
-            fake_gh.write_text("#!/bin/sh\nprintf '%s\\n' '[]'\n", encoding="utf-8")
+            fake_gh.write_text(
+                "#!/bin/sh\nprintf '%s\\n' '[{\"databaseId\":1,\"conclusion\":\"success\",\"createdAt\":\"2026-09-02T00:00:00Z\",\"headSha\":\"a\",\"url\":\"u1\"},{\"databaseId\":2,\"conclusion\":\"success\",\"createdAt\":\"2026-09-01T00:00:00Z\",\"headSha\":\"b\",\"url\":\"u2\"}]'\n",
+                encoding="utf-8",
+            )
             fake_gh.chmod(0o755)
             streak = Path(directory) / "streak.json"
             environment = os.environ.copy()
@@ -112,7 +115,7 @@ class GpQualificationHarnessTests(unittest.TestCase):
             )
             self.assertEqual(0, completed.returncode, completed.stderr)
             result = json.loads(streak.read_text(encoding="utf-8"))
-            self.assertEqual(1, result["observed_runs"])
+            self.assertEqual(3, result["observed_runs"])
             self.assertEqual(0, result["consecutive_green"])
             self.assertFalse(result["ready"])
             self.assertEqual("failure", result["runs"][0]["conclusion"])

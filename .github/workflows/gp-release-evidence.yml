@@ -120,6 +120,7 @@ jobs:
             exit 1
           fi
           gh release create "${tag}" --repo "${GITHUB_REPOSITORY}" --target "${SOURCE_SHA}" \
+            --latest=false \
             --title "GP qualification ${SOURCE_SHA}" \
             --notes "Immutable GP Lifecycle and Resilience qualification evidence for ${SOURCE_SHA}." \
             "gp-qualification-${SOURCE_SHA}.tar.gz" "gp-qualification-${SOURCE_SHA}.tar.gz.sha256"
