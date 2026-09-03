@@ -84,6 +84,11 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<IChangeTracker>();
             services.RemoveAll<IReplicaStore>();
             services.RemoveAll<IReplicaRepository>();
+            // This factory uses test-owned providers and HONUA_SKIP_MIGRATIONS; its fixture
+            // tables are intentionally not represented in the production DbUp journal.
+            services.RemoveAll<IDatabaseSchemaGuard>();
+            services.RemoveAll<Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>();
+            services.AddSingleton<IDatabaseSchemaGuard>(FixtureBypassDatabaseSchemaGuard.Instance);
             services.AddSingleton<IChangeTracker, InMemoryChangeTracker>();
             services.AddSingleton<IReplicaStore, InMemoryReplicaStore>();
             // The default host registers the Postgres-backed IReplicaRepository (which needs a real
