@@ -74,21 +74,7 @@ internal static partial class ImportEndpoints
 
         MapImportRoutes(v1Group, isV1: true);
 
-        // Control-plane compatibility route. This deliberately points at the same
-        // downloader, validator, queue, and progress store as /import/upload-url;
-        // it is a real import operation, not a receipt-only alias.
-        var importsGroup = app.MapGroup("/api/v{version:apiVersion}/admin/imports")
-            .WithApiVersionSet()
-            .HasApiVersion(1, 0)
-            .WithTags("Admin", "Import")
-            .RequireAdminAuthorization();
-
-        importsGroup.MapPost(string.Empty, HandleImportFileFromUrl)
-            .WithSummary("Create and queue an import job from a source URL.");
-
-        importsGroup.MapGet("/jobs", HandleGetActiveJobs);
-        importsGroup.MapGet("/jobs/{jobId}", HandleGetImportJobStatus);
-        importsGroup.MapPost("/jobs/{jobId}/cancel", HandleCancelImportJob);
+        MapCompatibilityImportRoutes(app);
     }
 
     /// <summary>
