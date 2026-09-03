@@ -405,25 +405,25 @@ internal sealed class CapabilityManifestService(
 
             Capability("serve.3d-tiles-scene", "scene", context,
                 maturity: CapabilityMaturity.Experimental,
-                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("serve.3d-tiles-scene")),
+                configured: IsExperimentalEnabled("serve.3d-tiles-scene")),
             Capability("serve.i3s-scene", "scene", context,
                 maturity: CapabilityMaturity.Experimental,
-                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("serve.i3s-scene")),
+                configured: IsExperimentalEnabled("serve.i3s-scene")),
             Capability("scene.catalog", "scene", context,
                 maturity: CapabilityMaturity.Experimental,
-                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("scene.catalog")),
+                configured: IsExperimentalEnabled("scene.catalog")),
             Capability("scene.bim-ingest", "scene", context,
                 maturity: CapabilityMaturity.Experimental,
-                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("scene.bim-ingest"),
+                configured: IsExperimentalEnabled("scene.bim-ingest"),
                 entitlementKey: FeatureCatalog.SceneBimIngestKey),
             Capability("scene.pointcloud-ingest", "scene", context,
                 maturity: CapabilityMaturity.Experimental,
-                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("scene.pointcloud-ingest"),
+                configured: IsExperimentalEnabled("scene.pointcloud-ingest"),
                 entitlementKey: FeatureCatalog.ScenePointCloudIngestKey),
             Capability("sync.offline", "sync", context,
                 maturity: CapabilityMaturity.Preview,
                 supported: syncSupported,
-                configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("sync.offline"),
+                configured: IsExperimentalEnabled("sync.offline"),
                 entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey,
                 policyCapability: "features.edit",
                 requiresWorkspace: true),
@@ -454,7 +454,8 @@ internal sealed class CapabilityManifestService(
             Capability("security.mtls", "security", context,
                 maturity: CapabilityMaturity.Experimental,
                 entitlementKey: FeatureCatalog.MtlsClientCertificateKey,
-                configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled),
+                configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled
+                    && IsExperimentalEnabled("security.mtls")),
 
             Capability("preview.file-import", "preview", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("query.features", "query", context),
@@ -473,7 +474,8 @@ internal sealed class CapabilityManifestService(
             // registry-derived Capabilities[] stay byte-identical.
             Capability("versioning.branch", "versioning", context,
                 maturity: CapabilityMaturity.Experimental,
-                entitlementKey: FeatureCatalog.BranchVersioningKey),
+                entitlementKey: FeatureCatalog.BranchVersioningKey,
+                configured: IsExperimentalEnabled("versioning.branch")),
             // Aggregated operate status (A12) — the server-authoritative operate/status surface. Ungated
             // GA; read-authorized (ops:read) at the HTTP layer. Kept last to mirror the registry order.
             Capability("operate.status", "operate", context, requiresAuthentication: true),
@@ -693,6 +695,9 @@ internal sealed class CapabilityManifestService(
                 resolution.ReasonCode,
                 Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
                 StringComparison.Ordinal);
+
+    private bool IsExperimentalEnabled(string capabilityId)
+        => options.ExperimentalCapabilityFlags.IsExperimentalEnabled(capabilityId);
 
     private CapabilityManifestCapability Capability(
         string id,
