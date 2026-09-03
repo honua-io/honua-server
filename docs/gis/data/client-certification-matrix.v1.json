@@ -8,7 +8,7 @@
     "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
     "trackingIssue": "https://github.com/honua-io/honua-server/issues/3393",
     "fixtureRevision": "sha256:d7c9c28fbfeea766d3d40768637d46452541355fd5e5817ed94ce4e4f9c172fc",
-    "serverConfigRevision": "sha256:071c22e84c2c494d0a3e85d2a9a5d4dc9a304e3d5762de32d97a6443e2afb4f6",
+    "serverConfigRevision": "sha256:f74efa7d06a76a9253149f7ce3e2b0b0fbc02a00f6b20d3d0d1a9be3cba84559",
     "authPolicyRevision": "sha256:bad3a57ccb2e67488680da7fc8722f1dc98cafd8a32ffb7ff808f29dfe5e7210",
     "currentInputs": [
       "tests/seed/client-compat-v1.sql",
