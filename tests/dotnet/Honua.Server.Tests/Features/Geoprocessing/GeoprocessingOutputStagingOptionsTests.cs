@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.FileStorage;
@@ -93,6 +94,12 @@ public sealed class GeoprocessingOutputStagingOptionsTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(Substitute.For<IConnectionMultiplexer>());
+        services.AddSingleton(new RedisDurabilityAttestation(
+            "redis.example.internal:6379",
+            "aof (appendonly=yes, aof_enabled=1)",
+            "appendfsync=always",
+            "noeviction",
+            DateTimeOffset.UtcNow));
 
         services.AddGeoprocessing(configuration);
 
