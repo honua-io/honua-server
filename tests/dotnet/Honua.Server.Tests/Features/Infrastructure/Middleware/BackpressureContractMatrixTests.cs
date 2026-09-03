@@ -261,6 +261,27 @@ public sealed class BackpressureContractMatrixTests
         responses[1].GetProperty("id").GetString().Should().Be("second");
     }
 
+    [Theory]
+    [InlineData("{\"jsonrpc\":\"2.0\",\"id\":3905,\"method\":", false)]
+    [InlineData("[{\"jsonrpc\":\"2.0\",\"id\":3905,\"method\":\"tools/list\"},", true)]
+    [Operation(Operations.Infrastructure)]
+    [Endpoint("POST /mcp")]
+    public async Task McpBackpressure_WhenInputEndsBeforeInspectionCap_DoesNotRecoverPrefixIds(
+        string payload,
+        bool isBatch)
+    {
+        var context = CreateMcpContext(HttpMethods.Post, "/mcp");
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(payload));
+
+        await BackpressureResponseWriter.WriteAsync(context, BackpressureKind.Saturated, SaturationDelaySeconds);
+
+        await context.Response.CompleteAsync();
+        context.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(context.Response.Body);
+        var response = isBatch ? document.RootElement[0] : document.RootElement;
+        response.GetProperty("id").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
     private static DefaultHttpContext CreateMcpContext(string method, string path)
     {
         var context = new DefaultHttpContext();

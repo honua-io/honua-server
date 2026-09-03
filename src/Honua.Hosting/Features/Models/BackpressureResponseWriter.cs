@@ -200,9 +200,12 @@ internal static class BackpressureResponseWriter
             }
             catch (JsonException)
             {
+                List<JsonElement?> prefixIds = bytesRead == MaxMcpInspectionBytes
+                    ? ReadRequestIdsFromPrefix(buffer.AsSpan(0, bytesRead), isBatch)
+                    : [];
                 return new McpRequestInspection(
                     isBatch,
-                    ReadRequestIdsFromPrefix(buffer.AsSpan(0, bytesRead), isBatch));
+                    prefixIds);
             }
         }
         catch (JsonException)
