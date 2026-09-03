@@ -385,6 +385,7 @@ public sealed class KubernetesArgoRolloutsDeployBackendTests
         observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
         observation.ObservedRevision.Should().Be(PreviousImage);
         client.AbortCalled.Should().BeTrue();
+        client.LastSetImage.Should().Be(PreviousImage);
     }
 
     [Fact]
@@ -424,6 +425,7 @@ public sealed class KubernetesArgoRolloutsDeployBackendTests
     {
         var client = new StubArgoRolloutsClient
         {
+            RolloutState = ProgressingRollout(DesiredImage),
             AbortException = new HttpRequestException("Conflict: resourceVersion=secret-rv-999", null, HttpStatusCode.Conflict)
         };
         var backend = CreateBackend(client);

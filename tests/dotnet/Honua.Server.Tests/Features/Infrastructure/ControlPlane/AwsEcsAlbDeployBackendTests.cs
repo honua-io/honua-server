@@ -232,7 +232,7 @@ public sealed class AwsEcsAlbDeployBackendTests
             ServiceState = new AwsEcsServiceState
             {
                 ServiceName = CanaryService,
-                TaskDefinitionArn = TaskDefArn,
+                TaskDefinitionArn = PreviousTaskDefArn,
                 RunningCount = 0,
                 DesiredCount = 0,
                 PendingCount = 0,
@@ -241,7 +241,9 @@ public sealed class AwsEcsAlbDeployBackendTests
         };
         var backend = CreateBackend(albClient, ecsClient);
 
-        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.RollbackRequested));
+        var observation = await backend.ObserveAsync(CreateOperation(
+            currentRevision: PreviousTaskDefArn,
+            status: WorkflowOperationStatus.RollbackRequested));
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
     }
@@ -266,7 +268,7 @@ public sealed class AwsEcsAlbDeployBackendTests
             ServiceState = new AwsEcsServiceState
             {
                 ServiceName = CanaryService,
-                TaskDefinitionArn = TaskDefArn,
+                TaskDefinitionArn = PreviousTaskDefArn,
                 RunningCount = 2,
                 DesiredCount = 2,
                 PendingCount = 0,
@@ -275,7 +277,9 @@ public sealed class AwsEcsAlbDeployBackendTests
         };
         var backend = CreateBackend(albClient, ecsClient);
 
-        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.RollbackRequested));
+        var observation = await backend.ObserveAsync(CreateOperation(
+            currentRevision: PreviousTaskDefArn,
+            status: WorkflowOperationStatus.RollbackRequested));
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
         observation.Message.Should().Contain("no pending deployment");
@@ -310,7 +314,9 @@ public sealed class AwsEcsAlbDeployBackendTests
         };
         var backend = CreateBackend(albClient, ecsClient);
 
-        var observation = await backend.ObserveAsync(CreateOperation(status: WorkflowOperationStatus.RollbackRequested));
+        var observation = await backend.ObserveAsync(CreateOperation(
+            currentRevision: PreviousTaskDefArn,
+            status: WorkflowOperationStatus.RollbackRequested));
 
         observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
     }
@@ -479,7 +485,9 @@ public sealed class AwsEcsAlbDeployBackendTests
         };
         var backend = CreateBackend(albClient);
 
-        var observation = await backend.RollbackAsync(CreateOperation(parameters: CanaryParameters()));
+        var observation = await backend.RollbackAsync(CreateOperation(
+            currentRevision: PreviousTaskDefArn,
+            parameters: CanaryParameters()));
 
         observation.Status.Should().Be(WorkflowOperationStatus.Failed);
         observation.Message.Should().NotBeNullOrEmpty();
@@ -847,7 +855,9 @@ public sealed class AwsEcsAlbDeployBackendTests
         };
         var backend = CreateBackend(albClient);
 
-        var observation = await backend.RollbackAsync(CreateOperation(parameters: CanaryParameters()));
+        var observation = await backend.RollbackAsync(CreateOperation(
+            currentRevision: PreviousTaskDefArn,
+            parameters: CanaryParameters()));
 
         observation.Status.Should().Be(WorkflowOperationStatus.Failed);
         observation.Message.Should().NotContain("secret-endpoint-arn");

@@ -109,7 +109,7 @@ internal sealed partial class DeployWorkflowReconciler(
                         reconciliationCancellation.Token)
                     .ConfigureAwait(false);
 
-                updated = ApplyRollbackObservationBudget(operation, updated, observation);
+                updated = ApplyRollbackObservationTimeout(operation, updated, observation);
             }
 
             if (!Equals(updated, operation))
@@ -435,10 +435,16 @@ internal sealed partial class DeployWorkflowReconciler(
     internal const string RollbackTransientAttemptsParameterKey = "deployment.rollback.transient_attempts";
 
     /// <summary>
-    /// Reserved deploy-spec parameter key carrying the count of consecutive provider observations
-    /// that still cannot prove convergence to the requested prior revision.
+    /// Reserved deploy-spec parameter key carrying the timestamp at which provider observations
+    /// first entered the rollback-settling state.
     /// </summary>
-    internal const string RollbackObservationAttemptsParameterKey = "deployment.rollback.observation_attempts";
+    internal const string RollbackObservationStartedAtParameterKey = "deployment.rollback.observation_started_at";
+
+    /// <summary>
+    /// Optional deploy-spec parameter controlling the maximum rollback-settling duration. The value
+    /// is clamped so provider polling can never become unbounded.
+    /// </summary>
+    internal const string RollbackObservationTimeoutSecondsParameterKey = "deployment.rollback.observation_timeout_seconds";
 
     /// <summary>
     /// Reserved deploy-spec parameter key bounding how many consecutive transient rollback failures
@@ -449,8 +455,10 @@ internal sealed partial class DeployWorkflowReconciler(
 
     private const int DefaultRollbackRetryBudget = 3;
     private const int MaximumRollbackRetryBudget = 10;
+    private static readonly TimeSpan DefaultRollbackObservationTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan MaximumRollbackObservationTimeout = TimeSpan.FromMinutes(30);
 
-    private static WorkflowOperationRecord ApplyRollbackObservationBudget(
+    private static WorkflowOperationRecord ApplyRollbackObservationTimeout(
         WorkflowOperationRecord previous,
         WorkflowOperationRecord current,
         DeployObservation observation)
@@ -470,29 +478,29 @@ internal sealed partial class DeployWorkflowReconciler(
             return current;
         }
 
-        var attempts = ReadRollbackObservationAttempts(current.Deploy) + 1;
-        var budget = ResolveRollbackRetryBudget(current.Deploy);
-        var deploy = WithRollbackObservationAttempts(current.Deploy, attempts);
+        var now = DateTimeOffset.UtcNow;
+        var startedAt = ReadRollbackObservationStartedAt(current.Deploy) ?? now;
+        var deploy = WithRollbackObservationStartedAt(current.Deploy, startedAt);
         var detail = observation.Message ?? "Provider evidence remains incomplete.";
-        if (attempts < budget)
+        var timeout = ResolveRollbackObservationTimeout(current.Deploy);
+        if (now - startedAt < timeout)
         {
             return current with
             {
                 Deploy = deploy,
-                CurrentPhase = $"Rollback evidence remains incomplete on observation {attempts} of {budget} and will be retried. {detail}",
+                CurrentPhase = $"Rollback evidence remains incomplete and will be retried until the {timeout.TotalSeconds:0}-second observation timeout. {detail}",
                 ErrorMessage = null
             };
         }
 
-        var completedAt = DateTimeOffset.UtcNow;
         return current with
         {
             Status = WorkflowOperationStatus.ManualInterventionRequired,
-            UpdatedAt = completedAt,
-            CompletedAt = completedAt,
+            UpdatedAt = now,
+            CompletedAt = now,
             Deploy = deploy,
-            CurrentPhase = $"Automatic rollback could not prove the requested prior revision after {attempts} observations and requires manual intervention. {detail}",
-            ErrorMessage = $"Automatic rollback evidence remained incomplete after {attempts} observations: {detail}"
+            CurrentPhase = $"Automatic rollback could not prove the requested prior revision within the {timeout.TotalSeconds:0}-second observation timeout and requires manual intervention. {detail}",
+            ErrorMessage = $"Automatic rollback evidence remained incomplete after the {timeout.TotalSeconds:0}-second observation timeout: {detail}"
         };
     }
 
@@ -503,12 +511,11 @@ internal sealed partial class DeployWorkflowReconciler(
             ? attempts
             : 0;
 
-    private static int ReadRollbackObservationAttempts(DeployOperationSpec spec)
-        => spec.Parameters.TryGetValue(RollbackObservationAttemptsParameterKey, out var raw) &&
-           int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var attempts) &&
-           attempts > 0
-            ? attempts
-            : 0;
+    private static DateTimeOffset? ReadRollbackObservationStartedAt(DeployOperationSpec spec)
+        => spec.Parameters.TryGetValue(RollbackObservationStartedAtParameterKey, out var raw) &&
+           DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var startedAt)
+            ? startedAt
+            : null;
 
     private static int ResolveRollbackRetryBudget(DeployOperationSpec spec)
     {
@@ -533,26 +540,38 @@ internal sealed partial class DeployWorkflowReconciler(
             }
         };
 
-    private static DeployOperationSpec WithRollbackObservationAttempts(DeployOperationSpec spec, int attempts)
+    private static TimeSpan ResolveRollbackObservationTimeout(DeployOperationSpec spec)
+    {
+        if (spec.Parameters.TryGetValue(RollbackObservationTimeoutSecondsParameterKey, out var raw) &&
+            double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) &&
+            seconds > 0)
+        {
+            return TimeSpan.FromSeconds(Math.Min(seconds, MaximumRollbackObservationTimeout.TotalSeconds));
+        }
+
+        return DefaultRollbackObservationTimeout;
+    }
+
+    private static DeployOperationSpec WithRollbackObservationStartedAt(DeployOperationSpec spec, DateTimeOffset startedAt)
         => spec with
         {
             Parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal)
             {
-                [RollbackObservationAttemptsParameterKey] = attempts.ToString(CultureInfo.InvariantCulture)
+                [RollbackObservationStartedAtParameterKey] = startedAt.ToString("O", CultureInfo.InvariantCulture)
             }
         };
 
     private static DeployOperationSpec WithoutRollbackAttempts(DeployOperationSpec spec)
     {
         if (!spec.Parameters.ContainsKey(RollbackTransientAttemptsParameterKey) &&
-            !spec.Parameters.ContainsKey(RollbackObservationAttemptsParameterKey))
+            !spec.Parameters.ContainsKey(RollbackObservationStartedAtParameterKey))
         {
             return spec;
         }
 
         var parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal);
         parameters.Remove(RollbackTransientAttemptsParameterKey);
-        parameters.Remove(RollbackObservationAttemptsParameterKey);
+        parameters.Remove(RollbackObservationStartedAtParameterKey);
         return spec with { Parameters = parameters };
     }
 

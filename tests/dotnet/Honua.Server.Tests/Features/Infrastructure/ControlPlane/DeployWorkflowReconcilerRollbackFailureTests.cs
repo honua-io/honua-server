@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -197,6 +198,17 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
             rollbackStatus: WorkflowOperationStatus.RollbackRequested,
             rollbackMessage: "Provider did not prove the requested prior revision.");
         var operation = CreateOperation(WorkflowOperationStatus.RollbackRequested);
+        operation = operation with
+        {
+            Deploy = operation.Deploy! with
+            {
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [DeployWorkflowReconciler.RollbackObservationStartedAtParameterKey] =
+                        DateTimeOffset.UtcNow.AddMinutes(-6).ToString("O", CultureInfo.InvariantCulture)
+                }
+            }
+        };
         await store.TryCreateAsync(operation);
 
         var reconciler = CreateReconciler(store, backend, new StubDeployTelemetrySignalEvaluator(null));
@@ -213,9 +225,9 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
 
         updated.Should().NotBeNull();
         updated!.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
-        updated.ErrorMessage.Should().Contain("evidence remained incomplete after 3 observations");
-        updated.Deploy!.Parameters[DeployWorkflowReconciler.RollbackObservationAttemptsParameterKey]
-            .Should().Be("3");
+        updated.ErrorMessage.Should().Contain("evidence remained incomplete after the 300-second observation timeout");
+        updated.Deploy!.Parameters[DeployWorkflowReconciler.RollbackObservationStartedAtParameterKey]
+            .Should().NotBeNullOrWhiteSpace();
     }
 
     // ---- helpers ---------------------------------------------------------

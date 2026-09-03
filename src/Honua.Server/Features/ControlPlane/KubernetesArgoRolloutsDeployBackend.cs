@@ -374,6 +374,17 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
 
         try
         {
+            // Abort restores traffic, but Argo leaves the candidate image in the Rollout pod
+            // template. Restore the authoritative prior revision in the same provider seam so
+            // ObserveRollback can prove both controller convergence and image identity.
+            await rolloutsClient.SetImageAsync(
+                    target.Namespace!,
+                    target.RolloutName!,
+                    target.ContainerName!,
+                    spec.CurrentRevision!,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
             await rolloutsClient.AbortAsync(target.Namespace!, target.RolloutName!, cancellationToken)
                 .ConfigureAwait(false);
 

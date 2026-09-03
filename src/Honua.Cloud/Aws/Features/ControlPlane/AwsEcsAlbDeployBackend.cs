@@ -808,6 +808,14 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
+            await ecsClient.UpdateServiceTaskDefinitionAsync(
+                    target.Cluster!,
+                    target.CanaryService!,
+                    spec.CurrentRevision!,
+                    target.Region,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
             await albClient.UpdateListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
                     BuildWeights(target.CanaryTargetGroupArn!, 100, target.StableTargetGroupArn!, 0),

@@ -332,7 +332,11 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         private bool IsNoOp() => _scenario is "candidate-healthy" or "hard-no-op" or "different-revision" or "ambiguous-evidence";
 
         public Task<ArgoRolloutState?> GetRolloutAsync(string @namespace, string name, CancellationToken cancellationToken = default) => Task.FromResult<ArgoRolloutState?>(_argo);
-        public Task<ArgoRolloutState> SetImageAsync(string @namespace, string name, string containerName, string image, CancellationToken cancellationToken = default) => Task.FromResult(_argo);
+        public Task<ArgoRolloutState> SetImageAsync(string @namespace, string name, string containerName, string image, CancellationToken cancellationToken = default)
+        {
+            if (!IsNoOp()) _argo = _argo with { PodTemplateImage = image };
+            return Task.FromResult(_argo);
+        }
         public Task<ArgoRolloutState> PromoteAsync(string @namespace, string name, CancellationToken cancellationToken = default) => Task.FromResult(_argo);
         public Task<ArgoRolloutState> AbortAsync(string @namespace, string name, CancellationToken cancellationToken = default)
         {
@@ -348,7 +352,12 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             if (!IsNoOp()) _alb = Alb(0, 100); return Task.FromResult(_alb);
         }
         public Task<AwsEcsServiceState> DescribeServiceAsync(string cluster, string serviceName, string? region, CancellationToken cancellationToken = default) => Task.FromResult(_ecs);
-        public Task UpdateServiceTaskDefinitionAsync(string cluster, string serviceName, string taskDefinitionArn, string? region, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UpdateServiceTaskDefinitionAsync(string cluster, string serviceName, string taskDefinitionArn, string? region, CancellationToken cancellationToken = default)
+        {
+            if (ShouldFailTransiently()) throw new AmazonClientException("transient provider failure");
+            if (!IsNoOp()) _ecs = Ecs(taskDefinitionArn);
+            return Task.CompletedTask;
+        }
 
         public Task<AwsLambdaAliasState> GetAliasAsync(string functionName, string aliasName, string? region, string? serviceUrl = null, CancellationToken cancellationToken = default) => Task.FromResult(_lambda);
         public Task<AwsLambdaAliasState> UpdateAliasAsync(string functionName, string aliasName, string functionVersion, IReadOnlyDictionary<string, double>? additionalVersionWeights, string? region, string? serviceUrl = null, CancellationToken cancellationToken = default)
