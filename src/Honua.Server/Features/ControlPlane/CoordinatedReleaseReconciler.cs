@@ -165,6 +165,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
 
             return MarkRunning(operation, CoordinatedReleaseStep.ContainerRollout,
                 childContainerOperationId: started.ChildOperationId,
+                containerPriorRevision: started.ObservedRevision,
                 detail: started.Detail ?? "Container rollout submitted.");
         }
 
@@ -174,6 +175,8 @@ internal sealed partial class CoordinatedReleaseReconciler(
             CoordinatedStepOutcome.Succeeded => Advance(operation, CoordinatedReleaseStep.MetadataAndSchema,
                 CoordinatedReleaseStepStatus.Succeeded, observed.Detail ?? "Container rollout promoted.",
                 stepToComplete: CoordinatedReleaseStep.ContainerRollout),
+            CoordinatedStepOutcome.RolledBack => WithStepRolledBack(operation, CoordinatedReleaseStep.ContainerRollout,
+                observed.Detail ?? "Container rollout already rolled back; starting coordinated unwind."),
             CoordinatedStepOutcome.Failed => RequestUnwind(operation, CoordinatedReleaseStep.ContainerRollout,
                 observed.Detail ?? "Container rollout failed."),
             _ => operation
@@ -212,6 +215,8 @@ internal sealed partial class CoordinatedReleaseReconciler(
             CoordinatedStepOutcome.Succeeded => Advance(operation, CoordinatedReleaseStep.Smoke,
                 CoordinatedReleaseStepStatus.Succeeded, observed.Detail ?? "DB schema change applied and new metadata revision activated.",
                 stepToComplete: CoordinatedReleaseStep.MetadataAndSchema),
+            CoordinatedStepOutcome.RolledBack => WithStepRolledBack(operation, CoordinatedReleaseStep.MetadataAndSchema,
+                observed.Detail ?? "Metadata/schema already rolled back; starting coordinated unwind."),
             CoordinatedStepOutcome.Failed => RequestUnwind(operation, CoordinatedReleaseStep.MetadataAndSchema,
                 observed.Detail ?? "Metadata/schema step failed."),
             _ => operation
@@ -443,6 +448,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
         CoordinatedReleaseStep step,
         string? childContainerOperationId = null,
         string? childMetadataOperationId = null,
+        string? containerPriorRevision = null,
         string? detail = null)
     {
         var context = operation.CoordinatedRelease!;
@@ -459,7 +465,10 @@ internal sealed partial class CoordinatedReleaseReconciler(
                 CurrentStep = step,
                 Steps = steps,
                 ContainerOperationId = childContainerOperationId ?? context.ContainerOperationId,
-                MetadataOperationId = childMetadataOperationId ?? context.MetadataOperationId
+                MetadataOperationId = childMetadataOperationId ?? context.MetadataOperationId,
+                Container = string.IsNullOrWhiteSpace(containerPriorRevision)
+                    ? context.Container
+                    : context.Container with { CurrentImage = containerPriorRevision }
             }
         };
     }

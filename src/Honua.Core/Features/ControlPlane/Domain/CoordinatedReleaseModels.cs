@@ -83,11 +83,6 @@ public enum CoordinatedReleaseStepStatus
     Running,
 
     /// <summary>
-    /// Rollback was requested from the child lifecycle and is awaiting terminal settlement.
-    /// </summary>
-    RollbackRequested,
-
-    /// <summary>
     /// The step completed successfully.
     /// </summary>
     Succeeded,
@@ -100,7 +95,13 @@ public enum CoordinatedReleaseStepStatus
     /// <summary>
     /// The step was unwound by the coordinated rollback.
     /// </summary>
-    RolledBack
+    RolledBack,
+
+    /// <summary>
+    /// Rollback was requested from the child lifecycle and is awaiting terminal settlement.
+    /// Appended to preserve the persisted ordinals of existing coordinated-release records.
+    /// </summary>
+    RollbackRequested
 }
 
 /// <summary>
