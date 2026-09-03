@@ -75,7 +75,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static async Task<IResult> HandleQueryH3Core(
-        string serviceId,
+        string serviceName,
         int layerId,
         IReadOnlyDictionary<string, StringValues> values,
         HttpContext context)
@@ -83,7 +83,7 @@ internal static partial class FeatureServerEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.queryH3");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.FeatureServer);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "queryH3");
-        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceName);
         activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -155,7 +155,7 @@ internal static partial class FeatureServerEndpoints
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
-            serviceId,
+            serviceName,
             layerId,
             context,
             logger: null,
@@ -234,7 +234,7 @@ internal static partial class FeatureServerEndpoints
             var (summaryResponse, summaryError) = await HandleSpatialAggregationSummaryQueryAsync(
                 context,
                 values,
-                serviceId,
+                serviceName,
                 layerId,
                 resource,
                 storageLayerId.Value,
@@ -374,6 +374,7 @@ internal static partial class FeatureServerEndpoints
         }
         var publication = layerValidation.Publication!;
         var resource = layerValidation.Resource!;
+        var serviceName = layerValidation.Service?.Metadata.Name ?? string.Empty;
 
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -448,7 +449,7 @@ internal static partial class FeatureServerEndpoints
             return Results.NoContent();
         }
 
-        var ttlSeconds = TilesetTtlResolver.Resolve(tileOptions, "FeatureServer", serviceId, "H3");
+        var ttlSeconds = TilesetTtlResolver.Resolve(tileOptions, "FeatureServer", serviceName, "H3");
         var credentialed = context.User.Identity?.IsAuthenticated == true
             || context.Request.Headers.ContainsKey("Authorization")
             || context.Request.Headers.ContainsKey("X-API-Key");

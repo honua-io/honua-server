@@ -11857,7 +11857,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_WithMatchingIfNoneMatch_ReturnsNotModified"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -11885,7 +11885,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetTileset_WithMatchingIfNoneMatch_ReturnsNotModified"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -11927,7 +11927,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetSceneAsset_UnknownAsset_Returns404"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -12991,7 +12991,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.HeadTileset_ReturnsHeadersWithoutBody"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -13005,7 +13005,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.HeadSceneAsset_ReturnsHeadersWithoutBody"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -15761,7 +15761,7 @@
         "Honua.Server.Tests.Features.Admin.SceneBimIngestEndpointsTests.Ingest_ValidCityGml_Returns201AndServesTileset"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "scene.bim-ingest"
     },
     {
@@ -15784,7 +15784,7 @@
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_ValidLas_Returns201AndServesTileset"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "scene.pointcloud-ingest"
     },
     {
@@ -20406,7 +20406,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeMisconfiguredEndpointTests.IssueEnvelope_MissingSigningKey_Returns500"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {

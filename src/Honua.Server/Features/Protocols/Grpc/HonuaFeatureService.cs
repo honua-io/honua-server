@@ -109,7 +109,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var layer = await ValidateGrpcLayerAsync(
             request.ServiceId, request.LayerId, context.CancellationToken).ConfigureAwait(false);
         await EnsureReadAccessAsync(context, layer.Service, layer.Resource).ConfigureAwait(false);
-        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken, streaming: true).ConfigureAwait(false);
+        var queryContext = await CreateQueryContextAsync(request, layer, context.CancellationToken).ConfigureAwait(false);
         var query = queryContext.Query;
         var pkField = layer.ObjectIdFieldName;
 

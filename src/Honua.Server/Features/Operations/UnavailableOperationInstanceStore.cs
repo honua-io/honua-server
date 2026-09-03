@@ -15,7 +15,7 @@ namespace Honua.Server.Features.Operations;
 /// </summary>
 internal sealed class UnavailableOperationInstanceStore : IOperationInstanceStore
 {
-    private static ServiceUnavailableException Unavailable()
+    private static CapabilityUnavailableException Unavailable()
         => new CapabilityUnavailableException(
             CapabilityUnavailableCodes.DurableControlPlaneDetail,
             CapabilityUnavailableCodes.RedisDependency,

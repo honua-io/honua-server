@@ -236,7 +236,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     {
         cancellationToken.ThrowIfCancellationRequested();
         var ids = await _database.SetMembersAsync(IdsKey).ConfigureAwait(false);
-        var values = ids.Length == 0 ? Array.Empty<RedisValue>() : await _database.StringGetAsync(ids.Select(id => (RedisKey)BuildKey(id.ToString())).ToArray()).ConfigureAwait(false);
+        var values = ids.Length == 0 ? Array.Empty<RedisValue>() : await _database.StringGetAsync(ids.Select(id => (RedisKey)$"{Prefix}{id}").ToArray()).ConfigureAwait(false);
         return values.Select(Read).Where(static value => value is not null).Cast<AdminApiKeyRecord>().OrderBy(key => key.CreatedAt).ToArray();
     }
 
