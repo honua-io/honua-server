@@ -371,6 +371,43 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             animation.GetProperty("reasonCode").GetString().Should().Be("license-required");
             animation.GetProperty("entitlementKey").GetString().Should().Be("temporal.animation-api");
             animation.GetProperty("minimumEdition").GetString().Should().Be("Pro");
+
+            var i3s = GetCapability(root, "serve.i3s-scene");
+            i3s.GetProperty("available").GetBoolean().Should().BeFalse();
+            i3s.GetProperty("reasonCode").GetString().Should().Be("license-required");
+            i3s.GetProperty("entitlementKey").GetString().Should().Be("serve.i3s-scene");
+            i3s.GetProperty("minimumEdition").GetString().Should().Be("Enterprise");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_WithEnterpriseLicense_AdvertisesI3sAsAvailable(bool manifestFromRegistry)
+    {
+        var fixture = CreateManifestFixture(
+            edition: HonuaEdition.Enterprise,
+            manifestFromRegistry: manifestFromRegistry);
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            var i3s = GetCapability(document.RootElement, "serve.i3s-scene");
+
+            i3s.GetProperty("available").GetBoolean().Should().BeTrue();
+            i3s.GetProperty("entitlementKey").GetString().Should().Be("serve.i3s-scene");
+            i3s.GetProperty("minimumEdition").GetString().Should().Be("Enterprise");
+            i3s.TryGetProperty("reasonCode", out _).Should().BeFalse();
         }
         finally
         {

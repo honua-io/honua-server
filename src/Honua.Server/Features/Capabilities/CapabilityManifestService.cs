@@ -24,6 +24,7 @@ using Honua.Import.FileImport;
 using Honua.Import.RasterImport;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
+using Honua.Infrastructure.Licensing;
 using Honua.ControlPlane;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Security;
@@ -58,6 +59,7 @@ internal sealed class CapabilityManifestService(
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     CapabilityManifestRuntimeInventory runtimeInventory,
     ICapabilityRegistry capabilityRegistry,
+    IServiceProvider serviceProvider,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
     private const string AuthorizationNotice =
@@ -404,7 +406,8 @@ internal sealed class CapabilityManifestService(
                 configured: IsExperimentalEnabled("serve.3d-tiles-scene")),
             Capability("serve.i3s-scene", "scene", context,
                 maturity: CapabilityMaturity.Experimental,
-                configured: IsExperimentalEnabled("serve.i3s-scene")),
+                configured: IsExperimentalEnabled("serve.i3s-scene"),
+                entitlementKey: "serve.i3s-scene"),
             Capability("scene.catalog", "scene", context,
                 maturity: CapabilityMaturity.Experimental,
                 configured: IsExperimentalEnabled("scene.catalog")),
@@ -518,7 +521,7 @@ internal sealed class CapabilityManifestService(
                 unavailableReasonOverride: lifecycleEnabled
                     ? null
                     : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
-                entitlementKey: spec.EntitlementKey,
+                entitlementKey: spec.EntitlementKey ?? descriptor.EntitlementKey,
                 entitlementKeys: spec.EntitlementKeys,
                 policyCapability: spec.PolicyCapability,
                 requiresAuthentication: spec.RequiresAuthentication,
@@ -589,7 +592,7 @@ internal sealed class CapabilityManifestService(
                 RequiresWorkspace = true,
             },
             ["serve.3d-tiles-scene"] = new(),
-            ["serve.i3s-scene"] = new(),
+            ["serve.i3s-scene"] = new() { EntitlementKey = "serve.i3s-scene" },
             ["scene.catalog"] = new(),
             ["scene.bim-ingest"] = new() { EntitlementKey = FeatureCatalog.SceneBimIngestKey },
             ["scene.pointcloud-ingest"] = new() { EntitlementKey = FeatureCatalog.ScenePointCloudIngestKey },
@@ -729,11 +732,14 @@ internal sealed class CapabilityManifestService(
         {
             foreach (var requiredEntitlementKey in requiredEntitlementKeys)
             {
-                var decision = entitlementService.CheckEntitlement(requiredEntitlementKey);
+                var decision = LicenseGate.CheckEntitlement(serviceProvider, requiredEntitlementKey);
                 if (!decision.IsActive)
                 {
                     available = false;
-                    reasonCode = ResolveEntitlementReasonCode(context.LicenseSnapshot, decision);
+                    reasonCode = ResolveEntitlementReasonCode(
+                        context.LicenseSnapshot,
+                        decision,
+                        requiredEntitlementKey);
                     break;
                 }
             }
@@ -1121,14 +1127,19 @@ internal sealed class CapabilityManifestService(
         {
             var feature = FeatureCatalog.All.FirstOrDefault(item =>
                 string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase));
-            if (feature is null)
+            var capability = feature is null
+                ? CapabilityKeyCatalog.All.FirstOrDefault(item =>
+                    string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase))
+                : null;
+            if (feature is null && capability is null)
             {
                 continue;
             }
 
-            if (!minimumEdition.HasValue || feature.MinimumEdition > minimumEdition.Value)
+            var edition = feature?.MinimumEdition ?? capability!.Edition;
+            if (!minimumEdition.HasValue || edition > minimumEdition.Value)
             {
-                minimumEdition = feature.MinimumEdition;
+                minimumEdition = edition;
             }
         }
 
@@ -1137,14 +1148,17 @@ internal sealed class CapabilityManifestService(
 
     private static string ResolveEntitlementReasonCode(
         LicenseSnapshot snapshot,
-        LicenseEntitlementDecision decision)
+        LicenseEntitlementDecision decision,
+        string? entitlementKey = null)
     {
         if (snapshot.ValidationState != LicenseValidationState.Valid)
         {
             return CapabilityReasonCodes.LicenseRequired;
         }
 
-        if (decision.RequiredEdition.HasValue && snapshot.Edition < decision.RequiredEdition.Value)
+        var requiredEdition = decision.RequiredEdition ?? CapabilityKeyCatalog.All
+            .FirstOrDefault(item => string.Equals(item.Key, entitlementKey, StringComparison.OrdinalIgnoreCase))?.Edition;
+        if (requiredEdition.HasValue && snapshot.Edition < requiredEdition.Value)
         {
             return CapabilityReasonCodes.LicenseRequired;
         }

@@ -38,10 +38,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     public const string NotRegisteredReasonCode = CapabilityReasonCodes.NotRegistered;
 
     private static readonly Dictionary<string, HonuaEdition> EditionByEntitlementKey =
-        FeatureCatalog.All.ToDictionary(
-            static f => f.Key,
-            static f => f.MinimumEdition,
-            StringComparer.Ordinal);
+        BuildEditionByEntitlementKey();
 
     private static readonly IReadOnlyList<CapabilityDescriptor> AllDescriptors = BuildAll();
 
@@ -289,7 +286,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // Pro-edition gated (fieldops.offline-sync entitlement) — GA means no longer
             // hidden/unadvertised, not free-tier.
             ("serve.3d-tiles-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
-            ("serve.i3s-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
+            ("serve.i3s-scene", "scene", "serve.i3s-scene", CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
             ("scene.catalog", "scene", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("scene.bim-ingest", "scene", FeatureCatalog.SceneBimIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("scene.pointcloud-ingest", "scene", FeatureCatalog.ScenePointCloudIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
@@ -410,4 +407,18 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         => entitlementKey is not null && EditionByEntitlementKey.TryGetValue(entitlementKey, out var edition)
             ? edition
             : null;
+
+    private static Dictionary<string, HonuaEdition> BuildEditionByEntitlementKey()
+    {
+        var editions = FeatureCatalog.All.ToDictionary(
+            static f => f.Key,
+            static f => f.MinimumEdition,
+            StringComparer.Ordinal);
+        foreach (var capability in CapabilityKeyCatalog.RoutedExperimentalKeys)
+        {
+            editions.TryAdd(capability.Key, capability.Edition);
+        }
+
+        return editions;
+    }
 }
