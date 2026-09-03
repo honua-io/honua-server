@@ -171,8 +171,13 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         services.AddSingleton<ILocalReplicaHealthProbe>(world);
         services.AddSingleton<IOptions<SelfHostedDeployOptions>>(Options.Create(new SelfHostedDeployOptions
         {
-            Enabled = true, Host = "127.0.0.1", ActivePort = 18080, StandbyPort = 18081,
-            ContainerPort = 8080, ContainerRuntime = "docker", ContainerNamePrefix = "rollback-contract",
+            Enabled = true,
+            Host = "127.0.0.1",
+            ActivePort = 18080,
+            StandbyPort = 18081,
+            ContainerPort = 8080,
+            ContainerRuntime = "docker",
+            ContainerNamePrefix = "rollback-contract",
             DrainDelaySeconds = 0
         }));
         // The registration helper also wires unrelated batch and telemetry services whose runtime
@@ -203,9 +208,12 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             },
             DeployTargetKind.AwsEcs => new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["aws.region"] = "us-east-1", ["aws.ecs.cluster"] = "honua-prod",
-                ["aws.ecs.canary_service"] = "honua-canary", ["aws.alb.listener_rule_arn"] = "listener-rule",
-                ["aws.alb.canary_target_group_arn"] = "canary-tg", ["aws.alb.stable_target_group_arn"] = "stable-tg"
+                ["aws.region"] = "us-east-1",
+                ["aws.ecs.cluster"] = "honua-prod",
+                ["aws.ecs.canary_service"] = "honua-canary",
+                ["aws.alb.listener_rule_arn"] = "listener-rule",
+                ["aws.alb.canary_target_group_arn"] = "canary-tg",
+                ["aws.alb.stable_target_group_arn"] = "stable-tg"
             },
             DeployTargetKind.AzureContainerApps => new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -213,29 +221,45 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             },
             DeployTargetKind.AwsLambda => new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["aws.lambda.function_name"] = "honua", ["aws.lambda.alias_name"] = "live", ["aws.region"] = "us-east-1"
+                ["aws.lambda.function_name"] = "honua",
+                ["aws.lambda.alias_name"] = "live",
+                ["aws.region"] = "us-east-1"
             },
             DeployTargetKind.AzureFunctions => new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["target.resource_id"] = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/honua",
-                ["functions.current_image"] = Prior, ["functions.desired_image"] = Candidate, ["functions.app_name"] = "honua"
+                ["functions.current_image"] = Prior,
+                ["functions.desired_image"] = Candidate,
+                ["functions.app_name"] = "honua"
             },
             _ => new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                [SelfHostedDeployParameterKeys.Image] = Candidate, [SelfHostedDeployParameterKeys.ActivePort] = "18080",
-                [SelfHostedDeployParameterKeys.StandbyPort] = "18081", [SelfHostedDeployParameterKeys.ContainerPort] = "8080"
+                [SelfHostedDeployParameterKeys.Image] = Candidate,
+                [SelfHostedDeployParameterKeys.ActivePort] = "18080",
+                [SelfHostedDeployParameterKeys.StandbyPort] = "18081",
+                [SelfHostedDeployParameterKeys.ContainerPort] = "8080"
             }
         };
         return new WorkflowOperationRecord
         {
-            OperationId = $"rollback-contract-{Guid.NewGuid():N}", Kind = WorkflowOperationKind.Deploy,
-            Status = WorkflowOperationStatus.RollbackRequested, CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow, CurrentPhase = "rollback contract", Audit = new OperationAuditInfo(),
+            OperationId = $"rollback-contract-{Guid.NewGuid():N}",
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.RollbackRequested,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "rollback contract",
+            Audit = new OperationAuditInfo(),
             Deploy = new DeployOperationSpec
             {
-                TargetId = $"target-{kind}", TargetKind = kind, Backend = backend, Environment = "production",
-                TargetName = "honua", ArtifactReference = Candidate, CurrentRevision = currentRevision,
-                DesiredRevision = Candidate, Parameters = parameters
+                TargetId = $"target-{kind}",
+                TargetKind = kind,
+                Backend = backend,
+                Environment = "production",
+                TargetName = "honua",
+                ArtifactReference = Candidate,
+                CurrentRevision = currentRevision,
+                DesiredRevision = Candidate,
+                Parameters = parameters
             }
         };
     }
@@ -248,7 +272,9 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         Directory.CreateDirectory(directory);
         File.WriteAllText(Path.Combine(directory, "deploy-backend-rollback-matrix.json"), JsonSerializer.Serialize(new
         {
-            contract = "honua-server#3891", executedAtUtc = DateTimeOffset.UtcNow, rows
+            contract = "honua-server#3891",
+            executedAtUtc = DateTimeOffset.UtcNow,
+            rows
         }, new JsonSerializerOptions { WriteIndented = true }));
     }
 
@@ -404,18 +430,28 @@ public sealed class DeployBackendRollbackTruthfulnessTests
 
         private static ArgoRolloutState Argo(string image, bool aborted, string? hash) => new()
         {
-            Name = "honua-server", Phase = ArgoRolloutPhase.Healthy, IsAborted = aborted,
-            PodTemplateImage = image, CurrentPodHash = hash, StableRevisionHash = hash
+            Name = "honua-server",
+            Phase = ArgoRolloutPhase.Healthy,
+            IsAborted = aborted,
+            PodTemplateImage = image,
+            CurrentPodHash = hash,
+            StableRevisionHash = hash
         };
         private static AwsAlbListenerRuleState Alb(int canary, int stable) => new()
         {
-            ListenerRuleArn = "listener-rule", TargetGroupWeights =
+            ListenerRuleArn = "listener-rule",
+            TargetGroupWeights =
             [new AwsAlbTargetGroupWeight { TargetGroupArn = "canary-tg", Weight = canary }, new AwsAlbTargetGroupWeight { TargetGroupArn = "stable-tg", Weight = stable }]
         };
         private static AwsEcsServiceState Ecs(string? revision) => new()
         {
-            ServiceName = "honua-canary", TaskDefinitionArn = revision, RunningCount = 1, DesiredCount = 1,
-            PendingCount = 0, Status = "ACTIVE", Deployments = [new AwsEcsDeploymentState
+            ServiceName = "honua-canary",
+            TaskDefinitionArn = revision,
+            RunningCount = 1,
+            DesiredCount = 1,
+            PendingCount = 0,
+            Status = "ACTIVE",
+            Deployments = [new AwsEcsDeploymentState
             {
                 Status = "PRIMARY", TaskDefinitionArn = revision, RolloutState = "COMPLETED", RunningCount = 1, DesiredCount = 1
             }]
@@ -425,10 +461,14 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         private static AzureFunctionsSiteConfigState Functions(string image) => new() { LinuxFxVersion = $"DOCKER|{image}" };
         private static ContainerSummary Container(string name, string role, string revision, bool running) => new()
         {
-            Id = name, Name = name, Running = running, Labels = new Dictionary<string, string>(StringComparer.Ordinal)
+            Id = name,
+            Name = name,
+            Running = running,
+            Labels = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [YarpRollingDeployBackend.LabelTarget] = "target-SelfHostedRolling",
-                [YarpRollingDeployBackend.LabelRole] = role, [YarpRollingDeployBackend.LabelRevision] = revision
+                [YarpRollingDeployBackend.LabelRole] = role,
+                [YarpRollingDeployBackend.LabelRevision] = revision
             }
         };
 
