@@ -2494,7 +2494,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 94,
+      "provingTestCount": 95,
       "maturity": {
         "implemented": 3,
         "preview": 2
