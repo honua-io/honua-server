@@ -3,6 +3,8 @@
 
 using Grpc.Core;
 using Grpc.Core.Interceptors;
+using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Protocols.Grpc;
@@ -124,7 +126,66 @@ internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor>
                 exception);
         }
 
+        if (grpcStatusCode is StatusCode.ResourceExhausted or StatusCode.Unavailable)
+        {
+            var machineCode = grpcStatusCode == StatusCode.ResourceExhausted
+                ? BackpressureMetadata.RateLimitExceededCode
+                : BackpressureMetadata.ServiceUnavailableCode;
+            var retryAfterSeconds = (exception as ServiceUnavailableException)?.RetryAfterSeconds;
+            return new RpcException(
+                new Status(grpcStatusCode, mapping.Detail),
+                BuildBackpressureTrailers(context, machineCode, retryAfterSeconds));
+        }
+
         return new RpcException(new Status(grpcStatusCode, mapping.Detail));
+    }
+
+    private static Metadata BuildBackpressureTrailers(
+        ServerCallContext context,
+        string machineCode,
+        int? retryAfterSeconds)
+    {
+        var trailers = new Metadata
+        {
+            { BackpressureMetadata.ErrorCodeKey, machineCode },
+            { BackpressureMetadata.RetryableKey, "true" },
+            { BackpressureMetadata.CorrelationIdKey, ResolveCorrelationId(context) },
+        };
+
+        if (retryAfterSeconds.HasValue)
+        {
+            trailers.Add(
+                BackpressureMetadata.RetryAfterKey,
+                retryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        return trailers;
+    }
+
+    private static string ResolveCorrelationId(ServerCallContext context)
+    {
+        var requestValue = context.RequestHeaders
+            .FirstOrDefault(entry => string.Equals(entry.Key, "x-correlation-id", StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+        if (!string.IsNullOrWhiteSpace(requestValue))
+        {
+            return requestValue;
+        }
+
+        try
+        {
+            var traceIdentifier = context.GetHttpContext().TraceIdentifier;
+            if (!string.IsNullOrWhiteSpace(traceIdentifier))
+            {
+                return traceIdentifier;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Unit-hosted ServerCallContext instances do not carry an ASP.NET Core context.
+        }
+
+        return Guid.NewGuid().ToString("N");
     }
 
     private static StatusCode MapStatusCode(int httpStatusCode, Exception exception, CancellationToken cancellationToken)

@@ -69,6 +69,7 @@ internal static class AlertTestFixtures
         {
             DispatchId = 1,
             EventId = 2,
+            ClaimToken = Guid.NewGuid(),
             ChannelType = channelType,
             Destination = destination,
             Status = AlertDispatchStatus.Pending,

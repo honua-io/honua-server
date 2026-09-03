@@ -5,6 +5,7 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -669,6 +670,9 @@ internal static class GeoservicesCatalogEndpoints
         var imageServerServices = new List<ImageServerProbeCandidate>();
         var successfulImageServerProbes = 0;
         var failedImageServerProbes = 0;
+        var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
+            context.RequestServices.GetRequiredService<IConfiguration>(),
+            "sync.offline");
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
@@ -736,7 +740,7 @@ internal static class GeoservicesCatalogEndpoints
                     Type = directoryType,
                     Url = $"{baseUrl}/rest/services/{escapedName}/{directoryType}",
                     SoapCapabilities = string.Equals(directoryType, FeatureServerProtocolName, StringComparison.Ordinal)
-                        ? FeatureServer.FeatureServerEndpoints.BuildServiceCapabilitiesV2(service)
+                        ? FeatureServer.FeatureServerEndpoints.BuildServiceCapabilitiesV2(service, offlineSyncEnabled)
                         : null
                 });
             }

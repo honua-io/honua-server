@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System;
+using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
@@ -248,71 +249,79 @@ internal static partial class FeatureServerEndpoints
         .Produces(400)
         .Produces(404);
 
-        // Replication endpoints
-        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/replicas", HandleReplicas)
-            .WithDisplayName("List Replicas")
-            .WithName("Replicas")
-            .WithSummary("List replicas for a feature service")
-            .WithDescription("Returns registered replica metadata for the feature service")
-            .WithTags("FeatureServer")
-            .Produces<ReplicaSummary[]>(200, "application/json")
-            .Produces(400)
-            .Produces(404);
+        // Disconnected-sync routes share the canonical Preview lifecycle opt-in with
+        // service composition and manifest availability (#3910).
+        var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
+            endpoints.ServiceProvider.GetRequiredService<IConfiguration>(),
+            "sync.offline");
+        if (offlineSyncEnabled)
+        {
+            // Replication endpoints
+            endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/replicas", HandleReplicas)
+                .WithDisplayName("List Replicas")
+                .WithName("Replicas")
+                .WithSummary("List replicas for a feature service")
+                .WithDescription("Returns registered replica metadata for the feature service")
+                .WithTags("FeatureServer")
+                .Produces<ReplicaSummary[]>(200, "application/json")
+                .Produces(400)
+                .Produces(404);
 
-        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}", HandleReplicaInfo)
-            .WithDisplayName("Get Replica Info")
-            .WithName("ReplicaInfo")
-            .WithSummary("Get metadata for a specific replica")
-            .WithDescription("Returns replica metadata for a specific registered replica")
-            .WithTags("FeatureServer")
-            .Produces<ReplicaInfoResponse>(200, "application/json")
-            .Produces(400)
-            .Produces(404);
+            endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}", HandleReplicaInfo)
+                .WithDisplayName("Get Replica Info")
+                .WithName("ReplicaInfo")
+                .WithSummary("Get metadata for a specific replica")
+                .WithDescription("Returns replica metadata for a specific registered replica")
+                .WithTags("FeatureServer")
+                .Produces<ReplicaInfoResponse>(200, "application/json")
+                .Produces(400)
+                .Produces(404);
 
-        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/createReplica", HandleCreateReplica)
-            .WithDisplayName("Create Replica")
-            .WithName("CreateReplica")
-            .WithSummary("Create a replica for offline use or synchronization")
-            .WithDescription("Creates a replica of specified layers for offline editing and synchronization")
-            .WithTags("FeatureServer")
-            .AllowAnonymous()
-            .Produces<CreateReplicaResponse>(200, "application/json")
-            .Produces(400)
-            .Produces(404)
-            .Produces(503);
+            endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/createReplica", HandleCreateReplica)
+                .WithDisplayName("Create Replica")
+                .WithName("CreateReplica")
+                .WithSummary("Create a replica for offline use or synchronization")
+                .WithDescription("Creates a replica of specified layers for offline editing and synchronization")
+                .WithTags("FeatureServer")
+                .AllowAnonymous()
+                .Produces<CreateReplicaResponse>(200, "application/json")
+                .Produces(400)
+                .Produces(404)
+                .Produces(503);
 
-        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/extractChanges", HandleExtractChanges)
-            .WithDisplayName("Extract Changes")
-            .WithName("ExtractChanges")
-            .WithSummary("Extract changes since last synchronization")
-            .WithDescription("Returns changes made since the last synchronization for a registered replica")
-            .WithTags("FeatureServer")
-            .AllowAnonymous()
-            .Produces<ExtractChangesResponse>(200, "application/json")
-            .Produces(400)
-            .Produces(404);
+            endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/extractChanges", HandleExtractChanges)
+                .WithDisplayName("Extract Changes")
+                .WithName("ExtractChanges")
+                .WithSummary("Extract changes since last synchronization")
+                .WithDescription("Returns changes made since the last synchronization for a registered replica")
+                .WithTags("FeatureServer")
+                .AllowAnonymous()
+                .Produces<ExtractChangesResponse>(200, "application/json")
+                .Produces(400)
+                .Produces(404);
 
-        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/synchronizeReplica", HandleSynchronizeReplica)
-            .WithDisplayName("Synchronize Replica")
-            .WithName("SynchronizeReplica")
-            .WithSummary("Synchronize a replica with the server")
-            .WithDescription("Applies edits from a replica to the server and returns server changes")
-            .WithTags("FeatureServer")
-            .AllowAnonymous()
-            .Produces<SynchronizeReplicaResponse>(200, "application/json")
-            .Produces(400)
-            .Produces(404);
+            endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/synchronizeReplica", HandleSynchronizeReplica)
+                .WithDisplayName("Synchronize Replica")
+                .WithName("SynchronizeReplica")
+                .WithSummary("Synchronize a replica with the server")
+                .WithDescription("Applies edits from a replica to the server and returns server changes")
+                .WithTags("FeatureServer")
+                .AllowAnonymous()
+                .Produces<SynchronizeReplicaResponse>(200, "application/json")
+                .Produces(400)
+                .Produces(404);
 
-        endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/unRegisterReplica", HandleUnRegisterReplica)
-            .WithDisplayName("Unregister Replica")
-            .WithName("UnRegisterReplica")
-            .WithSummary("Unregister a replica")
-            .WithDescription("Removes a registered replica and frees associated resources")
-            .WithTags("FeatureServer")
-            .AllowAnonymous()
-            .Produces<SuccessResponse>(200, "application/json")
-            .Produces(400)
-            .Produces(404);
+            endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/unRegisterReplica", HandleUnRegisterReplica)
+                .WithDisplayName("Unregister Replica")
+                .WithName("UnRegisterReplica")
+                .WithSummary("Unregister a replica")
+                .WithDescription("Removes a registered replica and frees associated resources")
+                .WithTags("FeatureServer")
+                .AllowAnonymous()
+                .Produces<SuccessResponse>(200, "application/json")
+                .Produces(400)
+                .Produces(404);
+        }
 
         // Maintenance/utility endpoints
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/append", HandleServiceAppend)

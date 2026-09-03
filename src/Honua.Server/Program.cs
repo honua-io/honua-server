@@ -368,11 +368,13 @@ builder.Host.UseSerilog((context, services, config) =>
 // Standalone Python/JS harnesses can opt back in with HONUA_REGISTER_TEST_INFRASTRUCTURE=true;
 // a self-migrating standalone Test image that enables the Operate observability fixture also
 // opts in automatically so the seed endpoint's providers resolve (honua-server#2350).
-if (Honua.Server.Startup.TestInfrastructureRegistrationPolicy.ShouldRegisterInfrastructure(
+var registerProviderInfrastructure =
+    Honua.Server.Startup.TestInfrastructureRegistrationPolicy.ShouldRegisterInfrastructure(
         isTestEnvironment,
         registerInfrastructureInTestEnvironment,
         operateObservabilityFixtureEnabled,
-        hostManagesOwnMigrations))
+        hostManagesOwnMigrations);
+if (registerProviderInfrastructure)
 {
     InfrastructureCompositionRoot.RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
@@ -808,10 +810,14 @@ if (!isTestEnvironment)
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
 }
 
-builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
-    new Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore(
-        sp.GetService<IDistributedCache>(),
-        sp.GetRequiredService<ILogger<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
+var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "sync.offline");
+if (offlineSyncEnabled)
+{
+    builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
+        new Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore(
+            sp.GetService<IDistributedCache>(),
+            sp.GetRequiredService<ILogger<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
+}
 // Replica/change-tracking services are provider-specific: Postgres registers concrete
 // implementations; DuckDB and MySQL (both read-only) register no-op stubs via their own
 // AddXxxServices extensions. Skip the Postgres registration for those providers so the
@@ -822,6 +828,9 @@ var replicaProvider = DataProviderNames.Normalize(
 if (replicaProvider != DataProviderNames.DuckDb &&
     replicaProvider != DataProviderNames.MySql)
 {
+    // Keep the durable repositories resolvable independently of the HTTP sync surface. The
+    // conflict-resolution service is part of the base composition and its dependencies must not
+    // disappear when sync.offline is disabled; route registration remains flag-gated below.
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
@@ -864,16 +873,15 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
         sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionJobStore>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
-builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
-    new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
-        sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
-        sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
-// Canonical replica-upload synchronization pipeline (#1272). Conflict detection runs against the
-// provider's change log; conflict-record writes use the durable conflict store when supported and
-// otherwise fall back to last-write-wins. Available for all providers since IChangeTracker and
-// IReplicaConflictRepository are always registered (read-only providers register no-op stubs).
-builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
-    Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+if (offlineSyncEnabled)
+{
+    builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
+        new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
+            sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
+            sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
+        Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+}
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations
 //      (Startup/ImportExportTileOperationsRegistration.cs)
@@ -972,6 +980,18 @@ builder.Services.AddHonuaHeadRequestSupport();
 builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
+
+// A PostgreSQL production composition is never allowed to construct an unguarded migration
+// runner or core store. Resolve the guard eagerly, before compatibility checks, migrations, or
+// endpoint activation, so an accidentally removed/overridden registration aborts host startup
+// even when no connection string is configured or migrations are run out-of-band.
+var configuredPrimaryProvider = DataProviderNames.Normalize(
+    builder.Configuration.GetValue<string>("DataSource:Provider"));
+if (registerProviderInfrastructure &&
+    configuredPrimaryProvider is DataProviderNames.Postgis or DataProviderNames.PostgreSql)
+{
+    _ = app.Services.GetRequiredService<IDatabaseSchemaGuard>();
+}
 
 HostedBlazorAssetHelpers.FilterHostedBlazorStaticAssetEndpoints(
     app,
@@ -1478,19 +1498,32 @@ app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
 app.MapAdminLayerAuthoringEndpoints();
 app.MapAdminLayerFilterConfigurationEndpoints();
-app.MapReplicaManagementEndpoints();
+if (offlineSyncEnabled)
+{
+    app.MapReplicaManagementEndpoints();
+}
 app.MapAdminLayerValidationEndpoints();
 app.MapAdminStyleSuggestionEndpoints();
 app.MapAdminSldStyleEndpoints();
 
 // Configure admin alerting zone/rule endpoints
-app.MapAlertAdminEndpoints();
+var geofenceAlertsEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "alerts.geofence");
+if (geofenceAlertsEnabled)
+{
+    app.MapAlertAdminEndpoints();
+}
 
 // Configure alert dispatch self-healing ops endpoints (dead-letter redrive, channel pause/resume) (#2561)
-app.MapAlertOpsAdminEndpoints();
+if (geofenceAlertsEnabled)
+{
+    app.MapAlertOpsAdminEndpoints();
+}
 
 // Configure Console Operate observability endpoints (#1168)
-app.MapObservabilityAlertEndpoints();
+if (geofenceAlertsEnabled)
+{
+    app.MapObservabilityAlertEndpoints();
+}
 app.MapObservabilityAuditEndpoints();
 app.MapObservabilityEventEndpoints();
 app.MapInvestigationEndpoints();
@@ -1587,8 +1620,14 @@ app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
 app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
     .RequireAdminAuthorization();
-app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
-app.MapGrpcService<Honua.Scene.Grpc.HonuaTileGrpcService>();
+if (CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "scene.catalog"))
+{
+    app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
+}
+if (CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "serve.3d-tiles-scene"))
+{
+    app.MapGrpcService<Honua.Scene.Grpc.HonuaTileGrpcService>();
+}
 app.MapGrpcService<Honua.Scene.Grpc.HonuaElevationGrpcService>();
 app.MapGrpcHealthChecksService();
 
@@ -1650,7 +1689,10 @@ app.MapOperationsProgressEndpoints();
 app.MapFeatureChangeEventsEndpoints();
 app.MapCollaborationEndpoints();
 app.MapMobileExceptionIngestionEndpoints();
-app.MapFieldCollectionSyncEndpoints();
+if (offlineSyncEnabled)
+{
+    app.MapFieldCollectionSyncEndpoints();
+}
 app.MapTileOperationsEndpoints();
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)
@@ -1692,7 +1734,56 @@ async Task RunDatabaseMigrationsAsync()
     if (builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"))
     {
         Honua.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
-        migrationState.MarkSkipped("Migrations skipped by configuration.");
+
+        // Explicitly opted-in Test hosts wire their own isolated providers and schema. The
+        // production PostgreSQL guard cannot validate that externally managed fixture shape;
+        // requiring it here makes the Python compatibility harness exit before its tests run.
+        if (isTestEnvironment && registerInfrastructureInTestEnvironment)
+        {
+            migrationState.MarkSkipped("Migrations skipped; the opted-in test infrastructure owns schema preparation.");
+            return;
+        }
+
+        var schemaGuard = app.Services.GetService<IDatabaseSchemaGuard>();
+        if (schemaGuard is null)
+        {
+            migrationState.MarkSkipped("Migrations skipped by configuration; no schema guard is registered for the active provider.");
+            return;
+        }
+
+        var skippedMigrationSecretResolver =
+            app.Services.GetService<Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver>();
+        var skippedMigrationConnectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
+            builder.Configuration,
+            skippedMigrationSecretResolver,
+            app.Lifetime.ApplicationStopping);
+        if (string.IsNullOrEmpty(skippedMigrationConnectionString))
+        {
+            migrationState.MarkFailed("Migrations were skipped, but the schema guard could not run without a database connection string.");
+            if (!app.Environment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    "Database schema verification is required when HONUA_SKIP_MIGRATIONS=true, but no connection string is configured.");
+            }
+            return;
+        }
+
+        try
+        {
+            await schemaGuard.VerifyAsync(
+                skippedMigrationConnectionString,
+                app.Lifetime.ApplicationStopping);
+            migrationState.MarkSkipped("Migrations skipped by configuration; journal/schema consistency verified.");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            migrationState.MarkFailed("Database schema diverges from the migration journal.");
+            Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
+            if (!app.Environment.IsDevelopment())
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+            }
+        }
         return;
     }
 

@@ -2,8 +2,12 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.StudioAiProxy;
+using Honua.Ai.StudioAiProxy.Domain;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -17,6 +21,8 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Authorization;
@@ -25,8 +31,114 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Crypto.Signers;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
+
+/// <summary>
+/// Redis-backed integration coverage for signed MCP platform-ops proposals (#3888).
+/// </summary>
+[Protocol(TestProtocols.TestQuality)]
+[Collection("Redis")]
+public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
+{
+    [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [InlineData(ProposeDeployOperationTool.ToolName, OperationClass.Deploy)]
+    [InlineData(ProposeMetadataReleaseTool.ToolName, OperationClass.MetadataRelease)]
+    public async Task VerifiedModelToolCall_SealsAwaitingApproval_WithoutActuation(
+        string toolName,
+        OperationClass operationClass)
+    {
+        var idempotencyKey = $"signed-transcript-{Guid.NewGuid():N}";
+        var argumentJson = toolName == ProposeDeployOperationTool.ToolName
+            ? $$"""{"targetId":"candidate-a","desiredRevision":"sha256:release-a","idempotencyKey":"{{idempotencyKey}}"}"""
+            : $$"""{"packageId":"package-a","targetEnvironment":"candidate-a","resourceSemanticId":"roads","newFieldName":"speed_limit","idempotencyKey":"{{idempotencyKey}}"}""";
+        using var argumentDocument = JsonDocument.Parse(argumentJson);
+        var signedArguments = argumentDocument.RootElement.Clone();
+        var request = new StudioAiChatRequest
+        {
+            Provider = "anthropic",
+            Model = "claude-sonnet-4-5",
+            Certification = new StudioAiTranscriptCertification
+            {
+                CandidateId = "candidate-a",
+                ReleaseId = "2026.1-rc.1",
+                EndpointIdentity = "candidate-proxy",
+                ActionId = "governed-mutation",
+                RunNonce = "nonce-1"
+            },
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "propose the release mutation" }]
+        };
+        var events = new[]
+        {
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "claude-sonnet-4-5" },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = toolName },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolArguments = signedArguments },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }
+        };
+        var privateKey = new Ed25519PrivateKeyParameters(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray(), 0);
+        var signer = new StudioAiTranscriptSigner(Options.Create(new StudioAiProxyConfiguration()), TimeProvider.System);
+        var provenance = signer.Sign(
+            new StudioAiTranscriptSigner.SigningKey("candidate-key", privateKey, privateKey.GeneratePublicKey().GetEncoded()),
+            request, "anthropic", "claude-sonnet-4-5", events);
+
+        var signedBytes = Convert.FromBase64String(provenance.CanonicalTranscript);
+        var verifier = new Ed25519Signer();
+        verifier.Init(false, privateKey.GeneratePublicKey());
+        verifier.BlockUpdate(signedBytes, 0, signedBytes.Length);
+        verifier.VerifySignature(Convert.FromBase64String(provenance.Signature)).Should().BeTrue();
+        using var transcript = JsonDocument.Parse(signedBytes);
+        transcript.RootElement.GetProperty("candidateId").GetString().Should().Be("candidate-a");
+        var verifiedEvents = JsonSerializer.Deserialize(
+            Convert.FromBase64String(transcript.RootElement.GetProperty("providerEvents").GetString()!),
+            StudioAiProxyJsonContext.Default.ListStudioAiChatEvent)!;
+        var verifiedCall = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStop);
+        var verifiedToolName = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStart).ToolName;
+
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var proposalStore = new RedisOperationProposalStore(
+            multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
+        var ladder = Substitute.For<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>();
+        var decision = new GuardrailDecision(GuardrailTier.RequiresApproval, operationClass, HonuaEdition.Enterprise, "model-proposal");
+        ladder.Resolve(operationClass).Returns(decision);
+        ladder.Resolve(operationClass, Arg.Any<string?>()).Returns(decision);
+        var actuator = Substitute.For<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>();
+        actuator.OperationClass.Returns(operationClass);
+        actuator.PlanAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new OperationProposalPlan());
+        var gateway = CanonicalOperationGatewayTestComposition.Build(proposalStore, ladder, [actuator]);
+        using var readerServices = McpPlatformOpsReaderTests.CreateServices(gateway);
+        var reader = McpPlatformOpsReaderTests.CreateReader(services: readerServices);
+        using var toolServices = new ServiceCollection().AddSingleton<IMcpPlatformOpsReader>(reader).BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = toolServices,
+            User = McpPlatformOpsReaderTests.CreatePrincipal()
+        };
+        IMcpTool tool = verifiedToolName switch
+        {
+            ProposeDeployOperationTool.ToolName => new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            ProposeMetadataReleaseTool.ToolName => new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
+            _ => throw new InvalidOperationException($"Verified tool '{verifiedToolName}' is not a governed proposal tool.")
+        };
+
+        var result = await tool.InvokeAsync(context, verifiedCall.ToolArguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+        var proposalId = result.StructuredContent.Value.GetProperty("proposalId").GetString();
+        var persisted = await proposalStore.GetAsync(proposalId!);
+        persisted.Should().NotBeNull("the real Redis store must round-trip the sealed proposal");
+        persisted!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        persisted.Kind.Should().Be(operationClass);
+        persisted.Plan.ExecutionPayload.Should().Contain("candidate-a");
+        await actuator.DidNotReceive().ExecuteAsync(
+            Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+}
 
 /// <summary>
 /// Unit coverage for the server-side MCP platform-ops adapter (#2566).
@@ -34,6 +146,25 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class McpPlatformOpsReaderTests
 {
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_DeployTargetMismatch_IsRejected()
+    {
+        var payload = new DeployExecutionPayload
+        {
+            TargetId = "candidate-b",
+            DesiredRevision = "sha256:release-b"
+        }.Serialize();
+
+        var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(
+            OperationClass.Deploy,
+            payload,
+            "candidate-a");
+
+        act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>()
+            .WithMessage("*does not match the certified candidate*");
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task GetPlatformReleaseStatus_Authorized_UsesOpsReadPolicyAndReturnsProjection()
@@ -358,7 +489,7 @@ public sealed class McpPlatformOpsReaderTests
         gateway.RouteCalls.Should().Be(0);
     }
 
-    private static McpPlatformOpsReader CreateReader(
+    internal static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,
         IWorkflowOperationStore? store = null,
         IAuthorizationService? authorization = null,
@@ -395,7 +526,7 @@ public sealed class McpPlatformOpsReaderTests
         return authorization;
     }
 
-    private static ServiceProvider CreateServices(
+    internal static ServiceProvider CreateServices(
         IOperationGateway? gateway = null,
         IOperationExecutorCatalog? catalog = null)
     {
@@ -430,7 +561,7 @@ public sealed class McpPlatformOpsReaderTests
         return services.BuildServiceProvider();
     }
 
-    private static ClaimsPrincipal CreatePrincipal()
+    internal static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "ops-agent"),

@@ -6,6 +6,7 @@ using System.Data.Common;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
@@ -18,6 +19,8 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 [Collection("Database")]
 public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
 {
+    private static readonly IDatabaseSchemaGuard _schemaGuard = new FixtureSchemaGuard();
+
     [IntegrationTest]
     public async Task EnvironmentReader_AndReleasePackageStore_RoundTripMetadataReleasePackage()
     {
@@ -36,7 +39,7 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
             snapshot.Etag.Should().Be("etag-dev-41");
             snapshot.Graph.Resources.Should().ContainSingle(resource => resource.Metadata.Id == "res.parcels");
 
-            var store = new PostgresMetadataReleasePackageStore(provider, schema);
+            var store = new PostgresMetadataReleasePackageStore(provider, _schemaGuard, schema);
             var packageId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
             var package = new MetadataReleasePackage
@@ -139,7 +142,7 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
         {
             await EnsureTablesAsync(schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataReleasePackageStore(provider, schema);
+            var store = new PostgresMetadataReleasePackageStore(provider, _schemaGuard, schema);
 
             await store.CreateAsync(BuildPackage(Guid.NewGuid(), "promote-parcels", "ops"));
             await store.CreateAsync(BuildPackage(Guid.NewGuid(), "promote-zoning", "ops"));
@@ -166,7 +169,7 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
         {
             await EnsureTablesAsync(schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataReleasePackageStore(provider, schema);
+            var store = new PostgresMetadataReleasePackageStore(provider, _schemaGuard, schema);
 
             await store.CreateAsync(BuildPackage(Guid.NewGuid(), "promote-parcels", "ops"));
 
@@ -192,7 +195,7 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
         {
             await EnsureTablesAsync(schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataReleasePackageStore(provider, schema);
+            var store = new PostgresMetadataReleasePackageStore(provider, _schemaGuard, schema);
             var first = BuildPackage(Guid.NewGuid(), "promote-parcels", null);
             var duplicate = BuildPackage(Guid.NewGuid(), "promote-parcels", null);
 
@@ -394,5 +397,23 @@ public sealed class PostgresMetadataReleaseStoreTests(PostgresFixture fixture)
             Func<Task> operation,
             CancellationToken cancellationToken = default)
             => operation();
+    }
+
+    private sealed class FixtureSchemaGuard : IDatabaseSchemaGuard
+    {
+        public Task VerifyAsync(string connectionString, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task VerifyAsync(DbConnection connection, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task VerifyConsistencyAsync(DbConnection connection, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task VerifyRequirementAsync(
+            DbConnection connection,
+            DatabaseSchemaRequirement requirement,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

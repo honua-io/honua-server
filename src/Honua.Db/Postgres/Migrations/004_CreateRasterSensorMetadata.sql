@@ -11,8 +11,8 @@
 -- (DbUp, embedded in Honua.Server). This file mirrors it for the legacy Postgres migration
 -- set; keep both definitions in sync.
 
-CREATE TABLE IF NOT EXISTS honua.raster_sensor_metadata (
-    raster_data_id BIGINT PRIMARY KEY REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.raster_sensor_metadata (
+    raster_data_id BIGINT PRIMARY KEY REFERENCES $HonuaSchema$.raster_data(id) ON DELETE CASCADE,
     sensor_name VARCHAR(255),
     camera_model VARCHAR(255),
     interior_orientation JSONB,
@@ -23,11 +23,11 @@ CREATE TABLE IF NOT EXISTS honua.raster_sensor_metadata (
 );
 
 CREATE INDEX IF NOT EXISTS idx_raster_sensor_metadata_has_exterior
-    ON honua.raster_sensor_metadata (raster_data_id)
+    ON $HonuaSchema$.raster_sensor_metadata (raster_data_id)
     WHERE exterior_orientation IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_raster_sensor_metadata_has_rpc
-    ON honua.raster_sensor_metadata (raster_data_id)
+    ON $HonuaSchema$.raster_sensor_metadata (raster_data_id)
     WHERE rpc IS NOT NULL;
 
-COMMENT ON TABLE honua.raster_sensor_metadata IS 'Per-raster sensor/camera/orientation/RPC metadata for ImageServer mensuration, orientation-ranked find, and image-coordinate-system project warps.';
+COMMENT ON TABLE $HonuaSchema$.raster_sensor_metadata IS 'Per-raster sensor/camera/orientation/RPC metadata for ImageServer mensuration, orientation-ranked find, and image-coordinate-system project warps.';

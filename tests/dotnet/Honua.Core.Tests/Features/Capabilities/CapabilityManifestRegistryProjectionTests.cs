@@ -32,11 +32,19 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "package.gitops-manifest",
         "package.map",
         "package.app",
+        "provider.redshift",
+        "provider.snowflake",
+        "provider.databricks",
         "temporal.filtering",
         "temporal.extent-discovery",
         "temporal.histogram",
         "temporal.time-series-tiles",
         "temporal.animation-api",
+        "serve.3d-tiles-scene",
+        "serve.i3s-scene",
+        "scene.catalog",
+        "scene.bim-ingest",
+        "scene.pointcloud-ingest",
         "sync.offline",
         "realtime.feature-streams",
         "serve.sensorthings",
@@ -82,6 +90,14 @@ public sealed class CapabilityManifestRegistryProjectionTests
     // experimental-disabled, so the registry-derived manifest omits them.
     private static readonly string[] ExperimentalManifestCapabilityIds =
     [
+        "provider.redshift",
+        "provider.snowflake",
+        "provider.databricks",
+        "serve.3d-tiles-scene",
+        "serve.i3s-scene",
+        "scene.catalog",
+        "scene.bim-ingest",
+        "scene.pointcloud-ingest",
         // temporal.* promoted to Implemented (GA) in #2429 — no longer omitted.
         // sync.offline promoted to Implemented (GA) in #2430 — no longer omitted.
         // realtime.feature-streams promoted to Implemented (GA) in #2428 — no longer omitted.
@@ -96,6 +112,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
 
     private static readonly string[] PreviewManifestCapabilityIds =
     [
+        "sync.offline",
+        "alerts.geofence",
         "realtime.feature-streams",
         "serve.sensorthings",
     ];

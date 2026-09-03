@@ -380,6 +380,31 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         toolChoice.GetProperty("function").GetProperty("name").GetString().Should().Be("list_incidents");
     }
 
+    [Theory]
+    [InlineData("data: {not-json}\n\ndata: [DONE]\n\n")]
+    [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\ndata: {bad}\n\ndata: [DONE]\n\n")]
+    [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n")]
+    public async Task StreamAsync_MalformedOrDoneWithoutFinishReason_EmitsTypedError(string fixture)
+    {
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+    }
+
+    [Theory]
+    [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"late\"}}]}\n\ndata: [DONE]\n\n")]
+    [InlineData("data: {\"model\":\"m\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\ndata: {\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\n")]
+    public async Task StreamAsync_OutputAfterTerminalMarker_EmitsTypedError(string fixture)
+    {
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        events.Last().Type.Should().Be(StudioAiChatEventType.Error);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+    }
+
     private static OpenAiCompatibleStudioAiProxyAdapter CreateAdapter(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         var handler = new StudioAiProxyMockHttpMessageHandler(responseBody, statusCode);
@@ -411,7 +436,7 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
     private static StudioAiProxyProviderOptions DefaultOptions() => new()
     {
         Kind = StudioAiProxyConfiguration.OpenAiKind,
-        Endpoint = "https://openrouter.ai/api/v1",
+        Endpoint = "https://localhost/api/v1",
         Model = "anthropic/claude-sonnet-4.5",
         ApiKey = "test-key",
         MaxTokens = 1024,

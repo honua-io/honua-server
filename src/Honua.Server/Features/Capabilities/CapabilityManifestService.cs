@@ -32,6 +32,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Server.Features.Protocols.Grpc;
 using Honua.Server.Features.Streaming;
+using Honua.Server.Startup;
 using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Capabilities;
@@ -57,6 +58,7 @@ internal sealed class CapabilityManifestService(
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     CapabilityManifestRuntimeInventory runtimeInventory,
+    WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
 {
@@ -108,7 +110,7 @@ internal sealed class CapabilityManifestService(
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
         var capabilities = options.ManifestFromRegistry
-            ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
+            ? BuildCapabilitiesFromRegistry(policyContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
@@ -393,13 +395,38 @@ internal sealed class CapabilityManifestService(
             Capability("package.map", "packages", context, policyCapability: "studio.edit"),
             Capability("package.app", "packages", context, policyCapability: "studio.edit"),
 
+            .. BuildWarehouseCapabilities(context),
+
             Capability("temporal.filtering", "temporal", context, entitlementKey: "temporal.filtering"),
             Capability("temporal.extent-discovery", "temporal", context, entitlementKey: "temporal.extent-discovery"),
             Capability("temporal.histogram", "temporal", context, entitlementKey: "temporal.histogram"),
             Capability("temporal.time-series-tiles", "temporal", context, entitlementKey: "temporal.time-series-tiles"),
             Capability("temporal.animation-api", "temporal", context, entitlementKey: "temporal.animation-api"),
 
-            Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
+            Capability("serve.3d-tiles-scene", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("serve.3d-tiles-scene")),
+            Capability("serve.i3s-scene", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("serve.i3s-scene")),
+            Capability("scene.catalog", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("scene.catalog")),
+            Capability("scene.bim-ingest", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("scene.bim-ingest"),
+                entitlementKey: FeatureCatalog.SceneBimIngestKey),
+            Capability("scene.pointcloud-ingest", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("scene.pointcloud-ingest"),
+                entitlementKey: FeatureCatalog.ScenePointCloudIngestKey),
+            Capability("sync.offline", "sync", context,
+                maturity: CapabilityMaturity.Preview,
+                supported: syncSupported,
+                configured: IsExperimentalEnabled("sync.offline"),
+                entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey,
+                policyCapability: "features.edit",
+                requiresWorkspace: true),
             Capability("realtime.feature-streams", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("realtime.feature-streams"),
@@ -407,7 +434,11 @@ internal sealed class CapabilityManifestService(
             Capability("serve.sensorthings", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("serve.sensorthings")),
-            Capability("alerts.geofence", "alerts", context, entitlementKey: "alerts.enter-exit", configured: alertOptionsValue.Enabled),
+            Capability("alerts.geofence", "alerts", context,
+                maturity: CapabilityMaturity.Preview,
+                entitlementKey: "alerts.enter-exit",
+                configured: alertOptionsValue.Enabled
+                    && options.ExperimentalCapabilityFlags.IsExperimentalEnabled("alerts.geofence")),
             // A compute backend is always registered, so `supported` alone over-claims: without
             // the Redis-backed durable job store nothing can be submitted (honua-release#202).
             Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || runtimeInventory.BatchBackends.Count > 0, requiresAuthentication: true, requiresDurableJobStore: true),
@@ -423,7 +454,8 @@ internal sealed class CapabilityManifestService(
             Capability("security.mtls", "security", context,
                 maturity: CapabilityMaturity.Experimental,
                 entitlementKey: FeatureCatalog.MtlsClientCertificateKey,
-                configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled),
+                configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled
+                    && IsExperimentalEnabled("security.mtls")),
 
             Capability("preview.file-import", "preview", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("query.features", "query", context),
@@ -442,7 +474,8 @@ internal sealed class CapabilityManifestService(
             // registry-derived Capabilities[] stay byte-identical.
             Capability("versioning.branch", "versioning", context,
                 maturity: CapabilityMaturity.Experimental,
-                entitlementKey: FeatureCatalog.BranchVersioningKey),
+                entitlementKey: FeatureCatalog.BranchVersioningKey,
+                configured: IsExperimentalEnabled("versioning.branch")),
             // Aggregated operate status (A12) — the server-authoritative operate/status surface. Ungated
             // GA; read-authorized (ops:read) at the HTTP layer. Kept last to mirror the registry order.
             Capability("operate.status", "operate", context, requiresAuthentication: true),
@@ -464,7 +497,6 @@ internal sealed class CapabilityManifestService(
     /// </summary>
     private CapabilityManifestCapability[] BuildCapabilitiesFromRegistry(
         CapabilityPolicyContext context,
-        CapabilityGateContext gateContext,
         OperationCapabilitySummary operationCapabilities)
     {
         var specs = BuildManifestCapabilitySpecs(operationCapabilities);
@@ -476,16 +508,10 @@ internal sealed class CapabilityManifestService(
                 continue;
             }
 
-            var resolution = CapabilityGateResolver.Resolve(descriptor, gateContext);
-            if (IsExperimentalDisabled(resolution) && descriptor.Maturity != CapabilityMaturity.Preview)
-            {
-                continue;
-            }
-
             var spec = specs.GetValueOrDefault(descriptor.Id, ManifestCapabilitySpec.Default);
-            var configured = spec.Configured &&
-                (descriptor.Maturity != CapabilityMaturity.Preview ||
-                 options.ExperimentalCapabilityFlags.IsExperimentalEnabled(descriptor.Id));
+            var lifecycleEnabled = descriptor.Maturity is not (CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
+                || options.ExperimentalCapabilityFlags.IsExperimentalEnabled(descriptor.Id);
+            var configured = spec.Configured && lifecycleEnabled;
             capabilities.Add(Capability(
                 descriptor.Id,
                 descriptor.Category,
@@ -493,6 +519,9 @@ internal sealed class CapabilityManifestService(
                 maturity: descriptor.Maturity,
                 supported: spec.Supported,
                 configured: configured,
+                unavailableReasonOverride: lifecycleEnabled
+                    ? null
+                    : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
                 entitlementKey: spec.EntitlementKey,
                 entitlementKeys: spec.EntitlementKeys,
                 policyCapability: spec.PolicyCapability,
@@ -528,6 +557,17 @@ internal sealed class CapabilityManifestService(
                 requiresAuthentication: true),
         ];
 
+    private CapabilityManifestCapability[] BuildWarehouseCapabilities(CapabilityPolicyContext context)
+        => warehouseProviders.All
+            .Select(decision => Capability(
+                decision.CapabilityId,
+                "provider",
+                context,
+                maturity: CapabilityMaturity.Experimental,
+                supported: decision.Supported,
+                configured: IsWarehouseProviderRegistered(decision)))
+            .ToArray();
+
     /// <summary>
     /// The per-capability config knobs the registry descriptor does not carry, keyed by
     /// descriptor id. Ids absent from the map use <see cref="ManifestCapabilitySpec.Default"/>.
@@ -550,6 +590,10 @@ internal sealed class CapabilityManifestService(
             ["package.map"] = new() { PolicyCapability = "studio.edit" },
             ["package.app"] = new() { PolicyCapability = "studio.edit" },
 
+            ["provider.redshift"] = WarehouseSpec(warehouseProviders.Redshift),
+            ["provider.snowflake"] = WarehouseSpec(warehouseProviders.Snowflake),
+            ["provider.databricks"] = WarehouseSpec(warehouseProviders.Databricks),
+
             ["temporal.filtering"] = new() { EntitlementKey = "temporal.filtering" },
             ["temporal.extent-discovery"] = new() { EntitlementKey = "temporal.extent-discovery" },
             ["temporal.histogram"] = new() { EntitlementKey = "temporal.histogram" },
@@ -563,6 +607,11 @@ internal sealed class CapabilityManifestService(
                 PolicyCapability = "features.edit",
                 RequiresWorkspace = true,
             },
+            ["serve.3d-tiles-scene"] = new(),
+            ["serve.i3s-scene"] = new(),
+            ["scene.catalog"] = new(),
+            ["scene.bim-ingest"] = new() { EntitlementKey = FeatureCatalog.SceneBimIngestKey },
+            ["scene.pointcloud-ingest"] = new() { EntitlementKey = FeatureCatalog.ScenePointCloudIngestKey },
             ["realtime.feature-streams"] = new() { EntitlementKey = "streaming.feature-subscriptions" },
             ["alerts.geofence"] = new() { EntitlementKey = "alerts.enter-exit", Configured = alertsConfigured },
             ["jobs.runner"] = new() { Supported = jobsSupported, RequiresAuthentication = true, RequiresDurableJobStore = true },
@@ -602,6 +651,26 @@ internal sealed class CapabilityManifestService(
         };
     }
 
+    private ManifestCapabilitySpec WarehouseSpec(WarehouseProviderDecision decision)
+        => new()
+        {
+            Supported = decision.Supported,
+            Configured = IsWarehouseProviderRegistered(decision),
+        };
+
+    private bool IsWarehouseProviderRegistered(WarehouseProviderDecision decision)
+    {
+        var registered = runtimeInventory.FeatureDataProviders.Contains(decision.ProviderName);
+        if (warehouseProviders.InfrastructureCompositionApplied && registered != decision.Enabled)
+        {
+            throw new InvalidOperationException(
+                $"Warehouse provider inventory drift: {decision.ProviderName} decision enabled={decision.Enabled} " +
+                $"but runtime registration present={registered}.");
+        }
+
+        return registered;
+    }
+
     private CapabilityGateContext BuildGateContext(HonuaEdition edition, string? environment)
         => new()
         {
@@ -627,6 +696,9 @@ internal sealed class CapabilityManifestService(
                 Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
                 StringComparison.Ordinal);
 
+    private bool IsExperimentalEnabled(string capabilityId)
+        => options.ExperimentalCapabilityFlags.IsExperimentalEnabled(capabilityId);
+
     private CapabilityManifestCapability Capability(
         string id,
         string category,
@@ -640,7 +712,8 @@ internal sealed class CapabilityManifestService(
         bool requiresAuthentication = false,
         bool requiresEnvironment = false,
         bool requiresWorkspace = false,
-        bool requiresDurableJobStore = false)
+        bool requiresDurableJobStore = false,
+        string? unavailableReasonOverride = null)
     {
         var available = true;
         string? reasonCode = null;
@@ -655,7 +728,7 @@ internal sealed class CapabilityManifestService(
         else if (!configured)
         {
             available = false;
-            reasonCode = CapabilityReasonCodes.DisabledByConfiguration;
+            reasonCode = unavailableReasonOverride ?? CapabilityReasonCodes.DisabledByConfiguration;
         }
         // Checked ahead of the caller-scoped gates on purpose: an uncomposed substrate is a
         // property of the deployment, not of who is asking, so an anonymous probe of a Redis-less

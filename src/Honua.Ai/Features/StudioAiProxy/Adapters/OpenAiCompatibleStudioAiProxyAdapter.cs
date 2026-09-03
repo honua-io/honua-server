@@ -54,7 +54,22 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         // A local endpoint (Ollama/vLLM/LM Studio) typically needs no key; a hosted gateway does.
         // Absence here is not itself a configuration error — the provider will reject the call with
         // an auth error if a key really was required, and that surfaces as a normal Error event.
-        var apiKey = await _apiKeyResolver.ResolveAsync(ProviderLabel, options, cancellationToken).ConfigureAwait(false);
+        string? apiKey = null;
+        var credentialUnavailable = false;
+        try
+        {
+            apiKey = await _apiKeyResolver.ResolveAsync(ProviderLabel, options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (StudioAiProxyCredentialUnavailableException)
+        {
+            credentialUnavailable = true;
+        }
+
+        if (credentialUnavailable)
+        {
+            yield return Error(model, "Provider credentials are unavailable.", errorCode: StudioAiProxyApiKeyResolver.CredentialUnavailableCode);
+            yield break;
+        }
 
         var proxyRequest = BuildRequest(options, request, model);
 
@@ -187,8 +202,22 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             if (payload == "[DONE]")
             {
+                if (sawDone)
+                {
+                    yield return Error(model, "Provider returned output after [DONE].", stopwatch.ElapsedMilliseconds,
+                        StudioAiStreamGrammarValidator.InvalidStreamCode);
+                    yield break;
+                }
+
                 sawDone = true;
-                break;
+                continue;
+            }
+
+            if (sawDone)
+            {
+                yield return Error(model, "Provider returned output after [DONE].", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
             }
 
             OpenAiStreamChunk? chunk = null;
@@ -205,7 +234,16 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             if (parseFailed || chunk is null)
             {
-                continue;
+                yield return Error(model, "Provider returned a malformed stream frame.", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
+            }
+
+            if (sawFinishReason && chunk.Choices is { Length: > 0 })
+            {
+                yield return Error(model, "Provider returned output after the finish reason.", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
             }
 
             if (!emittedMessageStart)
@@ -262,21 +300,33 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             }
         }
 
+        if (!sawFinishReason)
+        {
+            yield return Error(model, sawDone
+                ? "Provider ended the stream without a finish reason."
+                : "Provider stream ended before a finish reason was received.", stopwatch.ElapsedMilliseconds,
+                StudioAiStreamGrammarValidator.InvalidStreamCode);
+            yield break;
+        }
+
         foreach (var accumulator in toolCalls.Values)
         {
+            var arguments = accumulator.TryParse();
+            if (arguments is null)
+            {
+                yield return Error(model, "Provider returned invalid or incomplete tool arguments.", stopwatch.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
+            }
+
             yield return new StudioAiChatEvent
             {
                 Type = StudioAiChatEventType.ToolCallStop,
                 ToolCallId = accumulator.Id,
-                ToolArguments = accumulator.TryParse()
+                ToolArguments = arguments
             };
         }
 
-        if (!sawFinishReason && !sawDone)
-        {
-            yield return Error(model, "Provider stream ended before a finish reason was received.", stopwatch.ElapsedMilliseconds);
-            yield break;
-        }
 
         yield return new StudioAiChatEvent
         {
@@ -374,10 +424,11 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         _ => StudioAiStopReason.EndTurn
     };
 
-    private static StudioAiChatEvent Error(string model, string message, long? latencyMs = null) => new()
+    private static StudioAiChatEvent Error(string model, string message, long? latencyMs = null, string? errorCode = null) => new()
     {
         Type = StudioAiChatEventType.Error,
         Model = model,
+        ErrorCode = errorCode,
         ErrorMessage = message,
         LatencyMs = latencyMs
     };
