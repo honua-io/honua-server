@@ -114,7 +114,11 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
                 request.SourceKind,
                 request.SourceUrl,
                 request.CloudFileId,
-                request.UploadId);
+                request.UploadId,
+                operationInstanceId: request.OperationInstanceId,
+                correlationId: request.CorrelationId,
+                auditId: request.AuditId,
+                proposalId: request.ProposalId);
             state = new ImportJobState
             {
                 Progress = progress,
@@ -239,7 +243,14 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
             {
                 if (_jobs.TryGetValue(jobId, out var s))
                 {
-                    s.Progress = p with { JobId = jobId };
+                    s.Progress = p with
+                    {
+                        JobId = jobId,
+                        OperationInstanceId = request.OperationInstanceId,
+                        CorrelationId = request.CorrelationId,
+                        AuditId = request.AuditId,
+                        ProposalId = request.ProposalId,
+                    };
                 }
             });
 
