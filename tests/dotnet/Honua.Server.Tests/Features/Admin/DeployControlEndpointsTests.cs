@@ -151,6 +151,40 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/deploy/preflight")]
+    public async Task GetDeployPreflight_WithExecutableBodyContract_ExposesRuntimeMatchedRules()
+    {
+        const string scriptName = "999_unannotated_body.sql";
+        const string sql = """
+            CREATE FUNCTION honua.cleanup() RETURNS void LANGUAGE plpgsql AS $$
+            BEGIN
+                EXECUTE format('DROP TABLE IF EXISTS %I', 'legacy_layers');
+            END;
+            $$;
+            """;
+        var classification = MigrationSafetyClassifier.Classify(scriptName, sql);
+        classification.Classification.Should().Be(MigrationSafetyClassification.ContractUnannotated);
+
+        _migrationRunner.Plan = DatabaseMigrationPlan.Succeeded(
+            pendingScripts: [scriptName],
+            pendingScriptClassifications: [classification]);
+
+        var response = await _client.GetAsync("/api/v1/admin/deploy/preflight?includeDiagnostics=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var exposed = document.RootElement
+            .GetProperty("migration")
+            .GetProperty("pendingScriptClassifications")[0];
+
+        exposed.GetProperty("scriptName").GetString().Should().Be(scriptName);
+        exposed.GetProperty("classification").GetString().Should().Be("ContractUnannotated");
+        exposed.GetProperty("breakingRules").EnumerateArray()
+            .Select(rule => rule.GetString())
+            .Should().Equal("drop-table");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/preflight")]
     public async Task GetDeployPreflight_WithDiagnostics_ReturnsBackupHookOutcomeForPendingSet()
     {
         const string ContractScript = "002_drop_legacy_annotated.sql";

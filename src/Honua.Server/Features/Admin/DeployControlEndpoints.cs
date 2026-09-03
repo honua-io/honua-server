@@ -132,6 +132,14 @@ internal static class DeployControlEndpoints
                     PlanAvailable = snapshot.Migration.PlanAvailable,
                     UpgradeRequired = snapshot.Migration.UpgradeRequired,
                     PendingScripts = snapshot.Migration.PendingScripts,
+                    PendingScriptClassifications = snapshot.Migration.PendingScriptClassifications
+                        .Select(classification => new DeployPreflightMigrationClassification
+                        {
+                            ScriptName = classification.ScriptName,
+                            Classification = classification.Classification.ToString(),
+                            BreakingRules = classification.BreakingRules
+                        })
+                        .ToArray(),
                     ExecutedButNotDiscoveredScripts = snapshot.Migration.ExecutedButNotDiscoveredScripts,
                     PlanError = snapshot.Migration.PlanError,
                     BackupHook = snapshot.Migration.BackupHook
