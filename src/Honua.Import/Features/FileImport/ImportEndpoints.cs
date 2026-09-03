@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
@@ -72,6 +73,26 @@ internal static partial class ImportEndpoints
             .RequireAdminAuthorization();
 
         MapImportRoutes(v1Group, isV1: true);
+
+        // Control-plane compatibility route. This deliberately points at the same
+        // downloader, validator, queue, and progress store as /import/upload-url;
+        // it is a real import operation, not a receipt-only alias.
+        app.MapPost("/api/v{version:apiVersion}/admin/imports", HandleImportFileFromUrl)
+            .WithApiVersionSet()
+            .HasApiVersion(1, 0)
+            .WithTags("Admin", "Import")
+            .RequireAdminAuthorization()
+            .WithSummary("Create and queue an import job from a source URL.");
+
+        app.MapGet("/api/v{version:apiVersion}/admin/imports/jobs", HandleGetActiveJobs)
+            .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Import")
+            .RequireAdminAuthorization();
+        app.MapGet("/api/v{version:apiVersion}/admin/imports/jobs/{jobId}", HandleGetImportJobStatus)
+            .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Import")
+            .RequireAdminAuthorization();
+        app.MapPost("/api/v{version:apiVersion}/admin/imports/jobs/{jobId}/cancel", HandleCancelImportJob)
+            .WithApiVersionSet().HasApiVersion(1, 0).WithTags("Admin", "Import")
+            .RequireAdminAuthorization();
     }
 
     /// <summary>
@@ -690,7 +711,7 @@ internal static partial class ImportEndpoints
                 await TryRefreshPublishedSnapshotAsync(
                     context,
                     importRequest.TargetSchema,
-                    importRequest.TableName,
+                    ResolvePhysicalImportedTableName(importRequest.TableName),
                     cancellationToken);
             }
 
@@ -854,6 +875,15 @@ internal static partial class ImportEndpoints
             CloudFileId = uploadResult.File.FileId,
             UploadId = uploadId
         };
+    }
+
+    private static string ResolvePhysicalImportedTableName(string tableName)
+    {
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, "[^a-zA-Z0-9_]", "_");
+        var physical = "imported_" + sanitized.ToLowerInvariant();
+        if (physical.Length <= 40) return physical;
+        var hash = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(physical)))[..12];
+        return $"{physical[..(40 - hash.Length - 1)]}_{hash}";
     }
 
     private static Progress<UploadProgress>? CreateUploadProgressReporter(HttpContext context, string uploadId)

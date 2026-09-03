@@ -712,7 +712,9 @@ builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IFi
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource,
     Honua.Infrastructure.Authentication.FieldMaskSource>();
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
-    new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+    sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
+        ? new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>())
+        : new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
 // defaults; durable providers can replace these via TryAdd later.

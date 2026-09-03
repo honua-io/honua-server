@@ -23,4 +23,5 @@ internal sealed record RasterTileRenderContext(
     int FilterSrid,
     TileLimits TileLimits,
     TileOptions TileOptions,
-    Activity? Activity);
+    Activity? Activity,
+    string TileMatrixSetId);

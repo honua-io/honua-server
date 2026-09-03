@@ -639,9 +639,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             var relatedFilter = query.RelatedLayerId is int relatedLayerId
                 ? await ResolveEnforcedSqlFilterAsync(relatedLayerId, cancellationToken).ConfigureAwait(false)
                 : null;
-            if (originFilter is not null || relatedFilter is not null)
+            var relatedMaskedFields = query.RelatedLayerId is int maskedLayerId
+                ? await ResolveMaskedFieldsAsync(maskedLayerId, cancellationToken).ConfigureAwait(false)
+                : ImmutableArray<string>.Empty;
+            if (originFilter is not null || relatedFilter is not null || !relatedMaskedFields.IsDefaultOrEmpty)
             {
-                return await postgresDataAccess.QueryRelatedAsync(layerId, query, originFilter, relatedFilter, cancellationToken).ConfigureAwait(false);
+                return await postgresDataAccess.QueryRelatedAsync(
+                    layerId, query, originFilter, relatedFilter, relatedMaskedFields, cancellationToken).ConfigureAwait(false);
             }
         }
 

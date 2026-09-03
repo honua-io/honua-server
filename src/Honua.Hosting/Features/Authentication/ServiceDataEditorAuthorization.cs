@@ -400,7 +400,9 @@ internal static class ServiceDataEditorAuthorization
         ClaimsPrincipal principal,
         RbacOptions options,
         IServiceProvider serviceProvider)
-        => RbacRoleClaims.IsAdmin(principal, options, serviceProvider);
+        => AdminApiKeyPermission.IsFullAdminPrincipal(principal)
+           || (!principal.FindAll(AdminApiKeyPermission.PermissionClaimType).Any()
+               && RbacRoleClaims.IsAdmin(principal, options, serviceProvider));
 
     private static bool HasGlobalDataEditorRole(
         ClaimsPrincipal principal,

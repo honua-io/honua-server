@@ -568,12 +568,17 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 }
             }
 
+            var attributesSelect = BuildMaskedAttributesColumn(
+                ResolveMaskedFields(query ?? new FeatureQuery()),
+                ref paramIndex,
+                parameters);
+
             sql.Append(CultureInfo.InvariantCulture, $@"
             SELECT ST_AsMVT(tile, 'layer', $6, 'geom') AS mvt
             FROM (
                 SELECT
                     {DatabaseSchema.ObjectIdColumn},
-                    {DatabaseSchema.AttributesColumn},
+                    {attributesSelect},
                     ST_AsMVTGeom(
                         {geometryForTile},
                         {tileEnvelope},
@@ -685,12 +690,17 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 tileEnvelopeForFilter = tileEnvelopeWithBuffer;
             }
 
+            var attributesSelect = BuildMaskedAttributesColumn(
+                ResolveMaskedFields(query ?? new FeatureQuery()),
+                ref paramIndex,
+                parameters);
+
             sql.Append(CultureInfo.InvariantCulture, $@"
             SELECT ST_AsMVT(tile, 'layer', $3, 'geom') AS mvt
             FROM (
                 SELECT
                     {DatabaseSchema.ObjectIdColumn},
-                    {DatabaseSchema.AttributesColumn},
+                    {attributesSelect},
                     ST_AsMVTGeom(
                         {geometryForTile},
                         {tileEnvelope},
