@@ -84,9 +84,10 @@ public interface ICoordinatedContainerStepExecutor
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Rolls the container rollout back through the existing deploy rollback path. Idempotent.
+    /// Rolls the container rollout back through the existing deploy rollback path and returns the
+    /// child's accepted/observed state. Idempotent.
     /// </summary>
-    Task RollbackAsync(
+    Task<CoordinatedStepResult> RollbackAsync(
         string childOperationId,
         CancellationToken cancellationToken = default);
 }

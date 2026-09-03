@@ -278,7 +278,20 @@ internal sealed partial class CoordinatedReleaseReconciler(
                     "Container step had no child operation to roll back; continuing coordinated unwind.");
             }
 
-            await containerStep.RollbackAsync(context.ContainerOperationId!, cancellationToken).ConfigureAwait(false);
+            var rollback = await containerStep.RollbackAsync(context.ContainerOperationId!, cancellationToken)
+                .ConfigureAwait(false);
+            if (rollback.Outcome == CoordinatedStepOutcome.Failed)
+            {
+                return WithStepRollbackRequested(operation, CoordinatedReleaseStep.ContainerRollout,
+                    rollback.Detail ?? "Container child rollback request did not settle; observing the child before escalation.");
+            }
+
+            if (rollback.Outcome == CoordinatedStepOutcome.Succeeded)
+            {
+                return RequireManualIntervention(operation,
+                    "Container child rollback request lost a concurrency race while the desired revision remained active.");
+            }
+
             return WithStepRollbackRequested(operation, CoordinatedReleaseStep.ContainerRollout,
                 "Container rollback requested; waiting for the child operation to settle.");
         }

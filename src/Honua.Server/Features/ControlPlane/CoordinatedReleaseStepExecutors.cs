@@ -84,13 +84,32 @@ internal sealed class CoordinatedContainerStepExecutor(
         };
     }
 
-    public async Task RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)
-        => await deployService.RequestRollbackAsync(
+    public async Task<CoordinatedStepResult> RollbackAsync(
+        string childOperationId,
+        CancellationToken cancellationToken = default)
+    {
+        var deploy = await deployService.RequestRollbackAsync(
                 childOperationId,
                 requestedBy: null,
                 reason: "Coordinated rollback unwinding the container rollout.",
                 cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+
+        return deploy is null
+            ? new CoordinatedStepResult
+            {
+                Outcome = CoordinatedStepOutcome.Failed,
+                ChildOperationId = childOperationId,
+                Detail = "Container rollout rollback request could not be read back."
+            }
+            : new CoordinatedStepResult
+            {
+                Outcome = MapOutcome(deploy.Status),
+                ChildOperationId = childOperationId,
+                Detail = deploy.CurrentPhase,
+                ObservedRevision = deploy.ObservedState ?? deploy.Deploy?.CurrentRevision
+            };
+    }
 
     private static CoordinatedStepOutcome MapOutcome(WorkflowOperationStatus status) => status switch
     {
