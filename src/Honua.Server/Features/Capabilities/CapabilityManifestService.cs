@@ -399,7 +399,30 @@ internal sealed class CapabilityManifestService(
             Capability("temporal.time-series-tiles", "temporal", context, entitlementKey: "temporal.time-series-tiles"),
             Capability("temporal.animation-api", "temporal", context, entitlementKey: "temporal.animation-api"),
 
-            Capability("sync.offline", "sync", context, supported: syncSupported, entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey, policyCapability: "features.edit", requiresWorkspace: true),
+            Capability("serve.3d-tiles-scene", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("serve.3d-tiles-scene")),
+            Capability("serve.i3s-scene", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("serve.i3s-scene")),
+            Capability("scene.catalog", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("scene.catalog")),
+            Capability("scene.bim-ingest", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("scene.bim-ingest"),
+                entitlementKey: FeatureCatalog.SceneBimIngestKey),
+            Capability("scene.pointcloud-ingest", "scene", context,
+                maturity: CapabilityMaturity.Experimental,
+                configured: IsExperimentalEnabled("scene.pointcloud-ingest"),
+                entitlementKey: FeatureCatalog.ScenePointCloudIngestKey),
+            Capability("sync.offline", "sync", context,
+                maturity: CapabilityMaturity.Preview,
+                supported: syncSupported,
+                configured: IsExperimentalEnabled("sync.offline"),
+                entitlementKey: FeatureCatalog.FieldOpsOfflineSyncKey,
+                policyCapability: "features.edit",
+                requiresWorkspace: true),
             Capability("realtime.feature-streams", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("realtime.feature-streams"),
@@ -407,7 +430,11 @@ internal sealed class CapabilityManifestService(
             Capability("serve.sensorthings", "realtime", context,
                 maturity: CapabilityMaturity.Preview,
                 configured: options.ExperimentalCapabilityFlags.IsExperimentalEnabled("serve.sensorthings")),
-            Capability("alerts.geofence", "alerts", context, entitlementKey: "alerts.enter-exit", configured: alertOptionsValue.Enabled),
+            Capability("alerts.geofence", "alerts", context,
+                maturity: CapabilityMaturity.Preview,
+                entitlementKey: "alerts.enter-exit",
+                configured: alertOptionsValue.Enabled
+                    && options.ExperimentalCapabilityFlags.IsExperimentalEnabled("alerts.geofence")),
             // A compute backend is always registered, so `supported` alone over-claims: without
             // the Redis-backed durable job store nothing can be submitted (honua-release#202).
             Capability("jobs.runner", "jobs", context, supported: workloadCount > 0 || runtimeInventory.BatchBackends.Count > 0, requiresAuthentication: true, requiresDurableJobStore: true),
@@ -423,7 +450,8 @@ internal sealed class CapabilityManifestService(
             Capability("security.mtls", "security", context,
                 maturity: CapabilityMaturity.Experimental,
                 entitlementKey: FeatureCatalog.MtlsClientCertificateKey,
-                configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled),
+                configured: mtlsOptions.Mode != ClientCertificateAuthenticationMode.Disabled
+                    && IsExperimentalEnabled("security.mtls")),
 
             Capability("preview.file-import", "preview", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("query.features", "query", context),
@@ -442,7 +470,8 @@ internal sealed class CapabilityManifestService(
             // registry-derived Capabilities[] stay byte-identical.
             Capability("versioning.branch", "versioning", context,
                 maturity: CapabilityMaturity.Experimental,
-                entitlementKey: FeatureCatalog.BranchVersioningKey),
+                entitlementKey: FeatureCatalog.BranchVersioningKey,
+                configured: IsExperimentalEnabled("versioning.branch")),
             // Aggregated operate status (A12) — the server-authoritative operate/status surface. Ungated
             // GA; read-authorized (ops:read) at the HTTP layer. Kept last to mirror the registry order.
             Capability("operate.status", "operate", context, requiresAuthentication: true),
@@ -627,6 +656,9 @@ internal sealed class CapabilityManifestService(
                 resolution.ReasonCode,
                 Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
                 StringComparison.Ordinal);
+
+    private bool IsExperimentalEnabled(string capabilityId)
+        => options.ExperimentalCapabilityFlags.IsExperimentalEnabled(capabilityId);
 
     private CapabilityManifestCapability Capability(
         string id,

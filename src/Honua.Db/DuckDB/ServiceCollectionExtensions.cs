@@ -139,11 +139,11 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
         services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter("DuckDB"));
-        if (CapabilityFlagOptions.IsExperimentalEnabled(configuration, "sync.offline"))
-        {
-            services.AddScoped<IReplicaRepository>(_ => new NoOpReplicaRepository());
-            services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
-        }
+        // These no-op stores are dependency fallbacks, not feature enablement. The replica
+        // conflict service is composed for every provider and must remain resolvable even when
+        // the experimental sync surface is disabled.
+        services.AddScoped<IReplicaRepository>(_ => new NoOpReplicaRepository());
+        services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         services.AddScoped<IChangeTracker>(_ => new NoOpChangeTracker());
         services.AddScoped<IVersionManager>(_ => new NoOpVersionManager());
         // Honua.Infrastructure.Services.SpatialReferenceResolver (a mandatory scoped
