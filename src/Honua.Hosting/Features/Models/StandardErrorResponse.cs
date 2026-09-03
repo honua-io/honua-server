@@ -288,4 +288,14 @@ internal sealed class ErrorResponseFormatterOptions
     /// for expired/invalid token failures.
     /// </summary>
     public int? GeoServicesBodyCode { get; init; }
+
+    /// <summary>
+    /// Indicates whether the client may retry after the transient condition clears.
+    /// </summary>
+    public bool? Retryable { get; init; }
+
+    /// <summary>
+    /// Server-advised delay before retrying, in seconds, when known.
+    /// </summary>
+    public int? RetryAfterSeconds { get; init; }
 }

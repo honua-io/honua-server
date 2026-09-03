@@ -631,7 +631,8 @@ internal static partial class FeatureStreamEndpoints
                 FeatureStreamLog.SnapshotProbeFailed(logger, layerId, exception);
                 return StandardErrorHelpers.CreateServiceUnavailable(
                     context,
-                    $"A baseline snapshot cannot be served for layer {layerId.ToString(CultureInfo.InvariantCulture)}: its backing store did not accept the baseline read.");
+                    $"A baseline snapshot cannot be served for layer {layerId.ToString(CultureInfo.InvariantCulture)}: its backing store did not accept the baseline read.",
+                    retryable: true);
             }
         }
 

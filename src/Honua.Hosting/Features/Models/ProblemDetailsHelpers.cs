@@ -101,11 +101,27 @@ internal static class ProblemDetailsHelpers
     /// member (for example the Studio authorization codes, honua-server#3001 REQ-004).
     /// </summary>
     public static IResult CreateProblem(HttpContext context, string type, int statusCode, string title, string detail, string code)
+        => CreateProblem(context, type, statusCode, title, detail, code, retryable: null, retryAfterSeconds: null);
+
+    /// <summary>
+    /// Creates an RFC 7807 problem carrying the common machine-readable backpressure fields.
+    /// </summary>
+    public static IResult CreateProblem(
+        HttpContext context,
+        string type,
+        int statusCode,
+        string title,
+        string detail,
+        string code,
+        bool? retryable,
+        int? retryAfterSeconds)
     {
         var instance = BuildInstance(context);
         var problemDetails = CreateProblemDetails(type, statusCode, title, detail, instance, context) with
         {
             Code = code,
+            Retryable = retryable,
+            RetryAfterSeconds = retryAfterSeconds,
         };
 
         return Results.Json(

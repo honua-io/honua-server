@@ -307,7 +307,9 @@ internal static class StandardErrorResponseFormatter
             {
                 Code = bodyCode,
                 Message = errorResponse.Title,
-                Details = details?.Length > 0 ? details : null
+                Details = details?.Length > 0 ? details : null,
+                Retryable = options.Retryable,
+                RetryAfterSeconds = options.RetryAfterSeconds,
             }
         };
 
@@ -336,21 +338,25 @@ internal static class StandardErrorResponseFormatter
         StandardErrorResponse errorResponse,
         ErrorResponseFormatterOptions options)
     {
-        var detail = BuildDetailWithExtras(errorResponse, options);
-        return string.IsNullOrWhiteSpace(options.MachineCode)
-            ? ProblemDetailsHelpers.CreateProblem(
+        if (!string.IsNullOrWhiteSpace(options.MachineCode))
+        {
+            return ProblemDetailsHelpers.CreateProblem(
                 context,
                 type,
                 errorResponse.StatusCode,
                 errorResponse.Title,
-                detail)
-            : ProblemDetailsHelpers.CreateProblem(
-                context,
-                type,
-                errorResponse.StatusCode,
-                errorResponse.Title,
-                detail,
-                options.MachineCode);
+                BuildDetailWithExtras(errorResponse, options),
+                options.MachineCode,
+                options.Retryable,
+                options.RetryAfterSeconds);
+        }
+
+        return ProblemDetailsHelpers.CreateProblem(
+            context,
+            type,
+            statusCode: errorResponse.StatusCode,
+            title: errorResponse.Title,
+            detail: BuildDetailWithExtras(errorResponse, options));
     }
 
     /// <summary>

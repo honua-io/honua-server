@@ -193,6 +193,18 @@ public sealed class McpErrorMappingTests
     }
 
     [UnitTest]
+    public void SessionCapacityReached_PreservesDelayAndCorrelationMetadata()
+    {
+        var error = McpErrorMapper.SessionCapacityReached(5, "mcp-capacity-correlation");
+
+        error.Code.Should().Be(JsonRpcServerError);
+        error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
+        error.Data.Retryable.Should().BeTrue();
+        error.Data.RetryAfterSeconds.Should().Be(5);
+        error.Data.CorrelationId.Should().Be("mcp-capacity-correlation");
+    }
+
+    [UnitTest]
     public void IdempotencyConflictException_MapsToAlreadyExists()
     {
         var error = McpErrorMapper.Map(new GeoprocessingIdempotencyConflictException());
