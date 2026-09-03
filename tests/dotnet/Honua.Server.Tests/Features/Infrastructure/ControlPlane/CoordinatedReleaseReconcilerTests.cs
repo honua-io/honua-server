@@ -224,6 +224,25 @@ public sealed class CoordinatedReleaseReconcilerTests
     }
 
     [Fact]
+    public async Task Reconcile_AutomaticallyRolledBackChildWithWrongRevision_EscalatesParent()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = await CreateAsync(store);
+        var container = new FakeContainerStep
+        {
+            ObserveOutcome = CoordinatedStepOutcome.RolledBack,
+            RolledBackRevision = "honua/server:wrong"
+        };
+        var reconciler = CreateReconciler(store, container, new FakeMetadataStep());
+
+        var final = await DriveAsync(store, operation.OperationId, reconciler, autoApprove: true);
+
+        final.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        final.ErrorMessage.Should().Contain("expected prior image");
+        container.RollbackCalls.Should().Be(0, "an already-rolled-back child must not receive a second rollback request");
+    }
+
+    [Fact]
     public async Task Reconcile_ContainerRollbackRequestRace_DoesNotWaitOnSucceededChild()
     {
         var store = new InMemoryWorkflowOperationStore();
@@ -413,7 +432,13 @@ public sealed class CoordinatedReleaseReconcilerTests
                 });
             }
 
-            return Task.FromResult(new CoordinatedStepResult { Outcome = ObserveOutcome, ChildOperationId = childOperationId });
+            return Task.FromResult(new CoordinatedStepResult
+            {
+                Outcome = ObserveOutcome,
+                ChildOperationId = childOperationId,
+                ObservedRevision = ObserveOutcome == CoordinatedStepOutcome.RolledBack ? RolledBackRevision : null,
+                ExpectedRevision = ObserveOutcome == CoordinatedStepOutcome.RolledBack ? "honua/server:v20" : null
+            });
         }
 
         public Task<CoordinatedStepResult> RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)

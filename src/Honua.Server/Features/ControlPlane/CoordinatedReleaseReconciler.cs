@@ -165,7 +165,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
 
             return MarkRunning(operation, CoordinatedReleaseStep.ContainerRollout,
                 childContainerOperationId: started.ChildOperationId,
-                containerPriorRevision: started.ObservedRevision,
+                containerPriorRevision: started.ExpectedRevision ?? started.ObservedRevision,
                 detail: started.Detail ?? "Container rollout submitted.");
         }
 
@@ -175,9 +175,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
             CoordinatedStepOutcome.Succeeded => Advance(operation, CoordinatedReleaseStep.MetadataAndSchema,
                 CoordinatedReleaseStepStatus.Succeeded, observed.Detail ?? "Container rollout promoted.",
                 stepToComplete: CoordinatedReleaseStep.ContainerRollout),
-            CoordinatedStepOutcome.RolledBack => WithStepRolledBack(operation, CoordinatedReleaseStep.ContainerRollout,
-                observed.Detail ?? "Container rollout already rolled back; starting coordinated unwind.",
-                containerPriorRevision: observed.ObservedRevision),
+            CoordinatedStepOutcome.RolledBack => AcceptObservedContainerRollback(operation, observed),
             CoordinatedStepOutcome.Failed => RequestUnwind(operation, CoordinatedReleaseStep.ContainerRollout,
                 observed.Detail ?? "Container rollout failed."),
             _ => operation
@@ -305,7 +303,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
             }
 
             var observed = await containerStep.ObserveAsync(context.ContainerOperationId!, cancellationToken).ConfigureAwait(false);
-            var expectedPriorRevision = context.Container.CurrentImage ?? observed.ObservedRevision;
+            var expectedPriorRevision = context.Container.CurrentImage ?? observed.ExpectedRevision;
             if (observed.Outcome == CoordinatedStepOutcome.RolledBack &&
                 !string.IsNullOrWhiteSpace(expectedPriorRevision) &&
                 string.Equals(observed.ObservedRevision, expectedPriorRevision, StringComparison.Ordinal))
@@ -337,6 +335,26 @@ internal sealed partial class CoordinatedReleaseReconciler(
             ErrorMessage = null,
             CoordinatedRelease = context with { CurrentStep = CoordinatedReleaseStep.Failed }
         };
+    }
+
+    private static WorkflowOperationRecord AcceptObservedContainerRollback(
+        WorkflowOperationRecord operation,
+        CoordinatedStepResult observed)
+    {
+        var context = operation.CoordinatedRelease!;
+        var expectedPriorRevision = context.Container.CurrentImage ?? observed.ExpectedRevision;
+        if (!string.IsNullOrWhiteSpace(expectedPriorRevision) &&
+            string.Equals(observed.ObservedRevision, expectedPriorRevision, StringComparison.Ordinal))
+        {
+            return WithStepRolledBack(operation, CoordinatedReleaseStep.ContainerRollout,
+                observed.Detail ?? "Container rollout already rolled back to the exact prior image.",
+                containerPriorRevision: expectedPriorRevision);
+        }
+
+        return RequireManualIntervention(operation,
+            string.IsNullOrWhiteSpace(expectedPriorRevision)
+                ? "Container child reported RolledBack without a captured prior image."
+                : $"Container child reported RolledBack without the expected prior image '{expectedPriorRevision}'.");
     }
 
     private static bool NeedsUnwind(CoordinatedReleaseStepState? state)

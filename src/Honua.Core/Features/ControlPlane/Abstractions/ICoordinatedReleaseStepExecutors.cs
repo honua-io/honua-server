@@ -58,6 +58,13 @@ public sealed record CoordinatedStepResult
     /// Authoritative revision observed by the child lifecycle, when applicable.
     /// </summary>
     public string? ObservedRevision { get; init; }
+
+    /// <summary>
+    /// Prior revision captured by the child lifecycle before promotion, when available. This is
+    /// distinct from <see cref="ObservedRevision"/> so a rollback settlement can verify the provider
+    /// actually restored the captured baseline.
+    /// </summary>
+    public string? ExpectedRevision { get; init; }
 }
 
 /// <summary>
