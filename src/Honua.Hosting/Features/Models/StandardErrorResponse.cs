@@ -257,6 +257,11 @@ internal sealed class ErrorResponseFormatterOptions
     public string? WfsExceptionCode { get; init; }
 
     /// <summary>
+    /// Explicit WCS exception code to emit instead of the native default.
+    /// </summary>
+    public string? WcsExceptionCode { get; init; }
+
+    /// <summary>
     /// Optional WFS exception locator attribute.
     /// </summary>
     public string? WfsExceptionLocator { get; init; }
