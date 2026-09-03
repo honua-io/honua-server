@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -241,6 +242,12 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             {
                 context.User = result.Principal;
             }
+            else if (!result.Succeeded && result.Failure is not null && IsGeoServicesPortalRequest(context))
+            {
+                context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+                await StandardErrorHelpers.CreateInvalidToken(context).ExecuteAsync(context).ConfigureAwait(false);
+                return;
+            }
         }
 
         await _next(context).ConfigureAwait(false);
@@ -282,6 +289,19 @@ internal sealed class PortalTokenAuthenticationMiddleware(
         }
 
         return false;
+    }
+
+    private static bool IsGeoServicesPortalRequest(HttpContext context)
+    {
+        if (context.Request.Path.StartsWithSegments("/rest"))
+        {
+            return true;
+        }
+
+        // OAuth2 uses `token` as an operation operand on revoke/introspect, so an
+        // unknown operand must not be mistaken for an invalid request credential.
+        return context.Request.Path.StartsWithSegments("/sharing/rest") &&
+            !context.Request.Path.StartsWithSegments("/sharing/rest/oauth2");
     }
 
     private static bool HasBearerPrefix(Microsoft.Extensions.Primitives.StringValues values)

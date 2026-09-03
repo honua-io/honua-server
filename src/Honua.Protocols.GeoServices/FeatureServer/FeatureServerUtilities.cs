@@ -52,7 +52,7 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Allowed query parameters for each endpoint
     /// </summary>
-    private static class AllowedQueryParameters
+    internal static class AllowedQueryParameters
     {
         // Standard Esri metadata-request parameters that ArcGIS clients (notably
         // ArcGIS Pro / arcpy) append by default when resolving a FeatureServer
@@ -93,7 +93,8 @@ internal static partial class FeatureServerEndpoints
         public static readonly FrozenSet<string> GenerateRenderer = new[]
             {
                 "classificationDef",
-                "f"
+                "f",
+                "token"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -104,7 +105,8 @@ internal static partial class FeatureServerEndpoints
                 "useGlobalIds",
                 "gdbVersion",
                 "returnEditMoment",
-                "attachments"
+                "attachments",
+                "token"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -120,7 +122,8 @@ internal static partial class FeatureServerEndpoints
                 "geometry",
                 "geometryType",
                 "spatialRel",
-                "inSR"
+                "inSR",
+                "token"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -145,21 +148,22 @@ internal static partial class FeatureServerEndpoints
                 "sqlFormat",
                 "returnTrueCurves",
                 "historicMoment",
-                "f"
+                "f",
+                "token"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> GetEstimates =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", "token" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> ServiceGetEstimates =
-            new[] { "f", "layers", "layerId" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", "layers", "layerId", "token" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> QueryDomains =
-            new[] { "f", "layers", "layerId" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", "layers", "layerId", "token" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Relationships =
-            new[] { "f" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "f", "token" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         // Esri's queryTopFeatures accepts the standard FeatureServer layer-query
         // parameter family on top of its own "topFilter". The ArcGIS API for Python
@@ -184,7 +188,8 @@ internal static partial class FeatureServerEndpoints
                 "geometryType",
                 "spatialRel",
                 "time",
-                "f"
+                "f",
+                "token"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -198,15 +203,16 @@ internal static partial class FeatureServerEndpoints
                 "geometryType",
                 "spatialRel",
                 "time",
-                "f"
+                "f",
+                "token"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> Tiles =
-            new[] { "where", "time" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "where", "time", "token" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> H3Tiles =
-            new[] { "where", "resolution" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+            new[] { "where", "resolution", "token" }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         public static readonly FrozenSet<string> QueryH3 = new[]
             {
@@ -223,7 +229,8 @@ internal static partial class FeatureServerEndpoints
                 "schemaVersion",
                 "index",
                 "metadata",
-                "f"
+                "f",
+                "token"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }

@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -21,6 +22,29 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     public FeatureServerQueryParameterTests(WebAppFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    [Fact]
+    [Operation(Operations.Security)]
+    [Endpoint("FeatureServer operation query allowlists")]
+    public void EsriOperationAllowlists_AcceptPortalTokenParameter()
+    {
+        var tokenBearingOperations = new[]
+        {
+            FeatureServerEndpoints.AllowedQueryParameters.QueryRelatedRecords,
+            FeatureServerEndpoints.AllowedQueryParameters.GenerateRenderer,
+            FeatureServerEndpoints.AllowedQueryParameters.GetEstimates,
+            FeatureServerEndpoints.AllowedQueryParameters.ServiceGetEstimates,
+            FeatureServerEndpoints.AllowedQueryParameters.QueryDomains,
+            FeatureServerEndpoints.AllowedQueryParameters.Relationships,
+            FeatureServerEndpoints.AllowedQueryParameters.QueryBins,
+            FeatureServerEndpoints.AllowedQueryParameters.QueryDateBins,
+            FeatureServerEndpoints.AllowedQueryParameters.QueryH3,
+            FeatureServerEndpoints.AllowedQueryParameters.ApplyEdits,
+            FeatureServerEndpoints.AllowedQueryParameters.DeleteFeatures,
+        };
+
+        tokenBearingOperations.Should().AllSatisfy(parameters => parameters.Should().Contain("token"));
     }
 
     // ArcGIS Pro and the JS API send these parameters by default even when the

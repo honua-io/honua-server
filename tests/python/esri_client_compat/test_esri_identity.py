@@ -65,7 +65,21 @@ def test_x_esri_authorization_is_allowed_by_cors_preflight() -> None:
 
 
 def test_oauth_userinfo_is_served() -> None:
-    response, body = _json("/sharing/rest/oauth2/userinfo", params={"f": "json"})
+    token_response = httpx.post(
+        f"{BASE_URL}/sharing/rest/generateToken",
+        data={
+            "username": "admin",
+            "password": "EsriProbeAdmin123!",
+            "client": "requestip",
+            "f": "json",
+        },
+        timeout=30,
+    )
+    token_response.raise_for_status()
+    response, body = _json(
+        "/sharing/rest/oauth2/userinfo",
+        params={"f": "json", "token": token_response.json()["token"]},
+    )
 
     assert response.status_code == 200
     assert body.get("error", {}).get("code") != 404

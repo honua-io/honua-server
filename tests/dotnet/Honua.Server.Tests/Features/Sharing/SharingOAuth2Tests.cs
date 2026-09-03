@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -80,6 +81,38 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
         payload.ExpiresIn.Should().BeGreaterThan(0);
         payload.RefreshToken.Should().NotBeNullOrWhiteSpace();
         payload.TokenType.Should().Be("Bearer");
+        payload.Username.Should().Be("named.user@example.com");
+        payload.Ssl.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /sharing/rest/oauth2/userinfo")]
+    public async Task UserInfo_WithOAuthAccessToken_ReturnsEsriUserIdentity()
+    {
+        var verifier = "userinfo-pkce-verifier-value-0123456789-abcdefghij";
+        var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        var code = await SeedAuthorizationCodeAsync(challenge, "S256");
+
+        using var client = _fixture.CreateClient();
+        using var tokenResponse = await PostFormAsync(
+            client,
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", RedirectUri),
+            ("client_id", ClientId),
+            ("code_verifier", verifier));
+        var token = await ReadTokenAsync(tokenResponse);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/sharing/rest/oauth2/userinfo?f=json");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.AccessToken);
+        request.Headers.Referrer = new Uri(RedirectUri);
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("sub").GetString().Should().Be("named.user@example.com");
+        doc.RootElement.GetProperty("username").GetString().Should().Be("named.user@example.com");
     }
 
     [IntegrationTest]
@@ -734,6 +767,12 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
         [System.Text.Json.Serialization.JsonPropertyName("token_type")]
         public string TokenType { get; init; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("username")]
+        public string? Username { get; init; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("ssl")]
+        public bool Ssl { get; init; }
     }
 
     private sealed record ErrorPayload

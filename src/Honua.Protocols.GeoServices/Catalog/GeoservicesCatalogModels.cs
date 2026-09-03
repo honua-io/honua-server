@@ -58,5 +58,9 @@ internal sealed record RestInfoResponse
 internal sealed record RestAuthInfo
 {
     [JsonPropertyName("isTokenBasedSecurity")]
-    public bool IsTokenBasedSecurity { get; init; }
+    public bool IsTokenBasedSecurity { get; init; } = true;
+
+    [JsonPropertyName("tokenServicesUrl")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TokenServicesUrl { get; init; }
 }
