@@ -5,7 +5,7 @@
   "server_version": "1.0.0+e358ef1b50961de6fe6e4fae172e544418b7fe0c",
   "server_commit": "e358ef1b50961de6fe6e4fae172e544418b7fe0c",
   "fixture_revision": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
-  "server_config_revision": "sha256:1b88b3891b1b3b3fb85d47e716e9237ec8bba8e8344bb04902f8b3ce5b02f729",
+  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
   "client_lane": "py-owslib",
   "client_version": "0.36.0",
   "protocol": "wmts",
