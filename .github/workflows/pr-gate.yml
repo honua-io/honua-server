@@ -106,6 +106,9 @@ jobs:
           python3 scripts/ci/validate-tracked-file-encoding.py
           python3 scripts/ci/validate-tracked-file-encoding.test.py
 
+      - name: Verify terminal error receipt contract
+        run: python3 scripts/certification/verify-terminal-error-receipts.py
+
       - name: Verify review-first admission contract
         run: scripts/ci/validate-review-first-dispatch.sh
 

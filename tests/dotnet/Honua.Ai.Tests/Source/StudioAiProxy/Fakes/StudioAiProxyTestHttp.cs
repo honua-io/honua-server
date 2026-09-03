@@ -27,10 +27,13 @@ internal sealed class StudioAiProxyMockHttpMessageHandler : HttpMessageHandler
 
     public HttpRequestHeaders? CapturedHeaders { get; private set; }
 
+    public int SendCount { get; private set; }
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
+        SendCount++;
         if (request.Content is not null)
         {
             CapturedRequestBody = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

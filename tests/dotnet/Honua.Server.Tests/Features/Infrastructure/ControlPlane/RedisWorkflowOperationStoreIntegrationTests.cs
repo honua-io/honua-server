@@ -45,6 +45,41 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
     }
 
     [Fact]
+    public async Task WorkflowStore_WithRedis_AcceptedRollbackRejectsStaleSuccessAndRemainsActive()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var operation = CreateOperationRecord() with { Status = WorkflowOperationStatus.Reconciling };
+        (await store.TryCreateAsync(operation)).Should().BeTrue();
+
+        var staleReconcilerRead = await store.GetAsync(operation.OperationId);
+        var rollbackRead = await store.GetAsync(operation.OperationId);
+        staleReconcilerRead.Should().NotBeNull();
+        rollbackRead.Should().NotBeNull();
+
+        (await store.TrySetAsync(rollbackRead! with
+        {
+            Status = WorkflowOperationStatus.RollbackRequested,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Provider accepted rollback"
+        })).Should().BeTrue();
+
+        (await store.TrySetAsync(staleReconcilerRead! with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = "Stale candidate success"
+        })).Should().BeFalse("the rollback CAS advanced the durable version first");
+
+        var persisted = await store.GetAsync(operation.OperationId);
+        persisted!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        persisted.Version.Should().Be(2);
+        (await store.ListActiveAsync(WorkflowOperationKind.Deploy))
+            .Should().Contain(entry => entry.OperationId == operation.OperationId);
+    }
+
+    [Fact]
     public async Task WorkflowStore_Leases_AreExclusivePerOperation()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);

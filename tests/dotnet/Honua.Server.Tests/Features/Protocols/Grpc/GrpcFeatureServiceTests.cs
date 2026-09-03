@@ -12,7 +12,9 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -50,6 +52,7 @@ public sealed class GrpcFeatureServiceTests
     private readonly ICrsDetectionService _crsDetectionService = Substitute.For<ICrsDetectionService>();
     private readonly ICrsRegistry _crsRegistry = Substitute.For<ICrsRegistry>();
     private readonly IFeatureChangeEventPublisher _featureChangeEventPublisher = Substitute.For<IFeatureChangeEventPublisher>();
+    private readonly IOutboxCapabilityProvider _outboxCapabilityProvider = Substitute.For<IOutboxCapabilityProvider>();
     private readonly HonuaFeatureService _sut;
 
     private static readonly MetadataV2Resource _testResource = CreateResource();
@@ -68,7 +71,9 @@ public sealed class GrpcFeatureServiceTests
             _resourceValidator, _featureReader, _featureWriter, _streamingStore,
             new CommonQueryValidator(Options.Create(new LimitsOptions())),
             new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
-            _featureChangeEventPublisher,
+            new FeatureMutationEventService(
+                _featureChangeEventPublisher,
+                outboxCapabilityProvider: _outboxCapabilityProvider),
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
             NullLogger<HonuaFeatureService>.Instance);
@@ -85,6 +90,142 @@ public sealed class GrpcFeatureServiceTests
             .GetAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => Task.FromResult<Feature?>(
                 Feature.Create(callInfo.ArgAt<long>(1), geometry: null)));
+    }
+
+    public static TheoryData<int, bool> ApplyEditsAuthorizationCases()
+    {
+        var cases = new TheoryData<int, bool>();
+        for (var editKinds = 1; editKinds <= 7; editKinds++)
+        {
+            cases.Add(editKinds, true);
+            cases.Add(editKinds, false);
+        }
+
+        return cases;
+    }
+
+    [Theory]
+    [MemberData(nameof(ApplyEditsAuthorizationCases))]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_PresentEditKinds_RequiresEveryMatchingGrant(
+        int editKinds,
+        bool allRequiredGrantsPresent)
+    {
+        var request = CreateApplyEditsRequest(editKinds);
+        var operationNames = GetPresentOperationNames(editKinds);
+        if (!allRequiredGrantsPresent)
+        {
+            operationNames.Remove(GetGrantToOmit(editKinds));
+        }
+
+        var grants = operationNames
+            .Select(operation => new PermissionGrant
+            {
+                Service = "test",
+                Layer = "*",
+                Operation = operation
+            })
+            .ToArray();
+
+        var result = FeatureEditResult.Success(
+            createdCount: request.Adds.Count,
+            updatedCount: request.Updates.Count,
+            deletedCount: request.Deletes.Count);
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(result));
+
+        var callContext = CreateCallContext(CreateAuthenticatedUser("granted-role"), grants);
+        if (allRequiredGrantsPresent)
+        {
+            _ = await _sut.ApplyEdits(request, callContext);
+
+            _featureWriter.ReceivedCalls()
+                .Count(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+                .Should()
+                .Be(1);
+            return;
+        }
+
+        var act = async () => await _sut.ApplyEdits(request, callContext);
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        _featureReader.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureReader.GetAsync));
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+        _outboxCapabilityProvider.ReceivedCalls().Should().BeEmpty();
+        _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("write:test/test", true)]
+    [InlineData("write:test/other-layer", false)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_LayerScopedWriteKeyBehavior_RemainsTargetBound(
+        string permission,
+        bool shouldAllow)
+    {
+        var request = CreateApplyEditsRequest(editKinds: 7);
+        var result = FeatureEditResult.Success(
+            createdCount: 1,
+            updatedCount: 1,
+            deletedCount: 1);
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(result));
+
+        var callContext = CreateCallContext(CreateScopedWriteUser(permission));
+        if (shouldAllow)
+        {
+            _ = await _sut.ApplyEdits(request, callContext);
+            _featureWriter.ReceivedCalls()
+                .Count(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+                .Should()
+                .Be(1);
+            return;
+        }
+
+        var act = async () => await _sut.ApplyEdits(request, callContext);
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+        _outboxCapabilityProvider.ReceivedCalls().Should().BeEmpty();
+        _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_TenantInvisibleTarget_DeniesBeforeReadOutboxOrWrite()
+    {
+        var tenantService = CreateService("test", tenant: "tenant-b");
+        var tenantResource = CreateResource(tenant: "tenant-b");
+        _resourceValidator
+            .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(CreateTriple(tenantService, tenantResource)));
+
+        var act = async () => await _sut.ApplyEdits(
+            CreateApplyEditsRequest(editKinds: 7),
+            CreateCallContextForTenant(CreateAuthenticatedUser("admin"), "tenant-a"));
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+        _featureReader.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureReader.GetAsync));
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+        _outboxCapabilityProvider.ReceivedCalls().Should().BeEmpty();
+        _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
     [UnitTest]
@@ -320,6 +461,11 @@ public sealed class GrpcFeatureServiceTests
         _featureWriter.ReceivedCalls()
             .Should()
             .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+        _featureReader.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureReader.GetAsync));
+        _outboxCapabilityProvider.ReceivedCalls().Should().BeEmpty();
+        _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
     [UnitTest]
@@ -1217,28 +1363,102 @@ public sealed class GrpcFeatureServiceTests
     private static MetadataV2Service CreateService(
         string name,
         AccessPolicy? accessPolicy = null,
-        IReadOnlyList<string>? protocols = null)
+        IReadOnlyList<string>? protocols = null,
+        string? tenant = null)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
             {
                 Id = $"service-{name}",
-                Name = name
+                Name = name,
+                Tenant = tenant
             },
             AccessPolicy = accessPolicy,
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             Protocols = protocols ?? [GrpcProtocolName]
         };
 
+    private static Proto.ApplyEditsRequest CreateApplyEditsRequest(int editKinds)
+    {
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = "test",
+            LayerId = 0,
+            RollbackOnFailure = true
+        };
+
+        if ((editKinds & 1) != 0)
+        {
+            request.Adds.Add(new Proto.Feature
+            {
+                Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "created" } }
+            });
+        }
+
+        if ((editKinds & 2) != 0)
+        {
+            request.Updates.Add(new Proto.Feature
+            {
+                Id = 1,
+                Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "updated" } }
+            });
+        }
+
+        if ((editKinds & 4) != 0)
+        {
+            request.Deletes.Add(2);
+        }
+
+        return request;
+    }
+
+    private static List<string> GetPresentOperationNames(int editKinds)
+    {
+        var operations = new List<string>(3);
+        if ((editKinds & 1) != 0)
+        {
+            operations.Add("insert");
+        }
+
+        if ((editKinds & 2) != 0)
+        {
+            operations.Add("update");
+        }
+
+        if ((editKinds & 4) != 0)
+        {
+            operations.Add("delete");
+        }
+
+        return operations;
+    }
+
+    private static string GetGrantToOmit(int editKinds)
+    {
+        if ((editKinds & 1) != 0)
+        {
+            return "insert";
+        }
+
+        if ((editKinds & 4) != 0)
+        {
+            return "delete";
+        }
+
+        return "update";
+    }
+
     private static MetadataV2Resource CreateResource(
         string name = "test",
-        AccessPolicy? accessPolicy = null)
+        AccessPolicy? accessPolicy = null,
+        string? tenant = null)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
             {
                 Id = $"resource-{name}",
-                Name = name
+                Name = name,
+                Tenant = tenant
             },
             AccessPolicy = accessPolicy,
             Spatial = new MetadataV2ResourceSpatial
@@ -1294,9 +1514,24 @@ public sealed class GrpcFeatureServiceTests
     private static TestServerCallContext CreateCallContext(
         ClaimsPrincipal? user,
         params PermissionGrant[]? resolverGrants)
+        => CreateCallContext(user, tenantId: null, resolverGrants);
+
+    private static TestServerCallContext CreateCallContextForTenant(
+        ClaimsPrincipal? user,
+        string tenantId,
+        params PermissionGrant[]? resolverGrants)
+        => CreateCallContext(user, tenantId, resolverGrants);
+
+    private static TestServerCallContext CreateCallContext(
+        ClaimsPrincipal? user,
+        string? tenantId,
+        PermissionGrant[]? resolverGrants)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns(tenantId);
+        services.AddSingleton(tenantContext);
         services.Configure<RbacOptions>(opts =>
         {
             opts.DataEditorRoles = ["data-editor"];
@@ -1342,6 +1577,16 @@ public sealed class GrpcFeatureServiceTests
 
     private static ClaimsPrincipal CreateAnonymousUser()
         => new(new ClaimsIdentity());
+
+    private static ClaimsPrincipal CreateScopedWriteUser(string permission)
+        => new(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "scoped-write-user"),
+            new Claim(ClaimTypes.Role, LayerScopedWriteKey.Role),
+            new Claim("auth_type", LayerScopedWriteKey.AuthType),
+            new Claim("permission", permission)
+        ],
+        "Test"));
 
     /// <summary>
     /// Minimal ServerCallContext for unit testing gRPC services.

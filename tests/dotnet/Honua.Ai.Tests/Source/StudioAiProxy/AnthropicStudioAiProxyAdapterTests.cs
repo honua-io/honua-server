@@ -364,6 +364,33 @@ public sealed class AnthropicStudioAiProxyAdapterTests
         handler.CapturedRequestBody.Should().Contain("\"system\":\"You are a GIS analyst.\\n\\nBe terse.\"");
     }
 
+    [Theory]
+    [InlineData("data: {not-json}\n\n")]
+    [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {bad}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
+    [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {\"type\":\"future_event\"}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
+    public async Task StreamAsync_MalformedOrUnknownFrame_EmitsTypedError(string fixture)
+    {
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+    }
+
+    [Theory]
+    [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
+    [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{}}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
+    [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
+    [InlineData("data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\"}}\n\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n")]
+    public async Task StreamAsync_MissingStopReasonOrUnmatchedBlockStop_EmitsTypedError(string fixture)
+    {
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        events.Last().Type.Should().Be(StudioAiChatEventType.Error);
+        events.Last().ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+    }
+
     private static AnthropicStudioAiProxyAdapter CreateAdapter(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         var handler = new StudioAiProxyMockHttpMessageHandler(responseBody, statusCode);
@@ -395,7 +422,7 @@ public sealed class AnthropicStudioAiProxyAdapterTests
     private static StudioAiProxyProviderOptions DefaultOptions() => new()
     {
         Kind = StudioAiProxyConfiguration.AnthropicKind,
-        Endpoint = "https://api.anthropic.com",
+        Endpoint = "https://localhost",
         Model = "claude-sonnet-4-5",
         ApiKey = "test-key",
         MaxTokens = 1024,

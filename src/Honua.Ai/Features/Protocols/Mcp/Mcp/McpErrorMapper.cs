@@ -373,14 +373,16 @@ internal static class McpErrorMapper
     /// configured policy is to reject rather than evict (A3 session hardening;
     /// honua-server#2537).
     /// </summary>
-    public static McpJsonRpcError SessionCapacityReached() => new()
+    public static McpJsonRpcError SessionCapacityReached(int retryAfterSeconds, string correlationId) => new()
     {
         Code = JsonRpcServerError,
         Message = "The MCP server is at session capacity. Retry shortly.",
         Data = new McpErrorData
         {
             Code = Codes.Unavailable,
-            Retryable = true
+            Retryable = true,
+            RetryAfterSeconds = retryAfterSeconds,
+            CorrelationId = correlationId,
         }
     };
 }

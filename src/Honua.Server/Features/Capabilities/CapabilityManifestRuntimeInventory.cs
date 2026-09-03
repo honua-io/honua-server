@@ -4,6 +4,7 @@
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
 using Honua.Core.Features.Observability.Abstractions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 
 namespace Honua.Server.Features.Capabilities;
 
@@ -18,6 +19,7 @@ internal sealed class CapabilityManifestRuntimeInventory(
     IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     IEnumerable<IOpsAutonomyPolicyStore> opsAutonomyPolicyStores,
     IEnumerable<IFieldCollectionSyncStore> fieldCollectionSyncStores,
+    IEnumerable<IFeatureDataProvider> featureDataProviders,
     IWebHostEnvironment hostEnvironment)
 {
     public IReadOnlyList<IBatchComputeBackend> BatchBackends { get; } = batchBackends.ToArray();
@@ -29,6 +31,10 @@ internal sealed class CapabilityManifestRuntimeInventory(
     public bool HasAutonomyPolicyStore { get; } = opsAutonomyPolicyStores.Any();
 
     public bool HasFieldCollectionSyncStore { get; } = fieldCollectionSyncStores.Any();
+
+    public IReadOnlySet<string> FeatureDataProviders { get; } = featureDataProviders
+        .Select(static provider => provider.ProviderName)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     public string EnvironmentName { get; } = hostEnvironment.EnvironmentName;
 }

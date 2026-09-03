@@ -44,8 +44,7 @@ namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 /// Core handler for WFS 2.0 operations backed by the shared catalog and feature stores.
 /// </summary>
 /// <remarks>
-/// CITE conformance: 166/167 (WFS 2.0 `basic` profile on trunk); multi-layer
-/// rollbackOnFailure=true transactions remain the failing requirement.
+/// CITE conformance: 167/167 (WFS 2.0 `basic` profile, run 33583116921).
 /// Authoritative status: <see href="../../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
 /// </remarks>
 internal sealed partial class Wfs20Handler
@@ -207,7 +206,8 @@ internal sealed partial class Wfs20Handler
             plans.Add(new LayerQueryPlan(
                 featureType,
                 query with { Offset = layerOffset, Limit = layerLimit },
-                layerMatched));
+                layerMatched,
+                srsName));
 
             remainingCount -= layerLimit;
         }
@@ -752,21 +752,15 @@ internal sealed partial class Wfs20Handler
     /// explicit longitude/latitude axis order) in any of its accepted spellings.
     /// </summary>
     /// <remarks>
-    /// The original <c>Contains("CRS84")</c> substring test silently missed the
-    /// <c>CRS:84</c> spelling that <see cref="SpatialReferenceHelpers"/> accepts
-    /// everywhere else, so a client asking for <c>SRSNAME=CRS:84</c> was served
-    /// latitude/longitude ordinates under a longitude/latitude CRS. The shared
-    /// CRS parser closes that gap: CRS84 is the only CRS it maps to WGS 84 with
-    /// an EastNorth axis order, so the pair uniquely identifies it. The substring
-    /// test is retained as the first arm so the result is a strict superset of
-    /// the previous behaviour for spellings the parser does not recognise.
+    /// The shared CRS parser accepts the supported CRS84 spellings with anchored
+    /// patterns. CRS84 is the only CRS it maps to WGS 84 with an EastNorth axis
+    /// order, so the pair uniquely identifies it without accepting arbitrary
+    /// strings that merely contain <c>CRS84</c>.
     /// </remarks>
     private static bool IsCrs84Request(string? srsName)
-        => !string.IsNullOrWhiteSpace(srsName) &&
-           (srsName.Contains("CRS84", StringComparison.OrdinalIgnoreCase) ||
-            (SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
-             definition.Srid == SpatialReference.WGS84.Wkid &&
-             definition.AxisOrder == AxisOrder.EastNorth));
+        => SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
+           definition.Srid == SpatialReference.WGS84.Wkid &&
+           definition.AxisOrder == AxisOrder.EastNorth;
 
     private static Parameter CreateParameter(string name, bool allowAnyValue)
     {
@@ -1241,7 +1235,10 @@ internal sealed partial class Wfs20Handler
     /// GML path routes through here; WFS 1.0.0/1.1.0 serialize geometry themselves
     /// and are labelled at that writer.
     /// </remarks>
-    private static string RelabelCrs84SrsName(string geometryGml, FeatureQuery query)
+    private static string RelabelCrs84SrsName(
+        string geometryGml,
+        FeatureQuery query,
+        string? requestedSrsName = null)
     {
         var outputSrid = query.OutputSrid ?? query.SpatialReferenceSrid;
         if (query.OutputAxisOrder != AxisOrder.EastNorth ||
@@ -1252,7 +1249,8 @@ internal sealed partial class Wfs20Handler
 
         return geometryGml.Replace(
             $"srsName=\"{FormatCrs(SpatialReference.WGS84.Wkid)}\"",
-            $"srsName=\"{Crs84Urn}\"",
+            $"srsName=\"{System.Security.SecurityElement.Escape(
+                IsCrs84Request(requestedSrsName) ? requestedSrsName : Crs84Urn)}\"",
             StringComparison.Ordinal);
     }
 
@@ -1308,7 +1306,7 @@ internal sealed partial class Wfs20Handler
                 FeatureNamespacePrefix,
                 XmlConvert.EncodeLocalName(geometryPropertyName),
                 FeatureNamespaceUri);
-            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query));
+            writer.WriteRaw(RelabelCrs84SrsName(feature.GeometryGml, plan.Query, plan.RequestedSrsName));
             writer.WriteEndElement();
         }
 
@@ -2022,7 +2020,8 @@ internal sealed partial class Wfs20Handler
     private sealed record LayerQueryPlan(
         WfsFeatureTypeDescriptor Descriptor,
         FeatureQuery Query,
-        long MatchedCount);
+        long MatchedCount,
+        string? RequestedSrsName = null);
 
     private readonly record struct LayerQueryPlanSet(
         ImmutableArray<LayerQueryPlan> Plans,

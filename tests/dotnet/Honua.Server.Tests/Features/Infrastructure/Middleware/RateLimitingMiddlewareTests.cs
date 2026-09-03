@@ -53,7 +53,7 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
-    public async Task InvokeAsync_WhenRateLimitExceeded_ReturnsExpectedJsonContract()
+    public async Task InvokeAsync_WhenRateLimitExceeded_ReturnsProblemDetailsContract()
     {
         var middleware = CreateMiddleware();
 
@@ -67,10 +67,11 @@ public sealed class RateLimitingMiddlewareTests
         secondContext.Response.Body.Position = 0;
 
         using var responseDocument = await JsonDocument.ParseAsync(secondContext.Response.Body);
-        responseDocument.RootElement.GetProperty("error").GetString().Should().Be("rate_limit_exceeded");
-        responseDocument.RootElement.GetProperty("message").GetString().Should().Be("Too many requests. Please try again later.");
-        responseDocument.RootElement.GetProperty("details").GetProperty("limit").GetInt32().Should().Be(1);
-        responseDocument.RootElement.GetProperty("details").TryGetProperty("window_reset", out _).Should().BeTrue();
+        responseDocument.RootElement.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status429TooManyRequests);
+        responseDocument.RootElement.GetProperty("code").GetString().Should().Be("rate_limit_exceeded");
+        responseDocument.RootElement.GetProperty("retryable").GetBoolean().Should().BeTrue();
+        responseDocument.RootElement.GetProperty("retryAfterSeconds").GetInt32().Should().BeInRange(0, 60);
+        responseDocument.RootElement.GetProperty("correlationId").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
     [UnitTest]
@@ -405,7 +406,7 @@ public sealed class RateLimitingMiddlewareTests
     {
         var context = new DefaultHttpContext();
         context.Request.Method = httpMethod;
-        context.Request.Path = "/rest/services/test/FeatureServer/0/query";
+        context.Request.Path = "/native-contract";
         context.Response.Body = new MemoryStream();
         context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
         if (!string.IsNullOrWhiteSpace(localIp))
@@ -447,6 +448,7 @@ public sealed class RateLimitingMiddlewareTests
         }
 
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton<ITenantContext>(new StubTenantContext(tenantId));
         context.RequestServices = services.BuildServiceProvider();
 

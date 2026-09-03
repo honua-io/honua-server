@@ -64,7 +64,9 @@ internal static class ODataErrorFormatter
                 Message = string.IsNullOrWhiteSpace(errorResponse.Detail)
                     ? errorResponse.Title
                     : errorResponse.Detail,
-                Details = details
+                Details = details,
+                Retryable = options.Retryable,
+                RetryAfterSeconds = options.RetryAfterSeconds,
             }
         };
 

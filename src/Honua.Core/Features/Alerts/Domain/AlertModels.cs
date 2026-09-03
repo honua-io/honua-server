@@ -695,6 +695,12 @@ public sealed record AlertEventEnvelope
 public sealed record AlertDispatchItem
 {
     /// <summary>
+    /// Opaque ownership token for this claim. State transitions are accepted only
+    /// while this token still owns the processing row.
+    /// </summary>
+    public required Guid ClaimToken { get; init; }
+
+    /// <summary>
     /// Dispatch identifier.
     /// </summary>
     public required long DispatchId { get; init; }

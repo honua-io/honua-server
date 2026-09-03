@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.MultiTenancy.Domain;
@@ -33,6 +34,9 @@ public sealed class TenantStatusEnforcementMiddlewareTests
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         nextCalled.Should().BeFalse("a suspended tenant must be blocked before reaching the handler");
+        var problem = await ReadProblemAsync(context);
+        problem.GetProperty("code").GetString().Should().Be("tenant_suspended");
+        problem.GetProperty("correlationId").GetString().Should().Be(context.TraceIdentifier);
     }
 
     [UnitTest]
@@ -44,6 +48,8 @@ public sealed class TenantStatusEnforcementMiddlewareTests
         await middleware.InvokeAsync(context);
 
         context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        var problem = await ReadProblemAsync(context);
+        problem.GetProperty("code").GetString().Should().Be("tenant_deleted");
     }
 
     [UnitTest]
@@ -101,11 +107,19 @@ public sealed class TenantStatusEnforcementMiddlewareTests
         }
 
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton<ITenantContext>(new StubTenantContext(tenantId));
         services.AddSingleton<ITenantCatalog>(catalog);
         context.RequestServices = services.BuildServiceProvider();
 
         return context;
+    }
+
+    private static async Task<JsonElement> ReadProblemAsync(DefaultHttpContext context)
+    {
+        context.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(context.Response.Body);
+        return document.RootElement.Clone();
     }
 
     private sealed class StubCatalog : ITenantCatalog

@@ -5,7 +5,6 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Import.Domain;
@@ -14,12 +13,12 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Abstractions;
 using Honua.Geocoding.Features.Geocoding.Domain;
-using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,8 +40,6 @@ public sealed class McpIngestDatasetToolTests
 {
     private const string GeoJsonData =
         """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-97.74,30.27]},"properties":{"name":"Capitol"}}]}""";
-
-    private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
 
     [UnitTest]
     [Operation(Operations.Create)]
@@ -86,11 +83,6 @@ public sealed class McpIngestDatasetToolTests
         captured.TargetSrid.Should().Be(4326);
         captured.CsvOptions.Should().BeNull();
 
-        await _jobService.Received(1).EnsureCallerAuthorizedAsync(
-            Arg.Any<ClaimsPrincipal>(),
-            OperatorResourceType.Workspace,
-            OperatorOperation.Create,
-            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -318,7 +310,7 @@ public sealed class McpIngestDatasetToolTests
     [UnitTest]
     public void Describe_TeachesThePublishChainAndFormats()
     {
-        var descriptor = new IngestDatasetTool(_jobService, NullLogger<IngestDatasetTool>.Instance).Describe();
+        var descriptor = new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance).Describe();
 
         descriptor.Name.Should().Be("honua_ingest_dataset");
         descriptor.Description.Should()
@@ -362,6 +354,13 @@ public sealed class McpIngestDatasetToolTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(importService);
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<object?>(),
+                Arg.Any<string>())
+            .Returns(AuthorizationResult.Success());
+        services.AddSingleton(authorization);
         services.AddSingleton(license ?? ActiveLicense(IngestDatasetTool.GeocodeEntitlementKey));
         if (coordinator is not null)
         {
@@ -384,7 +383,7 @@ public sealed class McpIngestDatasetToolTests
     private async Task<McpJsonRpcResponse?> DispatchAsync(ServiceProvider services, string argumentsJson)
     {
         var surface = new McpDataAccessSurface(
-            [new IngestDatasetTool(_jobService, NullLogger<IngestDatasetTool>.Instance)],
+            [new IngestDatasetTool(NullLogger<IngestDatasetTool>.Instance)],
             [],
             NullLogger<McpDataAccessSurface>.Instance);
 

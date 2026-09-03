@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
@@ -263,9 +264,13 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         }
 
         var enumerator = adapter.StreamAsync(providerOptions, request, cancellationToken).GetAsyncEnumerator(cancellationToken);
-        var sawTerminalEvent = false;
+        var validator = new StudioAiStreamGrammarValidator();
+        StudioAiChatEvent? successfulTerminal = null;
         var transcriptEvents = signingKey is null ? null : new List<StudioAiChatEvent>();
         long transcriptCharacters = 0;
+        long responseBytes = 0;
+        var responseEventCount = 0;
+        var toolArgumentBytes = new Dictionary<string, long>(StringComparer.Ordinal);
         string? providerReportedModel = null;
 
         try
@@ -283,9 +288,9 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                     {
                         Type = StudioAiChatEventType.Error,
                         Model = model,
+                        ErrorCode = StudioAiStreamGrammarValidator.InvalidStreamCode,
                         ErrorMessage = "The provider adapter failed unexpectedly."
                     };
-                    sawTerminalEvent = true;
                     yield break;
                 }
 
@@ -295,6 +300,51 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 }
 
                 var evt = enumerator.Current;
+                var eventBytes = JsonSerializer.SerializeToUtf8Bytes(
+                    evt,
+                    StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length;
+                responseBytes += eventBytes;
+                responseEventCount++;
+                if (evt.Type == StudioAiChatEventType.ToolCallDelta && evt.ToolArgumentsDelta is { } argumentDelta)
+                {
+                    var toolCallId = evt.ToolCallId ?? string.Empty;
+                    toolArgumentBytes.TryGetValue(toolCallId, out var accumulatedBytes);
+                    toolArgumentBytes[toolCallId] = accumulatedBytes + Encoding.UTF8.GetByteCount(argumentDelta);
+                }
+
+                if (eventBytes > _configuration.MaxEventBytes
+                    || responseBytes > _configuration.MaxResponseBytes
+                    || responseEventCount > _configuration.MaxResponseEventCount
+                    || toolArgumentBytes.Values.Any(bytes => bytes > _configuration.MaxToolArgumentBytes))
+                {
+                    summary.Succeeded = false;
+                    summary.StopReason = StudioAiStopReason.Error;
+                    summary.ErrorMessage = "Provider output exceeded a configured byte limit.";
+                    yield return new StudioAiChatEvent
+                    {
+                        Type = StudioAiChatEventType.Error,
+                        Model = model,
+                        ErrorCode = "studio_ai/provider_output_too_large",
+                        ErrorMessage = "Provider output exceeded a configured byte limit."
+                    };
+                    yield break;
+                }
+
+                if (validator.Validate(evt) is { } rejectionReason)
+                {
+                    summary.Succeeded = false;
+                    summary.StopReason = StudioAiStopReason.Error;
+                    summary.ErrorMessage = "Provider returned an invalid event stream.";
+                    yield return new StudioAiChatEvent
+                    {
+                        Type = StudioAiChatEventType.Error,
+                        Model = model,
+                        ErrorCode = StudioAiStreamGrammarValidator.InvalidStreamCode,
+                        ErrorMessage = $"Provider stream rejected: {rejectionReason}."
+                    };
+                    yield break;
+                }
+
                 if (transcriptEvents is not null)
                 {
                     transcriptCharacters += EventCharacterCount(evt);
@@ -319,13 +369,20 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                         providerReportedModel = evt.Model;
                     }
                 }
-                if (evt.Type is StudioAiChatEventType.MessageStop or StudioAiChatEventType.Error)
+                if (evt.Type == StudioAiChatEventType.MessageStop)
                 {
-                    sawTerminalEvent = true;
-                    ApplySummary(summary, providerName, evt);
+                    // Hold successful termination until EOF. This makes duplicate and post-terminal
+                    // events ineligible for both messageStop and provenance signing.
+                    successfulTerminal = evt;
+                    continue;
                 }
 
                 yield return evt;
+                if (evt.Type == StudioAiChatEventType.Error)
+                {
+                    ApplySummary(summary, providerName, evt);
+                    yield break;
+                }
             }
         }
         finally
@@ -333,7 +390,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             await enumerator.DisposeAsync().ConfigureAwait(false);
         }
 
-        if (!sawTerminalEvent)
+        if (successfulTerminal is null)
         {
             // Contract violation guard: an adapter that ends its sequence without a terminal event
             // (see IStudioAiProxyAdapter remarks) still gets exactly one Error event and one audit
@@ -345,10 +402,13 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             {
                 Type = StudioAiChatEventType.Error,
                 Model = model,
+                ErrorCode = StudioAiStreamGrammarValidator.InvalidStreamCode,
                 ErrorMessage = "The provider adapter ended the stream unexpectedly."
             };
+            yield break;
         }
-        else if (signingKey is not null && summary.Succeeded)
+
+        if (signingKey is not null)
         {
             if (string.IsNullOrWhiteSpace(providerReportedModel))
             {
@@ -365,12 +425,64 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 yield break;
             }
 
-            yield return new StudioAiChatEvent
+            StudioAiSignedTranscript? provenance = null;
+            try
+            {
+                provenance = _transcriptSigner.Sign(
+                    signingKey, request, providerName, providerReportedModel, transcriptEvents!);
+            }
+            catch (InvalidOperationException)
+            {
+                summary.Succeeded = false;
+                summary.StopReason = StudioAiStopReason.Error;
+                summary.ErrorMessage = "Transcript provenance validation failed.";
+            }
+
+            if (provenance is null)
+            {
+                yield return new StudioAiChatEvent
+                {
+                    Type = StudioAiChatEventType.Error,
+                    Model = model,
+                    ErrorCode = "studio_ai/provenance_validation_failed",
+                    ErrorMessage = "Transcript provenance validation failed."
+                };
+                yield break;
+            }
+
+            var provenanceEvent = new StudioAiChatEvent
             {
                 Type = StudioAiChatEventType.TranscriptProvenance,
-                Provenance = _transcriptSigner.Sign(signingKey, request, providerName, providerReportedModel, transcriptEvents!)
+                Provenance = provenance
             };
+            var provenanceBytes = JsonSerializer.SerializeToUtf8Bytes(
+                provenanceEvent,
+                StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length;
+            if (provenanceBytes > _configuration.MaxEventBytes
+                || responseBytes + provenanceBytes > _configuration.MaxResponseBytes
+                || responseEventCount + 1 > _configuration.MaxResponseEventCount)
+            {
+                summary.Succeeded = false;
+                summary.StopReason = StudioAiStopReason.Error;
+                summary.ErrorMessage = "Transcript provenance exceeded a configured response limit.";
+                yield return new StudioAiChatEvent
+                {
+                    Type = StudioAiChatEventType.Error,
+                    Model = model,
+                    ErrorCode = "studio_ai/provider_output_too_large",
+                    ErrorMessage = "Transcript provenance exceeded a configured response limit."
+                };
+                yield break;
+            }
+
+            ApplySummary(summary, providerName, successfulTerminal);
+            yield return successfulTerminal;
+            yield return provenanceEvent;
+            yield break;
         }
+
+        ApplySummary(summary, providerName, successfulTerminal);
+        yield return successfulTerminal;
     }
 
     private static long EventCharacterCount(StudioAiChatEvent evt)

@@ -188,13 +188,15 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
+            FixtureBypassDatabaseSchemaGuard.Instance,
             schemaName);
 
     private async Task CreateSchemaAsync(string schemaName)
     {
         // raster_data: the source-of-truth table the tile SQL scans. raster_statistics: required by
         // the per-raster auto-stretch statistics path (its backfill does not auto-create the table).
-        // The mosaic path's raster_layer_statistics table is created on demand by the store.
+        // raster_layer_statistics is intentionally absent: this fixture bypasses the production
+        // journal guard and exercises the read-only compute fallback without runtime DDL.
         await fixture.ExecuteAsync("""
             CREATE TABLE IF NOT EXISTS raster_data (
                 id BIGSERIAL PRIMARY KEY,

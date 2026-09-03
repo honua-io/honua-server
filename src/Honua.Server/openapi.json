@@ -2,23 +2,23 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua OGC API Features",
-    "description": "OGC API Features implementation for geospatial data access\n\nCompliance: OGC CITE 1137/1138 across 14 conformance suites; WFS 2.0 basic is 166/167 because multi-layer rollbackOnFailure=true transactions are rejected — see docs/cite-status.md and run 33376911053.",
+    "description": "OGC API Features implementation for geospatial data access\n\nCompliance: OGC CITE 1138/1138 across 14 conformance suites; WFS 2.0 basic is 167/167 — see docs/cite-status.md and run 33583116921.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server"
     },
     "x-honua-cite-compliance": {
-      "summary": "1137/1138 assertions pass across 14 conformance suites on trunk; WFS 2.0 basic is 166/167 because multi-layer rollbackOnFailure=true transactions are rejected.",
+      "summary": "1138/1138 assertions pass across 14 conformance suites; WFS 2.0 basic is 167/167.",
       "totals": {
-        "passed": 1137,
-        "failed": 1,
+        "passed": 1138,
+        "failed": 0,
         "skipped": 0,
         "cantTell": 0
       },
-      "lastEvidenceRun": "2026-08-31",
+      "lastEvidenceRun": "2026-09-02",
       "evidenceRuns": {
         "aggregate": "https://github.com/honua-io/honua-server/actions/runs/33205558805",
-        "wfs20Basic": "https://github.com/honua-io/honua-server/actions/runs/33376911053"
+        "wfs20Basic": "https://github.com/honua-io/honua-server/actions/runs/33583116921"
       },
       "evidenceWorkflow": "https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml",
       "authoritativeSource": "docs/cite-status.md",
@@ -30,7 +30,7 @@
         { "suite": "KML 2.2", "profile": "applicable", "passed": 42, "total": 42, "passRate": "100%" },
         { "suite": "WFS 1.0", "profile": "basic", "passed": 162, "total": 162, "passRate": "100%" },
         { "suite": "WFS 1.1", "profile": "basic", "passed": 39, "total": 39, "passRate": "100%" },
-        { "suite": "WFS 2.0", "profile": "basic", "passed": 166, "total": 167, "passRate": "99.4%" },
+        { "suite": "WFS 2.0", "profile": "basic", "passed": 167, "total": 167, "passRate": "100%" },
         { "suite": "WFS 2.0 Transactional", "profile": "transactional", "passed": 25, "total": 25, "passRate": "100%" },
         { "suite": "WCS 2.0", "profile": "core", "passed": 82, "total": 82, "passRate": "100%" },
         { "suite": "WPS 2.0", "profile": "basic-async", "passed": 21, "total": 21, "passRate": "100%" },

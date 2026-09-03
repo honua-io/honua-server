@@ -31,9 +31,10 @@
       "edition": "Community",
       "status": null,
       "entryCount": 375,
-      "provingTestCount": 1138,
+      "provingTestCount": 1145,
       "maturity": {
-        "implemented": 375
+        "implemented": 373,
+        "preview": 2
       },
       "noSurface": null,
       "cite": [],
@@ -121,7 +122,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 112,
+      "provingTestCount": 115,
       "maturity": {
         "implemented": 4
       },
@@ -139,7 +140,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 1,
-      "provingTestCount": 18,
+      "provingTestCount": 19,
       "maturity": {
         "implemented": 1
       },
@@ -157,7 +158,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 18,
+      "provingTestCount": 20,
       "maturity": {
         "implemented": 4
       },
@@ -219,7 +220,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 18,
-      "provingTestCount": 46,
+      "provingTestCount": 47,
       "maturity": {
         "implemented": 18
       },
@@ -675,7 +676,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 27,
+      "provingTestCount": 29,
       "maturity": {
         "implemented": 2
       },
@@ -1141,7 +1142,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 74,
-      "provingTestCount": 217,
+      "provingTestCount": 219,
       "maturity": {
         "implemented": 74
       },
@@ -1738,7 +1739,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 142,
-      "provingTestCount": 375,
+      "provingTestCount": 376,
       "maturity": {
         "implemented": 142
       },
@@ -1991,7 +1992,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 274,
+      "provingTestCount": 275,
       "maturity": {
         "implemented": 21
       },
@@ -2151,7 +2152,7 @@
       "entryCount": 15,
       "provingTestCount": 29,
       "maturity": {
-        "implemented": 15
+        "preview": 15
       },
       "noSurface": null,
       "cite": [],
@@ -2241,7 +2242,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 117,
+      "provingTestCount": 118,
       "maturity": {
         "implemented": 2
       },
@@ -2264,9 +2265,9 @@
         {
           "suite": "WFS 2.0",
           "profile": "basic",
-          "passed": 166,
+          "passed": 167,
           "total": 167,
-          "passRate": 99.4
+          "passRate": 100.0
         }
       ],
       "parity": [],
@@ -2493,9 +2494,10 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 94,
+      "provingTestCount": 95,
       "maturity": {
-        "implemented": 5
+        "implemented": 3,
+        "preview": 2
       },
       "noSurface": null,
       "cite": [],

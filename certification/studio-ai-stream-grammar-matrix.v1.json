@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "1.0",
+  "issue": 3882,
+  "validator": "StudioAiStreamGrammarValidator",
+  "typedRejection": "studio_ai/invalid_provider_stream",
+  "providers": ["openai-compatible", "anthropic", "bedrock"],
+  "providerNeutralFixturesPerProvider": 13,
+  "providerNeutralFixtureExecutions": 39,
+  "wireFixtureExecutions": 6,
+  "totalFixtures": 45,
+  "executedFixtures": 45,
+  "skippedFixtures": 0,
+  "expectedInvalidOutcome": {
+    "terminalCount": 0,
+    "provenanceCount": 0,
+    "upstreamDisposalObserved": true,
+    "auditOutcome": "failed",
+    "downstreamDispatchCount": 0
+  },
+  "fixtures": [
+    {"id":"missing-message-start","rawFixture":"textDelta;messageStop","rawFixtureDigest":"sha256:dad5dd1155fcd85f7cc9b2123954768f00e65fac2a262687972a01ed4936482a","rejectionReason":"missing_message_start"},
+    {"id":"missing-provider-model","rawFixture":"messageStart(model=null);messageStop","rawFixtureDigest":"sha256:06bd491e25c8665178123bd0e8bf0c50b262a375e81ec4e3eeaf024a8493402c","rejectionReason":"missing_provider_model"},
+    {"id":"tool-delta-without-start","rawFixture":"messageStart;toolDelta(call-1);messageStop","rawFixtureDigest":"sha256:4b2fe71ecb0b5faa2efb4f078eeedc05371b0b9918f4aca9507c4dc71eaad761","rejectionReason":"tool_delta_without_start"},
+    {"id":"duplicate-tool-id","rawFixture":"messageStart;toolStart(call-1);toolStop(call-1);toolStart(call-1)","rawFixtureDigest":"sha256:9d76808055aca95333ae0bf56c22e5bf8163f87c9376d3459df2dfed64efe787","rejectionReason":"duplicate_tool_id"},
+    {"id":"tool-stop-without-start","rawFixture":"messageStart;toolStop(call-1)","rawFixtureDigest":"sha256:1414b4d4c996962b37d03cbf2950427827e3780df7aa3be20b7ee1355ab229e6","rejectionReason":"tool_stop_without_start"},
+    {"id":"invalid-tool-json","rawFixture":"messageStart;toolStart(call-1);toolStop(arguments=null)","rawFixtureDigest":"sha256:ce1443a97fc2ae42879a0aca8ff2874eaae10e7c532a5fff7255e8a2c18aa90d","rejectionReason":"invalid_tool_arguments"},
+    {"id":"truncated-tool-json","rawFixture":"messageStart;toolStart(call-1);toolDelta({);messageStop","rawFixtureDigest":"sha256:96018c395775da49b56f56341237349723d77e2ae43cace2fbebb2885cf6596b","rejectionReason":"message_stop_before_tool_stop"},
+    {"id":"message-stop-before-tool-stop","rawFixture":"messageStart;toolStart(call-1);messageStop","rawFixtureDigest":"sha256:cd1dcbe1494c3f8bb9aa2195478e3790b9b1604f2a1c30ea769e6fe210e31f66","rejectionReason":"message_stop_before_tool_stop"},
+    {"id":"duplicate-message-stop","rawFixture":"messageStart;messageStop;messageStop","rawFixtureDigest":"sha256:194aacccd77cf9431e3014ca378c66fc9aae3c45d510bb4e85ac012537c0e022","rejectionReason":"event_after_terminal"},
+    {"id":"error-after-message-stop","rawFixture":"messageStart;messageStop;error","rawFixtureDigest":"sha256:f9ce04ac6ba1893e3b6582e2636d266c81a22376196b28f030508235563bc953","rejectionReason":"event_after_terminal"},
+    {"id":"text-after-message-stop","rawFixture":"messageStart;messageStop;textDelta","rawFixtureDigest":"sha256:e06bc29fe530eb5c036b0bc5706a4e2c54fb04af8f2436112a33c66ff9d2f32e","rejectionReason":"event_after_terminal"},
+    {"id":"tool-after-message-stop","rawFixture":"messageStart;messageStop;toolStart","rawFixtureDigest":"sha256:d9cad0a1624b325efe6a18ccdaea420fee38f55bcafacd78844652f2f102ae66","rejectionReason":"event_after_terminal"},
+    {"id":"adapter-provenance","rawFixture":"messageStart;transcriptProvenance","rawFixtureDigest":"sha256:e4510faa18f494fb97725668f4848b5a26b72be846feec6b067eec044181eab8","rejectionReason":"adapter_emitted_provenance"}
+  ],
+  "wireFixtures": {
+    "openai-compatible": ["malformed-first-frame", "malformed-between-text", "done-without-finish-reason"],
+    "anthropic": ["malformed-first-frame", "malformed-between-events", "unknown-event-type"]
+  }
+}

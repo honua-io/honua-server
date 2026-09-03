@@ -263,7 +263,10 @@ internal static class AdminAuthEndpoints
             if (string.IsNullOrWhiteSpace(discovery.AuthorizationEndpoint))
             {
                 AdminAuthLog.MissingAuthorizationEndpoint(logger, provider.Key);
-                return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    "Identity provider is temporarily unavailable.",
+                    retryable: true);
             }
 
             var state = GenerateRandomString(32);
@@ -307,7 +310,10 @@ internal static class AdminAuthEndpoints
         catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException)
         {
             AdminAuthLog.CreateAuthorizeUrlFailed(logger, provider.Key, ex);
-            return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Identity provider is temporarily unavailable.",
+                retryable: true);
         }
     }
 
@@ -364,7 +370,10 @@ internal static class AdminAuthEndpoints
             if (string.IsNullOrWhiteSpace(discovery.TokenEndpoint))
             {
                 AdminAuthLog.MissingTokenEndpoint(logger, provider.Key);
-                return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    "Identity provider is temporarily unavailable.",
+                    retryable: true);
             }
 
             using var response = await RequestTokenAsync(
@@ -389,7 +398,10 @@ internal static class AdminAuthEndpoints
             if (tokenResponse is null || string.IsNullOrWhiteSpace(tokenResponse.AccessToken))
             {
                 AdminAuthLog.EmptyTokenResponse(logger, provider.Key);
-                return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    "Identity provider is temporarily unavailable.",
+                    retryable: true);
             }
 
             var validatedClaims = await ValidateAdminSessionIdTokenAsync(
@@ -402,7 +414,10 @@ internal static class AdminAuthEndpoints
                 !AdminAuthClaimsProjector.TryProjectValidatedClaims(validatedClaims, out var sessionClaims))
             {
                 AdminAuthLog.InvalidTokenProjection(logger, provider.Key);
-                return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    "Identity provider is temporarily unavailable.",
+                    retryable: true);
             }
 
             var expiresIn = tokenResponse.ExpiresIn > 0 ? tokenResponse.ExpiresIn : 300;
@@ -456,7 +471,10 @@ internal static class AdminAuthEndpoints
         catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException)
         {
             AdminAuthLog.RequestTokenFailed(logger, provider.Key, ex);
-            return StandardErrorHelpers.CreateServiceUnavailable(context, "Identity provider is temporarily unavailable.");
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Identity provider is temporarily unavailable.",
+                retryable: true);
         }
         finally
         {
