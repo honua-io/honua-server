@@ -36,7 +36,8 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
     {
         const string sql = """
             SELECT dedupe_key, rule_id, zone_id, service_id, layer_id, objectid, trigger_type,
-                   generation, severity, occurred_at, payload, incident_status, incident_duration_ms, source
+                   generation, severity, occurred_at, payload, incident_status, incident_duration_ms, source,
+                   source_event_id, job_id, operation_instance_id, correlation_id, audit_id, proposal_id
             FROM honua.alert_events
             WHERE event_id = @event_id
             """;
@@ -66,7 +67,13 @@ internal sealed class PostgresAlertEventStore : IAlertEventStore
             PayloadJson = reader.IsDBNull(10) ? "{}" : reader.GetString(10),
             IncidentStatus = AlertStoreConversions.ToIncidentStatus(reader.GetInt16(11)),
             IncidentDurationMs = reader.GetInt64(12),
-            Source = reader.IsDBNull(13) ? null : reader.GetString(13)
+            Source = reader.IsDBNull(13) ? null : reader.GetString(13),
+            SourceEventId = reader.IsDBNull(14) ? null : reader.GetString(14),
+            JobId = reader.IsDBNull(15) ? null : reader.GetString(15),
+            OperationInstanceId = reader.IsDBNull(16) ? null : reader.GetString(16),
+            CorrelationId = reader.IsDBNull(17) ? null : reader.GetString(17),
+            AuditId = reader.IsDBNull(18) ? null : reader.GetString(18),
+            ProposalId = reader.IsDBNull(19) ? null : reader.GetString(19)
         };
     }
 }

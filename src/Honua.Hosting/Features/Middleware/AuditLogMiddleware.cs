@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
+using System.Text.Json.Nodes;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -170,9 +170,25 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
         };
 
     private static string BuildDetails(HttpContext context, int status)
-        => string.Create(
-            CultureInfo.InvariantCulture,
-            $"{{\"status\":{status},\"method\":\"{context.Request.Method}\"}}");
+    {
+        var details = new JsonObject
+        {
+            ["status"] = status,
+            ["method"] = context.Request.Method,
+        };
+        AddHeader(details, context, "operationInstanceId", "X-Honua-Operation-Instance-Id");
+        AddHeader(details, context, "acceptedAuditId", "X-Honua-Audit-Id");
+        AddHeader(details, context, "proposalId", "X-Honua-Proposal-Id");
+        return details.ToJsonString();
+    }
+
+    private static void AddHeader(JsonObject details, HttpContext context, string propertyName, string headerName)
+    {
+        if (context.Request.Headers.TryGetValue(headerName, out var values) && values.Count > 0)
+        {
+            details[propertyName] = values[0];
+        }
+    }
 
     private static bool IsSuccessStatus(int status) => status is >= 200 and < 300;
 

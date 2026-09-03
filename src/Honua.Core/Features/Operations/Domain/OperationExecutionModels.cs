@@ -82,6 +82,12 @@ public sealed record OperationPolicyContext
     /// </summary>
     public string? CorrelationId { get; init; }
 
+    /// <summary>The durable acceptance-audit identity for this exact invocation.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>The durable proposal identity explicitly joined to this invocation.</summary>
+    public string? ProposalId { get; init; }
+
     /// <summary>Trusted tenant identity captured at invocation time.</summary>
     public string? TenantId { get; init; }
 
