@@ -65,6 +65,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         if (query is { Length: > 0 }) relativePath += "?" + string.Join("&", query);
         var uri = new Uri($"{current.Request.Scheme}://{current.Request.Host}/api/v1/admin{relativePath}");
         using var message = new HttpRequestMessage(_definition.Method, uri);
+        OperationLineageHeaders.Apply(message, context);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {

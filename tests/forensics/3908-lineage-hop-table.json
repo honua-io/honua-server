@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "honua.forensic-lineage.v1",
+  "issue": "honua-server#3908",
+  "candidateBinding": "GITHUB_SHA",
+  "joinPolicy": "explicit-identifiers-only",
+  "rawRecords": "3908-lineage-records.json",
+  "canonical": {
+    "operationInstanceId": "opinst-forensic-exact",
+    "correlationId": "corr-forensic-exact",
+    "auditId": "audit-forensic-exact",
+    "proposalId": "proposal-forensic-exact"
+  },
+  "hops": [
+    { "ordinal": 1, "path": "direct-admin-loopback", "exactEquality": true, "missingIds": 0, "replacementIds": 0, "inferredJoins": 0, "childJoin": "httpRequest" },
+    { "ordinal": 2, "path": "approved-replay-admin-loopback", "exactEquality": true, "missingIds": 0, "replacementIds": 0, "inferredJoins": 0, "childJoin": "proposalId" },
+    { "ordinal": 3, "path": "direct-queued-import", "exactEquality": true, "missingIds": 0, "replacementIds": 0, "inferredJoins": 0, "childJoin": "jobId" },
+    { "ordinal": 4, "path": "approved-replay-queued-import", "exactEquality": true, "missingIds": 0, "replacementIds": 0, "inferredJoins": 0, "childJoin": "proposalId+jobId" },
+    { "ordinal": 5, "path": "failed-job-ops-alert-dispatch", "exactEquality": true, "missingIds": 0, "replacementIds": 0, "inferredJoins": 0, "childJoin": "jobId+alertEventId+dispatchId" },
+    { "ordinal": 6, "path": "feature-event-realtime-rule-alert-dispatch", "exactEquality": true, "missingIds": 0, "replacementIds": 0, "inferredJoins": 0, "childJoin": "eventId+alertEventId+dispatchId" },
+    { "ordinal": 7, "path": "support-engineering-notification-bug-report", "exactEquality": true, "missingIds": 0, "replacementIds": 0, "inferredJoins": 0, "childJoin": "ticketId+bundleId+envelopeIndex+notificationEventId+bugEventId" }
+  ]
+}

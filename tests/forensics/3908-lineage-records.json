@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "honua.forensic-lineage.records.v1",
+  "issue": "honua-server#3908",
+  "candidateBinding": "GITHUB_SHA",
+  "sanitized": true,
+  "records": [
+    {
+      "ordinal": 1,
+      "path": "direct-admin-loopback",
+      "canonical": { "operationInstanceId": "opinst-direct-loopback", "correlationId": "corr-direct-loopback", "auditId": "audit-direct-loopback", "proposalId": null },
+      "observedHops": ["operation-dispatch", "loopback-http-headers"],
+      "childIds": { "httpRequest": "request-direct-loopback" },
+      "evidence": ["OperationsToolsetTests.LaneD_Executor_WritesAotSafeBody_WithoutRouteOrAbsentOptionalParameters"]
+    },
+    {
+      "ordinal": 2,
+      "path": "approved-replay-admin-loopback",
+      "canonical": { "operationInstanceId": "opinst-replay-loopback", "correlationId": "corr-replay-loopback", "auditId": "audit-replay-loopback", "proposalId": "proposal-replay-loopback" },
+      "observedHops": ["proposal-approval", "operation-dispatch", "loopback-http-headers"],
+      "childIds": { "httpRequest": "request-replay-loopback" },
+      "evidence": ["OperationsToolsetTests.LaneB_ApprovedReplay_MintsScopedCredential_AndUsesRequesterTenant", "OperationsToolsetTests.LaneD_ApprovedReplay_UsesExactOperationCredential_ThenRevokesIt", "OperationsToolsetTests.LaneA_ApprovedReplay_DoesNotExecuteWithApproveOnlyKey_AndUsesRequesterTenant"]
+    },
+    {
+      "ordinal": 3,
+      "path": "direct-queued-import",
+      "canonical": { "operationInstanceId": "opinst-direct-import", "correlationId": "corr-direct-import", "auditId": "audit-direct-import", "proposalId": null },
+      "observedHops": ["import-http-request", "queued-import-request", "import-progress"],
+      "childIds": { "jobId": "job-direct-import" },
+      "evidence": ["ImportEndpointTests.ImportFile_WithClientUploadId_ExposesAcceptedUploadAndImportJobResultFields"]
+    },
+    {
+      "ordinal": 4,
+      "path": "approved-replay-queued-import",
+      "canonical": { "operationInstanceId": "opinst-replay-import", "correlationId": "corr-replay-import", "auditId": "audit-replay-import", "proposalId": "proposal-replay-import" },
+      "observedHops": ["proposal-approval", "loopback-http-headers", "queued-import-request", "import-progress"],
+      "childIds": { "jobId": "job-replay-import" },
+      "evidence": ["OperationsToolsetTests.LaneA_ApprovedReplay_DoesNotExecuteWithApproveOnlyKey_AndUsesRequesterTenant", "ImportEndpointTests.ImportFile_WithClientUploadId_ExposesAcceptedUploadAndImportJobResultFields"]
+    },
+    {
+      "ordinal": 5,
+      "path": "failed-job-ops-alert-dispatch",
+      "canonical": { "operationInstanceId": "opinst-failed-job", "correlationId": "corr-failed-job", "auditId": "audit-failed-job", "proposalId": "proposal-failed-job" },
+      "observedHops": ["job-audit", "ops-alert", "durable-dispatch"],
+      "childIds": { "jobId": "job-failed", "alertEventId": "alert-failed-job", "dispatchId": "dispatch-failed-job" },
+      "evidence": ["OpsNotificationServiceTests.NotifyAsync_WhenEnabled_EnqueuesOpsEventToConfiguredChannel", "OpsNotificationServiceTests.JobTerminalCallback_FailedJobPreservesCanonicalLineageVerbatim"]
+    },
+    {
+      "ordinal": 6,
+      "path": "feature-event-realtime-rule-alert-dispatch",
+      "canonical": { "operationInstanceId": "opinst-feature", "correlationId": "corr-feature", "auditId": "audit-feature", "proposalId": "proposal-feature" },
+      "observedHops": ["feature-mutation", "feature-outbox", "realtime-envelope", "rule-alert", "durable-dispatch"],
+      "childIds": { "eventId": "event-feature", "alertEventId": "alert-feature", "dispatchId": "dispatch-feature" },
+      "evidence": ["FeatureMutationEventServiceTests.PublishAsync_WhenWkbHasNoSridButLayerSridProvided_PublishesGeometryAndCrs", "FeatureMutationOutboxScopeTests.ResolveOutboxScopeAsync_WhenCapabilityTrue_BuildsEntryFactoryFromProtocolContext", "FeatureStreamPublisherTests.ToEnvelope_MapsAllFields", "DefaultAlertEvaluatorTests.EvaluateAsync_CopiesExplicitFeatureEventLineageWithoutReplacement"]
+    },
+    {
+      "ordinal": 7,
+      "path": "support-engineering-notification-bug-report",
+      "canonical": { "correlationId": "corr-diagnostic", "traceId": "trace-diagnostic" },
+      "observedHops": ["diagnostic-envelope", "engineering-report", "notification", "bug-report-bridge"],
+      "childIds": { "ticketId": "ticket-diagnostic", "bundleId": "bundle-diagnostic", "envelopeIndex": 0, "notificationEventId": "notification-diagnostic", "bugEventId": "bug-diagnostic" },
+      "evidence": ["honua-support#71 full test suite"]
+    }
+  ]
+}

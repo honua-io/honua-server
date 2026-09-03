@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Middleware;
@@ -21,6 +22,26 @@ namespace Honua.Server.Tests.Infrastructure.Middleware;
 public sealed class AuditLogMiddlewareUnitTests
 {
     private readonly CapturingAuditLog _audit = new();
+
+    [Fact]
+    public async Task GovernedRequest_AuditDetailsRetainCanonicalLineageVerbatim()
+    {
+        var context = BuildContext(
+            "DELETE",
+            "/api/v{version:apiVersion}/admin/roles/{id}",
+            authenticated: true);
+        context.Request.Headers["X-Honua-Operation-Instance-Id"] = "opinst-exact";
+        context.Request.Headers["X-Honua-Audit-Id"] = "audit-exact";
+        context.Request.Headers["X-Honua-Proposal-Id"] = "proposal-exact";
+
+        await InvokeAsync(context, StatusCodes.Status200OK);
+
+        var audit = _audit.Events.Should().ContainSingle().Subject;
+        using var details = JsonDocument.Parse(audit.Details!);
+        details.RootElement.GetProperty("operationInstanceId").GetString().Should().Be("opinst-exact");
+        details.RootElement.GetProperty("acceptedAuditId").GetString().Should().Be("audit-exact");
+        details.RootElement.GetProperty("proposalId").GetString().Should().Be("proposal-exact");
+    }
 
     [Fact]
     public async Task FailedLogin_OnAnyRoute_EmitsAuthFailure()

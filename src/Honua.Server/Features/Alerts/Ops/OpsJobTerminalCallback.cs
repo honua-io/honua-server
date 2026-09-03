@@ -55,6 +55,11 @@ internal sealed partial class OpsJobTerminalCallback : IJobTerminalCallback
                 ? $"Execution job '{job.OperationId}' ({job.Spec.Kind}) failed: {error}"
                 : $"Execution job '{job.OperationId}' ({job.Spec.Kind}) failed.",
             DedupeIdentifier = $"{job.OperationId}:{job.Status}",
+            JobId = job.OperationId,
+            OperationInstanceId = job.Audit.OperationInstanceId,
+            CorrelationId = job.Audit.CorrelationId,
+            AuditId = job.Audit.AuditId,
+            ProposalId = job.Audit.ProposalId,
             Attributes = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["operationId"] = job.OperationId,

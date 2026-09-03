@@ -462,6 +462,10 @@ public sealed class OperationsToolsetTests
             var executionKey = request.Headers.GetValues("X-API-Key").Single();
             executionKey.Should().NotBe(approver.Key);
             request.Headers.GetValues("X-Honua-Tenant").Should().Equal("requester-tenant");
+            request.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().Equal("opinst-api-exact");
+            request.Headers.GetValues("X-Correlation-ID").Should().Equal("corr-api-exact");
+            request.Headers.GetValues("X-Honua-Audit-Id").Should().Equal("audit-api-exact");
+            request.Headers.GetValues("X-Honua-Proposal-Id").Should().Equal("proposal-1");
             executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -495,6 +499,9 @@ public sealed class OperationsToolsetTests
         }, new OperationPolicyContext
         {
             ApprovedProposalId = "proposal-1",
+            OperationInstanceId = "opinst-api-exact",
+            CorrelationId = "corr-api-exact",
+            AuditId = "audit-api-exact",
             TenantId = "requester-tenant",
             PrincipalId = "requester"
         }, CancellationToken.None);
@@ -629,12 +636,22 @@ public sealed class OperationsToolsetTests
             }
         };
 
-        var handle = await executor.SubmitAsync(request, new OperationPolicyContext(), CancellationToken.None);
+        var handle = await executor.SubmitAsync(request, new OperationPolicyContext
+        {
+            OperationInstanceId = "opinst-exact",
+            CorrelationId = "corr-exact",
+            AuditId = "audit-exact",
+            ProposalId = "proposal-exact",
+        }, CancellationToken.None);
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         handler.RequestUri!.AbsolutePath.Should().EndWith("/operations/operation-1/rollback");
         handler.Headers!.GetValues("X-API-Key").Should().Equal("secret");
         handler.Headers.GetValues("X-Honua-Tenant").Should().Equal("tenant-a");
+        handler.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().Equal("opinst-exact");
+        handler.Headers.GetValues("X-Correlation-ID").Should().Equal("corr-exact");
+        handler.Headers.GetValues("X-Honua-Audit-Id").Should().Equal("audit-exact");
+        handler.Headers.GetValues("X-Honua-Proposal-Id").Should().Equal("proposal-exact");
         using var body = JsonDocument.Parse(handler.Body!);
         body.RootElement.EnumerateObject().Select(static property => property.Name)
             .Should().BeEquivalentTo("force");
@@ -654,6 +671,10 @@ public sealed class OperationsToolsetTests
             replayHost = request.Headers.Host;
             var executionKey = request.Headers.GetValues("X-API-Key").Single();
             executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            request.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().Equal("opinst-replay");
+            request.Headers.GetValues("X-Correlation-ID").Should().Equal("corr-replay");
+            request.Headers.GetValues("X-Honua-Audit-Id").Should().Equal("audit-replay");
+            request.Headers.GetValues("X-Honua-Proposal-Id").Should().Equal("proposal-1");
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"ok\":true}")
@@ -671,6 +692,9 @@ public sealed class OperationsToolsetTests
             new OperationPolicyContext
             {
                 ApprovedProposalId = "proposal-1",
+                OperationInstanceId = "opinst-replay",
+                CorrelationId = "corr-replay",
+                AuditId = "audit-replay",
                 PrincipalId = "requester",
                 TenantId = "requester-tenant",
             },
@@ -864,6 +888,10 @@ public sealed class OperationsToolsetTests
             executionKey.Should().NotBe(approver.Key,
                 "the approve-only transport credential must never become execution authority");
             request.Headers.GetValues("X-Honua-Tenant").Should().Equal("requester-tenant");
+            request.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().Equal("opinst-connect-exact");
+            request.Headers.GetValues("X-Correlation-ID").Should().Equal("corr-connect-exact");
+            request.Headers.GetValues("X-Honua-Audit-Id").Should().Equal("audit-connect-exact");
+            request.Headers.GetValues("X-Honua-Proposal-Id").Should().Equal("proposal-1");
             executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -900,6 +928,9 @@ public sealed class OperationsToolsetTests
             new OperationPolicyContext
             {
                 ApprovedProposalId = "proposal-1",
+                OperationInstanceId = "opinst-connect-exact",
+                CorrelationId = "corr-connect-exact",
+                AuditId = "audit-connect-exact",
                 TenantId = "requester-tenant",
                 PrincipalId = "requester",
             },

@@ -945,11 +945,20 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("true"), "ForceBackground");
         content.Add(new StringContent(uploadId), "UploadId");
 
-        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/import/upload") { Content = content };
+        request.Headers.TryAddWithoutValidation("X-Honua-Operation-Instance-Id", "opinst-import-exact");
+        request.Headers.TryAddWithoutValidation("X-Correlation-ID", "corr-import-exact");
+        request.Headers.TryAddWithoutValidation("X-Honua-Audit-Id", "audit-import-exact");
+        request.Headers.TryAddWithoutValidation("X-Honua-Proposal-Id", "proposal-import-exact");
+        using var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var queued = await response.Content.ReadFromJsonAsync<JsonElement>();
         queued.GetProperty("uploadId").GetString().Should().Be(uploadId);
+        queued.GetProperty("operationInstanceId").GetString().Should().Be("opinst-import-exact");
+        queued.GetProperty("correlationId").GetString().Should().Be("corr-import-exact");
+        queued.GetProperty("auditId").GetString().Should().Be("audit-import-exact");
+        queued.GetProperty("proposalId").GetString().Should().Be("proposal-import-exact");
         var jobId = queued.GetProperty("jobId").GetString();
         jobId.Should().NotBeNullOrWhiteSpace();
 
@@ -968,6 +977,10 @@ public class ImportEndpointTests : IAsyncLifetime
         jobProgress.GetProperty("fileName").GetString().Should().Be("background.geojson");
         jobProgress.GetProperty("sourceKind").GetString().Should().BeOneOf("file", "cloud-file");
         jobProgress.GetProperty("uploadId").GetString().Should().Be(uploadId);
+        jobProgress.GetProperty("operationInstanceId").GetString().Should().Be("opinst-import-exact");
+        jobProgress.GetProperty("correlationId").GetString().Should().Be("corr-import-exact");
+        jobProgress.GetProperty("auditId").GetString().Should().Be("audit-import-exact");
+        jobProgress.GetProperty("proposalId").GetString().Should().Be("proposal-import-exact");
         jobProgress.GetProperty("currentPhase").GetString().Should().NotBeNullOrWhiteSpace();
     }
 

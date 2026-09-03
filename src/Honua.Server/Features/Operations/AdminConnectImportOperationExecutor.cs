@@ -55,6 +55,7 @@ internal sealed class AdminConnectImportOperationExecutor(
             : [];
         var uri = new Uri($"{current.Request.Scheme}://{current.Request.Host}/api/v1/admin{path}{(query.Length == 0 ? string.Empty : "?" + string.Join('&', query))}");
         using var message = new HttpRequestMessage(definition.Method, uri);
+        OperationLineageHeaders.Apply(message, context);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {

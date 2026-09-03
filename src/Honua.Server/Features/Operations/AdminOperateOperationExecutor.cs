@@ -58,6 +58,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         var method = dryRun ? _definition.DryRunMethod ?? _definition.Method : _definition.Method;
         var uri = BuildLocalUri(current, $"/api/v1/admin{AppendQuery(path, request)}");
         using var message = new HttpRequestMessage(method, uri);
+        OperationLineageHeaders.Apply(message, context);
         message.Headers.Host = current.Request.Host.Value;
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
