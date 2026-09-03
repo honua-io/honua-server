@@ -32,7 +32,9 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    command: redis-server --appendonly no
+    # The multidimensional fixture starts the GDAL worker, which is a durable-job
+    # consumer and therefore requires the same Redis durability contract as production.
+    command: redis-server --appendonly yes --appendfsync always --maxmemory-policy noeviction
     networks:
       - compat
     healthcheck:
