@@ -82,9 +82,10 @@ public sealed class PackageReviewEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/packages")]
     public async Task PublishMapPackage_WithoutPackage_ReturnsBadRequest()
     {
+        using var content = new StringContent("{\"package\":null}", Encoding.UTF8, "application/json");
         using var response = await _client.PostAsync(
             "/api/v1/admin/packages",
-            new StringContent("{\"package\":null}", Encoding.UTF8, "application/json"));
+            content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("Map package is required");

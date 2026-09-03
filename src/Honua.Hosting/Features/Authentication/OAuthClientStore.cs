@@ -297,11 +297,14 @@ internal sealed class RedisOAuthClientStore(IConnectionMultiplexer redis, TimePr
 
     public async Task<OAuthClientRecord?> ValidateSecretAsync(string clientId, string clientSecret, CancellationToken cancellationToken)
     {
-        foreach (var client in await ListAsync(cancellationToken).ConfigureAwait(false))
+        foreach (var client in (await ListAsync(cancellationToken).ConfigureAwait(false)).Where(client =>
+                     string.Equals(client.ClientId, clientId, StringComparison.Ordinal) &&
+                     client.SecretHash is not null &&
+                     client.RevokedAt is null &&
+                     (client.ExpiresAt is null || client.ExpiresAt > _timeProvider.GetUtcNow())))
         {
-            if (!string.Equals(client.ClientId, clientId, StringComparison.Ordinal) || client.SecretHash is null || client.RevokedAt is not null || client.ExpiresAt <= _timeProvider.GetUtcNow()) continue;
             var hash = SHA256.HashData(Encoding.UTF8.GetBytes(clientSecret));
-            if (!CryptographicOperations.FixedTimeEquals(hash, client.SecretHash)) return null;
+            if (!CryptographicOperations.FixedTimeEquals(hash, client.SecretHash!)) return null;
             var updated = client with { LastUsedAt = _timeProvider.GetUtcNow(), UpdatedAt = _timeProvider.GetUtcNow() };
             await _database.StringSetAsync(BuildKey(client.Id), JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
             return updated;
