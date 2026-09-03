@@ -275,14 +275,25 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
 
     public async Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         foreach (var record in await ListAsync(cancellationToken).ConfigureAwait(false))
         {
             var hash = SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
-            if (record.RevokedAt is null && (!record.ExpiresAt.HasValue || record.ExpiresAt > _timeProvider.GetUtcNow()) && CryptographicOperations.FixedTimeEquals(hash, record.KeyHash))
+            var now = _timeProvider.GetUtcNow();
+            if (record.RevokedAt is null && (!record.ExpiresAt.HasValue || record.ExpiresAt > now) && CryptographicOperations.FixedTimeEquals(hash, record.KeyHash))
             {
-                var updated = record with { LastUsedAt = _timeProvider.GetUtcNow(), UpdatedAt = _timeProvider.GetUtcNow() };
-                await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
-                return new(updated);
+                var updated = record with { LastUsedAt = now, UpdatedAt = now };
+                var key = BuildKey(record.Id);
+                var transaction = _database.CreateTransaction();
+                // Do not unconditionally rewrite the snapshot read by ListAsync: a concurrent
+                // revoke or rotate must win, rather than being resurrected by validation.
+                transaction.AddCondition(Condition.StringEqual(key, JsonSerializer.Serialize(record)));
+                _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt));
+                if (await transaction.ExecuteAsync().ConfigureAwait(false))
+                {
+                    return new(updated);
+                }
             }
         }
         return null;

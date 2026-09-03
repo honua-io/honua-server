@@ -249,11 +249,24 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
             {
                 try
                 {
-                    await publishingService.RefreshMaterializedFeaturesForSourceTableAsync(
-                        connectionProvider.GetConnectionString(),
-                        request.TargetSchema,
-                        ResolvePhysicalImportedTableName(request.TableName),
-                        cancellationToken).ConfigureAwait(false);
+                    var connectionString = connectionProvider.GetConnectionString();
+                    foreach (var physicalTableName in ResolvePhysicalImportedTableNames(request.TableName))
+                    {
+                        try
+                        {
+                            await publishingService.RefreshMaterializedFeaturesForSourceTableAsync(
+                                connectionString,
+                                request.TargetSchema,
+                                physicalTableName,
+                                cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            // A legacy 41-63 character physical name may not exist; continue
+                            // to the current hashed name so published snapshots remain fresh.
+                            UniversalImportJobLog.ProgressUpdateFailed(_logger, jobId, ex);
+                        }
+                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -380,13 +393,18 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
     }
 
-    private static string ResolvePhysicalImportedTableName(string tableName)
+    private static IReadOnlyList<string> ResolvePhysicalImportedTableNames(string tableName)
     {
         var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, "[^a-zA-Z0-9_]", "_");
         var physical = "imported_" + sanitized.ToLowerInvariant();
-        if (physical.Length <= 40) return physical;
+        if (physical.Length <= 40) return [physical];
+
         var hash = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(physical)))[..12];
-        return $"{physical[..(40 - hash.Length - 1)]}_{hash}";
+        var hashed = $"{physical[..(40 - hash.Length - 1)]}_{hash}";
+        // Imports before the length-limit fix used the unsuffixed name through
+        // PostgreSQL's 63-character identifier limit. Refresh both candidates so
+        // those published layers are not stranded after an upgrade.
+        return physical.Length <= 63 ? [physical, hashed] : [hashed];
     }
 
     /// <inheritdoc/>
