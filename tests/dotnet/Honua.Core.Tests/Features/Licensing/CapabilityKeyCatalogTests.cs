@@ -79,7 +79,8 @@ public sealed class CapabilityKeyCatalogTests
             + CapabilityKeyCatalog.RoutedExperimentalKeys.Count
             + CapabilityKeyCatalog.RoutedPreviewKeys.Count
             + CapabilityKeyCatalog.DescriptiveKeys.Count
-            + FeatureCatalog.All.Count);
+            + FeatureCatalog.All.Count
+            - CapabilityKeyCatalog.RoutedPreviewKeys.Count);
     }
 
     [Fact]
