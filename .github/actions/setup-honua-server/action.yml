@@ -21,7 +21,7 @@ inputs:
     required: true
   base-seed-path:
     description: >
-      Path to the SQL seed script to apply before the server starts.
+      Path to the SQL seed script to apply after the server migrations complete.
       Defaults to the shared CI base schema used by existing integration jobs.
     required: false
     default: 'tests/seed/base-schema.sql'
@@ -57,6 +57,12 @@ runs:
       if: ${{ inputs.server-image == '' || inputs.build-source-fixtures == 'true' }}
       shell: bash
       run: dotnet build src/Honua.Server --configuration Release --no-restore
+
+    - name: Provision PostGIS extensions
+      shell: bash
+      run: >-
+        PGPASSWORD=honua psql -v ON_ERROR_STOP=1 -h localhost -U honua -d honua_test
+        -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
 
     - name: Start Honua Server
       shell: bash
