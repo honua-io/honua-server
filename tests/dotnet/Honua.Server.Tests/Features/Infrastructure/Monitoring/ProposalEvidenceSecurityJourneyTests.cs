@@ -166,6 +166,27 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    public async Task EvidenceBoundProposal_BootstrapAdminIsRejectedBeforePersistence()
+    {
+        var client = CreateClient(WebAppFixture.SharedAdminPassword, TenantA);
+        var session = await InitializeMcpAsync(client);
+        var descriptor = await GetDescriptorAsync(ProposeDeployOperationTool.ToolName, client, session);
+        var selection = await SelectThroughProxyAsync(
+            client, descriptor, ValidDeployArguments(), Candidate);
+
+        var response = await CallToolAsync(client, session, selection);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Document.Should().NotBeNull();
+        IsMcpError(response.Document!.RootElement).Should().BeTrue();
+        HasApprovalHandle(response.Document.RootElement).Should().BeFalse();
+        (await _proposals.ListActiveAsync()).Should().BeEmpty(
+            "a bootstrap principal cannot create a durable evidence-bound approval");
+        MutationCount.Should().Be(0);
+    }
+
     private async Task RunAllowedAsync(
         string toolName,
         OperationClass operationClass,
@@ -672,9 +693,9 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         JsonElement arguments = default;
         StudioAiSignedTranscript? provenance = null;
         string? errorCode = null;
-        foreach (var frame in body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
+        foreach (var lines in body.Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
+            .Select(frame => frame.Split('\n')))
         {
-            var lines = frame.Split('\n');
             var eventName = lines.Single(line => line.StartsWith("event: ", StringComparison.Ordinal))[7..];
             var data = lines.Single(line => line.StartsWith("data: ", StringComparison.Ordinal))[6..];
             var evt = JsonSerializer.Deserialize(data, StudioAiProxyJsonContext.Default.StudioAiChatEvent)!;
@@ -766,8 +787,10 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         string? sessionId = null)
     {
         if (_descriptors.TryGetValue(toolName, out var cached)) return cached;
-        client.Should().NotBeNull();
-        sessionId.Should().NotBeNull();
+        var requiredClient = client
+            ?? throw new InvalidOperationException("An MCP client is required for a live catalog lookup.");
+        var requiredSessionId = sessionId
+            ?? throw new InvalidOperationException("An MCP session is required for a live catalog lookup.");
         string? cursor = null;
         do
         {
@@ -778,14 +801,14 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
                 ["method"] = "tools/list",
                 ["params"] = cursor is null ? new JsonObject() : new JsonObject { ["cursor"] = cursor },
             };
-            using var request = BuildMcpRequest(body, sessionId);
-            using var response = await client!.SendAsync(request);
+            using var request = BuildMcpRequest(body, requiredSessionId);
+            using var response = await requiredClient.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var result = document.RootElement.GetProperty("result");
-            foreach (var tool in result.GetProperty("tools").EnumerateArray())
+            foreach (var tool in result.GetProperty("tools").EnumerateArray()
+                .Where(tool => tool.GetProperty("name").GetString() == toolName))
             {
-                if (tool.GetProperty("name").GetString() != toolName) continue;
                 var descriptor = new ToolDescriptor(
                     toolName,
                     tool.TryGetProperty("description", out var description) ? description.GetString() : null,
