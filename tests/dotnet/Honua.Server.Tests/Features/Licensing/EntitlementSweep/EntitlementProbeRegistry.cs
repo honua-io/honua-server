@@ -110,6 +110,11 @@ internal static class EntitlementProbeRegistry
             new(FeatureCatalog.ScimProvisioningKey, HttpMethod.Get, "/scim/v2/Users",
                 Configure: WithScimBearer),
 
+            // Control plane — the tenant-admin group entitlement filter runs before any
+            // individual handler resolves tenant state. The sweep's authenticated admin
+            // client therefore reaches the gate with a simple list request.
+            new(FeatureCatalog.MultiTenancyKey, HttpMethod.Get, "/api/v1/admin/tenants"),
+
             // Import — gate runs first in both handlers (raw HttpContext, no FromBody).
             new("import.geoservices", HttpMethod.Post, "/api/v1/admin/import/geoservices/discover", "{}"),
             new("import.geoserver", HttpMethod.Post, "/api/v1/admin/import/geoserver/discover", "{}"),
