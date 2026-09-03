@@ -42,9 +42,9 @@ internal static class LayerScopedWriteKey
     private static readonly string[] AdminGrants = ["admin", "*"];
 
     /// <summary>
-    /// Prefix for administrative permission grants (e.g. <c>admin:*</c>,
-    /// <c>admin:read</c>). A key carrying any such grant retains full admin
-    /// authority and is never treated as a layer-scoped write key.
+    /// Prefix for administrative permission grants. Scoped admin grants remain
+    /// non-admin for data-plane authorization; only exact full-admin grants
+    /// confer that role.
     /// </summary>
     private const string AdminGrantPrefix = "admin:";
 
@@ -99,7 +99,10 @@ internal static class LayerScopedWriteKey
         {
             // Unscoped: bootstrap admin / dev bypass (null) and empty grant sets
             // (normalized to admin:* by the key store) retain full admin authority.
-            return true;
+            var subGrant = permission[AdminGrantPrefix.Length..].Trim();
+            return subGrant.Equals("*", StringComparison.OrdinalIgnoreCase)
+                || subGrant.Equals("write", StringComparison.OrdinalIgnoreCase)
+                || subGrant.Equals("manage", StringComparison.OrdinalIgnoreCase);
         }
 
         var hasMeaningfulGrant = false;

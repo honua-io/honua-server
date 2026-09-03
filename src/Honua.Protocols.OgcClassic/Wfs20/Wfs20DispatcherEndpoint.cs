@@ -825,6 +825,11 @@ internal static class Wfs20DispatcherEndpoint
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
+            if (!(context.User.Identity?.IsAuthenticated ?? false))
+            {
+                return Task.FromResult<IResult>(Results.Unauthorized());
+            }
+
             var validationError = ValidateOperationRequestParameters(parameters);
 
             if (validationError is not null)
@@ -865,6 +870,11 @@ internal static class Wfs20DispatcherEndpoint
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         try
         {
+            if (!(context.User.Identity?.IsAuthenticated ?? false))
+            {
+                return Task.FromResult<IResult>(Results.Unauthorized());
+            }
+
             var validationError = ValidateOperationRequestParameters(parameters);
 
             if (validationError is not null)

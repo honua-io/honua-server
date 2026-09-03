@@ -109,17 +109,16 @@ public sealed record ImportRequest
     /// Whether to overwrite existing table.
     /// </summary>
     /// <remarks>
-    /// Preserved for backward compatibility. It is equivalent to
-    /// <see cref="ImportLoadMode.Replace"/> and only takes effect when
-    /// <see cref="LoadMode"/> is not explicitly set away from the default
-    /// (<see cref="EffectiveLoadMode"/> resolves the two).
+    /// Preserved for backward compatibility. When <see cref="LoadMode"/> is left at its
+    /// default, <see langword="true"/> selects replace and <see langword="false"/> selects
+    /// append so an existing target is never silently destroyed.
     /// </remarks>
     public bool OverwriteExisting { get; init; }
 
     /// <summary>
     /// How the load reconciles with an existing target table (replace / append / upsert).
-    /// Defaults to <see cref="ImportLoadMode.Replace"/>, matching the historical
-    /// full-replace behavior and <see cref="OverwriteExisting"/>.
+    /// Defaults to <see cref="ImportLoadMode.Replace"/> as the explicit API value; the
+    /// legacy <see cref="OverwriteExisting"/> flag is reconciled by <see cref="EffectiveLoadMode"/>.
     /// </summary>
     public ImportLoadMode LoadMode { get; init; } = ImportLoadMode.Replace;
 
@@ -143,7 +142,9 @@ public sealed record ImportRequest
     /// to a non-default value; otherwise <see cref="OverwriteExisting"/> selects replace.
     /// </summary>
     public ImportLoadMode EffectiveLoadMode =>
-        LoadMode != ImportLoadMode.Replace ? LoadMode : ImportLoadMode.Replace;
+        LoadMode != ImportLoadMode.Replace
+            ? LoadMode
+            : OverwriteExisting ? ImportLoadMode.Replace : ImportLoadMode.Append;
 
     /// <summary>
     /// Validates that either FileStream or CloudFileId is provided

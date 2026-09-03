@@ -188,6 +188,6 @@ internal sealed class Wfs20EditParameterAdapter(
                 feature.Id,
                 feature.Geometry,
                 feature.Attributes,
-                EditUpdateMode.Replace));
+                EditUpdateMode.Merge));
     }
 }

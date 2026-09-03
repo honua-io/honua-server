@@ -11,7 +11,9 @@ You'll run a production-shaped Honua stack on a single host: pinned image, secre
 ```bash
 mkdir -p /opt/honua && cd /opt/honua
 cat > .env <<'EOF'
-HONUA_TAG=latest
+# Supply an immutable GHCR image reference (tag plus digest) from the release
+# manifest; floating tags such as latest are not suitable for production.
+HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:replace-with-release-digest
 POSTGRES_PASSWORD=replace-with-strong-db-password
 HONUA_ADMIN_PASSWORD=replace-with-strong-admin-password
 HONUA_MASTER_KEY=replace-with-random-string-of-32-plus-characters
@@ -27,7 +29,7 @@ chmod 600 .env
 cat > docker-compose.yml <<'EOF'
 services:
   honua:
-    image: honuaio/honua-server:${HONUA_TAG}
+    image: ${HONUA_IMAGE}
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8081:8081"
@@ -75,7 +77,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U honua -d honua"]
+      # The PostGIS image starts a temporary postmaster while initializing a
+      # fresh volume. Wait for the final postmaster (PID 1) before migrations.
+      test: ["CMD-SHELL", "test \"$(head -n 1 /var/lib/postgresql/data/postmaster.pid 2>/dev/null)\" = \"1\" && pg_isready -U honua -d honua"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -126,14 +130,15 @@ For headless deployments, keep Redis unless every durable control-plane feature 
       ASPNETCORE_URLS: "http://+:8080"
       HONUA_SERVER_BASE_URL: "http://honua:8080"
       HONUA_ADMIN_API_KEY: ${HONUA_ADMIN_PASSWORD}
+      # Production Console is fail-closed and must sit behind a trusted edge
+      # authenticator that supplies these identity headers.
+      Honua__Console__Auth__Mode: EdgeForwarded
+      Honua__Console__Auth__EdgeForwarded__Enabled: "true"
     depends_on:
       honua:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/operate"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+    # The Console image intentionally does not own an anonymous health endpoint;
+    # use the hosting layer or the backend /healthz/ready probe for health.
     restart: unless-stopped
 ```
 
@@ -166,7 +171,7 @@ with HonuaAdminClient(
 PY
 ```
 
-If Console is enabled, confirm the ops dashboard responds:
+If Console is enabled behind the configured edge authenticator, confirm the ops dashboard responds:
 
 > Open `http://127.0.0.1:5174/operate`, `http://127.0.0.1:5174/operate/health`, `http://127.0.0.1:5174/operate/copilot` in a browser.
 
@@ -302,6 +307,11 @@ docker compose up -d honua
 
 ### Gating contract-phase migrations (optional)
 
+When a Pro or Enterprise licence enables Redis-backed operations, production starts with a
+fail-closed operation policy. The shipped production settings enable
+`Operations__Policy__Enabled=true` and set `Operations__Policy__DefaultDecision=Deny`; add
+explicit `Operations__Policy__Rules` entries for operations this deployment allows.
+
 The root quickstart uses the journal-scoped Gate policy by default. For production compose, keep `Database__MigrationSafety__ContractApplyPolicy: Gate` when you want a schema-narrowing upgrade to be a deliberate, approved step on an existing database. It applies only to an already-migrated database, so a first install still provisions fully with no extra config:
 
 ```yaml
@@ -314,7 +324,7 @@ The root quickstart uses the journal-scoped Gate policy by default. For producti
       Database__MigrationSafety__BackupCommand: "pg_dump -h postgres -U honua -d honua -Fc -f /tmp/honua-pre-migrate.dump"
 ```
 
-Under `Gate`, a pending reviewed contract migration blocks startup with a message naming the scripts and the preflight endpoints above. Approve it for one upgrade by starting the container with `HONUA_APPROVE_CONTRACT_MIGRATIONS=true`; unset it again afterward. Setting `HONUA_SKIP_MIGRATIONS=true` bypasses migrations entirely (for out-of-band migration flows such as serverless) and is **outside** this policy — those paths own their own upgrade safety.
+Under `Gate`, a pending reviewed contract migration blocks startup with a message naming the scripts and the preflight endpoints above. Approve it for one upgrade by setting `HONUA_APPROVE_CONTRACT_MIGRATIONS` to the nonce printed by the migration safety error; unset it again afterward. Setting `HONUA_SKIP_MIGRATIONS=true` bypasses migrations entirely (for out-of-band migration flows such as serverless) and is **outside** this policy — those paths own their own upgrade safety.
 
 ## Next steps
 

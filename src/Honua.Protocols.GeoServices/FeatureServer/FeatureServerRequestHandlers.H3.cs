@@ -448,7 +448,15 @@ internal static partial class FeatureServerEndpoints
             return Results.NoContent();
         }
 
-        context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptions.CacheMaxAge}";
+        var ttlSeconds = TilesetTtlResolver.Resolve(tileOptions, "FeatureServer", serviceId, "H3");
+        var credentialed = context.User.Identity?.IsAuthenticated == true
+            || context.Request.Headers.ContainsKey("Authorization")
+            || context.Request.Headers.ContainsKey("X-API-Key");
+        context.Response.Headers["Cache-Control"] = $"{(credentialed ? "private" : "public")}, max-age={ttlSeconds}";
+        if (credentialed)
+        {
+            context.Response.Headers["Vary"] = "Authorization, X-API-Key";
+        }
         return Results.Bytes(tileData, "application/vnd.mapbox-vector-tile");
     }
 

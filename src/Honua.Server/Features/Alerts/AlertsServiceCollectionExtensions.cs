@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
+using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -26,6 +27,18 @@ internal static class AlertsServiceCollectionExtensions
             .Bind(configuration.GetSection(AlertDeliveryOptions.SectionName))
             .ValidateOnStart();
         services.AddSingleton<IValidateOptions<AlertDeliveryOptions>, AlertDeliveryOptionsValidator>();
+
+        // alerts.geofence is Preview and must be an explicit opt-in. Keep both workers
+        // dormant when the capability flag is absent so the manifest cannot claim the
+        // feature is disabled while it still evaluates rules or delivers notifications.
+        var experimentalFlags = new CapabilityFlagOptions();
+        CapabilityFlagOptions.Bind(
+            experimentalFlags,
+            configuration.GetSection(CapabilityFlagOptions.SectionName));
+        if (!experimentalFlags.IsExperimentalEnabled("alerts.geofence"))
+        {
+            services.PostConfigure<AlertOptions>(options => options.Enabled = false);
+        }
 
         // Alert-pipeline OTel metrics: a singleton that owns its instruments on the shared
         // "Honua" meter (created via IMeterFactory), injected into the writer, dispatcher, and

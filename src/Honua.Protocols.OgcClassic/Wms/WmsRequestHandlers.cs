@@ -1212,6 +1212,11 @@ internal static partial class WmsRequestHandlers
     {
         result = default!;
 
+        // CITE fixture rendering was intentionally removed in #34. Every WMS
+        // request must flow through the canonical feature/style renderer so
+        // certification exercises the shipped product pipeline.
+        return false;
+
         var serviceName = service.Metadata.Name ?? string.Empty;
         if (!string.Equals(serviceName, CiteServiceName, StringComparison.OrdinalIgnoreCase))
         {

@@ -10,6 +10,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Honua.Geoprocessing;
 
@@ -42,6 +43,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
     private readonly IOptionsMonitor<ExecutionAdmissionOptions> _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ExecutionAdmissionEvaluator> _logger;
+    private readonly IDatabase? _redis;
 
     private readonly ConcurrentDictionary<string, RateBucket> _rateBuckets = new();
 
@@ -51,12 +53,14 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         IOptionsMonitor<ExecutionAdmissionOptions> options,
         TimeProvider timeProvider,
         ILogger<ExecutionAdmissionEvaluator> logger,
-        IExecutionJobStore? jobStore = null)
+        IExecutionJobStore? jobStore = null,
+        IConnectionMultiplexer? multiplexer = null)
     {
         _options = options;
         _timeProvider = timeProvider;
         _logger = logger;
         _jobStore = jobStore;
+        _redis = multiplexer?.GetDatabase();
 
         _evaluatedCounter = HonuaTelemetry.Meter.CreateCounter<long>(
             "execution.admission.evaluated",
@@ -160,7 +164,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         // Claim a slot so concurrent requests from the same principal cannot both pass.
         if (options.MaxSubmissionsPerWindow > 0 && !string.IsNullOrWhiteSpace(request.PrincipalId))
         {
-            var claimed = TryClaimSubmission(request, options, out var postClaimCount);
+            var (claimed, postClaimCount) = await TryClaimSubmissionAsync(request, options).ConfigureAwait(false);
             if (!claimed)
             {
                 var rateSnapshot = snapshot with { SubmissionsInWindow = postClaimCount };
@@ -342,14 +346,30 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         return bucket.Count(_timeProvider.GetUtcNow(), TimeSpan.FromSeconds(options.RateWindowSeconds));
     }
 
-    private bool TryClaimSubmission(
-        ExecutionAdmissionRequest request, ExecutionAdmissionOptions options, out int count)
+    private async Task<(bool Claimed, int Count)> TryClaimSubmissionAsync(
+        ExecutionAdmissionRequest request, ExecutionAdmissionOptions options)
     {
         var key = BuildRateKey(request);
         var now = _timeProvider.GetUtcNow();
         var window = TimeSpan.FromSeconds(options.RateWindowSeconds);
+        if (_redis != null)
+        {
+            try
+            {
+                const string script = "local cutoff=tonumber(ARGV[1])-tonumber(ARGV[2]); redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',cutoff); local count=redis.call('ZCARD',KEYS[1]); if count >= tonumber(ARGV[3]) then return count end; redis.call('ZADD',KEYS[1],ARGV[1],ARGV[4]); redis.call('EXPIRE',KEYS[1],math.ceil(tonumber(ARGV[2])/1000)); return count+1";
+                var redisKey = $"honua:execution-admission:rate:{key}";
+                var nowMs = now.ToUnixTimeMilliseconds();
+                var result = (long)await _redis.ScriptEvaluateAsync(script, [new RedisKey(redisKey)],
+                    [nowMs, (long)window.TotalMilliseconds, options.MaxSubmissionsPerWindow, $"{nowMs}:{Guid.NewGuid():N}"]).ConfigureAwait(false);
+                return (result <= options.MaxSubmissionsPerWindow, (int)result);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _logger.LogWarning(ex, "Distributed execution-admission rate limiting unavailable; using process-local fallback.");
+            }
+        }
         var bucket = _rateBuckets.GetOrAdd(key, static _ => new RateBucket());
-        var claimed = bucket.TryClaim(now, window, options.MaxSubmissionsPerWindow, out count);
+        var claimed = bucket.TryClaim(now, window, options.MaxSubmissionsPerWindow, out var count);
 
         // Periodically evict idle buckets to prevent the dictionary from growing
         // without bound in deployments with high-cardinality principals. The sweep
@@ -360,7 +380,7 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
             SweepIdleBuckets(now, window);
         }
 
-        return claimed;
+        return (claimed, count);
     }
 
     private int _claimCount;

@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -296,6 +297,17 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         var stagingPromoted = false;
         var overwriteLockAcquired = false;
+        var tableIsPartial = true;
+
+        async Task RemovePartialTableAsync()
+        {
+            if (tableIsPartial)
+            {
+                await DropTableAsync(connection, targetSchema, loadTableName, CancellationToken.None).ConfigureAwait(false);
+                tableIsPartial = false;
+            }
+        }
+
         try
         {
             if (request.OverwriteExisting)
@@ -346,7 +358,18 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                 {
                     perTypeWarnings.Add(ex.Message);
                     classification = MigrationFidelityAutomationStatuses.ManualReview;
+                    await RemovePartialTableAsync().ConfigureAwait(false);
                     break;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    await RemovePartialTableAsync().ConfigureAwait(false);
+                    throw;
+                }
+                catch
+                {
+                    await RemovePartialTableAsync().ConfigureAwait(false);
+                    throw;
                 }
 
                 if (page.Features.Count == 0)
@@ -369,16 +392,27 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                 }
                 previousFirstFeatureRaw = currentFirstFeatureRaw;
 
-                var (pageInserted, pageFailed, pageMixed) = await InsertFeaturesAsync(
-                        connection,
-                        targetSchema,
-                        loadTableName,
-                        fields,
-                        page.Features,
-                        resource.GeometryType,
-                        srid,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                (int pageInserted, int pageFailed, bool pageMixed) insertedPage;
+                try
+                {
+                    insertedPage = await InsertFeaturesAsync(
+                            connection,
+                            targetSchema,
+                            loadTableName,
+                            fields,
+                            page.Features,
+                            resource.GeometryType,
+                            srid,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    await RemovePartialTableAsync().ConfigureAwait(false);
+                    throw;
+                }
+
+                var (pageInserted, pageFailed, pageMixed) = insertedPage;
 
                 inserted += pageInserted;
                 failed += pageFailed;
@@ -406,19 +440,28 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             {
                 perTypeWarnings.Add($"{failed} feature(s) failed to insert.");
                 classification = MigrationFidelityAutomationStatuses.ManualReview;
+                await RemovePartialTableAsync().ConfigureAwait(false);
             }
 
-            if (!request.OverwriteExisting ||
-                string.Equals(classification, MigrationFidelityAutomationStatuses.Automated, StringComparison.Ordinal))
+            if (tableIsPartial && (!request.OverwriteExisting ||
+                string.Equals(classification, MigrationFidelityAutomationStatuses.Automated, StringComparison.Ordinal)))
             {
-                await CreateSpatialIndexAsync(connection, targetSchema, loadTableName, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await CreateSpatialIndexAsync(connection, targetSchema, loadTableName, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    await RemovePartialTableAsync().ConfigureAwait(false);
+                    throw;
+                }
             }
 
             if (request.OverwriteExisting)
             {
                 if (!string.Equals(classification, MigrationFidelityAutomationStatuses.Automated, StringComparison.Ordinal))
                 {
-                    await DropTableAsync(connection, targetSchema, loadTableName, CancellationToken.None).ConfigureAwait(false);
+                    await RemovePartialTableAsync().ConfigureAwait(false);
                     inserted = 0;
                 }
                 else
@@ -430,7 +473,17 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                         tableName,
                         cancellationToken).ConfigureAwait(false);
                     stagingPromoted = true;
+                    tableIsPartial = false;
                 }
+            }
+
+            if (classification == MigrationFidelityAutomationStatuses.ManualReview)
+            {
+                await RemovePartialTableAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                tableIsPartial = false;
             }
 
             return new OgcWfsImportedFeatureType
@@ -450,9 +503,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         {
             try
             {
-                if (request.OverwriteExisting && !stagingPromoted)
+                if (!stagingPromoted)
                 {
-                    await DropTableAsync(connection, targetSchema, loadTableName, CancellationToken.None).ConfigureAwait(false);
+                    await RemovePartialTableAsync().ConfigureAwait(false);
                 }
             }
             finally
@@ -706,11 +759,18 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     private static string BuildStagingTableName(string tableName)
     {
         const string stagingPrefix = "__honua_wfs_stage_";
-        const int maxTableLengthWithIndexSuffix = 54;
-        var prefix = tableName.Length > maxTableLengthWithIndexSuffix - stagingPrefix.Length
-            ? tableName[..(maxTableLengthWithIndexSuffix - stagingPrefix.Length)]
-            : tableName;
-        return stagingPrefix + prefix;
+        const int maxIdentifierLength = 63;
+        const int hashLength = 8;
+        var maxNameLength = maxIdentifierLength - stagingPrefix.Length - hashLength - 1;
+        if (tableName.Length <= maxNameLength)
+        {
+            return stagingPrefix + tableName;
+        }
+
+        var suffix = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tableName)))
+            [..hashLength]
+            .ToLowerInvariant();
+        return stagingPrefix + tableName[..maxNameLength] + "_" + suffix;
     }
 
     private static async Task AcquireOverwriteLockAsync(
