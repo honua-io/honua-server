@@ -28,6 +28,7 @@ namespace Honua.Infrastructure.Authentication;
 /// </remarks>
 public static class PortalTokenAuthenticationExtensions
 {
+    internal static readonly object AuthenticationFailureKey = new();
     /// <summary>
     /// Authentication scheme name for ArcGIS-compatible portal tokens.
     /// </summary>
@@ -83,6 +84,27 @@ public static class PortalTokenAuthenticationExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<PortalTokenAuthenticationMiddleware>();
+    }
+
+    /// <summary>
+    /// Rejects invalid portal tokens after the shared audit and rate-limit middleware has
+    /// entered the request. This preserves the Esri 498 response while ensuring repeated
+    /// invalid credentials consume the configured source-IP rate-limit bucket.
+    /// </summary>
+    public static IApplicationBuilder UsePortalTokenAuthenticationRejection(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.Use(async (context, next) =>
+        {
+            if (!context.Items.TryGetValue(AuthenticationFailureKey, out var failure) || failure is not true)
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+            await StandardErrorHelpers.CreateInvalidToken(context).ExecuteAsync(context).ConfigureAwait(false);
+        });
     }
 
     private static void TryAddSingletonPortalTokenIssuer(this IServiceCollection services)
@@ -244,9 +266,7 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             }
             else if (!result.Succeeded && result.Failure is not null && IsGeoServicesPortalRequest(context))
             {
-                context.Response.Headers.Append("WWW-Authenticate", "Bearer");
-                await StandardErrorHelpers.CreateInvalidToken(context).ExecuteAsync(context).ConfigureAwait(false);
-                return;
+                context.Items[PortalTokenAuthenticationExtensions.AuthenticationFailureKey] = true;
             }
         }
 

@@ -391,28 +391,24 @@ internal static class SharingOAuth2Endpoints
             return StandardErrorHelpers.CreateNotFound(context, "Portal OAuth2 is disabled.");
         }
 
-        var principal = context.User.Identity?.IsAuthenticated == true ? context.User : null;
-        if (principal is null)
+        var token = await ReadUserInfoTokenAsync(context).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(token))
         {
-            var token = await ReadUserInfoTokenAsync(context).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return OAuth2UserInfoError(StatusCodes.Status400BadRequest, "invalid_request", "An access token is required.");
-            }
-
-            var validation = await tokenIssuer.ValidateAsync(
-                token,
-                new PortalTokenBinding(
-                    context.Request.Headers.Referer.FirstOrDefault(),
-                    context.Connection.RemoteIpAddress?.ToString()),
-                context.RequestAborted).ConfigureAwait(false);
-            if (validation is null)
-            {
-                return OAuth2UserInfoError(StatusCodes.Status401Unauthorized, "invalid_token", "The access token is invalid or expired.");
-            }
-
-            principal = validation.Principal;
+            return OAuth2UserInfoError(StatusCodes.Status400BadRequest, "invalid_request", "An access token is required.");
         }
+
+        var validation = await tokenIssuer.ValidateAsync(
+            token,
+            new PortalTokenBinding(
+                context.Request.Headers.Referer.FirstOrDefault(),
+                context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted).ConfigureAwait(false);
+        if (validation is null)
+        {
+            return OAuth2UserInfoError(StatusCodes.Status401Unauthorized, "invalid_token", "The access token is invalid or expired.");
+        }
+
+        var principal = validation.Principal;
 
         var username = ResolveUserInfoUsername(principal);
         var response = new OAuth2UserInfoResponse
@@ -436,8 +432,18 @@ internal static class SharingOAuth2Endpoints
             return ReadFirst(form["access_token"]) ?? ReadFirst(form["token"]);
         }
 
-        return ReadFirst(context.Request.Query["access_token"])
+        return ReadBearerToken(context.Request.Headers["Authorization"])
+            ?? ReadBearerToken(context.Request.Headers["X-Esri-Authorization"])
+            ?? ReadFirst(context.Request.Query["access_token"])
             ?? ReadFirst(context.Request.Query["token"]);
+    }
+
+    private static string? ReadBearerToken(StringValues value)
+    {
+        var header = ReadFirst(value);
+        return header is not null && header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? header["Bearer ".Length..].Trim()
+            : null;
     }
 
     private static string ResolveUserInfoUsername(ClaimsPrincipal principal)

@@ -117,6 +117,38 @@ public sealed class SharingOAuth2Tests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/oauth2/userinfo")]
+    public async Task UserInfo_PostWithFormAccessToken_ReturnsEsriUserIdentity()
+    {
+        var verifier = "userinfo-post-pkce-verifier-value-0123456789";
+        var challenge = WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        var code = await SeedAuthorizationCodeAsync(challenge, "S256");
+
+        using var client = _fixture.CreateClient();
+        using var tokenResponse = await PostFormAsync(
+            client,
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", RedirectUri),
+            ("client_id", ClientId),
+            ("code_verifier", verifier));
+        var token = await ReadTokenAsync(tokenResponse);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/sharing/rest/oauth2/userinfo");
+        request.Headers.Referrer = new Uri(RedirectUri);
+        request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["access_token"] = token.AccessToken,
+        });
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.GetProperty("sub").GetString().Should().Be("named.user@example.com");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/oauth2/token")]
     public async Task Token_RefreshTokenGrant_ReturnsFreshAccessToken()
     {

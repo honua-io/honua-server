@@ -38,6 +38,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     [Endpoint("GET /rest/services/GeocodeServer/findAddressCandidates")]
+    [Endpoint("POST /rest/services/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_ReturnsGeoServicesPayload()
     {
         using var factory = CreateDefaultFactory();

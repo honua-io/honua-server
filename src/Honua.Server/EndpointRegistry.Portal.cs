@@ -25,6 +25,8 @@ public static partial class EndpointRegistry
         new("GET", "/sharing/rest/oauth2/authorize"),
         new("GET", "/sharing/rest/oauth2/callback"),
         new("POST", "/sharing/rest/oauth2/token"),
+        new("GET", "/sharing/rest/oauth2/userinfo"),
+        new("POST", "/sharing/rest/oauth2/userinfo"),
         // GET /sharing/rest/oauth2/token removed (BH7-001): RFC 6749 §4.1.3 requires POST-only token exchange; GET exposed credentials in URLs/logs (CWE-598).
 
         // OAuth2 RFC 7662 token introspection (#1890).
