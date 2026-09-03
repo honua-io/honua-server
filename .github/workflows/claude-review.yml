@@ -64,13 +64,15 @@ on:
 
 permissions: {}
 
-# Never cancel. A comment-triggered run is CREATED for every comment on every PR
-# (the job-level `if` only skips the job afterwards) and concurrency is evaluated
-# at run creation, so a `cancel-in-progress` group keyed on the PR would let
-# Codex's rate-limit notice -- or the PR-template advisory comment that lands
-# seconds after a push -- cancel a review already in flight. Groups are keyed so
-# that comment runs and head runs can never collide, and a superseded head needs
-# no cancellation: its trusted resolve step fails closed once the PR has moved.
+# Never cancel workflow runs. A comment-triggered run is CREATED for every
+# comment on every PR (the job-level `if` only skips the job afterwards) and
+# workflow-level concurrency is evaluated at run creation, so a
+# `cancel-in-progress` group keyed on the PR would let Codex's rate-limit notice
+# -- or the PR-template advisory comment that lands seconds after a push --
+# cancel a review already in flight. The review job adds the exact PR/head
+# single-flight boundary after its trusted resolver has bound issue comments.
+# A superseded head needs no cancellation: its resolver fails closed once the
+# pull request has moved.
 concurrency:
   group: >-
     claude-review-${{ github.event_name == 'schedule'
@@ -132,8 +134,8 @@ jobs:
               `#${decision.number} ${decision.head} ${decision.reason}`).join('\n'));
             await core.summary.write();
 
-  review:
-    name: Post exact-head Claude review evidence
+  resolve:
+    name: Resolve exact Claude review subject
     # Same-repo, non-fork, pull_request-originated PR Gate runs only; plus an
     # explicit `@claude review` re-request from a human with write access
     # (the action itself would otherwise hard-fail the permission check and
@@ -150,19 +152,16 @@ jobs:
           github.event.comment.author_association))
       || (github.event_name == 'workflow_dispatch' && inputs.pr != '')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
-      # GITHUB_TOKEN stays READ-ONLY. Everything the lane publishes is published
-      # by the action's own Claude App installation token, so no write scope is
-      # needed here.
       actions: read
       checks: read
       contents: read
       pull-requests: read
-      # Required by the action's default auth path: it exchanges this OIDC token
-      # for the Claude GitHub App installation token that makes the author
-      # `claude[bot]`.
-      id-token: write
+    outputs:
+      skip: ${{ steps.target.outputs.skip }}
+      pr: ${{ steps.target.outputs.pr }}
+      head: ${{ steps.target.outputs.head }}
     steps:
       - name: Check out trusted reviewer policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -259,28 +258,80 @@ jobs:
                 'to enable it. Codex remains the only attesting reviewer until then.');
             }
 
+            core.setOutput('skip', 'false');
+            core.setOutput('pr', String(number));
+            core.setOutput('head', head);
+            core.info(`Resolved PR #${number} at ${head}.`);
+
+  review:
+    needs: resolve
+    if: needs.resolve.outputs.skip == 'false'
+    name: Post exact-head Claude review evidence
+    # The subject is resolved before this job is admitted. This is the actual
+    # in-flight dedupe boundary: every trigger for one PR/head shares one
+    # group, including issue-comment re-requests whose head is unavailable at
+    # workflow creation time. The queued run re-checks durable completion after
+    # the active run exits, so a successfully completed exact head is never
+    # reviewed twice; a failed run remains retryable.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: claude-review-${{ needs.resolve.outputs.pr }}-${{ needs.resolve.outputs.head }}
+      cancel-in-progress: false
+    permissions:
+      # GITHUB_TOKEN stays READ-ONLY. Everything the lane publishes is published
+      # by the action's own Claude App installation token, so no write scope is
+      # needed here.
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+      # Required by the action's default auth path: it exchanges this OIDC token
+      # for the Claude GitHub App installation token that makes the author
+      # `claude[bot]`.
+      id-token: write
+    steps:
+      - name: Check out trusted reviewer policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Skip duplicate completed exact-head review
+        id: target
+        uses: actions/github-script@v9
+        env:
+          PR: ${{ needs.resolve.outputs.pr }}
+          HEAD: ${{ needs.resolve.outputs.head }}
+        with:
+          script: |
             const { buildCleanCommentBody } = require('./scripts/ci/claude-review-body');
-            const cleanBody = buildCleanCommentBody(head);
             const { findCompletedClaudeReview } = require('./scripts/ci/claude-review-dedupe');
+            const pr = Number(process.env.PR);
+            const head = process.env.HEAD;
             const prior = await findCompletedClaudeReview({
               github,
               repo: context.repo,
-              pullNumber: number,
+              pullNumber: pr,
               head,
             });
             if (prior.completed) {
               const kind = prior.clean ? 'clean evidence' : 'inline findings';
-              core.summary.addRaw(`PR #${number} already reviewed at ${head} (${kind}).`);
+              core.summary.addRaw(`PR #${pr} already reviewed at ${head} (${kind}).`);
               await core.summary.write();
-              return skip(`PR #${number} already reviewed at ${head} (${kind}).`);
+              core.notice(`duplicate: PR #${pr} already reviewed at ${head} (${kind}).`);
+              core.setOutput('skip', 'true');
+              return;
             }
 
             require('node:fs').mkdirSync('review-input', { recursive: true });
-            require('node:fs').writeFileSync('review-input/clean-body.md', cleanBody, 'utf8');
+            require('node:fs').writeFileSync(
+              'review-input/clean-body.md', buildCleanCommentBody(head), 'utf8');
             core.setOutput('skip', 'false');
-            core.setOutput('pr', String(number));
+            core.setOutput('pr', String(pr));
             core.setOutput('head', head);
-            core.info(`Reviewing PR #${number} at ${head}.`);
+            core.info(`Reviewing PR #${pr} at ${head}.`);
 
       - name: Stage the pull request as read-only data
         id: diff
