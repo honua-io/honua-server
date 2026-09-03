@@ -240,7 +240,7 @@ internal sealed partial class OgcFilterProcessor
                 sqlFilter = translationResult.SqlFilter;
             }
 
-            var bboxResult = ProcessBboxFilter(bbox, bboxCrsDefinition);
+            var bboxResult = ProcessBboxFilter(bbox, bboxCrsDefinition, resource);
             if (!bboxResult.IsSuccess)
             {
                 return FilterProcessingResult.Failure(bboxResult.ErrorMessage!);
@@ -439,6 +439,17 @@ internal sealed partial class OgcFilterProcessor
 
     private static TemporalFilterResult ProcessTemporalFilter(string? datetime, MetadataV2Resource resource)
     {
+        if (!OgcTemporalFilterParser.TryParseRange(datetime, out var start, out var end, out var rangeError))
+        {
+            return TemporalFilterResult.Failure(rangeError ?? "Invalid datetime parameter.");
+        }
+
+        if ((start is not null || end is not null) &&
+            string.IsNullOrWhiteSpace(resource.Temporal?.StartTimeField))
+        {
+            return TemporalFilterResult.Success(null);
+        }
+
         if (OgcTemporalFilterParser.TryParse(datetime, resource, out var temporalFilter, out var errorMessage))
         {
             return TemporalFilterResult.Success(temporalFilter);
@@ -447,7 +458,10 @@ internal sealed partial class OgcFilterProcessor
         return TemporalFilterResult.Failure(errorMessage ?? "Invalid datetime parameter.");
     }
 
-    private BboxFilterResult ProcessBboxFilter(string? bboxValue, CrsDefinition crsDefinition)
+    private BboxFilterResult ProcessBboxFilter(
+        string? bboxValue,
+        CrsDefinition crsDefinition,
+        MetadataV2Resource resource)
     {
         var bboxResult = TryParseBbox(bboxValue, crsDefinition);
         if (!bboxResult.IsSuccess)
@@ -456,6 +470,11 @@ internal sealed partial class OgcFilterProcessor
         }
 
         if (bboxResult.BoundingBox == null)
+        {
+            return BboxFilterResult.Success(null);
+        }
+
+        if (resource.Spatial is null || resource.Spatial.GeometryType == MetadataV2GeometryType.None)
         {
             return BboxFilterResult.Success(null);
         }
