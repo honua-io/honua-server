@@ -568,6 +568,6 @@ public static class FeatureCatalog
 
         // Control plane — Enterprise Preview
         new(MultiTenancyKey, "Multi-Tenant Operation", Categories.ControlPlane,
-            HonuaEdition.Enterprise, "Administer tenant lifecycles and isolate tenant data through schema-per-tenant routing."),
+            HonuaEdition.Enterprise, "Preview tenant lifecycle, schema routing, and usage surfaces. Honua 2026.1 GA deployments are single-tenant; Preview status never lowers the security severity of cross-tenant disclosure."),
     ];
 }
