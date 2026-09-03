@@ -27,7 +27,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Features.Infrastructure.MultiTenancy;
 
 /// <summary>
-/// Full tenant-middleware denial matrix for the nine release protocol families (issue #3904).
+/// Full tenant-middleware denial matrix for the eight release protocol families (issue #3904).
 /// Each cell proves the denial is native, correlated, and terminates before the route handler.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
@@ -53,11 +53,11 @@ public sealed class TenantDenialContractMatrixTests
     }
 
     [UnitTest]
-    public void ContractCells_ContainsExactNineByFourDenominator()
+    public void ContractCells_ContainsExactEightByFourDenominator()
     {
-        Routes.Should().HaveCount(9);
+        Routes.Should().HaveCount(8);
         Denials.Should().HaveCount(4);
-        ContractCells.Count.Should().Be(36);
+        ContractCells.Count.Should().Be(32);
     }
 
     [Theory]
@@ -65,7 +65,6 @@ public sealed class TenantDenialContractMatrixTests
     [Trait("Category", "Integration")]
     [Trait("Tier", "Integration")]
     [Operation(Operations.Security)]
-    [Endpoint("GET|POST tenant denial protocol matrix")]
     public async Task TenantDenial_RouteAndCause_UsesNativeEnvelopeWithoutHandlerSideEffects(
         string routeName,
         string denialName)
@@ -84,46 +83,88 @@ public sealed class TenantDenialContractMatrixTests
         AssertNativeContract(route, denial, response, body);
     }
 
-    [Theory]
-    [InlineData("GET")]
-    [InlineData("DELETE")]
+    [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("GET|DELETE /mcp tenant denial")]
-    public async Task TenantDenial_McpTransportMethods_KeepHttpFailureSemantics(string method)
+    [Endpoint("GET /rest/services/{id}/ImageServer/WCS")]
+    public async Task TenantDenial_ImageServerWcs_UsesOws20EnvelopeWithoutHandlerSideEffects()
     {
-        var route = Routes.Single(candidate => candidate.Name == "MCP JSON-RPC");
-        var denial = Denials.Single(candidate => candidate.Name == "suspended tenant");
-        await using var app = await CreateAppAsync(route, denial, new StrongBox<int>());
-        using var request = new HttpRequestMessage(new HttpMethod(method), route.Path);
+        var route = new RouteCase("WCS", "/rest/services/7/ImageServer/WCS");
+        var denial = Denials.Single(candidate => candidate.Name == "unauthorized override");
+        var handlerCalls = new StrongBox<int>();
+        await using var app = await CreateAppAsync(route, denial, handlerCalls);
+        using var request = CreateRequest(route, denial);
 
         var response = await app.GetTestClient().SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
 
+        handlerCalls.Value.Should().Be(0);
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        response.Content.Headers.ContentType.Should().BeNull();
-        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle(CorrelationId);
+        body.Should().Contain("http://www.opengis.net/ows/2.0");
+        body.Should().Contain("exceptionCode=\"AccessDenied\"");
+        body.Should().Contain($"CorrelationId: {CorrelationId}");
     }
 
-    [Fact]
+    [IntegrationTheory]
+    [InlineData("GET", "unauthorized override")]
+    [InlineData("GET", "missing bearer tenant")]
+    [InlineData("DELETE", "unauthorized override")]
+    [InlineData("DELETE", "missing bearer tenant")]
     [Operation(Operations.Security)]
-    [Endpoint("POST /mcp notification tenant denial")]
-    public async Task TenantDenial_McpNotification_ReturnsAcceptedWithoutJsonRpcBody()
+    [Endpoint("GET /mcp")]
+    [Endpoint("DELETE /mcp")]
+    public async Task TenantDenial_McpTransportVerb_UsesHttpDenialWithoutHandlerSideEffects(
+        string method,
+        string denialName)
+    {
+        var route = new RouteCase("MCP transport", "/mcp");
+        var denial = Denials.Single(candidate => candidate.Name == denialName);
+        var handlerCalls = new StrongBox<int>();
+        await using var app = await CreateAppAsync(route, denial, handlerCalls);
+        using var request = new HttpRequestMessage(new HttpMethod(method), route.Path);
+        if (denial.Name == "unauthorized override")
+        {
+            request.Headers.Add(TenantContextOptions.TenantHeaderName, "tenant-target");
+        }
+
+        var response = await app.GetTestClient().SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        handlerCalls.Value.Should().Be(0);
+        response.StatusCode.Should().Be(denial.HttpStatus);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle(CorrelationId);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("code").GetString().Should().Be(denial.Code);
+        document.RootElement.GetProperty("correlationId").GetString().Should().Be(CorrelationId);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /mcp")]
+    public async Task TenantDenial_McpNotification_SuppressesJsonRpcResponseWithoutHandlerSideEffects()
     {
         var route = Routes.Single(candidate => candidate.Name == "MCP JSON-RPC");
-        var denial = Denials.Single(candidate => candidate.Name == "suspended tenant");
-        await using var app = await CreateAppAsync(route, denial, new StrongBox<int>());
+        var denial = Denials.Single(candidate => candidate.Name == "unauthorized override");
+        var handlerCalls = new StrongBox<int>();
+        await using var app = await CreateAppAsync(route, denial, handlerCalls);
         using var request = new HttpRequestMessage(HttpMethod.Post, route.Path)
         {
             Content = new StringContent(
-                "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{}}",
+                "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"honua_query_features\",\"arguments\":{}}}",
                 Encoding.UTF8,
-                "application/json")
+                "application/json"),
         };
+        request.Headers.Add(TenantContextOptions.TenantHeaderName, "tenant-target");
 
         var response = await app.GetTestClient().SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
 
+        handlerCalls.Value.Should().Be(0);
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
-        response.Content.Headers.ContentType.Should().BeNull();
-        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle(CorrelationId);
+        body.Should().BeEmpty();
     }
 
     private static void AssertNativeContract(
@@ -179,16 +220,6 @@ public sealed class TenantDenialContractMatrixTests
                     response.StatusCode.Should().Be(denial.HttpStatus);
                     response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
                     body.Should().Contain($"exceptionCode=\"{denial.XmlCode}\"");
-                    body.Should().Contain($"CorrelationId: {CorrelationId}");
-                    break;
-                }
-
-            case "WCS":
-                {
-                    response.StatusCode.Should().Be(denial.HttpStatus);
-                    response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
-                    body.Should().Contain("<ows:ExceptionReport");
-                    body.Should().Contain("exceptionCode=\"NoApplicableCode\"");
                     body.Should().Contain($"CorrelationId: {CorrelationId}");
                     break;
                 }
@@ -316,7 +347,6 @@ public sealed class TenantDenialContractMatrixTests
     [
         new("OGC API", "/ogc/features/collections"),
         new("WFS", "/wfs"),
-        new("WCS", "/rest/services/0/ImageServer/WCS"),
         new("WMS alias", "/ogc/services/example/wms"),
         new("OData", "/odata/Features"),
         new("GeoServices", "/rest/services/example/FeatureServer"),
