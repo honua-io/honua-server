@@ -231,19 +231,77 @@ internal sealed partial class CoordinatedReleaseReconciler(
 
         // Reverse order: undo the most recent reversible step first.
         var metadataState = FindStep(context, CoordinatedReleaseStep.MetadataAndSchema);
-        if (NeedsUnwind(metadataState) && !string.IsNullOrWhiteSpace(context.MetadataOperationId))
+        if (NeedsUnwind(metadataState))
         {
+            if (string.IsNullOrWhiteSpace(context.MetadataOperationId))
+            {
+                return RequireManualIntervention(operation,
+                    "Metadata/schema rollback cannot settle because its child operation id is missing.");
+            }
+
             await metadataStep.RollbackAsync(context.MetadataOperationId!, cancellationToken).ConfigureAwait(false);
-            return WithStepRolledBack(operation, CoordinatedReleaseStep.MetadataAndSchema,
-                "Reversed metadata/schema: reactivated the prior revision and executed the inverse script.");
+            return WithStepRollbackRequested(operation, CoordinatedReleaseStep.MetadataAndSchema,
+                "Metadata/schema rollback requested; waiting for the child operation to settle.");
+        }
+
+        if (metadataState?.Status == CoordinatedReleaseStepStatus.RollbackRequested)
+        {
+            if (string.IsNullOrWhiteSpace(context.MetadataOperationId))
+            {
+                return RequireManualIntervention(operation,
+                    "Metadata/schema rollback cannot settle because its child operation id is missing.");
+            }
+
+            var observed = await metadataStep.ObserveAsync(context.MetadataOperationId!, cancellationToken).ConfigureAwait(false);
+            return observed.Outcome switch
+            {
+                CoordinatedStepOutcome.RolledBack => WithStepRolledBack(operation, CoordinatedReleaseStep.MetadataAndSchema,
+                    observed.Detail ?? "Reversed metadata/schema: reactivated the prior revision and executed the inverse script."),
+                CoordinatedStepOutcome.Failed => RequireManualIntervention(operation,
+                    observed.Detail ?? "Metadata/schema child rollback did not settle successfully."),
+                _ => operation
+            };
         }
 
         var containerState = FindStep(context, CoordinatedReleaseStep.ContainerRollout);
-        if (NeedsUnwind(containerState) && !string.IsNullOrWhiteSpace(context.ContainerOperationId))
+        if (NeedsUnwind(containerState))
         {
+            if (string.IsNullOrWhiteSpace(context.ContainerOperationId))
+            {
+                return RequireManualIntervention(operation,
+                    "Container rollback cannot settle because its child operation id is missing.");
+            }
+
             await containerStep.RollbackAsync(context.ContainerOperationId!, cancellationToken).ConfigureAwait(false);
-            return WithStepRolledBack(operation, CoordinatedReleaseStep.ContainerRollout,
-                "Reversed container rollout: rolled the deploy back to the prior image.");
+            return WithStepRollbackRequested(operation, CoordinatedReleaseStep.ContainerRollout,
+                "Container rollback requested; waiting for the child operation to settle.");
+        }
+
+        if (containerState?.Status == CoordinatedReleaseStepStatus.RollbackRequested)
+        {
+            if (string.IsNullOrWhiteSpace(context.ContainerOperationId))
+            {
+                return RequireManualIntervention(operation,
+                    "Container rollback cannot settle because its child operation id is missing.");
+            }
+
+            var observed = await containerStep.ObserveAsync(context.ContainerOperationId!, cancellationToken).ConfigureAwait(false);
+            if (observed.Outcome == CoordinatedStepOutcome.RolledBack &&
+                string.Equals(observed.ObservedRevision, context.Container.CurrentImage, StringComparison.Ordinal))
+            {
+                return WithStepRolledBack(operation, CoordinatedReleaseStep.ContainerRollout,
+                    observed.Detail ?? "Reversed container rollout: exact prior image observed.");
+            }
+
+            if (observed.Outcome is CoordinatedStepOutcome.Failed or CoordinatedStepOutcome.RolledBack)
+            {
+                return RequireManualIntervention(operation,
+                    observed.Outcome == CoordinatedStepOutcome.RolledBack
+                        ? $"Container child reported RolledBack without the expected prior image '{context.Container.CurrentImage}'."
+                        : observed.Detail ?? "Container child rollback did not settle successfully.");
+            }
+
+            return operation;
         }
 
         // Nothing left to unwind — the coordinated rollback is complete.
@@ -264,6 +322,37 @@ internal sealed partial class CoordinatedReleaseReconciler(
             state.Status is CoordinatedReleaseStepStatus.Succeeded
                 or CoordinatedReleaseStepStatus.Running
                 or CoordinatedReleaseStepStatus.Failed;
+
+    private static WorkflowOperationRecord WithStepRollbackRequested(
+        WorkflowOperationRecord operation,
+        CoordinatedReleaseStep step,
+        string phase)
+    {
+        var context = operation.CoordinatedRelease!;
+        return operation with
+        {
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CurrentPhase = phase,
+            CoordinatedRelease = context with
+            {
+                Steps = UpsertStep(context.Steps, step, CoordinatedReleaseStepStatus.RollbackRequested, phase)
+            }
+        };
+    }
+
+    private static WorkflowOperationRecord RequireManualIntervention(WorkflowOperationRecord operation, string reason)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return operation with
+        {
+            Status = WorkflowOperationStatus.ManualInterventionRequired,
+            UpdatedAt = now,
+            CompletedAt = now,
+            CurrentPhase = reason,
+            ErrorMessage = reason,
+            CoordinatedRelease = operation.CoordinatedRelease! with { CurrentStep = CoordinatedReleaseStep.Failed }
+        };
+    }
 
     private static CoordinatedReleaseStepState? FindStep(CoordinatedReleaseContext context, CoordinatedReleaseStep step)
         => context.Steps.FirstOrDefault(s => s.Step == step);

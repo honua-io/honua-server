@@ -23,6 +23,11 @@ public enum CoordinatedStepOutcome
     Succeeded,
 
     /// <summary>
+    /// The child lifecycle reached its terminal rolled-back state.
+    /// </summary>
+    RolledBack,
+
+    /// <summary>
     /// The step failed; the conductor must trigger the coordinated rollback.
     /// </summary>
     Failed
@@ -48,6 +53,11 @@ public sealed record CoordinatedStepResult
     /// Operator-facing detail for the step.
     /// </summary>
     public string? Detail { get; init; }
+
+    /// <summary>
+    /// Authoritative revision observed by the child lifecycle, when applicable.
+    /// </summary>
+    public string? ObservedRevision { get; init; }
 }
 
 /// <summary>
