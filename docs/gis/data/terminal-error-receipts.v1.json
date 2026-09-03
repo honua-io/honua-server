@@ -1,0 +1,151 @@
+{
+  "schemaVersion": "1.0.0",
+  "manifestId": "honua.terminal-error-receipts/v1",
+  "trackingIssue": "https://github.com/honua-io/honua-server/issues/3907",
+  "expectedCellCount": 40,
+  "sdkPaths": [
+    { "id": "js-http", "sdk": "javascript", "transport": "http" },
+    { "id": "js-geoservices", "sdk": "javascript", "transport": "geoservices-http-200" },
+    { "id": "js-grpc", "sdk": "javascript", "transport": "grpc" },
+    { "id": "dotnet-http", "sdk": "dotnet", "transport": "http" },
+    { "id": "dotnet-geoservices", "sdk": "dotnet", "transport": "geoservices-http-200" },
+    { "id": "dotnet-grpc", "sdk": "dotnet", "transport": "grpc" },
+    { "id": "python-http-geoservices", "sdk": "python", "transport": "http-and-geoservices" },
+    { "id": "python-grpc", "sdk": "python", "transport": "grpc" }
+  ],
+  "failureClasses": [
+    {
+      "id": "authz-denied",
+      "httpStatus": 403,
+      "geoServicesCode": 403,
+      "grpcStatus": { "name": "PERMISSION_DENIED", "number": 7 },
+      "kind": "authorization",
+      "code": "permission_denied",
+      "retryable": false,
+      "detail": "The current principal lacks permission.",
+      "authenticationRequired": {
+        "httpStatus": 401,
+        "grpcStatus": { "name": "UNAUTHENTICATED", "number": 16 },
+        "kind": "authentication",
+        "code": "authentication_required"
+      }
+    },
+    {
+      "id": "not-found",
+      "httpStatus": 404,
+      "geoServicesCode": 404,
+      "grpcStatus": { "name": "NOT_FOUND", "number": 5 },
+      "kind": "not-found",
+      "code": "resource_not_found",
+      "retryable": false,
+      "detail": "The requested resource was not found."
+    },
+    {
+      "id": "validation",
+      "httpStatus": 400,
+      "geoServicesCode": 400,
+      "grpcStatus": { "name": "INVALID_ARGUMENT", "number": 3 },
+      "kind": "validation",
+      "code": "validation_failed",
+      "retryable": false,
+      "detail": "One or more fields are invalid.",
+      "errors": [
+        {
+          "code": "required",
+          "severity": "error",
+          "path": "/name",
+          "fieldId": "name",
+          "itemIndex": null,
+          "message": "Name is required."
+        }
+      ]
+    },
+    {
+      "id": "conflict",
+      "httpStatus": 409,
+      "geoServicesCode": 409,
+      "grpcStatus": { "name": "ABORTED", "number": 10 },
+      "kind": "conflict",
+      "code": "resource_conflict",
+      "retryable": false,
+      "detail": "The resource changed; reload before retrying."
+    },
+    {
+      "id": "backpressure",
+      "httpStatus": 429,
+      "geoServicesCode": 429,
+      "grpcStatus": { "name": "RESOURCE_EXHAUSTED", "number": 8 },
+      "kind": "throttled",
+      "code": "rate_limited",
+      "retryable": true,
+      "retryAfterSeconds": 30,
+      "detail": "Request capacity is temporarily exhausted."
+    }
+  ],
+  "wireShapes": {
+    "http": {
+      "contentType": "application/problem+json",
+      "correlationHeader": "X-Correlation-ID",
+      "retryHeader": "Retry-After",
+      "bodyFields": [
+        "type",
+        "title",
+        "status",
+        "detail",
+        "instance",
+        "version",
+        "kind",
+        "code",
+        "correlationId",
+        "retryable",
+        "retryAfterSeconds",
+        "errors"
+      ]
+    },
+    "geoservices-http-200": {
+      "transportStatus": 200,
+      "bodyPath": "error",
+      "bodyFields": [
+        "code",
+        "message",
+        "details",
+        "kind",
+        "machineCode",
+        "correlationId",
+        "retryable",
+        "retryAfterSeconds",
+        "errors"
+      ]
+    },
+    "grpc": {
+      "correlationKeys": ["x-correlation-id", "honua-request-id", "x-request-id"],
+      "machineCodeKey": "honua-error-code",
+      "kindKey": "honua-error-kind",
+      "retryableKey": "honua-error-retryable",
+      "retryKey": "retry-after",
+      "structuredErrorsKey": "honua-error-details",
+      "retainInitialMetadata": true,
+      "retainTrailingMetadata": true
+    }
+  },
+  "receiptFields": [
+    "transportStatus",
+    "protocolCode",
+    "kind",
+    "code",
+    "retryable",
+    "retryAfterSeconds",
+    "correlationId",
+    "fieldErrors",
+    "protocolMetadata"
+  ],
+  "safety": {
+    "rawBodyInDefaultSerialization": false,
+    "sensitiveMetadataKeys": [
+      "authorization",
+      "cookie",
+      "set-cookie",
+      "x-api-key"
+    ]
+  }
+}
