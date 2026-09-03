@@ -1626,6 +1626,7 @@
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployPreflight_WhenInstanceIsAligned_ReturnsReady",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployPreflight_WhenPendingMigrationsExist_ReturnsBlocked",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployPreflight_WithDiagnostics_ReturnsBackupHookOutcomeForPendingSet",
+        "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployPreflight_WithExecutableBodyContract_ExposesRuntimeMatchedRules",
         "Honua.Server.Tests.Features.Admin.DeployControlEndpointsTests.GetDeployPreflight_WithIncludeDiagnosticsTrue_ReturnsDiagnostics"
       ],
       "proof_ledger_surface": "control-plane-admin",
