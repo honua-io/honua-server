@@ -108,7 +108,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings", "serve.geoservices-imageserver", "serve.wmts" })
             {
                 var capability = GetCapability(document.RootElement, id);
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();
