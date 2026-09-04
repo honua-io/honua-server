@@ -55,8 +55,8 @@ internal sealed partial class OperateObservabilityFixtureSeeder(
         var logStore = services.GetRequiredService<IExecutionLogStore>();
         var recentErrors = services.GetRequiredService<RecentErrorBuffer>();
 
-        // The geofence alert stores back the alerts.geofence capability, which is Experimental and
-        // disabled by default (AlertOptions.Enabled = false). A host that omits the alerts subsystem
+        // The geofence alert stores back the alerts.geofence capability, which is Preview and
+        // disabled by default. A host that omits the alerts subsystem
         // never registers these stores, so resolve them optionally: when any is absent the seeder
         // skips the alert-fixture slice and still hydrates the rest of the Operate observability
         // surface (jobs, logs, audit, investigation) instead of failing the whole seed with a 500.

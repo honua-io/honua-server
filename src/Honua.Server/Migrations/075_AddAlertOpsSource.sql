@@ -3,7 +3,7 @@
 
 -- Migration: 075_AddAlertOpsSource.sql
 -- Description: Promotes the alert delivery outbox to a shared, consumer-agnostic
---              notification pipeline (alerts GA, #2427). Adds an event `source`
+--              notification pipeline (customer alerting, Preview in 2026.1). Adds an event `source`
 --              discriminator and relaxes `rule_id` to allow operations notifications
 --              (deploy/job terminal events) that reuse the same outbox but are not
 --              linked to an alert rule.

@@ -3,7 +3,7 @@
 
 -- Migration: 076_AddAlertDispatchRetentionIndexes.sql
 -- Description: Keeps the alert delivery outbox backlog count cheap and the outbox
---              bounded (alerts GA follow-up, #2481). Before this, GetBacklogAsync
+--              bounded (alerting qualification follow-up, #2481). Before this, GetBacklogAsync
 --              scanned the whole honua.alert_dispatch table (the only partial index
 --              covered status IN (0,3)) every dispatch pass, and delivered (status=2)
 --              rows were never purged, so both grew without bound.

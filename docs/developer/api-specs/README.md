@@ -169,7 +169,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 - Validate packages and request read-only preview plans before publish or execute decisions
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
-- Manage geofence alert zones, realtime alert rules, draft validation, enable/disable state, and delivery health for Console Operate workflows
+- Manage Preview geofence alert zones, realtime alert rules, draft validation, enable/disable state, and delivery health for Console Operate workflows (explicit `alerts.geofence` capability opt-in required in 2026.1)
 - Inspect runtime license status, upload signed license files when enabled, and read the active feature/entitlement inventory
 - Save and reopen analysis content under `/api/v1/analysis/**` using the
   markdown contract while the OpenAPI snapshot catches up

@@ -193,6 +193,7 @@ public sealed class FeatureCatalogDriftTests
             .Where(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview)
             .Select(entry => entry.Route)
             .ToArray();
+        previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/alerts", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/sta/v1.1", StringComparison.OrdinalIgnoreCase));

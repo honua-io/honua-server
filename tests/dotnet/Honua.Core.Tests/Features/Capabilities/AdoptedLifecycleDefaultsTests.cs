@@ -47,4 +47,25 @@ public sealed class AdoptedLifecycleDefaultsTests
         enabled.Enabled.Should().BeTrue("each row has an independent canonical opt-in");
         enabled.ReasonCode.Should().BeNull();
     }
+
+    [Fact]
+    public void CustomerAlertingLifecycle_RemainsPreviewWithoutGaReceipts()
+    {
+        // Operator ruling 2026-09-04: section 7.3 conditional GA is not pursued for
+        // 2026.1. Existing qualification tests prove the feature; they are not GA
+        // receipts. A future GA claim must deliberately replace this lifecycle-truth
+        // contract with the reviewed promotion receipts, rather than drifting one
+        // registry, entitlement, or generated-data surface independently.
+        Registry.Find("alerts.geofence")!.Maturity.Should().Be(CapabilityMaturity.Preview);
+
+        var customerAlertingKeys = CapabilityKeyCatalog.All
+            .Where(capability => capability.Category is FeatureCatalog.Categories.Alerts
+                or FeatureCatalog.Categories.Channels)
+            .ToArray();
+
+        customerAlertingKeys.Should().NotBeEmpty();
+        customerAlertingKeys.Should().OnlyContain(
+            capability => capability.Status == CapabilityKeyCatalog.PreviewStatus,
+            "every trigger and delivery channel is part of the Preview customer-alerting claim");
+    }
 }

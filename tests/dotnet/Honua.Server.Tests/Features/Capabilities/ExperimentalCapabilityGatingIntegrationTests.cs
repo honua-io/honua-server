@@ -19,8 +19,8 @@ namespace Honua.Server.Tests.Features.Capabilities;
 /// Track-B integration coverage for honua-server#2347 (T11): the built-experimental
 /// capabilities the T10 flip (#2346) gated OFF the first-release surface
 /// (<c>versioning.branch</c> and — since #2958 — <c>security.mtls</c> again;
-/// <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, <c>temporal.*</c>, and
-/// <c>sync.offline</c> were promoted to GA, so they are no longer experimental) must be
+/// <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, and <c>sync.offline</c>
+/// are Preview and are checked in the same opt-in path) must be
 /// genuinely <b>absent</b> from every served surface end-to-end when experimental is
 /// disabled (the production default), and become present/served the moment a customer
 /// opts one in via <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and
@@ -36,9 +36,8 @@ namespace Honua.Server.Tests.Features.Capabilities;
 ///     the gated VMS and client-certificate route groups
 ///     (<c>/rest/services/{id}/VersionManagementServer</c>,
 ///     <c>/api/v1/admin/security/client-certificates/*</c>) short-circuit with
-///     <c>404 honua:capability-experimental-disabled</c> while disabled. The now-GA
-///     temporal, alerts, streaming, and disconnected-sync replica groups are asserted to
-///     NOT short-circuit even with experimental off.
+///     <c>404 honua:capability-experimental-disabled</c> while disabled. Preview
+///     alerts are likewise asserted absent until explicitly opted in.
 ///   </description></item>
 /// </list>
 /// The Test environment turns experimental ON globally (appsettings.Test.json), which is
@@ -63,7 +62,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         "scene.pointcloud-ingest",
         // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
         // sync.offline promoted to GA (Implemented) in #2430 — no longer experimental-gated.
-        // alerts.geofence promoted in #2427 — not gated.
+        // alerts.geofence is Preview in 2026.1 and is asserted separately below.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
         // security.mtls was promoted to GA in #2431, then DEMOTED back to experimental in
@@ -273,10 +272,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /api/v1/admin/alerts/zones")]
     public async Task AlertsEndpoint_WhenPreviewDisabled_IsNotMapped()
     {
-        // #2427 promoted alerts.geofence Experimental -> Implemented (GA). The alerts
-        // admin group must no longer short-circuit as experimental-disabled even with the
-        // global experimental switch OFF — the request reaches the handler (subject to
-        // admin auth) instead of the 404 the T10 flip previously produced.
+        // Operator ruling 2026-09-04 keeps alerts.geofence Preview for 2026.1. The
+        // admin group must remain hidden behind the canonical explicit opt-in.
         var fixture = CreateFixture(experimentalGlobalEnabled: false);
         await fixture.InitializeAsync();
 

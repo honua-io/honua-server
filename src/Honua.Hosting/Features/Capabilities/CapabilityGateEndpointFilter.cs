@@ -13,17 +13,18 @@ namespace Honua.Infrastructure.Capabilities;
 /// Track T5 / #2341). It reads the gated descriptor id from the
 /// <see cref="CapabilityGateMetadata"/> attached by <c>WithCapabilityGate</c>,
 /// resolves it through <see cref="ICapabilityRegistry"/> with the config-driven
-/// experimental precedence (#2339 / T2), and short-circuits the request when the
-/// capability resolves <b>experimental-disabled</b>.
+/// experimental precedence (#2339 / T2), and short-circuits the request when an
+/// Experimental or Preview capability resolves <b>experimental-disabled</b>.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The filter only short-circuits the <see cref="CapabilityReasonCodes.ExperimentalDisabled"/>
-/// outcome — an off-by-default experimental capability whose flag is not set. In
+/// outcome — an off-by-default Experimental or Preview capability whose flag is not set. In
 /// that case it returns <c>404 Not Found</c> as <c>application/problem+json</c>
 /// with <c>type: honua:capability-experimental-disabled</c> and a hint to enable
 /// the capability via <c>Capabilities:Experimental:{id}</c>, so a disabled
-/// experimental surface is indistinguishable from an unmapped route.
+/// opt-in surface is indistinguishable from an unmapped route. The stable problem type
+/// and configuration namespace remain experimental-named for wire compatibility.
 /// </para>
 /// <para>
 /// Every other resolution passes through to the endpoint: an enabled capability,
@@ -90,16 +91,24 @@ internal sealed partial class CapabilityGateEndpointFilter : IEndpointFilter
             string.Equals(resolution.ReasonCode, CapabilityReasonCodes.ExperimentalDisabled, StringComparison.Ordinal))
         {
             Log.ExperimentalDisabled(_logger, gate.DescriptorId, httpContext.Request.Path.Value ?? string.Empty);
-            return ValueTask.FromResult<object?>(CreateExperimentalDisabledProblem(httpContext, gate.DescriptorId));
+            var maturity = _registry.Find(gate.DescriptorId)?.Maturity;
+            return ValueTask.FromResult<object?>(CreateExperimentalDisabledProblem(
+                httpContext,
+                gate.DescriptorId,
+                maturity));
         }
 
         return next(context);
     }
 
-    private static IResult CreateExperimentalDisabledProblem(HttpContext httpContext, string descriptorId)
+    private static IResult CreateExperimentalDisabledProblem(
+        HttpContext httpContext,
+        string descriptorId,
+        CapabilityMaturity? maturity)
     {
+        var lifecycle = maturity == CapabilityMaturity.Preview ? "preview" : "experimental";
         var detail =
-            $"The '{descriptorId}' capability is experimental and disabled. " +
+            $"The '{descriptorId}' capability is {lifecycle} and disabled. " +
             $"Enable it via the configuration key 'Capabilities:Experimental:{descriptorId}:Enabled=true' " +
             "(or the global switch 'Capabilities:Experimental:Enabled=true').";
 

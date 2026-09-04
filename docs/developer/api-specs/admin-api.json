@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Honua Server Management API",
-    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, realtime alert management, durable job viewing, package validation and preview planning, runtime licensing, deploy control, and native client-certificate trust management. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
+    "description": "Curated OpenAPI snapshot of key Honua Server administrative endpoints for configuration, import scanning, connections, layers, styles, observability, Preview realtime alert management, durable job viewing, package validation and preview planning, runtime licensing, deploy control, and native client-certificate trust management. Customer alerting requires explicit opt-in in 2026.1 and is not GA. For full runtime endpoint discovery, use /api/v1/admin/config and the Control Plane guide.",
     "version": "1.0.0",
     "contact": {
       "name": "Honua Server",
@@ -72,7 +72,7 @@
     },
     {
       "name": "Alerts",
-      "description": "Console Operate geofence zones, alert rules, draft validation, and delivery health"
+      "description": "Preview in 2026.1: Console Operate geofence zones, alert rules, draft validation, and delivery health. Requires the alerts.geofence capability opt-in; qualification evidence does not make this surface GA."
     },
     {
       "name": "Jobs",
@@ -9073,7 +9073,7 @@
           "Alerts"
         ],
         "summary": "List Alert Rule Events",
-        "description": "List the trigger events raised by one alert rule, newest first, with cursor paging. Part of the geofence alerting surface, which is capability-gated: the whole route family returns 404 when alerts.geofence is experimental-disabled.",
+        "description": "List the trigger events raised by one alert rule, newest first, with cursor paging. Part of the Preview geofence alerting surface, which is capability-gated: the whole route family returns 404 with the stable experimental-disabled reason when alerts.geofence is not opted in.",
         "operationId": "listAlertRuleEvents",
         "parameters": [
           {

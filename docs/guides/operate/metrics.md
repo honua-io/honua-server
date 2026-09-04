@@ -37,7 +37,9 @@ The enabled alerting candidate lane runs the real Postgres webhook E2E with
 `Alerts__Enabled=true` against an exact candidate SHA. The load/soak lane now
 starts the server under Production policy and drives the real request histograms.
 Those lanes make the metric names above shipped surface; they do not make an
-unconfigured local alert source complete.
+unconfigured local alert source complete. Customer alerting remains Preview in
+2026.1: these qualification receipts prove behavior but do not promote the
+capability to GA or create an availability/performance commitment.
 
 ## Not required for the 2026.1 claim
 

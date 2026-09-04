@@ -39,8 +39,8 @@ internal static class AlertAdminEndpoints
     public static void MapAlertAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/alerts")
-            // T10 (#2346): geofence alerting is built-experimental and gated OFF the
-            // first-release surface (404 when alerts.geofence is experimental-disabled).
+            // Customer alerting is Preview in 2026.1 and gated off by default
+            // (404 with the stable experimental-disabled reason until explicitly opted in).
             .WithCapabilityGate("alerts.geofence")
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
