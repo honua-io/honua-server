@@ -18,10 +18,12 @@
 using System.Diagnostics;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Tiles.Services;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -56,7 +58,8 @@ internal static partial class VectorTileServerEndpoints
             .Produces(200, contentType: MvtContentType)
             .Produces(204)
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .Produces(501);
     }
 
     /// <summary>
@@ -117,7 +120,7 @@ internal static partial class VectorTileServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var primary = ResolvePrimaryTiledPublication(snapshot, service);
+            var primary = ResolvePrimaryVectorTilePublication(snapshot, service, context);
             if (primary is null)
             {
                 return StandardErrorHelpers.CreateNotFound(context,
@@ -126,15 +129,9 @@ internal static partial class VectorTileServerEndpoints
 
             var (publication, resource) = primary.Value;
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(context, [resource], service);
-            if (accessError != null)
-            {
-                return accessError;
-            }
-
-            // Mirror the V2 metadata builders' resolution order: integer storage handle is
-            // publication.LayerIndex when the graph carries no explicit storage binding.
-            var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+                ?? snapshot.ResolveStorageLayerId(resource)
+                ?? publication.LayerIndex;
             if (storageLayerId is null)
             {
                 return StandardErrorHelpers.CreateNotFound(context,
@@ -144,12 +141,28 @@ internal static partial class VectorTileServerEndpoints
             var query = VectorTileExecution.CreateQuery(
                 resource.ReadSrid() ?? SpatialReference.WGS84.Wkid);
 
-            var tileProvider = context.RequestServices.GetRequiredService<ITileProvider>();
+            var fallbackProvider = context.RequestServices.GetRequiredService<ITileProvider>();
+            var providerResolution = await new TileFeatureProviderResolver(
+                context.RequestServices.GetService<FeatureProviderQueryRouter>()).ResolveTileProviderAsync(
+                    snapshot,
+                    service,
+                    resource,
+                    publication,
+                    storageLayerId.Value,
+                    fallbackProvider,
+                    cancellationToken).ConfigureAwait(false);
+            if (providerResolution.Provider is null)
+            {
+                return StandardErrorHelpers.CreateNotImplemented(
+                    context,
+                    $"Layer '{resource.Metadata.Name}' is backed by data provider '{providerResolution.UnsupportedProviderName}', " +
+                    "which does not support vector tile generation.");
+            }
 
             // Esri tile/{z}/{y}/{x} -> canonical (tileCol=x, tileRow=y, zoom=z); same top-left origin.
             var result = await VectorTileExecution.ExecuteAsync(
                 context,
-                tileProvider,
+                providerResolution.Provider,
                 storageLayerId.Value,
                 x,
                 y,
@@ -175,33 +188,4 @@ internal static partial class VectorTileServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Resolves the service's primary tiled publication. Prefers an
-    /// <see cref="MetadataV2PublicationType.EsriVectorTileLayer"/> publication (the type the
-    /// VectorTileServer adapter advertises); falls back to the first resolvable publication so
-    /// services that publish their tiled layer under a different publication type still render.
-    /// </summary>
-    private static (MetadataV2Publication Publication, MetadataV2Resource Resource)? ResolvePrimaryTiledPublication(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
-    {
-        (MetadataV2Publication Publication, MetadataV2Resource Resource)? fallback = null;
-        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
-        {
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
-            {
-                continue;
-            }
-
-            if (publication.PublicationType == MetadataV2PublicationType.EsriVectorTileLayer)
-            {
-                return (publication, resource!);
-            }
-
-            fallback ??= (publication, resource!);
-        }
-
-        return fallback;
-    }
 }

@@ -1,11 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Tiles.Services;
+using Honua.Infrastructure.Licensing;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -94,16 +99,24 @@ internal static class H3Endpoints
 
         var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var storageLayerId = publication.LayerIndex
-            ?? snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource)
+            ?? publication.LayerIndex;
         if (storageLayerId is not { } layerId)
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
         }
 
-        // Check h3-pg extension availability
-        var h3Error = await H3CapabilityHelpers.ValidateH3AvailabilityAsync(context, cancellationToken);
+        var entitlementError = LicenseGate.RequireEntitlement(context, FeatureCatalog.H3AnalyticsKey, "H3 spatial aggregation");
+        if (entitlementError is not null)
+        {
+            return entitlementError;
+        }
+
+        // The primary database capability does not describe a routed source.
+        var h3Error = TileFeatureProviderResolver.RequiresRouting(snapshot, publication)
+            ? null
+            : await H3CapabilityHelpers.ValidateH3AvailabilityAsync(context, cancellationToken);
         if (h3Error is not null)
         {
             return h3Error;
@@ -121,8 +134,19 @@ internal static class H3Endpoints
             SpatialReferenceSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Srid
         };
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var rows = await featureReader.QueryH3Async(layerId, featureQuery, h3Query, cancellationToken);
+        var resolver = new TileFeatureProviderResolver(context.RequestServices.GetService<FeatureProviderQueryRouter>());
+        var featureReader = await resolver.ResolveFeatureReaderAsync(
+            snapshot, snapshot.Index.ServicesById[publication.ServiceId], resource, publication, layerId,
+            context.RequestServices.GetRequiredService<IFeatureReader>(), cancellationToken).ConfigureAwait(false);
+        ImmutableArray<IReadOnlyDictionary<string, object?>> rows;
+        try
+        {
+            rows = await featureReader.QueryH3Async(layerId, featureQuery, h3Query, cancellationToken).ConfigureAwait(false);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(context, "The configured data provider does not support H3 aggregation for this collection.");
+        }
 
         // Return as GeoJSON FeatureCollection using typed models for AOT safety
         var features = rows.Select(row =>

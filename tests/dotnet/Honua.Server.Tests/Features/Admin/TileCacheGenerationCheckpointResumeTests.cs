@@ -202,7 +202,7 @@ public sealed class TileCacheGenerationCheckpointResumeTests
     private static ServiceProvider CreateServiceProvider(ITileProvider provider)
     {
         var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<IMetadataV2GraphProvider>());
+        services.AddSingleton<IMetadataV2GraphProvider>(new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder().BuildProvider());
         services.AddSingleton(provider);
         return services.BuildServiceProvider();
     }

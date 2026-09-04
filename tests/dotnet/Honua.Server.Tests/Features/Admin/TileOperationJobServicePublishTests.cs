@@ -574,6 +574,14 @@ public sealed class TileOperationJobServicePublishTests
             .AddService("svc-publish-test", "publish-test")
             .AddResource("res-publish", "publish-layer")
             .AddPublication("pub-publish", "svc-publish-test", "res-publish", layerIndex: 7)
+            .AddService("world", "world")
+            .AddResource("world-42", "world-42")
+            .AddPublication("world-pub-42", "world", "world-42", layerIndex: 42)
+            .AddPublication("world-pub-7", "world", "res-publish", layerIndex: 7)
+            .AddResource("world-41", "world-41")
+            .AddPublication("world-pub-41", "world", "world-41", layerIndex: 41)
+            .AddResource("world-13", "world-13")
+            .AddPublication("world-pub-13", "world", "world-13", layerIndex: 13)
             .Build();
         services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
 

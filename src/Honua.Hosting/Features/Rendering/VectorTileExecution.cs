@@ -56,16 +56,6 @@ internal static class VectorTileExecution
         string? tileMatrixSetId = null,
         GridGeometry? gridGeometry = null)
     {
-        var ttlSeconds = TilesetTtlResolver.Resolve(
-            tileOptions,
-            serviceId ?? string.Empty,
-            layerId ?? storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            tileMatrixSetId ?? DefaultTileMatrixSetId);
-        var credentialed = context.User.Identity?.IsAuthenticated == true
-            || context.Request.Headers.ContainsKey(HeaderNames.Authorization)
-            || context.Request.Headers.ContainsKey("X-API-Key");
-        var cacheControl = $"{(credentialed ? "private" : "public")}, max-age={ttlSeconds}";
-
         var tileData = await tileProvider.GetMvtTileAsync(
             storageLayerId,
             tileCol,
@@ -81,19 +71,34 @@ internal static class VectorTileExecution
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            SetCacheHeaders(context, cacheControl, credentialed);
+            ApplyCacheHeaders(context, tileOptions, serviceId, layerId, storageLayerId, tileMatrixSetId);
             return Results.NoContent();
         }
 
         activity?.SetStatus(ActivityStatusCode.Ok);
         activity?.SetTag("honua.tile.bytes", tileData.Length);
-        SetCacheHeaders(context, cacheControl, credentialed);
+        ApplyCacheHeaders(context, tileOptions, serviceId, layerId, storageLayerId, tileMatrixSetId);
         return Results.Bytes(tileData, MvtContentType);
     }
 
-    private static void SetCacheHeaders(HttpContext context, string cacheControl, bool credentialed)
+    internal static void ApplyCacheHeaders(
+        HttpContext context,
+        TileOptions tileOptions,
+        string? serviceId,
+        string? layerId,
+        int storageLayerId,
+        string? tileMatrixSetId = null)
     {
-        context.Response.Headers[HeaderNames.CacheControl] = cacheControl;
+        var ttlSeconds = TilesetTtlResolver.Resolve(
+            tileOptions,
+            serviceId ?? string.Empty,
+            layerId ?? storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            tileMatrixSetId ?? DefaultTileMatrixSetId);
+        var credentialed = context.User.Identity?.IsAuthenticated == true
+            || context.Request.Headers.ContainsKey(HeaderNames.Authorization)
+            || context.Request.Headers.ContainsKey("X-API-Key");
+        context.Response.Headers[HeaderNames.CacheControl] =
+            $"{(credentialed ? "private" : "public")}, max-age={ttlSeconds}";
         if (credentialed)
         {
             context.Response.Headers[HeaderNames.Vary] = "Authorization, X-API-Key";
