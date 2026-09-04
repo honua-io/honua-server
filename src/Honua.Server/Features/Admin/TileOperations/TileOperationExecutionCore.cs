@@ -77,16 +77,18 @@ internal sealed partial class TileOperationExecutionCore
         ArgumentNullException.ThrowIfNull(serviceProvider);
 
         var graphProvider = serviceProvider.GetRequiredService<IMetadataV2GraphProvider>();
-        var tileProvider = serviceProvider.GetRequiredService<ITileProvider>();
+        var tileSources = request.Operation is "seed" or "warm" or "archive" or "publish"
+            ? await ResolveTileSourcesAsync(request, graphProvider, serviceProvider, cancellationToken).ConfigureAwait(false)
+            : new Dictionary<int, TileSource>();
 
         return request.Operation switch
         {
-            "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, graphProvider, tileProvider, cancellationToken).ConfigureAwait(false),
-            "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, graphProvider, tileProvider, cancellationToken).ConfigureAwait(false),
+            "seed" => await ExecuteSeedOrWarmAsync(started, request, warmMode: false, graphProvider, tileSources, cancellationToken).ConfigureAwait(false),
+            "warm" => await ExecuteSeedOrWarmAsync(started, request, warmMode: true, graphProvider, tileSources, cancellationToken).ConfigureAwait(false),
             "invalidate" => await ExecuteInvalidationAsync(started, request, graphProvider, cancellationToken).ConfigureAwait(false),
             "purge" => await ExecuteInvalidationAsync(started, request, graphProvider, cancellationToken).ConfigureAwait(false),
-            "archive" => await ExecuteArchiveAsync(started, request, tileProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
-            "publish" => await ExecutePublishAsync(started, request, tileProvider, serviceProvider, cancellationToken).ConfigureAwait(false),
+            "archive" => await ExecuteArchiveAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
+            "publish" => await ExecutePublishAsync(started, request, tileSources, serviceProvider, cancellationToken).ConfigureAwait(false),
             "expire" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: false, graphProvider, serviceProvider, tenantScope, cancellationToken).ConfigureAwait(false),
             "delete" => await ExecuteExpireOrDeleteAsync(started, request, deleteBytes: true, graphProvider, serviceProvider, tenantScope, cancellationToken).ConfigureAwait(false),
             _ => started with
@@ -136,7 +138,7 @@ internal sealed partial class TileOperationExecutionCore
         TileOperationStartRequest request,
         bool warmMode,
         IMetadataV2GraphProvider graphProvider,
-        ITileProvider tileProvider,
+        IReadOnlyDictionary<int, TileSource> tileSources,
         CancellationToken cancellationToken)
     {
         if (!string.Equals(request.TileMatrixSetId, "WebMercatorQuad", StringComparison.OrdinalIgnoreCase))
@@ -238,8 +240,8 @@ internal sealed partial class TileOperationExecutionCore
 
                 try
                 {
-                    await tileProvider.GetMvtTileAsync(
-                        layerId,
+                    await tileSources[layerId].Provider.GetMvtTileAsync(
+                        tileSources[layerId].StorageLayerId,
                         member.X,
                         member.Y,
                         member.Z,
@@ -418,7 +420,7 @@ internal sealed partial class TileOperationExecutionCore
     private async Task<TileOperationProgress> ExecuteArchiveAsync(
         TileOperationProgress progress,
         TileOperationStartRequest request,
-        ITileProvider tileProvider,
+        IReadOnlyDictionary<int, TileSource> tileSources,
         IServiceProvider serviceProvider,
         CancellationToken cancellationToken)
     {
@@ -434,7 +436,7 @@ internal sealed partial class TileOperationExecutionCore
 
         var layerId = request.LayerId.Value;
 
-        var build = await BuildPMTilesArchiveAsync("archive", progress, request, layerId, tileProvider, cancellationToken).ConfigureAwait(false);
+        var build = await BuildPMTilesArchiveAsync("archive", progress, request, layerId, tileSources, cancellationToken).ConfigureAwait(false);
         if (!build.HasArchive)
         {
             return build.Progress;
@@ -520,7 +522,7 @@ internal sealed partial class TileOperationExecutionCore
     private async Task<TileOperationProgress> ExecutePublishAsync(
         TileOperationProgress progress,
         TileOperationStartRequest request,
-        ITileProvider tileProvider,
+        IReadOnlyDictionary<int, TileSource> tileSources,
         IServiceProvider serviceProvider,
         CancellationToken cancellationToken)
     {
@@ -553,7 +555,7 @@ internal sealed partial class TileOperationExecutionCore
             };
         }
 
-        var build = await BuildPMTilesArchiveAsync("publish", progress, request, layerId, tileProvider, cancellationToken).ConfigureAwait(false);
+        var build = await BuildPMTilesArchiveAsync("publish", progress, request, layerId, tileSources, cancellationToken).ConfigureAwait(false);
         if (!build.HasArchive)
         {
             return build.Progress;
@@ -712,7 +714,7 @@ internal sealed partial class TileOperationExecutionCore
         TileOperationProgress progress,
         TileOperationStartRequest request,
         int layerId,
-        ITileProvider tileProvider,
+        IReadOnlyDictionary<int, TileSource> tileSources,
         CancellationToken cancellationToken)
     {
         var tileCoordinates = BuildTileCoordinates(request);
@@ -740,8 +742,8 @@ internal sealed partial class TileOperationExecutionCore
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var tileData = await tileProvider.GetMvtTileAsync(
-                    layerId,
+                var tileData = await tileSources[layerId].Provider.GetMvtTileAsync(
+                    tileSources[layerId].StorageLayerId,
                     coordinate.X,
                     coordinate.Y,
                     coordinate.Z,

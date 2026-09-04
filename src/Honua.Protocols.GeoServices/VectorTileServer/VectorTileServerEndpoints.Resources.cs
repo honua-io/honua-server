@@ -156,7 +156,7 @@ internal static partial class VectorTileServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var primary = ResolvePrimaryStylePublication(snapshot, service, context);
+            var primary = ResolvePrimaryVectorTilePublication(snapshot, service, context);
             if (primary is null)
             {
                 return StandardErrorHelpers.CreateNotFound(
@@ -207,7 +207,7 @@ internal static partial class VectorTileServerEndpoints
     /// the publication flagged <see cref="MetadataV2Publication.IsPrimary"/>, then the lowest
     /// layer index) together with its backing resource.
     /// </summary>
-    private static (MetadataV2Publication Publication, MetadataV2Resource Resource)? ResolvePrimaryStylePublication(
+    private static (MetadataV2Publication Publication, MetadataV2Resource Resource)? ResolvePrimaryVectorTilePublication(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         HttpContext context)
@@ -240,6 +240,13 @@ internal static partial class VectorTileServerEndpoints
         MetadataV2Publication candidate,
         MetadataV2Publication current)
     {
+        var candidateIsVector = candidate.PublicationType == MetadataV2PublicationType.EsriVectorTileLayer;
+        var currentIsVector = current.PublicationType == MetadataV2PublicationType.EsriVectorTileLayer;
+        if (candidateIsVector != currentIsVector)
+        {
+            return candidateIsVector;
+        }
+
         if (candidate.IsPrimary != current.IsPrimary)
         {
             return candidate.IsPrimary;

@@ -110,6 +110,13 @@
       "description": "Hex or square grid density (heatmap) binning over a filtered subset."
     },
     {
+      "key": "analytics.h3",
+      "displayName": "H3 Aggregation",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Aggregate features into H3 cells and publish H3 vector tiles."
+    },
+    {
       "key": "analytics.line-of-sight",
       "displayName": "Line of Sight",
       "category": "Analytics",
