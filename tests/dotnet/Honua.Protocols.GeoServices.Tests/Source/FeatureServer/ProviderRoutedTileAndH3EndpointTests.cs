@@ -214,7 +214,8 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
                 .Returns(CreateH3Rows("routed-cell"));
             SecondaryReader.QueryH3Async(
                     Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Is<H3AggregationQuery>(query => query.Resolution == 6), Arg.Any<CancellationToken>())
-                .Returns(_ => throw new NotSupportedException("provider-secret"));
+                .Returns(Task.FromException<ImmutableArray<IReadOnlyDictionary<string, object?>>>(
+                    new NotSupportedException("provider-secret")));
 
             var connectionRegistry = Substitute.For<ISecureConnectionRegistry>();
             connectionRegistry.GetConnectionAsync("routed-connection", Arg.Any<CancellationToken>())

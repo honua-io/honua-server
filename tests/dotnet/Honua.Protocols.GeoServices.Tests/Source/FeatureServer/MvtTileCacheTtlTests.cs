@@ -37,12 +37,27 @@ public class MvtTileCacheTtlTests : IClassFixture<WebAppFixture>
     public async Task GetTile_NoPerTilesetOverride_UsesGlobalCacheMaxAge()
     {
         // Default TileOptions.CacheMaxAge is 3600 (no per-tileset override configured).
-        var response = await _fixture.Client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt");
+        using var client = _fixture.CreateClient();
+        var response = await client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.Public.Should().BeTrue();
         response.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromSeconds(3600));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
+    public async Task GetTile_AuthenticatedRequest_UsesPrivateCacheWithGlobalTtl()
+    {
+        using var client = _fixture.CreateAdminClient();
+        var response = await client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
+        response.Headers.CacheControl.Should().NotBeNull();
+        response.Headers.CacheControl!.Private.Should().BeTrue();
+        response.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromSeconds(3600));
+        response.Headers.Vary.Should().Contain("Authorization").And.Contain("X-API-Key");
     }
 }
 
@@ -100,7 +115,8 @@ public class MvtTileCacheTtlOverrideTests
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
     public async Task GetTile_WithPerTilesetOverride_UsesOverrideTtl()
     {
-        var response = await _fixture.Client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt");
+        using var client = _fixture.CreateClient();
+        var response = await client.GetAsync($"/tiles/{TestLayerId}/1/0/0.mvt");
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
         response.Headers.CacheControl.Should().NotBeNull();

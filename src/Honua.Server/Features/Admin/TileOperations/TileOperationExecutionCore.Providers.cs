@@ -33,11 +33,14 @@ internal sealed partial class TileOperationExecutionCore
             // Job IDs are service-local cache targets, not physical storage handles. Resolve
             // each independently so service-wide seed/warm jobs may span several connections.
             var candidates = publications
-                .Where(publication => (publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication)) == layerId)
+                .Where(publication => (publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication)) == layerId ||
+                    (service is null && snapshot.ResolveStorageLayerId(publication) == layerId))
                 .ToArray();
             if (candidates.Length == 0)
             {
-                if (service is not null)
+                if (service is not null ||
+                    (snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(layerId, out var binding) &&
+                     !string.IsNullOrWhiteSpace(binding.ConnectionId)))
                 {
                     throw new InvalidOperationException("The tile operation target is not routable.");
                 }

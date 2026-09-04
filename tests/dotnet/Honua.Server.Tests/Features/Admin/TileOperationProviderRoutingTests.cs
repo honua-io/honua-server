@@ -6,6 +6,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -26,12 +27,13 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class TileOperationProviderRoutingTests
 {
     [Theory]
-    [InlineData("seed", null)]
-    [InlineData("seed", "routed")]
-    [InlineData("warm", "routed")]
-    [InlineData("archive", "routed")]
-    [InlineData("publish", "routed")]
-    public async Task Execute_SourceBackedLayer_UsesBoundProviderAndStorageId(string operation, string? serviceId)
+    [InlineData("seed", null, 0)]
+    [InlineData("seed", null, 41)]
+    [InlineData("seed", "routed", 0)]
+    [InlineData("warm", "routed", 0)]
+    [InlineData("archive", "routed", 0)]
+    [InlineData("publish", "routed", 0)]
+    public async Task Execute_SourceBackedLayer_UsesBoundProviderAndStorageId(string operation, string? serviceId, int layerId)
     {
         var fallback = Substitute.For<ITileProvider>();
         var routed = Substitute.For<ITileProvider>();
@@ -42,11 +44,11 @@ public sealed class TileOperationProviderRoutingTests
         var core = CreateCore(services);
         var request = new TileOperationStartRequest
         {
-            Operation = operation, ServiceId = serviceId, LayerId = 0, MinZoom = 0, MaxZoom = 0, MaxTiles = 1
+            Operation = operation, ServiceId = serviceId, LayerId = layerId, MinZoom = 0, MaxZoom = 0, MaxTiles = 1
         };
 
         var result = await core.ExecuteAsync(
-            TileOperationProgress.CreateInitial("routed-job", operation, serviceId, 0, "WebMercatorQuad"),
+            TileOperationProgress.CreateInitial("routed-job", operation, serviceId, layerId, "WebMercatorQuad"),
             request, services, CancellationToken.None);
 
         await routed.Received(1).GetMvtTileAsync(41, 0, 0, 0, Arg.Any<FeatureQuery?>(), Arg.Any<TileOptions>(),
@@ -101,7 +103,7 @@ public sealed class TileOperationProviderRoutingTests
     }
 
     private static TileOperationExecutionCore CreateCore(ServiceProvider services) => new(
-        new InMemoryUniversalProgressStore(),
+        Substitute.For<IUniversalProgressStore>(),
         new OutputCacheInvalidationService(null, null, null,
             services.GetRequiredService<IServiceScopeFactory>(), null,
             NullLogger<OutputCacheInvalidationService>.Instance),
