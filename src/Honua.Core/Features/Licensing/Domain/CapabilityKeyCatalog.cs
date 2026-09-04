@@ -65,11 +65,11 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Enterprise, "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.", Status: ExperimentalStatus),
     ];
 
-    /// <summary>Routed capabilities that ship as operator-opt-in Preview.</summary>
+    /// <summary>Routed capabilities that ship as explicit opt-in Preview.</summary>
     public static IReadOnlyList<CapabilityKeyDefinition> RoutedPreviewKeys { get; } =
     [
         new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.ControlPlane,
-            HonuaEdition.Enterprise, "Preview tenant lifecycle, schema routing, and usage surfaces. Honua 2026.1 GA deployments are single-tenant; Preview status never lowers the security severity of cross-tenant disclosure.", Status: PreviewStatus),
+            HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure.", Status: PreviewStatus),
     ];
 
     /// <summary>
