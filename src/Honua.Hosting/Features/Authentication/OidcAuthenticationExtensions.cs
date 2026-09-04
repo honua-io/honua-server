@@ -684,7 +684,7 @@ public static class OidcAuthenticationExtensions
                         CanonicalSecurityActor.StampFrameworkClaim(
                             bearerIdentity,
                             CanonicalSecurityActor.AuthenticationSchemeClaim,
-                            context.Scheme.Name);
+                            JwtBearerScheme);
                         CanonicalSecurityActor.StampFrameworkClaim(
                             bearerIdentity,
                             OperatorScopeCatalog.ScopeGovernedClaimType,
