@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.Geometry.Services;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
@@ -14,8 +15,6 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
-using Honua.Protocols.GeoServices;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
@@ -107,7 +106,7 @@ internal sealed partial class GeoservicesImportService
             if (geometry.TryGetProperty("curvePaths", out var curvePaths))
             {
                 var coordinates = curvePaths.EnumerateArray()
-                    .Select(path => ReadCurvePath(path, coordsCarryZ, coordsCarryM))
+                    .Select(ReadCurvePath)
                     .Where(path => path.Length >= 2)
                     .ToArray();
 
@@ -181,21 +180,15 @@ internal sealed partial class GeoservicesImportService
 
     private static void AppendWktCoordinates(StringBuilder builder, JsonElement value)
     {
+        builder.Append('(');
         if (value.ValueKind == JsonValueKind.Array && value.GetArrayLength() > 0 &&
             value[0].ValueKind == JsonValueKind.Number)
         {
-            builder.Append('(');
-            for (var i = 0; i < value.GetArrayLength(); i++)
-            {
-                if (i > 0)
-                    builder.Append(' ');
-                builder.Append(value[i].GetDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
-            }
+            AppendWktCoordinate(builder, value);
             builder.Append(')');
             return;
         }
 
-        builder.Append('(');
         var first = true;
         foreach (var child in value.EnumerateArray())
         {
@@ -203,9 +196,29 @@ internal sealed partial class GeoservicesImportService
                 builder.Append(',');
             first = false;
 
-            AppendWktCoordinates(builder, child);
+            if (child.ValueKind == JsonValueKind.Array && child.GetArrayLength() > 0 &&
+                child[0].ValueKind == JsonValueKind.Number)
+            {
+                AppendWktCoordinate(builder, child);
+            }
+            else
+            {
+                AppendWktCoordinates(builder, child);
+            }
         }
         builder.Append(')');
+    }
+
+    private static void AppendWktCoordinate(StringBuilder builder, JsonElement coordinate)
+    {
+        for (var i = 0; i < coordinate.GetArrayLength(); i++)
+        {
+            if (i > 0)
+                builder.Append(' ');
+            builder.Append(coordinate[i].GetDouble().ToString(
+                "R",
+                System.Globalization.CultureInfo.InvariantCulture));
+        }
     }
 
     private static bool HasHigherDimensionCoordinates(JsonElement geometry)
@@ -305,17 +318,8 @@ internal sealed partial class GeoservicesImportService
         return values.ToArray();
     }
 
-    private static double[][] ReadCurvePath(JsonElement path, bool carryZ, bool carryM)
-    {
-        var curveGeometry = new GeoServicesGeometry
-        {
-            HasZ = carryZ,
-            HasM = carryM,
-            CurvePaths = [path.EnumerateArray().ToArray()]
-        };
-
-        return CurveGeometryConverter.Densify(curveGeometry).Paths?[0] ?? [];
-    }
+    private static double[][] ReadCurvePath(JsonElement path)
+        => EsriTrueCurveDensifier.DensifyPart(path.EnumerateArray().ToArray());
 
     /// <summary>
     /// Writes a single GeoJSON coordinate, emitting the Z ordinate when the

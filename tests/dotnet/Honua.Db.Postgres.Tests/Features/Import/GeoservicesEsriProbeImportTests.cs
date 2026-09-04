@@ -80,6 +80,186 @@ public sealed class GeoservicesEsriProbeImportTests(PostgresFixture fixture)
         }
     }
 
+    [Fact]
+    public async Task ImportLayerAsync_DimensionalBinarySource_PreservesEveryRowAndValue()
+    {
+        const string tableName = "esri_probe_zm_binary";
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesEsriProbeImportTests));
+        var handler = new FidelityHandler(
+            """
+            {
+              "id": 0,
+              "name": "ZM binary layer",
+              "geometryType": "esriGeometryPoint",
+              "hasZ": true,
+              "hasM": true,
+              "maxRecordCount": 2,
+              "advancedQueryCapabilities": { "supportsPagination": false },
+              "fields": [
+                { "name": "OBJECTID", "type": "esriFieldTypeOID", "nullable": false },
+                { "name": "NAME", "type": "esriFieldTypeString", "nullable": false },
+                { "name": "PAYLOAD", "type": "esriFieldTypeBlob", "nullable": true },
+                { "name": "IMAGE", "type": "esriFieldTypeRaster", "nullable": true }
+              ]
+            }
+            """,
+            "[1,2]",
+            """
+            {
+              "features": [
+                {
+                  "attributes": { "OBJECTID": 1, "NAME": "alpha", "PAYLOAD": "AQID", "IMAGE": "BAUG" },
+                  "geometry": { "x": 10, "y": 20, "z": 30, "m": 40 }
+                },
+                {
+                  "attributes": { "OBJECTID": 2, "NAME": "beta", "PAYLOAD": "BwgJ", "IMAGE": "CgsM" },
+                  "geometry": { "x": -1, "y": -2, "z": -3, "m": -4 }
+                }
+              ],
+              "exceededTransferLimit": false,
+              "spatialReference": { "wkid": 4326 }
+            }
+            """);
+
+        try
+        {
+            var result = await CreateService(handler).ImportLayerAsync(new GeoservicesImportRequest
+            {
+                ServiceUrl = "https://example.com/arcgis/rest/services/Probe/FeatureServer",
+                LayerId = 0,
+                TableName = tableName,
+                TargetSchema = schema,
+                TargetSrid = 4326,
+                BatchSize = 10,
+                RequestTimeoutSeconds = 5,
+                MaxRetries = 0,
+                AutoPublish = false
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(2);
+            result.FailedFeatures.Should().Be(0);
+
+            await using var verification = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand(
+                $"SELECT name, payload, image, ST_AsEWKT(geom), ST_CoordDim(geom) " +
+                $"FROM \"{schema}\".\"{tableName}\" ORDER BY name",
+                verification);
+            await using var rows = await command.ExecuteReaderAsync();
+            var imported = new List<(string Name, byte[] Payload, byte[] Image, string Geometry, int Dimensions)>();
+            while (await rows.ReadAsync())
+            {
+                imported.Add((
+                    rows.GetString(0),
+                    rows.GetFieldValue<byte[]>(1),
+                    rows.GetFieldValue<byte[]>(2),
+                    rows.GetString(3),
+                    rows.GetInt32(4)));
+            }
+
+            imported.Should().HaveCount(2);
+            imported[0].Name.Should().Be("alpha");
+            imported[0].Payload.Should().Equal(1, 2, 3);
+            imported[0].Image.Should().Equal(4, 5, 6);
+            imported[0].Geometry.Should().Be("SRID=4326;POINT(10 20 30 40)");
+            imported[0].Dimensions.Should().Be(4);
+            imported[1].Name.Should().Be("beta");
+            imported[1].Payload.Should().Equal(7, 8, 9);
+            imported[1].Image.Should().Equal(10, 11, 12);
+            imported[1].Geometry.Should().Be("SRID=4326;POINT(-1 -2 -3 -4)");
+            imported[1].Dimensions.Should().Be(4);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
+    public async Task ImportLayerAsync_CurveAndEmptySource_PreservesEverySourceGeometry()
+    {
+        const string tableName = "esri_probe_curve_empty";
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesEsriProbeImportTests));
+        var handler = new FidelityHandler(
+            """
+            {
+              "id": 0,
+              "name": "Curve and empty layer",
+              "geometryType": "esriGeometryPolyline",
+              "maxRecordCount": 2,
+              "advancedQueryCapabilities": { "supportsPagination": false },
+              "fields": [
+                { "name": "OBJECTID", "type": "esriFieldTypeOID", "nullable": false },
+                { "name": "NAME", "type": "esriFieldTypeString", "nullable": false }
+              ]
+            }
+            """,
+            "[1,2]",
+            """
+            {
+              "features": [
+                {
+                  "attributes": { "OBJECTID": 1, "NAME": "curve" },
+                  "geometry": { "curvePaths": [[[1,0], {"c":[[0,1],[0,0]]}]] }
+                },
+                {
+                  "attributes": { "OBJECTID": 2, "NAME": "empty" },
+                  "geometry": { "paths": [] }
+                }
+              ],
+              "exceededTransferLimit": false,
+              "spatialReference": { "wkid": 4326 }
+            }
+            """);
+
+        try
+        {
+            var result = await CreateService(handler).ImportLayerAsync(new GeoservicesImportRequest
+            {
+                ServiceUrl = "https://example.com/arcgis/rest/services/Probe/FeatureServer",
+                LayerId = 0,
+                TableName = tableName,
+                TargetSchema = schema,
+                TargetSrid = 4326,
+                BatchSize = 2,
+                RequestTimeoutSeconds = 5,
+                MaxRetries = 0,
+                AutoPublish = false
+            });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(2);
+            result.FailedFeatures.Should().Be(0);
+
+            await using var verification = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = new NpgsqlCommand(
+                $"SELECT name, geom IS NULL, ST_IsEmpty(geom), ST_NPoints(geom), ST_AsEWKT(geom) " +
+                $"FROM \"{schema}\".\"{tableName}\" ORDER BY name",
+                verification);
+            await using var rows = await command.ExecuteReaderAsync();
+
+            (await rows.ReadAsync()).Should().BeTrue();
+            rows.GetString(0).Should().Be("curve");
+            rows.GetBoolean(1).Should().BeFalse();
+            rows.GetBoolean(2).Should().BeFalse();
+            rows.GetInt32(3).Should().Be(31);
+            rows.GetString(4).Should().StartWith("SRID=4326;MULTILINESTRING((1 0,");
+            rows.GetString(4).Should().EndWith("0 1))");
+
+            (await rows.ReadAsync()).Should().BeTrue();
+            rows.GetString(0).Should().Be("empty");
+            rows.GetBoolean(1).Should().BeFalse();
+            rows.GetBoolean(2).Should().BeTrue();
+            rows.GetInt32(3).Should().Be(0);
+            rows.GetString(4).Should().Be("SRID=4326;MULTILINESTRING EMPTY");
+            (await rows.ReadAsync()).Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private GeoservicesImportService CreateService(HttpMessageHandler handler)
     {
         var restClient = new ArcGisRestClient(
@@ -163,6 +343,41 @@ public sealed class GeoservicesEsriProbeImportTests(PostgresFixture fixture)
             // objectIds windows before reaching this request.
             throw new InvalidOperationException(
                 "Probe source rejects resultOffset because supportsPagination=false.");
+        }
+
+        private static Task<HttpResponseMessage> Json(string payload)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            });
+    }
+
+    private sealed class FidelityHandler(
+        string layerMetadata,
+        string objectIds,
+        string featureResponse) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.PathAndQuery ?? string.Empty;
+            if (path.EndsWith("/0?f=json", StringComparison.Ordinal))
+                return Json(layerMetadata);
+
+            if (path.Contains("returnCountOnly=true", StringComparison.Ordinal))
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(objectIds);
+                return Json($"{{\"count\":{document.RootElement.GetArrayLength()}}}");
+            }
+
+            if (path.Contains("returnIdsOnly=true", StringComparison.Ordinal))
+                return Json($"{{\"objectIds\":{objectIds}}}");
+
+            if (path.Contains("objectIds=", StringComparison.Ordinal))
+                return Json(featureResponse);
+
+            throw new InvalidOperationException($"Unexpected ArcGIS probe request: {path}");
         }
 
         private static Task<HttpResponseMessage> Json(string payload)
