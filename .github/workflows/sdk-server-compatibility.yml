@@ -734,6 +734,13 @@ jobs:
           NuGetAudit: false
           WarningsNotAsErrors: NU1901;NU1902;NU1903;NU1904
 
+      # Runs BEFORE the certification so a producer that has stopped enforcing
+      # the governed facet set fails here, with a named assertion, instead of
+      # emitting a fragment nobody can trust.
+      - name: Verify certification fragment builder
+        shell: bash
+        run: python3 scripts/ci/build-sdk-release-certification.test.py
+
       - name: Run clean public-registry SDK certification
         id: release-certification
         continue-on-error: true
@@ -757,6 +764,11 @@ jobs:
         run: |
           test -f results/sdk-release-certification/fragment.json
           jq -e '.operation_scope == {complete:true,expected:99,observed:99}' results/sdk-release-certification/fragment.json >/dev/null
+          # Cell completeness is not facet completeness. The governed honua-sdks
+          # roster row requires seven scenario facets; a fragment whose probes
+          # only covered the positive path must stay red no matter how many of
+          # the 99 cells report pass.
+          jq -e '.facet_scope.complete == true' results/sdk-release-certification/fragment.json >/dev/null
           jq -e '.passed == true' results/sdk-release-certification/report.json >/dev/null
 
   compatibility-report:

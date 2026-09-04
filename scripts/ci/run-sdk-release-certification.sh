@@ -70,4 +70,5 @@ python3 "$root_dir/scripts/ci/build-sdk-release-certification.py" --manifest "$m
   --output "$results_dir/fragment.json" --producer-source-sha "$(git -C "$root_dir" rev-parse HEAD)" \
   --run-url "${GITHUB_SERVER_URL:-local}/${GITHUB_REPOSITORY:-honua-io/honua-server}/actions/runs/${GITHUB_RUN_ID:-local}"
 jq -e '.operation_scope.complete == true and (.observations | length) == 99' "$results_dir/fragment.json" >/dev/null
+jq -e '.facet_scope.complete == true' "$results_dir/fragment.json" >/dev/null
 jq -e '.passed == true' "$results_dir/report.json" >/dev/null
