@@ -75,11 +75,11 @@ public static class ExecutionQualificationBarrier
             return;
         }
 
-        var operationDirectory = Path.Combine(root, Safe(scope.OperationId));
+        var operationDirectory = Path.Join(root, Safe(scope.OperationId));
         Directory.CreateDirectory(operationDirectory);
-        var readyPath = Path.Combine(operationDirectory, $"{Safe(barrier)}.ready.json");
-        var releasePath = Path.Combine(operationDirectory, $"{Safe(barrier)}.release");
-        var observedPath = Path.Combine(operationDirectory, $"{Safe(barrier)}.signal-observed.json");
+        var readyPath = Path.Join(operationDirectory, $"{Safe(barrier)}.ready.json");
+        var releasePath = Path.Join(operationDirectory, $"{Safe(barrier)}.release");
+        var observedPath = Path.Join(operationDirectory, $"{Safe(barrier)}.signal-observed.json");
 
         WriteJsonAtomically(
             readyPath,
@@ -130,7 +130,7 @@ public static class ExecutionQualificationBarrier
         }
 
         WriteJsonAtomically(
-            Path.Combine(operationDirectory, $"{Safe(barrier)}.released.json"),
+            Path.Join(operationDirectory, $"{Safe(barrier)}.released.json"),
             new
             {
                 operationId = scope.OperationId,
