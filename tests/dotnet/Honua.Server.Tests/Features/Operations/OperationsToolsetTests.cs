@@ -559,6 +559,69 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public void SecretAwareApprovalPayload_RetainsInputSecretForProposalLifetime()
+    {
+        var store = new RecordingOperationSecretStore();
+        var definition = AdminAccessOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.oidc-provider.create");
+        var descriptor = AdminAccessOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var context = new OperationPolicyContext
+        {
+            OperationInstanceId = "opinst-approval-secret-ttl",
+            PrincipalId = "principal-4187",
+            TenantId = "tenant-4187",
+        };
+
+        new AdminOperateOperationApprovalRequestMapper(definition, store).Map(
+            descriptor,
+            new OperationRequest
+            {
+                OperationId = definition.OperationId,
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["clientSecret"] = "secret-value",
+                },
+            },
+            context,
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+        store.LastTtl.Should().Be(TimeSpan.FromDays(30));
+    }
+
+    [UnitTest]
+    public async Task SecretAwareAdminApiResult_ReportsIndeterminateWhenSecretPersistenceFailsAfterActuation()
+    {
+        var secretStore = new FailingOperationSecretStore();
+        var secret = Guid.NewGuid().ToString("N");
+        using var client = new HttpClient(new CapturingOperationHandler(_ => Task.FromResult(
+            new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent($"{{\"data\":{{\"key\":\"{secret}\"}}}}")
+            })));
+        var executor = BuildAccessAdminExecutor("admin.api-key.create", client, secretStore);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = executor.OperationId,
+                Parameters = new Dictionary<string, string?> { ["name"] = "automation" },
+            },
+            new OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-secret-store-failure",
+                PrincipalId = "principal-4187",
+                TenantId = "tenant-4187",
+            });
+
+        handle.Status.Should().Be(OperationHandleStatus.Indeterminate);
+        handle.Reason.Should().Contain("one-time secret");
+        JsonSerializer.Serialize(handle).Should().NotContain(secret);
+        handle.Result!.Details["response"].Should().NotContain(secret);
+        secretStore.StoreCalled.Should().BeTrue();
+    }
+
+    [UnitTest]
     public async Task SecretAwareAdminApiResult_PersistsOnlyOpaqueReference_AndConsumesOnce()
     {
         var store = new VolatileOperationSecretStore();
@@ -1996,5 +2059,39 @@ public sealed class OperationsToolsetTests
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) => respond(request);
+    }
+
+    private sealed class RecordingOperationSecretStore : IOperationSecretStore
+    {
+        public TimeSpan? LastTtl { get; private set; }
+
+        public bool IsAvailable => true;
+
+        public OperationSecretReference Store(string operationInstanceId, string operationId, string? principalId,
+            string? tenantId, string name, string value, TimeSpan? ttl = null)
+        {
+            LastTtl = ttl;
+            return new OperationSecretReference { ReferenceId = "opsecret-recorded", Name = name };
+        }
+
+        public string? Consume(OperationSecretReference reference, string operationInstanceId, string operationId,
+            string? principalId, string? tenantId) => null;
+    }
+
+    private sealed class FailingOperationSecretStore : IOperationSecretStore
+    {
+        public bool StoreCalled { get; private set; }
+
+        public bool IsAvailable => true;
+
+        public OperationSecretReference Store(string operationInstanceId, string operationId, string? principalId,
+            string? tenantId, string name, string value, TimeSpan? ttl = null)
+        {
+            StoreCalled = true;
+            throw new InvalidOperationException("secret store unavailable after actuation");
+        }
+
+        public string? Consume(OperationSecretReference reference, string operationInstanceId, string operationId,
+            string? principalId, string? tenantId) => null;
     }
 }

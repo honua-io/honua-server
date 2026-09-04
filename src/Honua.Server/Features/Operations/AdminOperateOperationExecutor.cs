@@ -137,7 +137,32 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
             var operationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
             var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
             var now = _clock.GetUtcNow();
-            var result = BuildResult(payload, response.IsSuccessStatusCode, operationInstanceId, context);
+            OperationResultSummary result;
+            try
+            {
+                result = BuildResult(payload, response.IsSuccessStatusCode, operationInstanceId, context);
+            }
+            catch (OperationSecretPersistenceException)
+            {
+                return new OperationHandle
+                {
+                    OperationInstanceId = operationInstanceId,
+                    OperationId = OperationId,
+                    CorrelationId = correlationId,
+                    Status = OperationHandleStatus.Indeterminate,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    Reason = "Admin API actuation succeeded, but its one-time secret could not be durably stored.",
+                    Result = new OperationResultSummary
+                    {
+                        Summary = $"{_definition.Title} outcome is indeterminate.",
+                        Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["response"] = SanitizeResponse(payload),
+                        },
+                    },
+                };
+            }
             if (!response.IsSuccessStatusCode)
             {
                 return new OperationHandle
@@ -183,13 +208,20 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
             {
                 var store = _operationSecretStore
                     ?? throw new InvalidOperationException("Secret-bearing operation result requires the operation secret channel.");
-                secretReferences.Add(store.Store(
-                    operationInstanceId,
-                    OperationId,
-                    context.PrincipalId,
-                    context.TenantId,
-                    secretName,
-                    secret));
+                try
+                {
+                    secretReferences.Add(store.Store(
+                        operationInstanceId,
+                        OperationId,
+                        context.PrincipalId,
+                        context.TenantId,
+                        secretName,
+                        secret));
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    throw new OperationSecretPersistenceException();
+                }
             }
 
             response = SanitizeResponse(payload);
@@ -302,6 +334,8 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
                 break;
         }
     }
+
+    private sealed class OperationSecretPersistenceException : Exception;
 
     private static Uri BuildLocalUri(HttpContext current, string pathAndQuery)
     {
