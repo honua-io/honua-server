@@ -708,19 +708,33 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             byte[]? cachedValue;
             if (_redis != null)
             {
-                await SetRedisEntryWithIndexAsync(healthKey, HealthCheckValue, HealthCheckTtl, cancellationToken)
-                    .ConfigureAwait(false);
-                cachedValue = await GetRedisEntryAsync(healthKey).ConfigureAwait(false);
-                await RemoveRedisEntryWithIndexAsync(healthKey, cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    await SetRedisEntryWithIndexAsync(healthKey, HealthCheckValue, HealthCheckTtl, cancellationToken)
+                        .ConfigureAwait(false);
+                    cachedValue = await GetRedisEntryAsync(healthKey).ConfigureAwait(false);
+                }
+                finally
+                {
+                    // Cleanup must survive caller cancellation and partial writes: the
+                    // value TTL cannot expire membership in the shared cache-key index.
+                    await RemoveRedisEntryWithIndexAsync(healthKey, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
             }
             else
             {
-                await _distributedCache!.SetAsync(healthKey, HealthCheckValue,
-                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
-                    cancellationToken).ConfigureAwait(false);
-                cachedValue = await _distributedCache.GetAsync(healthKey, cancellationToken).ConfigureAwait(false);
-                await _distributedCache.RemoveAsync(healthKey, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await _distributedCache!.SetAsync(healthKey, HealthCheckValue,
+                        new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
+                        cancellationToken).ConfigureAwait(false);
+                    cachedValue = await _distributedCache.GetAsync(healthKey, cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    await _distributedCache!.RemoveAsync(healthKey, CancellationToken.None).ConfigureAwait(false);
+                }
             }
 
             return cachedValue is not null && cachedValue.AsSpan().SequenceEqual(HealthCheckValue);

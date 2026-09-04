@@ -49,16 +49,18 @@ internal sealed partial class RateLimitingMiddleware
     private const string UnknownKeyFamily = "unknown";
 
     /// <summary>
-    /// Soft cap on process-local counter entries before stale windows are pruned.
+    /// Hard cap on process-local counter entries. New keys fail closed at capacity.
     /// </summary>
     private const int MaxMemoryCounterEntries = 10_000;
 
     /// <summary>
     /// Process-local fixed-window counters used when Redis is unavailable. Counters
-    /// are mutated under a per-entry lock so concurrent requests for the same key
-    /// cannot lose increments (a get/set round-trip through a cache is not atomic).
+    /// are admitted, incremented, and expired under one lock so the capacity and
+    /// existing budgets remain correct during concurrent high-cardinality traffic.
     /// </summary>
     private static readonly ConcurrentDictionary<string, FixedWindowCounter> _memoryCounters = new();
+    private static readonly object _memoryCountersLock = new();
+    private static DateTimeOffset _nextMemoryCounterPrune = DateTimeOffset.MinValue;
 
     private readonly RequestDelegate _next;
     private readonly IRateLimitPolicyStore _policyStore;
@@ -378,9 +380,8 @@ internal sealed partial class RateLimitingMiddleware
 
     /// <summary>
     /// Checks rate limit using process-local counters with a fixed window algorithm.
-    /// Increments happen under a per-counter lock so concurrent requests for the
-    /// same key are counted exactly (the previous get-increment-set round trip lost
-    /// updates under concurrency, letting clients exceed the limit).
+    /// Admission, expiry, and increments share a lock so concurrent requests cannot
+    /// exceed the hard capacity, lose increments, or reset a live counter by eviction.
     /// </summary>
     /// <param name="counterKey">The counter key (subject identity plus any per-endpoint policy scope).</param>
     /// <param name="resolved">The resolved limit and window for this request.</param>
@@ -397,65 +398,84 @@ internal sealed partial class RateLimitingMiddleware
         var bucketStartTicks = now.UtcTicks / windowTicks * windowTicks;
         var windowStart = new DateTimeOffset(bucketStartTicks, TimeSpan.Zero);
 
-        var counter = _memoryCounters.GetOrAdd(counterKey, static _ => new FixedWindowCounter());
-        int currentCount;
-        lock (counter)
+        lock (_memoryCountersLock)
         {
+            if (!_memoryCounters.TryGetValue(counterKey, out var counter))
+            {
+                if (_memoryCounters.Count >= MaxMemoryCounterEntries)
+                {
+                    PruneExpiredMemoryCounters(now);
+                }
+                if (_memoryCounters.Count >= MaxMemoryCounterEntries)
+                {
+                    return new RateLimitResult
+                    {
+                        IsAllowed = false,
+                        RequestsRemaining = 0,
+                        WindowReset = windowStart + window,
+                        Limit = resolved.Limit
+                    };
+                }
+                counter = new FixedWindowCounter();
+                _memoryCounters[counterKey] = counter;
+            }
+
             if (counter.WindowStart != windowStart)
             {
                 counter.WindowStart = windowStart;
                 counter.Count = 0;
             }
+            counter.WindowEnd = windowStart + window;
+            if (counter.WindowEnd < _nextMemoryCounterPrune)
+            {
+                _nextMemoryCounterPrune = counter.WindowEnd;
+            }
+            var currentCount = ++counter.Count;
+            var limit = resolved.Limit;
 
-            currentCount = ++counter.Count;
+            return new RateLimitResult
+            {
+                IsAllowed = currentCount <= limit,
+                RequestsRemaining = Math.Max(0, limit - currentCount),
+                WindowReset = counter.WindowEnd,
+                RequestCount = currentCount,
+                Limit = limit
+            };
         }
-
-        PruneExpiredMemoryCounters(windowStart);
-
-        var limit = resolved.Limit;
-
-        return new RateLimitResult
-        {
-            IsAllowed = currentCount <= limit,
-            RequestsRemaining = Math.Max(0, limit - currentCount),
-            WindowReset = windowStart + window,
-            RequestCount = currentCount,
-            Limit = limit
-        };
     }
 
     /// <summary>
-    /// Opportunistically removes counters from previous windows once the dictionary
-    /// grows beyond <see cref="MaxMemoryCounterEntries"/>, bounding memory use.
+    /// Reclaims only expired windows while holding the admission lock. The earliest
+    /// expiry avoids scanning all counters for every rejected high-cardinality request.
     /// </summary>
-    private static void PruneExpiredMemoryCounters(DateTimeOffset currentWindowStart)
+    private static void PruneExpiredMemoryCounters(DateTimeOffset now)
     {
-        if (_memoryCounters.Count <= MaxMemoryCounterEntries)
+        if (now < _nextMemoryCounterPrune)
         {
             return;
         }
 
+        _nextMemoryCounterPrune = DateTimeOffset.MaxValue;
         foreach (var entry in _memoryCounters)
         {
-            bool stale;
-            lock (entry.Value)
-            {
-                stale = entry.Value.WindowStart < currentWindowStart;
-            }
-
-            if (stale)
+            if (entry.Value.WindowEnd <= now)
             {
                 _memoryCounters.TryRemove(entry);
+            }
+            else if (entry.Value.WindowEnd < _nextMemoryCounterPrune)
+            {
+                _nextMemoryCounterPrune = entry.Value.WindowEnd;
             }
         }
     }
 
     /// <summary>
-    /// Mutable fixed-window counter state; mutated only under a lock on the instance.
+    /// Mutable fixed-window state protected by the process-local admission lock.
     /// </summary>
     private sealed class FixedWindowCounter
     {
         public DateTimeOffset WindowStart;
+        public DateTimeOffset WindowEnd;
         public int Count;
     }
 
