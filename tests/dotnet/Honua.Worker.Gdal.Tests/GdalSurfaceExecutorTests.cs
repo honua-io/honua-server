@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -21,6 +22,28 @@ namespace Honua.Worker.Gdal.Tests;
 public sealed class GdalSurfaceExecutorTests
 {
     private const string ScratchSuite = "honua-gdal-surface-test";
+
+    /// <summary>Width and height of the planar DEM fixtures, in cells.</summary>
+    private const int GridSize = 7;
+
+    /// <summary>Square cell size of the planar DEM fixtures, in metres.</summary>
+    private const double CellSizeMetres = 10d;
+
+    /// <summary>West edge of the planar DEM fixtures, in EPSG:32610 metres.</summary>
+    private const double LowerLeftX = 500_000d;
+
+    /// <summary>South edge of the planar DEM fixtures, in EPSG:32610 metres.</summary>
+    private const double LowerLeftY = 4_000_000d;
+
+    /// <summary>EPSG code of the planar DEM fixtures (WGS 84 / UTM zone 10N, metres).</summary>
+    private const int Utm10N = 32610;
+
+    /// <summary>
+    /// Tolerance for decoded slope samples. gdaldem computes in double and stores
+    /// Float32, so the round trip carries roughly 1e-5 of relative error on values
+    /// of this magnitude; asserting exact float equality would be wrong.
+    /// </summary>
+    private const double SlopeTolerance = 1e-4;
 
     private static string Base64(string text) => GdalCli.Base64(text);
 
@@ -305,14 +328,7 @@ public sealed class GdalSurfaceExecutorTests
     public async Task Slope_WithRealGdaldem_ProducesGeoTiff_AndReconcilesAgainstSource()
     {
         var scratch = NewScratch();
-        var executor = new GdalSurfaceJobExecutor(
-            new ProcessGdalCommandRunner(
-                Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
-                Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
-                Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
-                NullLogger<ProcessGdalCommandRunner>.Instance),
-            GdalJobFactory.Options(scratch),
-            NullLogger<GdalSurfaceJobExecutor>.Instance);
+        var executor = NewRealGdalExecutor(scratch);
 
         try
         {
@@ -332,12 +348,217 @@ public sealed class GdalSurfaceExecutorTests
             payload.Should().HaveCountGreaterThan(4);
             (payload[0] == 0x49 && payload[1] == 0x49 || payload[0] == 0x4D && payload[1] == 0x4D)
                 .Should().BeTrue("output must be a real GeoTIFF");
+
+            // The signature check above is not correctness evidence on its own, so
+            // decode the raster: the sample DEM is a constant-elevation 16×16
+            // surface, whose slope is identically zero on every interior cell.
+            var decoded = await GdalRasterOracle
+                .DecodeAsync(scratch, "flat-slope", payload)
+                .ConfigureAwait(false);
+
+            decoded.Width.Should().Be(16);
+            decoded.Height.Should().Be(16);
+            decoded.InteriorValues().Should().AllSatisfy(value =>
+                value.Should().BeApproximately(0d, SlopeTolerance,
+                    "a constant-elevation DEM has zero slope everywhere"));
         }
         finally
         {
             CleanupScratch(scratch);
         }
     }
+
+    /// <summary>
+    /// Whole-catalog GP execution receipt for <c>surface.slope</c> in its default
+    /// (degrees) mode — #3922.
+    ///
+    /// Drives the production <see cref="GdalSurfaceJobExecutor"/> over the real
+    /// <c>gdaldem</c> binary with a georeferenced planar DEM of known rise/run, then
+    /// DECODES the emitted GeoTIFF and asserts the numeric surface, the preserved
+    /// grid and CRS, and the explicit nodata edge. A GeoTIFF signature, a non-empty
+    /// artifact, or a CLI-flag assertion against a fake runner is listed as
+    /// insufficient evidence by certification/gp-operation-matrix.v1.json.
+    /// </summary>
+    [GdalCliFact("gdaldem")]
+    [Protocol(ProtocolNames.TestQuality)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Slope_Degrees_WithRealGdaldem_MatchesPlanarOracle_AndPreservesGrid()
+    {
+        var scratch = NewScratch();
+        var executor = NewRealGdalExecutor(scratch);
+
+        try
+        {
+            // 7×7 UTM 10N grid, 10 m cells, rising 5 m per cell to the east and flat
+            // north-south: dz/dx = 0.5, dz/dy = 0, so Horn's operator — the kernel
+            // gdaldem uses — reproduces the plane exactly and every interior cell must
+            // read atan(0.5) = 26.565051° regardless of GDAL build.
+            var demBytes = await GdalRasterOracle.WritePlanarDemAsync(
+                scratch,
+                "planar-dem-degrees",
+                columns: GridSize,
+                rows: GridSize,
+                cellSize: CellSizeMetres,
+                lowerLeftX: LowerLeftX,
+                lowerLeftY: LowerLeftY,
+                baseElevation: 100d,
+                risePerColumnEast: 5d,
+                risePerRowNorth: 0d,
+                epsg: Utm10N).ConfigureAwait(false);
+
+            var job = GdalJobFactory.Job(
+                GdalSurfaceJobExecutor.SlopeProcessId,
+                ("source", Convert.ToBase64String(demBytes)));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            context.Artifacts.Should().ContainSingle();
+            context.Artifacts[0].Should().StartWith("data:image/tiff");
+
+            var decoded = await GdalRasterOracle
+                .DecodeAsync(scratch, "planar-slope-degrees", GdalCli.DecodeDataUri(context.Artifacts[0]))
+                .ConfigureAwait(false);
+
+            // Grid preservation: same shape, same georeferencing, same CRS, float band.
+            decoded.Width.Should().Be(GridSize);
+            decoded.Height.Should().Be(GridSize);
+            decoded.DataType.Should().Be("Float32");
+            decoded.OriginX.Should().BeApproximately(LowerLeftX, 1e-6);
+            decoded.OriginY.Should().BeApproximately(LowerLeftY + (GridSize * CellSizeMetres), 1e-6);
+            decoded.PixelWidth.Should().BeApproximately(CellSizeMetres, 1e-9);
+            decoded.PixelHeight.Should().BeApproximately(-CellSizeMetres, 1e-9);
+            decoded.GeoTransform[2].Should().Be(0d, "the output grid stays axis-aligned");
+            decoded.GeoTransform[4].Should().Be(0d, "the output grid stays axis-aligned");
+            decoded.CoordinateSystemWkt.Should().Contain(
+                Utm10N.ToString(CultureInfo.InvariantCulture),
+                "the source CRS (EPSG:32610) must survive the operation");
+
+            // Numeric surface: every interior cell is the plane's slope in DEGREES.
+            var expectedDegrees = double.RadiansToDegrees(Math.Atan(0.5d));
+            expectedDegrees.Should().BeApproximately(26.565051d, 1e-6, "sanity-check the oracle itself");
+
+            foreach (var (column, row) in InteriorCells())
+            {
+                decoded.Value(column, row).Should().BeApproximately(
+                    expectedDegrees, SlopeTolerance,
+                    $"cell ({column},{row}) sits on a plane rising 5 m per 10 m cell eastward");
+            }
+
+            // Fails for the plausible wrong-but-well-formed output: percent rise.
+            decoded.Value(3, 3).Should().NotBeApproximately(50d, 1d,
+                "default slope units are degrees, not percent rise");
+
+            // Explicit edge/nodata expectation: gdaldem leaves the one-pixel border
+            // as nodata because -compute_edges is not passed.
+            decoded.NoDataValue.Should().NotBeNull();
+            decoded.NoDataValue!.Value.Should().BeApproximately(GdalRasterOracle.NoDataSentinel, 1e-6);
+            foreach (var value in decoded.BorderValues())
+            {
+                value.Should().BeApproximately(
+                    GdalRasterOracle.NoDataSentinel, 1e-6,
+                    "the outer ring has no full 3×3 window, so gdaldem writes nodata there");
+            }
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    /// <summary>
+    /// Percent-mode half of the <c>surface.slope</c> execution receipt (#3922).
+    /// Uses a DIFFERENT plane from the degrees case so the two expected surfaces
+    /// cannot be satisfied by one constant, and asserts the percent value rather
+    /// than the degree value the same grid would produce.
+    /// </summary>
+    [GdalCliFact("gdaldem")]
+    [Protocol(ProtocolNames.TestQuality)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Slope_Percent_WithRealGdaldem_MatchesPlanarOracle()
+    {
+        var scratch = NewScratch();
+        var executor = NewRealGdalExecutor(scratch);
+
+        try
+        {
+            // 6 m east + 8 m north per 10 m cell: dz/dx = 0.6, dz/dy = 0.8, so the
+            // gradient magnitude is exactly 1.0 — 100% rise, or 45° in degrees mode.
+            var demBytes = await GdalRasterOracle.WritePlanarDemAsync(
+                scratch,
+                "planar-dem-percent",
+                columns: GridSize,
+                rows: GridSize,
+                cellSize: CellSizeMetres,
+                lowerLeftX: LowerLeftX,
+                lowerLeftY: LowerLeftY,
+                baseElevation: 100d,
+                risePerColumnEast: 6d,
+                risePerRowNorth: 8d,
+                epsg: Utm10N).ConfigureAwait(false);
+
+            var job = GdalJobFactory.Job(
+                GdalSurfaceJobExecutor.SlopeProcessId,
+                ("source", Convert.ToBase64String(demBytes)),
+                ("units", "percent"));
+            var context = new RecordingJobExecutionContext(job.OperationId);
+
+            var result = await executor.ExecuteAsync(job, context, default);
+
+            result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+            context.Artifacts.Should().ContainSingle();
+
+            var decoded = await GdalRasterOracle
+                .DecodeAsync(scratch, "planar-slope-percent", GdalCli.DecodeDataUri(context.Artifacts[0]))
+                .ConfigureAwait(false);
+
+            decoded.Width.Should().Be(GridSize);
+            decoded.Height.Should().Be(GridSize);
+            decoded.CoordinateSystemWkt.Should().Contain(Utm10N.ToString(CultureInfo.InvariantCulture));
+
+            foreach (var (column, row) in InteriorCells())
+            {
+                decoded.Value(column, row).Should().BeApproximately(
+                    100d, SlopeTolerance,
+                    $"cell ({column},{row}) sits on a plane whose gradient magnitude is exactly 1.0");
+            }
+
+            // Fails for the plausible wrong-but-well-formed output: degrees.
+            decoded.Value(3, 3).Should().NotBeApproximately(45d, 1d,
+                "units=percent must reach gdaldem as -p, not fall back to degrees");
+
+            foreach (var value in decoded.BorderValues())
+            {
+                value.Should().BeApproximately(GdalRasterOracle.NoDataSentinel, 1e-6);
+            }
+        }
+        finally
+        {
+            CleanupScratch(scratch);
+        }
+    }
+
+    private static IEnumerable<(int Column, int Row)> InteriorCells()
+    {
+        for (var row = 1; row < GridSize - 1; row++)
+        {
+            for (var column = 1; column < GridSize - 1; column++)
+            {
+                yield return (column, row);
+            }
+        }
+    }
+
+    private static GdalSurfaceJobExecutor NewRealGdalExecutor(string scratch)
+        => new(
+            new ProcessGdalCommandRunner(
+                Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
+                Microsoft.Extensions.Options.Options.Create(new AwsS3Options()),
+                Microsoft.Extensions.Options.Options.Create(new AzureBlobOptions()),
+                NullLogger<ProcessGdalCommandRunner>.Instance),
+            GdalJobFactory.Options(scratch),
+            NullLogger<GdalSurfaceJobExecutor>.Instance);
 
     private static GdalSurfaceJobExecutor NewExecutor(IGdalCommandRunner runner, out string scratch)
     {

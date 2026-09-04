@@ -109,24 +109,44 @@ internal static class GdalCli
         }
         else
         {
-            // Fallback: gdal_translate over a tiny VRT. The VRT holds a 16×16
-            // constant-value Float32 dataset so gdaldem has finite slope inputs.
-            var vrtPath = Path.Join(scratch, "sample.vrt");
-            File.WriteAllText(vrtPath, """
-                <VRTDataset rasterXSize="16" rasterYSize="16">
-                  <VRTRasterBand dataType="Float32" band="1">
-                    <ColorInterp>Gray</ColorInterp>
-                    <NoDataValue>0</NoDataValue>
-                  </VRTRasterBand>
-                </VRTDataset>
-                """);
-            await RunOrThrowAsync("gdal_translate", new[] { "-of", "GTiff", "-a_nodata", "0", vrtPath, demPath }, scratch)
+            // Fallback: gdal_translate over a tiny ESRI ASCII Grid holding a 16×16
+            // constant-value surface, so gdaldem has finite slope inputs.
+            //
+            // This used to be a .vrt, which cannot work through the production
+            // runner: GdalHardeningOptions.SkipDrivers puts VRT in GDAL_SKIP on
+            // every invocation (#2765), so the VRT never opens. AAIGrid is plain
+            // text, is not skipped, and needs no extra tooling.
+            var asciiPath = Path.Join(scratch, "sample.asc");
+            var row = string.Join(' ', Enumerable.Repeat("100", 16));
+            var grid = new StringBuilder()
+                .Append("ncols 16\nnrows 16\nxllcorner 0\nyllcorner 0\ncellsize 1\nNODATA_value -9999\n");
+            for (var i = 0; i < 16; i++)
+            {
+                grid.Append(row).Append('\n');
+            }
+
+            await File.WriteAllTextAsync(asciiPath, grid.ToString()).ConfigureAwait(false);
+            await RunOrThrowAsync(
+                    "gdal_translate",
+                    new[] { "-q", "-of", "GTiff", "-ot", "Float32", asciiPath, demPath },
+                    scratch)
                 .ConfigureAwait(false);
         }
         return File.ReadAllBytes(demPath);
     }
 
-    private static async Task RunOrThrowAsync(string tool, IReadOnlyList<string> args, string scratch)
+    /// <summary>
+    /// Runs a GDAL CLI tool through the PRODUCTION <see cref="ProcessGdalCommandRunner"/>
+    /// — same hardened environment the worker uses — and throws when it fails, so a
+    /// broken fixture or decode step surfaces as an error rather than as a silently
+    /// missing assertion.
+    /// </summary>
+    /// <param name="tool">The GDAL CLI tool to invoke.</param>
+    /// <param name="args">The argument vector.</param>
+    /// <param name="scratch">Working directory for the invocation.</param>
+    /// <returns>The completed command result, including captured stdout.</returns>
+    public static async Task<GdalCommandResult> RunOrThrowAsync(
+        string tool, IReadOnlyList<string> args, string scratch)
     {
         var runner = new ProcessGdalCommandRunner(
             Microsoft.Extensions.Options.Options.Create(new GdalHardeningOptions()),
@@ -137,8 +157,10 @@ internal static class GdalCli
         if (!result.Succeeded)
         {
             throw new InvalidOperationException(
-                $"Failed to synthesize sample DEM via {tool}: exit={result.ExitCode}; stderr={result.StandardError}");
+                $"GDAL tool '{tool}' failed: exit={result.ExitCode}; stderr={result.StandardError}");
         }
+
+        return result;
     }
 }
 
