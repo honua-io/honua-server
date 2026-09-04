@@ -91,6 +91,28 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /wps")]
+    [InterfaceOperation(TestProtocols.Wps202, "DescribeProcess")]
+    public async Task DescribeProcess_AllCanonicalProcessesDeclareLiteralDataDomains()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/wps?service=WPS&request=DescribeProcess&version=2.0.0&identifier=ALL");
+        var xml = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
+        var document = XDocument.Parse(xml);
+        XNamespace wps = "http://www.opengis.net/wps/2.0";
+        var processes = document.Descendants(wps + "Process").ToArray();
+
+        processes.Should().NotBeEmpty();
+        processes.SelectMany(process => process.Descendants(wps + "LiteralData"))
+            .Select(literalData => literalData.Element(XName.Get("LiteralDataDomain")))
+            .Should().NotBeEmpty()
+            .And.OnlyContain(domain => domain != null);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /wps")]
     [InterfaceOperation(TestProtocols.Wps202, "Execute")]

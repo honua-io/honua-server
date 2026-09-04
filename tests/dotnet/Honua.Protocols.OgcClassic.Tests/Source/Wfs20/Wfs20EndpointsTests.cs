@@ -1093,14 +1093,16 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("must be qualified when multiple feature types are requested");
     }
 
-    [IntegrationTest]
+    [Theory]
+    [InlineData("RESOURCEID")]
+    [InlineData("FEATUREID")]
     [Operation(Operations.Query)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
-    public async Task Wfs_GetFeature_QualifiedResourceIdWithoutTypeNames_ReturnsFeature()
+    public async Task Wfs_GetFeature_QualifiedResourceIdWithoutTypeNames_ReturnsFeature(string identifierParameter)
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&RESOURCEID=test_layer.1");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&{identifierParameter}=test_layer.1");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
