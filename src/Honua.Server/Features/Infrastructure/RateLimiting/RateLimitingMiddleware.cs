@@ -338,17 +338,14 @@ internal sealed partial class RateLimitingMiddleware
         // Use Redis sorted set for sliding window
         var pipeline = database.CreateTransaction();
 
-        // Remove entries older than the window. The returned task resolves only after
-        // pipeline.ExecuteAsync() below and its per-command result isn't needed individually
-        // (only countTask's result matters), so it's discarded rather than named — the
-        // discard still suppresses the "unawaited task" warning that a bare statement would emit.
-        _ = pipeline.SortedSetRemoveRangeByScoreAsync(
+        // Every mutation must succeed before the count can authorize a request.
+        var trimTask = pipeline.SortedSetRemoveRangeByScoreAsync(
             windowKey,
             0,
             windowStart.ToUnixTimeMilliseconds());
 
         // Add current request
-        _ = pipeline.SortedSetAddAsync(
+        var addTask = pipeline.SortedSetAddAsync(
             windowKey,
             Guid.NewGuid().ToString(),
             now.ToUnixTimeMilliseconds());
@@ -357,9 +354,14 @@ internal sealed partial class RateLimitingMiddleware
         var countTask = pipeline.SortedSetLengthAsync(windowKey);
 
         // Set expiration to twice the window so stale entries self-evict.
-        _ = pipeline.KeyExpireAsync(windowKey, window + window);
+        var expireTask = pipeline.KeyExpireAsync(windowKey, window + window);
 
-        await pipeline.ExecuteAsync();
+        var executeTask = pipeline.ExecuteAsync();
+        await Task.WhenAll(executeTask, trimTask, addTask, countTask, expireTask);
+        if (!await executeTask)
+        {
+            throw new InvalidOperationException("The Redis rate-limit transaction was not committed.");
+        }
 
         var requestCount = await countTask;
         var limit = resolved.Limit;

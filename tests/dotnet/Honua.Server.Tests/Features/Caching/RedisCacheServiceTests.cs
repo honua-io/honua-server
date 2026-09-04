@@ -449,7 +449,13 @@ public sealed class RedisCacheServiceTests : IDisposable
         var database = Substitute.For<IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
         database.PingAsync(Arg.Any<CommandFlags>()).Returns(TimeSpan.Zero);
-        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>())
+        var transaction = Substitute.For<ITransaction>();
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync().Returns(true);
+        transaction.SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>()).Returns(true);
+        transaction.KeyDeleteAsync(Arg.Any<RedisKey>()).Returns(true);
+        transaction.SetRemoveAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>()).Returns(true);
+        transaction.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>())
             .Returns(_ => denied && denyWrites
                 ? Task.FromException<bool>(new RedisServerException("READONLY writes unavailable"))
                 : Task.FromResult(true));
@@ -466,8 +472,10 @@ public sealed class RedisCacheServiceTests : IDisposable
         denied = false;
         (await cache.IsCacheHealthyAsync()).Should().BeTrue();
         await database.Received(denyWrites ? 1 : 2).StringGetAsync($"deployment:{ScopedKeyPrefix}__health_check__");
-        await database.Received(2).StringSetAsync($"deployment:{ScopedKeyPrefix}__health_check__",
+        await transaction.Received(2).StringSetAsync($"deployment:{ScopedKeyPrefix}__health_check__",
             Arg.Any<RedisValue>(), TimeSpan.FromSeconds(30));
+        await transaction.Received(2).SetAddAsync($"deployment:{ScopedKeyPrefix}__cache_key_index__",
+            $"deployment:{ScopedKeyPrefix}__health_check__");
     }
 
     [Theory]
@@ -488,7 +496,11 @@ public sealed class RedisCacheServiceTests : IDisposable
         var redis = Substitute.For<IConnectionMultiplexer>();
         var database = Substitute.For<IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>()).Returns(true);
+        var transaction = Substitute.For<ITransaction>();
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync().Returns(true);
+        transaction.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>()).Returns(true);
+        transaction.SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>()).Returns(true);
         var read = new TaskCompletionSource<RedisValue>(TaskCreationOptions.RunContinuationsAsynchronously);
         database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(read.Task);
         using var cache = new RedisCacheService(distributedCache,

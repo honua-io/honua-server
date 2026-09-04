@@ -690,29 +690,27 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         // cache or an open retry interval says nothing about distributed-state availability.
         try
         {
-            // A reachable Redis can still deny reads or be read-only. Exercise both
-            // cache operations under the same storage prefix as ordinary entries.
-            // The reserved key expires even if this instance stops probing.
+            // Exercise the ordinary indexed write/read/delete path, including
+            // per-command transaction failures. Expiry bounds interrupted probes.
             var healthKey = GetPrefixedKey(HealthCheckKey);
+            byte[]? cachedValue;
             if (_redis != null)
             {
-                var db = _redis.GetDatabase();
-                var storageKey = GetRedisStorageKey(healthKey);
-                if (!await db.StringSetAsync(storageKey, HealthCheckValue, HealthCheckTtl)
-                    .WaitAsync(cancellationToken).ConfigureAwait(false))
-                {
-                    return false;
-                }
-
-                var value = await db.StringGetAsync(storageKey)
+                await SetRedisEntryWithIndexAsync(healthKey, HealthCheckValue, HealthCheckTtl, cancellationToken)
                     .WaitAsync(cancellationToken).ConfigureAwait(false);
-                return value == "1";
+                cachedValue = await GetRedisEntryAsync(healthKey).WaitAsync(cancellationToken).ConfigureAwait(false);
+                await RemoveRedisEntryWithIndexAsync(healthKey, cancellationToken)
+                    .WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await _distributedCache!.SetAsync(healthKey, HealthCheckValue,
+                    new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
+                    cancellationToken).ConfigureAwait(false);
+                cachedValue = await _distributedCache.GetAsync(healthKey, cancellationToken).ConfigureAwait(false);
+                await _distributedCache.RemoveAsync(healthKey, cancellationToken).ConfigureAwait(false);
             }
 
-            await _distributedCache!.SetAsync(healthKey, HealthCheckValue,
-                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
-                cancellationToken).ConfigureAwait(false);
-            var cachedValue = await _distributedCache.GetAsync(healthKey, cancellationToken).ConfigureAwait(false);
             return cachedValue is not null && cachedValue.AsSpan().SequenceEqual(HealthCheckValue);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
