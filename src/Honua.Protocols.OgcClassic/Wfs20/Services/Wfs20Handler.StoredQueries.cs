@@ -92,9 +92,9 @@ internal sealed partial class Wfs20Handler
                 ? Array.Empty<RedisValue>()
                 : database.StringGetAsync(ids.Select(id => (RedisKey)BuildStoredQueryKey(scope, id.ToString())).ToArray()).GetAwaiter().GetResult();
             bucket.Clear();
-            foreach (var value in values)
+            foreach (var value in values.Where(static value => value.HasValue))
             {
-                if (value.HasValue && JsonSerializer.Deserialize<StoredQueryDefinition>((string)value!) is { } definition)
+                if (JsonSerializer.Deserialize<StoredQueryDefinition>((string)value!) is { } definition)
                 {
                     bucket[definition.Id] = definition;
                 }

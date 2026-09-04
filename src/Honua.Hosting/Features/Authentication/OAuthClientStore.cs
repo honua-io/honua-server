@@ -297,16 +297,25 @@ internal sealed class RedisOAuthClientStore(IConnectionMultiplexer redis, TimePr
 
     public async Task<OAuthClientRecord?> ValidateSecretAsync(string clientId, string clientSecret, CancellationToken cancellationToken)
     {
-        foreach (var client in await ListAsync(cancellationToken).ConfigureAwait(false))
-        {
-            if (!string.Equals(client.ClientId, clientId, StringComparison.Ordinal) || client.SecretHash is null || client.RevokedAt is not null || client.ExpiresAt <= _timeProvider.GetUtcNow()) continue;
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(clientSecret));
-            if (!CryptographicOperations.FixedTimeEquals(hash, client.SecretHash)) return null;
-            var updated = client with { LastUsedAt = _timeProvider.GetUtcNow(), UpdatedAt = _timeProvider.GetUtcNow() };
-            await _database.StringSetAsync(BuildKey(client.Id), JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
-            return updated;
-        }
-        return null;
+        var now = _timeProvider.GetUtcNow();
+        var clients = await ListAsync(cancellationToken).ConfigureAwait(false);
+
+        // A public client carries no secret hash, and a revoked or expired client can
+        // never authenticate, so those candidates are filtered out before the
+        // constant-time comparison rather than skipped inside the loop.
+        var client = clients.FirstOrDefault(candidate =>
+            string.Equals(candidate.ClientId, clientId, StringComparison.Ordinal) &&
+            candidate.SecretHash is not null &&
+            candidate.RevokedAt is null &&
+            !(candidate.ExpiresAt.HasValue && candidate.ExpiresAt.Value <= now));
+
+        if (client?.SecretHash is not { } secretHash) return null;
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(clientSecret));
+        if (!CryptographicOperations.FixedTimeEquals(hash, secretHash)) return null;
+        var updated = client with { LastUsedAt = now, UpdatedAt = now };
+        await _database.StringSetAsync(BuildKey(client.Id), JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt)).ConfigureAwait(false);
+        return updated;
     }
 
     private async Task<OAuthClientRecord?> ReadAsync(Guid id, CancellationToken cancellationToken)

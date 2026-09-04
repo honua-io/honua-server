@@ -121,11 +121,14 @@ public sealed class EsriProbeBugHuntTests
 
     private static HttpClient CreateClient() => new() { BaseAddress = BaseUri };
 
-    private static Task<HttpResponseMessage> PostAsync(
+    private static async Task<HttpResponseMessage> PostAsync(
         HttpClient client,
         string path,
         Dictionary<string, string> values)
-        => client.PostAsync(path, new FormUrlEncodedContent(values));
+    {
+        using var content = new FormUrlEncodedContent(values);
+        return await client.PostAsync(path, content);
+    }
 
     private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
     {
