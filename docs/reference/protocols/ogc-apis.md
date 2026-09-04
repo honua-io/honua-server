@@ -42,7 +42,7 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 | `bbox`, `bbox-crs` | 4 or 6 values; anti-meridian supported; any registry-resolvable EPSG CRS. |
 | `crs` | Output CRS; response includes `Content-Crs`. Part 2 conformance is not currently advertised. |
 | `datetime` | RFC 3339 instant or interval; requires temporal fields. |
-| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering: `cql2-text` (default) and `cql2-json`. The exact-candidate lane currently advertises only the text/JSON and core filter/queryables classes. |
+| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering: `cql2-text` (default) and `cql2-json`. Filtering is implemented and blocking-tested, but its complete CQL2/Features Part 3 classes are not currently advertised. |
 | Queryable properties | Simple-valued queryables accepted directly as query parameters (combined with AND). |
 
 CQL2 parsing and translation support is broader than the currently advertised

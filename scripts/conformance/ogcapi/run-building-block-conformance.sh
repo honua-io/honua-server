@@ -164,21 +164,17 @@ cat > "$RESULTS_DIR/candidate.json" <<EOF
 }
 EOF
 
-# Keep the declaration boundary executable. The building-block validators prove
-# the five Part 3/CQL2 classes below; the rest of the Part 2/3/4 and CQL2
-# family needs a complete ETS or equivalent class suite before it can be
-# advertised. This check prevents a future endpoint edit from silently
-# widening the public claim without widening the evidence lane.
+# Keep the declaration boundary executable. The building-block validators
+# validate live queryables and exercise CQL2/filter behavior, but they are not a
+# complete ETS-equivalent class suite. Only queryables is therefore advertised;
+# this check prevents a future endpoint edit from silently widening the public
+# claim without widening the evidence lane.
 python3 - "$RESULTS_DIR/conformance.json" <<'PY'
 import json
 import sys
 
 expected = {
     "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
-    "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
-    "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
-    "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
-    "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
 }
 target_prefixes = (
     "http://www.opengis.net/spec/ogcapi-features-2/",
