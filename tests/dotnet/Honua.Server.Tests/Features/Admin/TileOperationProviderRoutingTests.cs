@@ -44,7 +44,8 @@ public sealed class TileOperationProviderRoutingTests
         var core = CreateCore(services);
         var request = new TileOperationStartRequest
         {
-            Operation = operation, ServiceId = serviceId, LayerId = layerId, MinZoom = 0, MaxZoom = 0, MaxTiles = 1
+            Operation = operation, ServiceId = serviceId, LayerId = layerId, MinZoom = 0, MaxZoom = 0, MaxTiles = 1,
+            TileMatrixSetId = "WebMercatorQuad"
         };
 
         var result = await core.ExecuteAsync(
@@ -88,7 +89,7 @@ public sealed class TileOperationProviderRoutingTests
         var first = Substitute.For<ITileProvider>();
         var second = Substitute.For<ITileProvider>();
         using var services = CreateServices(fallback, first, second);
-        var request = new TileOperationStartRequest { Operation = "seed", ServiceId = "routed", MinZoom = 0, MaxZoom = 0 };
+        var request = new TileOperationStartRequest { Operation = "seed", ServiceId = "routed", MinZoom = 0, MaxZoom = 0, TileMatrixSetId = "WebMercatorQuad" };
 
         var result = await CreateCore(services).ExecuteAsync(
             TileOperationProgress.CreateInitial("service-job", "seed", "routed", null, "WebMercatorQuad"),
@@ -102,6 +103,25 @@ public sealed class TileOperationProviderRoutingTests
         fallback.ReceivedCalls().Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Execute_BareLayerIdCollidesWithStorageHandle_RejectsAmbiguousSource()
+    {
+        var fallback = Substitute.For<ITileProvider>();
+        var first = Substitute.For<ITileProvider>();
+        var second = Substitute.For<ITileProvider>();
+        using var services = CreateServices(fallback, first, second, collideWithStorageId: true);
+        var request = new TileOperationStartRequest { Operation = "seed", LayerId = 41, MinZoom = 0, MaxZoom = 0 };
+
+        var act = () => CreateCore(services).ExecuteAsync(
+            TileOperationProgress.CreateInitial("ambiguous-job", "seed", null, 41, "WebMercatorQuad"),
+            request, services, CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*ambiguous*");
+        fallback.ReceivedCalls().Should().BeEmpty();
+        first.ReceivedCalls().Should().BeEmpty();
+        second.ReceivedCalls().Should().BeEmpty();
+    }
+
     private static TileOperationExecutionCore CreateCore(ServiceProvider services) => new(
         Substitute.For<IUniversalProgressStore>(),
         new OutputCacheInvalidationService(null, null, null,
@@ -109,7 +129,8 @@ public sealed class TileOperationProviderRoutingTests
             NullLogger<OutputCacheInvalidationService>.Instance),
         Options.Create(new TileOptions()), Options.Create(new LimitsOptions()), NullLogger.Instance, 100);
 
-    private static ServiceProvider CreateServices(ITileProvider fallback, ITileProvider? routed, ITileProvider? second = null)
+    private static ServiceProvider CreateServices(
+        ITileProvider fallback, ITileProvider? routed, ITileProvider? second = null, bool collideWithStorageId = false)
     {
         var graphBuilder = new TestMetadataV2GraphBuilder()
             .AddConnection("connection", "routed", provider: DataProviderNames.Postgis)
@@ -121,7 +142,7 @@ public sealed class TileOperationProviderRoutingTests
         {
             graphBuilder.AddResource("resource-2", "other-layer")
                 .AddStorageBinding("binding-2", "resource-2", "public.other", connectionId: "connection", storageLayerId: 42)
-                .AddPublication("publication-2", "service", "resource-2", layerIndex: 1, storageBindingId: "binding-2");
+                .AddPublication("publication-2", "service", "resource-2", layerIndex: collideWithStorageId ? 41 : 1, storageBindingId: "binding-2");
         }
 
         var graph = graphBuilder.BuildProvider();

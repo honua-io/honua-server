@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net.Http.Json;
+using System.Net;
+using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
@@ -23,6 +25,17 @@ public sealed class FeatureServerH3EntitlementTests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.QueryH3)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/h3")]
+    public async Task OgcH3_CommunityEdition_ReturnsPaymentRequired()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{WebAppFixture.TestLayerId}/h3?resolution=5");
+        response.StatusCode.Should().Be(HttpStatusCode.PaymentRequired);
+    }
 
     [IntegrationTest]
     [Operation(Operations.QueryH3)]

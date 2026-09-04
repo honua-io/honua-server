@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -14,7 +15,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 [Protocol(TestProtocols.OgcApiFeatures)]
 public sealed class OgcFeaturesH3Tests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
     public async Task InitializeAsync() => await _fixture.InitializeAsync();
 

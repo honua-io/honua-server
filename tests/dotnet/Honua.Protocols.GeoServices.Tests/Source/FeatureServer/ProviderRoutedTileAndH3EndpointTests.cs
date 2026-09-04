@@ -49,6 +49,30 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
     public ProviderRoutedTileAndH3EndpointTests(Fixture fixture) => _fixture = fixture;
 
     [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.QueryH3)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/h3")]
+    public async Task OgcH3_SourceBackedLayer_UsesBindingScopedFeatureReader()
+    {
+        var response = await _fixture.App.Client.GetAsync("/ogc/features/collections/0/h3?resolution=5");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("routed-cell").And.NotContain("fallback-cell");
+        await _fixture.SecondaryReader.Received().QueryH3Async(
+            41, Arg.Any<FeatureQuery>(), Arg.Any<H3AggregationQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.QueryH3)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/h3")]
+    public async Task OgcH3_UnsupportedBoundReader_ReturnsCapabilityError()
+    {
+        var response = await _fixture.App.Client.GetAsync("/ogc/features/collections/0/h3?resolution=6");
+        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("provider-secret");
+    }
+
+    [IntegrationTest]
     [Protocol(TestProtocols.VectorTileServer)]
     [Operation(Operations.GetTile)]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tile/{z}/{y}/{x}.pbf")]
@@ -314,7 +338,11 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
                     connectionId: "routed-connection", storageLayerId: 42)
                 .AddService(
                     "service-routed", "routed",
-                    protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.VectorTileServer])
+                    protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.VectorTileServer, MetadataV2ServiceProtocols.OgcFeatures])
+                .AddPublication(
+                    "publication-secondary-ogc", "service-routed", "resource-secondary",
+                    layerIndex: 0, storageBindingId: "binding-secondary",
+                    publicationType: MetadataV2PublicationType.OgcCollection)
                 .AddPublication(
                     "publication-secondary", "service-routed", "resource-secondary",
                     layerIndex: 0, storageBindingId: "binding-secondary",
