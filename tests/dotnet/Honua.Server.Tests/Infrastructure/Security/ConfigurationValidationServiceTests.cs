@@ -32,13 +32,12 @@ public sealed class ConfigurationValidationServiceTests
         ConfigurationValidationService.ValidateConfiguration(
             BuildConfiguration(values), logger.Object, isDevelopment: false);
 
-        logger.Verify(instance => instance.Log(
-            LogLevel.Information,
-            It.Is<EventId>(id => id.Id == 4010),
-            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("Customer alerting")
-                && state.ToString()!.Contains(expectedStatus)),
-            It.IsAny<Exception?>(),
-            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+        logger.Invocations.Should().ContainSingle(invocation =>
+            invocation.Method.Name == nameof(ILogger.Log)
+            && (LogLevel)invocation.Arguments[0] == LogLevel.Information
+            && ((EventId)invocation.Arguments[1]).Id == 4010
+            && invocation.Arguments[2].ToString()!.Contains("Customer alerting")
+            && invocation.Arguments[2].ToString()!.Contains(expectedStatus));
     }
 
     [Fact]
