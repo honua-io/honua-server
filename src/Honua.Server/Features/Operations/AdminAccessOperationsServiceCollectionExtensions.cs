@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -22,6 +23,9 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
             AdminAccessOperationDescriptorProvider>());
         foreach (var definition in AdminAccessOperationCatalog.Definitions)
         {
+            if (AdminMcpOperationExclusions.RequiresSecretAwareRuntime(definition.OperationId))
+                continue;
+
             var descriptor = AdminAccessOperationCatalog.Descriptors.Single(
                 item => item.OperationId == definition.OperationId);
             if (definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
