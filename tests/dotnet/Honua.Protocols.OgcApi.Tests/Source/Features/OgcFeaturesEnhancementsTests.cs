@@ -917,6 +917,40 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
             .NotContain("http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/gml-sf0");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/features/conformance")]
+    public async Task GetConformance_AdvertisesOnlyEvidenceBackedFeaturesClasses()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/features/conformance");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var classes = json.RootElement.GetProperty("conformsTo")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .Where(value => value is not null)
+            .Select(value => value!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var advertisedPart2Part3Part4AndCql2Classes = classes
+            .Where(value => value.Contains("/spec/ogcapi-features-2/", StringComparison.Ordinal)
+                || value.Contains("/spec/ogcapi-features-3/", StringComparison.Ordinal)
+                || value.Contains("/spec/ogcapi-features-4/", StringComparison.Ordinal)
+                || value.StartsWith("http://www.opengis.net/spec/cql2/1.0/conf/", StringComparison.Ordinal))
+            .ToArray();
+
+        advertisedPart2Part3Part4AndCql2Classes.Should().BeEquivalentTo(
+        [
+            "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
+            "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+            "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
+            "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+            "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
+        ]);
+    }
+
     #endregion
 
     #region Content Negotiation Tests (Issue #56)
