@@ -104,7 +104,7 @@ public sealed class TileOperationJobServiceGenerationTests
     private static ServiceProvider CreateServiceProvider()
     {
         var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<IMetadataV2GraphProvider>());
+        services.AddSingleton<IMetadataV2GraphProvider>(new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder().BuildProvider());
         services.AddSingleton(Substitute.For<ITileProvider>());
         return services.BuildServiceProvider();
     }

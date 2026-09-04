@@ -11,8 +11,8 @@ namespace Honua.Protocols.GeoServices.VectorTileServer.Services;
 /// service metadata. The level-of-detail table is fixed for the Web Mercator (EPSG:3857)
 /// vector tiling scheme. This mirrors <c>ImageServerTileInfoBuilder</c> but for the vector
 /// tiling scheme: 512-pixel logical tiles serving the <c>pbf</c> (Mapbox Vector Tile) format,
-/// where the level-0 scale denominator follows the OGC WebMercatorQuad standard
-/// (<c>559082264.0287178</c>) and halves every level. This is pure metadata assembly — the
+/// where the level-0 scale follows Esri's 96 DPI convention for 512-pixel tiles
+/// (<c>295828763.7958</c>) and halves every level. This is pure metadata assembly — the
 /// metadata foundation does not host an Esri-format vector tile cache (#1777).
 /// </summary>
 internal static class VectorTileServerTileInfoBuilder
@@ -28,12 +28,6 @@ internal static class VectorTileServerTileInfoBuilder
     /// WebMercatorQuad tile: <c>(2 * WebMercatorExtent) / 512</c>.
     /// </summary>
     private const double Resolution0 = (2.0 * SpatialConstants.WebMercatorExtent) / TileSize;
-
-    /// <summary>
-    /// Scale denominator at zoom level 0 for the WebMercatorQuad tile matrix set. This is the
-    /// OGC-standardized value Esri vector tile caches advertise; each subsequent level halves it.
-    /// </summary>
-    private const double ScaleDenominator0 = 559082264.0287178;
 
     /// <summary>WebMercator spatial reference well-known id used by Esri tile caches.</summary>
     private const int WebMercatorWkid = 102100;
@@ -64,7 +58,7 @@ internal static class VectorTileServerTileInfoBuilder
             {
                 Level = level,
                 Resolution = Resolution0 / factor,
-                Scale = ScaleDenominator0 / factor
+                Scale = (Resolution0 / factor) * Dpi * 39.37
             };
         }
 
