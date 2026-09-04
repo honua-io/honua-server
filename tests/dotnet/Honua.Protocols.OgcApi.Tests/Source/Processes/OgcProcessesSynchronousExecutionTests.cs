@@ -130,6 +130,104 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_AsyncRawCatalogProcess_IsAdmittedAndPersistsResponseMode()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}},\"response\":\"raw\"}}",
+            Encoding.UTF8,
+            "application/json");
+
+        using var response = await _fixture.App.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created,
+            "Part 1 applies raw response negotiation to asynchronous results too (#4145)");
+        _fixture.SubmittedMetadata!["ogc.processes.response"].Should().Be("raw");
+
+        using var asyncOnlyRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/surface.slope/execution");
+        asyncOnlyRequest.Content = new StringContent(
+            """{"inputs":{"source":"AAAA"},"response":"raw"}""",
+            Encoding.UTF8,
+            "application/json");
+
+        using var asyncOnlyResponse = await _fixture.App.Client.SendAsync(asyncOnlyRequest);
+
+        asyncOnlyResponse.StatusCode.Should().Be(HttpStatusCode.Created,
+            "raw must also be admitted when the catalog process has no synchronous mode (#4145)");
+        _fixture.SubmittedMetadata!["ogc.processes.response"].Should().Be("raw");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_QualifiedAndReferencedCatalogInputs_AreNormalized()
+    {
+        const string geoJson = "{\"type\":\"Point\",\"coordinates\":[1,2]}";
+        var href = "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(geoJson));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            $$"""
+            {
+              "inputs": {
+                "wkb": { "href": "{{href}}", "type": "application/geo+json" },
+                "srid": { "value": 4326 },
+                "distance": { "value": 25.5 }
+              }
+            }
+            """,
+            Encoding.UTF8,
+            "application/json");
+
+        using var response = await _fixture.App.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created,
+            "catalog processes must accept the same qualified and by-reference input forms as CITE (#4146)");
+        var inputs = _fixture.SubmittedPlan!.Steps.Single().Inputs;
+        inputs["srid"].Should().Be("4326");
+        inputs["distance"].Should().Be("25.5");
+        new WKBReader().Read(Convert.FromBase64String(inputs["wkb"])).GeometryType.Should().Be("Point");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task ReferenceDocumentation_ExecuteExample_IsRunnableVerbatim()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../.."));
+        var documentation = await File.ReadAllTextAsync(
+            Path.Combine(repositoryRoot, "docs", "reference", "protocols", "ogc-apis.md"));
+        const string marker = "In the [API explorer]";
+        var exampleStart = documentation.IndexOf(marker, StringComparison.Ordinal);
+        exampleStart.Should().BeGreaterThanOrEqualTo(0);
+        var methodStart = documentation.IndexOf("`POST ", exampleStart, StringComparison.Ordinal) + 6;
+        var methodEnd = documentation.IndexOf('`', methodStart);
+        var endpoint = documentation[methodStart..methodEnd];
+        var jsonStart = documentation.IndexOf("```json", methodEnd, StringComparison.Ordinal) + 7;
+        var jsonEnd = documentation.IndexOf("```", jsonStart, StringComparison.Ordinal);
+        var body = documentation[jsonStart..jsonEnd].Trim();
+        body.Should().NotContain("<", "the only execute example must not contain a placeholder (#4150)");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        using var response = await _fixture.App.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created,
+            "the reference documentation's only execute request must run verbatim (#4150)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_MalformedNestedGeoJson_ReturnsSanitizedValidationError()
     {
         var malformedInputs = new[]
@@ -263,6 +361,8 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
     public AnalysisPlan? SubmittedPlan { get; private set; }
 
+    public IReadOnlyDictionary<string, string>? SubmittedMetadata { get; private set; }
+
     public int SubmissionCount { get; private set; }
 
     public OgcProcessesSynchronousExecutionFixture()
@@ -282,7 +382,9 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(callInfo => RecordSubmission(callInfo.ArgAt<AnalysisPlan>(0)));
+            .Returns(callInfo => RecordSubmission(
+                callInfo.ArgAt<AnalysisPlan>(0),
+                callInfo.ArgAt<IReadOnlyDictionary<string, string>?>(3)));
 
         // The processes adapter submits through SubmitProtocolJobAsync, a default
         // interface member whose default body forwards to SubmitJobAsync. NSubstitute
@@ -295,7 +397,9 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 Arg.Any<IProcessCatalog>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(callInfo => RecordSubmission(callInfo.ArgAt<AnalysisPlan>(0)));
+            .Returns(callInfo => RecordSubmission(
+                callInfo.ArgAt<AnalysisPlan>(0),
+                callInfo.ArgAt<IReadOnlyDictionary<string, string>?>(4)));
 
         var terminalService = Substitute.For<IGeoprocessingJobTerminalService>();
         terminalService.WaitForResultAsync(
@@ -313,9 +417,12 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
             services.AddSingleton(terminalService);
         });
 
-        Task<ExecutionJobRecord> RecordSubmission(AnalysisPlan plan)
+        Task<ExecutionJobRecord> RecordSubmission(
+            AnalysisPlan plan,
+            IReadOnlyDictionary<string, string>? metadata)
         {
             SubmittedPlan = plan;
+            SubmittedMetadata = metadata;
             SubmissionCount++;
             return Task.FromResult(job);
         }

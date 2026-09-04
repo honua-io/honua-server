@@ -101,36 +101,24 @@ Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `b
 | GET | `/ogc/processes/jobs`, `.../jobs/{jobId}`, `.../jobs/{jobId}/results` | Job list (active only, `limit`), status, results. |
 | DELETE | `/ogc/processes/jobs/{jobId}` | Dismiss (cancel) a job. |
 
-The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. All current execution modes and job endpoints require Redis-backed durable storage (503 otherwise).
+The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. Catalog inputs accept bare values, qualified values such as `{ "value": 100 }`, and `href` references. Catalog outputs advertise value transmission: document responses inline each output (with media-type and base64 qualifiers where needed), while `response: "raw"` returns the native representation from either a synchronous execution or the asynchronous job results endpoint. All current execution modes and job endpoints require Redis-backed durable storage (503 otherwise).
 
-In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/processes/honua-geoprocessing/execution` with `Prefer: respond-async` and this body:
+In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/processes/geometry.buffer/execution` with `Prefer: respond-async` and this body:
 
 ```json
 {
   "inputs": {
-    "plan": {
-      "planId": "buffer-demo",
-      "steps": [
-        {
-          "kind": "geoprocess",
-          "processId": "geometry.buffer",
-          "inputs": {
-            "wkb": "<base64-encoded-point-or-polygon-wkb>",
-            "srid": 4326,
-            "distance": 100
-          }
-        }
-      ]
-    }
+    "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "srid": 4326,
+    "distance": 100
   },
   "response": "document"
 }
 ```
 
-The direct `honua-geoprocessing` endpoint accepts one executable catalog step;
-the `geometry.buffer` example therefore supplies the catalog's required `wkb`
-and `srid` inputs. Multi-step DAG plans are submitted through the durable plan
-runner when that surface is enabled, not through this direct execution path.
+The example supplies a complete little-endian WKB point at `(0, 0)` and the
+catalog process's required `srid` and `distance` inputs, so it can be submitted
+verbatim. Replace the WKB value and distance for a useful buffer operation.
 
 ## OGC API Records
 

@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
@@ -30,6 +31,9 @@ public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobR
 {
     private const string JobId = "ogc-gp-result-job";
     private const string SelectedJobId = "ogc-gp-selected-result-job";
+    private const string ValueJobId = "ogc-gp-value-result-job";
+    private const string RawJobId = "ogc-gp-raw-result-job";
+    private const string MultiRawJobId = "ogc-gp-multi-raw-result-job";
 
     private readonly WebAppFixture _fixture;
 
@@ -88,6 +92,51 @@ public sealed class OgcProcessesJobResultsTests : IClassFixture<OgcProcessesJobR
         doc.RootElement.GetProperty("outputTable").GetProperty("id").GetString()
             .Should().Be("selected-artifact-2");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task JobResults_AdvertisedValueTransmission_ReturnsInlineQualifiedValue()
+    {
+        using var response = await _fixture.Client.GetAsync($"/ogc/processes/jobs/{ValueJobId}/results");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var output = doc.RootElement.GetProperty("outputFeatureLayer");
+        output.TryGetProperty("href", out _).Should().BeFalse(
+            "a process advertising only value transmission must not return a reference object (#4144)");
+        output.GetProperty("mediaType").GetString().Should().Be("application/geo+json");
+        output.GetProperty("value").GetProperty("type").GetString().Should().Be("FeatureCollection");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task JobResults_AsyncRawRequest_ReturnsNativeRepresentation()
+    {
+        using var response = await _fixture.Client.GetAsync($"/ogc/processes/jobs/{RawJobId}/results");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        (await response.Content.ReadAsStringAsync()).Should().Be("{\"value\":42}",
+            "the persisted raw response choice applies when an asynchronous job is polled (#4145)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task JobResults_AsyncRawMultipleValues_ReturnsMultipartRelated()
+    {
+        using var response = await _fixture.Client.GetAsync($"/ogc/processes/jobs/{MultiRawJobId}/results");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("multipart/related");
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("Content-ID: <outputFeatureLayer>");
+        body.Should().Contain("Content-ID: <outputReport>");
+        body.Should().Contain("{\"value\":42}");
+        body.Should().Contain("{\"count\":1}");
+    }
 }
 
 /// <summary>
@@ -101,6 +150,9 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
 {
     private const string JobId = "ogc-gp-result-job";
     private const string SelectedJobId = "ogc-gp-selected-result-job";
+    private const string ValueJobId = "ogc-gp-value-result-job";
+    private const string RawJobId = "ogc-gp-raw-result-job";
+    private const string MultiRawJobId = "ogc-gp-multi-raw-result-job";
 
     public WebAppFixture App { get; }
 
@@ -109,6 +161,9 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
         var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         jobStore.GetAsync(JobId, Arg.Any<CancellationToken>()).Returns(CreateSucceededJob());
         jobStore.GetAsync(SelectedJobId, Arg.Any<CancellationToken>()).Returns(CreateSelectedJob());
+        jobStore.GetAsync(ValueJobId, Arg.Any<CancellationToken>()).Returns(CreateValueJob(ValueJobId, "document"));
+        jobStore.GetAsync(RawJobId, Arg.Any<CancellationToken>()).Returns(CreateValueJob(RawJobId, "raw"));
+        jobStore.GetAsync(MultiRawJobId, Arg.Any<CancellationToken>()).Returns(CreateMultiRawJob());
 
         App = new WebAppFixture()
             .ConfigureServices(services =>
@@ -176,6 +231,55 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
                     [$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}1"] = "outputTable",
                     ["submittedVia"] = "OGC-API-Processes",
                     ["protocolProcessId"] = "generalization.dissolve"
+                }
+            }
+        };
+
+    private static ExecutionJobRecord CreateValueJob(string jobId, string responseMode)
+        => new()
+        {
+            OperationId = jobId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "geometry-buffer",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["submittedVia"] = "OGC-API-Processes",
+                    ["protocolProcessId"] = "geometry.buffer",
+                    ["ogc.processes.response"] = responseMode,
+                    [$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}0"] = "outputFeatureLayer"
+                }
+            }
+        };
+
+    private static ExecutionJobRecord CreateMultiRawJob()
+        => new()
+        {
+            OperationId = MultiRawJobId,
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            Spec = new ExecutionJobSpec
+            {
+                Kind = ExecutionJobKind.Geoprocessing,
+                TargetKind = BatchComputeTargetKind.KubernetesJob,
+                Backend = "local",
+                WorkloadName = "multi-output",
+                Parameters = new Dictionary<string, string>
+                {
+                    ["submittedVia"] = "OGC-API-Processes",
+                    ["protocolProcessId"] = "example.multi-output",
+                    ["ogc.processes.response"] = "raw",
+                    [$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}0"] = "outputFeatureLayer",
+                    [$"{GeoprocessingProtocolMetadataKeys.OutputNamePrefix}1"] = "outputReport"
                 }
             }
         };
@@ -268,6 +372,81 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
                 ExecutedAt = DateTimeOffset.UtcNow
             });
 
+        private static readonly AnalysisResultPackage ValueResults = AnalysisResultPackage.CreateCompleted(
+            resultPackageId: "ogc-gp-value-result-job:v1",
+            summary: new ResultSummary { Title = "inline GeoJSON" },
+            artifacts:
+            [
+                new ArtifactRef
+                {
+                    ArtifactId = "inline-feature-collection",
+                    Kind = ArtifactKind.FeatureLayer,
+                    Label = "outputFeatureLayer",
+                    Uri = "data:application/geo+json;base64," + Convert.ToBase64String(
+                        Encoding.UTF8.GetBytes("{\"type\":\"FeatureCollection\",\"features\":[]}")),
+                    ContentType = "application/geo+json"
+                }
+            ],
+            workspaceRefs: [],
+            provenance: new ProvenanceRecord
+            {
+                Sources = [],
+                ProcessDefinitions = ["geometry.buffer"],
+                ExecutedAt = DateTimeOffset.UtcNow
+            });
+
+        private static readonly AnalysisResultPackage RawResults = AnalysisResultPackage.CreateCompleted(
+            resultPackageId: "ogc-gp-raw-result-job:v1",
+            summary: new ResultSummary { Title = "raw JSON" },
+            artifacts:
+            [
+                new ArtifactRef
+                {
+                    ArtifactId = "raw-value",
+                    Kind = ArtifactKind.Scalar,
+                    Label = "outputFeatureLayer",
+                    Uri = "data:application/json;base64,eyJ2YWx1ZSI6NDJ9",
+                    ContentType = "application/json"
+                }
+            ],
+            workspaceRefs: [],
+            provenance: new ProvenanceRecord
+            {
+                Sources = [],
+                ProcessDefinitions = ["geometry.buffer"],
+                ExecutedAt = DateTimeOffset.UtcNow
+            });
+
+        private static readonly AnalysisResultPackage MultiRawResults = AnalysisResultPackage.CreateCompleted(
+            resultPackageId: "ogc-gp-multi-raw-result-job:v1",
+            summary: new ResultSummary { Title = "multiple raw values" },
+            artifacts:
+            [
+                new ArtifactRef
+                {
+                    ArtifactId = "multi-value-1",
+                    Kind = ArtifactKind.FeatureLayer,
+                    Label = "outputFeatureLayer",
+                    Uri = "data:application/json;base64,eyJ2YWx1ZSI6NDJ9",
+                    ContentType = "application/json"
+                },
+                new ArtifactRef
+                {
+                    ArtifactId = "multi-value-2",
+                    Kind = ArtifactKind.Report,
+                    Label = "outputReport",
+                    Uri = "data:application/json;base64,eyJjb3VudCI6MX0=",
+                    ContentType = "application/json"
+                }
+            ],
+            workspaceRefs: [],
+            provenance: new ProvenanceRecord
+            {
+                Sources = [],
+                ProcessDefinitions = ["example.multi-output"],
+                ExecutedAt = DateTimeOffset.UtcNow
+            });
+
         public Task EnsureCallerAuthorizedAsync(
             ClaimsPrincipal principal,
             OperatorResourceType resourceType,
@@ -299,17 +478,27 @@ public sealed class OgcProcessesJobResultsTestsFixture : IAsyncLifetime
             string jobId,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(jobId, SelectedJobId, StringComparison.Ordinal)
-                ? CreateSelectedJob()
-                : CreateSucceededJob());
+            => Task.FromResult(jobId switch
+            {
+                SelectedJobId => CreateSelectedJob(),
+                ValueJobId => CreateValueJob(ValueJobId, "document"),
+                RawJobId => CreateValueJob(RawJobId, "raw"),
+                MultiRawJobId => CreateMultiRawJob(),
+                _ => CreateSucceededJob()
+            });
 
         public Task<AnalysisResultPackage> GetJobResultsAsync(
             string jobId,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(string.Equals(jobId, SelectedJobId, StringComparison.Ordinal)
-                ? SelectedResults
-                : Results);
+            => Task.FromResult(jobId switch
+            {
+                SelectedJobId => SelectedResults,
+                ValueJobId => ValueResults,
+                RawJobId => RawResults,
+                MultiRawJobId => MultiRawResults,
+                _ => Results
+            });
 
         public Task CancelJobAsync(
             string jobId,

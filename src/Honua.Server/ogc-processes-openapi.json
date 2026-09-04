@@ -190,7 +190,7 @@
         },
         "responses": {
           "200": {
-            "description": "Synchronous execution completed successfully. Document mode returns a results document; raw mode returns the single inline output with its artifact media type.",
+            "description": "Synchronous execution completed successfully. Document mode returns inline value-transmitted outputs; raw mode returns one native output or a multipart/related body for multiple outputs.",
             "content": {
               "application/json": {
                 "schema": {
@@ -280,7 +280,7 @@
             }
           },
           "413": {
-            "description": "Synchronous raw output exceeds the configured inline artifact limit",
+            "description": "A value-transmitted output exceeds the configured inline artifact limit",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -516,10 +516,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Job succeeded. Document-mode results keyed by output identifier per OGC API Processes Part 1 §7.11.1. V1 declares no value-typed outputs on the canonical process, so the body is an empty object; populated entries land here once result storage ships.",
+            "description": "Job succeeded. The representation honors the response mode and output selection persisted from the execute request: document mode returns inline value-transmitted outputs, while raw mode returns one native output or multipart/related for multiple outputs.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Results" }
+                "schema": {
+                  "anyOf": [
+                    { "$ref": "#/components/schemas/Results" },
+                    { "$ref": "#/components/schemas/RawJsonValue" }
+                  ]
+                }
+              },
+              "application/geo+json": {
+                "schema": { "type": "object" }
+              },
+              "application/octet-stream": {
+                "schema": { "type": "string", "format": "binary" }
+              },
+              "multipart/related": {
+                "schema": { "type": "string", "format": "binary" }
               }
             }
           },
@@ -781,7 +795,7 @@
         "properties": {
           "inputs": {
             "type": "object",
-            "description": "Inputs for the selected process. The canonical analysis process uses plan; direct processes use their advertised input identifiers.",
+            "description": "Inputs for the selected process. The canonical analysis process uses plan; direct processes use their advertised input identifiers and accept bare values, qualified values, or href links.",
             "properties": {
               "plan": { "$ref": "#/components/schemas/AnalysisPlan" }
             },
@@ -805,7 +819,7 @@
             "type": "string",
             "enum": ["document", "raw"],
             "default": "document",
-            "description": "Response mode. 'raw' is supported for synchronous single-value results; asynchronous execution requires 'document'."
+            "description": "Response mode. 'raw' returns the native representation for synchronous executions and from the results endpoint for asynchronous jobs. Multiple raw outputs use multipart/related."
           }
         }
       },
@@ -912,11 +926,11 @@
       },
       "Results": {
         "type": "object",
-        "description": "Document-mode results map keyed by output identifier (OGC API Processes Part 1 §7.11.1). V1 canonical process declares no value-typed outputs, so the map is empty.",
+        "description": "Document-mode results map keyed by output identifier. Catalog outputs are inline values or qualified values carrying mediaType and optional base64 encoding; the canonical plan process has no declared outputs.",
         "additionalProperties": true
       },
       "RawJsonValue": {
-        "description": "An arbitrary JSON object, array, string, number, boolean, or null returned by raw-mode synchronous execution."
+        "description": "An arbitrary JSON object, array, string, number, boolean, or null returned by raw-mode execution."
       }
     }
   }

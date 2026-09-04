@@ -10,6 +10,7 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.Ogc.Common;
@@ -17,7 +18,6 @@ using Honua.Protocols.Ogc.Api.Processes.Models;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Microsoft.Net.Http.Headers;
 
 namespace Honua.Protocols.Ogc.Api.Processes;
 
@@ -299,7 +299,8 @@ internal static class ProcessEndpoints
         ILogger<OgcProcessesEndpointsLog> logger,
         IGeoprocessingJobService jobService,
         IGeoprocessingJobTerminalService terminalService,
-        IOgcProcessesCatalog processCatalog)
+        IOgcProcessesCatalog processCatalog,
+        IHttpClientFactory httpClientFactory)
     {
         EnrichActivity("ExecuteProcess");
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -386,14 +387,6 @@ internal static class ProcessEndpoints
                     $"Response mode '{request.Response}' is not supported.");
             }
 
-            if (rawResponse && !executeSynchronously)
-            {
-                return OgcProcessesResults.Error(
-                    StatusCodes.Status400BadRequest,
-                    "Invalid response mode",
-                    "Raw responses require a supported synchronous value request.");
-            }
-
             if (definition != null
                 && OgcProcessesCiteEchoFixture.IsDefinition(definition)
                 && !OgcProcessesCiteEchoFixture.TryValidateInputs(request.Inputs, out var inputError))
@@ -414,6 +407,25 @@ internal static class ProcessEndpoints
                     StatusCodes.Status400BadRequest,
                     "Invalid output selection",
                     $"Process '{processId}' does not support explicit output selection.");
+            }
+
+            if (definition != null && !OgcProcessesCiteEchoFixture.IsDefinition(definition))
+            {
+                var normalized = await NormalizeInputReferencesAsync(
+                    request,
+                    httpClientFactory,
+                    context.RequestServices.GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
+                        ?? 50L * 1024L * 1024L,
+                    cancellationToken).ConfigureAwait(false);
+                if (normalized.Request == null)
+                {
+                    return OgcProcessesResults.Error(
+                        StatusCodes.Status400BadRequest,
+                        "Invalid process input",
+                        normalized.Error ?? "A referenced input could not be resolved.");
+                }
+
+                request = normalized.Request;
             }
 
             var geometryService = context.RequestServices.GetRequiredService<IGeometryService>();
@@ -437,7 +449,8 @@ internal static class ProcessEndpoints
             var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["submittedVia"] = "OGC-API-Processes",
-                ["protocolProcessId"] = processId
+                ["protocolProcessId"] = processId,
+                [OgcProcessesExecutionMetadata.ResponseMode] = rawResponse ? "raw" : "document"
             };
             if (definition != null)
             {
@@ -506,9 +519,12 @@ internal static class ProcessEndpoints
                 return terminal.Outcome switch
                 {
                     GeoprocessingTerminalResultOutcome.Succeeded => rawResponse
-                        ? BuildRawResultsResponse(context, terminal.ResultPackage!)
-                        : JobEndpoints.BuildResultsResponse(
-                            context, logger, jobRecord.OperationId, terminal.Job ?? jobRecord, terminal.ResultPackage!),
+                        ? await JobEndpoints.BuildRawResultsResponseAsync(
+                                terminal.Job ?? jobRecord, context, terminal.ResultPackage!)
+                            .ConfigureAwait(false)
+                        : await JobEndpoints.BuildValueResultsResponseAsync(
+                                terminal.Job ?? jobRecord, context, terminal.ResultPackage!)
+                            .ConfigureAwait(false),
                     GeoprocessingTerminalResultOutcome.Failed => JobEndpoints.BuildJobFailedResult(
                         jobRecord.OperationId,
                         terminal.Job?.ErrorMessage),
@@ -754,12 +770,24 @@ internal static class ProcessEndpoints
 
             var parameter = processDefinition.Parameters.FirstOrDefault(candidate =>
                 string.Equals(candidate.Name, input.Key, StringComparison.Ordinal));
+            var effectiveValue = GetInlineInputValue(input.Value, out var mediaType);
             if (parameter?.ValueType == ProcessParameterValueType.Wkb
-                && input.Value.ValueKind == JsonValueKind.Object)
+                && string.Equals(GetMediaTypeEssence(mediaType), "application/wkb", StringComparison.OrdinalIgnoreCase))
+            {
+                if (effectiveValue.ValueKind != JsonValueKind.String)
+                {
+                    error = $"Input '{input.Key}' application/wkb value must be a base64 string.";
+                    return false;
+                }
+
+                inputs[input.Key] = effectiveValue.GetString() ?? string.Empty;
+            }
+            else if (parameter?.ValueType == ProcessParameterValueType.Wkb
+                && effectiveValue.ValueKind == JsonValueKind.Object)
             {
                 if (!TryConvertGeoJsonInput(
                         input.Key,
-                        input.Value,
+                        effectiveValue,
                         inputSrid,
                         geometryService,
                         out var normalized,
@@ -772,7 +800,7 @@ internal static class ProcessEndpoints
             }
             else
             {
-                inputs[input.Key] = JsonElementToCanonicalInput(input.Value);
+                inputs[input.Key] = JsonElementToCanonicalInput(effectiveValue);
             }
         }
 
@@ -804,6 +832,7 @@ internal static class ProcessEndpoints
             return null;
         }
 
+        srid = GetInlineInputValue(srid, out _);
         if (srid.ValueKind == JsonValueKind.Number && srid.TryGetInt32(out var numeric))
         {
             return numeric;
@@ -879,100 +908,291 @@ internal static class ProcessEndpoints
             _ => element.GetRawText()
         };
 
+    private static async Task<InputNormalizationResult> NormalizeInputReferencesAsync(
+        OgcExecuteRequest request,
+        IHttpClientFactory httpClientFactory,
+        long maxArtifactBytes,
+        CancellationToken cancellationToken)
+    {
+        if (request.Inputs == null)
+        {
+            return new InputNormalizationResult(request, null);
+        }
+
+        var inputs = request.Inputs.ToBuilder();
+        foreach (var input in request.Inputs)
+        {
+            if (input.Value.ValueKind != JsonValueKind.Object
+                || !input.Value.TryGetProperty("href", out var hrefElement))
+            {
+                continue;
+            }
+
+            if (hrefElement.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(hrefElement.GetString()))
+            {
+                return new InputNormalizationResult(null, $"Input '{input.Key}' href must be a non-empty string.");
+            }
+
+            var mediaTypeHint = input.Value.TryGetProperty("type", out var typeElement)
+                && typeElement.ValueKind == JsonValueKind.String
+                    ? typeElement.GetString()
+                    : null;
+            var resolved = await ResolveInputReferenceAsync(
+                hrefElement.GetString()!,
+                mediaTypeHint,
+                httpClientFactory,
+                maxArtifactBytes,
+                cancellationToken).ConfigureAwait(false);
+            if (resolved.Value.ValueKind == JsonValueKind.Undefined)
+            {
+                return new InputNormalizationResult(
+                    null,
+                    $"Input '{input.Key}' reference could not be resolved: {resolved.Error}");
+            }
+
+            inputs[input.Key] = BuildQualifiedInput(resolved.Value, resolved.MediaType);
+        }
+
+        return new InputNormalizationResult(
+            request with { Inputs = inputs.ToImmutable() },
+            null);
+    }
+
+    private static async Task<ResolvedInputReference> ResolveInputReferenceAsync(
+        string href,
+        string? mediaTypeHint,
+        IHttpClientFactory httpClientFactory,
+        long maxArtifactBytes,
+        CancellationToken cancellationToken)
+    {
+        byte[] payload;
+        string? mediaType = mediaTypeHint;
+        if (href.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryDecodeDataUri(href, maxArtifactBytes, out payload, out var dataMediaType, out var dataError))
+            {
+                return new ResolvedInputReference(default, null, dataError);
+            }
+
+            mediaType ??= dataMediaType;
+        }
+        else
+        {
+            var validation = await OutboundHttpUrlValidator.ValidateAsync(href, cancellationToken)
+                .ConfigureAwait(false);
+            if (!validation.IsValid)
+            {
+                return new ResolvedInputReference(default, null, validation.ErrorMessage);
+            }
+
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, validation.Uri);
+                using var response = await httpClientFactory
+                    .CreateClient(OgcProcessInputReferenceHttpClient.Name)
+                    .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return new ResolvedInputReference(
+                        default,
+                        null,
+                        $"the remote server returned HTTP {(int)response.StatusCode}.");
+                }
+
+                if (response.Content.Headers.ContentLength is > 0
+                    && response.Content.Headers.ContentLength > maxArtifactBytes)
+                {
+                    return new ResolvedInputReference(default, null, "the referenced value exceeds the configured input limit.");
+                }
+
+                mediaType ??= response.Content.Headers.ContentType?.MediaType;
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                var read = await ReadBoundedAsync(stream, maxArtifactBytes, cancellationToken).ConfigureAwait(false);
+                if (read == null)
+                {
+                    return new ResolvedInputReference(default, null, "the referenced value exceeds the configured input limit.");
+                }
+
+                payload = read;
+            }
+            catch (HttpRequestException)
+            {
+                return new ResolvedInputReference(default, null, "the remote value is unavailable.");
+            }
+        }
+
+        try
+        {
+            if (IsJsonMediaType(mediaType))
+            {
+                using var document = JsonDocument.Parse(payload);
+                return new ResolvedInputReference(document.RootElement.Clone(), mediaType, null);
+            }
+
+            var scalarValue = GetMediaTypeEssence(mediaType)?.StartsWith("text/", StringComparison.OrdinalIgnoreCase) == true
+                ? System.Text.Encoding.UTF8.GetString(payload)
+                : Convert.ToBase64String(payload);
+            using var scalar = JsonDocument.Parse(JsonSerializer.Serialize(
+                scalarValue,
+                OgcProcessesJsonContext.Default.String));
+            return new ResolvedInputReference(
+                scalar.RootElement.Clone(),
+                mediaType ?? "application/octet-stream",
+                null);
+        }
+        catch (JsonException)
+        {
+            return new ResolvedInputReference(default, null, "the referenced JSON value is invalid.");
+        }
+    }
+
+    private static JsonElement BuildQualifiedInput(JsonElement value, string? mediaType)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("value");
+            value.WriteTo(writer);
+            if (!string.IsNullOrWhiteSpace(mediaType))
+            {
+                writer.WriteString("mediaType", mediaType);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        using var document = JsonDocument.Parse(stream.ToArray());
+        return document.RootElement.Clone();
+    }
+
+    internal static bool TryDecodeDataUri(
+        string uri,
+        long maxArtifactBytes,
+        out byte[] payload,
+        out string? mediaType,
+        out string? error)
+    {
+        payload = [];
+        mediaType = null;
+        error = null;
+        var separator = uri.IndexOf(',');
+        if (!uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase) || separator <= 5)
+        {
+            error = "the value is not a valid data URI.";
+            return false;
+        }
+
+        var descriptor = uri[5..separator];
+        var base64 = descriptor.EndsWith(";base64", StringComparison.OrdinalIgnoreCase);
+        var mediaTypeSeparator = descriptor.IndexOf(';');
+        mediaType = mediaTypeSeparator >= 0 ? descriptor[..mediaTypeSeparator] : descriptor;
+        if (string.IsNullOrWhiteSpace(mediaType))
+        {
+            mediaType = "text/plain";
+        }
+
+        var encodedPayload = uri[(separator + 1)..];
+        if (base64 && encodedPayload.Length > ((maxArtifactBytes + 2L) / 3L) * 4L)
+        {
+            error = "the referenced value exceeds the configured input limit.";
+            return false;
+        }
+
+        try
+        {
+            payload = base64
+                ? Convert.FromBase64String(encodedPayload)
+                : System.Text.Encoding.UTF8.GetBytes(Uri.UnescapeDataString(encodedPayload));
+        }
+        catch (Exception exception) when (exception is FormatException or UriFormatException)
+        {
+            error = "the data URI payload is malformed.";
+            return false;
+        }
+
+        if (payload.LongLength > maxArtifactBytes)
+        {
+            payload = [];
+            error = "the referenced value exceeds the configured input limit.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static async Task<byte[]?> ReadBoundedAsync(
+        Stream stream,
+        long maxBytes,
+        CancellationToken cancellationToken)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        while (true)
+        {
+            var read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                return buffer.ToArray();
+            }
+
+            if (buffer.Length + read > maxBytes)
+            {
+                return null;
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+    }
+
+    private static bool IsJsonMediaType(string? mediaType)
+    {
+        var essence = GetMediaTypeEssence(mediaType);
+        return !string.IsNullOrWhiteSpace(essence)
+               && (essence.EndsWith("/json", StringComparison.OrdinalIgnoreCase)
+                   || essence.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? GetMediaTypeEssence(string? mediaType)
+        => mediaType?.Split(';', 2, StringSplitOptions.TrimEntries)[0];
+
+    private readonly record struct InputNormalizationResult(OgcExecuteRequest? Request, string? Error);
+
+    private readonly record struct ResolvedInputReference(JsonElement Value, string? MediaType, string? Error);
+
+    private static JsonElement GetInlineInputValue(JsonElement input, out string? mediaType)
+    {
+        mediaType = null;
+        if (input.ValueKind != JsonValueKind.Object
+            || (input.TryGetProperty("type", out var type) && type.ValueKind == JsonValueKind.String)
+            || !input.TryGetProperty("value", out var value))
+        {
+            return input;
+        }
+
+        if (input.TryGetProperty("mediaType", out var mediaTypeElement)
+            && mediaTypeElement.ValueKind == JsonValueKind.String)
+        {
+            mediaType = mediaTypeElement.GetString();
+        }
+        else if (input.TryGetProperty("format", out var format)
+                 && format.ValueKind == JsonValueKind.Object
+                 && format.TryGetProperty("mediaType", out mediaTypeElement)
+                 && mediaTypeElement.ValueKind == JsonValueKind.String)
+        {
+            mediaType = mediaTypeElement.GetString();
+        }
+
+        return value;
+    }
+
     private static bool HasPreference(IEnumerable<string?> values, string preference)
         => values
             .SelectMany(value => (value ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries))
             .Select(value => value.Split(';', 2, StringSplitOptions.TrimEntries)[0])
             .Any(value => string.Equals(value.Trim(), preference, StringComparison.OrdinalIgnoreCase));
-
-    private static IResult BuildRawResultsResponse(
-        HttpContext context,
-        AnalysisResultPackage resultPackage)
-    {
-        if (resultPackage.Artifacts.Count != 1)
-        {
-            return OgcProcessesResults.Error(
-                StatusCodes.Status400BadRequest,
-                "Raw response unavailable",
-                "Raw response mode requires exactly one value output.");
-        }
-
-        var artifact = resultPackage.Artifacts[0];
-        var uri = artifact.Uri;
-        var separator = uri?.IndexOf(',') ?? -1;
-        if (string.IsNullOrWhiteSpace(uri)
-            || !uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)
-            || separator <= 5)
-        {
-            return OgcProcessesResults.Error(
-                StatusCodes.Status400BadRequest,
-                "Raw response unavailable",
-                "The single output is a reference and cannot be returned as a raw value.");
-        }
-
-        var descriptor = uri[5..separator];
-        if (!descriptor.EndsWith(";base64", StringComparison.OrdinalIgnoreCase))
-        {
-            return OgcProcessesResults.Error(
-                StatusCodes.Status400BadRequest,
-                "Raw response unavailable",
-                "The single output is not an inline base64 value.");
-        }
-
-        var mediaTypeSeparator = descriptor.IndexOf(';');
-        var mediaType = mediaTypeSeparator > 0
-            ? descriptor[..mediaTypeSeparator]
-            : artifact.ContentType ?? "application/octet-stream";
-        if (!MediaTypeHeaderValue.TryParse(mediaType, out _))
-        {
-            return OgcProcessesResults.Error(
-                StatusCodes.Status500InternalServerError,
-                "Invalid process result",
-                "The inline result declares an invalid media type.");
-        }
-
-        var encoded = uri[(separator + 1)..];
-        var maxArtifactBytes = context.RequestServices
-            .GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
-            ?? 50L * 1024L * 1024L;
-        var estimatedBytes = (encoded.Length / 4L) * 3L;
-        if (encoded.EndsWith("==", StringComparison.Ordinal))
-        {
-            estimatedBytes -= 2L;
-        }
-        else if (encoded.EndsWith('='))
-        {
-            estimatedBytes -= 1L;
-        }
-        if (estimatedBytes > maxArtifactBytes)
-        {
-            return OgcProcessesResults.Error(
-                StatusCodes.Status413PayloadTooLarge,
-                "Raw response too large",
-                "The inline result exceeds the configured artifact response limit.");
-        }
-
-        try
-        {
-            var payload = Convert.FromBase64String(encoded);
-            if (payload.LongLength > maxArtifactBytes)
-            {
-                return OgcProcessesResults.Error(
-                    StatusCodes.Status413PayloadTooLarge,
-                    "Raw response too large",
-                    "The inline result exceeds the configured artifact response limit.");
-            }
-
-            return Results.Bytes(payload, mediaType);
-        }
-        catch (FormatException)
-        {
-            return OgcProcessesResults.Error(
-                StatusCodes.Status500InternalServerError,
-                "Invalid process result",
-                "The inline result payload is not valid base64 data.");
-        }
-    }
 
     private static OgcProcessSummary ToOgcProcessSummary(ProcessDefinition definition, string baseUrl)
         => new()
@@ -1000,7 +1220,7 @@ internal static class ProcessEndpoints
         {
             Id = definition.ProcessId,
             Title = definition.Title,
-            Description = $"{definition.Description} Execution supports the catalog-advertised job-control modes; asynchronous execution returns document-mode artifact references when the runtime publishes results.",
+            Description = $"{definition.Description} Execution supports the catalog-advertised job-control modes and returns outputs using the advertised value transmission.",
             Version = "1.0.0",
             JobControlOptions = BuildOgcJobControlOptions(definition),
             OutputTransmission = ImmutableArray.Create("value"),
@@ -1046,6 +1266,7 @@ internal static class ProcessEndpoints
             Description = parameter.Required
                 ? $"{parameter.Description} Required."
                 : parameter.Description,
+            MinOccurs = parameter.Required ? 1 : 0,
             Schema = new OgcProcessIoSchema
             {
                 Type = parameter.ValueType == ProcessParameterValueType.Wkb
