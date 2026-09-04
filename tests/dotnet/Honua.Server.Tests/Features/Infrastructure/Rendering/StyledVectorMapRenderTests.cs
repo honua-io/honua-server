@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -30,6 +31,7 @@ public sealed class StyledVectorMapRenderTests : IAsyncLifetime
     // with no rows in raster_data, so the raster-coverage renderer yields no data and the
     // decorator falls back to the shared styled-vector pipeline.
     private const int VectorLayerId = 1;
+    private const int TemporalVectorLayerId = 0;
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
@@ -116,6 +118,120 @@ public sealed class StyledVectorMapRenderTests : IAsyncLifetime
         HasPngSignature(result.Data).Should().BeTrue();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_OutputCrs_TransformsBboxAndReportsRenderedCrs()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{VectorLayerId}/map" +
+            "?bbox=-123,37,-122,38&bbox-crs=CRS84&crs=EPSG:3857&width=256&height=256&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Crs", out var contentCrsValues).Should().BeTrue();
+        contentCrsValues.Should().ContainSingle().Which.Should().Contain("3857");
+        HasVisiblePixel(await response.Content.ReadAsByteArrayAsync()).Should().BeTrue(
+            "the CRS84 bbox must be transformed before the Web Mercator render query (#4162)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
+    public async Task GetStyledMap_OutputCrs_TransformsBboxAndReportsRenderedCrs()
+    {
+        var catalog = _fixture.GetService<ILayerStyleCatalog>();
+        await catalog.SetMapLibreStyleAsync(VectorLayerId, CircleStyle("#ff0000"));
+        var styleId = GetCollectionStyleId(VectorLayerId);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{VectorLayerId}/styles/{Uri.EscapeDataString(styleId)}/map" +
+            "?bbox=-123,37,-122,38&bbox-crs=CRS84&crs=EPSG:3857&width=256&height=256&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Crs", out var contentCrsValues).Should().BeTrue();
+        contentCrsValues.Should().ContainSingle().Which.Should().Contain("3857");
+        HasPixel(await response.Content.ReadAsByteArrayAsync(), isRed: true).Should().BeTrue(
+            "styled rendering must transform the bbox and honor the requested output CRS (#4162)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_Datetime_FiltersVectorFeatures()
+    {
+        var request =
+            $"/ogc/maps/collections/{TemporalVectorLayerId}/map" +
+            "?bbox=-123,37,-121,39&width=256&height=256&f=png";
+
+        var unfiltered = await _fixture.Client.GetAsync(request);
+        var filtered = await _fixture.Client.GetAsync(
+            request + "&datetime=1900-01-01T00:00:00Z/1900-01-02T00:00:00Z");
+
+        unfiltered.StatusCode.Should().Be(HttpStatusCode.OK);
+        filtered.StatusCode.Should().Be(HttpStatusCode.OK);
+        HasVisiblePixel(await unfiltered.Content.ReadAsByteArrayAsync()).Should().BeTrue();
+        HasVisiblePixel(await filtered.Content.ReadAsByteArrayAsync()).Should().BeFalse(
+            "the vector query must receive the advertised datetime filter (#4163)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/map")]
+    public async Task GetCollectionMap_TransparentAndBgcolor_AreRendered()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{VectorLayerId}/map" +
+            "?bbox=-123,37,-122,38&width=256&height=256&f=png&transparent=false&bgcolor=0x00FF00");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var bitmap = SKBitmap.Decode(await response.Content.ReadAsByteArrayAsync());
+        bitmap.Should().NotBeNull();
+        bitmap.GetPixel(0, 0).Should().Be(new SKColor(0, 255, 0, 255),
+            "the documented opaque background color must reach the vector renderer (#4164)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
+    public async Task GetStyledMap_UnknownStyle_ReturnsNotFound()
+    {
+        var catalog = _fixture.GetService<ILayerStyleCatalog>();
+        await catalog.SetMapLibreStyleAsync(VectorLayerId, CircleStyle("#ff0000"));
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{VectorLayerId}/styles/does-not-exist/map" +
+            "?bbox=-123,37,-122,38&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "an unknown style must not silently render the collection default (#4165)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
+    public async Task GetStyledMap_UnassociatedStyle_ReturnsNotFound()
+    {
+        var catalog = _fixture.GetService<IStyleCatalog>();
+        var styleId = $"unassociated-{Guid.NewGuid():N}";
+        (await catalog.CreateStyleAsync(styleId, CircleStyle("#ff0000"))).Should().NotBeNull();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{VectorLayerId}/styles/{styleId}/map" +
+            "?bbox=-123,37,-122,38&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "a real style that is not associated with the collection must not be rendered (#4165)");
+    }
+
+    private string GetCollectionStyleId(int layerId)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource).Should().BeTrue();
+        resource.Should().NotBeNull();
+        resource!.Metadata.Name.Should().NotBeNullOrWhiteSpace();
+        return resource.Metadata.Name!;
+    }
+
     private static bool HasPngSignature(byte[] data) =>
         data.Length > 8 &&
         data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47;
@@ -138,6 +254,25 @@ public sealed class StyledVectorMapRenderTests : IAsyncLifetime
                     }
                 }
                 else if (pixel.Blue > 150 && pixel.Red < 80 && pixel.Green < 80)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasVisiblePixel(byte[] pngBytes)
+    {
+        using var bitmap = SKBitmap.Decode(pngBytes);
+        bitmap.Should().NotBeNull("the render output must be a decodable image");
+
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                if (bitmap.GetPixel(x, y).Alpha > 0)
                 {
                     return true;
                 }
