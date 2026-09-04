@@ -28,6 +28,7 @@ referencing==0.37.0
 requests==2.34.2
 rich==15.0.0
 rpds-py==2026.6.3
+schemathesis==4.25.2
 sortedcontainers==2.4.0
 starlette==1.6.0
 starlette-testclient==0.4.1
