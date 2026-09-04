@@ -39,12 +39,14 @@ public sealed class RedisReadinessOutageTests
             NullLogger<RedisCacheService>.Instance, Substitute.For<IPerformanceMonitor>(), redis);
         Assert.True(await cache.IsCacheHealthyAsync());
 
-        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", denyWrites ? "-set" : "-get"]);
+        // Expiring writes may use SETEX/PSETEX rather than SET, depending on
+        // client optimization. Deny the whole write category for this case.
+        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", denyWrites ? "-@write" : "-get"]);
         Assert.Equal("OK", denied.Stdout.Trim());
         _ = await redis.GetDatabase().PingAsync();
         Assert.False(await cache.IsCacheHealthyAsync());
 
-        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", denyWrites ? "+set" : "+get"]);
+        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", denyWrites ? "+@write" : "+get"]);
         Assert.Equal("OK", restored.Stdout.Trim());
         Assert.True(await cache.IsCacheHealthyAsync());
     }
