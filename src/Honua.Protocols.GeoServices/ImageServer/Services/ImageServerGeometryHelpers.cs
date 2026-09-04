@@ -109,6 +109,14 @@ internal static class ImageServerGeometryHelpers
         string? geometryJson,
         out IReadOnlyList<SamplePoint> points,
         out string? error)
+        => TryGetSamplePoints(geometryJson, null, int.MaxValue, out points, out error);
+
+    internal static bool TryGetSamplePoints(
+        string? geometryJson,
+        double? sampleDistance,
+        int maxPointCount,
+        out IReadOnlyList<SamplePoint> points,
+        out string? error)
     {
         points = Array.Empty<SamplePoint>();
         error = null;
@@ -147,7 +155,9 @@ internal static class ImageServerGeometryHelpers
                 return true;
             }
 
-            var coordinates = CollectCoordinates(root);
+            var coordinates = sampleDistance is > 0
+                ? CollectCoordinatesAtDistance(root, sampleDistance.Value, maxPointCount)
+                : CollectCoordinates(root);
             if (coordinates.Count > 0)
             {
                 var list = new List<SamplePoint>(coordinates.Count);
@@ -176,6 +186,66 @@ internal static class ImageServerGeometryHelpers
             error = "geometry must be a point, multipoint, polyline, polygon, or envelope.";
             return false;
         }
+    }
+
+    private static List<(double X, double Y)> CollectCoordinatesAtDistance(
+        JsonElement root,
+        double sampleDistance,
+        int maxPointCount)
+    {
+        // sampleDistance applies along each path/ring independently. Multipoints retain
+        // their explicit locations and never acquire synthetic links between parts.
+        if (root.TryGetProperty("points", out var pointsElement) && pointsElement.ValueKind == JsonValueKind.Array)
+        {
+            var explicitPoints = new List<(double, double)>();
+            AppendCoordinatePairs(pointsElement, explicitPoints);
+            return explicitPoints.Take(maxPointCount).ToList();
+        }
+
+        var result = new List<(double, double)>();
+        foreach (var propertyName in CompositeCoordinatePropertyNames)
+        {
+            if (!root.TryGetProperty(propertyName, out var parts) || parts.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var partElement in parts.EnumerateArray())
+            {
+                var part = new List<(double X, double Y)>();
+                if (partElement.ValueKind == JsonValueKind.Array)
+                {
+                    AppendCoordinatePairs(partElement, part);
+                }
+
+                for (var i = 0; i < part.Count && result.Count < maxPointCount; i++)
+                {
+                    if (i == 0)
+                    {
+                        result.Add(part[i]);
+                        continue;
+                    }
+
+                    var start = part[i - 1];
+                    var end = part[i];
+                    var dx = end.X - start.X;
+                    var dy = end.Y - start.Y;
+                    var length = Math.Sqrt((dx * dx) + (dy * dy));
+                    for (var distance = sampleDistance; distance < length && result.Count < maxPointCount; distance += sampleDistance)
+                    {
+                        var fraction = distance / length;
+                        result.Add((start.X + (dx * fraction), start.Y + (dy * fraction)));
+                    }
+
+                    if (result.Count < maxPointCount)
+                    {
+                        result.Add(end);
+                    }
+                }
+            }
+        }
+
+        return result;
     }
 
     private static GeometryEnvelope Normalize(double xmin, double ymin, double xmax, double ymax, int? srid)

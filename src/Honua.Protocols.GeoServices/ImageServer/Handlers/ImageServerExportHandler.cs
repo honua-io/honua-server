@@ -686,6 +686,14 @@ internal sealed class ImageServerExportHandler
                 return false;
             }
 
+            if (!string.IsNullOrWhiteSpace(request.NoData))
+            {
+                error = new ExportParameterParseError(
+                    "noData overrides are not implemented on this service; omit noData to use the raster's stored NoData value.",
+                    IsNotImplemented: true);
+                return false;
+            }
+
             // An ExtractBand renderingRule and the bandIds parameter express the same
             // band-selection intent. When both are present the renderingRule chain wins,
             // matching ArcGIS clients that author band selection through the function chain.

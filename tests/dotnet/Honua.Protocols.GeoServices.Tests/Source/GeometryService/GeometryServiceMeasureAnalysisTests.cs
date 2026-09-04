@@ -474,6 +474,33 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
         await response.AssertGeoServicesErrorAsync(400);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Generalize)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/generalize")]
+    public async Task Generalize_DeviationUnitConvertsToSpatialReferenceUnits()
+    {
+        var body = """
+        {
+            "geometries": {"geometryType":"esriGeometryPolyline","geometries":[
+                {"paths":[[[0,0],[0.01,0.005],[0.02,0]]]}
+            ]},
+            "sr": 4326,
+            "maxDeviation": 100,
+            "deviationUnit": "esriMeters"
+        }
+        """;
+
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/generalize",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        response.Be200Ok();
+        var result = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(), GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result!.Geometries![0].GetProperty("paths")[0].GetArrayLength().Should().Be(3,
+            "100 metres is much smaller than the middle vertex's angular deviation");
+    }
+
     // --- labelPoints ---
 
     [IntegrationTest]

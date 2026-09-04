@@ -1153,12 +1153,23 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, deviationError);
             }
 
+            var maxDeviationInSpatialReferenceUnits = maxDeviation;
+            var deviationUnit = GeometryServiceRequestParser.GetValue(values, "deviationUnit");
+            if (!string.IsNullOrWhiteSpace(deviationUnit))
+            {
+                var spatialContext = await ResolveMeasurementSpatialContextAsync(context.RequestServices, sr!.Value, ct)
+                    .ConfigureAwait(false);
+                maxDeviationInSpatialReferenceUnits = maxDeviation
+                    * GeometryServiceRequestParser.GetUnitMultiplier(deviationUnit)
+                    / spatialContext.MetersPerNativeUnit;
+            }
+
             var parameters = new GeneralizeParameters
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 SR = sr!.Value,
-                MaxDeviation = maxDeviation
+                MaxDeviation = maxDeviationInSpatialReferenceUnits
             };
 
             GeometryServiceLog.RequestParsed(_logger, "generalize", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -1846,15 +1857,29 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, digitsError);
             }
 
+            var conversionMode = GeometryServiceRequestParser.GetValue(values, "conversionMode");
+            var (oldStyle, zoneOneAt180, modeError) = ResolveMgrsConversionMode(conversionType, conversionMode);
+            if (modeError is not null)
+            {
+                return CreateError(context, 400, modeError);
+            }
+
+            var addSpacesRaw = GeometryServiceRequestParser.GetValue(values, "addSpaces");
+            var roundingRaw = GeometryServiceRequestParser.GetValue(values, "rounding");
+
             var parameters = new ToGeoCoordinateStringParameters
             {
                 Coordinates = coordinates,
                 SR = sr!.Value,
                 ConversionType = conversionType,
-                ConversionMode = GeometryServiceRequestParser.GetValue(values, "conversionMode"),
+                ConversionMode = conversionMode,
                 NumOfDigits = numOfDigits,
-                AddSpaces = !GeometryServiceRequestParser.ParseBool(
-                    GeometryServiceRequestParser.GetValue(values, "rounding"))
+                AddSpaces = string.IsNullOrWhiteSpace(addSpacesRaw)
+                    ? string.Equals(conversionType, "USNG", StringComparison.OrdinalIgnoreCase)
+                    : GeometryServiceRequestParser.ParseBool(addSpacesRaw),
+                Rounding = string.IsNullOrWhiteSpace(roundingRaw) || GeometryServiceRequestParser.ParseBool(roundingRaw),
+                OldStyle = oldStyle,
+                ZoneOneAt180 = zoneOneAt180
             };
 
             return await ExecuteToGeoCoordinateStringAsync(parameters, scope, ct).ConfigureAwait(false);
@@ -1931,12 +1956,20 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, "Parameter 'strings' must contain at least one grid reference string.");
             }
 
+            var conversionMode = GeometryServiceRequestParser.GetValue(values, "conversionMode");
+            var (oldStyle, _, modeError) = ResolveMgrsConversionMode(conversionType, conversionMode);
+            if (modeError is not null)
+            {
+                return CreateError(context, 400, modeError);
+            }
+
             var parameters = new FromGeoCoordinateStringParameters
             {
                 Strings = strings,
                 SR = sr!.Value,
                 ConversionType = conversionType,
-                ConversionMode = GeometryServiceRequestParser.GetValue(values, "conversionMode")
+                ConversionMode = conversionMode,
+                OldStyle = oldStyle
             };
 
             return await ExecuteFromGeoCoordinateStringAsync(parameters, scope, ct).ConfigureAwait(false);
@@ -1977,12 +2010,14 @@ internal sealed class GeometryServiceHandler(
             var (longitude, latitude) = await ToWgs84Async(coordinate[0], coordinate[1], parameters.SR, ct)
                 .ConfigureAwait(false);
 
-            // USNG conventionally inserts spaces; MGRS conventionally omits them. The
-            // grid scheme is identical, so only the formatting differs.
-            var addSpaces = parameters.AddSpaces
-                && !string.Equals(parameters.ConversionType, "MGRS", StringComparison.OrdinalIgnoreCase);
-
-            strings[i] = MgrsConverter.ToMgrs(longitude, latitude, parameters.NumOfDigits, addSpaces);
+            strings[i] = MgrsConverter.ToMgrs(
+                longitude,
+                latitude,
+                parameters.NumOfDigits,
+                parameters.AddSpaces,
+                parameters.Rounding,
+                parameters.OldStyle,
+                parameters.ZoneOneAt180);
         }
 
         var response = new GeometryServiceToGeoCoordinateStringResponse { Strings = strings };
@@ -2002,7 +2037,7 @@ internal sealed class GeometryServiceHandler(
         var coordinates = new double[parameters.Strings.Length][];
         for (var i = 0; i < parameters.Strings.Length; i++)
         {
-            var (longitude, latitude) = MgrsConverter.FromMgrs(parameters.Strings[i]);
+            var (longitude, latitude) = MgrsConverter.FromMgrs(parameters.Strings[i], parameters.OldStyle);
             var (x, y) = await FromWgs84Async(longitude, latitude, parameters.SR, ct).ConfigureAwait(false);
             coordinates[i] = [x, y];
         }
@@ -2080,6 +2115,36 @@ internal sealed class GeometryServiceHandler(
         }
 
         return (normalized, $"Parameter 'conversionType' value '{normalized}' is not recognized. Supported types: MGRS, USNG.");
+    }
+
+    private static (bool OldStyle, bool ZoneOneAt180, string? Error) ResolveMgrsConversionMode(
+        string conversionType,
+        string? raw)
+    {
+        if (!string.Equals(conversionType, "MGRS", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(raw) ||
+            string.Equals(raw, "mgrsDefault", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(raw, "mgrsNewStyle", StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, false, null);
+        }
+
+        if (string.Equals(raw, "mgrsOldStyle", StringComparison.OrdinalIgnoreCase))
+        {
+            return (true, false, null);
+        }
+
+        if (string.Equals(raw, "mgrsNewWith180InZone01", StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, true, null);
+        }
+
+        if (string.Equals(raw, "mgrsOldWith180InZone01", StringComparison.OrdinalIgnoreCase))
+        {
+            return (true, true, null);
+        }
+
+        return (false, false, $"Parameter 'conversionMode' value '{raw}' is not recognized.");
     }
 
     private static (double[][] Coordinates, string? Error) ParseCoordinatePairs(string? raw, int maxCoordinates)

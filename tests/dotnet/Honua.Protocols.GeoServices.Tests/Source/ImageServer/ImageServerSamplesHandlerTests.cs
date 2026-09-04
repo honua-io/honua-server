@@ -35,6 +35,40 @@ public class ImageServerSamplesHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public void GetSamples_PolylineSampleDistanceCreatesIntermediatePoints()
+    {
+        var ok = ImageServerGeometryHelpers.TryGetSamplePoints(
+            "{\"paths\":[[[0,0],[10,0]]],\"spatialReference\":{\"wkid\":4326}}",
+            sampleDistance: 2,
+            maxPointCount: 1000,
+            out var points,
+            out var error);
+
+        ok.Should().BeTrue(error);
+        points.Select(static point => point.X).Should().Equal(0, 2, 4, 6, 8, 10);
+        points.Should().OnlyContain(static point => point.Y == 0 && point.Srid == 4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task GetSamplesAsync_UnsupportedInterpolationReturns501InsteadOfIgnoringIt()
+    {
+        var handler = CreateHandler(Substitute.For<IZarrStore>());
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geometry"] = "{\"x\":0,\"y\":0}",
+            ["interpolation"] = "RSP_BilinearInterpolation",
+        };
+
+        var context = CreateImageServerContext();
+        await AssertGeoServicesErrorAsync(
+            context,
+            await handler.GetSamplesAsync(context, 1, values, CancellationToken.None),
+            StatusCodes.Status501NotImplemented);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task GetSamplesAsync_WithMultidimensionalDefinition_NoZarrStore_ReturnsNotImplemented()
     {
         var handler = CreateHandler(Substitute.For<IZarrStore>());

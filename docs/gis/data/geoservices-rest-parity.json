@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "generator": "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
   "trackingIssue": "#2863",
-  "lastReviewed": "2026-08-22",
+  "lastReviewed": "2026-09-03",
   "judgmentSource": "docs/gis/data/geoservices-parity-judgment.json",
   "routeRoster": {
     "derivedFrom": "Honua.Server.EndpointRegistry.All, via the generated feature catalog (tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs).",
@@ -2153,7 +2153,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Samples pixel values at point, multipoint, polyline/polygon vertex, or envelope-center locations using the shared raster identify pipeline. sampleCount is capped at 1000."
+            "notes": "Samples pixel values at point, multipoint, distance-spaced polyline/polygon, or envelope-center locations using the shared raster identify pipeline. sampleDistance is honored in geometry SR units and sampleCount is capped at 1000. Nearest-neighbor interpolation is supported; other interpolation modes return 501."
           },
           {
             "name": "Identify",
@@ -2333,7 +2333,7 @@
           {
             "name": "pixelType",
             "status": "partial",
-            "notes": "Validated but not applied."
+            "notes": "UNKNOWN is accepted as the no-conversion default; every explicit conversion type returns 501 because pixel conversion is not implemented."
           },
           {
             "name": "compression",
@@ -2346,8 +2346,13 @@
             "notes": "Executes a Stretch (MinMax/StandardDeviation/PercentClip, optional per-band Statistics), a Colormap (explicit [value,r,g,b] stops or a named ColorrampName), and a Clip (envelope/polygon, including ClippingType=1 keep-outside). Identity / StretchType=0 are no-ops. Unrecognized stretch/colorramp variants and inline Colorramp objects return 501; unknown functions return 400. Chain planning/validation is internal (there is no computeClass route): the planner walks Identity / Stretch / Colormap / Clip / ExtractBand nodes (max chain depth 8) and rejects unknown functions with a 400 naming the offending node. Output pixel type defaults to U8 when the chain includes Stretch and F32 otherwise, unless the document overrides outputPixelType."
           },
           {
-            "name": "bandIds, noData, noDataInterpretation",
+            "name": "bandIds",
             "status": "implemented"
+          },
+          {
+            "name": "noData, noDataInterpretation",
+            "status": "partial",
+            "notes": "Values are shape-validated, then explicit noData overrides return 501 because the export pipeline cannot apply them; stored raster NoData remains effective when the parameters are omitted."
           },
           {
             "name": "mosaicRule, time",
@@ -2743,7 +2748,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "ArcGIS-style service descriptor (currentVersion, serviceDescription, maxBufferCount, maxSimplifyCount)."
+            "notes": "Service descriptor with serviceDescription, maxBufferCount, and maxSimplifyCount; currentVersion is intentionally omitted."
           },
           {
             "name": "Areas and Lengths",
@@ -2908,7 +2913,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Supports MGRS and USNG."
+            "notes": "Supports MGRS and USNG, independent addSpaces/rounding controls, and the Esri MGRS new/old-style plus longitude-180 zone-01 conversion modes."
           },
           {
             "name": "Generalize",
@@ -3058,7 +3063,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Supports MGRS and USNG."
+            "notes": "Supports MGRS and USNG, independent addSpaces/rounding controls, and the Esri MGRS new/old-style plus longitude-180 zone-01 conversion modes."
           },
           {
             "name": "Trim/Extend",
@@ -3145,7 +3150,9 @@
         "Only JSON-style responses are supported (json/pjson); Esri html output is not supported.",
         "clip uses the envelope of the supplied clip geometry, not the full clip shape.",
         "findTransformations returns an empty transformation list because Honua applies CRS transformations through its PROJ-backed projection pipeline rather than exposing the discrete Esri geographic-transformation catalog; project still performs the correct datum transform and honors a client-supplied datumTransformation WKID/composite via the shared WKID -\u003E PROJ pipeline catalog.",
-        "toGeoCoordinateString / fromGeoCoordinateString support MGRS and USNG; the remaining Esri conversion types (UTM, GARS, GEOREF, DD, DDM, DMS) return a clear 400."
+        "toGeoCoordinateString / fromGeoCoordinateString support MGRS and USNG; the remaining Esri conversion types (UTM, GARS, GEOREF, DD, DDM, DMS) return a clear 400.",
+        "trimExtend extendHow, offset simplifyResult, and project transformation/transformForward are accepted but not applied.",
+        "relation rejects line-coincidence relations, and empty geometry arrays return 400 instead of operation-specific empty results."
       ]
     },
     {
@@ -3773,7 +3780,7 @@
         ]
       },
       "knownLimitations": [
-        "Route solves accept GET and POST; the other NAServer solve operations are POST-only.",
+        "All five NAServer solve operations accept GET query parameters and POST form parameters.",
         "OD cost-matrix output is cost-only; line geometry remains deferred.",
         "Location-allocation implements minimize-impedance and maximize-coverage; other problem types are rejected.",
         "Network-dataset registry CRUD does not edit edges, vertices, turn restrictions, or rebuild topology.",
@@ -3954,7 +3961,7 @@
       "knownGaps": [
         "/rest/info always reports isTokenBasedSecurity=false and omits tokenServicesUrl",
         "no folders in the catalog response",
-        "currentVersion is deliberately not advertised"
+        "currentVersion is emitted only by /rest/info; catalogs and service descriptors omit it"
       ],
       "evidence": {
         "code": [
@@ -4002,7 +4009,7 @@
         "notImplemented": []
       },
       "knownLimitations": [
-        "Honua never advertises an ArcGIS Server currentVersion/fullVersion; clients that branch on it must treat its absence as \u0022unknown\u0022, not as a version floor."
+        "Only /rest/info emits the compatibility value currentVersion 10.8. Catalogs and service descriptors omit currentVersion/fullVersion; clients must treat absence there as unknown."
       ]
     },
     {

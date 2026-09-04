@@ -218,6 +218,9 @@ internal sealed class ToGeoCoordinateStringParameters
     public string? ConversionMode { get; init; }
     public int NumOfDigits { get; init; } = 5;
     public bool AddSpaces { get; init; } = true;
+    public bool Rounding { get; init; } = true;
+    public bool OldStyle { get; init; }
+    public bool ZoneOneAt180 { get; init; }
 }
 
 /// <summary>
@@ -229,6 +232,7 @@ internal sealed class FromGeoCoordinateStringParameters
     public int SR { get; init; }
     public required string ConversionType { get; init; }
     public string? ConversionMode { get; init; }
+    public bool OldStyle { get; init; }
 }
 
 /// <summary>
