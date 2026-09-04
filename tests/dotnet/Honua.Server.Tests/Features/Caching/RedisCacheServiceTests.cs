@@ -449,7 +449,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         var database = Substitute.For<IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
         database.PingAsync(Arg.Any<CommandFlags>()).Returns(TimeSpan.Zero);
-        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>())
+        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>())
             .Returns(_ => denied && denyWrites
                 ? Task.FromException<bool>(new RedisServerException("READONLY writes unavailable"))
                 : Task.FromResult(true));
@@ -488,7 +488,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         var redis = Substitute.For<IConnectionMultiplexer>();
         var database = Substitute.For<IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>()).Returns(true);
+        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>()).Returns(true);
         var read = new TaskCompletionSource<RedisValue>(TaskCreationOptions.RunContinuationsAsynchronously);
         database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(read.Task);
         using var cache = new RedisCacheService(distributedCache,
