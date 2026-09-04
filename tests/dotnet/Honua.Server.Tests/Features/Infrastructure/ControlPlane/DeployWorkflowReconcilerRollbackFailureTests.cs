@@ -223,8 +223,13 @@ public sealed class DeployWorkflowReconcilerRollbackFailureTests
             }
         }
 
-        updated.Should().NotBeNull();
-        updated!.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        if (updated is null)
+        {
+            Assert.Fail("Reconciliation loop never produced an updated operation record.");
+            return;
+        }
+
+        updated.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
         updated.ErrorMessage.Should().Contain("evidence remained incomplete after the 300-second observation timeout");
         updated.Deploy!.Parameters[DeployWorkflowReconciler.RollbackObservationStartedAtParameterKey]
             .Should().NotBeNullOrWhiteSpace();

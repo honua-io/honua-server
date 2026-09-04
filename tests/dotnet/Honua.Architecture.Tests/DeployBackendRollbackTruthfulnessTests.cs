@@ -268,9 +268,9 @@ public sealed class DeployBackendRollbackTruthfulnessTests
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var directory = Environment.GetEnvironmentVariable("HONUA_SERVER_TEST_RESULTS_DIR")
-            ?? Path.Combine(root, "tests", "TestResults");
+            ?? ArchitectureTestHelpers.CombinePath(root, "tests", "TestResults");
         Directory.CreateDirectory(directory);
-        File.WriteAllText(Path.Combine(directory, "deploy-backend-rollback-matrix.json"), JsonSerializer.Serialize(new
+        File.WriteAllText(ArchitectureTestHelpers.CombinePath(directory, "deploy-backend-rollback-matrix.json"), JsonSerializer.Serialize(new
         {
             contract = "honua-server#3891",
             executedAtUtc = DateTimeOffset.UtcNow,
@@ -475,7 +475,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         private static ArgoRolloutState ReadArgoFixture(int caseIndex)
         {
             var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
-            var path = Path.Combine(root, "tests", "dotnet", "Honua.Architecture.Tests", "TestData", "argo-rollback-regression.json");
+            var path = ArchitectureTestHelpers.CombinePath(root, "tests", "dotnet", "Honua.Architecture.Tests", "TestData", "argo-rollback-regression.json");
             using var document = JsonDocument.Parse(File.ReadAllText(path));
             var observation = document.RootElement.GetProperty("cases")[caseIndex]
                 .GetProperty("observations")[0];
