@@ -81,6 +81,51 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
     }
 
     [IntegrationTest]
+    public async Task GetCurrentAsync_NoV2Snapshot_ProjectsV1EditCapabilitiesIntoFeatureServiceAndPublication()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await SeedV1CatalogAsync(
+                fixture.DataSource,
+                schema,
+                serviceName: "legacy_editable",
+                layerId: 702,
+                layerName: "Legacy Editable");
+            await ExecuteAsync(fixture.DataSource, schema, $"""
+                UPDATE "{schema}".services
+                SET capabilities = ARRAY['Query', 'Create', 'Update', 'Delete']
+                WHERE service_name = 'legacy_editable';
+                """);
+
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider,
+                environment: "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName: schema);
+
+            var snapshot = await store.GetCurrentAsync();
+
+            var featureService = snapshot.Graph.Services.Should()
+                .ContainSingle(service => service.Metadata.Id == "svc-legacy-editable-feature").Which;
+            featureService.Options.Should().ContainKey("capabilities");
+            featureService.Options!["capabilities"].EnumerateArray()
+                .Select(value => value.GetString())
+                .Should().Equal("Query", "Create", "Update", "Delete");
+
+            snapshot.Graph.Publications.Should()
+                .ContainSingle(publication => publication.Metadata.Id == "pub-legacy-editable-feature-702").Which
+                .Capabilities.Should().Equal("Query", "Create", "Update", "Delete");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetCurrentAsync_WhenV2SnapshotActivated_ServesActivatedSnapshotNotCompat()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
