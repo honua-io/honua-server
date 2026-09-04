@@ -261,8 +261,7 @@ public static class OidcAuthenticationExtensions
                 "admin",
                 "administrator",
                 "Administrator",
-                AdminApiKeyPermission.ApprovedOperationRole,
-                LayerScopedWriteKey.ScopedKeyRole);
+                AdminApiKeyPermission.ApprovedOperationRole);
 
             UpdateRolePolicy(
                 authzOptions,
