@@ -412,7 +412,7 @@ internal sealed partial class RateLimitingMiddleware
                     {
                         IsAllowed = false,
                         RequestsRemaining = 0,
-                        WindowReset = windowStart + window,
+                        WindowReset = _nextMemoryCounterPrune,
                         Limit = resolved.Limit
                     };
                 }
