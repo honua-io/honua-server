@@ -115,6 +115,40 @@ public sealed class AdminAuthSessionStoreTests
             "a null distributed cache result means key-not-found; the store must return null");
     }
 
+    [UnitTest]
+    public async Task RemoveAuthenticatedSessionAsync_DistributedCacheFails_RejectsRevocationAndEvictsLocalSession()
+    {
+        var cache = Substitute.For<IDistributedCache>();
+        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("Redis unavailable")));
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<byte[]?>(new IOException("Redis unavailable")));
+        using var memory = new MemoryCache(new MemoryCacheOptions());
+        var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
+        var sessionId = await store.CreateAuthenticatedSessionAsync("oidc", "token", null,
+            [new AdminAuthSessionClaim { Type = "sub", Value = "admin" }],
+            DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
+
+        await Assert.ThrowsAsync<AdminAuthSessionRevocationException>(() =>
+            store.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+        Assert.Null(await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+    }
+
+    [UnitTest]
+    public async Task RemovePendingSessionAsync_DistributedCacheFails_PreservesBestEffortCleanup()
+    {
+        var cache = Substitute.For<IDistributedCache>();
+        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("Redis unavailable")));
+        using var memory = new MemoryCache(new MemoryCacheOptions());
+        var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
+        var sessionId = await store.CreatePendingSessionAsync("oidc", "state", "verifier",
+            DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
+
+        await store.RemovePendingSessionAsync(sessionId, CancellationToken.None);
+        Assert.Null(await store.GetPendingSessionAsync(sessionId, CancellationToken.None));
+    }
+
     // ─── Basic session lifecycle ────────────────────────────────────────────────
 
     [UnitTest]
