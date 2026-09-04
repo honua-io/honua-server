@@ -129,6 +129,23 @@ class RealtimeCandidateQualificationTests(unittest.TestCase):
         self.assertIn("stale", text)
         self.assertIn("replayed evidence", text)
 
+    def test_missing_post_candidate_digest_binding_fails_closed(self):
+        source = complete_evidence()
+        candidate = expected()
+        candidate["serverImage"] = ""
+
+        receipt = MODULE.qualify(source, candidate, now=NOW, max_age=timedelta(hours=24))
+
+        self.assertEqual("rejected", receipt["status"])
+        diagnostics = " ".join(receipt["diagnostics"])
+        self.assertIn("candidate digest binding is unavailable", diagnostics)
+        self.assertIn("post-candidate receipt required", diagnostics)
+        self.assertEqual(SERVER_IMAGE, receipt["candidate"]["serverImage"])
+
+        source["server"]["image"] = "honua/server:latest"
+        receipt = MODULE.qualify(source, candidate, now=NOW, max_age=timedelta(hours=24))
+        self.assertIn("immutable sha256 digest", " ".join(receipt["diagnostics"]))
+
     def test_all_candidate_identities_are_bound(self):
         mutations = (
             ("server", "revision", "c" * 40, "server revision"),
@@ -182,12 +199,15 @@ class RealtimeCandidateQualificationTests(unittest.TestCase):
         self.assertIn("--require-qualified", text)
         self.assertIn("if: always()", text)
         self.assertIn("retention-days: 180", text)
+        self.assertIn("an absent digest binding is still a hard rejection", text)
 
     def test_release_bundle_requires_successful_realtime_execution(self):
         workflow = Path(__file__).parents[3] / ".github/workflows/release-bundle.yml"
         text = workflow.read_text(encoding="utf-8")
         self.assertIn("realtime-preview-qualification:", text)
         self.assertIn("needs.realtime-preview-qualification.result == 'success'", text)
+        self.assertIn("candidate_image: ${{ needs.rc-image.outputs.image_digest }}", text)
+        self.assertIn("honua-release#269", text)
         self.assertIn("realtime_sdk_artifact_id:", text)
 
 

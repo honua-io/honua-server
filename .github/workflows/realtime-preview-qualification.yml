@@ -8,8 +8,9 @@ on:
         required: true
         type: string
       candidate_image:
-        description: Immutable candidate digest (sha256:...; mutable tags are refused)
-        required: true
+        description: Candidate digest emitted by the post-build candidate step (sha256:...; mutable tags are refused)
+        required: false
+        default: ''
         type: string
       candidate_environment:
         description: Reviewed candidate environment identity
@@ -41,7 +42,12 @@ on:
         required: true
         type: string
       candidate_image:
-        required: true
+        # TODO(honua-release#269): the release orchestrator must provide the post-candidate
+        # receipt after building/reusing the immutable candidate. Until then this remains
+        # optional only so the qualifier can retain independent admissibility diagnostics;
+        # an absent digest binding is still a hard rejection.
+        required: false
+        default: ''
         type: string
       candidate_environment:
         required: true
@@ -93,7 +99,10 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_REVISION" =~ ^[a-f0-9]{40}$ ]]
-          [[ "$CANDIDATE_IMAGE" =~ ^sha256:[a-f0-9]{64}$ ]]
+          if [[ -n "$CANDIDATE_IMAGE" && ! "$CANDIDATE_IMAGE" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "candidate image must be an immutable sha256 digest when supplied" >&2
+            exit 1
+          fi
           [[ "$SDK_REVISION" =~ ^[a-f0-9]{40}$ ]]
           [[ "$SDK_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$SDK_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]

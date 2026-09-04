@@ -67,7 +67,6 @@ def _identity_diagnostics(evidence: dict, expected: dict, now: datetime, max_age
     workflow = evidence.get("workflow") if isinstance(evidence.get("workflow"), dict) else {}
     checks = (
         (server.get("revision"), expected["serverRevision"], "server revision"),
-        (server.get("image"), expected["serverImage"], "immutable server image"),
         (candidate.get("environment"), expected["environment"], "candidate environment"),
         (sdk.get("revision"), expected["sdkRevision"], "SDK revision"),
         (sdk.get("package"), expected["sdkPackage"], "SDK package"),
@@ -81,6 +80,22 @@ def _identity_diagnostics(evidence: dict, expected: dict, now: datetime, max_age
     for actual, wanted, label in checks:
         if actual != wanted:
             diagnostics.append(f"{label} {actual!r} does not match exact candidate {wanted!r}")
+
+    actual_image = server.get("image")
+    expected_image = expected["serverImage"]
+    if expected_image:
+        if actual_image != expected_image:
+            diagnostics.append(
+                f"immutable server image {actual_image!r} does not match exact candidate {expected_image!r}"
+            )
+    else:
+        # The source SDK receipt can be collected before the release candidate exists. It
+        # remains useful for all of the independent admissibility checks below, but it must
+        # never qualify a release without a post-candidate receipt bound to the emitted digest.
+        diagnostics.append(
+            "candidate digest binding is unavailable: post-candidate receipt required "
+            "(honua-release#269)"
+        )
 
     if not SHA.fullmatch(str(server.get("revision", ""))):
         diagnostics.append("server revision must be an immutable 40-character commit SHA")
@@ -149,8 +164,11 @@ def qualify(evidence: dict, expected: dict, *, now: datetime, max_age: timedelta
                 reasons.append("one or more executed assertions did not pass")
             if row.get("serverRevision") != expected["serverRevision"]:
                 reasons.append("row is not bound to the exact server revision")
-            if row.get("serverImage") != expected["serverImage"]:
-                reasons.append("row is not bound to the immutable server image")
+            if expected["serverImage"]:
+                if row.get("serverImage") != expected["serverImage"]:
+                    reasons.append("row is not bound to the immutable server image")
+            elif row.get("serverImage") != evidence.get("server", {}).get("image"):
+                reasons.append("row is not internally bound to the immutable server image")
             if row.get("sdkRevision") != expected["sdkRevision"]:
                 reasons.append("row is not bound to the exact SDK revision")
             if row.get("sdkPackage") != expected["sdkPackage"]:
@@ -177,7 +195,7 @@ def qualify(evidence: dict, expected: dict, *, now: datetime, max_age: timedelta
         "candidate": {
             "environment": expected["environment"],
             "serverRevision": expected["serverRevision"],
-            "serverImage": expected["serverImage"],
+            "serverImage": expected["serverImage"] or evidence.get("server", {}).get("image"),
             "sdkPackage": expected["sdkPackage"],
             "sdkRevision": expected["sdkRevision"],
             "workflowRepository": expected["workflowRepository"],

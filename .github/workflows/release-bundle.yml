@@ -306,6 +306,9 @@ jobs:
     uses: ./.github/workflows/realtime-preview-qualification.yml
     with:
       candidate_revision: ${{ needs.rc-image.outputs.server_sha }}
+      # The candidate job is the only authority for this digest. The reusable gate
+      # consumes it when present and fails closed when the post-candidate receipt is
+      # unavailable; the release-side sequencing fix is tracked in honua-release#269.
       candidate_image: ${{ needs.rc-image.outputs.image_digest }}
       candidate_environment: ${{ github.event.inputs.release_id }}
       sdk_revision: ${{ github.event.inputs.realtime_sdk_revision }}

@@ -8,10 +8,15 @@ The SDK artifact must be produced by `.github/workflows/realtime-live-conformanc
 `realtime-cross-transport-conformance-<run-id>`, and contain `realtime-preview-evidence.json` in
 `honua.realtime-preview-evidence.v2` format. It binds the server commit and image digest, SDK
 commit and package, candidate environment, workflow/run/attempt/artifact, generation window,
-and an executed assertion receipt for every exact row. Dispatch the server workflow with those
-same immutable identities. The workflow verifies the source run and artifact before download,
-projects with `--require-qualified`, and retains the source, diagnostics, ledger, and verdict for
-180 days.
+and an executed assertion receipt for every exact row. The release candidate job is the authority
+for the candidate digest: when its digest output is present, qualification binds every receipt
+and row to that exact value. Until the release-side sequencing contract is delivered, an absent
+post-candidate receipt is a hard rejection; the gate still evaluates exact revision, source
+workflow/run/attempt, freshness, live-lane, and non-source-built (immutable digest) admissibility.
+Track the sequencing handoff in
+[honua-release#269](https://github.com/honua-io/honua-release/issues/269). The workflow verifies
+the source run and artifact before download, projects with `--require-qualified`, and retains the
+source, diagnostics, ledger, and verdict for 180 days.
 
 For local contract testing, use the same complete identity set:
 
