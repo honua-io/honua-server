@@ -46,6 +46,9 @@ public static class CapabilityKeyCatalog
     /// </summary>
     public const string ExperimentalStatus = "experimental";
 
+    /// <summary>Release-posture value marking a capability as Preview.</summary>
+    public const string PreviewStatus = "preview";
+
     /// <summary>
     /// Edition-qualified, routed capabilities that remain deployable while their public release
     /// posture is experimental.
@@ -129,7 +132,7 @@ public static class CapabilityKeyCatalog
         new("serve.ogc-api-records", "OGC API Records", Categories.Serve,
             HonuaEdition.Community, "Search and retrieve catalog records through OGC API - Records."),
         new("serve.ogc-api-edr", "OGC API - EDR", Categories.Serve,
-            HonuaEdition.Community, "Query environmental data resources through OGC API - Environmental Data Retrieval."),
+            HonuaEdition.Community, "Query environmental data resources through OGC API - Environmental Data Retrieval.", Status: PreviewStatus),
         new("serve.odata", "OData v4", Categories.Serve,
             HonuaEdition.Community, "Query and edit features through the OData v4 protocol surface."),
         new("serve.wms", "WMS 1.3", Categories.Serve,
