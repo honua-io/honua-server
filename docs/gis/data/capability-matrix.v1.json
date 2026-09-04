@@ -1742,7 +1742,7 @@
       "entryCount": 142,
       "provingTestCount": 376,
       "maturity": {
-        "implemented": 142
+        "preview": 142
       },
       "noSurface": null,
       "cite": [],
@@ -1768,7 +1768,8 @@
       "entryCount": 45,
       "provingTestCount": 336,
       "maturity": {
-        "implemented": 45
+        "implemented": 43,
+        "preview": 2
       },
       "noSurface": null,
       "cite": [],
@@ -2375,7 +2376,7 @@
       "entryCount": 1,
       "provingTestCount": 6,
       "maturity": {
-        "implemented": 1
+        "preview": 1
       },
       "noSurface": null,
       "cite": [
