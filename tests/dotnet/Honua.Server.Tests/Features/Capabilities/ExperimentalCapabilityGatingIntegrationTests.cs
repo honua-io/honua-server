@@ -161,7 +161,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task Manifest_WhenRealtimePreviewsOptedIn_DeclaresPreviewLifecycle()
+    public async Task Manifest_WhenCustomerAlertingAndRealtimePreviewsOptedIn_DeclaresPreviewLifecycle()
     {
         var fixture = CreateFixture(experimentalGlobalEnabled: true);
         await fixture.InitializeAsync();
@@ -173,7 +173,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var id in new[] { "alerts.geofence", "realtime.feature-streams", "serve.sensorthings" })
             {
                 var capability = document.RootElement.GetProperty("capabilities")
                     .EnumerateArray()

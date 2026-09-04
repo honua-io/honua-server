@@ -215,6 +215,19 @@ public sealed class FeatureCatalogDriftTests
     }
 
     [ArchitectureTest]
+    public void CustomerAlertingRoutes_RemainPreviewWithoutGaReceipts()
+    {
+        var alerting = LoadCommittedCatalog().Entries
+            .Where(entry => entry.Route.StartsWith("/api/v1/admin/alerts/", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        alerting.Should().NotBeEmpty();
+        alerting.Should().OnlyContain(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview,
+            "the 2026-09-04 operator ruling keeps every customer-alerting route Preview; "
+            + "qualification tests do not replace a reviewed GA promotion with receipts");
+    }
+
+    [ArchitectureTest]
     public void CommittedCatalog_EqualsFreshlyGeneratedOutput()
     {
         var committed = File.ReadAllText(FeatureCatalogPaths.CommittedArtifactPath());
