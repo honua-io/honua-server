@@ -52,6 +52,63 @@ public sealed class TileOperationJobServicePublishTests
     }
 
     [Fact]
+    public async Task Archive_MaxTiles_ReportsTruncationAndStampsActualCoverage()
+    {
+        var stub = new StubCloudStorage();
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true);
+        var sut = CreateSut(serviceProvider);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "archive",
+            LayerId = 1,
+            MinZoom = 0,
+            MaxZoom = 3,
+            MaxTiles = 2
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.Warnings.Should().ContainSingle(w => w.Contains("exceeded maxTiles=2"));
+        stub.LastUploadBytes.Should().NotBeNull();
+
+        var header = PMTilesHeader.ReadFrom(stub.LastUploadBytes!);
+        header.TileEntriesCount.Should().Be(2);
+        header.MinZoom.Should().Be(0);
+        header.MaxZoom.Should().Be(1, "the selected two tiles only reach zoom 1");
+    }
+
+    [Fact]
+    public async Task Publish_MaxTiles_ReportsTruncationAndStampsActualCoverage()
+    {
+        var stub = new StubCloudStorage();
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true);
+        var sut = CreateSut(serviceProvider);
+
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = "publish",
+            LayerId = 1,
+            MinZoom = 0,
+            MaxZoom = 3,
+            MaxTiles = 2
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        var progress = await sut.GetAsync(jobId);
+        progress.Should().NotBeNull();
+        progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.Warnings.Should().ContainSingle(w => w.Contains("exceeded maxTiles=2"));
+        progress.PublishedArtifact.Should().NotBeNull();
+        progress.PublishedArtifact!.MaxZoom.Should().Be(1);
+        PMTilesHeader.ReadFrom(stub.LastUploadBytes!).MaxZoom.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Publish_SignedUrlStrategy_PopulatesDescriptorWithSignedUrl()
     {
         var stub = new StubCloudStorage();
@@ -644,6 +701,8 @@ public sealed class TileOperationJobServicePublishTests
 
         public FileUploadRequest? LastUpload { get; private set; }
 
+        public byte[]? LastUploadBytes { get; private set; }
+
         public List<string> DeletedFileIds { get; } = [];
 
         public Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default)
@@ -653,19 +712,16 @@ public sealed class TileOperationJobServicePublishTests
                 ? request.ObjectKeyOverride
                 : Guid.NewGuid().ToString("N");
 
-            // Drain content stream so the size aligns with what the writer produced.
-            long size = 0;
+            // Drain content stream so the size aligns with what the writer produced. Keep the
+            // bytes for archive-header assertions in the PMTiles regression tests.
+            using var uploadBytes = new MemoryStream();
             if (request.Content.CanSeek)
             {
-                size = request.Content.Length;
                 request.Content.Position = 0;
             }
-            else
-            {
-                using var ms = new MemoryStream();
-                request.Content.CopyTo(ms);
-                size = ms.Length;
-            }
+            request.Content.CopyTo(uploadBytes);
+            LastUploadBytes = uploadBytes.ToArray();
+            var size = LastUploadBytes.LongLength;
 
             var cloudFile = new CloudFile
             {
