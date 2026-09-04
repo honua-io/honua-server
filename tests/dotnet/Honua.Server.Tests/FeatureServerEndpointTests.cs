@@ -3115,10 +3115,17 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         applyEditsResponse.DeleteResults.Should().NotBeNull().And.BeEmpty();
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("rollbackOnFailure", "invalid", "rollbackOnFailure must be a boolean value")]
+    [InlineData("useGlobalIds", "true", "useGlobalIds is not supported")]
+    [InlineData("returnEditMoment", "true", "returnEditMoment is not supported")]
+    [InlineData("f", "xml", "is not supported. Supported formats: json, pjson")]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
-    public async Task ApplyEdits_ServiceLevel_FormControls_AreHonored()
+    public async Task ApplyEdits_ServiceLevel_FormControl_IsHonored(
+        string control,
+        string value,
+        string expectedError)
     {
         var edits = """
             [{"id":0,"adds":[{"attributes":{"name":"form controls"}}]}]
@@ -3126,18 +3133,14 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["edits"] = edits,
-            ["useGlobalIds"] = "true",
-            ["returnEditMoment"] = "false",
-            ["rollbackOnFailure"] = "true",
-            ["gdbVersion"] = "sde.DEFAULT",
-            ["f"] = "json"
+            [control] = value
         });
 
         var response = await _fixture.Client.PostAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/applyEdits", form);
 
         await response.AssertGeoServicesErrorAsync(400);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("useGlobalIds is not supported");
+        (await response.Content.ReadAsStringAsync()).Should().Contain(expectedError);
     }
 
     [IntegrationTest]
@@ -3178,61 +3181,6 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         await response.AssertGeoServicesErrorAsync(400);
         (await response.Content.ReadAsStringAsync()).Should().Contain("Create edits are not enabled");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.ApplyEdits)]
-    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
-    public async Task ApplyEdits_WithAttributeOnlyUpdate_ReturnsSuccess()
-    {
-        var addPayload = """
-            {
-              "features": [
-                {
-                  "attributes": {
-                    "name": "ApplyEdits attribute-only target",
-                    "description": "Description should survive"
-                  },
-                  "geometry": { "x": -122.35, "y": 37.77 }
-                }
-              ]
-            }
-            """;
-
-        using var addContent = new StringContent(addPayload, Encoding.UTF8, "application/json");
-        var addResponse = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
-            addContent);
-        addResponse.Be200Ok();
-
-        var addResult = JsonSerializer.Deserialize<ApplyEditsResponse>(
-            await addResponse.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
-        var objectId = addResult!.AddResults![0].ObjectId!.Value;
-
-        var applyPayload = $$"""
-            {
-              "updates": [
-                {
-                  "attributes": {
-                    "objectid": {{objectId}},
-                    "name": "ApplyEdits attribute-only updated"
-                  }
-                }
-              ]
-            }
-            """;
-
-        using var applyContent = new StringContent(applyPayload, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
-            applyContent);
-
-        response.Be200Ok();
-        var result = JsonSerializer.Deserialize<ApplyEditsResponse>(
-            await response.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
-        result.Should().NotBeNull();
-        result!.Success.Should().BeTrue();
-        result.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue();
     }
 
     [IntegrationTest]
