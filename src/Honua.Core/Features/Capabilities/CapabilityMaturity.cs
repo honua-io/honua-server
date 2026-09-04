@@ -29,7 +29,7 @@ public enum CapabilityMaturity
     Experimental = 2,
 
     /// <summary>
-    /// Preview — implemented and available only through an explicit operator opt-in
+    /// Preview — implemented and available only through explicit configuration opt-in
     /// until the release qualification gates have passed.
     /// </summary>
     Preview = 3,

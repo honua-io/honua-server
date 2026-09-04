@@ -14,6 +14,7 @@ All admin endpoints require authentication. Send `X-API-Key` with the admin pass
 | File, URL, migration, and raster imports; jobs | `/api/v1/admin/import`, `/api/v1/admin/operations`, `/api/v1/admin/jobs`, `/api/v1/admin/tile-operations` | [Imports and jobs](imports-and-jobs.md) |
 | Layer styles, SLD, suggestions, themes | `/api/v1/admin/metadata/layers/{layerId}/style` | [Styles](styles.md) |
 | API keys, roles, users, OIDC providers, license | `/api/v1/admin/api-keys`, `/api/v1/admin/roles`, `/api/v1/admin/users`, `/api/v1/admin/oidc`, `/api/v1/admin/license` | [Users, roles, and licensing](users-roles-licensing.md) |
+| Tenant lifecycle and usage — **Preview/trial only; non-production** | `/api/v1/admin/tenants` | [Tenancy support](../../guides/deploy/tenancy.md) |
 | Form packages and submissions | `/api/v1/admin/forms`, `/api/v1/forms` | [Forms](forms.md) |
 | Deploy operations and rollback | `/api/v1/admin/deploy` | [Upgrade and rollback](../../guides/deploy/upgrade-and-rollback.md) |
 | Operations, observability, alerts | `/api/v1/admin/observability`, `/api/v1/admin/alerts` | [Operations](../../guides/deploy/backup-and-restore.md), [Monitoring](../../guides/deploy/monitoring.md) |
@@ -35,8 +36,8 @@ Each capability record reports:
 | `supported` | The server build registers the backing implementation. |
 | `available` | Usable for this request after configuration, environment, authentication, license, and policy checks. |
 | `reasonCode` | Present only when unavailable; stable values include `unsupported`, `disabled-by-configuration`, `license-required`, `entitlement-inactive`, `insufficient-policy`, `environment-unavailable`, and `workspace-scope-required`. |
-| `lifecycle` | Product lifecycle classification. Realtime feature streams and SensorThings report `preview` until exact-candidate qualification passes. |
-| `optInRequired` | Whether the capability must be explicitly enabled. Preview realtime capabilities remain declared but unavailable with `disabled-by-configuration` until opted in. |
+| `lifecycle` | Product lifecycle classification. `admin.multi-tenancy`, realtime feature streams, and SensorThings report `preview`; multi-tenancy is trial-only and non-production in 2026.1. |
+| `optInRequired` | Whether the capability must be explicitly enabled. Preview capabilities remain declared but unavailable with `disabled-by-configuration` until opted in. |
 
 The document also carries `transports` (REST, GeoServices, OGC, OData, STAC, tiles, gRPC, MCP, QGIS, mTLS), `limits` (query, analysis, upload, and job limits), and `policies` (license and entitlement state). The manifest is informational only — operation endpoints remain the source of truth for authorization and resource checks. Do not persist it as an authorization cache.
 

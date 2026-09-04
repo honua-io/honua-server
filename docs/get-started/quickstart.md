@@ -1,5 +1,10 @@
 # Go from zero to a map in your browser
 
+> This quickstart follows the Honua 2026.1 GA **single-tenant** path. Multi-tenant
+> operation is Preview/trial only for non-production evaluation; do not use customer
+> production data. It has no GA, availability, performance, durability, or SLO
+> commitment. See [Tenancy support](../guides/deploy/tenancy.md).
+
 You'll have Honua running in Docker with a published dataset rendered in a browser map in about 10 minutes.
 
 **Prerequisites:** Docker with Compose v2, `git`, GitHub CLI authenticated with package-read access, and Python 3.11 or later.

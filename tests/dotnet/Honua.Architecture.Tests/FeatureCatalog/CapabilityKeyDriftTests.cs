@@ -198,6 +198,20 @@ public sealed class CapabilityKeyDriftTests
     }
 
     [ArchitectureTest]
+    public void TenantAdminRoutes_AreAlwaysPreviewMultiTenancySurfaces()
+    {
+        var tenantEntries = LoadCommittedCatalog().Entries
+            .Where(entry => entry.Route.StartsWith("/api/v1/admin/tenants", StringComparison.Ordinal))
+            .ToArray();
+
+        tenantEntries.Should().HaveCount(7, "the complete tenant administration route family is lifecycle-pinned");
+        tenantEntries.Should().OnlyContain(
+            entry => entry.Capability == "admin.multi-tenancy" && entry.Maturity == "preview",
+            "tenant administration may never be emitted as a GA-shaped control-plane surface; "
+            + "Honua 2026.1 permits it only as the admin.multi-tenancy Preview/trial surface");
+    }
+
+    [ArchitectureTest]
     public void CommittedCapabilityKeysJson_MatchesCapabilityKeyCatalog()
     {
         var committed = LoadCommittedCapabilityKeysDocument();

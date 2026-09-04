@@ -102,10 +102,12 @@ Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), Op
 
 ## Key capabilities
 
-Honua 2026.1 is GA for single-tenant deployments. Multi-tenant operation remains
-Preview for explicitly configured environments such as the demo area; it carries
-no GA operational, SLA, or scale promise. Cross-tenant disclosure remains a
-full-severity security defect. See [Tenancy support](docs/guides/deploy/tenancy.md).
+Honua 2026.1 is GA for single-tenant deployments. Multi-tenant operation is a
+**Preview/trial-only, non-production evaluation surface**; do not use customer
+production data. It carries no GA commitment and no availability, performance,
+durability, SLO, or scale promise. Honua does not provide SaaS, hosting, or a managed
+service. Cross-tenant disclosure remains a full-severity security defect. See
+[Tenancy support](docs/guides/deploy/tenancy.md).
 
 - **Query and edit** — FeatureServer query/applyEdits/attachments/related records, OGC API Features CRUD with CQL2, WFS 2.0 transactions, OData CRUD with spatial functions (`geo.distance`, `geo.intersects`, `$batch`). FeatureServer applyEdits is **(Pro)**; edits through the open protocols (OGC API Features, WFS-T, OData, gRPC) stay Community. Output as JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow.
 - **Esri migration and coexistence** — Honua provides protocol-level compatibility for selected, operation-scoped ArcGIS Pro and Esri SDK workflows, bounded by the published [GeoServices parity matrix](docs/reference/compatibility/geoservices-parity.md) and [cross-client certification matrix](docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md). Import public ArcGIS REST and GeoServer services into PostGIS (service imports are **(Enterprise)**); scan ArcGIS Server and GeoServer for deterministic migration inventories. See [Migrate from ArcGIS Server](docs/guides/migrate/from-arcgis-server.md) and [from GeoServer](docs/guides/migrate/from-geoserver.md).
@@ -115,7 +117,7 @@ full-severity security defect. See [Tenancy support](docs/guides/deploy/tenancy.
 - **AI-operable** — the `/mcp` surface implements the open [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) standard so agents can validate plans, dry-run, execute, and read results with the same authorization as any other client. MCP discovery/query and spec artifacts are Community; agent operations and spec-apply execution are **(Pro)**; approval workflows are **(Enterprise)**. See [Connect AI agents](docs/guides/connect/ai-agents-mcp.md).
 - **Cloud-native operations** — container-first and stateless; multi-layer caching with in-memory fallback (output cache and Redis caching are **(Pro)**); OpenTelemetry traces and metrics; API-key auth, OIDC SSO **(Pro)** — multi-provider OIDC, SAML 2.0, and SCIM 2.0 are **(Enterprise)** — and experimental mTLS client-certificate auth (off by default, not on the GA path); a server-computed operate loop for humans, Console, and agents ([Operating Honua](docs/guides/operate/README.md)).
 
-The admin API (`/api/v1/admin`) manages connections, services, layers, styles, and import jobs; the web admin UI lives in [honua-console](https://github.com/honua-io/honua-console). The admin API is also the substrate for Honua's managed control-plane direction — change management and instance lifecycle workflows build on it rather than on a third-party GitOps controller.
+The admin API (`/api/v1/admin`) manages connections, services, layers, styles, and import jobs; the web admin UI lives in [honua-console](https://github.com/honua-io/honua-console). The admin API is also the substrate for self-managed control-plane workflows: change management and instance lifecycle automation build on it rather than on a third-party GitOps controller.
 
 ## Data providers
 
