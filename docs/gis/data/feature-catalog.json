@@ -32,7 +32,7 @@
         "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.DeleteRule_AfterDeliveredOrDeadLetterIncident_RetainsHistoricalEvidence"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -47,7 +47,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -1063,7 +1063,7 @@
         "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.ListChannelStates_AfterPause_ReportsPausedChannel"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -1078,7 +1078,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRules_WithServiceAndLayerFilter_ReturnsSuccessEnvelope"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -1092,7 +1092,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -1108,7 +1108,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ListRuleEvents_WithUnknownStatus_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -1123,7 +1123,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.GetRuleHealth_WithUnavailableDeliveryChannel_ReturnsPolicyState"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -1139,7 +1139,7 @@
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.AlertsEndpoint_WhenPreviewDisabled_IsNotMapped"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -1153,7 +1153,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -2247,6 +2247,34 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "import.file"
+    },
+    {
+      "id": "get-api-v1-admin-imports-jobs",
+      "route": "/api/v1/admin/imports/jobs",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Import.ImportUrlEndpointTests.CompatibilityPluralImportJobs_ReturnsActiveJobs"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "get-api-v1-admin-imports-jobs-jobid",
+      "route": "/api/v1/admin/imports/jobs/{jobId}",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Import.ImportUrlEndpointTests.CompatibilityPluralImportJobStatus_UnknownJob_ReturnsNotFound"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "get-api-v1-admin-investigations",
@@ -9476,7 +9504,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.Replicas_WhenReplicaExists_ReturnsReplicaList"
       ],
       "proof_ledger_surface": "feature-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -9490,7 +9518,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ReplicaInfo_WhenReplicaExists_ReturnsReplicaMetadata"
       ],
       "proof_ledger_surface": "feature-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -11865,7 +11893,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneOpenUsdManifestEndpointTests.GetOpenUsdManifest_WithMatchingIfNoneMatch_ReturnsNotModified"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -11893,7 +11921,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetTileset_WithMatchingIfNoneMatch_ReturnsNotModified"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -11935,7 +11963,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.GetSceneAsset_UnknownAsset_Returns404"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -13013,7 +13041,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.HeadTileset_ReturnsHeadersWithoutBody"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -13027,7 +13055,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneTilesetEndpointTests.HeadSceneAsset_ReturnsHeadersWithoutBody"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -13514,7 +13542,7 @@
         "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_UnknownChannel_Returns400"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -13528,7 +13556,7 @@
         "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.PauseChannel_StopsDispatchClaims_ResumeRestoresThem"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -13543,7 +13571,7 @@
         "Honua.Server.Tests.Features.Admin.AlertOpsAdminEndpointsTests.RedriveDeadLetters_WithSeededDeadLetterBacklog_DrainsBacklogToPending"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -13566,7 +13594,7 @@
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -13585,7 +13613,7 @@
         "Honua.Server.Tests.Features.Alerts.AlertEntitlementGateTests.ProEdition_AllowsProFeatures_BlocksEnterpriseFeatures"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -13601,7 +13629,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -14917,6 +14945,34 @@
       "capability": "import.file"
     },
     {
+      "id": "post-api-v1-admin-imports",
+      "route": "/api/v1/admin/imports",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Import.ImportUrlEndpointTests.CompatibilityPluralImportRoute_WithSupportedPublicS3Source_ImportsData"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "post-api-v1-admin-imports-jobs-jobid-cancel",
+      "route": "/api/v1/admin/imports/jobs/{jobId}/cancel",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Import.ImportUrlEndpointTests.CompatibilityPluralImportJobCancel_UnknownJob_ReturnsNotFound"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "post-api-v1-admin-investigations",
       "route": "/api/v1/admin/investigations",
       "method": "POST",
@@ -15576,6 +15632,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "post-api-v1-admin-packages",
+      "route": "/api/v1/admin/packages",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.PackageReview.PackageReviewEndpointTests.PublishMapPackage_WithoutPackage_ReturnsBadRequest"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "post-api-v1-admin-packages-preview",
       "route": "/api/v1/admin/packages/preview",
       "method": "POST",
@@ -15764,7 +15834,7 @@
         "Honua.Server.Tests.Features.Admin.SceneGenerationEndpointsTests.Generate_UnknownLayerId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "admin.control-plane"
     },
     {
@@ -15783,7 +15853,7 @@
         "Honua.Server.Tests.Features.Admin.SceneBimIngestEndpointsTests.Ingest_ValidCityGml_Returns201AndServesTileset"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "scene.bim-ingest"
     },
     {
@@ -15806,7 +15876,7 @@
         "Honua.Server.Tests.Features.Admin.ScenePointCloudIngestEndpointsTests.Ingest_ValidLas_Returns201AndServesTileset"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "scene.pointcloud-ingest"
     },
     {
@@ -18692,7 +18762,7 @@
         "Honua.Server.Tests.Features.Security.FeatureServerServiceRbacTests.UnRegisterReplica_WithReadOnlyRole_ReturnsForbidden"
       ],
       "proof_ledger_surface": "feature-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -18717,7 +18787,7 @@
         "Honua.Server.Tests.Features.Security.FeatureServerReplicationAccessPolicyTests.ExtractChanges_WithAnonymousClient_AndAnonymousReadLayerPolicy_AllowsMatchingLayer"
       ],
       "proof_ledger_surface": "feature-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -18829,7 +18899,7 @@
         "Honua.Server.Tests.Features.Security.FeatureServerServiceRbacTests.SynchronizeReplica_WithReadOnlyRole_ReturnsForbidden"
       ],
       "proof_ledger_surface": "feature-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -18849,7 +18919,7 @@
         "Honua.Server.Tests.Features.Security.FeatureServerServiceRbacTests.UnRegisterReplica_WithReadOnlyRole_ReturnsForbidden"
       ],
       "proof_ledger_surface": "feature-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -20443,7 +20513,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeMisconfiguredEndpointTests.IssueEnvelope_MissingSigningKey_Returns500"
       ],
       "proof_ledger_surface": "scenes-3dtiles",
-      "maturity": "implemented",
+      "maturity": "experimental",
       "capability": "serve.3d-tiles-scene"
     },
     {
@@ -21014,7 +21084,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.UpdateRule_NonexistentRuleId_Returns404"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -21028,7 +21098,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.RuleCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {
@@ -21043,7 +21113,7 @@
         "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests.ZoneCrud_CreateUpdateDelete_CompletesLifecycle"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "alerts.evaluation"
     },
     {

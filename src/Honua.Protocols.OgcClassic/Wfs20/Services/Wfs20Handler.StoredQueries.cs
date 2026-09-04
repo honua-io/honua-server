@@ -32,6 +32,7 @@ using Honua.ServiceDefaults;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using StackExchange.Redis;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
@@ -75,9 +76,54 @@ internal sealed partial class Wfs20Handler
     private static ConcurrentDictionary<string, StoredQueryDefinition> GetScopedStoredQueries(HttpContext context)
     {
         var scope = ResolveStoredQueryScope(context);
-        return ManagedStoredQueriesByScope.GetOrAdd(
+        var bucket = ManagedStoredQueriesByScope.GetOrAdd(
             scope,
             static _ => new ConcurrentDictionary<string, StoredQueryDefinition>(StringComparer.OrdinalIgnoreCase));
+
+        // Redis is the shared source of truth when the server is running in its
+        // distributed deployment shape. Refreshing the bucket on each operation
+        // prevents a replica-local dictionary from hiding definitions created by
+        // another replica or surviving a restart only by accident (#32).
+        if (context.RequestServices.GetService<IConnectionMultiplexer>() is { } redis)
+        {
+            var database = redis.GetDatabase();
+            var ids = database.SetMembersAsync(BuildStoredQueryScopeKey(scope)).GetAwaiter().GetResult();
+            var values = ids.Length == 0
+                ? Array.Empty<RedisValue>()
+                : database.StringGetAsync(ids.Select(id => (RedisKey)BuildStoredQueryKey(scope, id.ToString())).ToArray()).GetAwaiter().GetResult();
+            bucket.Clear();
+            foreach (var definition in values
+                         .Where(static value => value.HasValue)
+                         .Select(static value => JsonSerializer.Deserialize<StoredQueryDefinition>((string)value!))
+                         .OfType<StoredQueryDefinition>())
+            {
+                bucket[definition.Id] = definition;
+            }
+        }
+
+        return bucket;
+    }
+
+    private static string BuildStoredQueryScopeKey(string scope) => $"honua:wfs:stored-query:{scope}";
+    private static string BuildStoredQueryKey(string scope, string id) => $"honua:wfs:stored-query:{scope}:{Convert.ToBase64String(Encoding.UTF8.GetBytes(id)).TrimEnd('=').Replace('+', '-').Replace('/', '_')}";
+
+    private static void PersistStoredQuery(HttpContext context, StoredQueryDefinition definition)
+    {
+        if (context.RequestServices.GetService<IConnectionMultiplexer>() is not { } redis) return;
+        var scope = ResolveStoredQueryScope(context);
+        var database = redis.GetDatabase();
+        database.StringSetAsync(BuildStoredQueryKey(scope, definition.Id), JsonSerializer.Serialize(definition)).GetAwaiter().GetResult();
+        database.SetAddAsync(BuildStoredQueryScopeKey(scope), definition.Id).GetAwaiter().GetResult();
+    }
+
+    private static bool RemovePersistedStoredQuery(HttpContext context, string id)
+    {
+        if (context.RequestServices.GetService<IConnectionMultiplexer>() is not { } redis) return false;
+        var scope = ResolveStoredQueryScope(context);
+        var database = redis.GetDatabase();
+        var removed = database.KeyDeleteAsync(BuildStoredQueryKey(scope, id)).GetAwaiter().GetResult();
+        database.SetRemoveAsync(BuildStoredQueryScopeKey(scope), id).GetAwaiter().GetResult();
+        return removed;
     }
 
     public async Task<IResult> HandleListStoredQueriesAsync(
@@ -274,6 +320,8 @@ internal sealed partial class Wfs20Handler
                 id);
         }
 
+        PersistStoredQuery(context, definition);
+
         var xml = WriteXmlDocument(writer =>
         {
             writer.WriteStartDocument();
@@ -319,6 +367,8 @@ internal sealed partial class Wfs20Handler
                 $"Stored query '{storedQueryId}' does not exist.",
                 "storedquery_id");
         }
+
+        RemovePersistedStoredQuery(context, storedQueryId);
 
         var xml = WriteXmlDocument(writer =>
         {

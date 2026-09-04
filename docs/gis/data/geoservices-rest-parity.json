@@ -160,7 +160,7 @@
               "POST /rest/services/{serviceId}/FeatureServer/createReplica"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Registers offline replica state in distributed cache when available, otherwise in memory."
           },
@@ -174,7 +174,7 @@
               "POST /rest/services/{serviceId}/FeatureServer/extractChanges"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "First sync returns full adds; later syncs do not provide database-grade incremental change tracking."
           },
@@ -262,7 +262,7 @@
               "GET /rest/services/{serviceId}/FeatureServer/replicas/{replicaId}"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Lists registered replica metadata for the service and returns a single replica descriptor by id. Backed by the same replica store as createReplica/synchronizeReplica."
           },
@@ -276,7 +276,7 @@
               "POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Supports download, upload, and bidirectional sync directions."
           },
@@ -290,7 +290,7 @@
               "POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": ""
           },

@@ -140,7 +140,9 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
 
         var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // The CAS retry confirms the cancellation request, but the mocked reread remains
+        // nonterminal; the corrected contract is 202 until terminal cancellation is observed.
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         await _jobStore.Received(2).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(j =>
@@ -330,7 +332,9 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         {
             var response = await fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            // A queued record that has not yet been reread as terminal is an accepted
+            // cancellation request, not a completed cancellation (202, not the old 200).
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
             await backend.DidNotReceive().CancelAsync(
                 Arg.Any<ExecutionJobRecord>(),
@@ -412,7 +416,9 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         {
             var response = await fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            // A queued record that has not yet been reread as terminal is an accepted
+            // cancellation request, not a completed cancellation (202, not the old 200).
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
             await backend.DidNotReceive().CancelAsync(
                 Arg.Any<ExecutionJobRecord>(),
@@ -547,7 +553,7 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
 
         var response = await _fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
         // Must have written CancellationRequestedAt, not terminal Cancelled.
         await _jobStore.Received().TrySetAsync(
@@ -624,7 +630,9 @@ public sealed class OgcProcessesDismissJobTests : IAsyncLifetime
         {
             var response = await fixture.Client.DeleteAsync($"/ogc/processes/jobs/{JobId}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            // The remote backend has acknowledged the cancellation request while the job
+            // remains nonterminal, so the endpoint correctly reports 202 Accepted.
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
             await jobStore.Received().TrySetAsync(
                 Arg.Is<ExecutionJobRecord>(j =>

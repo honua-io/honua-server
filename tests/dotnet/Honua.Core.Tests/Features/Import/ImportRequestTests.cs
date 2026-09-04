@@ -106,7 +106,7 @@ public sealed class ImportRequestTests
     }
 
     [Fact]
-    public void LoadMode_DefaultsToReplace()
+    public void LoadMode_DefaultsToReplace_ButLegacyFalseFlagResolvesToAppend()
     {
         var request = new ImportRequest
         {
@@ -115,7 +115,7 @@ public sealed class ImportRequestTests
         };
 
         request.LoadMode.Should().Be(ImportLoadMode.Replace);
-        request.EffectiveLoadMode.Should().Be(ImportLoadMode.Replace);
+        request.EffectiveLoadMode.Should().Be(ImportLoadMode.Append);
     }
 
     [Theory]
@@ -132,6 +132,19 @@ public sealed class ImportRequestTests
         };
 
         request.EffectiveLoadMode.Should().Be(mode);
+    }
+
+    [Fact]
+    public void EffectiveLoadMode_WhenOverwriteIsFalse_AppendsInsteadOfReplacing()
+    {
+        var request = new ImportRequest
+        {
+            FileName = "features.geojson",
+            TableName = "features",
+            OverwriteExisting = false
+        };
+
+        request.EffectiveLoadMode.Should().Be(ImportLoadMode.Append);
     }
 
     [Fact]

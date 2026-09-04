@@ -4,11 +4,15 @@
 using System.Collections.Immutable;
 using System.Text;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Styles.Handlers;
 using Honua.Protocols.Ogc.Api.Styles.Models;
 using Honua.Protocols.Ogc.Common;
@@ -139,6 +143,7 @@ public static class OgcStylesEndpoints
         HttpContext context,
         string? f,
         IOgcStyleProjection projection,
+        IMetadataV2GraphProvider graphProvider,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
@@ -162,6 +167,11 @@ public static class OgcStylesEndpoints
         var entries = ImmutableArray.CreateBuilder<StyleEntry>(summaries.Count);
         foreach (var summary in summaries)
         {
+            if (!await IsStyleVisibleAsync(context, summary.StyleId, graphProvider, cancellationToken).ConfigureAwait(false))
+            {
+                continue;
+            }
+
             entries.Add(new StyleEntry
             {
                 Id = summary.StyleId,
@@ -239,6 +249,7 @@ public static class OgcStylesEndpoints
         string styleId,
         HttpContext context,
         IOgcStyleProjection projection,
+        IMetadataV2GraphProvider graphProvider,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
@@ -247,6 +258,12 @@ public static class OgcStylesEndpoints
             return StandardErrorHelpers.CreateNotAcceptable(
                 context,
                 "Supported stylesheet media types are application/vnd.mapbox.style+json, application/vnd.ogc.sld+xml;version=1.0, application/vnd.ogc.sld+xml;version=1.1, and application/vnd.esri.drawinginfo+json.");
+        }
+
+        var accessError = await AuthorizeStyleAsync(context, styleId, graphProvider, cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return accessError;
         }
 
         var stylesheet = await projection.GetStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
@@ -268,6 +285,7 @@ public static class OgcStylesEndpoints
         HttpContext context,
         string? f,
         IOgcStyleProjection projection,
+        IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken = default)
     {
         if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
@@ -278,6 +296,12 @@ public static class OgcStylesEndpoints
                 out var errorResult))
         {
             return errorResult!;
+        }
+
+        var accessError = await AuthorizeStyleAsync(context, styleId, graphProvider, cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return accessError;
         }
 
         var metadata = await projection.GetStyleMetadataAsync(styleId, cancellationToken).ConfigureAwait(false);
@@ -320,6 +344,47 @@ public static class OgcStylesEndpoints
             OgcStylesJsonContext.Default.StyleMetadataResponse,
             outputFormat,
             "Style metadata");
+    }
+
+    private static async Task<bool> IsStyleVisibleAsync(
+        HttpContext context,
+        string styleId,
+        IMetadataV2GraphProvider graphProvider,
+        CancellationToken cancellationToken)
+        => await AuthorizeStyleAsync(context, styleId, graphProvider, cancellationToken).ConfigureAwait(false) is null;
+
+    private static async Task<IResult?> AuthorizeStyleAsync(
+        HttpContext context,
+        string styleId,
+        IMetadataV2GraphProvider graphProvider,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var resource = snapshot.Graph.Resources.FirstOrDefault(resource =>
+            string.Equals(resource.Metadata.Name, styleId, StringComparison.OrdinalIgnoreCase));
+        if (resource is null)
+        {
+            // Standalone catalog styles have no layer policy and retain their existing
+            // public read behavior.
+            return null;
+        }
+
+        var publication = snapshot.Graph.Publications
+            .Where(candidate => snapshot.ResolveResource(candidate)?.Metadata.Id == resource.Metadata.Id)
+            .Where(snapshot.IsRoutable)
+            .OrderByDescending(candidate => candidate.IsPrimary)
+            .FirstOrDefault();
+        var service = publication is not null && snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
+            ? resolvedService
+            : null;
+
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Style '{styleId}' not found.");
+        }
+
+        return await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, service, AccessScope.Read, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

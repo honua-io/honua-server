@@ -405,7 +405,18 @@ public static class MigrationSafetyClassifier
             i++;
         }
 
-        return i < length && sql[i] == '$' ? sql[start..(i + 1)] : null;
+        if (i >= length || sql[i] != '$')
+        {
+            return null;
+        }
+
+        var tag = sql[start..(i + 1)];
+        // DbUp variables use the same delimiters as PostgreSQL dollar quotes. They are
+        // substituted before execution and must remain visible to the migration-safety
+        // classifier; treating $HonuaSchema$ as a quoted body can hide following DDL.
+        return string.Equals(tag, "$HonuaSchema$", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : tag;
     }
 
     /// <summary>

@@ -2,8 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.PackageReview.Abstractions;
 using Honua.Core.Features.PackageReview.Domain;
+using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
+using Honua.Server.Features.Console;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -41,6 +46,13 @@ internal static partial class PackageReviewEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<PackageReviewResponse>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
+
+        group.MapPost("/", HandlePublishMapPackage)
+            .WithDisplayName("Publish Map Package")
+            .WithSummary("Persist a map package as an immutable Studio version and publication request.")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .Produces<MapPackagePublishResponse>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status400BadRequest);
     }
 
     private static Task<IResult> HandleValidate(
@@ -96,6 +108,87 @@ internal static partial class PackageReviewEndpoints
                 "Package review failed",
                 "An internal error occurred while reviewing the package.");
         }
+    }
+
+    private static async Task<IResult> HandlePublishMapPackage(
+        MapPackagePublishRequest request,
+        [FromServices] IStudioPackageLifecycleService lifecycle,
+        HttpContext context)
+    {
+        if (request.Package is null || string.IsNullOrWhiteSpace(request.Package.MapPackageId))
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context, StatusCodes.Status400BadRequest, "Map package is required", "package.mapPackageId is required.");
+        }
+
+        var actor = ConsolePrincipal.ResolveActorId(context.User);
+        var packageJson = JsonSerializer.SerializeToElement(request.Package, PackagingJsonContext.Default.MapPackage);
+        var draft = await lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+        {
+            PackageKey = request.Package.MapPackageId,
+            WorkspaceId = request.WorkspaceId,
+            OwnerId = actor,
+            Envelope = new StudioPackageEnvelope
+            {
+                Family = StudioPackageFamily.Map,
+                SchemaVersion = "studio_map.v1",
+                Format = request.Package.Format,
+                Body = packageJson,
+                PublicationIntent = request.Intent
+            },
+            ActorId = actor
+        }, context.RequestAborted).ConfigureAwait(false);
+
+        var version = await lifecycle.SaveDraftAsVersionAsync(
+            draft.DraftId, request.Message, actor, draft.Generation, context.RequestAborted).ConfigureAwait(false);
+        if (version is null)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context, StatusCodes.Status409Conflict, "Map package could not be versioned", "The package draft was not available for versioning.");
+        }
+
+        var publication = await lifecycle.CreatePublicationRequestAsync(
+            version.ItemId,
+            version.VersionId,
+            request.Intent,
+            request.WarningAcknowledgement,
+            actor,
+            context.RequestAborted).ConfigureAwait(false);
+        if (publication is null)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                context, StatusCodes.Status409Conflict, "Map package could not be published", "The immutable package version was not available.");
+        }
+
+        return Results.Json(new MapPackagePublishResponse
+        {
+            PackageId = request.Package.MapPackageId,
+            ItemId = version.ItemId,
+            VersionId = version.VersionId,
+            Package = request.Package with { Status = PackageStatus.Ready, UpdatedAt = version.CreatedAt },
+            PublicationRequestId = publication.RequestId,
+            PublicationStatus = publication.Status.ToString()
+        }, PackageReviewJsonContext.Default.MapPackagePublishResponse, statusCode: StatusCodes.Status201Created);
+    }
+
+    internal sealed record MapPackagePublishRequest
+    {
+        public required MapPackage Package { get; init; }
+        public string? MapId { get; init; }
+        public string? WorkspaceId { get; init; }
+        public string? Message { get; init; }
+        public string? WarningAcknowledgement { get; init; }
+        public StudioPublicationIntent? Intent { get; init; }
+    }
+
+    internal sealed record MapPackagePublishResponse
+    {
+        public required string PackageId { get; init; }
+        public required Guid ItemId { get; init; }
+        public required Guid VersionId { get; init; }
+        public required MapPackage Package { get; init; }
+        public required Guid PublicationRequestId { get; init; }
+        public required string PublicationStatus { get; init; }
     }
 
 }
