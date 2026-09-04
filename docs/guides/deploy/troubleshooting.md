@@ -10,7 +10,7 @@ You'll diagnose the most common operational failures by symptom and apply the ve
 
 Expected: `Healthy` and `Ready`. If either fails, start with the startup or database tables below. Admin-only diagnostics: `GET /monitoring/health/production`, `GET /monitoring/health/comprehensive`, `GET /api/v1/admin/observability/errors`.
 
-A single-node deployment with no Redis configured reports `Ready` — feature-change events run in node-local in-memory mode (a startup warning notes this). When Redis is configured, every readiness probe requires successful cache write/read/delete operations, including the cache index updates and while cached data uses in-process fallback. The reserved health key uses the cache's configured namespace, is removed after a successful probe, and expires after 30 seconds if interrupted. A Redis-related readiness `503` can indicate a connection failure, denied cache commands, or a read-only Redis endpoint; check `ConnectionStrings__Redis`, Redis permissions, and the server itself.
+A single-node deployment with no Redis configured reports `Ready` — feature-change events run in node-local in-memory mode (a startup warning notes this). When Redis is configured, every readiness probe requires successful cache write/read/delete operations, including the cache index updates and while cached data uses in-process fallback. Overlapping local probes share an in-flight round-trip, and shutdown drains it before disposing the cache. Both the direct Redis and distributed-cache-only paths exercise their index. The reserved health key uses the cache's configured namespace, is removed after a successful probe, and expires after 30 seconds if interrupted. A Redis-related readiness `503` can indicate a connection failure, denied cache commands, or a read-only Redis endpoint; check `ConnectionStrings__Redis`, Redis permissions, and the server itself.
 
 ## Startup
 
@@ -53,6 +53,7 @@ Rate limiting belongs at the edge (WAF, API gateway, ingress, or load balancer) 
 When the application limiter is enabled and a Redis counter fails, Honua enforces
 its in-process fixed-window counters for both the shared subject limit and any
 endpoint-specific limit. Excess requests still receive `429` and `Retry-After`.
+After a Redis counter fails, remaining counters in that request use the local store without waiting for another Redis timeout.
 The process keeps at most 10,000 active subject/endpoint counters. At capacity, new counter keys receive `429` until an existing window expires; active counters retain their budgets.
 These fallback budgets are per server process, start independently of Redis's
 sliding-window counters, and are not synchronized between replicas. Redis metering

@@ -405,7 +405,7 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task IsCacheHealthyAsync_DistributedCacheOutage_ProbesDuringFallbackAndRecovery()
     {
         var unavailable = false;
-        byte[]? storedValue = null;
+        var storedValues = new Dictionary<string, byte[]>();
         var distributedCache = Substitute.For<IDistributedCache>();
         distributedCache.SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(),
                 Arg.Any<DistributedCacheEntryOptions>(), Arg.Any<CancellationToken>())
@@ -416,13 +416,19 @@ public sealed class RedisCacheServiceTests : IDisposable
                     return Task.FromException(new IOException("Redis unavailable"));
                 }
 
-                storedValue = call.ArgAt<byte[]>(1);
+                storedValues[call.ArgAt<string>(0)] = call.ArgAt<byte[]>(1);
                 return Task.CompletedTask;
             });
         distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => unavailable
+            .Returns(call => unavailable
                 ? Task.FromException<byte[]?>(new IOException("Redis unavailable"))
-                : Task.FromResult(storedValue));
+                : Task.FromResult(storedValues.GetValueOrDefault(call.ArgAt<string>(0))));
+        distributedCache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                storedValues.Remove(call.ArgAt<string>(0));
+                return Task.CompletedTask;
+            });
         using var cache = new RedisCacheService(distributedCache,
             Options.Create(new CacheOptions { EnableFallback = true, RetryIntervalSeconds = 300 }),
             NullLogger<RedisCacheService>.Instance, _performanceMonitor);
@@ -500,12 +506,11 @@ public sealed class RedisCacheServiceTests : IDisposable
                 cleaned.TrySetResult();
                 return Task.CompletedTask;
             });
+        var distributedRead = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
         distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(async call =>
-            {
-                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
-                return (byte[]?)null;
-            });
+            .Returns(call => call.ArgAt<string>(0).EndsWith("__cache_key_index__", StringComparison.Ordinal)
+                ? Task.FromResult<byte[]?>(null)
+                : distributedRead.Task);
         var redis = Substitute.For<IConnectionMultiplexer>();
         var database = Substitute.For<IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
@@ -534,6 +539,7 @@ public sealed class RedisCacheServiceTests : IDisposable
         var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe);
         exception.CancellationToken.Should().Be(cancellation.Token);
         read.TrySetResult((RedisValue)"1");
+        distributedRead.TrySetResult("1"u8.ToArray());
         await cleaned.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 

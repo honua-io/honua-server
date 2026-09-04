@@ -251,13 +251,13 @@ internal sealed partial class RateLimitingMiddleware
             var endpointLimit = ResolveEndpointLimit(context);
             if (endpointLimit is null)
             {
-                return subjectResult;
+                return subjectResult.Result;
             }
 
             var scopedKey = $"{rateLimitKey}|policy:{endpointLimit.Value.Scope}";
-            var endpointResult = await CheckCounterAsync(scopedKey, endpointLimit.Value);
+            var endpointResult = await CheckCounterAsync(scopedKey, endpointLimit.Value, useRedis: !subjectResult.UsedMemory);
 
-            return CombineResults(subjectResult, endpointResult);
+            return CombineResults(subjectResult.Result, endpointResult.Result);
         }
         // Intentional catch-all: this is the request-handling boundary for the rate-limit
         // check (Redis/counter faults, etc.); allow the request through on failure rather
@@ -281,13 +281,14 @@ internal sealed partial class RateLimitingMiddleware
     /// <paramref name="resolved"/>, using the Redis sliding window when available and falling back
     /// to a process-local fixed window otherwise. Every call increments the counter.
     /// </summary>
-    private async Task<RateLimitResult> CheckCounterAsync(string counterKey, ResolvedRateLimit resolved)
+    private async Task<(RateLimitResult Result, bool UsedMemory)> CheckCounterAsync(
+        string counterKey, ResolvedRateLimit resolved, bool useRedis = true)
     {
-        if (_redis != null)
+        if (useRedis && _redis != null)
         {
             try
             {
-                return await CheckRateLimitRedisAsync(counterKey, resolved);
+                return (await CheckRateLimitRedisAsync(counterKey, resolved), false);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -296,7 +297,7 @@ internal sealed partial class RateLimitingMiddleware
             }
         }
 
-        return CheckRateLimitMemory(counterKey, resolved);
+        return (CheckRateLimitMemory(counterKey, resolved), true);
     }
 
     /// <summary>

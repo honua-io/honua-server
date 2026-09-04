@@ -29,7 +29,7 @@ namespace Honua.Infrastructure.Caching;
 /// blocking operations in disposal. Always use 'await using' syntax to ensure
 /// proper async cleanup and prevent thread pool starvation.
 /// </remarks>
-internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, ICacheStorageMetricsProvider, IDisposable
+internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, ICacheStorageMetricsProvider, IDisposable, IAsyncDisposable
 {
     private const string CacheType = "layer-catalog";
     private const string HealthCheckKey = "__health_check__";
@@ -53,7 +53,9 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CacheWriteInfo> _writeMetadata = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _distributedIndexLock = new(1, 1);
-    private readonly SemaphoreSlim _healthCheckLock = new(1, 1);
+    private readonly object _healthProbeStateLock = new();
+    private Task<bool>? _activeHealthProbe;
+    private Task? _disposeTask;
     private readonly string _healthCheckKey = HealthCheckKey + ":" + Guid.NewGuid().ToString("N");
     // Bounded set of invalidation keys that failed to reach Redis during an outage and
     // must be replayed when the connection is restored.
@@ -682,9 +684,18 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     /// <inheritdoc />
     public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
     {
-        // A caller may stop waiting while a Redis command is still running. Keep
-        // the probe lock until those commands finish so cleanup cannot race a retry.
-        return ProbeCacheAsync(cancellationToken).WaitAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_healthProbeStateLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            // Overlapping callers share an actual in-flight round-trip. Cancellation
+            // stops only that caller's wait; disposal drains the probe and its cleanup.
+            if (_activeHealthProbe is null || _activeHealthProbe.IsCompleted)
+            {
+                _activeHealthProbe = ProbeCacheAsync(CancellationToken.None);
+            }
+            return _activeHealthProbe.WaitAsync(cancellationToken);
+        }
     }
 
     private async Task<bool> ProbeCacheAsync(CancellationToken cancellationToken)
@@ -697,13 +708,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         // Readiness must probe the configured dependency on every call. A usable local
         // cache or an open retry interval says nothing about distributed-state availability.
-        await _healthCheckLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Exercise the ordinary indexed write/read/delete path, including
             // per-command transaction failures. Expiry bounds interrupted probes.
             // One reserved entry per service instance bounds interrupted probes and
-            // separates replicas; the lock serializes overlapping local probes.
+            // separates replicas; overlapping local callers share this probe.
             var healthKey = GetPrefixedKey(_healthCheckKey);
             byte[]? cachedValue;
             if (_redis != null)
@@ -729,11 +739,19 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     await _distributedCache!.SetAsync(healthKey, HealthCheckValue,
                         new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
                         cancellationToken).ConfigureAwait(false);
+                    await TrackIndexedKeyAsync(healthKey, cancellationToken).ConfigureAwait(false);
                     cachedValue = await _distributedCache.GetAsync(healthKey, cancellationToken).ConfigureAwait(false);
                 }
                 finally
                 {
-                    await _distributedCache!.RemoveAsync(healthKey, CancellationToken.None).ConfigureAwait(false);
+                    try
+                    {
+                        await _distributedCache!.RemoveAsync(healthKey, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        await RemoveIndexedKeyAsync(healthKey, CancellationToken.None).ConfigureAwait(false);
+                    }
                 }
             }
 
@@ -749,10 +767,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         {
             RedisCacheServiceLog.RedisHealthCheckFailed(_logger, ex);
             return false;
-        }
-        finally
-        {
-            _healthCheckLock.Release();
         }
     }
 
@@ -1377,20 +1391,45 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
 
-        _disposed = true;
-        _cleanupTimer.Dispose();
-        _fallbackCache.Clear();
-        _writeMetadata.Clear();
-        _distributedIndexLock.Dispose();
-        _healthCheckLock.Dispose();
-        foreach (var semaphore in _keyLocks.Values)
+    public ValueTask DisposeAsync()
+    {
+        lock (_healthProbeStateLock)
         {
-            semaphore.Dispose();
+            if (_disposeTask is not null)
+            {
+                return new ValueTask(_disposeTask);
+            }
+
+            _disposed = true;
+            _disposeTask = DrainAndDisposeAsync(_activeHealthProbe);
+            return new ValueTask(_disposeTask);
         }
-        _keyLocks.Clear();
+    }
+
+    private async Task DrainAndDisposeAsync(Task<bool>? healthProbe)
+    {
+        try
+        {
+            if (healthProbe is not null)
+            {
+                await healthProbe.ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _cleanupTimer.Dispose();
+            _fallbackCache.Clear();
+            _writeMetadata.Clear();
+            _distributedIndexLock.Dispose();
+            foreach (var semaphore in _keyLocks.Values)
+            {
+                semaphore.Dispose();
+            }
+            _keyLocks.Clear();
+        }
     }
 
     private sealed class KeyLock : IAsyncDisposable, IDisposable
