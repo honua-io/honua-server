@@ -123,14 +123,47 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         using var successResponse = response!;
         if (!successResponse.IsSuccessStatusCode)
         {
-            var body = await successResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var (body, bodyTimedOut, bodyFailure, _) = await StudioAiProxyHttpStreamHelpers
+                .ReadErrorBodySafeAsync(successResponse.Content, timeoutCts.Token, cancellationToken)
+                .ConfigureAwait(false);
+            if (bodyTimedOut)
+            {
+                StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
+                yield return Error(model, "Provider request timed out.", stopwatch.ElapsedMilliseconds);
+                yield break;
+            }
+
+            if (bodyFailure is not null)
+            {
+                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, bodyFailure);
+                yield return Error(model, "Provider response failed.", stopwatch.ElapsedMilliseconds);
+                yield break;
+            }
+
             StudioAiProxyLog.ProviderHttpError(_logger, ProviderLabel, (int)successResponse.StatusCode, Truncate(body, 500));
             yield return Error(model, $"Provider returned HTTP {(int)successResponse.StatusCode}.");
             yield break;
         }
 
-        await using var stream = await successResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
+        var (stream, openTimedOut, openFailure) = await StudioAiProxyHttpStreamHelpers
+            .OpenStreamSafeAsync(successResponse.Content, timeoutCts.Token, cancellationToken)
+            .ConfigureAwait(false);
+        if (openTimedOut)
+        {
+            StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
+            yield return Error(model, "Provider request timed out.", stopwatch.ElapsedMilliseconds);
+            yield break;
+        }
+
+        if (openFailure is not null)
+        {
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, openFailure);
+            yield return Error(model, "Provider response failed.", stopwatch.ElapsedMilliseconds);
+            yield break;
+        }
+
+        await using var responseStream = stream!;
+        using var reader = new StreamReader(responseStream, Encoding.UTF8);
 
         string? toolCallId = null;
         StringBuilder? toolArgsBuffer = null;
