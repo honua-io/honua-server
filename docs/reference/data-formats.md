@@ -14,7 +14,7 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | GPX | `.gpx` | GPS exchange format. |
 | KML / KMZ | `.kml`, `.kmz` | Keyhole Markup Language, plain or zipped. |
 | WKT | `.wkt` | Well-known text geometries. |
-| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. |
+| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. |
 | FlatGeobuf | `.fgb` | Compact binary format. |
 | File Geodatabase | `.gdb.zip` | Zipped Esri `.gdb` directory. |
 | GeoParquet | `.parquet`, `.geoparquet` | Apache Parquet with WKB geometry encoding. |
