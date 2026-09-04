@@ -304,9 +304,12 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_partial_receipt");
         try
         {
-            var firstPage = await File.ReadAllTextAsync(Path.Combine(
+            // All segments after AppContext.BaseDirectory are fixed literals and can never be rooted,
+            // so Path.Combine cannot drop earlier segments here (cs/path-combine false positive);
+            // Path.Join never discards them regardless.
+            var firstPage = await File.ReadAllTextAsync(Path.Join(
                 AppContext.BaseDirectory, "TestData", "ImportAdversarial", "wfs-page-one.geojson"));
-            var truncatedPage = await File.ReadAllTextAsync(Path.Combine(
+            var truncatedPage = await File.ReadAllTextAsync(Path.Join(
                 AppContext.BaseDirectory, "TestData", "ImportAdversarial", "wfs-page-two-truncated.json"));
             using var client = new HttpClient(new SequencedWfsHandler(firstPage, truncatedPage));
             var result = await CreateService(client, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
@@ -350,7 +353,8 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
                 }]
             };
 
-            var response = await File.ReadAllTextAsync(Path.Combine(
+            // Fixed literal segments after AppContext.BaseDirectory; see the note above on Path.Join.
+            var response = await File.ReadAllTextAsync(Path.Join(
                 AppContext.BaseDirectory, "TestData", "ImportAdversarial", "wfs-long-name.geojson"));
             using var firstClient = new HttpClient(new FakeWfsHandler(response));
             var firstResult = await CreateService(firstClient, inventory).ImportFeaturesAsync(new OgcWfsImportRequest

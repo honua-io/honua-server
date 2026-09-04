@@ -357,7 +357,10 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 seedResult.Success.Should().BeTrue(seedResult.ErrorMessage);
             }
 
-            await using var replacement = File.OpenRead(Path.Combine(
+            // All segments after AppContext.BaseDirectory are fixed literals and can never be rooted,
+            // so Path.Combine cannot drop earlier segments here (cs/path-combine false positive);
+            // Path.Join never discards them regardless.
+            await using var replacement = File.OpenRead(Path.Join(
                 AppContext.BaseDirectory, "TestData", "ImportAdversarial", "overwrite-existing-false.geojson"));
             var result = await service.ImportFileAsync(new ImportRequest
             {
@@ -425,7 +428,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 seedResult.Success.Should().BeTrue(seedResult.ErrorMessage);
             }
 
-            await using var hostile = File.OpenRead(Path.Combine(
+            // Fixed literal segments after AppContext.BaseDirectory; see the note above on Path.Join.
+            await using var hostile = File.OpenRead(Path.Join(
                 AppContext.BaseDirectory, "TestData", "ImportAdversarial", "mixed-validity-replace.geojson"));
             var result = await service.ImportFileAsync(new ImportRequest
             {
@@ -481,7 +485,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 new NoopPerformanceMonitor(),
                 NullLogger<StreamingFileImportService>.Instance);
 
-            firstStream = new GateStream(await File.ReadAllBytesAsync(Path.Combine(
+            // Fixed literal segments after AppContext.BaseDirectory; see the note above on Path.Join.
+            firstStream = new GateStream(await File.ReadAllBytesAsync(Path.Join(
                 AppContext.BaseDirectory, "TestData", "ImportAdversarial", "concurrent-replace.wkt")));
             firstTask = firstService.ImportFileAsync(new ImportRequest
             {
@@ -527,14 +532,12 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             firstStream?.Release();
             if (firstTask is not null)
             {
-                try
-                {
-                    await firstTask;
-                }
-                catch
-                {
-                    // The assertion above owns the expected result; cleanup must still drop the isolated schema.
-                }
+                // The assertions above own the expected result; this only drains the in-flight import
+                // so the schema drop below cannot race it. Task.WhenAny completes without rethrowing,
+                // and reading Exception marks a fault observed, so a failing import can neither mask
+                // the real assertion failure nor resurface as an UnobservedTaskException.
+                await Task.WhenAny(firstTask);
+                _ = firstTask.Exception;
             }
 
             await fixture.DropSchemaAsync(schema);
