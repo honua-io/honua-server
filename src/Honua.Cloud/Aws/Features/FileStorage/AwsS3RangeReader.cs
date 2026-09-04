@@ -100,8 +100,15 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
     /// <inheritdoc />
     public async Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
-        var metadata = await _client.GetObjectMetadataAsync(bucket, key, cancellationToken).ConfigureAwait(false);
-        return metadata.ContentLength;
+        try
+        {
+            var metadata = await _client.GetObjectMetadataAsync(bucket, key, cancellationToken).ConfigureAwait(false);
+            return metadata.ContentLength;
+        }
+        catch (AmazonS3Exception ex) when (IsNotFound(ex))
+        {
+            throw new FileNotFoundException($"S3 object '{key}' was not found in bucket '{bucket}'.", ex);
+        }
     }
 
     /// <inheritdoc />

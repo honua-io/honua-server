@@ -128,6 +128,8 @@ public sealed record ZarrAxis(
 /// store declares no resolvable time axis.</param>
 /// <param name="Axes">Additional non-spatial, non-temporal coordinate axes
 /// (vertical/elevation/named) the store declares; empty when none.</param>
+/// <param name="YAxisAscending">True when storage rows increase from south to north;
+/// false for the usual north-up row order.</param>
 public sealed record ZarrStoreMetadata(
     ZarrFormatVersion ZarrFormat,
     int Srid,
@@ -138,7 +140,8 @@ public sealed record ZarrStoreMetadata(
     string? SpatialYDimension,
     string? TemporalDimension,
     TemporalExtent? Temporal = null,
-    ZarrAxis[]? Axes = null)
+    ZarrAxis[]? Axes = null,
+    bool YAxisAscending = false)
 {
     /// <summary>
     /// Additional coordinate axes declared on the store; never null.

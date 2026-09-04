@@ -17,6 +17,48 @@ namespace Honua.Server.Tests.Features.Infrastructure.Authentication;
 
 public sealed class LayerAccessAuthorizerTests
 {
+    [Theory]
+    [InlineData(true, "tenant-a", "reader", true)]
+    [InlineData(false, "tenant-a", "reader", true)]
+    [InlineData(true, "tenant-b", "reader", false)]
+    [InlineData(false, "tenant-b", "reader", false)]
+    [InlineData(true, "tenant-a", "other", false)]
+    [InlineData(false, "tenant-a", "other", false)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task AuthorizePublicationAsync_DifferentStorageId_EnforcesResourceAndTenantPolicy(
+        bool useHttpContext, string publicationTenant, string role, bool expectedAllowed)
+    {
+        var graph = BuildGraph(storageLayerId: 700, publicationTenant);
+        await using var services = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(new StubGraphProvider(graph))
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "user-a"),
+            new Claim(ClaimTypes.Role, role),
+            new Claim("tenant_id", "tenant-a"),
+        ], "test"));
+        var accessor = new HttpContextAccessor
+        {
+            HttpContext = useHttpContext
+                ? new DefaultHttpContext { RequestServices = services, User = principal }
+                : null,
+        };
+        var authorizer = new LayerAccessAuthorizer(
+            accessor, services.GetRequiredService<IServiceScopeFactory>());
+
+        var decision = await authorizer.AuthorizePublicationAsync(
+            principal,
+            graph.Graph.Publications.Single(),
+            graph.Graph.Resources.Single(),
+            graph.Graph.Services.Single(),
+            AuthorizationOperation.Query);
+
+        decision.IsAllowed.Should().Be(expectedAllowed);
+    }
+
     [UnitTest]
     public async Task AuthorizeLayerAsync_ForeignPublicationCannotFallBackToUnscopedResourcePolicy()
     {

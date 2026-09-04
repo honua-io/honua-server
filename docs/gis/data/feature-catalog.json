@@ -4944,7 +4944,8 @@
       "protocol": "http-route",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_LayerWithoutServableCoverage_Returns404"
+        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_LayerWithoutServableCoverage_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_WithoutAuthentication_Returns401BeforeStoreLookup"
       ],
       "proof_ledger_surface": "datacube-tiles",
       "maturity": "implemented",
