@@ -342,17 +342,21 @@ internal sealed class GeometryServiceHandler(
 
             // Parse spatial references
             var (inSr, inSrError) = await ResolveRequiredSpatialReferenceAsync(values, "inSR", ct);
-            if (inSrError is not null)
+            if (inSrError is not null || inSr is not { } inSrid)
             {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "project", inSrError);
-                return CreateError(context, 400, inSrError);
+                var error = inSrError
+                    ?? "Parameter 'inSR' must be a valid spatial reference WKID, EPSG code, CRS URI, WKT string, or spatial reference object.";
+                GeometryServiceLog.InvalidGeometryInput(_logger, "project", error);
+                return CreateError(context, 400, error);
             }
 
             var (outSr, outSrError) = await ResolveRequiredSpatialReferenceAsync(values, "outSR", ct);
-            if (outSrError is not null)
+            if (outSrError is not null || outSr is not { } outSrid)
             {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "project", outSrError);
-                return CreateError(context, 400, outSrError);
+                var error = outSrError
+                    ?? "Parameter 'outSR' must be a valid spatial reference WKID, EPSG code, CRS URI, WKT string, or spatial reference object.";
+                GeometryServiceLog.InvalidGeometryInput(_logger, "project", error);
+                return CreateError(context, 400, error);
             }
 
             // GeometryServer names these parameters `transformation` and `transformForward`.
@@ -378,10 +382,10 @@ internal sealed class GeometryServiceHandler(
             var datumCatalog = context.RequestServices
                 .GetRequiredService<Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>();
             var transformationInSr = await _spatialReferenceResolver
-                .ResolveGeodeticBaseSridAsync(inSr!.Value, ct)
+                .ResolveGeodeticBaseSridAsync(inSrid, ct)
                 .ConfigureAwait(false);
             var transformationOutSr = await _spatialReferenceResolver
-                .ResolveGeodeticBaseSridAsync(outSr!.Value, ct)
+                .ResolveGeodeticBaseSridAsync(outSrid, ct)
                 .ConfigureAwait(false);
             if (!GeoServicesDatumTransformationResolver.TryResolveWithDirection(
                     datumCatalog,
@@ -400,14 +404,19 @@ internal sealed class GeometryServiceHandler(
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                InSR = inSr!.Value,
-                OutSR = outSr!.Value,
-                // A catalog no-op expresses an identity datum shift. When either endpoint is
-                // projected, retain the ordinary SRID projection rather than replacing that
-                // projection with a stand-alone no-op pipeline.
-                DatumTransformation = transformationInSr != inSr.Value || transformationOutSr != outSr.Value
-                    ? datumSelection is { ProjPipeline: "+proj=noop" } ? null : datumSelection
-                    : datumSelection
+                InSR = inSrid,
+                OutSR = outSrid,
+                // PostGIS' 3-argument ST_Transform overload accepts a source CRS string, not
+                // a +proj=pipeline operation. Until a pipeline-capable execution path exists,
+                // use the ordinary SRID projection for non-identity catalog selections. A
+                // catalog no-op is safe for geographic endpoints; projected endpoints still
+                // need the ordinary SRID projection to perform the CRS conversion.
+                DatumTransformation = datumSelection is { ProjPipeline: { Length: > 0 } pipeline }
+                    && !string.Equals(pipeline, "+proj=noop", StringComparison.Ordinal)
+                    ? null
+                    : transformationInSr != inSrid || transformationOutSr != outSrid
+                        ? null
+                        : datumSelection
             };
 
             GeometryServiceLog.RequestParsed(_logger, "project", parameters.GeometryJsonStrings.Length, parameters.GeometryType);

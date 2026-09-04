@@ -336,6 +336,35 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.Project)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_NonIdentityTransformation_FallsBackToSridProjection()
+    {
+        // WKID 1241 is a cataloged +proj=pipeline operation. PostGIS cannot accept an
+        // operation pipeline in the source-CRS argument of its 3-argument ST_Transform
+        // overload, so this request must use the ordinary SRID projection path.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -100.0, "y": 40.0}]
+            },
+            "inSR": 4267,
+            "outSR": 4269,
+            "transformation": 1241
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("geometries").GetArrayLength().Should().Be(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_WithUnsupportedEsriTransformation_Returns400()
     {
         var body = """
