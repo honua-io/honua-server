@@ -18076,6 +18076,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_InvalidSrid_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_JsonSpatialReference_WithLatestWkid_ParsesCorrectly",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_JsonSpatialReference_WithName_ParsesCorrectly",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_NonIdentityTransformationPipeline_UsesSridProjection",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_ProjectedSourceTransformation_ResolvesAgainstGeodeticBase",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_ReverseTransformationDirection_MatchesPyprojIdentity",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_SameSrid_ReturnsUnchanged",

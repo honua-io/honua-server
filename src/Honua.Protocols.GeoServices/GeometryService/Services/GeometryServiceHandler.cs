@@ -355,6 +355,9 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, outSrError);
             }
 
+            var inputSrid = inSr.GetValueOrDefault();
+            var outputSrid = outSr.GetValueOrDefault();
+
             // GeometryServer names these parameters `transformation` and `transformForward`.
             // Continue accepting Honua's earlier `datumTransformation` alias for compatibility.
             var transformationValue = GeometryServiceRequestParser.GetValue(values, "transformation");
@@ -378,10 +381,10 @@ internal sealed class GeometryServiceHandler(
             var datumCatalog = context.RequestServices
                 .GetRequiredService<Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>();
             var transformationInSr = await _spatialReferenceResolver
-                .ResolveGeodeticBaseSridAsync(inSr!.Value, ct)
+                .ResolveGeodeticBaseSridAsync(inputSrid, ct)
                 .ConfigureAwait(false);
             var transformationOutSr = await _spatialReferenceResolver
-                .ResolveGeodeticBaseSridAsync(outSr!.Value, ct)
+                .ResolveGeodeticBaseSridAsync(outputSrid, ct)
                 .ConfigureAwait(false);
             if (!GeoServicesDatumTransformationResolver.TryResolveWithDirection(
                     datumCatalog,
@@ -400,14 +403,18 @@ internal sealed class GeometryServiceHandler(
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                InSR = inSr!.Value,
-                OutSR = outSr!.Value,
-                // A catalog no-op expresses an identity datum shift. When either endpoint is
-                // projected, retain the ordinary SRID projection rather than replacing that
-                // projection with a stand-alone no-op pipeline.
-                DatumTransformation = transformationInSr != inSr.Value || transformationOutSr != outSr.Value
-                    ? datumSelection is { ProjPipeline: "+proj=noop" } ? null : datumSelection
-                    : datumSelection
+                InSR = inputSrid,
+                OutSR = outputSrid,
+                // PostGIS' text overload treats this string as a target CRS, not as a
+                // stand-alone coordinate-operation pipeline. Preserve the catalog selection
+                // for pair/direction validation, but use ordinary SRID projection whenever
+                // the operation is non-identity or an endpoint is projected; PROJ then picks
+                // the best available operation instead of failing to parse a pipeline as a CRS.
+                DatumTransformation = transformationInSr == inputSrid &&
+                                      transformationOutSr == outputSrid &&
+                                      datumSelection is { ProjPipeline: "+proj=noop" }
+                    ? datumSelection
+                    : null
             };
 
             GeometryServiceLog.RequestParsed(_logger, "project", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
