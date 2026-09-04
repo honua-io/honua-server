@@ -247,7 +247,7 @@ release_barrier() {
 }
 
 barrier_record() {
-  local job="$1" barrier="$2" suffix="$3" path
+  local job="$1" barrier="$2" suffix="${3:-}" path
   [[ -n "$suffix" ]] || suffix=ready
   path="$(barrier_directory "$job")/$barrier.$suffix.json"
   [[ -s "$path" ]] && jq -c . "$path" || printf 'null'
@@ -521,6 +521,7 @@ run_timeout_live() {
   local mode="$1" job record terminal state retry_code result_code failed_terminal_count
   local request_at signal_file object_count_before object_count_after process_ready child_pid worker_container child_alive signal_deadline
   local behavior="native production executor"
+  export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
   export HONUA_GP_TIMEOUT_SECONDS=2
   if [[ "$mode" == ignore-cancellation ]]; then
     export HONUA_GP_QUALIFICATION_EXECUTOR_MODE=ignore-cancellation
@@ -621,9 +622,10 @@ run_timeout_live() {
     --argjson transitions "$(jq -s '.' "$scenario_transition_file")" \
     --arg pending "$pending" --arg claimed "$claimed_score" \
     --argjson before "$object_count_before" --argjson after "$object_count_after" \
-    --argjson child_alive "$child_alive" \
+    --argjson child_alive "$child_alive" --argjson failed_terminal_count "$failed_terminal_count" \
     '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,artifact_references:($record.artifactReferences // []),timeout_source:"supported workload policy batch.timeout_seconds",cancellation_source:(if $behavior|startswith("native production executor ignores") then "OGC DELETE via peer" else null end),signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,terminal_failure_count:$failed_terminal_count,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},retry_race_http:$retry_code,result_visibility:{after_terminal:$result_code},object_inventory:{before:$before,after_retention_cleanup:$after}}')"
   unset HONUA_GP_QUALIFICATION_EXECUTOR_MODE
+  unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
   export HONUA_GP_TIMEOUT_SECONDS=3600
   compose up -d --force-recreate server server-peer worker >/dev/null || return 1
   wait_ready || return 1
@@ -929,10 +931,14 @@ else
     if [[ "${lane}" == lifecycle ]]; then
       run_scenario sync run_sync || failures=$((failures + 1))
       run_scenario async run_async_baseline || failures=$((failures + 1))
+      export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+      compose up -d --force-recreate worker >/dev/null || failures=$((failures + 1))
       run_scenario cancel-claimed run_cancel_barrier claimed || failures=$((failures + 1))
       run_scenario cancel-native-process-started run_cancel_barrier native-process-started || failures=$((failures + 1))
       run_scenario cancel-output-bytes-written-unpublished run_cancel_barrier output-bytes-written-unpublished || failures=$((failures + 1))
       run_scenario cancel-artifact-reference-published-terminal-cas-pending run_cancel_barrier artifact-reference-published-terminal-cas-pending || failures=$((failures + 1))
+      unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
+      compose up -d --force-recreate worker >/dev/null || failures=$((failures + 1))
       run_scenario idempotency run_idempotency || failures=$((failures + 1))
       run_scenario retry run_retry || failures=$((failures + 1))
       run_scenario timeout-cooperative run_timeout_cooperative || failures=$((failures + 1))
