@@ -42,6 +42,29 @@ public sealed class GeoPackageAttributeRoundtripTests
     }
 
     [Theory]
+    [InlineData(false, "long")]
+    [InlineData(true, "long")]
+    [InlineData(false, "double")]
+    [InlineData(true, "double")]
+    [InlineData(false, "decimal")]
+    [InlineData(true, "decimal")]
+    public async Task ImportExport_GeoServicesEpochValues_PreserveTemporalMeaning(bool timestamp, string numericType)
+    {
+        var instant = new DateTimeOffset(2026, 9, 4, 0, 0, 0, TimeSpan.Zero);
+        if (timestamp)
+            instant = instant.AddHours(1).AddMilliseconds(123);
+        var milliseconds = instant.ToUnixTimeMilliseconds();
+        object epoch = numericType switch
+        {
+            "double" => (double)milliseconds,
+            "decimal" => (decimal)milliseconds,
+            _ => (object)milliseconds
+        };
+        await RoundtripAsync([new("value", timestamp ? ExportFieldType.DateTime : ExportFieldType.Date, true)],
+            [timestamp ? (object)instant : DateOnly.FromDateTime(instant.UtcDateTime)], epoch);
+    }
+
+    [Theory]
     [InlineData(false, "not-a-date")]
     [InlineData(false, "2026-02-30")]
     [InlineData(true, "not-a-timestamp")]
@@ -75,7 +98,7 @@ public sealed class GeoPackageAttributeRoundtripTests
         }
     }
 
-    private static async Task RoundtripAsync(ExportField[] fields, object[] values)
+    private static async Task RoundtripAsync(ExportField[] fields, object[] values, object? geoServicesEpoch = null)
     {
         var scratch = Path.Join(Path.GetTempPath(), $"honua-gpkg-roundtrip-{Guid.NewGuid():N}");
         Directory.CreateDirectory(scratch);
@@ -125,6 +148,9 @@ public sealed class GeoPackageAttributeRoundtripTests
             var imported = await ReadAsync(input);
             Assert.Equal(2, imported.Count);
             AssertAttributes(imported[0], fields, values);
+            // GeoServices edits may store accepted date fields as epoch milliseconds.
+            if (geoServicesEpoch is not null)
+                imported[0].Attributes[fields[0].Name] = geoServicesEpoch;
             Assert.Equal(2, await GeoPackageExportWriter.WriteAsync(output, Rows(imported, fields), fields,
                 ExportGeometryType.Point, 4326, "EPSG:4326", null, CancellationToken.None));
             var roundtrip = await ReadAsync(output);

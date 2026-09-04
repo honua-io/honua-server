@@ -387,6 +387,7 @@ internal static class GeoPackageExportWriter
             ExportFieldType.Date when value is DateOnly date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ExportFieldType.Date when value is DateTime dt => dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ExportFieldType.Date when value is DateTimeOffset dto => dto.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ExportFieldType.Date when IsEpochValue(value) => EpochToUtc(value).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ExportFieldType.Time when value is TimeSpan ts => ts.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),
             _ => value
         };
@@ -397,6 +398,7 @@ internal static class GeoPackageExportWriter
         var utc = value switch
         {
             DateTimeOffset dto => dto.UtcDateTime,
+            _ when IsEpochValue(value) => EpochToUtc(value),
             DateTime dt => dt.Kind == DateTimeKind.Unspecified
                 ? DateTime.SpecifyKind(dt, DateTimeKind.Utc)
                 : dt.ToUniversalTime(),
@@ -407,6 +409,33 @@ internal static class GeoPackageExportWriter
 
         // DateTime's UTC round-trip format emits Z and retains fractional precision.
         return utc.ToString("O", CultureInfo.InvariantCulture);
+    }
+
+    private static bool IsEpochValue(object value) => value is
+        byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal;
+
+    private static DateTime EpochToUtc(object value)
+    {
+        try
+        {
+            // Retain sub-millisecond precision instead of rounding numeric edits to Int64 milliseconds.
+            var milliseconds = value switch
+            {
+                double number => decimal.Parse(number.ToString("R", CultureInfo.InvariantCulture),
+                    NumberStyles.Float, CultureInfo.InvariantCulture),
+                float number => decimal.Parse(number.ToString("R", CultureInfo.InvariantCulture),
+                    NumberStyles.Float, CultureInfo.InvariantCulture),
+                _ => Convert.ToDecimal(value, CultureInfo.InvariantCulture)
+            };
+            var ticks = milliseconds * TimeSpan.TicksPerMillisecond;
+            if (ticks != decimal.Truncate(ticks))
+                throw new InvalidDataException("GeoPackage epoch timestamps exceed supported tick precision.");
+            return DateTime.UnixEpoch.AddTicks(checked((long)ticks));
+        }
+        catch (Exception exception) when (exception is OverflowException or FormatException or ArgumentOutOfRangeException)
+        {
+            throw new InvalidDataException("GeoPackage epoch timestamps must contain a finite value within the supported date range.", exception);
+        }
     }
 
     private static bool TryDetectGeometryDimensions(WkbReader reader, byte[] wkb, out bool hasZ, out bool hasM)
