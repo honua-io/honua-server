@@ -61,6 +61,21 @@ public sealed class DatumTransformationParserTests
     }
 
     [UnitTest]
+    public void TryParse_SingleWkidObject_ParsesStandardTransformationShape()
+    {
+        DatumTransformationParser.TryParse(
+            """{"wkid":108001}""",
+            out var request,
+            out var error).Should().BeTrue();
+
+        error.Should().BeNull();
+        request.Should().Be(new DatumTransformationRequest(
+            Wkid: 108001,
+            TransformForward: true,
+            TransformForwardSpecified: false));
+    }
+
+    [UnitTest]
     public void TryResolve_ReverseComposite_KeepsCatalogInverseDirection()
     {
         const string composite = """{"geoTransforms":[{"wkid":108001,"transformForward":false}]}""";

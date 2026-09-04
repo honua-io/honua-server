@@ -3,7 +3,9 @@
 
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
@@ -14,6 +16,10 @@ namespace Honua.Infrastructure.Services;
 /// </summary>
 internal class SpatialReferenceResolver
 {
+    private static readonly Regex _wktAuthorityNodeRegex = new(
+        @"(?:AUTHORITY|ID)\s*\[\s*""EPSG""\s*,\s*""?(\d{3,6})""?\s*\]",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ICrsRegistry _crsRegistry;
 
@@ -46,6 +52,113 @@ internal class SpatialReferenceResolver
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves a projected CRS to the EPSG identifier of its geodetic base CRS.
+    /// Geographic and unresolvable definitions retain their original SRID.
+    /// </summary>
+    public async Task<int> ResolveGeodeticBaseSridAsync(
+        int srid,
+        CancellationToken cancellationToken = default)
+    {
+        var definition = await _crsRegistry.ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false);
+        if (!definition.HasValue || definition.Value.IsGeographic)
+        {
+            return srid;
+        }
+
+        if (TryGetGeodeticBaseSridFromWkt(definition.Value.Wkt, out var baseSrid) ||
+            TryGetGeodeticBaseSridFromProjJson(srid, out baseSrid))
+        {
+            return baseSrid;
+        }
+
+        return srid;
+    }
+
+    private static bool TryGetGeodeticBaseSridFromProjJson(int srid, out int baseSrid)
+    {
+        baseSrid = 0;
+        if (!GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson))
+        {
+            return false;
+        }
+
+        using var document = JsonDocument.Parse(projJson);
+        var root = document.RootElement;
+        return root.TryGetProperty("base_crs", out var baseCrs) &&
+               baseCrs.TryGetProperty("id", out var id) &&
+               id.TryGetProperty("authority", out var authority) &&
+               string.Equals(authority.GetString(), "EPSG", StringComparison.OrdinalIgnoreCase) &&
+               id.TryGetProperty("code", out var code) &&
+               code.TryGetInt32(out baseSrid);
+    }
+
+    private static bool TryGetGeodeticBaseSridFromWkt(string? wkt, out int baseSrid)
+    {
+        baseSrid = 0;
+        if (string.IsNullOrWhiteSpace(wkt))
+        {
+            return false;
+        }
+
+        foreach (var keyword in new[] { "BASEGEOGCRS", "BASEGEODCRS", "GEOGCS", "GEOGCRS", "GEODCRS" })
+        {
+            if (!TryExtractFirstWktMember(wkt, keyword, out var member))
+            {
+                continue;
+            }
+
+            var matches = _wktAuthorityNodeRegex.Matches(member);
+            if (matches.Count > 0 &&
+                int.TryParse(matches[^1].Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out baseSrid))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryExtractFirstWktMember(string wkt, string keyword, out string member)
+    {
+        member = string.Empty;
+        var start = wkt.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+        while (start >= 0)
+        {
+            var open = start + keyword.Length;
+            while (open < wkt.Length && char.IsWhiteSpace(wkt[open]))
+            {
+                open++;
+            }
+
+            if (open < wkt.Length && wkt[open] == '[')
+            {
+                var depth = 0;
+                var inQuote = false;
+                for (var i = open; i < wkt.Length; i++)
+                {
+                    if (wkt[i] == '"')
+                    {
+                        inQuote = !inQuote;
+                    }
+                    else if (!inQuote && wkt[i] == '[')
+                    {
+                        depth++;
+                    }
+                    else if (!inQuote && wkt[i] == ']' && --depth == 0)
+                    {
+                        member = wkt.Substring(start, i - start + 1);
+                        return true;
+                    }
+                }
+            }
+
+            start = wkt.IndexOf(keyword, start + keyword.Length, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
     }
 
     private async Task<int?> EnsureSupportedAsync(int? srid, CancellationToken cancellationToken)

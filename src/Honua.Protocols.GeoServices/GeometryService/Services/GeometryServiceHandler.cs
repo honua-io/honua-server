@@ -377,12 +377,18 @@ internal sealed class GeometryServiceHandler(
 
             var datumCatalog = context.RequestServices
                 .GetRequiredService<Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>();
+            var transformationInSr = await _spatialReferenceResolver
+                .ResolveGeodeticBaseSridAsync(inSr!.Value, ct)
+                .ConfigureAwait(false);
+            var transformationOutSr = await _spatialReferenceResolver
+                .ResolveGeodeticBaseSridAsync(outSr!.Value, ct)
+                .ConfigureAwait(false);
             if (!GeoServicesDatumTransformationResolver.TryResolveWithDirection(
                     datumCatalog,
                     transformationValue,
                     transformForward,
-                    inSr!.Value,
-                    outSr!.Value,
+                    transformationInSr,
+                    transformationOutSr,
                     out var datumSelection,
                     out var datumError))
             {
@@ -396,7 +402,12 @@ internal sealed class GeometryServiceHandler(
                 GeometryType = geomType,
                 InSR = inSr!.Value,
                 OutSR = outSr!.Value,
-                DatumTransformation = datumSelection
+                // A catalog no-op expresses an identity datum shift. When either endpoint is
+                // projected, retain the ordinary SRID projection rather than replacing that
+                // projection with a stand-alone no-op pipeline.
+                DatumTransformation = transformationInSr != inSr.Value || transformationOutSr != outSr.Value
+                    ? datumSelection is { ProjPipeline: "+proj=noop" } ? null : datumSelection
+                    : datumSelection
             };
 
             GeometryServiceLog.RequestParsed(_logger, "project", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -1803,8 +1814,12 @@ internal sealed class GeometryServiceHandler(
 
             var parameters = new FindTransformationsParameters
             {
-                InSR = inSr!.Value,
-                OutSR = outSr!.Value,
+                InSR = await _spatialReferenceResolver
+                    .ResolveGeodeticBaseSridAsync(inSr!.Value, ct)
+                    .ConfigureAwait(false),
+                OutSR = await _spatialReferenceResolver
+                    .ResolveGeodeticBaseSridAsync(outSr!.Value, ct)
+                    .ConfigureAwait(false),
                 NumOfResults = numOfResults
             };
 

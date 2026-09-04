@@ -79,8 +79,11 @@ internal static class GeoServicesDatumTransformationResolver
         selection = null;
         errorMessage = null;
 
-        // No reprojection requested, or output equals the input SRID: nothing to do.
-        if (fromSrid == toSrid)
+        // No reprojection requested, or output equals the input SRID: nothing to do when
+        // the client did not request a transformation. An explicit WKID must still be
+        // parsed and validated: projected CRSs can share a geodetic base, and silently
+        // accepting a transformation that does not apply to that base pair is incorrect.
+        if (fromSrid == toSrid && string.IsNullOrWhiteSpace(datumTransformationValue))
         {
             return true;
         }
