@@ -337,6 +337,11 @@ internal static partial class FeatureServerEndpoints
     internal static string BuildServiceCapabilitiesV2(MetadataV2Service service, bool offlineSyncEnabled)
         => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled);
 
+    internal static string BuildServiceCapabilitiesV2(
+        MetadataV2Service service,
+        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications)
+        => BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads: false, offlineSyncEnabled: true);
+
     private static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
@@ -906,14 +911,15 @@ internal static partial class FeatureServerEndpoints
     private static bool ServiceSupportsEditingV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications)
-        => ServiceSupportsEditingV2(service) || publications.Any(pair =>
-            ServiceSupportsOperationV2(service, "Create", pair.Publication) ||
-            ServiceSupportsOperationV2(service, "Update", pair.Publication) ||
-            ServiceSupportsOperationV2(service, "Delete", pair.Publication));
+        => publications.Count == 0
+            ? ServiceSupportsEditingV2(service)
+            : publications.Any(pair =>
+                ServiceSupportsOperationV2(service, "Create", pair.Publication) ||
+                ServiceSupportsOperationV2(service, "Update", pair.Publication) ||
+                ServiceSupportsOperationV2(service, "Delete", pair.Publication));
 
     private static bool ServiceSupportsEditingV2(MetadataV2Service service, MetadataV2Publication publication)
-        => ServiceSupportsEditingV2(service) ||
-           ServiceSupportsOperationV2(service, "Create", publication) ||
+        => ServiceSupportsOperationV2(service, "Create", publication) ||
            ServiceSupportsOperationV2(service, "Update", publication) ||
            ServiceSupportsOperationV2(service, "Delete", publication);
 
@@ -941,12 +947,16 @@ internal static partial class FeatureServerEndpoints
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)>? publications = null)
     {
-        var supportsCreate = ServiceSupportsOperationV2(service, "Create") ||
-                             publications?.Any(pair => ServiceSupportsOperationV2(service, "Create", pair.Publication)) == true;
-        var supportsUpdate = ServiceSupportsOperationV2(service, "Update") ||
-                             publications?.Any(pair => ServiceSupportsOperationV2(service, "Update", pair.Publication)) == true;
-        var supportsDelete = ServiceSupportsOperationV2(service, "Delete") ||
-                             publications?.Any(pair => ServiceSupportsOperationV2(service, "Delete", pair.Publication)) == true;
+        var hasPublications = publications is { Count: > 0 };
+        var supportsCreate = hasPublications
+            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Create", pair.Publication))
+            : ServiceSupportsOperationV2(service, "Create");
+        var supportsUpdate = hasPublications
+            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Update", pair.Publication))
+            : ServiceSupportsOperationV2(service, "Update");
+        var supportsDelete = hasPublications
+            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Delete", pair.Publication))
+            : ServiceSupportsOperationV2(service, "Delete");
 
         if (supportsCreate)
         {

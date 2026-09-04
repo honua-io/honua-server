@@ -12,6 +12,7 @@ public sealed class FeatureServerLifecycleCapabilityTests
 {
     private static readonly string[] DeclaredCapabilities = ["Query", "Sync"];
     private static readonly string[] UpdateOnlyCapabilities = ["Query", "Update"];
+    private static readonly string[] AllEditCapabilities = ["Query", "Create", "Update", "Delete"];
 
     [Fact]
     public void BuildServiceCapabilities_WhenOfflineSyncDisabled_OmitsDeclaredSync()
@@ -52,5 +53,34 @@ public sealed class FeatureServerLifecycleCapabilityTests
         FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Create").Should().BeFalse();
         FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Update").Should().BeTrue();
         FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Delete").Should().BeFalse();
+    }
+
+    [Fact]
+    public void BuildServiceCapabilities_UsesValidatedPublicationCapabilitiesWhenPresent()
+    {
+        var service = new MetadataV2Service
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "Service" },
+            Options = new Dictionary<string, JsonElement>
+            {
+                ["capabilities"] = JsonSerializer.SerializeToElement(AllEditCapabilities)
+            }
+        };
+        var publication = new MetadataV2Publication
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "Publication" },
+            Capabilities = ["Query", "Update"]
+        };
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "Resource" }
+        };
+
+        FeatureServerEndpoints.BuildServiceCapabilitiesV2(service, [(publication, resource)])
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Should().Equal("Query", "Update", "Editing");
+        FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Create", publication).Should().BeFalse();
+        FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Update", publication).Should().BeTrue();
+        FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Delete", publication).Should().BeFalse();
     }
 }

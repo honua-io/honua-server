@@ -685,7 +685,7 @@ internal static partial class FeatureServerEndpoints
                 "rollbackOnFailure=true is not supported for multi-layer service applyEdits",
                 ["rollbackOnFailure=true only provides intra-layer atomicity. " +
                  "Multi-layer service-level edits cannot be rolled back atomically across layers. " +
-                 "Set rollbackOnFailure=false (or omit it) to allow partial commits, or submit each layer separately."]);
+                 "Set rollbackOnFailure=false to allow partial commits, or submit each layer separately."]);
         }
 
         var results = new ServiceLayerEditResult[orderedLayerIds.Count];
