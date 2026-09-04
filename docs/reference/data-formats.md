@@ -117,3 +117,5 @@ See the protocol pages for parameters: [vector tiles](protocols/vector-tiles.md)
 - [Import files guide](../guides/publish/import-files.md)
 - [Export data guide](../guides/query-analyze/export-data.md)
 - [Environment variables — imports and limits](configuration/environment-variables.md#imports-and-limits)
+
+CSV preserves quoted empty strings (`""`) and whitespace-only attribute values, including attribute-only rows. Unquoted empty fields remain missing/null. CSV export quotes empty strings so they remain distinct from null values on reimport.
