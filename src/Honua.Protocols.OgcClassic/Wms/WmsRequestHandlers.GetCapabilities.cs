@@ -543,6 +543,7 @@ internal static partial class WmsRequestHandlers
                 cancellationToken).ConfigureAwait(false) ?? rootExtent;
             await AppendWmsGeographicBoundsAsync(context, sb, layerExtent, "        ", isWms111).ConfigureAwait(false);
 
+            AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
             AppendWmsTemporalDimension(sb, layer, "        ", isWms111, temporalRanges);
 
             sb.AppendLine("        <MetadataURL type=\"TC211\">");

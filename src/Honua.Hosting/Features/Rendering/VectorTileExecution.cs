@@ -61,9 +61,14 @@ internal static class VectorTileExecution
             serviceId ?? string.Empty,
             layerId ?? storageLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             tileMatrixSetId ?? DefaultTileMatrixSetId);
-        var credentialed = context.User.Identity?.IsAuthenticated == true
-            || context.Request.Headers.ContainsKey(HeaderNames.Authorization)
-            || context.Request.Headers.ContainsKey("X-API-Key");
+        var isDevelopmentBypass = string.Equals(
+            context.User.FindFirst("auth_type")?.Value,
+            "dev-bypass",
+            StringComparison.Ordinal);
+        var credentialed = !isDevelopmentBypass &&
+            (context.User.Identity?.IsAuthenticated == true
+                || context.Request.Headers.ContainsKey(HeaderNames.Authorization)
+                || context.Request.Headers.ContainsKey("X-API-Key"));
         var cacheControl = $"{(credentialed ? "private" : "public")}, max-age={ttlSeconds}";
 
         var tileData = await tileProvider.GetMvtTileAsync(
