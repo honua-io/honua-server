@@ -36,7 +36,7 @@ public static class CapabilityGateResolver
 {
     /// <summary>
     /// Resolves whether the given descriptor is enabled for the context, applying the
-    /// experimental feature-flag precedence.
+    /// experimental feature-flag precedence when the descriptor requires opt-in.
     /// </summary>
     /// <param name="descriptor">
     /// The capability descriptor, or <c>null</c> when no capability with the requested

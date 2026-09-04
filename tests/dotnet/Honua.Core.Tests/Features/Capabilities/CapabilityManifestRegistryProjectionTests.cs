@@ -42,6 +42,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "temporal.animation-api",
         "serve.3d-tiles-scene",
         "serve.i3s-scene",
+        "serve.ogc-api-edr",
         "scene.catalog",
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
@@ -126,6 +127,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
 
     private static readonly string[] PreviewManifestCapabilityIds =
     [
+        "serve.ogc-api-edr",
         "sync.offline",
         "alerts.geofence",
         "realtime.feature-streams",
