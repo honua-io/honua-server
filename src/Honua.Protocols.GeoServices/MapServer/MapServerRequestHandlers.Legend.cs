@@ -479,6 +479,48 @@ internal static partial class MapServerEndpoints
             });
         }
 
+        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol) &&
+            defaultSymbol.ValueKind == JsonValueKind.Object)
+        {
+            var simpleDrawingInfo = BuildSimpleDrawingInfo(defaultSymbol);
+            if (!TryConvertDynamicLayerDrawingInfo(
+                    layer.LayerId,
+                    simpleDrawingInfo,
+                    layer.StyleLayerId,
+                    layer.LayerName,
+                    layer.GeometryType,
+                    geoServicesStyleConverter,
+                    out var simpleStyleJson,
+                    out error))
+            {
+                return true;
+            }
+
+            var styleLayer = SelectLegendStyleLayer(
+                StyleTranslator.ParseStyleLayers(simpleStyleJson),
+                layer.GeometryType);
+            if (styleLayer is not null)
+            {
+                var defaultLabel = renderer.TryGetProperty("defaultLabel", out var defaultLabelElement) &&
+                                   defaultLabelElement.ValueKind == JsonValueKind.String
+                    ? defaultLabelElement.GetString()
+                    : "Other";
+                var swatchBytes = SkiaMapRenderer.RenderLegendSwatch(
+                    styleLayer,
+                    layer.GeometryType,
+                    swatchWidth,
+                    swatchHeight);
+                entries.Add(new LegendEntry
+                {
+                    Label = defaultLabel,
+                    ImageData = Convert.ToBase64String(swatchBytes),
+                    ContentType = "image/png",
+                    Width = swatchWidth,
+                    Height = swatchHeight
+                });
+            }
+        }
+
         return entries.Count > 0;
     }
 

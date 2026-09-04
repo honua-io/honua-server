@@ -94,12 +94,15 @@ internal static partial class MapServerEndpoints
 
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Honua.Server.MapServerEndpoints");
             var timeInfos = await Task.WhenAll(visibleLayers.Select(layer =>
-                FeatureServerEndpoints.BuildTimeInfoV2Async(
+                BuildTimeInfoSafeAsync(
                     layer.Resource,
                     layer.Publication,
                     snapshot,
                     featureReader,
+                    logger,
                     cancellationToken))).ConfigureAwait(false);
             var response = MapServiceToMapServerResponse(
                 service,
@@ -187,11 +190,14 @@ internal static partial class MapServerEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var drawingInfo = ResolveMapServerDrawingInfo(resource, snapshot);
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-            var timeInfo = await FeatureServerEndpoints.BuildTimeInfoV2Async(
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Honua.Server.MapServerEndpoints");
+            var timeInfo = await BuildTimeInfoSafeAsync(
                 resource,
                 publication,
                 snapshot,
                 featureReader,
+                logger,
                 cancellationToken).ConfigureAwait(false);
 
             var response = MapLayerToMapServerLayerResponse(
@@ -480,6 +486,42 @@ internal static partial class MapServerEndpoints
                 : null,
             TimeExtent = [min, max]
         };
+    }
+
+    /// <summary>
+    /// Resolves one layer's optional time metadata without allowing malformed provider data
+    /// to fail the service or layer metadata document. Cancellation remains request-fatal.
+    /// </summary>
+    private static async Task<FeatureServerTimeInfo?> BuildTimeInfoSafeAsync(
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        MetadataV2GraphSnapshot snapshot,
+        IFeatureReader featureReader,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await FeatureServerEndpoints.BuildTimeInfoV2Async(
+                resource,
+                publication,
+                snapshot,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            MapServerLog.TemporalExtentSkipped(
+                logger,
+                publication.LayerIndex ?? -1,
+                resource.Metadata.Name ?? string.Empty,
+                ex);
+            return null;
+        }
     }
 
     private static double CalculateTileResolution(int z)

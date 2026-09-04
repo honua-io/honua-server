@@ -1494,13 +1494,13 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     {
         var renderer = rendererType == "uniqueValue"
             ? """
-              {"type":"uniqueValue","field1":"category","uniqueValueInfos":[
+              {"type":"uniqueValue","field1":"category","defaultLabel":"Other","defaultSymbol":{"type":"esriSMS","style":"esriSMSCircle","color":[0,255,0,255],"size":10},"uniqueValueInfos":[
                 {"value":"test","label":"Residential","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[255,0,0,255],"size":10}},
                 {"value":"sample","label":"Commercial","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[0,0,255,255],"size":10}}
               ]}
               """
             : """
-              {"type":"classBreaks","field":"objectid","classBreakInfos":[
+              {"type":"classBreaks","field":"objectid","defaultLabel":"Other","defaultSymbol":{"type":"esriSMS","style":"esriSMSCircle","color":[0,255,0,255],"size":10},"classBreakInfos":[
                 {"classMaxValue":2,"label":"Low","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[255,0,0,255],"size":10}},
                 {"classMaxValue":5,"label":"High","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[0,0,255,255],"size":10}}
               ]}
@@ -1515,7 +1515,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         var legend = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.LegendResponse);
         var entries = legend!.Layers.Should().ContainSingle().Subject.Legend!;
-        entries.Select(entry => entry.Label).Should().Equal(firstLabel, secondLabel);
+        entries.Select(entry => entry.Label).Should().Equal(firstLabel, secondLabel, "Other");
         entries.Should().OnlyContain(entry => !string.IsNullOrWhiteSpace(entry.ImageData));
         entries.Select(entry => entry.ImageData).Should().OnlyHaveUniqueItems();
         if (rendererType == "uniqueValue")
