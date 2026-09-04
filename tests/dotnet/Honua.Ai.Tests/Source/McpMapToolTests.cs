@@ -12,6 +12,9 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Core.Queries.Filters;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Rendering;
@@ -48,6 +51,34 @@ public sealed class McpMapToolTests
     private const int StorageLayerId = 42;
 
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task Gav_QueryFeatures_DeniedLayerPolicy_MustNotReturnCount()
+    {
+        var policy = new AccessPolicy { AllowedRoles = ["restricted-data-reader"] };
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(42L);
+        using var services = BuildServices(reader: reader, accessPolicy: policy);
+        var context = AuthenticatedContext(services);
+        var graph = await services.GetRequiredService<IMetadataV2GraphProvider>().GetCurrentAsync();
+        var layer = MapToolLayerResolver.Resolve(graph, ServiceId, LayerIndex);
+        var restDenial = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, layer.Resource, layer.Service);
+        restDenial.Should().NotBeNull("the identical REST layer access check must deny this principal");
+
+        var response = await BuildSurface().DispatchAsync(context,
+            ToolCall("gav-policy", QueryFeaturesTool.ToolName,
+                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":true}"""),
+            CancellationToken.None);
+
+        response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue(
+            "MCP must enforce the same resource policy as REST before calling the reader");
+        await reader.DidNotReceive().CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
 
     [UnitTest]
     [Operation(Operations.Query)]
@@ -1013,7 +1044,7 @@ public sealed class McpMapToolTests
         [],
         NullLogger<McpDataAccessSurface>.Instance);
 
-    private static TestMetadataV2GraphProvider BuildGraphProvider()
+    private static TestMetadataV2GraphProvider BuildGraphProvider(AccessPolicy? accessPolicy = null)
     {
         var spatial = new MetadataV2ResourceSpatial
         {
@@ -1026,6 +1057,7 @@ public sealed class McpMapToolTests
             .AddResource(
                 ResourceId,
                 "Parcels Dataset",
+                accessPolicy: accessPolicy,
                 spatial: spatial,
                 fields:
                 [
@@ -1043,10 +1075,12 @@ public sealed class McpMapToolTests
         IFeatureReader? reader = null,
         IGeometryService? geometryService = null,
         IRasterMapRenderer? renderer = null,
-        ITemporaryFileService? temporaryFileService = null)
+        ITemporaryFileService? temporaryFileService = null,
+        AccessPolicy? accessPolicy = null)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());
+        services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider(accessPolicy));
+        services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton(reader ?? Substitute.For<IFeatureReader>());
         services.AddSingleton(geometryService ?? Substitute.For<IGeometryService>());
         services.AddSingleton(renderer ?? Substitute.For<IRasterMapRenderer>());
