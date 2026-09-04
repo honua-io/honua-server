@@ -245,6 +245,31 @@ public sealed class FeatureServerServiceRbacTests
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.CreateReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WhenSyncCapabilityIsNotDeclared_ReturnsBadRequest()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(
+            static () => new RbacTestLayerCatalog(syncEnabled: false));
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "admin");
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            replicaName = "sync-disabled",
+            layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+            f = "json"
+        });
+
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            content);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_WithMultipleProtocolPublicationsForLayer_UsesFeaturePublication()
     {
         // RbacTestLayerCatalog exposes each layer through OData and Esri FeatureServer
@@ -628,6 +653,36 @@ public sealed class FeatureServerServiceAccessPolicyTests
 
 public sealed class FeatureServerReplicationAccessPolicyTests
 {
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.ListReplicas)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task ReplicaList_HidesReplicaOwnedByAnotherPrincipal()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var ownerClient = factory.CreateClient();
+        ownerClient.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "replica-owner");
+        ownerClient.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "admin");
+
+        var replicaId = await CreateReplicaAsync(
+            ownerClient,
+            ServiceRbacTestFixture.AlphaService,
+            "owner-isolated",
+            ServiceRbacTestFixture.AlphaLayerId);
+
+        using var otherClient = factory.CreateClient();
+        otherClient.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "different-principal");
+
+        var response = await otherClient.GetAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/replicas?f=json");
+
+        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.EnumerateArray()
+            .Should().NotContain(replica => replica.GetProperty("replicaID").GetString() == replicaId);
+    }
+
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.CreateReplica)]

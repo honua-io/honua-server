@@ -286,14 +286,11 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.animation-api", "temporal", "temporal.animation-api", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // Disconnected-sync replica / conflict review — promoted to GA (Implemented) in
-            // #2430 after conflict-resolution hardening: an operator resolution now commits the
-            // resolved feature state through the shared edit pipeline instead of only recording
-            // an action, and a conflictHandling=manualReview sync mode withholds conflicting
-            // edits for review instead of forcing last-write-wins. The admin replica/
-            // conflict-review routes ship on the default first-release surface. Still
-            // Pro-edition gated (fieldops.offline-sync entitlement) — GA means no longer
-            // hidden/unadvertised, not free-tier.
+            // Disconnected-sync replica / conflict review is Preview in 2026.1 per the
+            // OPERATOR RULING 2026-09-03 (honua-release#266). The earlier #2430 promotion
+            // is superseded: security and isolation hardening ships in 2026.1, while the
+            // remaining Esri protocol-completeness gaps are deferred to release/2026.2.
+            // The surface remains Pro-edition gated (fieldops.offline-sync entitlement).
             ("serve.3d-tiles-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
             ("serve.i3s-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
             ("scene.catalog", "scene", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),

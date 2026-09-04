@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Capabilities;
 using Honua.Server;
 using Xunit;
+using LicensingFeatureCatalog = Honua.Core.Features.Licensing.Domain.FeatureCatalog;
 
 namespace Honua.Architecture.Tests.FeatureCatalog;
 
@@ -196,6 +197,11 @@ public sealed class FeatureCatalogDriftTests
         previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/sta/v1.1", StringComparison.OrdinalIgnoreCase));
+        previewRoutes.Should().Contain(route => route.Contains("/FeatureServer/createReplica", StringComparison.OrdinalIgnoreCase));
+        catalog.Entries
+            .Where(entry => string.Equals(entry.Capability, LicensingFeatureCatalog.FieldOpsOfflineSyncKey, StringComparison.Ordinal))
+            .Should().NotBeEmpty()
+            .And.OnlyContain(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview);
         experimentalRoutes.Should().Contain(route => route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase));
     }
 

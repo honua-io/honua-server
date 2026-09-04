@@ -922,11 +922,12 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Whether the service opts into the sync/replica surface (createReplica /
     /// synchronizeReplica / extractChanges), driven by a declared <c>Sync</c>
-    /// capability in <c>service.Options["capabilities"]</c>. The replica handlers
-    /// are served unconditionally; this flag only advertises the surface so Esri
-    /// clients enable their offline/replica workflows against the service.
+    /// capability in <c>service.Options["capabilities"]</c>. Replica routes remain
+    /// registered for parity and lifecycle reporting, but createReplica fails closed
+    /// unless this capability is declared so a service cannot create offline state while
+    /// sync is disabled.
     /// </summary>
-    private static bool ServiceSupportsSyncV2(MetadataV2Service service)
+    internal static bool ServiceSupportsSyncV2(MetadataV2Service service)
         => ReadServiceCapabilitiesV2(service)
             .Any(capability => capability.Equals("Sync", StringComparison.OrdinalIgnoreCase));
 

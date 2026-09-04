@@ -1639,11 +1639,13 @@ sql:
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           last_sync_time TIMESTAMPTZ NOT NULL DEFAULT now(),
           last_sync_generation BIGINT NOT NULL DEFAULT 0,
+          owner_id TEXT,
           CONSTRAINT replicas_valid_name CHECK(LENGTH(replica_name) > 0 AND LENGTH(replica_name) <= 256),
           CONSTRAINT replicas_valid_service CHECK(LENGTH(service_id) > 0),
           CONSTRAINT replicas_valid_sync_model CHECK(sync_model IN ('none', 'perLayer', 'perReplica'))
       );
   - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS upload_base_generation BIGINT NOT NULL DEFAULT 0;"
+  - "CREATE INDEX IF NOT EXISTS ix_replicas_service_owner ON honua.replicas(service_id, owner_id, created_at DESC);"
   - |
       CREATE TABLE IF NOT EXISTS honua.feature_changes (
           change_id BIGSERIAL PRIMARY KEY,

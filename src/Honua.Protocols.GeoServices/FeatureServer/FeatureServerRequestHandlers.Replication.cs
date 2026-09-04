@@ -312,6 +312,14 @@ internal static partial class FeatureServerEndpoints
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
 
+        if (!ServiceSupportsSyncV2(service))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Offline synchronization is not enabled for this service.",
+                ["Declare the Sync service capability before creating a replica."]);
+        }
+
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,

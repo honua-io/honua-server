@@ -143,7 +143,7 @@
           "esriPaths": [
             "/FeatureServer/createReplica"
           ],
-          "notes": "Registers offline replica state in distributed cache when available, otherwise in memory."
+          "notes": "Preview in 2026.1: registers offline replica state in distributed cache when available, otherwise in memory. Security and isolation hardening ships in 2026.1; remaining Esri protocol-completeness gaps are deferred to release/2026.2."
         },
         {
           "name": "Extract Changes",
@@ -151,7 +151,7 @@
           "esriPaths": [
             "/FeatureServer/extractChanges"
           ],
-          "notes": "First sync returns full adds; later syncs do not provide database-grade incremental change tracking."
+          "notes": "Preview in 2026.1: first sync returns full adds; later syncs do not provide database-grade incremental change tracking. The remaining Esri delta/parity gaps are deferred to release/2026.2."
         },
         {
           "name": "Synchronize Replica",
@@ -159,7 +159,7 @@
           "esriPaths": [
             "/FeatureServer/synchronizeReplica"
           ],
-          "notes": "Supports download, upload, and bidirectional sync directions."
+          "notes": "Preview in 2026.1: supports download, upload, and bidirectional sync directions. The remaining Esri payload, cursor, ID, idempotency, and transport parity gaps are deferred to release/2026.2."
         },
         {
           "name": "Unregister Replica",
@@ -509,7 +509,7 @@
             "/FeatureServer/replicas",
             "/FeatureServer/replicas/{replicaId}"
           ],
-          "notes": "Lists registered replica metadata for the service and returns a single replica descriptor by id. Backed by the same replica store as createReplica/synchronizeReplica."
+          "notes": "Preview in 2026.1: lists registered replica metadata for the service and returns a single replica descriptor by id. Backed by the same replica store as createReplica/synchronizeReplica; remaining descriptor parity gaps are deferred to release/2026.2."
         },
         {
           "name": "validateSQL (service)",
