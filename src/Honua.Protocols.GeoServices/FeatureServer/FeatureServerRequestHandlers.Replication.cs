@@ -40,6 +40,22 @@ internal static partial class FeatureServerEndpoints
             "GeoServices offline sync");
 
     /// <summary>
+    /// Enforces the service-local sync contract after the deployment-wide Preview gate has
+    /// passed. A service without the declared <c>Sync</c> capability advertises
+    /// <c>syncEnabled=false</c>; allowing replica lifecycle calls anyway would create state
+    /// that Esri clients cannot discover or safely reconcile (#4114).
+    /// </summary>
+    private static IResult? RequireServiceSyncCapability(
+        HttpContext context,
+        MetadataV2Service service)
+        => ServiceSupportsSyncV2(service)
+            ? null
+            : StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Offline sync is not enabled for this service.",
+                ["The FeatureServer service must declare the Sync capability before replica operations can be used."]);
+
+    /// <summary>
     /// Validates a replica upload against the shared edit limits before the sync pipeline runs.
     /// Returns the client-facing message when a limit is exceeded, or <c>null</c> when the upload is
     /// within limits.
@@ -166,6 +182,12 @@ internal static partial class FeatureServerEndpoints
             return accessError;
         }
 
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
+        }
+
         var accessibleLayerIds = serviceLayers
             .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
             .Select(layer => layer.PublicLayerId)
@@ -249,6 +271,12 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
+        }
+
         var layerServerGens = replicaRecord.SyncModel.Equals("perLayer", StringComparison.OrdinalIgnoreCase)
             ? System.Text.Json.JsonSerializer.Serialize(
                 replicaRecord.LayerIds
@@ -311,7 +339,6 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
-
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,
@@ -320,6 +347,12 @@ internal static partial class FeatureServerEndpoints
         if (writeAccessError != null)
         {
             return writeAccessError;
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         if (string.IsNullOrWhiteSpace(context.User?.Identity?.Name))
@@ -489,6 +522,12 @@ internal static partial class FeatureServerEndpoints
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
@@ -765,10 +804,8 @@ internal static partial class FeatureServerEndpoints
         CancellationToken cancellationToken)
     {
         // The serverGen-based change-tracking flow is served on the same change-tracking
-        // backend the replica flow uses; it is not gated on the advertised "Sync"
-        // capability token (the replica extractChanges path is served unconditionally too,
-        // and the change tracker is always available). Layer access is still enforced
-        // below so unauthorized callers cannot extract changes.
+        // backend the replica flow uses. Layer access is enforced before the service-local
+        // Sync capability response so unauthorized callers cannot learn service settings.
 
         // Resolve the layers to extract from: the optional layers filter, otherwise all
         // accessible service layers. This reuses the same access-checked resolution the
@@ -790,6 +827,12 @@ internal static partial class FeatureServerEndpoints
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "No accessible layers to extract changes from for this service.");
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         if (!TryParseBoolValue(values, "returnIdsOnly", false, out var returnIdsOnly, out var returnIdsOnlyError))
@@ -1004,7 +1047,6 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
-
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,
@@ -1013,6 +1055,12 @@ internal static partial class FeatureServerEndpoints
         if (writeAccessError != null)
         {
             return writeAccessError;
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
@@ -1889,7 +1937,6 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
-
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,
@@ -1898,6 +1945,12 @@ internal static partial class FeatureServerEndpoints
         if (writeAccessError != null)
         {
             return writeAccessError;
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();

@@ -7,6 +7,7 @@
     "planned": "Planned but not yet built; declared for roadmap visibility only.",
     "deferred": "Deferred out of the current release scope by an owner decision; present and serving on trunk but not advertised as part of this release's GA surface.",
     "experimental": "Implemented but off by default and gated behind an explicitly-named configuration flag, so it is not part of the default advertised surface.",
+    "preview": "Available for opt-in evaluation, but not a GA contract in the current release.",
     "partial": "Partially implemented — a subset of the capability is served."
   },
   "reasonCodes": {
@@ -14,6 +15,13 @@
     "config-gated-off-by-default": "Served only when a named, default-off configuration flag is set; not part of the default advertised surface."
   },
   "overrides": [
+    {
+      "capability": "fieldops.offline-sync",
+      "maturity": "preview",
+      "reasonCode": "release-deferred",
+      "reason": "The 2026-09-03 operator ruling makes offline sync Preview in 2026.1. Replica, field-collection, form-offline, and replica-review projections must not advertise GA while non-security parity work is deferred to release/2026.2.",
+      "decision": "honua-release#266 / #264 operator ruling (2026-09-03)"
+    },
     {
       "capability": "demo.showcase",
       "maturity": "experimental",
