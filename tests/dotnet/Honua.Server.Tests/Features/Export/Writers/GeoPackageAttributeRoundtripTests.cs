@@ -27,15 +27,52 @@ public sealed class GeoPackageAttributeRoundtripTests
         await RoundtripAsync(fields, ["source value", "retained fid suffix", "retained geom suffix"]);
     }
 
-    [Fact]
-    public async Task ImportExport_BooleanDateAndTimestamp_PreserveDeclaredTypesAndValues()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-10)]
+    [InlineData(9)]
+    public async Task ImportExport_BooleanDateAndTimestamp_PreserveDeclaredTypesAndValues(int offsetHours)
     {
         await RoundtripAsync([
             new("active", ExportFieldType.Boolean, true), new("observed", ExportFieldType.Date, true),
             new("created", ExportFieldType.DateTime, true), new("sequence", ExportFieldType.BigInteger, true),
             new("ratio", ExportFieldType.Double, true), new("title", ExportFieldType.String, true)],
-            [true, new DateOnly(2026, 9, 4), new DateTimeOffset(2026, 9, 4, 1, 2, 3, TimeSpan.Zero).AddTicks(1234567),
+            [true, new DateOnly(2026, 9, 4), new DateTimeOffset(2026, 9, 4, 1, 2, 3, TimeSpan.FromHours(offsetHours)).AddTicks(1234567),
                 9007199254740993L, 1.23456789012345, "Hawaiʻi"]);
+    }
+
+    [Theory]
+    [InlineData(false, "not-a-date")]
+    [InlineData(false, "2026-02-30")]
+    [InlineData(true, "not-a-timestamp")]
+    [InlineData(true, "2026-13-01T00:00:00Z")]
+    public async Task Import_MalformedTemporalCell_ReportsInvalidData(bool timestamp, string value)
+    {
+        var path = Path.Join(Path.GetTempPath(), $"honua-invalid-temporal-{Guid.NewGuid():N}.gpkg");
+        try
+        {
+            var type = timestamp ? ExportFieldType.DateTime : ExportFieldType.Date;
+            var field = new ExportField("value", type, true);
+            var source = new NetTopologySuite.Features.Feature(new WKTReader().Read("POINT (1 2)"),
+                new AttributesTable { { "value", type == ExportFieldType.Date ? (object)new DateOnly(2026, 9, 4) : DateTimeOffset.UnixEpoch } });
+            await GeoPackageExportWriter.WriteAsync(path, Rows([source], [field]), [field],
+                ExportGeometryType.Point, 4326, "EPSG:4326", null, CancellationToken.None);
+            await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString()))
+            {
+                await connection.OpenAsync();
+                await using var update = connection.CreateCommand();
+                update.CommandText = "UPDATE features SET value = $value";
+                update.Parameters.AddWithValue("$value", value);
+                await update.ExecuteNonQueryAsync();
+            }
+
+            await Assert.ThrowsAsync<InvalidDataException>(() => ReadAsync(path));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(path);
+        }
     }
 
     private static async Task RoundtripAsync(ExportField[] fields, object[] values)
@@ -112,6 +149,21 @@ public sealed class GeoPackageAttributeRoundtripTests
             foreach (var field in fields)
             {
                 Assert.Equal(SqlType(field.Type), declarations[field.Name]);
+            }
+
+            await reader.CloseAsync();
+            for (var i = 0; i < fields.Length; i++)
+            {
+                if (fields[i].Type != ExportFieldType.DateTime)
+                {
+                    continue;
+                }
+
+                await using var timestamp = verify.CreateCommand();
+                timestamp.CommandText = $"SELECT {Quote(fields[i].Name)} FROM features WHERE {Quote(fields[i].Name)} IS NOT NULL";
+                var stored = Assert.IsType<string>(await timestamp.ExecuteScalarAsync());
+                Assert.Equal(((DateTimeOffset)values[i]).UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture), stored);
+                Assert.EndsWith("Z", stored, StringComparison.Ordinal);
             }
         }
         finally

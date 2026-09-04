@@ -203,8 +203,14 @@ internal sealed partial class StreamingFileImportService
                 1L => true,
                 _ => throw new InvalidDataException($"GeoPackage BOOLEAN field '{reader.GetName(ordinal)}' must contain 0 or 1.")
             },
-            "DATE" => DateOnly.ParseExact(reader.GetString(ordinal), "yyyy-MM-dd", CultureInfo.InvariantCulture),
-            "DATETIME" => DateTimeOffset.Parse(reader.GetString(ordinal), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal),
+            "DATE" => DateOnly.TryParseExact(reader.GetString(ordinal), "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var date)
+                ? date
+                : throw new InvalidDataException($"GeoPackage DATE field '{reader.GetName(ordinal)}' must contain a valid ISO date."),
+            "DATETIME" => DateTimeOffset.TryParse(reader.GetString(ordinal), CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal, out var timestamp)
+                ? timestamp
+                : throw new InvalidDataException($"GeoPackage DATETIME field '{reader.GetName(ordinal)}' must contain a valid timestamp."),
             _ => reader.GetValue(ordinal)
         };
     }

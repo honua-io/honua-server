@@ -383,14 +383,30 @@ internal static class GeoPackageExportWriter
         return fieldType switch
         {
             ExportFieldType.Boolean when value is bool b => b ? 1 : 0,
-            ExportFieldType.DateTime when value is DateTime dt => dt.ToString("O", CultureInfo.InvariantCulture),
-            ExportFieldType.DateTime when value is DateTimeOffset dto => dto.ToString("O", CultureInfo.InvariantCulture),
+            ExportFieldType.DateTime => FormatDateTime(value),
             ExportFieldType.Date when value is DateOnly date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ExportFieldType.Date when value is DateTime dt => dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ExportFieldType.Date when value is DateTimeOffset dto => dto.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ExportFieldType.Time when value is TimeSpan ts => ts.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),
             _ => value
         };
+    }
+
+    private static string FormatDateTime(object value)
+    {
+        var utc = value switch
+        {
+            DateTimeOffset dto => dto.UtcDateTime,
+            DateTime dt => dt.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(dt, DateTimeKind.Utc)
+                : dt.ToUniversalTime(),
+            string text when DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal, out var parsed) => parsed.UtcDateTime,
+            _ => throw new InvalidDataException("GeoPackage DATETIME values must contain a valid timestamp.")
+        };
+
+        // DateTime's UTC round-trip format emits Z and retains fractional precision.
+        return utc.ToString("O", CultureInfo.InvariantCulture);
     }
 
     private static bool TryDetectGeometryDimensions(WkbReader reader, byte[] wkb, out bool hasZ, out bool hasM)
