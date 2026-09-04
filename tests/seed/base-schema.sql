@@ -372,6 +372,10 @@ CREATE TABLE IF NOT EXISTS honua.feature_change_outbox (
     claim_node_id    text,
     claim_expires_at timestamptz,
     dispatched_at    timestamptz,
+    operation_instance_id text,
+    correlation_id       text,
+    audit_id             text,
+    proposal_id          text,
     CONSTRAINT feature_change_outbox_pkey PRIMARY KEY (outbox_id),
     CONSTRAINT feature_change_outbox_status_chk CHECK (
         status IN ('pending', 'claimed', 'dispatched', 'failed', 'dead_lettered')
@@ -426,6 +430,33 @@ CREATE INDEX IF NOT EXISTS idx_raster_tiles_lookup ON honua.raster_tiles(raster_
 CREATE INDEX IF NOT EXISTS ix_fco_dispatch ON honua.feature_change_outbox (created_at) WHERE status IN ('pending', 'failed');
 CREATE INDEX IF NOT EXISTS ix_fco_claim_recovery ON honua.feature_change_outbox (claim_expires_at) WHERE status = 'claimed';
 CREATE INDEX IF NOT EXISTS ix_fco_dead_lettered ON honua.feature_change_outbox (created_at) WHERE status = 'dead_lettered';
+
+ALTER TABLE IF EXISTS honua.feature_change_outbox
+    ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+    ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+    ADD COLUMN IF NOT EXISTS audit_id TEXT,
+    ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+ALTER TABLE IF EXISTS honua.feature_changes
+    ADD COLUMN IF NOT EXISTS event_id TEXT,
+    ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+    ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+    ADD COLUMN IF NOT EXISTS audit_id TEXT,
+    ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+ALTER TABLE IF EXISTS honua.alert_events
+    ADD COLUMN IF NOT EXISTS source_event_id TEXT,
+    ADD COLUMN IF NOT EXISTS job_id TEXT,
+    ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+    ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+    ADD COLUMN IF NOT EXISTS audit_id TEXT,
+    ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+DO $$
+BEGIN
+    IF to_regclass('honua.feature_changes') IS NOT NULL THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_changes_event_id
+            ON honua.feature_changes(event_id)
+            WHERE event_id IS NOT NULL;
+    END IF;
+END $$;
 
 -- OGC SensorThings API (STA v1.1) Phase 1 storage (#1747). Mirrors migration
 -- 059_CreateSensorThings.sql so the migration-skipping CI fixture has the tables.

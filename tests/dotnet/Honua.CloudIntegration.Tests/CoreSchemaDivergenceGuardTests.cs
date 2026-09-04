@@ -224,6 +224,14 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             """;
         command.Parameters.AddWithValue("schema", schema);
         (await command.ExecuteScalarAsync()).Should().Be(6);
+
+        (await CountTablesAsync(
+                connectionString,
+                "honua",
+                "feature_change_outbox",
+                "feature_changes",
+                "alert_events"))
+            .Should().Be(3, "migration 110 owns governed lineage in the canonical honua schema");
     }
 
     [SkippableFact]

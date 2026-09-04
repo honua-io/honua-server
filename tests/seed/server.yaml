@@ -660,11 +660,21 @@ sql:
           claim_node_id    text,
           claim_expires_at timestamptz,
           dispatched_at    timestamptz,
+          operation_instance_id text,
+          correlation_id       text,
+          audit_id             text,
+          proposal_id          text,
           CONSTRAINT feature_change_outbox_pkey PRIMARY KEY (outbox_id),
           CONSTRAINT feature_change_outbox_status_chk CHECK (
               status IN ('pending', 'claimed', 'dispatched', 'failed', 'dead_lettered')
           )
       );
+  - |
+      ALTER TABLE IF EXISTS honua.feature_change_outbox
+          ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+          ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+          ADD COLUMN IF NOT EXISTS audit_id TEXT,
+          ADD COLUMN IF NOT EXISTS proposal_id TEXT;
   - "CREATE INDEX IF NOT EXISTS ix_fco_dispatch ON honua.feature_change_outbox (created_at) WHERE status IN ('pending', 'failed');"
   - "CREATE INDEX IF NOT EXISTS ix_fco_claim_recovery ON honua.feature_change_outbox (claim_expires_at) WHERE status = 'claimed';"
   - "CREATE INDEX IF NOT EXISTS ix_fco_dead_lettered ON honua.feature_change_outbox (created_at) WHERE status = 'dead_lettered';"
@@ -1271,6 +1281,12 @@ sql:
           incident_status SMALLINT NOT NULL DEFAULT 1,
           incident_duration_ms BIGINT NOT NULL DEFAULT 0,
           source TEXT,
+          source_event_id TEXT,
+          job_id TEXT,
+          operation_instance_id TEXT,
+          correlation_id TEXT,
+          audit_id TEXT,
+          proposal_id TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
           CONSTRAINT alert_events_valid_dedupe_key CHECK (length(dedupe_key) > 0),
           CONSTRAINT alert_events_valid_trigger CHECK (trigger_type IN (1, 2, 3, 4)),
@@ -1278,6 +1294,14 @@ sql:
           CONSTRAINT alert_events_valid_severity CHECK (severity IN ('info', 'warning', 'critical')),
           CONSTRAINT alert_events_valid_incident_status CHECK (incident_status IN (1, 2, 3))
       );
+  - |
+      ALTER TABLE IF EXISTS honua.alert_events
+          ADD COLUMN IF NOT EXISTS source_event_id TEXT,
+          ADD COLUMN IF NOT EXISTS job_id TEXT,
+          ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+          ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+          ADD COLUMN IF NOT EXISTS audit_id TEXT,
+          ADD COLUMN IF NOT EXISTS proposal_id TEXT;
   - "CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_events_dedupe_key ON honua.alert_events(dedupe_key);"
   # Partial index for ops-notification queries (mirrors 075_AddAlertOpsSource.sql).
   - "CREATE INDEX IF NOT EXISTS ix_alert_events_source_ops ON honua.alert_events(occurred_at DESC) WHERE source = 'ops';"
@@ -1629,9 +1653,25 @@ sql:
           public_objectid BIGINT,
           operation SMALLINT NOT NULL,
           changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          event_id TEXT,
+          operation_instance_id TEXT,
+          correlation_id TEXT,
+          audit_id TEXT,
+          proposal_id TEXT,
           CONSTRAINT feature_changes_valid_operation CHECK(operation IN (1, 2, 3))
       );
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS public_objectid BIGINT;"
+  - |
+      ALTER TABLE IF EXISTS honua.feature_changes
+          ADD COLUMN IF NOT EXISTS event_id TEXT,
+          ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+          ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+          ADD COLUMN IF NOT EXISTS audit_id TEXT,
+          ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+  - |
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_changes_event_id
+          ON honua.feature_changes(event_id)
+          WHERE event_id IS NOT NULL;
   - |
       CREATE TABLE IF NOT EXISTS honua.replica_conflicts (
           conflict_id TEXT PRIMARY KEY,

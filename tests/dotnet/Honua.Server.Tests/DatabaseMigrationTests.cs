@@ -380,6 +380,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration);
         result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.RasterExternalStorageMigration);
         result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.SensorThingsMigration);
+        result.AppliedScripts.Should().Contain(ServerCoreSchemaMigrations.Manifest.GovernedLineageMigration);
         result.AppliedScripts.Should().NotContain(ServerCoreSchemaMigrations.Manifest.ConfiguredSchemaAdoptionMigration,
             "the contract-gated adoption script has no work in the default schema");
 
@@ -409,9 +410,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
                 'Honua.Postgres.Migrations.005_CompleteLateRasterProvisioning.sql',
                 'Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql',
                 'Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql',
-                'Honua.Server.Migrations.059_CreateSensorThings.sql')
+                'Honua.Server.Migrations.059_CreateSensorThings.sql',
+                'Honua.Server.Migrations.110_PreserveGovernedLineage.sql')
             """;
-        (await command.ExecuteScalarAsync()).Should().Be(5,
+        (await command.ExecuteScalarAsync()).Should().Be(6,
             "upgrade and restore receipts use one journal denominator for both numbered roots");
 
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
