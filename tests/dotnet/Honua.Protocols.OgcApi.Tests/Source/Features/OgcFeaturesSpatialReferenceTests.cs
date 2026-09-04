@@ -207,6 +207,89 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
     }
 
     [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
+    [Endpoint("PUT /ogc/features/collections/{collectionId}/items/{featureId}")]
+    public async Task ProjectedCollection_AbsentContentCrs_DefaultsToCrs84ForGetPutRoundTrip()
+    {
+        // Part 4 makes Content-Crs optional when the body uses the default CRS.
+        // The default is CRS84, not the collection's projected storage CRS.
+        var originalCoordinates = new[] { -122.4194, 37.7749 };
+        var feature = new GeoJsonFeature
+        {
+            Type = "Feature",
+            Geometry = new SimpleGeoJsonGeometry
+            {
+                Type = "Point",
+                CoordinatesJson = "[-122.4194, 37.7749]"
+            },
+            Properties = new Dictionary<string, object?>
+            {
+                ["name"] = "CRS84 default round trip"
+            }
+        };
+
+        var createJson = JsonSerializer.Serialize(feature, OgcJsonContext.Default.GeoJsonFeature);
+        using var createRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items")
+        {
+            Content = new StringContent(createJson, Encoding.UTF8, "application/geo+json")
+        };
+
+        var createResponse = await _fixture.Client.SendAsync(createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        createResponse.Headers.TryGetValues("Content-Crs", out var createCrs).Should().BeTrue();
+        createCrs!.Single().Should().Be($"<{OgcFeaturesUtilities.Crs84Uri}>");
+
+        var createdContent = await createResponse.Content.ReadAsStringAsync();
+        var created = JsonSerializer.Deserialize(createdContent, OgcJsonContext.Default.GeoJsonFeature);
+        created.Should().NotBeNull();
+        created!.Id.Should().NotBeNull();
+        AssertPointCoordinates(created, originalCoordinates);
+
+        var featureId = NormalizeFeatureId(created.Id);
+        featureId.Should().NotBeNull();
+
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items/{featureId}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var getContent = await getResponse.Content.ReadAsStringAsync();
+        var fetched = JsonSerializer.Deserialize(getContent, OgcJsonContext.Default.GeoJsonFeature);
+        fetched.Should().NotBeNull();
+        AssertPointCoordinates(fetched!, originalCoordinates);
+
+        // Send the default-CRS GET representation back without adding Content-Crs.
+        // Before the fix this second write treated CRS84 coordinates as EPSG:3857.
+        using var replaceRequest = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items/{featureId}")
+        {
+            Content = new StringContent(getContent, Encoding.UTF8, "application/geo+json")
+        };
+        var replaceResponse = await _fixture.Client.SendAsync(replaceRequest);
+        replaceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        replaceResponse.Headers.TryGetValues("Content-Crs", out var replaceCrs).Should().BeTrue();
+        replaceCrs!.Single().Should().Be($"<{OgcFeaturesUtilities.Crs84Uri}>");
+
+        var replacedContent = await replaceResponse.Content.ReadAsStringAsync();
+        var replaced = JsonSerializer.Deserialize(replacedContent, OgcJsonContext.Default.GeoJsonFeature);
+        replaced.Should().NotBeNull();
+        AssertPointCoordinates(replaced!, originalCoordinates);
+
+        var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
+        var storedCoordinates = await SpatialReferenceTestData.GetGeometryCoordinatesAsync(
+            _fixture.Postgres,
+            schema,
+            featureId.Value,
+            SpatialReferenceTestLayerCatalog.PointLayerId);
+        storedCoordinates.Should().NotBeNull();
+        storedCoordinates!.Value.X.Should().BeApproximately(-13627665.27, 2d);
+        storedCoordinates.Value.Y.Should().BeApproximately(4547675.35, 2d);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
     public async Task GetCollection_WithNon4326Layer_IncludesStorageCrs()
     {
@@ -448,5 +531,17 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
                     => parsedJsonStringId,
             _ => null
         };
+    }
+
+    private static void AssertPointCoordinates(GeoJsonFeature feature, double[] expected)
+    {
+        feature.Geometry.Should().NotBeNull();
+        var coordinates = JsonDocument.Parse(feature.Geometry!.CoordinatesJson!).RootElement
+            .EnumerateArray()
+            .Select(static value => value.GetDouble())
+            .ToArray();
+        coordinates.Should().HaveCount(2);
+        coordinates[0].Should().BeApproximately(expected[0], 1e-4);
+        coordinates[1].Should().BeApproximately(expected[1], 1e-4);
     }
 }
