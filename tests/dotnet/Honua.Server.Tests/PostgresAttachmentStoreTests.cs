@@ -95,6 +95,28 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpdateAsync_KeywordsSnapshotBeforeConcurrentReplacement_PreservesReplacementContent()
+    {
+        var original = await CreateTestAttachment();
+        // The keywords-only endpoint reads this snapshot before awaiting UpdateAsync.
+        var snapshot = (await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id))!.Value;
+        await using var replacementContent = new MemoryStream("replacement content"u8.ToArray());
+        var replacement = await _attachmentStore.ReplaceAsync(
+            TestLayerId, TestFeatureId, original.Id, "replacement.txt", "text/plain", replacementContent);
+        Assert.False(await _fileStorage.ExistsAsync(snapshot.StoragePath));
+
+        // Resume the keywords-only endpoint with exactly the fields it copies from its snapshot.
+        var keywordUpdate = Attachment.Create(
+            snapshot.Id, snapshot.FeatureId, snapshot.LayerId, snapshot.Filename,
+            snapshot.ContentType, snapshot.Size, snapshot.CreatedAt, snapshot.StoragePath, "new-keywords");
+        await _attachmentStore.UpdateAsync(TestLayerId, TestFeatureId, keywordUpdate);
+
+        var current = (await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id))!.Value;
+        Assert.Equal(replacement.StoragePath, current.StoragePath);
+        Assert.NotNull(await _attachmentStore.DownloadAsync(TestLayerId, TestFeatureId, original.Id));
+    }
+
+    [Fact]
     public async Task UploadAsync_WithValidFile_CreatesAttachmentAndStoresFile()
     {
         // Arrange

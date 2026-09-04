@@ -25,6 +25,42 @@ public sealed class RedisJobQueueTests
     private const string ClaimedSetKey = "controlplane:jobqueue:claimed";
 
     [UnitTest]
+    public async Task TryClaimAsync_PendingEntryForHealthyRunningJob_DoesNotStealClaim()
+    {
+        const string operationId = "running-job-requeued-by-stale-reconciler";
+        var database = Substitute.For<IDatabase>();
+        database.SortedSetRangeByRankAsync(
+                Arg.Any<RedisKey>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<Order>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(new RedisValue[] { operationId }), Task.FromResult(Array.Empty<RedisValue>()));
+        database.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(Array.Empty<HashEntry>()));
+        database.ScriptEvaluateAsync(
+                Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(RedisResult.Create((RedisValue)"1")));
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        var running = CreateQueuedJob(operationId) with
+        {
+            Status = ExecutionJobStatus.Running,
+            ClaimedBy = "worker-original",
+            ClaimedAt = DateTimeOffset.UtcNow,
+            LastHeartbeatAt = DateTimeOffset.UtcNow,
+            AttemptCount = 1
+        };
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(operationId, Arg.Any<CancellationToken>()).Returns(running);
+        jobStore.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var queue = new RedisJobQueue(redis, jobStore, NullLogger<RedisJobQueue>.Instance);
+
+        var claimed = await queue.TryClaimAsync("worker-second");
+
+        Assert.Null(claimed);
+        await jobStore.DidNotReceive().TrySetAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task ExecutionJobStore_ExpiresEverySecondaryIndex()
     {
         var database = Substitute.For<IDatabase>();
