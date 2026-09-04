@@ -808,7 +808,14 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                   ON a.attrelid = c.oid
                  AND a.attnum > 0
                  AND NOT a.attisdropped
-                WHERE n.nspname = @schema
+                WHERE (
+                    (n.nspname = @schema AND (
+                        @schema = @canonical_schema OR
+                        (c.relname <> ALL(@lineage_tables) AND c.relname <> ALL(@lineage_indexes))))
+                    OR
+                    (n.nspname = @canonical_schema AND
+                        (c.relname = ANY(@lineage_tables) OR c.relname = ANY(@lineage_indexes)))
+                )
                   AND (c.relname = ANY(@tables) OR c.relname = ANY(@indexes))
                   AND c.relkind IN ('r', 'p', 'i', 'I')
                 """;
@@ -816,6 +823,11 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             schemaParameter.ParameterName = "schema";
             schemaParameter.Value = _schemaName;
             schemaCommand.Parameters.Add(schemaParameter);
+
+            var canonicalSchemaParameter = schemaCommand.CreateParameter();
+            canonicalSchemaParameter.ParameterName = "canonical_schema";
+            canonicalSchemaParameter.Value = PostgresSchemaConfiguration.DefaultMetadataSchema;
+            schemaCommand.Parameters.Add(canonicalSchemaParameter);
 
             var tablesParameter = schemaCommand.CreateParameter();
             tablesParameter.ParameterName = "tables";
@@ -834,6 +846,24 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                 npgsqlIndexesParameter.NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text;
             }
             schemaCommand.Parameters.Add(indexesParameter);
+
+            var lineageTablesParameter = schemaCommand.CreateParameter();
+            lineageTablesParameter.ParameterName = "lineage_tables";
+            lineageTablesParameter.Value = _governedLineageTables;
+            if (lineageTablesParameter is NpgsqlParameter npgsqlLineageTablesParameter)
+            {
+                npgsqlLineageTablesParameter.NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text;
+            }
+            schemaCommand.Parameters.Add(lineageTablesParameter);
+
+            var lineageIndexesParameter = schemaCommand.CreateParameter();
+            lineageIndexesParameter.ParameterName = "lineage_indexes";
+            lineageIndexesParameter.Value = _governedLineageIndexes;
+            if (lineageIndexesParameter is NpgsqlParameter npgsqlLineageIndexesParameter)
+            {
+                npgsqlLineageIndexesParameter.NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text;
+            }
+            schemaCommand.Parameters.Add(lineageIndexesParameter);
 
             await using var reader = await schemaCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
