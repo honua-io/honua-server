@@ -207,7 +207,7 @@ internal static class GpxFormatReader
                             double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) &&
                             double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
                         {
-                            coordinates.Add(new Coordinate(longitude, latitude));
+                            coordinates.Add(await ReadPointCoordinateAsync(subtree, longitude, latitude, cancellationToken));
                         }
                     }
                     else if (string.Equals(subtree.LocalName, "name", StringComparison.Ordinal) &&
@@ -242,4 +242,35 @@ internal static class GpxFormatReader
 
         return null;
     }
+
+    private static async Task<Coordinate> ReadPointCoordinateAsync(
+        XmlReader reader,
+        double longitude,
+        double latitude,
+        CancellationToken cancellationToken)
+    {
+        var coordinate = new CoordinateZ(longitude, latitude, double.NaN);
+        using var point = reader.ReadSubtree();
+        await point.ReadAsync();
+        while (await point.ReadAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (point.NodeType != XmlNodeType.Element || point.LocalName != "ele")
+            {
+                continue;
+            }
+
+            var text = await point.ReadElementContentAsStringAsync();
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var elevation) ||
+                !double.IsFinite(elevation))
+            {
+                throw new InvalidDataException("GPX point elevation must be a finite number.");
+            }
+
+            coordinate.Z = elevation;
+        }
+
+        return coordinate;
+    }
+
 }

@@ -11,7 +11,7 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | GeoJSON | `.geojson`, `.json` | FeatureCollection, Feature, or bare geometry. |
 | Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf` (plus `.shx`/`.prj`); bare `.shp` uploads are rejected. |
 | GeoPackage | `.gpkg` | OGC SQLite-based format. |
-| GPX | `.gpx` | GPS exchange format. |
+| GPX | `.gpx` | GPS exchange format. Track and route point elevations are preserved as Z ordinates; absent elevation remains absent. Invalid elevation values reject the import rather than silently discarding samples. |
 | KML / KMZ | `.kml`, `.kmz` | Keyhole Markup Language, plain or zipped. |
 | WKT | `.wkt` | Well-known text geometries. |
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. |
