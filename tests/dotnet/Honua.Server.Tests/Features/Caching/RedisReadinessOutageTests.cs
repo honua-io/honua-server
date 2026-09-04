@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Sockets;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -29,7 +31,15 @@ public sealed class RedisReadinessOutageTests
     [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_RedisStopsAndRestarts_RequiresLiveProbeEvenDuringFallback(bool enterFallback)
     {
-        await using var container = new RedisBuilder("redis:7.2-alpine").Build();
+        // Docker can remap ephemeral host ports on restart. Keep the dependency's
+        // endpoint stable so this exercises recovery of the existing connection.
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var redisPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        await using var container = new RedisBuilder("redis:7.2-alpine")
+            .WithPortBinding(redisPort, 6379)
+            .Build();
         await container.StartAsync();
         var configuration = ConfigurationOptions.Parse(container.GetConnectionString());
         configuration.AbortOnConnectFail = false;
@@ -65,6 +75,7 @@ public sealed class RedisReadinessOutageTests
         Assert.True(events.CanPersistEvents);
 
         await container.StartAsync();
+        Assert.Equal(redisPort, container.GetMappedPublicPort(6379));
         using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         while (!await cache.IsCacheHealthyAsync(recoveryTimeout.Token))
         {
