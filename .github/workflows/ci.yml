@@ -81,6 +81,10 @@ on:
         required: false
         type: string
         default: ''
+      trunk_red_failing_jobs:
+        description: 'Internal trunk-red brake input: semicolon-separated exact check names from the last deterministic red. Non-empty only for a reduced trunk verification; a later full_ci run is still required to clear the brake.'
+        required: false
+        default: ''
       console_image:
         description: 'Optional honua-console image tag for the quickstart Console compose smoke. Defaults to repository variable HONUA_CONSOLE_IMAGE when set.'
         required: false
@@ -354,7 +358,7 @@ jobs:
       integration_changes: ${{ steps.filter.outputs.integration_changes }}
       integration_reason: ${{ steps.filter.outputs.integration_reason }}
       full_ci: ${{ steps.filter.outputs.full_ci }}
-      postgres_matrix: ${{ steps.filter.outputs.postgres_matrix }}
+      postgres_matrix: ${{ steps.trunk_red_postgres.outputs.postgres_matrix }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -534,6 +538,31 @@ jobs:
           echo "Full CI:"
           echo "${FULL_CI:-true}"
 
+      # A reduced trunk-red run must preserve the exact Postgres matrix legs
+      # that failed. Keep this as a post-filter output so ordinary scheduled,
+      # manual, PR, and selective-batch runs use the existing matrix unchanged.
+      - name: Apply trunk-red Postgres leg selection
+        id: trunk_red_postgres
+        if: always()
+        env:
+          FAILING_JOBS: ${{ inputs.trunk_red_failing_jobs }}
+          POSTGRES_MATRIX: ${{ steps.filter.outputs.postgres_matrix }}
+        run: |
+          set -euo pipefail
+          matrix="${POSTGRES_MATRIX:-[]}"
+          if [[ "${{ github.ref }}" == "refs/heads/trunk" && -n "${FAILING_JOBS}" && "${FAILING_JOBS}" == *"Postgres Compatibility ("* ]]; then
+            selected=$(jq -c --arg jobs "${FAILING_JOBS}" '
+              map(.pg_image as $image | select(($jobs | split("; ")) | index("Postgres Compatibility (" + $image + ")")))
+            ' <<<"${matrix}")
+            if [[ "$(jq length <<<"${selected}")" -gt 0 ]]; then
+              matrix="${selected}"
+              echo "Trunk-red reduced Postgres legs: ${matrix}"
+            else
+              echo "::warning::trunk_red_failing_jobs named Postgres Compatibility but matched no configured matrix leg; retaining the full Postgres matrix."
+            fi
+          fi
+          echo "postgres_matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+
   # Compute the server-tests shard subset for this PR. Scheduled/manual full
   # integration runs execute every shard. See ADR-0037.
   # Per ADR-0037 .github/ci-shards.json is the single source of truth for both
@@ -548,7 +577,7 @@ jobs:
   #     shards never instantiate a runner.
   targeted-shards:
     name: Detect Targeted Server-Tests Shards
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Server Tests (')) }}
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -564,6 +593,7 @@ jobs:
         id: compute
         env:
           TRAILING_SELECTIVE_BASE: ${{ inputs.selective_base }}
+          TRUNK_RED_FAILING_JOBS: ${{ inputs.trunk_red_failing_jobs }}
         run: |
           set -euo pipefail
           all_shards_json=$(jq -c '[.shards[].name]' .github/ci-shards.json)
@@ -631,6 +661,22 @@ jobs:
               })
             | sort_by(-.dispatch_rank)
           ' .github/ci-shards.json)
+
+          # Matrix job names are the rendered check names, so a trunk-red
+          # input can narrow Server Tests to the exact failed shard legs. If
+          # the list is malformed or stale, fail safe to every shard rather
+          # than silently omitting a required failing check.
+          if [[ "${{ github.ref }}" == "refs/heads/trunk" && -n "${TRUNK_RED_FAILING_JOBS}" && "${TRUNK_RED_FAILING_JOBS}" == *"Server Tests ("* ]]; then
+            reduced_matrix=$(jq -c --arg jobs "${TRUNK_RED_FAILING_JOBS}" '
+              map(.shard_name as $shard | select(($jobs | split("; ")) | index("Server Tests (" + $shard + ")")))
+            ' <<<"${matrix_include}")
+            if [[ "$(jq length <<<"${reduced_matrix}")" -gt 0 ]]; then
+              matrix_include="${reduced_matrix}"
+              echo "Trunk-red reduced Server Tests shards: ${matrix_include}"
+            else
+              echo "::warning::trunk_red_failing_jobs named Server Tests but matched no configured shard; retaining all Server Tests shards."
+            fi
+          fi
           if [ "$(printf '%s' "${matrix_include}" | jq 'length')" = "0" ]; then
             echo "::error::matrix_include is empty — targeted-shards selected no shards"
             exit 1
@@ -674,7 +720,7 @@ jobs:
 
   build:
     name: Build & Format Check
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Build & Format Check') || contains(inputs.trunk_red_failing_jobs, 'AOT Build Verification') || contains(inputs.trunk_red_failing_jobs, 'MCP Certification (') || contains(inputs.trunk_red_failing_jobs, 'MCP LLM Smoke Tests')) }}
     needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -772,7 +818,7 @@ jobs:
   # `test-all` needs the single matrix job id.
   dotnet-foundation-family-tests:
     name: .NET Foundation Tests (${{ matrix.family_name }})
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, '.NET Foundation Tests')) }}
     # Each family restores and builds its own closure. Run in parallel with
     # Build & Format Check; CI Gate still requires every result via `test-all`.
     needs: changes
@@ -889,7 +935,7 @@ jobs:
   # aggregation cannot silently un-gate a family.
   dotnet-foundation-tests:
     name: .NET Foundation Tests
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, '.NET Foundation Tests')) }}
     needs: [changes, dotnet-foundation-family-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1003,7 +1049,7 @@ jobs:
   # engages exactly as it does for every other real gate.
   server-governance-drift:
     name: Server Governance/Drift
-    if: ${{ github.ref == 'refs/heads/trunk' }}
+    if: ${{ github.ref == 'refs/heads/trunk' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Server Governance/Drift')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -1075,7 +1121,7 @@ jobs:
     # painting every PR red kept PRs UNSTABLE (blocking the clean-only merge-train).
     # They still run on scheduled/manual full-matrix runs so the coverage signal
     # isn't lost. Delete the matrix.advisory clause once #1965 fixes the tests.
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Server Tests (')) }}
     runs-on: ubuntu-latest
     # Every shard restores and builds its own test project. Waiting for the
     # independent build/format job added ~14 minutes to the critical path.
@@ -1411,7 +1457,7 @@ jobs:
     # a narrower gate would trade a fixed skip for a new coverage hole. Scheduled
     # / manual full CI and merge-train batches set integration_changes=true, so
     # the job is part of the run_all lane too.
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Worker GDAL Tests')) }}
     runs-on: ubuntu-latest
     needs: changes
     # Step caps sit inside the job cap with the >=10 min non-test overhead margin
@@ -1544,7 +1590,7 @@ jobs:
 
   python-integration-tests:
     name: Python Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Python Integration Tests')) }}
     runs-on: ubuntu-latest
     needs: changes
     timeout-minutes: 25
@@ -1610,7 +1656,7 @@ jobs:
 
   js-typecheck:
     name: JavaScript Type Check
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'JavaScript Type Check')) }}
     runs-on: ubuntu-latest
     needs: changes
     timeout-minutes: 10
@@ -1668,7 +1714,7 @@ jobs:
 
   js-integration-tests:
     name: JavaScript Integration Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'JavaScript Integration Tests')) }}
     runs-on: ubuntu-latest
     needs: changes
     timeout-minutes: 15
@@ -1787,7 +1833,7 @@ jobs:
 
   esri-leaflet-browser-tests:
     name: Esri Leaflet Browser Tests
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Esri Leaflet Browser Tests')) }}
     runs-on: ubuntu-latest
     needs: changes
     timeout-minutes: 15
@@ -1891,7 +1937,7 @@ jobs:
 
   maplibre-compat:
     name: MapLibre GL JS Browser Compatibility
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'MapLibre GL JS Browser Compatibility')) }}
     runs-on: ubuntu-latest
     needs: changes
     timeout-minutes: 15
@@ -2004,7 +2050,7 @@ jobs:
 
   mcp-certification:
     name: MCP Certification (${{ matrix.transport }})
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'MCP Certification (') || contains(inputs.trunk_red_failing_jobs, 'MCP LLM Smoke Tests')) }}
     runs-on: ubuntu-latest
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 15
@@ -2113,7 +2159,7 @@ jobs:
 
   mcp-llm-smoke:
     name: MCP LLM Smoke Tests
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.mcp-certification.outputs.cert_ran == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.mcp-certification.outputs.cert_ran == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'MCP LLM Smoke Tests')) }}
     runs-on: ubuntu-latest
     needs: mcp-certification
     continue-on-error: true
@@ -2207,7 +2253,7 @@ jobs:
 
   postgres-compat:
     name: Postgres Compatibility (${{ matrix.pg_image }})
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Postgres Compatibility (') || contains(inputs.trunk_red_failing_jobs, 'MCP Certification (') || contains(inputs.trunk_red_failing_jobs, 'MCP LLM Smoke Tests') || contains(inputs.trunk_red_failing_jobs, 'AOT Build Verification')) }}
     runs-on: ubuntu-latest
     needs: changes
     timeout-minutes: 30
@@ -2332,7 +2378,7 @@ jobs:
 
   core-package-compatibility:
     name: Honua.Core Package Compatibility
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Honua.Core Package Compatibility') || contains(inputs.trunk_red_failing_jobs, 'AOT Build Verification') || contains(inputs.trunk_red_failing_jobs, 'MCP Certification (') || contains(inputs.trunk_red_failing_jobs, 'MCP LLM Smoke Tests')) }}
     runs-on: ubuntu-latest
     needs: changes
     timeout-minutes: 10
@@ -2442,7 +2488,7 @@ jobs:
     # builds per review-fix push. It runs alongside the shard matrix (p90 88.6m)
     # under a 45-minute ceiling, so it is not expected to extend the batch
     # critical path.
-    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'AOT Build Verification')) }}
     runs-on: ubuntu-latest
     needs: [build, changes, core-package-compatibility, postgres-compat]
     timeout-minutes: 45
@@ -2489,7 +2535,7 @@ jobs:
 
   docker-build:
     name: Docker Build & Integration Test
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Docker Build & Integration Test')) }}
     runs-on: ubuntu-latest
     needs: changes
     # A cold BuildKit build consumed 13m45s in run 29088883576, leaving no
@@ -2681,7 +2727,7 @@ jobs:
 
   quickstart-console-smoke:
     name: Quickstart Console Compose Smoke
-    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' }}
+    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.non_test_changes == 'true' && (inputs.trunk_red_failing_jobs == '' || contains(inputs.trunk_red_failing_jobs, 'Quickstart Console Compose Smoke')) }}
     runs-on: ubuntu-latest
     needs: changes
     timeout-minutes: 30
