@@ -6,7 +6,6 @@ using System.Text;
 using Honua.Core.Features.FileImport.Services;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
-using Xunit;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -22,13 +21,13 @@ public sealed class GeoJsonIntegerRoundtripTests
     public async Task ImportExport_Int64PropertiesAndFeatureIds_PreserveExactTypesAndValues(long value)
     {
         var number = value.ToString(CultureInfo.InvariantCulture);
-        var json = $$"""
-            {"type":"FeatureCollection","features":[{"type":"Feature","id":{{number}},"geometry":{"type":"Point","coordinates":[-157.1234567890123,21.1234567890123,30.25]},"properties":{"key":{{number}},"fraction":1.25,"active":true,"name":"Hawaiʻi"}}]}
+        var json = $$$"""
+            {"type":"FeatureCollection","features":[{"type":"Feature","id":{{{number}}},"geometry":{"type":"Point","coordinates":[-157.1234567890123,21.1234567890123,30.25]},"properties":{"key":{{{number}}},"fraction":1.25,"active":true,"name":"Hawaiʻi"}}]}
             """;
         var source = Assert.Single(await ReadAsync(json));
         Assert.Equal(value, Assert.IsType<long>(source.Attributes["key"]));
         Assert.Equal(value, Assert.IsType<long>(source.Attributes["id"]));
-        var exported = new GeoJsonWriter().Write(source);
+        var exported = new GeoJsonWriter { Dimension = 3 }.Write(new FeatureCollection { source });
         var roundtrip = Assert.Single(await ReadAsync(exported));
         Assert.Equal(value, Assert.IsType<long>(roundtrip.Attributes["key"]));
         Assert.Equal(value, Assert.IsType<long>(roundtrip.Attributes["id"]));
