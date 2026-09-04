@@ -218,29 +218,34 @@ internal static class ImageServerGeometryHelpers
                     AppendCoordinatePairs(partElement, part);
                 }
 
-                for (var i = 0; i < part.Count && result.Count < maxPointCount; i++)
+                if (part.Count > 0 && result.Count < maxPointCount)
                 {
-                    if (i == 0)
-                    {
-                        result.Add(part[i]);
-                        continue;
-                    }
+                    result.Add(part[0]);
+                }
 
+                var distanceToNextSample = sampleDistance;
+                for (var i = 1; i < part.Count && result.Count < maxPointCount; i++)
+                {
                     var start = part[i - 1];
                     var end = part[i];
                     var dx = end.X - start.X;
                     var dy = end.Y - start.Y;
                     var length = Math.Sqrt((dx * dx) + (dy * dy));
-                    for (var distance = sampleDistance; distance < length && result.Count < maxPointCount; distance += sampleDistance)
+                    if (length <= 0)
                     {
-                        var fraction = distance / length;
-                        result.Add((start.X + (dx * fraction), start.Y + (dy * fraction)));
+                        continue;
                     }
 
-                    if (result.Count < maxPointCount)
+                    var distanceAlongSegment = 0d;
+                    while (distanceToNextSample <= length - distanceAlongSegment && result.Count < maxPointCount)
                     {
-                        result.Add(end);
+                        distanceAlongSegment += distanceToNextSample;
+                        var fraction = distanceAlongSegment / length;
+                        result.Add((start.X + (dx * fraction), start.Y + (dy * fraction)));
+                        distanceToNextSample = sampleDistance;
                     }
+
+                    distanceToNextSample -= length - distanceAlongSegment;
                 }
             }
         }

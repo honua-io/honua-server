@@ -35,10 +35,10 @@ public class ImageServerSamplesHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public void GetSamples_PolylineSampleDistanceCreatesIntermediatePoints()
+    public void GetSamples_PolylineSampleDistanceCarriesSpacingAcrossVertices()
     {
         var ok = ImageServerGeometryHelpers.TryGetSamplePoints(
-            "{\"paths\":[[[0,0],[10,0]]],\"spatialReference\":{\"wkid\":4326}}",
+            "{\"paths\":[[[0,0],[1,0],[10,0]]],\"spatialReference\":{\"wkid\":4326}}",
             sampleDistance: 2,
             maxPointCount: 1000,
             out var points,
