@@ -91,7 +91,7 @@ Run `POST /api/v1/admin/multidim-coverages` with this body:
 - **`Raster import request is invalid.` for PNG/JPEG** — those formats need a `.pgw`/`.jgw`/`.wld` world file; add the sidecar or supply `srid` plus a `.prj`.
 - **Homogeneity error on upload** — the new raster's SRID or band count differs from the layer's first raster; use a separate layer or reproject/restack the source.
 - **COG tiles not served from cloud** — check the registration with `GET /api/v1/admin/cloud-rasters/{id}`, confirm a range reader is configured for the provider, and verify that the object has an ETag and standalone JPEG tiles. The decoder understands DEFLATE/LZW/ZSTD/uncompressed data, but the tile route cannot encode those samples as PNG/JPEG/TIFF; its default `format=png` does not transcode JPEG either.
-- **Web tiles misaligned** — direct COG tile serving requires an EPSG:3857 GoogleMapsCompatible grid. Other SRIDs and grids fail closed; use the imported PostGIS path for reprojection and general raster operations.
+- **Web tiles misaligned** — direct COG tile serving requires an EPSG:3857 GoogleMapsCompatible grid. Other SRIDs and grids return 404 from the tile fallback; use the imported PostGIS path for reprojection and general raster operations. A successful metadata refresh does not certify that a source is tile-servable. Rotated, sheared and invalid ModelTransformation grids are rejected during metadata extraction.
 
 More help: [troubleshooting](../deploy/troubleshooting.md).
 

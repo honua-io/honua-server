@@ -28,7 +28,7 @@ cloud COGs. The tile object must be an EPSG:3857, GoogleMapsCompatible-aligned C
 closed rather than being reprojected. Only standalone JPEG tiles can pass through with `format=jpg`;
 TIFF-JPEG streams requiring shared JPEGTables are not assembled. DEFLATE, LZW, ZSTD and uncompressed
 samples can be decoded internally, but this route has no image encoder for them. The default
-`format=png` does not transcode JPEG. Workflow detail: [Publish rasters](../../guides/publish/publish-rasters.md).
+`format=png` does not transcode JPEG. Unsupported grids and output formats return 404 from the tile fallback; a successful metadata refresh does not guarantee tile delivery. Workflow detail: [Publish rasters](../../guides/publish/publish-rasters.md).
 
 Imported rasters can be deleted (`DELETE /api/v1/admin/import/raster/{rasterId}`) and have their descriptive metadata updated (`PATCH /api/v1/admin/import/raster/{rasterId}` — `name`/`description`/`acquisitionDate`); cloud-registered COGs use `DELETE /api/v1/admin/cloud-rasters/{id}`. These admin operations are the canonical equivalents of Esri ImageServer's `deleteRasters`/`updateRaster` — see the [ImageServer admin-op mapping](../compatibility/imageserver-admin-mapping.md).
 
