@@ -189,6 +189,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 SourceSrid = 4326,
                 TargetSrid = 4326,
                 LoadMode = loadMode,
+                OverwriteExisting = loadMode == ImportLoadMode.Replace,
             });
 
             result.Success.Should().BeTrue(result.ErrorMessage);
@@ -286,6 +287,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 SourceSrid = 4326,
                 TargetSrid = 4326,
                 LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true,
             });
             await firstStream.WaitForReadStartedAsync();
 
@@ -299,6 +301,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 SourceSrid = 4326,
                 TargetSrid = 4326,
                 LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true,
             });
 
             // Give the second request a chance to contend while the first owns the target's
@@ -730,6 +733,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 TargetSchema = schema,
                 SourceSrid = 4326,
                 TargetSrid = 4326,
+                OverwriteExisting = true,
             });
 
             result.Success.Should().BeFalse();

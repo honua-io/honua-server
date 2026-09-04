@@ -248,14 +248,23 @@ internal static class McpBearerAuthenticationEndpointExtensions
         // A policy scheme forwards to the concrete validator and preserves that
         // handler's ticket scheme. Only those framework-owned bearer schemes may
         // cross this authority boundary; no token claim can choose the scheme.
+        // Policy-scheme authentication can retain the forwarding scheme on the ticket
+        // ("Composite") even though the concrete JWT handler created the authenticated
+        // identity as "Bearer". Use that framework-owned identity type as the concrete
+        // provenance when the ticket itself is the forwarding wrapper.
+        var sourceIdentity = principal.Identities.FirstOrDefault(static identity => identity.IsAuthenticated);
         var scheme = result.Ticket?.AuthenticationScheme;
+        if (!string.Equals(scheme, OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(scheme, OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase))
+        {
+            scheme = sourceIdentity?.AuthenticationType;
+        }
         if (!string.Equals(scheme, OidcAuthenticationExtensions.JwtBearerScheme, StringComparison.OrdinalIgnoreCase)
             && !string.Equals(scheme, OidcAuthenticationExtensions.OperatorBearerScheme, StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        var sourceIdentity = principal.Identities.FirstOrDefault(static identity => identity.IsAuthenticated);
         var identity = new ClaimsIdentity(
             principal.Claims.Where(static claim =>
                 !claim.Type.StartsWith("honua:", StringComparison.OrdinalIgnoreCase)

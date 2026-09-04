@@ -173,7 +173,10 @@ public static class AuthenticationExtensions
     private static void ConfigureAdminPolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
-        _ = policy.RequireRole("admin", AdminApiKeyPermission.ApprovedOperationRole);
+        _ = policy.RequireRole(
+            "admin",
+            AdminApiKeyPermission.ApprovedOperationRole,
+            LayerScopedWriteKey.ScopedKeyRole);
         _ = policy.AddRequirements(new AdminPermissionRequirement());
         policy.AuthenticationSchemes.Add(ApiKeyScheme);
         if (mtlsCapabilityEnabled)
@@ -185,7 +188,7 @@ public static class AuthenticationExtensions
     private static void ConfigureAdminApprovePolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
-        _ = policy.RequireRole("admin");
+        _ = policy.RequireRole("admin", LayerScopedWriteKey.ScopedKeyRole);
         _ = policy.AddRequirements(new AdminApproveRequirement());
         policy.AuthenticationSchemes.Add(ApiKeyScheme);
         if (mtlsCapabilityEnabled)

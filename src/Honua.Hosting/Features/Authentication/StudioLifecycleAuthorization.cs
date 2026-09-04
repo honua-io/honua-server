@@ -124,6 +124,11 @@ internal sealed class StudioLifecycleAuthorizationHandler(
             return true;
         }
 
+        if (principal.IsInRole(LayerScopedWriteKey.ScopedKeyRole))
+        {
+            return true;
+        }
+
         var aliases = options.AdminRoles;
         if (aliases is null)
         {

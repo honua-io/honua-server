@@ -267,13 +267,6 @@ internal static partial class AttachmentEndpoints
             featureIds = Array.FindAll(featureIds, allowed.Contains);
         }
 
-        var featureReaderForVisibility = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var visibleFeatureIds = await featureReaderForVisibility.QueryObjectIdsAsync(
-            layerId,
-            new FeatureQuery { ObjectIds = featureIds.ToImmutableArray(), ExcludeAttributes = true },
-            cancellationToken);
-        featureIds = Array.FindAll(featureIds, visibleFeatureIds.Contains);
-
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 

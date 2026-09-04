@@ -79,6 +79,53 @@ internal static class TenantDenialResponseWriter
         return StandardErrorResponseFormatter.WriteErrorAsync(context, errorResponse, options);
     }
 
+    /// <summary>
+    /// Identifies MCP calls that cross the tenant data boundary while preserving tenantless discovery.
+    /// </summary>
+    internal static async Task<bool> IsTenantBoundMcpRequestAsync(HttpRequest request)
+    {
+        if (!IsMcpRequest(request.Path))
+        {
+            return false;
+        }
+
+        if (HttpMethods.IsGet(request.Method) || HttpMethods.IsDelete(request.Method))
+        {
+            return true;
+        }
+
+        if (!HttpMethods.IsPost(request.Method) || request.ContentLength == 0)
+        {
+            return false;
+        }
+
+        request.EnableBuffering();
+        try
+        {
+            using var document = await JsonDocument.ParseAsync(
+                    request.Body,
+                    cancellationToken: request.HttpContext.RequestAborted)
+                .ConfigureAwait(false);
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                return document.RootElement.EnumerateArray().Any(IsTenantBoundMcpElement);
+            }
+
+            return IsTenantBoundMcpElement(document.RootElement);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        finally
+        {
+            if (request.Body.CanSeek)
+            {
+                request.Body.Position = 0;
+            }
+        }
+    }
+
     private static async Task WriteMcpAsync(HttpContext context, TenantDenialKind denial)
     {
         var request = await ReadMcpRequestIdentityAsync(context.Request, context.RequestAborted).ConfigureAwait(false);
@@ -232,6 +279,13 @@ internal static class TenantDenialResponseWriter
         var identity = ParseMcpRequestIdentity(element);
         return new McpBatchItem(identity.Id, identity.IsNotification);
     }
+
+    private static bool IsTenantBoundMcpElement(JsonElement element)
+        => element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty("method", out var method)
+            && method.ValueKind == JsonValueKind.String
+            && (string.Equals(method.GetString(), "tools/call", StringComparison.Ordinal)
+                || string.Equals(method.GetString(), "resources/read", StringComparison.Ordinal));
 
     private static bool IsValidMcpRequestId(JsonElement id)
     {

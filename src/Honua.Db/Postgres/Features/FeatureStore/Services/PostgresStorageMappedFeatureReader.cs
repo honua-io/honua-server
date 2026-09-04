@@ -487,6 +487,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return $"({string.Join(" || ", chunks)})::text";
     }
 
+    private static string BuildAttributesExpressionText(
+        MetadataV2Field[] fields,
+        string? attributesColumn,
+        Func<object?, string> addParameter)
+        => BuildAttributesExpressionText(fields, attributesColumn, addParameter, distinctObjectIdExpression: null);
+
     private static string BuildAttributesExpressionChunk(
         IEnumerable<MetadataV2Field> fields,
         string? attributesColumn,
