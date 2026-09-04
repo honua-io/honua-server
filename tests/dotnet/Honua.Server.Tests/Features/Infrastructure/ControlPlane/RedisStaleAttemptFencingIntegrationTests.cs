@@ -56,11 +56,11 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 CREATE TABLE "{schema}".fenced_output (
                     id BIGSERIAL PRIMARY KEY,
                     geom geometry(Geometry, 4326),
-                    attributes JSONB NOT NULL
+                    attributes JSONB NOT NULL,
+                    idempotency_key TEXT NOT NULL
                 );
-                CREATE UNIQUE INDEX fenced_output_logical_row
-                    ON "{schema}".fenced_output
-                    ((attributes->>'__pipeline_batch_id'), (attributes->>'row_id'));
+                ALTER TABLE "{schema}".fenced_output
+                    ADD CONSTRAINT fenced_output_idempotency UNIQUE (idempotency_key);
                 """);
 
             var job = CreateSinkJob(operationId, schema, retryPolicy: new JobRetryPolicy
@@ -397,7 +397,10 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             [prefix + "table"] = "fenced_output",
             [prefix + "schema"] = schema,
             [prefix + "targetSrid"] = "4326",
-            [prefix + "batchSize"] = "1"
+            [prefix + "batchSize"] = "1",
+            [prefix + "idempotencyColumn"] = "idempotency_key",
+            [prefix + "idempotencyConstraint"] = "fenced_output_idempotency",
+            [prefix + "idempotencyKey"] = operationId
         };
 
         var now = DateTimeOffset.UtcNow;
