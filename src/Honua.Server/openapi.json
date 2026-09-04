@@ -263,7 +263,7 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 2000,
+              "maximum": 10000,
               "default": 1000
             }
           },
@@ -354,6 +354,39 @@
             "schema": {
               "type": "string",
               "format": "uri"
+            }
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated feature identifiers to return",
+            "style": "form",
+            "explode": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "properties",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated property names to include in each feature",
+            "style": "form",
+            "explode": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortby",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated sort fields, optionally prefixed with + for ascending or - for descending order",
+            "style": "form",
+            "explode": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],

@@ -107,6 +107,21 @@ public sealed class SharingRestReadTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/info")]
+    public async Task GeoServicesInfo_AdvertisesTokenAuthentication()
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await client.GetAsync("/rest/info?f=json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var authInfo = doc.RootElement.GetProperty("authInfo");
+        authInfo.GetProperty("isTokenBasedSecurity").GetBoolean().Should().BeTrue();
+        authInfo.GetProperty("tokenServicesUrl").GetString().Should().EndWith("/sharing/rest/generateToken");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /sharing/rest/portals/self")]
     public async Task PortalsSelf_Anonymous_OmitsUser()

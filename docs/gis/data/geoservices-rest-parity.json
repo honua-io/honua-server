@@ -3481,6 +3481,7 @@
             "honuaEndpoints": [
               "GET /rest/services/GeocodeServer/findAddressCandidates",
               "GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates",
+              "POST /rest/services/GeocodeServer/findAddressCandidates",
               "POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates"
             ],
             "capabilityMaturity": [
@@ -4131,6 +4132,21 @@
               "implemented"
             ],
             "notes": "authorization_code and refresh_token grants with rotating refresh tokens (rotation on by default); Basic-auth client credentials accepted. POST only \u2014 the GET form was deliberately removed. The client_credentials grant is opt-in (EnableClientCredentials, default false \u2192 unsupported_grant_type), as is its optional IdP/OIDC federation."
+          },
+          {
+            "name": "OAuth2 userinfo",
+            "status": "implemented",
+            "esriPaths": [
+              "/sharing/rest/oauth2/userinfo"
+            ],
+            "honuaEndpoints": [
+              "GET /sharing/rest/oauth2/userinfo",
+              "POST /sharing/rest/oauth2/userinfo"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Accepts GET and form-encoded POST with a valid portal token supplied as Bearer authorization, X-Esri-Authorization, access_token, or token. Returns the OAuth2 subject, username, and display name; invalid or missing credentials use the OAuth2 invalid_request/invalid_token envelopes."
           }
         ],
         "partial": [

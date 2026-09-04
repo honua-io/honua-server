@@ -800,6 +800,12 @@ internal static class GeoservicesCatalogEndpoints
             entries.Sort(ServiceDirectoryEntryComparer);
         }
 
+        // A graph can contain more than one publication/service record that projects to
+        // the same Esri directory name and type. ArcGIS clients treat the directory key as
+        // (name,type); returning duplicates makes authenticated discovery ambiguous and can
+        // cause SDKs to open the same service twice (#4130).
+        entries = DeduplicateServiceDirectoryEntries(entries);
+
         IResult? accessError = null;
         int? accessStatusCode = null;
         if (entries.Count == 0 && deniedDecisions.Count > 0)
@@ -818,6 +824,18 @@ internal static class GeoservicesCatalogEndpoints
             accessError,
             accessStatusCode,
             imageServerServices.Count > 0 && successfulImageServerProbes == 0 && failedImageServerProbes > 0);
+    }
+
+    private static List<ServiceDirectoryEntry> DeduplicateServiceDirectoryEntries(
+        IEnumerable<ServiceDirectoryEntry> source)
+    {
+        var result = new List<ServiceDirectoryEntry>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        result.AddRange(source
+            .OrderBy(static entry => entry, Comparer<ServiceDirectoryEntry>.Create(ServiceDirectoryEntryComparer))
+            .Where(entry => seen.Add($"{entry.Name}\u0000{entry.Type}")));
+
+        return result;
     }
 
     private static int ServiceDirectoryEntryComparer(ServiceDirectoryEntry left, ServiceDirectoryEntry right)
@@ -862,7 +880,10 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandleGetRestInfo(HttpContext context, string? f)
+    private static IResult HandleGetRestInfo(
+        HttpContext context,
+        string? f,
+        [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions)
     {
         if (!IsSupportedFormat(f))
         {
@@ -880,7 +901,14 @@ internal static class GeoservicesCatalogEndpoints
         var response = new RestInfoResponse
         {
             SoapUrl = soapUrl,
-            SecureSoapUrl = IsHttpsBaseUrl(baseUrl, context) ? soapUrl : null
+            SecureSoapUrl = IsHttpsBaseUrl(baseUrl, context) ? soapUrl : null,
+            AuthInfo = new RestAuthInfo
+            {
+                IsTokenBasedSecurity = tokenOptions.Value.Enabled,
+                TokenServicesUrl = tokenOptions.Value.Enabled
+                    ? $"{baseUrl}/sharing/rest/generateToken"
+                    : null
+            }
         };
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
     }

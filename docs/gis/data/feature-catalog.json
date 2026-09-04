@@ -6625,6 +6625,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCoreContractTests.GetOpenApiSpec_ItemsParametersMatchRuntimeContract",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetOpenApiSpec_OgcFeaturesApiRoute_ReturnsValidOpenApiSpecification",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.GlobalControlPlaneEndpoints_AreMarkedTenantIndependent",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution"
@@ -6729,6 +6730,9 @@
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetFeatures_ShouldReturnGeoJSON",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.StoryCollection_AfterReset_ReturnsSeededOgcFeatures",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCoreContractTests.GetItems_AtMaximumOffset_DoesNotAdvertiseUnreachableNextLink",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCoreContractTests.GetItems_WithBboxOnNonSpatialCollection_MatchesAllFeatures",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCoreContractTests.GetItems_WithDatetimeOnNonTemporalCollection_MatchesAllFeatures",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_FormatParameterOverridesAcceptHeader",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_ReturnsResponseWithPagingLinksAndTimeStamp",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetItems_With3dBbox_AcceptsAndUsesHorizontalExtent",
@@ -7793,7 +7797,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetRestInfo_DefaultFormat_ReturnsRootInfo",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetRestInfo_HttpsPublicBaseUrl_PublishesSecureSoapUrl"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetRestInfo_HttpsPublicBaseUrl_PublishesSecureSoapUrl",
+        "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.GeoServicesInfo_AdvertisesTokenAuthentication"
       ],
       "proof_ledger_surface": "geoservices-catalog",
       "maturity": "implemented",
@@ -7817,6 +7822,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetServicesDirectory_PjsonFormat_ReturnsCatalogPayload",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogSceneServerTests.GetServicesDirectory_Enterprise_ListsRegisteredSceneServer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogSceneServerTests.GetServicesDirectory_OpenCore_OmitsSceneServer",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_DuplicatePublicationNameAndType_ReturnsOneEntry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_LayerlessGpServiceRequiresServingLifecycle",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_LayerlessGpService_TypedAsGpServer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogServiceTypingTests.GetServicesDirectory_MultiProtocolService_ListedOncePerEsriType",
@@ -9330,6 +9336,7 @@
         "Honua.Server.Tests.Features.Security.GeoServicesRouteValidationTests.FeatureServer_Metadata_AllowsNumericLeadingServiceId",
         "Honua.Server.Tests.Features.Security.InputValidationIntegrationTests.FeatureServer_WithSqlLikeBearerCredential_DoesNotReturnBadRequest",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.Authorization_PublicEndpoint_AllowsAnonymousAccess",
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.InvalidQueryToken_ReturnsEsri498InsteadOfAnonymousDowngrade",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.IssuedRequestIpToken_AuthenticatesSubsequentRestRequest",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.IssuedToken_AcceptedViaAuthorizationBearerHeader_Authenticates",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.IssuedToken_AcceptedViaEsriAuthorizationHeader_Authenticates",
@@ -12201,6 +12208,20 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2CallbackE2ETests.Callback_FullIdpRoundTrip_IssuesArcGisCodeAndMintsToken",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Callback_WhenNoOidcProviderConfigured_Returns404"
+      ],
+      "proof_ledger_surface": "arcgis-portal-sharing",
+      "maturity": "implemented",
+      "capability": "identity.portal-sharing"
+    },
+    {
+      "id": "get-sharing-rest-oauth2-userinfo",
+      "route": "/sharing/rest/oauth2/userinfo",
+      "method": "GET",
+      "family": "ArcGIS Portal Sharing",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.UserInfo_WithOAuthAccessToken_ReturnsEsriUserIdentity"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
       "maturity": "implemented",
@@ -17655,6 +17676,20 @@
       "capability": "serve.geoservices-geocodeserver"
     },
     {
+      "id": "post-rest-services-geocodeserver-findaddresscandidates",
+      "route": "/rest/services/GeocodeServer/findAddressCandidates",
+      "method": "POST",
+      "family": "GeoServices REST GeocodeServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.FindAddressCandidates_ReturnsGeoServicesPayload"
+      ],
+      "proof_ledger_surface": "geocode-server",
+      "maturity": "implemented",
+      "capability": "geocoding.forward"
+    },
+    {
       "id": "post-rest-services-utilities-geometry-geometryserver",
       "route": "/rest/services/Utilities/Geometry/GeometryServer",
       "method": "POST",
@@ -20617,7 +20652,7 @@
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WhenDisabled_Returns404",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithClientRequestIp_ReturnsToken",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithFormCredentials_ReturnsTokenAndExpiry",
-        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithInvalidCredentials_Returns401",
+        "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithInvalidCredentials_Returns400UnableToGenerateToken",
         "Honua.Server.Tests.Features.Sharing.SharingRestTokenTests.GenerateToken_WithoutCredentials_Returns400"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
@@ -20684,6 +20719,20 @@
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Token_UnknownAuthorizationCode_ReturnsInvalidGrant",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Token_UnsupportedGrantType_ReturnsError",
         "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.Token_WhenPortalTokenDisabled_Returns404"
+      ],
+      "proof_ledger_surface": "arcgis-portal-sharing",
+      "maturity": "implemented",
+      "capability": "identity.portal-sharing"
+    },
+    {
+      "id": "post-sharing-rest-oauth2-userinfo",
+      "route": "/sharing/rest/oauth2/userinfo",
+      "method": "POST",
+      "family": "ArcGIS Portal Sharing",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Sharing.SharingOAuth2Tests.UserInfo_PostWithFormAccessToken_ReturnsEsriUserIdentity"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
       "maturity": "implemented",
