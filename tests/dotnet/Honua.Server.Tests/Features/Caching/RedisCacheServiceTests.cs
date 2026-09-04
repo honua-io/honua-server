@@ -516,6 +516,59 @@ public sealed class RedisCacheServiceTests : IDisposable
         exception.CancellationToken.Should().Be(cancellation.Token);
     }
 
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Cache)]
+    public async Task IsCacheHealthyAsync_ConcurrentProbes_DoNotDeleteEachOthersEntries(bool sameInstance)
+    {
+        var entries = new ConcurrentDictionary<string, byte[]>();
+        var firstReadStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readCount = 0;
+        var distributedCache = Substitute.For<IDistributedCache>();
+        distributedCache.SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<DistributedCacheEntryOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                entries[call.ArgAt<string>(0)] = call.ArgAt<byte[]>(1);
+                return Task.CompletedTask;
+            });
+        distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                if (Interlocked.Increment(ref readCount) == 1)
+                {
+                    firstReadStarted.SetResult();
+                    await releaseFirstRead.Task;
+                }
+                return entries.TryGetValue(call.ArgAt<string>(0), out var value) ? value : null;
+            });
+        distributedCache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                entries.TryRemove(call.ArgAt<string>(0), out _);
+                return Task.CompletedTask;
+            });
+        using var first = new RedisCacheService(distributedCache, Options.Create(_options),
+            NullLogger<RedisCacheService>.Instance, _performanceMonitor);
+        using var second = new RedisCacheService(distributedCache, Options.Create(_options),
+            NullLogger<RedisCacheService>.Instance, _performanceMonitor);
+
+        var firstProbe = first.IsCacheHealthyAsync();
+        await firstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var secondProbe = (sameInstance ? first : second).IsCacheHealthyAsync();
+        if (!sameInstance)
+        {
+            Assert.True(await secondProbe);
+        }
+        releaseFirstRead.SetResult();
+
+        Assert.True(await firstProbe);
+        Assert.True(await secondProbe);
+        Assert.Empty(entries);
+    }
+
     [UnitTest]
     [Operation(Operations.Cache)]
     public async Task TryRestoreRedisAsync_WhenRedisRecovers_ClearsFallbackState()
