@@ -12,7 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Operations;
-using Honua.TestKit.Attributes;
+using Xunit;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
@@ -23,9 +23,11 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Operations;
 
+[Trait("Category", "Unit")]
+[Trait("Tier", "Fast")]
 public sealed class AdminOperationsGaContractTests
 {
-    [UnitTest]
+    [Fact]
     public async Task AdminMutation_AuditDetails_PreserveEffectiveTenant()
     {
         var tenant = new RequestTenantContext();
@@ -61,7 +63,7 @@ public sealed class AdminOperationsGaContractTests
         recorded!.Details.Should().Contain("tenant-a", "the shared audit table must identify the effective target tenant");
     }
 
-    [UnitTest]
+    [Fact]
     public void AdminApprovalPlan_ReviewerProjection_IdentifiesTargetAndChange()
     {
         var definition = AdminApiOperationCatalog.Definitions.Single(d => d.OperationId == "admin.layer.filter.set");
@@ -85,7 +87,7 @@ public sealed class AdminOperationsGaContractTests
         reviewerText.Should().Contain("status = 'open'", "the reviewer must be shown the proposed change");
     }
 
-    [UnitTest]
+    [Fact]
     public async Task ApprovedReplay_TenantHeader_PreservesApprovedTenant()
     {
         var tenant = new RequestTenantContext();
@@ -113,7 +115,7 @@ public sealed class AdminOperationsGaContractTests
         tenant.TenantId.Should().Be("approved-tenant", "replay must use the tenant sealed into the approved payload");
     }
 
-    [UnitTest]
+    [Fact]
     public async Task ReleasePackageList_Pagination_RemainsInQuery()
     {
         using var capture = new CaptureHandler();
@@ -129,7 +131,7 @@ public sealed class AdminOperationsGaContractTests
         capture.Uri.Query.Should().Be("?limit=1&offset=2");
     }
 
-    [UnitTest]
+    [Fact]
     public async Task SetLayerEnabled_ServiceFilter_RemainsInQuery()
     {
         using var capture = new CaptureHandler();
@@ -154,7 +156,7 @@ public sealed class AdminOperationsGaContractTests
         capture.Uri.AbsolutePath.Should().EndWith("/layers/1/enabled");
     }
 
-    [UnitTest]
+    [Fact]
     public async Task ReleasePackageCreate_NumericText_RemainsAString()
     {
         using var capture = new CaptureHandler();
@@ -171,7 +173,7 @@ public sealed class AdminOperationsGaContractTests
         body.RootElement.GetProperty("title").GetString().Should().Be("2026");
     }
 
-    [UnitTest]
+    [Fact]
     public async Task MetadataPrevalidate_MissingRequiredTarget_IsInvalid()
     {
         using var capture = new CaptureHandler();
@@ -190,7 +192,7 @@ public sealed class AdminOperationsGaContractTests
             new OperationLineageAttestationStore(TimeProvider.System));
     }
 
-    private static IHttpContextAccessor Context()
+    private static HttpContextAccessor Context()
     {
         var context = new DefaultHttpContext();
         context.Request.Host = new HostString("localhost", 8080);

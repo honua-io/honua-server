@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <IsTestProject>true</IsTestProject>
+    <!-- Retain the existing Hosting friend-assembly boundary for isolated probes. -->
+    <AssemblyName>Honua.Server.Tests</AssemblyName>
+    <NoWarn>$(NoWarn);CA1861;CA1001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
+    <Compile Include="../../dotnet/Honua.Server.Tests/Features/Operations/AdminOperationsGaContractTests.cs" Link="AdminOperationsGaContractTests.cs" />
+    <EmbeddedResource Include="../../../docs/developer/api-specs/admin-api.json" LogicalName="Honua.Server.admin-api.json" />
+    <Compile Include="../../../src/Honua.Server/Features/Operations/AdminApiOperationCatalog.cs" Link="Production/Operations/AdminApiOperationCatalog.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Operations/AdminApiOperationExecutor.cs" Link="Production/Operations/AdminApiOperationExecutor.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Operations/AdminOperateOperationCatalog.cs" Link="Production/Operations/AdminOperateOperationCatalog.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Operations/AdminOperateOperationExecutor.cs" Link="Production/Operations/AdminOperateOperationExecutor.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Operations/OperationLineageHeaders.cs" Link="Production/Operations/OperationLineageHeaders.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Operations/ApprovedOperationCredentialRevocation.cs" Link="Production/Operations/ApprovedOperationCredentialRevocation.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Operations/ServicePublishOperation.cs" Link="Production/Operations/ServicePublishOperation.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Infrastructure/Middleware/TenantContextMiddleware.cs" Link="Production/Infrastructure/Middleware/TenantContextMiddleware.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Infrastructure/MultiTenancy/RequestTenantContext.cs" Link="Production/Infrastructure/MultiTenancy/RequestTenantContext.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Infrastructure/MultiTenancy/TenantDenialResponseWriter.cs" Link="Production/Infrastructure/MultiTenancy/TenantDenialResponseWriter.cs" />
+  </ItemGroup>
+</Project>
