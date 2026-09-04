@@ -234,6 +234,23 @@ internal sealed partial class AdminAuthSessionStore(
             AdminAuthSessionLog.DistributedCacheRemoveFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
             if (keyPrefix == AuthSessionKeyPrefix)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    // A direct shared-store miss confirms idempotent revocation. Never
+                    // use the memory fallback or interpret a failed read as absence.
+                    if (await _distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false) is null)
+                    {
+                        return;
+                    }
+                }
+                catch (Exception readException) when (readException is not OutOfMemoryException)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    AdminAuthSessionLog.DistributedCacheReadFailed(
+                        _logger, GetKeyFamily(key), LogValueRedactor.Hash(key), readException);
+                }
+
                 // A local eviction cannot revoke the authoritative shared session. The caller
                 // must preserve the cookie and report failure so revocation can be retried.
                 cancellationToken.ThrowIfCancellationRequested();
