@@ -9,16 +9,15 @@ namespace Honua.CloudIntegration.Tests;
 
 /// <summary>
 /// Testcontainers fixture that boots a single throwaway PostgreSQL container for the ADR-0060
-/// migration-gate lane (#2166, #2457) and the canonical core-schema verification lane (#3899).
-/// The PostGIS image lets the latter execute the real numbered migration roots; synthetic migration
-/// gate scenarios continue to use plain PostgreSQL objects.
+/// migration-gate lane (#2166, #2457). A plain <c>postgres</c> image is sufficient because the lane
+/// exercises the expand/contract safety gate over synthetic migration scripts (no PostGIS objects).
 ///
 /// When Docker is unavailable the container fails to start, <see cref="Available"/> stays false, and the
 /// dependent <c>[SkippableFact]</c> tests skip — mirroring <see cref="LocalStackFixture"/>.
 /// </summary>
 public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
 {
-    private const string Image = "postgis/postgis:18-3.6";
+    private const string Image = "postgres:17-alpine";
 
     private PostgreSqlContainer? _container;
 
@@ -67,9 +66,7 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
     /// migration scenario runs against its own database so the DbUp journal and applied objects never
     /// cross-contaminate between tests.
     /// </summary>
-    public async Task<string> CreateFreshDatabaseAsync(
-        bool enablePostGis = false,
-        bool enablePostGisRaster = false)
+    public async Task<string> CreateFreshDatabaseAsync()
     {
         var databaseName = $"honua_ci_{Guid.NewGuid():N}";
 
@@ -81,25 +78,9 @@ public sealed class LocalSubstratePostgresFixture : IAsyncLifetime
             await command.ExecuteNonQueryAsync();
         }
 
-        var connectionString = new NpgsqlConnectionStringBuilder(ConnectionString)
+        return new NpgsqlConnectionStringBuilder(ConnectionString)
         {
             Database = databaseName
         }.ConnectionString;
-
-        if (enablePostGis || enablePostGisRaster)
-        {
-            await using var connection = new NpgsqlConnection(connectionString);
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = enablePostGisRaster
-                ? """
-                    CREATE EXTENSION IF NOT EXISTS postgis;
-                    CREATE EXTENSION IF NOT EXISTS postgis_raster;
-                    """
-                : "CREATE EXTENSION IF NOT EXISTS postgis;";
-            await command.ExecuteNonQueryAsync();
-        }
-
-        return connectionString;
     }
 }

@@ -39,12 +39,10 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
         var environment = $"CatalogReconTest-{Guid.NewGuid():N}";
 
         await EnsureCatalogSchemaAsync();
-        await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, "honua");
 
         var graphStore = new PostgresMetadataV2GraphStore(
             new FixtureConnectionProvider(fixture),
-            environment,
-            FixtureBypassDatabaseSchemaGuard.Instance);
+            environment);
 
         try
         {

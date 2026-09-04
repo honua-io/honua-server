@@ -100,14 +100,6 @@ public static class MigrationSafetyClassifier
         @"^\s*--\s*honua:compatibility-review\b.*\breason[ \t]*=[ \t]*\S",
         RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
 
-    // Dynamic SQL inside a function/DO body must remain invisible to the lexical DDL patterns: those
-    // bodies are also used for runtime-generated, non-migration-owned tables. A migration whose dynamic
-    // body deliberately performs a contract-phase operation can opt in explicitly so the runtime gate
-    // still sees it after quoted bodies are stripped.
-    private static readonly Regex DeclaredContractPhaseMarker = new(
-        @"^\s*--\s*honua:migration-phase[ \t]+contract\s*$",
-        RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
-
     private static readonly (string RuleName, Regex Pattern)[] PotentiallyBreakingPatterns =
     [
         CreatePattern("drop-column", @"\bALTER\s+TABLE\b[\s\S]*?\bDROP\s+COLUMN\b"),
@@ -168,11 +160,6 @@ public static class MigrationSafetyClassifier
 
         var normalized = StripCommentsAndQuotedBodies(sql);
         var matchedRules = new List<string>();
-
-        if (DeclaredContractPhaseMarker.IsMatch(sql))
-        {
-            matchedRules.Add("declared-contract-phase");
-        }
 
         foreach (var (ruleName, pattern) in PotentiallyBreakingPatterns)
         {

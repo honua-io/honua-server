@@ -98,8 +98,9 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreStatisticsTests));
         try
         {
+            // raster_layer_statistics is intentionally not created here: the store must
+            // self-provision it (lazy backfill on deployments without the 003 migration).
             await CreateRasterTablesAsync(schemaName);
-            await CoreMigrationTestFixture.ApplyRasterLayerStatisticsAsync(fixture, schemaName);
             var west = await InsertConstantRasterAsync(schemaName, "west", value: 10, upperLeftX: 0);
             var east = await InsertConstantRasterAsync(schemaName, "east", value: 30, upperLeftX: 2);
             var store = CreateStore(schemaName);
@@ -138,7 +139,6 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
         try
         {
             await CreateRasterTablesAsync(schemaName);
-            await CoreMigrationTestFixture.ApplyRasterLayerStatisticsAsync(fixture, schemaName);
             var west = await InsertConstantRasterAsync(schemaName, "west", value: 10, upperLeftX: 0);
             var east = await InsertConstantRasterAsync(schemaName, "east", value: 30, upperLeftX: 2);
             var store = CreateStore(schemaName);
@@ -301,7 +301,6 @@ public sealed class PostgresRasterStoreStatisticsTests(PostgresFixture fixture)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
-            FixtureBypassDatabaseSchemaGuard.Instance,
             schemaName);
 
     // A 2x2 raster whose four pixels are 0, 100, 200, 300 so a stretch has a real range to map.

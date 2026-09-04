@@ -47,12 +47,10 @@ internal sealed partial class DeployWorkflowReconciler(
 
         using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var renewalTask = RenewLeaseUntilCancelledAsync(operationId, reconciliationCancellation);
-        WorkflowOperationRecord? reconciledVersion = null;
 
         try
         {
             var operation = await workflowStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
-            reconciledVersion = operation;
             if (operation == null ||
                 operation.Kind != WorkflowOperationKind.Deploy ||
                 operation.Deploy == null ||
@@ -112,10 +110,8 @@ internal sealed partial class DeployWorkflowReconciler(
 
             if (!Equals(updated, operation))
             {
-                if (await workflowStore.TrySetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false))
-                {
-                    Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
-                }
+                await workflowStore.SetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
+                Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
             }
         }
         catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -125,9 +121,7 @@ internal sealed partial class DeployWorkflowReconciler(
         }
         catch (Exception ex)
         {
-            // Use the version this reconciliation actually observed. Re-reading here would consume a
-            // newer concurrent RollbackRequested claim and let this stale failure overwrite it.
-            var operation = reconciledVersion;
+            var operation = await workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
             if (operation is
                 {
                     Kind: WorkflowOperationKind.Deploy,
@@ -145,7 +139,7 @@ internal sealed partial class DeployWorkflowReconciler(
                     ErrorMessage = $"Deploy reconciliation failed due to {ex.GetType().Name}."
                 };
 
-                await workflowStore.TrySetAsync(failedOperation, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await workflowStore.SetAsync(failedOperation, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
             throw;

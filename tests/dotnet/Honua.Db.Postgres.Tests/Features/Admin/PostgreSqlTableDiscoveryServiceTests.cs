@@ -40,34 +40,4 @@ public sealed class PostgreSqlTableDiscoveryServiceTests
 
         tables.Should().NotBeNull();
     }
-
-    [Fact]
-    public async Task DiscoverPostGisTablesAsync_ExcludesWfsOverwriteStagingTables()
-    {
-        var schemaName = await _fixture.CreateIsolatedSchemaAsync("wfs_stage_discovery");
-        try
-        {
-            await using var connection = await _fixture.DataSource.OpenConnectionAsync();
-            await using (var command = connection.CreateCommand())
-            {
-                command.CommandText = $"CREATE TABLE \"{schemaName}\".\"__honua_wfs_stage_cities\" (geom geometry(Point, 4326))";
-                await command.ExecuteNonQueryAsync();
-            }
-
-            var service = new PostgreSqlTableDiscoveryService(
-                NullLogger<PostgreSqlTableDiscoveryService>.Instance,
-                schemaConfiguration: new PostgresSchemaConfiguration(
-                    PostgresSchemaConfiguration.DefaultMetadataSchema,
-                    schemaName,
-                    [schemaName]));
-
-            var tables = await service.DiscoverPostGisTablesAsync(connection, CancellationToken.None);
-
-            tables.Should().NotContain(table => table.Schema == schemaName && table.Table == "__honua_wfs_stage_cities");
-        }
-        finally
-        {
-            await _fixture.DropSchemaAsync(schemaName);
-        }
-    }
 }

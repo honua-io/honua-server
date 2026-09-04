@@ -3,7 +3,6 @@
 
 using System.Text.Json;
 using Honua.Core.Configuration;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
@@ -140,9 +139,6 @@ internal static partial class FeatureServerEndpoints
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
             var branchVersioningEnabled = IsBranchVersioningAvailable(context);
-            var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
-                context.RequestServices.GetRequiredService<IConfiguration>(),
-                "sync.offline");
             FeatureServerResponse response = MapServiceToResponseV2(
                 service,
                 publications,
@@ -150,8 +146,7 @@ internal static partial class FeatureServerEndpoints
                 limits,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads,
-                branchVersioningEnabled: branchVersioningEnabled,
-                offlineSyncEnabled: offlineSyncEnabled);
+                branchVersioningEnabled: branchVersioningEnabled);
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, response.Layers.Length);
 
@@ -310,9 +305,6 @@ internal static partial class FeatureServerEndpoints
 
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var supportsAttachmentUploads = HasAttachmentSurface(context.RequestServices);
-            var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(
-                context.RequestServices.GetRequiredService<IConfiguration>(),
-                "sync.offline");
             var timeInfo = await BuildTimeInfoV2Async(
                 resource,
                 publication,
@@ -343,8 +335,7 @@ internal static partial class FeatureServerEndpoints
                 popupInfo: popupInfo,
                 extrusionInfo: extrusionInfo,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
-                supportsAttachmentUploads: supportsAttachmentUploads,
-                offlineSyncEnabled: offlineSyncEnabled);
+                supportsAttachmentUploads: supportsAttachmentUploads);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, resolvedLayerId, resource.Metadata.Name);
 

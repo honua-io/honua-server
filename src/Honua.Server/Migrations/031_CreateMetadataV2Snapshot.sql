@@ -2,7 +2,7 @@
 -- sidecar tables provide indexed lookup for admin queries that do not need
 -- to load the full graph.
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_snapshots (
+CREATE TABLE IF NOT EXISTS honua.metadata_v2_snapshots (
     environment       TEXT          NOT NULL,
     revision          BIGINT        NOT NULL,
     schema_version    TEXT          NOT NULL,
@@ -15,20 +15,20 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_snapshots (
 );
 
 -- One row per environment pointing to the active revision.
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_current (
+CREATE TABLE IF NOT EXISTS honua.metadata_v2_current (
     environment       TEXT          NOT NULL PRIMARY KEY,
     revision          BIGINT        NOT NULL,
     etag              TEXT          NOT NULL,
     activated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     FOREIGN KEY (environment, revision)
-        REFERENCES $HonuaSchema$.metadata_v2_snapshots(environment, revision)
+        REFERENCES honua.metadata_v2_snapshots(environment, revision)
         ON DELETE RESTRICT
 );
 
 -- Sidecar lookup tables. Denormalized from the snapshot document, scoped to
 -- (environment, revision) so they roll forward with each snapshot.
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_resources_idx (
+CREATE TABLE IF NOT EXISTS honua.metadata_v2_resources_idx (
     environment       TEXT          NOT NULL,
     revision          BIGINT        NOT NULL,
     resource_id       TEXT          NOT NULL,
@@ -38,14 +38,14 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_resources_idx (
     primary_storage_binding_id TEXT NULL,
     PRIMARY KEY (environment, revision, resource_id),
     FOREIGN KEY (environment, revision)
-        REFERENCES $HonuaSchema$.metadata_v2_snapshots(environment, revision)
+        REFERENCES honua.metadata_v2_snapshots(environment, revision)
         ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_metadata_v2_resources_name
-    ON $HonuaSchema$.metadata_v2_resources_idx (environment, revision, name);
+    ON honua.metadata_v2_resources_idx (environment, revision, name);
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_services_idx (
+CREATE TABLE IF NOT EXISTS honua.metadata_v2_services_idx (
     environment       TEXT          NOT NULL,
     revision          BIGINT        NOT NULL,
     service_id        TEXT          NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_services_idx (
     route             TEXT          NULL,
     PRIMARY KEY (environment, revision, service_id),
     FOREIGN KEY (environment, revision)
-        REFERENCES $HonuaSchema$.metadata_v2_snapshots(environment, revision)
+        REFERENCES honua.metadata_v2_snapshots(environment, revision)
         ON DELETE CASCADE
 );
 
@@ -64,9 +64,9 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_services_idx (
 -- column must NOT be unique. See migration 046 (honua-server#1395), which relaxes this
 -- on databases created before the constraint was corrected.
 CREATE INDEX IF NOT EXISTS idx_metadata_v2_services_name
-    ON $HonuaSchema$.metadata_v2_services_idx (environment, revision, lower(name));
+    ON honua.metadata_v2_services_idx (environment, revision, lower(name));
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_publications_idx (
+CREATE TABLE IF NOT EXISTS honua.metadata_v2_publications_idx (
     environment       TEXT          NOT NULL,
     revision          BIGINT        NOT NULL,
     publication_id    TEXT          NOT NULL,
@@ -79,17 +79,17 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_publications_idx (
     service_local_id  TEXT          NULL,
     PRIMARY KEY (environment, revision, publication_id),
     FOREIGN KEY (environment, revision)
-        REFERENCES $HonuaSchema$.metadata_v2_snapshots(environment, revision)
+        REFERENCES honua.metadata_v2_snapshots(environment, revision)
         ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_metadata_v2_publications_service
-    ON $HonuaSchema$.metadata_v2_publications_idx (environment, revision, service_id);
+    ON honua.metadata_v2_publications_idx (environment, revision, service_id);
 
 CREATE INDEX IF NOT EXISTS idx_metadata_v2_publications_resource
-    ON $HonuaSchema$.metadata_v2_publications_idx (environment, revision, resource_id);
+    ON honua.metadata_v2_publications_idx (environment, revision, resource_id);
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_storage_bindings_idx (
+CREATE TABLE IF NOT EXISTS honua.metadata_v2_storage_bindings_idx (
     environment       TEXT          NOT NULL,
     revision          BIGINT        NOT NULL,
     storage_binding_id TEXT         NOT NULL,
@@ -99,14 +99,14 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_storage_bindings_idx (
     locator           TEXT          NOT NULL,
     PRIMARY KEY (environment, revision, storage_binding_id),
     FOREIGN KEY (environment, revision)
-        REFERENCES $HonuaSchema$.metadata_v2_snapshots(environment, revision)
+        REFERENCES honua.metadata_v2_snapshots(environment, revision)
         ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_metadata_v2_storage_bindings_resource
-    ON $HonuaSchema$.metadata_v2_storage_bindings_idx (environment, revision, resource_id);
+    ON honua.metadata_v2_storage_bindings_idx (environment, revision, resource_id);
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_connections_idx (
+CREATE TABLE IF NOT EXISTS honua.metadata_v2_connections_idx (
     environment       TEXT          NOT NULL,
     revision          BIGINT        NOT NULL,
     connection_id     TEXT          NOT NULL,
@@ -115,6 +115,6 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.metadata_v2_connections_idx (
     provider          TEXT          NULL,
     PRIMARY KEY (environment, revision, connection_id),
     FOREIGN KEY (environment, revision)
-        REFERENCES $HonuaSchema$.metadata_v2_snapshots(environment, revision)
+        REFERENCES honua.metadata_v2_snapshots(environment, revision)
         ON DELETE CASCADE
 );

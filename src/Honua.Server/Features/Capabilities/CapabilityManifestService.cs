@@ -108,7 +108,7 @@ internal sealed class CapabilityManifestService(
         var gateContext = BuildGateContext(snapshot.Edition, request.Environment);
 
         var capabilities = options.ManifestFromRegistry
-            ? BuildCapabilitiesFromRegistry(policyContext, operationCapabilities)
+            ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
@@ -464,6 +464,7 @@ internal sealed class CapabilityManifestService(
     /// </summary>
     private CapabilityManifestCapability[] BuildCapabilitiesFromRegistry(
         CapabilityPolicyContext context,
+        CapabilityGateContext gateContext,
         OperationCapabilitySummary operationCapabilities)
     {
         var specs = BuildManifestCapabilitySpecs(operationCapabilities);
@@ -475,10 +476,16 @@ internal sealed class CapabilityManifestService(
                 continue;
             }
 
+            var resolution = CapabilityGateResolver.Resolve(descriptor, gateContext);
+            if (IsExperimentalDisabled(resolution) && descriptor.Maturity != CapabilityMaturity.Preview)
+            {
+                continue;
+            }
+
             var spec = specs.GetValueOrDefault(descriptor.Id, ManifestCapabilitySpec.Default);
-            var lifecycleEnabled = descriptor.Maturity is not (CapabilityMaturity.Preview or CapabilityMaturity.Experimental)
-                || options.ExperimentalCapabilityFlags.IsExperimentalEnabled(descriptor.Id);
-            var configured = spec.Configured && lifecycleEnabled;
+            var configured = spec.Configured &&
+                (descriptor.Maturity != CapabilityMaturity.Preview ||
+                 options.ExperimentalCapabilityFlags.IsExperimentalEnabled(descriptor.Id));
             capabilities.Add(Capability(
                 descriptor.Id,
                 descriptor.Category,
@@ -486,9 +493,6 @@ internal sealed class CapabilityManifestService(
                 maturity: descriptor.Maturity,
                 supported: spec.Supported,
                 configured: configured,
-                unavailableReasonOverride: lifecycleEnabled
-                    ? null
-                    : Core.Features.Capabilities.CapabilityReasonCodes.ExperimentalDisabled,
                 entitlementKey: spec.EntitlementKey,
                 entitlementKeys: spec.EntitlementKeys,
                 policyCapability: spec.PolicyCapability,
@@ -559,11 +563,6 @@ internal sealed class CapabilityManifestService(
                 PolicyCapability = "features.edit",
                 RequiresWorkspace = true,
             },
-            ["serve.3d-tiles-scene"] = new(),
-            ["serve.i3s-scene"] = new(),
-            ["scene.catalog"] = new(),
-            ["scene.bim-ingest"] = new() { EntitlementKey = FeatureCatalog.SceneBimIngestKey },
-            ["scene.pointcloud-ingest"] = new() { EntitlementKey = FeatureCatalog.ScenePointCloudIngestKey },
             ["realtime.feature-streams"] = new() { EntitlementKey = "streaming.feature-subscriptions" },
             ["alerts.geofence"] = new() { EntitlementKey = "alerts.enter-exit", Configured = alertsConfigured },
             ["jobs.runner"] = new() { Supported = jobsSupported, RequiresAuthentication = true, RequiresDurableJobStore = true },
@@ -641,8 +640,7 @@ internal sealed class CapabilityManifestService(
         bool requiresAuthentication = false,
         bool requiresEnvironment = false,
         bool requiresWorkspace = false,
-        bool requiresDurableJobStore = false,
-        string? unavailableReasonOverride = null)
+        bool requiresDurableJobStore = false)
     {
         var available = true;
         string? reasonCode = null;
@@ -657,7 +655,7 @@ internal sealed class CapabilityManifestService(
         else if (!configured)
         {
             available = false;
-            reasonCode = unavailableReasonOverride ?? CapabilityReasonCodes.DisabledByConfiguration;
+            reasonCode = CapabilityReasonCodes.DisabledByConfiguration;
         }
         // Checked ahead of the caller-scoped gates on purpose: an uncomposed substrate is a
         // property of the deployment, not of who is asking, so an anonymous probe of a Redis-less

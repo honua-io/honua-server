@@ -10,14 +10,14 @@
 -- partition key keeps temporal-range scans cheap at IoT volumes without the
 -- per-row overhead of the feature CDC path.
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_thing (
+CREATE TABLE IF NOT EXISTS honua.sta_thing (
     id          bigint      NOT NULL,
     name        text        NOT NULL,
     description text        NOT NULL DEFAULT '',
     CONSTRAINT sta_thing_pkey PRIMARY KEY (id)
 );
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_sensor (
+CREATE TABLE IF NOT EXISTS honua.sta_sensor (
     id            bigint      NOT NULL,
     name          text        NOT NULL,
     description   text        NOT NULL DEFAULT '',
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_sensor (
     CONSTRAINT sta_sensor_pkey PRIMARY KEY (id)
 );
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_observed_property (
+CREATE TABLE IF NOT EXISTS honua.sta_observed_property (
     id          bigint      NOT NULL,
     name        text        NOT NULL,
     definition  text        NOT NULL DEFAULT '',
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_observed_property (
     CONSTRAINT sta_observed_property_pkey PRIMARY KEY (id)
 );
 
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_datastream (
+CREATE TABLE IF NOT EXISTS honua.sta_datastream (
     id                    bigint      NOT NULL,
     name                  text        NOT NULL,
     description           text        NOT NULL DEFAULT '',
@@ -46,15 +46,15 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_datastream (
     sensor_id             bigint      NOT NULL,
     observed_property_id  bigint      NOT NULL,
     CONSTRAINT sta_datastream_pkey PRIMARY KEY (id),
-    CONSTRAINT sta_datastream_thing_fk FOREIGN KEY (thing_id) REFERENCES $HonuaSchema$.sta_thing (id),
-    CONSTRAINT sta_datastream_sensor_fk FOREIGN KEY (sensor_id) REFERENCES $HonuaSchema$.sta_sensor (id),
-    CONSTRAINT sta_datastream_obsprop_fk FOREIGN KEY (observed_property_id) REFERENCES $HonuaSchema$.sta_observed_property (id)
+    CONSTRAINT sta_datastream_thing_fk FOREIGN KEY (thing_id) REFERENCES honua.sta_thing (id),
+    CONSTRAINT sta_datastream_sensor_fk FOREIGN KEY (sensor_id) REFERENCES honua.sta_sensor (id),
+    CONSTRAINT sta_datastream_obsprop_fk FOREIGN KEY (observed_property_id) REFERENCES honua.sta_observed_property (id)
 );
 
 -- Time-series observations, range-partitioned on phenomenon_time. id is unique
 -- within a datastream; the partition key participates in the primary key as
 -- required by declarative partitioning.
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_observation (
+CREATE TABLE IF NOT EXISTS honua.sta_observation (
     id                     bigint      NOT NULL,
     datastream_id          bigint      NOT NULL,
     phenomenon_time        timestamptz NOT NULL,
@@ -66,32 +66,32 @@ CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_observation (
 
 -- Default partition catches any phenomenon_time not covered by an explicit
 -- partition so Phase 1 reads/seeds work without partition maintenance tooling.
-CREATE TABLE IF NOT EXISTS $HonuaSchema$.sta_observation_default
-    PARTITION OF $HonuaSchema$.sta_observation DEFAULT;
+CREATE TABLE IF NOT EXISTS honua.sta_observation_default
+    PARTITION OF honua.sta_observation DEFAULT;
 
 -- BRIN on the partition key is ideal for monotonically-increasing time-series.
 CREATE INDEX IF NOT EXISTS ix_sta_observation_time
-    ON $HonuaSchema$.sta_observation USING BRIN (phenomenon_time);
+    ON honua.sta_observation USING BRIN (phenomenon_time);
 
 -- Per-datastream temporal navigation (Datastreams(id)/Observations ordered by time).
 CREATE INDEX IF NOT EXISTS ix_sta_observation_datastream_time
-    ON $HonuaSchema$.sta_observation (datastream_id, phenomenon_time);
+    ON honua.sta_observation (datastream_id, phenomenon_time);
 
 -- Synthetic / simulated datastream so the read path is demoable end-to-end
 -- without an ingest pipeline. Idempotent: ON CONFLICT DO NOTHING.
-INSERT INTO $HonuaSchema$.sta_thing (id, name, description)
+INSERT INTO honua.sta_thing (id, name, description)
 VALUES (1, 'Demo Air Quality Station', 'Synthetic air-quality monitoring station for the SensorThings Phase 1 demo')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO $HonuaSchema$.sta_sensor (id, name, description, encoding_type, metadata)
+INSERT INTO honua.sta_sensor (id, name, description, encoding_type, metadata)
 VALUES (1, 'Demo Thermometer', 'Synthetic temperature sensor', 'application/pdf', 'https://example.org/sensors/demo-thermometer')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO $HonuaSchema$.sta_observed_property (id, name, definition, description)
+INSERT INTO honua.sta_observed_property (id, name, definition, description)
 VALUES (1, 'Air Temperature', 'http://mmisw.org/ont/cf/parameter/air_temperature', 'Ambient air temperature')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO $HonuaSchema$.sta_datastream (
+INSERT INTO honua.sta_datastream (
     id, name, description, observation_type, unit_name, unit_symbol, unit_definition,
     thing_id, sensor_id, observed_property_id)
 VALUES (
@@ -105,7 +105,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Seed a deterministic synthetic series: 48 hourly observations ending now,
 -- result = 15 + 10 * sin(hour) so $filter/$orderby are demoable against varied values.
-INSERT INTO $HonuaSchema$.sta_observation (id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
+INSERT INTO honua.sta_observation (id, datastream_id, phenomenon_time, result_time, result, feature_of_interest_id)
 SELECT
     gs AS id,
     1 AS datastream_id,

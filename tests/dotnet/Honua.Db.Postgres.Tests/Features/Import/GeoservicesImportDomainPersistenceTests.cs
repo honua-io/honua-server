@@ -46,12 +46,10 @@ public sealed class GeoservicesImportDomainPersistenceTests(PostgresFixture fixt
         // and graph store write to exist (idempotent; isolated-schema seeding does not
         // guarantee them in this collection).
         await EnsureCatalogSchemaAsync();
-        await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, "honua");
 
         var graphStore = new PostgresMetadataV2GraphStore(
             new FixtureConnectionProvider(fixture),
-            environment,
-            FixtureBypassDatabaseSchemaGuard.Instance);
+            environment);
 
         try
         {

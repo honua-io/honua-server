@@ -7,7 +7,6 @@ using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Hosting;
 using Honua.Db.Postgres;
-using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,7 +33,7 @@ public sealed class PostgresPromotionSurfaceRegistrationTests
         services.AddLogging();
         services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
 
-        services.AddPostgreSqlServices(configuration, ServerCoreSchemaMigrations.Manifest);
+        services.AddPostgreSqlServices(configuration);
         services.AddServerFeatures(configuration);
 
         var resourceTypes = services

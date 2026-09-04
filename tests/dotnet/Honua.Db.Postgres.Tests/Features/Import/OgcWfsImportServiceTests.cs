@@ -255,122 +255,6 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
     }
 
     [Fact]
-    public async Task ImportFeaturesAsync_OverwritePageTwoFormatFailure_PreservesPriorChecksumAndCleansStaging()
-    {
-        var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_atomic_fail");
-        try
-        {
-            using var seedClient = new HttpClient(new FakeWfsHandler(
-                BuildPointFeatureCollection(("Sentinel", 73, -157.85, 21.30))));
-            await CreateService(seedClient, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
-            {
-                ServiceUrl = DefaultServiceUrl,
-                TargetSchema = schemaName,
-                ApplyMode = true,
-                AllowUnsafeLocalUrls = true,
-            });
-            var before = await ReadCityRowsAsync(schemaName, "wfs_cities");
-
-            using var failingClient = new HttpClient(new SequencedWfsHandler(
-                BuildPointFeatureCollection(("Replacement page one", 1, -155, 19))
-                    .Replace("\"numberMatched\":1", "\"numberMatched\":2", StringComparison.Ordinal),
-                "not-json"));
-            var result = await CreateService(failingClient, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
-            {
-                ServiceUrl = DefaultServiceUrl,
-                TargetSchema = schemaName,
-                ApplyMode = true,
-                AllowUnsafeLocalUrls = true,
-                OverwriteExisting = true,
-                PageSize = 1,
-            });
-
-            result.FeatureTypes.Should().ContainSingle().Which.Classification
-                .Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
-            (await ReadCityRowsAsync(schemaName, "wfs_cities")).Should().BeEquivalentTo(before);
-            (await FindTablesLikeAsync(schemaName, "wfs_cities__%"))
-                .Should().BeEmpty("failed overwrite attempts must clean their staging table");
-        }
-        finally
-        {
-            await fixture.DropSchemaAsync(schemaName);
-        }
-    }
-
-    [Fact]
-    public async Task ImportFeaturesAsync_SuccessfulOverwrite_PromotesOnlyCompletedReplacement()
-    {
-        var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_atomic_ok");
-        try
-        {
-            using var seedClient = new HttpClient(new FakeWfsHandler(
-                BuildPointFeatureCollection(("Sentinel", 73, -157.85, 21.30))));
-            await CreateService(seedClient, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
-            {
-                ServiceUrl = DefaultServiceUrl,
-                TargetSchema = schemaName,
-                ApplyMode = true,
-                AllowUnsafeLocalUrls = true,
-            });
-
-            using var replacementClient = new HttpClient(new FakeWfsHandler(
-                BuildPointFeatureCollection(("Replacement", 99, -155.08, 19.71))));
-            var result = await CreateService(replacementClient, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
-            {
-                ServiceUrl = DefaultServiceUrl,
-                TargetSchema = schemaName,
-                ApplyMode = true,
-                AllowUnsafeLocalUrls = true,
-                OverwriteExisting = true,
-            });
-
-            result.FeaturesCopied.Should().Be(1);
-            (await ReadCityRowsAsync(schemaName, "wfs_cities")).Should().ContainSingle()
-                .Which.Name.Should().Be("Replacement");
-            (await FindTablesLikeAsync(schemaName, "wfs_cities__%")).Should().BeEmpty();
-        }
-        finally
-        {
-            await fixture.DropSchemaAsync(schemaName);
-        }
-    }
-
-    [Fact]
-    public async Task ImportFeaturesAsync_Overwrite_ReapsOrphanedStagingTableFromPriorAttempt()
-    {
-        var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_atomic_orphan");
-        try
-        {
-            await using (var connection = await fixture.GetConnectionAsync())
-            await using (var command = connection.CreateCommand())
-            {
-                command.CommandText = $"CREATE TABLE {QuoteIdentifier(schemaName)}.\"__honua_wfs_stage_wfs_cities\" (obsolete text)";
-                await command.ExecuteNonQueryAsync();
-            }
-
-            using var client = new HttpClient(new FakeWfsHandler(
-                BuildPointFeatureCollection(("Replacement", 99, -155.08, 19.71))));
-            var result = await CreateService(client, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
-            {
-                ServiceUrl = DefaultServiceUrl,
-                TargetSchema = schemaName,
-                ApplyMode = true,
-                AllowUnsafeLocalUrls = true,
-                OverwriteExisting = true,
-            });
-
-            result.FeaturesCopied.Should().Be(1);
-            (await ReadCityRowsAsync(schemaName, "wfs_cities")).Should().ContainSingle()
-                .Which.Name.Should().Be("Replacement");
-            (await FindTablesLikeAsync(schemaName, "__honua_wfs_stage_%")).Should().BeEmpty();
-        }
-        finally
-        {
-            await fixture.DropSchemaAsync(schemaName);
-        }
-    }
-
-    [Fact]
     public async Task ImportFeaturesAsync_SchemaSurfacedFromInventoryDrivesPostgresColumnTypes()
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_schema");
@@ -578,23 +462,6 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         return result != null && result != DBNull.Value;
     }
 
-    private async Task<string[]> FindTablesLikeAsync(string schemaName, string pattern)
-    {
-        var tables = new List<string>();
-        await using var connection = await fixture.GetConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT table_name FROM information_schema.tables WHERE table_schema = @schema AND table_name LIKE @pattern";
-        command.Parameters.AddWithValue("schema", schemaName);
-        command.Parameters.AddWithValue("pattern", pattern);
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            tables.Add(reader.GetString(0));
-        }
-
-        return tables.ToArray();
-    }
-
     private static string QuoteIdentifier(string identifier) => $"\"{identifier.Replace("\"", "\"\"")}\"";
 
     private sealed record CityRow(string Name, int Population, double X, double Y);
@@ -626,20 +493,6 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
             return Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responsePayload, Encoding.UTF8, "application/geo+json")
-            });
-        }
-    }
-
-    private sealed class SequencedWfsHandler(params string[] responses) : HttpMessageHandler
-    {
-        private int _index;
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            var payload = responses[Math.Min(_index++, responses.Length - 1)];
-            return Task.FromResult<HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(payload, Encoding.UTF8, "application/geo+json"),
             });
         }
     }
