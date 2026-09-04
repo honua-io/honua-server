@@ -44,7 +44,7 @@ public sealed class FeatureServerTrueCurveTests : IAsyncLifetime
         _fixture.UseSeed(Path.Join("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
         _fixture.EnableV2ServiceEditingCapabilities(
-            WebAppFixture.TestServiceId,
+            SpatialReferenceTestLayerCatalog.ServiceId,
             ["Create", "Update", "Delete"]);
     }
 
