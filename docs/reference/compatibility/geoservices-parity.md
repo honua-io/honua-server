@@ -81,7 +81,7 @@ Esri spec: [Feature Service](https://developers.arcgis.com/rest/services-referen
 | `resultType`, `sqlFormat`, `gdbVersion`, `quantizationParameters`, `datumTransformation` | Partial | `quantizationParameters` is honored for `f=json`: the featureSet emits a `transform` (`originPosition`/`scale`/`translate`, `upperLeft` or `lowerLeft`) and geometry coordinates become integer grid deltas; layer metadata advertises `supportsCoordinatesQuantization=true`, and `f=pbf` likewise returns a quantized `transform`. Quantization is ignored for `f=geojson` (GeoJSON has no quantization). `gdbVersion`/`datumTransformation` are accepted for client compatibility and ignored. |
 | `returnExceededLimitFeatures` | Accepted (no-op) | Accept-and-ignore for interop (#1460): the ArcGIS Maps SDK for .NET always sends it. Honua already returns the truncated page plus `exceededTransferLimit=true`, so both the default and an explicit `false` return the same page and flag. |
 | `returnZ`, `returnM` (3D/measured queries) | Implemented (Postgres) | `returnZ`/`returnM` carry the higher ordinates through the storage read: the Postgres geometry read switches to extended WKB (EWKB) when either flag is set, so stored Z/M survive to the output and are emitted on the GeoServices JSON/PBF geometry; without the flag the read stays 2D OGC WKB (byte-identical to prior behavior). The layer descriptor advertises `hasZ`/`hasM` from the authored Metadata v2 display flags (emitted only when true, so 2D layer documents stay byte-stable — #1877 Part C). GeoJSON output still rejects `returnM=true` (RFC 7946 has no M); `parquet`/`arrow` strip M. |
-| `returnTrueCurves` | Partial | **Input** is densified: true-curve geometry supplied as `curvePaths`/`curveRings` on `applyEdits` or a query spatial filter is densified to linear vertices before storage — circular-arc (`{"c":…}`) and cubic-Bézier (`{"b":…}`) segments are interpolated (bounded vertex count); elliptic-arc (`{"a":…}`) segments are rejected with an explicit message (#1877 Part A). **Output** stays linear: NTS/WKB cannot represent a true curve, so densified geometry is what is stored and queried back — there is no `curve` re-emission from stored linear geometry. The parse↔serialize round-trip is proven at the converter level (`CurveGeometryConverter.Parse`/`Serialize`). On query, `returnTrueCurves=true` is accepted but returns the densified linear geometry with correct `hasZ`/`hasM`; Honua still advertises `supportsTrueCurve=false`. Lossless curve storage/re-emission remains deferred (requires a sidecar curve-storage design) — `Refs #1877` Part B. |
+| `returnTrueCurves` | Partial | **Input** is densified: true-curve geometry supplied as `curvePaths`/`curveRings` on `applyEdits` or a query spatial filter is densified to linear vertices before storage — circular-arc (`{"c":…}`), center-form circular/elliptic-arc (`{"a":…}`), and cubic-Bézier (`{"b":…}`) segments are interpolated with a bounded vertex count; generated vertices preserve and interpolate Z/M ordinates (#1877 Part A). **Output** stays linear: NTS/WKB cannot represent a true curve, so densified geometry is what is stored and queried back — there is no `curve` re-emission from stored linear geometry. The parse↔serialize round-trip is proven at the converter level (`CurveGeometryConverter.Parse`/`Serialize`). On query, `returnTrueCurves=true` is accepted but returns the densified linear geometry with correct `hasZ`/`hasM`; Honua still advertises `supportsTrueCurve=false`. Lossless curve storage/re-emission remains deferred (requires a sidecar curve-storage design) — `Refs #1877` Part B. |
 
 ### applyEdits parameters
 
@@ -271,12 +271,15 @@ Known parameter-level caveats:
 
 - `f` supports `json`/`pjson` only; `f=html` is rejected.
 - `clip` uses the envelope of the clip geometry, not its full shape.
-- `findTransformations` returns an empty list — CRS transformation runs through the
-  PROJ pipeline rather than a discrete Esri transformation catalog; `project` still
-  applies the correct datum transform directly.
+- `findTransformations` returns the applicable default from the shared Esri datum
+  transformation catalog when the pair has a WKID-backed entry. `extentOfInterest`
+  ranking and vertical transformations remain unsupported.
 - `toGeoCoordinateString`/`fromGeoCoordinateString` support `MGRS` and `USNG`;
   `UTM`, `GARS`, `GEOREF`, `DD`, `DDM`, and `DMS` return a clear 400.
-- `trimExtend.extendHow`, `offset.simplifyResult`, and `project`'s `transformation`/`transformForward` controls are accepted but not applied.
+- `trimExtend.extendHow` and `offset.simplifyResult` are accepted but not applied.
+- `project` honors the Esri `transformation`/`transformForward` controls for
+  WKID-backed transformations in the shared catalog; custom WKT and multi-step
+  composite transformations remain unsupported.
 - `relation` rejects line-coincidence relations, and empty geometry arrays are rejected instead of producing Esri's operation-specific empty results.
 
 ## NAServer

@@ -1180,6 +1180,36 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         identify.Results!.Length.Should().BeGreaterThan(0);
     }
 
+    [IntegrationTheory]
+    [InlineData("esriGeometryEnvelope", "{\"xmin\":-122.51,\"ymin\":37.504,\"xmax\":-122.49,\"ymax\":37.506}")]
+    [InlineData("esriGeometryMultipoint", "{\"points\":[[-122.5,37.505]]}")]
+    [InlineData("esriGeometryPolyline", "{\"paths\":[[[-122.51,37.505],[-122.49,37.505]]]}")]
+    [InlineData("esriGeometryPolygon", "{\"rings\":[[[-122.51,37.504],[-122.49,37.504],[-122.49,37.506],[-122.51,37.506],[-122.51,37.504]]]}")]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_NonPointGeometryWithinTolerance_ReturnsResults(
+        string geometryType,
+        string geometry)
+    {
+        // The seeded point is (-122.5, 37.5). With this one-degree map extent and 1000px
+        // display width, tolerance=10 is 0.01 map units. Each geometry is 0.004-0.005 units away:
+        // Shapely 2.1.2 reports distance 0.004-0.005, so it misses unbuffered and hits buffered.
+        var encodedGeometry = Uri.EscapeDataString(geometry);
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify" +
+            $"?geometry={encodedGeometry}&geometryType={geometryType}&sr=4326" +
+            "&mapExtent=-123,37,-122,38&imageDisplay=1000,1000,96" +
+            "&tolerance=10&layers=all&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
+
+        identify.Should().NotBeNull();
+        identify!.Results.Should().NotBeNullOrEmpty(
+            $"{geometryType} identify tolerance applies around the geometry boundary");
+    }
+
     // Regression (#1429): the ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
     // envelope ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}); it must be accepted, not 400.
     [IntegrationTest]
