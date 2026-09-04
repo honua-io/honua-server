@@ -14,7 +14,7 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | GPX | `.gpx` | GPS exchange format. Track segment boundaries are preserved as separate lines; singleton segments remain points, with a geometry collection for mixed tracks. Track and route elevations are preserved as Z ordinates; absent elevation remains absent, and invalid elevation rejects the import. |
 | KML / KMZ | `.kml`, `.kmz` | Keyhole Markup Language, plain or zipped. |
 | WKT | `.wkt` | Well-known text geometries. |
-| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. |
+| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. Bulk, OGC API Features and WFS CSV output share null/empty string escaping. |
 | FlatGeobuf | `.fgb` | Compact binary format. |
 | File Geodatabase | `.gdb.zip` | Zipped Esri `.gdb` directory. |
 | GeoParquet | `.parquet`, `.geoparquet` | Apache Parquet with WKB geometry encoding. |
@@ -81,7 +81,7 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 | GML 3.2 | Default (`application/gml+xml; version=3.2`); the only format for the `GetFeatureById` stored query. |
 | GeoJSON | `application/geo+json`. |
 | JSON | `application/json`. |
-| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. |
+| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. Bulk, OGC API Features and WFS CSV output share null/empty string escaping. |
 
 ### OData v4 (`/odata`)
 
