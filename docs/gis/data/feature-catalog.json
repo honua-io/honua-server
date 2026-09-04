@@ -6909,6 +6909,7 @@
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.OgcApiFeatures_LandingPageAndConformance_ReturnValidResponses",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetConformance_ShouldReturnConformanceClasses",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetConformance_AdvertisesOnlyEvidenceBackedFeaturesClasses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetConformance_DoesNotAdvertiseGmlSf0",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetConformance_ReturnsCacheHeaders",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetConformance_ReturnsValidConformanceDeclarationWithRequiredClasses"
