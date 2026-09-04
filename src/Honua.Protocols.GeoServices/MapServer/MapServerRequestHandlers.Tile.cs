@@ -104,6 +104,7 @@ internal static partial class MapServerEndpoints
 
             var renderResources = publishedLayers
                 .Where(layer => IsTileLayerVisibleByDefault(layer.Resource))
+                .Where(layer => IsTileLayerVisibleAtScale(layer.Resource, z))
                 .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
                 .ToArray();
             var renderLayers = renderResources
@@ -248,9 +249,15 @@ internal static partial class MapServerEndpoints
     private static RenderLayerDescriptor BuildTileRenderDescriptor(TileLayerDescriptor layer)
     {
         var geometryType = layer.Resource.ReadGeometryType();
+        var primaryIdField = layer.Resource.FindPrimaryIdField();
         var hasGeometry = geometryType != MetadataV2GeometryType.None ||
                           layer.Resource.FindPrimaryGeometryField() is not null;
-        return CreateRenderLayerDescriptorFromV2(layer.StorageLayerId, hasGeometry, geometryType);
+        return CreateRenderLayerDescriptorFromV2(
+            layer.StorageLayerId,
+            hasGeometry,
+            geometryType,
+            stableOrderField: primaryIdField?.Name ?? GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource),
+            stableOrderFieldType: primaryIdField?.Type);
     }
 
     private static int ResolveTileServiceSrid(
@@ -262,6 +269,14 @@ internal static partial class MapServerEndpoints
 
     private static bool IsTileLayerVisibleByDefault(MetadataV2Resource resource)
         => resource.Display?.DefaultVisibility ?? true;
+
+    internal static bool IsTileLayerVisibleAtScale(MetadataV2Resource resource, int z)
+    {
+        var scale = CalculateTileScale(z);
+        var display = resource.Display;
+        return (display?.MinScale is not > 0 || scale <= display.MinScale.Value) &&
+               (display?.MaxScale is not > 0 || scale >= display.MaxScale.Value);
+    }
 
     /// <summary>
     /// Builds a stable fingerprint of the effective row-level-security predicate for the
