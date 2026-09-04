@@ -98,7 +98,7 @@ public static class GdalInfoCoverageEnricher
         }
 
         var values = gt.EnumerateArray().ToArray();
-        if (values.Length != 6 || !values[5].TryGetDouble(out var pixelHeight) || pixelHeight == 0)
+        if (values.Length != 6 || !values[5].TryGetDouble(out var pixelHeight) || Math.Abs(pixelHeight) < double.Epsilon)
         {
             return null;
         }
