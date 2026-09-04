@@ -1634,7 +1634,6 @@ sql:
           replica_id TEXT PRIMARY KEY,
           replica_name TEXT NOT NULL,
           service_id TEXT NOT NULL,
-          owner_id TEXT NULL,
           sync_model TEXT NOT NULL DEFAULT 'perReplica',
           layer_ids INT[] NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1644,7 +1643,6 @@ sql:
           CONSTRAINT replicas_valid_service CHECK(LENGTH(service_id) > 0),
           CONSTRAINT replicas_valid_sync_model CHECK(sync_model IN ('none', 'perLayer', 'perReplica'))
       );
-  - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS owner_id TEXT NULL;"
   - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS upload_base_generation BIGINT NOT NULL DEFAULT 0;"
   - |
       CREATE TABLE IF NOT EXISTS honua.feature_changes (
