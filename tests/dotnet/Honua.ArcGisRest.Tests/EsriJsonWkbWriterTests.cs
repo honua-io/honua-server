@@ -139,11 +139,13 @@ public class EsriJsonWkbWriterTests
     }
 
     [Fact]
-    public void Write_PolygonMissingRings_Throws()
+    public void Write_EmptyPolygonAndPolyline_ReturnsNullGeometry()
     {
-        var element = Parse("""{"rings": []}""");
+        var polygon = Parse("""{"rings": []}""");
+        var polyline = Parse("""{"paths": []}""");
 
-        Assert.Throws<InvalidOperationException>(() => EsriJsonWkbWriter.Write(element, MetadataV2GeometryType.Polygon));
+        Assert.Null(EsriJsonWkbWriter.Write(polygon, MetadataV2GeometryType.Polygon));
+        Assert.Null(EsriJsonWkbWriter.Write(polyline, MetadataV2GeometryType.MultiLineString));
     }
 
     [Fact]
