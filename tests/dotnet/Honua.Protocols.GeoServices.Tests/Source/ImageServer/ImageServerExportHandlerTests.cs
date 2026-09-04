@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -1234,6 +1235,21 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_RasterProviderUnavailable_ReturnsServiceUnavailable()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TestDbException("Raster export provider failed"));
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_TemporaryStorageLimitExceeded_ReturnsServiceUnavailable()
     {
         SetupLayerAndRasters();
@@ -1583,4 +1599,6 @@ public class ImageServerExportHandlerTests
         Height = 256,
         Srid = 4326
     };
+
+    private sealed class TestDbException(string message) : DbException(message);
 }

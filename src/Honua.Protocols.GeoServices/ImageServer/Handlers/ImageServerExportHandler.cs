@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -293,9 +294,19 @@ internal sealed class ImageServerExportHandler
                 "Temporary export storage is currently at capacity. Please retry shortly.",
                 ex.RetryAfterSeconds);
         }
+        catch (ServiceUnavailableException ex)
+        {
+            ImageServerLog.ExportImageFailed(_logger, ex, layerId);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Raster export provider is currently unavailable. Please retry shortly.",
+                ex.RetryAfterSeconds,
+                retryable: true);
+        }
         // Intentionally generic: this is a top-level protocol request handler; any
-        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
-        // generic 500 rather than crash the host or leak internals to the client.
+        // unexpected non-provider failure (for example, a programming error) must map
+        // to a generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.ExportImageFailed(_logger, ex, layerId);
