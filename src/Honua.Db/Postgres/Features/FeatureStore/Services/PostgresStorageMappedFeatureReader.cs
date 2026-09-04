@@ -396,11 +396,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (query.Distinct)
         {
-            sql.Append("SELECT objectid, geometry, attributes FROM (SELECT DISTINCT 0::bigint AS objectid, NULL AS geometry, ");
-            sql.Append(attributesSelect);
+            sql.Append(CultureInfo.InvariantCulture, "SELECT objectid, geometry, attributes FROM (SELECT DISTINCT 0::bigint AS objectid, NULL AS geometry, ");
+            sql.Append(CultureInfo.InvariantCulture, attributesSelect);
             sql.Append(CultureInfo.InvariantCulture, $" AS attributes FROM {_qualifiedTableName}");
             AppendFilter(sql, query);
-            sql.Append(") AS distinct_values");
+            sql.Append(CultureInfo.InvariantCulture, ") AS distinct_values");
             AppendDistinctOrderBy(sql, query);
         }
         else
@@ -1133,7 +1133,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
         {
-            sql.Append(" ORDER BY attributes");
+            sql.Append(CultureInfo.InvariantCulture, " ORDER BY attributes");
             return;
         }
 
