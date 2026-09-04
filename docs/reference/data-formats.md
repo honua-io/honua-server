@@ -117,3 +117,5 @@ See the protocol pages for parameters: [vector tiles](protocols/vector-tiles.md)
 - [Import files guide](../guides/publish/import-files.md)
 - [Export data guide](../guides/query-analyze/export-data.md)
 - [Environment variables — imports and limits](configuration/environment-variables.md#imports-and-limits)
+
+New import tables retain source geometry ordinate dimensions while enforcing the requested SRID. Migration 111 enables this for GPX elevations and other dimensional input. Existing append/upsert tables keep their declared geometry constraints.
