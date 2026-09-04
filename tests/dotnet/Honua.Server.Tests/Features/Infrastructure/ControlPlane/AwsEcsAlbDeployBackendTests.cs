@@ -415,12 +415,14 @@ public sealed class AwsEcsAlbDeployBackendTests
     public async Task RollbackAsync_SetsStableToFullWeight_ReturnsRollbackRequested()
     {
         var albClient = new StubAwsAlbClient();
-        var backend = CreateBackend(albClient);
+        var ecsClient = new StubAwsEcsClient();
+        var backend = CreateBackend(albClient, ecsClient);
 
         var observation = await backend.RollbackAsync(CreateOperation(currentRevision: PreviousTaskDefArn, parameters: CanaryParameters()));
 
         observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
         observation.ObservedRevision.Should().Be(PreviousTaskDefArn);
+        ecsClient.LastUpdateTaskDefinitionArn.Should().Be(PreviousTaskDefArn);
         albClient.LastWeights.Should().NotBeNull();
         albClient.LastWeights!.Single(w => w.TargetGroupArn == CanaryTargetGroupArn).Weight.Should().Be(0);
         albClient.LastWeights.Single(w => w.TargetGroupArn == StableTargetGroupArn).Weight.Should().Be(100);
