@@ -1386,6 +1386,30 @@ internal sealed partial class JobExecutionContext(
         }
     }
 
+    /// <inheritdoc />
+    public async Task ThrowIfExecutionLeaseLostAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (job == null || !IsOwnedBy(job)
+                || (claimedAttempt > 0 && job.AttemptCount != claimedAttempt)
+                || job.CancellationRequestedAt.HasValue)
+            {
+                throw new InvalidOperationException(
+                    $"Execution lease for job '{operationId}' is no longer owned by worker '{workerId}'.");
+            }
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
     /// <summary>
     /// Builds the updated reference list, returning <see langword="false"/> when the
     /// publication is already durably present. Only typed raster output descriptors

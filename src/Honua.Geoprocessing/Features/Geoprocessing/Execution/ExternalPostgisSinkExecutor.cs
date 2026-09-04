@@ -147,6 +147,12 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
         long rejected = 0;
         try
         {
+            // The artifact publication fence cannot roll back rows already committed
+            // to an external database. Re-check the durable worker lease before DDL,
+            // and again immediately before each transactional batch below, so a
+            // resurrected stale attempt cannot create or mutate external output.
+            await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
+
             await using var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
@@ -175,6 +181,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
                     buffer.Add(feature);
                     if (buffer.Count >= batchSize)
                     {
+                        await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
                         written += await InsertBatchAsync(
                             connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId, wkbWriter, cancellationToken)
                             .ConfigureAwait(false);
@@ -184,6 +191,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
 
                 if (buffer.Count > 0)
                 {
+                    await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
                     written += await InsertBatchAsync(
                         connection, tx, schema, table, geometryColumn, targetSrid, buffer, batchId, wkbWriter, cancellationToken)
                         .ConfigureAwait(false);
@@ -390,6 +398,7 @@ internal sealed partial class ExternalPostgisSinkExecutor : IProcessExecutor
             SELECT ST_SetSRID(ST_GeomFromWKB(payload.wkb), {targetSrid.ToString(CultureInfo.InvariantCulture)}),
                    payload.attributes
             FROM unnest(@wkbs, @attributes) AS payload(wkb, attributes)
+            ON CONFLICT DO NOTHING
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
