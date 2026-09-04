@@ -42,7 +42,8 @@ The document also carries `transports` (REST, GeoServices, OGC, OData, STAC, til
 
 Customer alert zones, rules, evaluation, and delivery channels are Preview in
 2026.1. Enable both `Capabilities:Experimental:alerts.geofence:Enabled=true` and
-the alert worker configuration before use; this opt-in does not constitute a GA
+`Alerts:Enabled=true` before use. Startup reports the Preview opt-in through the
+existing feature-status log event; this opt-in does not constitute a GA
 availability or support commitment.
 
 Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist; every other admin endpoint requires authentication.

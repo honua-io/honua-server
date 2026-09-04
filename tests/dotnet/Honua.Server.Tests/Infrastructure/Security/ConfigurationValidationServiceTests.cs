@@ -4,7 +4,9 @@
 using FluentAssertions;
 using Honua.Server.Features.Admin.Services;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
@@ -12,6 +14,33 @@ namespace Honua.Server.Tests.Infrastructure.Security;
 [Trait("Component", "Security")]
 public sealed class ConfigurationValidationServiceTests
 {
+    [Theory]
+    [InlineData(null, "disabled (preview, default)")]
+    [InlineData("Capabilities:Experimental:alerts.geofence:Enabled", "preview (opted in; workers require Alerts:Enabled)")]
+    [InlineData("Capabilities:Experimental:Enabled", "preview (opted in; workers require Alerts:Enabled)")]
+    public void ValidateConfiguration_AlertingLifecycle_UsesExistingStartupStatusEvent(string? flag, string expectedStatus)
+    {
+        var values = new Dictionary<string, string?>();
+        if (flag != null)
+        {
+            values[flag] = "true";
+        }
+
+        var logger = new Mock<ILogger>();
+        logger.Setup(instance => instance.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
+
+        ConfigurationValidationService.ValidateConfiguration(
+            BuildConfiguration(values), logger.Object, isDevelopment: false);
+
+        logger.Verify(instance => instance.Log(
+            LogLevel.Information,
+            It.Is<EventId>(id => id.Id == 4010),
+            It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains("Customer alerting")
+                && state.ToString()!.Contains(expectedStatus)),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
+    }
+
     [Fact]
     public void ValidateConfiguration_NonDevelopment_WithStrictHostValidationAndNoAllowlist_ReturnsError()
     {
