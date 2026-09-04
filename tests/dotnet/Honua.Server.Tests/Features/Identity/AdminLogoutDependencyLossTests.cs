@@ -26,9 +26,14 @@ public sealed class AdminLogoutDependencyLossTests
     [InlineData(true, true)]
     [InlineData(false, false)]
     [InlineData(true, false)]
+    [InlineData(false, true, true, false)]
+    [InlineData(true, true, true, false)]
+    [InlineData(false, true, true, true)]
+    [InlineData(true, true, true, true)]
     [Endpoint("POST /api/v1/admin/auth/logout")]
     [Endpoint("POST /saml/slo")]
-    public async Task Logout_DistributedCacheOutage_Returns503UntilRevocationCanBeRetried(bool saml, bool warmCache)
+    public async Task Logout_DistributedCacheOutage_Returns503UntilRevocationCanBeRetried(
+        bool saml, bool warmCache, bool readsAvailable = false, bool sessionAbsent = false)
     {
         // Keep the authoritative record across an outage, just as Redis does when DEL fails.
         var backingCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
@@ -38,7 +43,7 @@ public sealed class AdminLogoutDependencyLossTests
             .Returns(call => backingCache.SetAsync(call.ArgAt<string>(0), call.ArgAt<byte[]>(1),
                 call.ArgAt<DistributedCacheEntryOptions>(2), call.ArgAt<CancellationToken>(3)));
         cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(call => unavailable
+            .Returns(call => unavailable && !readsAvailable
                 ? Task.FromException<byte[]?>(new IOException("Dependency unavailable"))
                 : backingCache.GetAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1)));
         cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -83,7 +88,19 @@ public sealed class AdminLogoutDependencyLossTests
         using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["SAMLRequest"] = signedRequest });
 
         unavailable = true;
+        if (sessionAbsent)
+        {
+            await backingCache.RemoveAsync("admin-auth:session:" + sessionId);
+        }
         using var failed = await client.PostAsync(path, saml ? content : null);
+        if (sessionAbsent)
+        {
+            Assert.Equal(HttpStatusCode.OK, failed.StatusCode);
+            Assert.Contains(failed.Headers.GetValues("Set-Cookie"), cookie =>
+                cookie.StartsWith(AdminAuthSessionStore.AuthSessionCookieName + "=;", StringComparison.Ordinal));
+            Assert.Null(await otherReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+            return;
+        }
         Assert.Equal(HttpStatusCode.ServiceUnavailable, failed.StatusCode);
         Assert.Equal("true", Assert.Single(failed.Headers.GetValues("Honua-Retryable")));
         Assert.False(failed.Headers.TryGetValues("Set-Cookie", out var cookies) &&
