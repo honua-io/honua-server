@@ -492,6 +492,14 @@ public sealed class RedisCacheServiceTests : IDisposable
     {
         using var cancellation = new CancellationTokenSource();
         var distributedCache = Substitute.For<IDistributedCache>();
+        var cleaned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        distributedCache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                Assert.False(call.Arg<CancellationToken>().IsCancellationRequested);
+                cleaned.TrySetResult();
+                return Task.CompletedTask;
+            });
         distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
@@ -506,6 +514,12 @@ public sealed class RedisCacheServiceTests : IDisposable
         transaction.ExecuteAsync().Returns(true);
         transaction.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>()).Returns(true);
         transaction.SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>()).Returns(true);
+        transaction.KeyDeleteAsync(Arg.Any<RedisKey>()).Returns(true);
+        transaction.SetRemoveAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>()).Returns(_ =>
+        {
+            cleaned.TrySetResult();
+            return Task.FromResult(true);
+        });
         var read = new TaskCompletionSource<RedisValue>(TaskCreationOptions.RunContinuationsAsynchronously);
         database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(read.Task);
         using var cache = new RedisCacheService(distributedCache,
@@ -519,6 +533,8 @@ public sealed class RedisCacheServiceTests : IDisposable
 
         var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe);
         exception.CancellationToken.Should().Be(cancellation.Token);
+        read.TrySetResult((RedisValue)"1");
+        await cleaned.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [Theory]

@@ -18,6 +18,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Middleware;
 
+[Collection("RateLimitingCapacity")]
 public sealed class RateLimitingMiddlewareTests
 {
     [UnitTest]
@@ -476,6 +477,65 @@ public sealed class RateLimitingMiddlewareTests
         }
     }
 
+    [UnitTest]
+    public async Task InvokeAsync_RedisOutage_HardBoundsLocalCountersWithoutResettingExistingBudgets()
+    {
+        // This collection runs alone because the process-local store is shared.
+        var field = typeof(RateLimitingMiddleware).GetField("_memoryCounters",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var counters = (System.Collections.IDictionary)field.GetValue(null)!;
+        var previous = counters.Cast<System.Collections.DictionaryEntry>().ToArray();
+        counters.Clear();
+        try
+        {
+            var redis = Substitute.For<StackExchange.Redis.IConnectionMultiplexer>();
+            redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(_ =>
+                throw new StackExchange.Redis.RedisConnectionException(
+                    StackExchange.Redis.ConnectionFailureType.UnableToConnect, "Redis unavailable"));
+            var policies = Substitute.For<IRateLimitPolicyStore>();
+            policies.ListPoliciesAsync(Arg.Any<CancellationToken>()).Returns(
+                Task.FromResult<IReadOnlyList<RateLimitPolicy>>([new RateLimitPolicy
+                {
+                    Name = "capacity", Scope = "tenant", Key = "capacity-test",
+                    RequestsPerWindow = 1, WindowDuration = TimeSpan.FromDays(3650)
+                }]));
+            var middleware = CreateMiddleware(policyStore: policies, redis: redis);
+            async Task<int> RequestAsync(string subject)
+            {
+                var context = CreateContext("198.51.100.99", subject: subject, tenantId: "capacity-test");
+                using var services = (IDisposable)context.RequestServices;
+                using var body = context.Response.Body;
+                await middleware.InvokeAsync(context);
+                if (context.Response.StatusCode == StatusCodes.Status429TooManyRequests)
+                {
+                    Assert.NotEmpty(context.Response.Headers.RetryAfter.ToString());
+                    Assert.Equal("0", context.Response.Headers["X-RateLimit-Remaining"].ToString());
+                }
+                return context.Response.StatusCode;
+            }
+
+            for (var i = 0; i < 9990; i++)
+            {
+                Assert.Equal(StatusCodes.Status200OK, await RequestAsync("existing-" + i));
+            }
+            var burst = await Task.WhenAll(Enumerable.Range(0, 128)
+                .Select(i => Task.Run(() => RequestAsync("burst-" + i))));
+
+            Assert.Equal(10, burst.Count(status => status == StatusCodes.Status200OK));
+            Assert.Equal(118, burst.Count(status => status == StatusCodes.Status429TooManyRequests));
+            Assert.Equal(10_000, counters.Count);
+            Assert.Equal(StatusCodes.Status429TooManyRequests, await RequestAsync("existing-0"));
+        }
+        finally
+        {
+            counters.Clear();
+            foreach (var entry in previous)
+            {
+                counters.Add(entry.Key, entry.Value);
+            }
+        }
+    }
+
     private static RateLimitingMiddleware CreateMiddleware(
         bool enabled = true,
         int limit = 1,
@@ -606,4 +666,9 @@ public sealed class RateLimitingMiddlewareTests
         public Task<RateLimitStatus?> GetStatusAsync(string key, CancellationToken cancellationToken = default)
             => Task.FromResult<RateLimitStatus?>(null);
     }
+}
+
+[CollectionDefinition("RateLimitingCapacity", DisableParallelization = true)]
+public sealed class RateLimitingCapacityCollection
+{
 }
