@@ -327,6 +327,22 @@
       "geobench": []
     },
     {
+      "key": "analytics.h3",
+      "displayName": "H3 Aggregation",
+      "category": "Analytics",
+      "edition": "Pro",
+      "status": null,
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "analytics.line-of-sight",
       "displayName": "Line of Sight",
       "category": "Analytics",
@@ -1618,7 +1634,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 421,
+      "provingTestCount": 422,
       "maturity": {
         "implemented": 49
       },
