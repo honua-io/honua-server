@@ -107,7 +107,7 @@ def helm_render(chart, executable):
             print(json.dumps(summary), flush=True)
 
 
-def runtime(dll, database=None, storage=None):
+def runtime(dll, database=None, storage=None, case_filter=None):
     base = {k: v for k, v in os.environ.items() if k in ('PATH', 'HOME', 'DOTNET_ROOT', 'LD_LIBRARY_PATH')}
     base.update(ASPNETCORE_ENVIRONMENT='Production', DOTNET_ENVIRONMENT='Production',
                 Kestrel__Endpoints__Http__Url='http://127.0.0.1:18943',
@@ -154,6 +154,8 @@ def runtime(dll, database=None, storage=None):
                 envelope = json.dumps({'version': 1, 'keyId': 'qa', 'payload': b64(payload), 'signature': b64(signature)})
                 scenarios[f'{edition.lower()}-{state}'] = {'Licensing__LicenseContent': envelope}
     for case, updates in scenarios.items():
+        if case_filter and case != case_filter:
+            continue
         env = base | updates
         with socket.socket() as http_socket, socket.socket() as grpc_socket:
             http_socket.bind(('127.0.0.1', 0))
@@ -210,6 +212,15 @@ def runtime(dll, database=None, storage=None):
                 process.wait()
             reader.join(timeout=2)
         log = ''.join(chunks)
+        # Diagnose bootstrap failures without retaining any raw credential values.
+        scrubbed = log
+        sensitive_values = [v for k, v in env.items() if v and any(
+            part in k.lower() for part in ('password', 'masterkey', 'licensecontent', 'connectionstrings'))]
+        if database:
+            sensitive_values.extend(re.findall(r'(?i)Password=([^;]+)', database))
+        for value in sorted(sensitive_values, key=len, reverse=True):
+            scrubbed = scrubbed.replace(value, '[REDACTED]')
+        failure = [line[:1200] for line in scrubbed.splitlines() if line.startswith('Unhandled exception.')]
         markers = [s for s in ['Master key not configured', 'Master key must be at least 32',
             'Admin password must be at least 16', 'Admin password must contain',
             'Refusing to start', 'Development license grant', 'not allowed in Production',
@@ -220,14 +231,16 @@ def runtime(dll, database=None, storage=None):
         print(json.dumps({'case': case, 'exit_before_stop': exit_code,
             'http_statuses': statuses, 'log_markers': markers,
             'license_state': license_state,
+            'bootstrap_failure': failure,
             'exception_types': sorted(set(re.findall(r'\b([A-Za-z.]+Exception)\b', log)))}), flush=True)
 
 
-def runtime_with_database(dll):
+def runtime_with_database(dll, case_filter=None, initialize=True):
     name = 'gav-safe-defaults-' + secrets.token_hex(5)
     env = os.environ | {'POSTGRES_PASSWORD': secrets.token_urlsafe(32)}
     image = 'pgrouting/pgrouting:17-3.5-3.7.3'
-    subprocess.run(['docker', 'run', '--rm', '-d', '--name', name,
+    init_args = ['-v', str(ROOT / 'docker/init-db.sql') + ':/docker-entrypoint-initdb.d/init-db.sql:ro'] if initialize else []
+    subprocess.run(['docker', 'run', '--rm', '-d', '--name', name, *init_args,
         '-e', 'POSTGRES_PASSWORD', '-e', 'POSTGRES_USER=qa', '-e', 'POSTGRES_DB=qa',
         '-p', '127.0.0.1::5432', image], env=env, check=True, stdout=subprocess.DEVNULL)
     try:
@@ -239,23 +252,38 @@ def runtime_with_database(dll):
             time.sleep(.5)
         database = f"Host=127.0.0.1;Port={port};Database=qa;Username=qa;Password={env['POSTGRES_PASSWORD']};Timeout=5"
         with tempfile.TemporaryDirectory(prefix='honua-safe-storage-') as storage:
-            runtime(dll, database, storage)
+            runtime(dll, database, storage, case_filter)
     finally:
         subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL, check=True)
 
 
-def production_database_refusal():
+def production_database_refusal(with_password=False):
     doc = (ROOT / 'docs/guides/deploy/docker-compose.md').read_text()
     shipped = re.search(r"cat > docker-compose.yml <<'EOF'\n(.*?)\nEOF", doc, re.S).group(1)
     project = 'gav-safe-defaults-' + secrets.token_hex(5)
     env = {k: v for k, v in os.environ.items() if k in ('PATH', 'HOME', 'DOCKER_HOST')}
     env.update(HONUA_IMAGE='honua-server:qa', HONUA_STORAGE_VOLUME_NAME=project + '-storage')
+    if with_password:
+        env['POSTGRES_PASSWORD'] = secrets.token_urlsafe(32)
     with tempfile.TemporaryDirectory(prefix='honua-safe-compose-') as directory:
         path = Path(directory) / 'compose.yml'
         path.write_text(shipped)
         command = ['docker', 'compose', '--project-name', project, '--env-file', '/dev/null', '-f', str(path)]
         try:
             started = subprocess.run(command + ['up', '-d', 'postgres'], env=env, capture_output=True, text=True, timeout=90)
+            if with_password:
+                for _ in range(120):
+                    ready = subprocess.run(command + ['exec', '-T', 'postgres', 'sh', '-c',
+                        'test "$(head -n 1 /var/lib/postgresql/data/postmaster.pid)" = "1" && pg_isready -h 127.0.0.1 -U honua -d honua'],
+                        env=env, capture_output=True)
+                    if ready.returncode == 0:
+                        break
+                    time.sleep(.5)
+                check = subprocess.run(command + ['exec', '-T', 'postgres', 'psql', '-U', 'honua', '-d', 'honua', '-Atc',
+                    "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'postgis');"], env=env, capture_output=True, text=True, check=True)
+                print(json.dumps({'case': 'exact-production-postgres-preflight', 'compose_up_exit': started.returncode,
+                    'database_ready': ready.returncode == 0, 'postgis_installed': check.stdout.strip() == 't'}), flush=True)
+                return
             for _ in range(40):
                 ps = subprocess.run(command + ['ps', '-a', '--format', 'json'], env=env, capture_output=True, text=True)
                 items = [json.loads(line) for line in ps.stdout.splitlines() if line]
@@ -278,12 +306,20 @@ if __name__ == '__main__':
     parser.add_argument('--helm-chart', type=Path)
     parser.add_argument('--helm-executable', type=Path, default=Path('helm'))
     parser.add_argument('--production-postgres-refusal', action='store_true')
+    parser.add_argument('--case')
+    parser.add_argument('--without-postgis-init', action='store_true')
+    parser.add_argument('--production-postgres-preflight', action='store_true')
     args = parser.parse_args()
-    if args.production_postgres_refusal:
+    if args.production_postgres_preflight:
+        production_database_refusal(with_password=True)
+    elif args.production_postgres_refusal:
         production_database_refusal()
     elif args.helm_chart:
         helm_render(args.helm_chart, args.helm_executable)
     elif args.runtime:
-        (runtime_with_database if args.with_database else runtime)(args.runtime.resolve())
+        if args.with_database:
+            runtime_with_database(args.runtime.resolve(), args.case, not args.without_postgis_init)
+        else:
+            runtime(args.runtime.resolve(), case_filter=args.case)
     else:
         render()
