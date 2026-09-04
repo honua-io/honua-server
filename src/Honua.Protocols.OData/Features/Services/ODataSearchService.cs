@@ -17,8 +17,19 @@ using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.OData.Services;
+
+internal sealed record ODataSearchDependencies(
+    IFeatureReader FeatureReader,
+    IRelationshipStore RelationshipStore,
+    IStreamingFeatureStore StreamingFeatureStore,
+    IGeometryService GeometryService,
+    ICrsRegistry CrsRegistry,
+    IMetadataV2GraphProvider GraphProvider,
+    ODataFeatureProviderResolver ProviderResolver,
+    IOptions<ODataOptions> Options);
 
 /// <summary>
 /// Service for handling OData search and aggregation operations.
@@ -38,26 +49,24 @@ internal sealed partial class ODataSearchService
     private readonly ICrsRegistry _crsRegistry;
     private readonly ODataQueryService _queryService;
     private readonly IMetadataV2GraphProvider _graphProvider;
+    private readonly ODataFeatureProviderResolver _providerResolver;
+    private readonly int _maxApplyInputRows;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataSearchService"/> class.
     /// </summary>
-    public ODataSearchService(
-        IFeatureReader featureReader,
-        IRelationshipStore relationshipStore,
-        IStreamingFeatureStore streamingFeatureStore,
-        IGeometryService geometryService,
-        ICrsRegistry crsRegistry,
-        ODataQueryService queryService,
-        IMetadataV2GraphProvider graphProvider)
+    public ODataSearchService(ODataSearchDependencies dependencies, ODataQueryService queryService)
     {
-        _featureReader = featureReader;
-        _relationshipStore = relationshipStore;
-        _streamingFeatureStore = streamingFeatureStore;
-        _geometryService = geometryService;
-        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
+        ArgumentNullException.ThrowIfNull(dependencies);
+        _featureReader = dependencies.FeatureReader;
+        _relationshipStore = dependencies.RelationshipStore;
+        _streamingFeatureStore = dependencies.StreamingFeatureStore;
+        _geometryService = dependencies.GeometryService;
+        _crsRegistry = dependencies.CrsRegistry;
         _queryService = queryService;
-        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
+        _graphProvider = dependencies.GraphProvider;
+        _providerResolver = dependencies.ProviderResolver;
+        _maxApplyInputRows = dependencies.Options.Value.MaxApplyInputRows;
     }
 
     /// <summary>
@@ -112,7 +121,7 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException("$search parameter is required.");
         }
 
-        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken, requireCount: count == true).ConfigureAwait(false);
         var resource = resolvedLayer.Resource;
         var srid = resource.ReadSrid() ?? 4326;
 
@@ -144,7 +153,7 @@ internal sealed partial class ODataSearchService
         query = ODataSqlFragmentMergeHelper.Merge(query, textSearchFilter);
 
         // Storage handle is still int-keyed at the IFeatureReader boundary.
-        var result = await _featureReader.QueryAsync(resolvedLayer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+        var result = await resolvedLayer.Reader.QueryAsync(resolvedLayer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
         var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
             _crsRegistry,
             srid,
@@ -246,7 +255,11 @@ internal sealed partial class ODataSearchService
         ValidateAggregationFields(aggregation, resource);
 
         // Use existing aggregation handler for processing
-        var handler = new ODataAggregationHandler(_featureReader, _streamingFeatureStore, _queryService);
+        var reader = resolvedLayer.Reader;
+        var stream = ReferenceEquals(reader, _featureReader)
+            ? _streamingFeatureStore
+            : reader as IStreamingFeatureStore;
+        var handler = new ODataAggregationHandler(reader, stream, _queryService, _maxApplyInputRows);
         return await handler.ProcessAggregationAsync(
             resolvedLayer.StorageLayerId,
             resource,
@@ -475,7 +488,8 @@ internal sealed partial class ODataSearchService
 
     private async Task<ResolvedODataLayer> ResolveODataLayerAsync(
         int layerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireCount = false)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
@@ -507,7 +521,12 @@ internal sealed partial class ODataSearchService
                 continue;
             }
 
+            var reader = await _providerResolver.ResolveQueryReaderAsync(
+                snapshot, service, resource!, publication, storageLayerId.Value,
+                requireCount, cancellationToken).ConfigureAwait(false);
+
             return new ResolvedODataLayer(
+                reader,
                 publication,
                 resource!,
                 layerId,
@@ -596,6 +615,7 @@ internal sealed partial class ODataSearchService
     }
 
     private sealed record ResolvedODataLayer(
+        IFeatureReader Reader,
         MetadataV2Publication Publication,
         MetadataV2Resource Resource,
         int PublicLayerId,

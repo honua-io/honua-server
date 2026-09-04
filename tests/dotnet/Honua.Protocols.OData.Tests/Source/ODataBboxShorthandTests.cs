@@ -20,7 +20,8 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataBboxShorthandTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ConfigureWebHost(builder => builder.UseSetting("OData:MaxPageSize", "2").UseSetting("OData:MaxApplyInputRows", "2"));
     private const int TestLayerId = 0;
     private const long SanFranciscoId = 1;   // -122.4194, 37.7749
     private const long LosAngelesId = 2;     // -118.2437, 34.0522
@@ -36,6 +37,51 @@ public sealed class ODataBboxShorthandTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    public async Task PowerQuery_DocumentedFeed_LoadsFeatureRows()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null && !File.Exists(Path.Join(directory.FullName, "docs", "guides", "connect", "excel-power-bi.md")))
+        {
+            directory = directory.Parent;
+        }
+
+        directory.Should().NotBeNull();
+        var guide = await File.ReadAllTextAsync(Path.Join(directory!.FullName, "docs", "guides", "connect", "excel-power-bi.md"));
+        var match = System.Text.RegularExpressions.Regex.Match(guide, "OData\\.Feed\\(\\s*\"(?<url>[^\"]+)\"");
+        match.Success.Should().BeTrue();
+        var source = match.Groups["url"].Value.Replace("{layerId}", "0", StringComparison.Ordinal);
+        var response = await _fixture.Client.GetAsync(new Uri(source).PathAndQuery);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rows = await ParseFeaturesAsync(response);
+        rows.Should().NotBeEmpty();
+        rows.Select(row => row.TryGetProperty("ObjectId", out _)).Should().OnlyContain(found => found,
+            "the documented Power Query source must load feature rows");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SpatialQuery)]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    public async Task Bbox_NextLink_StaysInsideWindow()
+    {
+        const string bbox = "-124,32,-114,42";
+        var response = await _fixture.Client.GetAsync($"/odata/Layers(0)/Features?bbox={bbox}&$orderby=ObjectId&$select=ObjectId");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var page = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var link = page.RootElement.GetProperty("@odata.nextLink").GetString()!;
+        var parameters = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(link).Query);
+        parameters["bbox"].ToString().Should().Be(bbox);
+
+        var next = await _fixture.Client.GetAsync(new Uri(link).PathAndQuery);
+        next.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rows = await ParseFeaturesAsync(next);
+        rows.Should().NotBeEmpty();
+        rows.Should().OnlyContain(row => row.GetProperty("ObjectId").GetInt64() <= 5);
+    }
 
     [IntegrationTest]
     [Operation(Operations.SpatialQuery)]
@@ -89,6 +135,22 @@ public sealed class ODataBboxShorthandTests : IAsyncLifetime
             $"/odata/Features({TestLayerId})?bbox=not-a-bbox");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    public async Task Apply_ConfiguredInputBudget_RejectsOverflowAndAcceptsExactLimit()
+    {
+        var overflow = await _fixture.Client.GetAsync("/odata/Layers(0)/Features?$apply=aggregate($count%20as%20n)");
+        overflow.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await overflow.Content.ReadAsStringAsync()).Should().Contain("maximum input row count of 2");
+
+        var exact = await _fixture.Client.GetAsync(
+            "/odata/Layers(0)/Features?$apply=aggregate($count%20as%20n)&$filter=ObjectId%20lt%203");
+        exact.StatusCode.Should().Be(HttpStatusCode.OK, await exact.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await exact.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("value")[0].GetProperty("n").GetInt64().Should().Be(2);
     }
 
     private static async Task<List<JsonElement>> ParseFeaturesAsync(HttpResponseMessage response)

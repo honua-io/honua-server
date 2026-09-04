@@ -110,9 +110,10 @@ internal sealed class ODataFeatureProviderResolver(
             return (false, "The layer's configured data provider is read-only for OData write operations.");
         }
 
-        return ReferenceEquals(binding.Provider.Writer, _fallbackWriter)
-            ? (true, null)
-            : (false, "OData writes through secondary data providers are not supported.");
+        // Even the primary provider's writer targets the managed partition, not this
+        // connection/table binding. Until a binding-aware writer contract exists,
+        // reject before any pre-read or mutation (including batch changesets).
+        return (false, "OData writes through connection-bound or secondary data providers are not supported.");
     }
 
     private static bool RequiresProviderRouting(

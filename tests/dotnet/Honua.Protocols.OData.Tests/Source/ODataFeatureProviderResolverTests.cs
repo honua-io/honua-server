@@ -110,12 +110,33 @@ public sealed class ODataFeatureProviderResolverTests
         provider.Writer.Returns(primaryWriter);
         var resolver = new ODataFeatureProviderResolver(
             Substitute.For<IFeatureReader>(), primaryWriter, CreateRouter(connectionId, provider));
-        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId: null);
 
         var support = await resolver.CheckWriteSupportAsync(
             snapshot, service, resource, publication, 41, CancellationToken.None);
 
         support.Supported.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CheckWriteSupportAsync_ConnectionBoundPrimaryWriter_RejectsShadowWrites()
+    {
+        var connectionId = Guid.NewGuid();
+        var primaryWriter = Substitute.For<IFeatureWriter>();
+        var provider = Substitute.For<IFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.Postgis);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadWritePostgis);
+        provider.Reader.Returns(Substitute.For<IFeatureReader>());
+        provider.Writer.Returns(primaryWriter);
+        var resolver = new ODataFeatureProviderResolver(
+            Substitute.For<IFeatureReader>(), primaryWriter, CreateRouter(connectionId, provider));
+        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId.ToString());
+
+        var support = await resolver.CheckWriteSupportAsync(
+            snapshot, service, resource, publication, 41, CancellationToken.None);
+
+        support.Supported.Should().BeFalse();
+        await primaryWriter.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default!, default);
     }
 
     [Fact]
@@ -219,7 +240,7 @@ public sealed class ODataFeatureProviderResolverTests
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*routing is not configured*");
     }
 
-    private static FeatureProviderQueryRouter CreateRouter(Guid connectionId, IFeatureDataProvider provider)
+    internal static FeatureProviderQueryRouter CreateRouter(Guid connectionId, IFeatureDataProvider provider)
     {
         var providerName = provider.ProviderName;
         var connectionRegistry = Substitute.For<ISecureConnectionRegistry>();
@@ -242,7 +263,7 @@ public sealed class ODataFeatureProviderResolverTests
             new FeatureDataProviderRegistry([provider]));
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
+    internal static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
         CreateSnapshot(string? connectionId)
     {
         var service = new MetadataV2Service
