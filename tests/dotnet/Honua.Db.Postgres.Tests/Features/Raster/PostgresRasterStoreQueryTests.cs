@@ -148,8 +148,10 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
-    [IntegrationTest]
-    public async Task ExportImageAsync_WithDisabledGdalDrivers_ReportsUnsupportedFormat()
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExportImageAsync_WithDisabledGdalDrivers_ReportsUnsupportedFormat(bool mosaic)
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
         try
@@ -167,12 +169,16 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
                 FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
-            var export = () => store.ExportImageAsync(LayerId, rasterId, new RasterQuery
+            var query = new RasterQuery
             {
                 OutputFormat = RasterFormat.PNG,
                 OutputWidth = 64,
                 OutputHeight = 64,
-            });
+            };
+            var secondRasterId = mosaic ? await InsertImageServerProbeRasterAsync(schemaName) : rasterId;
+            var export = () => mosaic
+                ? store.ExportMosaicAsync(LayerId, [rasterId, secondRasterId], RasterMergeStrategy.Newest, query)
+                : store.ExportImageAsync(LayerId, rasterId, query);
 
             await export.Should().ThrowAsync<NotSupportedException>()
                 .WithMessage("The requested raster export format is not available on this server.");

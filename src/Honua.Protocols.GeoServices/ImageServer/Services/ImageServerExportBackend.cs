@@ -45,7 +45,7 @@ internal sealed class ImageServerExportBackend(
                         cancellationToken)
                     .ConfigureAwait(false);
         }
-        catch (DbException ex)
+        catch (DbException ex) when (ex.IsTransient)
         {
             throw new ServiceUnavailableException("Raster export provider is unavailable.", ex);
         }

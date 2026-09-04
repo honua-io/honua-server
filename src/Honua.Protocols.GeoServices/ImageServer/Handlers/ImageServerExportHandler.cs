@@ -304,8 +304,16 @@ internal sealed class ImageServerExportHandler
                 ex.RetryAfterSeconds,
                 retryable: true);
         }
+        catch (NotSupportedException ex)
+        {
+            ImageServerLog.ExportImageFailed(_logger, ex, layerId);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "The requested raster export is not supported by the configured provider.");
+        }
         // Intentionally generic: this is a top-level protocol request handler; any
-        // unexpected non-provider failure (for example, a programming error) must map
+        // unexpected failure (for example, a programming error) must map
         // to a generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

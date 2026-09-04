@@ -1250,6 +1250,20 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_NonTransientDatabaseError_RemainsServerError()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TestDbException("Private SQL details", transient: false));
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ExportImageAsync(context, 1, CreateRequest(responseFormat: "image"));
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status500InternalServerError);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_UnavailableExportFormat_ReturnsNotImplementedWithoutProviderDetails()
     {
         SetupLayerAndRasters();
@@ -1617,5 +1631,8 @@ public class ImageServerExportHandlerTests
         Srid = 4326
     };
 
-    private sealed class TestDbException(string message) : DbException(message);
+    private sealed class TestDbException(string message, bool transient = true) : DbException(message)
+    {
+        public override bool IsTransient => transient;
+    }
 }

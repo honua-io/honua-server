@@ -226,6 +226,12 @@ public sealed class CapabilityKeyDriftTests
             entries.Should().NotBeEmpty();
             entries.Should().OnlyContain(entry => entry.Maturity == "preview");
         }
+
+        var wmtsRoutes = catalog.Entries
+            .Where(entry => entry.Route.Contains("/WMTS", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        wmtsRoutes.Should().NotBeEmpty();
+        wmtsRoutes.Should().OnlyContain(entry => entry.Maturity == "preview");
     }
 
     [ArchitectureTest]

@@ -48,6 +48,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "sync.offline",
         "realtime.feature-streams",
         "serve.sensorthings",
+        "serve.geoservices-imageserver",
+        "serve.wmts",
         "alerts.geofence",
         "jobs.runner",
         "ai.spec-apply",
@@ -117,6 +119,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "alerts.geofence",
         "realtime.feature-streams",
         "serve.sensorthings",
+        "serve.geoservices-imageserver",
+        "serve.wmts",
     ];
 
     [Fact]

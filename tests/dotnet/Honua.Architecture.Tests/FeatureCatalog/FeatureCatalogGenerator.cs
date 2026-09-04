@@ -259,6 +259,18 @@ internal static class FeatureCatalogGenerator
     /// </summary>
     internal static string? ResolveDescriptorIdForRoute(string route)
     {
+        // Lifecycle-only Preview declarations also cover the MapServer WMTS aliases,
+        // whose capability key belongs to the otherwise GA MapServer family.
+        if (route.Contains("/WMTS", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.wmts";
+        }
+
+        if (route.Contains("/ImageServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.geoservices-imageserver";
+        }
+
         // Temporal analytics — /api/v1/temporal/* was promoted to GA (Implemented) in
         // #2429 (temporal.filtering/extent-discovery/histogram/time-series-tiles), so it is
         // no longer a flipped experimental group: its routes fall through to the in-release
