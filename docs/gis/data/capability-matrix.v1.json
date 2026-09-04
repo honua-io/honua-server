@@ -332,9 +332,11 @@
       "category": "Analytics",
       "edition": "Pro",
       "status": null,
-      "entryCount": 0,
-      "provingTestCount": 0,
-      "maturity": {},
+      "entryCount": 4,
+      "provingTestCount": 34,
+      "maturity": {
+        "implemented": 4
+      },
       "noSurface": null,
       "cite": [],
       "parity": [],
@@ -1633,10 +1635,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 49,
-      "provingTestCount": 423,
+      "entryCount": 47,
+      "provingTestCount": 410,
       "maturity": {
-        "implemented": 49
+        "implemented": 47
       },
       "noSurface": null,
       "cite": [],
@@ -1873,7 +1875,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 9,
-      "provingTestCount": 25,
+      "provingTestCount": 27,
       "maturity": {
         "implemented": 9
       },
@@ -2009,10 +2011,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 21,
-      "provingTestCount": 279,
+      "entryCount": 19,
+      "provingTestCount": 270,
       "maturity": {
-        "implemented": 21
+        "implemented": 19
       },
       "noSurface": null,
       "cite": [
@@ -2204,7 +2206,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 38,
+      "provingTestCount": 40,
       "maturity": {
         "implemented": 7
       },

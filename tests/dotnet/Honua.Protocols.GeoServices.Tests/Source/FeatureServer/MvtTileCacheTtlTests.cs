@@ -13,7 +13,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 /// <summary>
 /// Serve-path cache-TTL integration coverage for the MVT tile endpoint.
-/// Asserts the <c>Cache-Control: public, max-age=&lt;resolved&gt;</c> header is
+/// Asserts the <c>Cache-Control: private, max-age=&lt;resolved&gt;</c> header is
 /// driven by <see cref="TilesetTtlResolver" /> — the global
 /// <see cref="TileOptions.CacheMaxAge" /> by default, and a per-tileset override
 /// when one is configured for the requested tileset identity.
@@ -21,18 +21,16 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]
 [Collection("Database")]
-public class MvtTileCacheTtlTests : IAsyncLifetime
+public class MvtTileCacheTtlTests : IClassFixture<WebAppFixture>
 {
     private const int TestLayerId = 0;
 
-    // The standard fixture authenticates every request through the development
-    // bypass. Disable it so requests without credentials exercise public caching.
-    private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+    private readonly WebAppFixture _fixture;
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
-
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public MvtTileCacheTtlTests(WebAppFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     [IntegrationTest]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
@@ -44,8 +42,10 @@ public class MvtTileCacheTtlTests : IAsyncLifetime
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
         response.Headers.CacheControl.Should().NotBeNull();
-        response.Headers.CacheControl!.Public.Should().BeTrue();
+        // /tiles requires authentication, so the privacy policy requires private caching.
+        response.Headers.CacheControl!.Private.Should().BeTrue();
         response.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromSeconds(3600));
+        response.Headers.Vary.Should().Contain("Authorization").And.Contain("X-API-Key");
     }
 
     [IntegrationTest]
@@ -102,9 +102,7 @@ public class MvtTileCacheTtlOverrideTests
         }
 
         public WebAppFixture App { get; } =
-            new WebAppFixture()
-                .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"))
-                .ReplaceService<IOptions<TileOptions>>(Options.Create(TileOptionsValue));
+            new WebAppFixture().ReplaceService<IOptions<TileOptions>>(Options.Create(TileOptionsValue));
 
         public Task InitializeAsync() => App.InitializeAsync();
 
@@ -124,7 +122,8 @@ public class MvtTileCacheTtlOverrideTests
 
         response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent);
         response.Headers.CacheControl.Should().NotBeNull();
-        response.Headers.CacheControl!.Public.Should().BeTrue();
+        response.Headers.CacheControl!.Private.Should().BeTrue();
         response.Headers.CacheControl.MaxAge.Should().Be(TimeSpan.FromSeconds(OverrideTtlSeconds));
+        response.Headers.Vary.Should().Contain("Authorization").And.Contain("X-API-Key");
     }
 }

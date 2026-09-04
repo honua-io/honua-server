@@ -6722,6 +6722,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3EntitlementTests.OgcH3_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.OgcH3_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.OgcH3_UnsupportedBoundReader_ReturnsCapabilityError",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesH3Tests.H3_InvalidCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesH3Tests.H3_MissingResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesH3Tests.H3_UnknownQueryParameter_ReturnsBadRequestWithStandardFormat",
@@ -6729,7 +6732,7 @@
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",
-      "capability": "serve.ogc-api-features"
+      "capability": "analytics.h3"
     },
     {
       "id": "get-ogc-features-collections-collectionid-items",
@@ -9998,6 +10001,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3EntitlementTests.QueryH3Get_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_ExcessiveKRingDistance_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_InvalidResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_InvalidService_ReturnsNotFound",
@@ -10005,11 +10009,13 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_MissingResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_NegativeResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_ValidResolution_ReturnsOkOrCapabilityError",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_WithKRingDistance_ReturnsOkOrCapabilityError"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_WithKRingDistance_ReturnsOkOrCapabilityError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3_UnsupportedBoundReader_ReturnsCapabilityError"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
-      "capability": "serve.geoservices-featureserver"
+      "capability": "analytics.h3"
     },
     {
       "id": "get-rest-services-serviceid-featureserver-layerid-queryrelatedrecords",
@@ -11680,6 +11686,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.VectorTileServer_RootStyleAndTile_UseSameRoutedPrimaryPublication",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_BadCoordinates_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_EmptyTile_ReturnsNoContent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_InRange_ReturnsMvtBytesWithCacheHeader",
@@ -11715,7 +11722,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_AbsurdDimension_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_EdgeBlock_MarksOutOfRangeTilesZero",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_FullyInRange_ReturnsAllAvailable",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_LevelOutsideScheme_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_LevelOutsideScheme_ReturnsUnprocessableEntity",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_NonSquareBlock_UsesWidthThenHeight",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_UnknownService_ReturnsNotFound"
       ],
       "proof_ledger_surface": "vector-tile-server",
@@ -12859,15 +12867,18 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3EntitlementTests.H3Tile_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_InvalidCoords_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_InvalidResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_NonExistentLayer_ReturnsRealNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_ValidCoords_ReturnsOkOrCapabilityError",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_WithExplicitResolution_ReturnsOkOrCapabilityError"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_WithExplicitResolution_ReturnsOkOrCapabilityError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.H3Tile_EmptyRoutedTile_PreservesCacheHeaders",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.H3Tile_SourceBackedLayer_UsesBindingScopedTileProvider"
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",
-      "capability": "serve.ogc-api-features"
+      "capability": "analytics.h3"
     },
     {
       "id": "get-tiles-layerid-tile-json",
@@ -12900,6 +12911,7 @@
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.MVT_GetTile_ShouldReturnProtobuf",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateProtocols_DisableFeatureServer_BlocksLayerTiles",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileCacheTtlOverrideTests.GetTile_WithPerTilesetOverride_UsesOverrideTtl",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileCacheTtlTests.GetTile_AuthenticatedRequest_UsesPrivateCacheWithGlobalTtl",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileCacheTtlTests.GetTile_NoPerTilesetOverride_UsesGlobalCacheMaxAge",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileEndpointTests.GetTile_HighZoomLevel_ReturnsDetailedTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileEndpointTests.GetTile_InvalidTileCoordinates_ReturnsBadRequest",
@@ -12918,6 +12930,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileTemporalEndpointTests.GetTile_WithTimeOpenStart_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileTemporalEndpointTests.GetTile_WithTimeRangeIso8601_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileTemporalEndpointTests.GetTile_WithTimeRangeUnixMs_ReturnsTile",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.FeatureServerMvt_SourceBackedLayer_UsesBindingScopedTileProvider",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.MapLibre_CanLoadFromTileJson"
       ],
       "proof_ledger_surface": "vector-tiles-mvt",
@@ -19321,15 +19334,18 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3EntitlementTests.QueryH3Post_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_ValidRequest_ReturnsOkOrCapabilityError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithHistogramSummariesAndNoTotals_ResolvesCellBounds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithLargeCountSummary_PreservesIntegerPrecision",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithOutStatisticsArray_ReturnsOkOrCapabilityError",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithSpatialAggregationSummaries_ReturnsSdkSummaryResponse"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithSpatialAggregationSummaries_ReturnsSdkSummaryResponse",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3Post_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3Summaries_SourceBackedLayer_UsesBindingScopedFeatureReader"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
-      "capability": "serve.geoservices-featureserver"
+      "capability": "analytics.h3"
     },
     {
       "id": "post-rest-services-serviceid-featureserver-layerid-queryrelatedrecords",
