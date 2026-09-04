@@ -41,8 +41,8 @@
       "capability": "admin.multi-tenancy",
       "maturity": "preview",
       "reasonCode": "release-preview",
-      "reason": "Honua 2026.1 GA is single-tenant. Multi-tenant tenant lifecycle, schema routing, and usage surfaces remain enabled for the demo area as Preview, without GA operational, SLA, or scale claims. Cross-tenant disclosure remains a full-severity security defect regardless of lifecycle status.",
-      "decision": "honua-release#210 operator ruling (2026-09-02); honua-server#3906"
+      "reason": "Honua 2026.1 GA is single-tenant. Multi-tenant lifecycle, schema routing, and usage are Preview/trial only for non-production demo or evaluation areas; do not use customer production data. No GA, availability, performance, durability, SLA, SLO, or scale commitment. Honua provides no SaaS or managed hosting. Cross-tenant disclosure remains a full-severity security defect regardless of lifecycle status.",
+      "decision": "honua-release#210; honua-server#3906; operator contract amendment (2026-09-04)"
     },
     {
       "capability": "demo.showcase",

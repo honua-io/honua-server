@@ -237,6 +237,10 @@ public sealed class CapabilityKeyDriftTests
     [ArchitectureTest]
     public void TenantAdminRoutes_AreAlwaysPreviewMultiTenancySurfaces()
     {
+        var vocabulary = CapabilityKeyCatalog.All.Single(capability => capability.Key == "admin.multi-tenancy");
+        vocabulary.Status.Should().Be("preview");
+        vocabulary.Description.Should().Contain("Preview/trial").And.Contain("non-production");
+
         var tenantEntries = LoadCommittedCatalog().Entries
             .Where(entry => entry.Route.StartsWith("/api/v1/admin/tenants", StringComparison.Ordinal))
             .ToArray();
@@ -246,6 +250,17 @@ public sealed class CapabilityKeyDriftTests
             entry => entry.Capability == "admin.multi-tenancy" && entry.Maturity == "preview",
             "tenant administration may never be emitted as a GA-shaped control-plane surface; "
             + "Honua 2026.1 permits it only as the admin.multi-tenancy Preview/trial surface");
+
+        var matrixPath = Path.Combine(ArchitectureTestHelpers.ResolveRepositoryRoot(),
+            "docs", "gis", "data", "capability-matrix.v1.json");
+        using var matrix = JsonDocument.Parse(File.ReadAllText(matrixPath));
+        var tenancy = matrix.RootElement.GetProperty("capabilities").EnumerateArray()
+            .Single(capability => capability.GetProperty("key").GetString() == "admin.multi-tenancy");
+        tenancy.GetProperty("status").GetString().Should().Be("preview");
+        tenancy.GetProperty("entryCount").GetInt32().Should().Be(tenantEntries.Length);
+        tenancy.GetProperty("maturity").GetProperty("preview").GetInt32().Should().Be(tenantEntries.Length);
+        tenancy.GetProperty("maturity").EnumerateObject().Should().OnlyContain(tier => tier.Name == "preview",
+            "a future GA-shaped tenancy claim in the generated matrix must fail the build");
     }
 
     [ArchitectureTest]
