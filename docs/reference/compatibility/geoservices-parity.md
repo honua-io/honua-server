@@ -31,7 +31,7 @@ Status vocabulary:
 
 - **Implemented** — the Esri operation exists at a compatible path and the documented behavior is supported.
 - **Partial** — the operation exists, but only a subset of documented parameters or behavior is supported.
-- **Preview** — the operation is available for opt-in evaluation but is not a GA contract in the current release.
+- **Preview** — the operation is available for opt-in evaluation but is not a GA contract in the current release. Preview is a lifecycle maturity, separate from the implementation-completeness status in the machine-readable matrix.
 - **Stub** — the route exists and returns the spec-shaped response, but the backing data model is deferred; read-style stubs return empty/`false` results and mutation stubs return HTTP 400 rather than fabricating success.
 - **Not implemented** — the operation is not exposed.
 
@@ -417,7 +417,7 @@ and the OAuth2 surface are gated by `Authentication:PortalToken:Enabled` plus th
 
 ## Sources and upkeep
 
-- **Hand-authored judgement source:** [`docs/gis/data/geoservices-parity-judgment.json`](../../gis/data/geoservices-parity-judgment.json) — the *only* file to edit. It carries the Implemented/Partial/Preview/Stub verdict and the gap prose, keyed to derived operation paths.
+- **Hand-authored judgement source:** [`docs/gis/data/geoservices-parity-judgment.json`](../../gis/data/geoservices-parity-judgment.json) — the *only* file to edit. It carries the Implemented/Partial/Stub completeness verdict and the gap prose, keyed to derived operation paths; Preview lifecycle maturity is derived from the capability catalog.
 - **Generated machine-readable export:** [`docs/gis/data/geoservices-rest-parity.json`](../../gis/data/geoservices-rest-parity.json) — **do not hand-edit.** Regenerate with `scripts/generate-geoservices-parity.sh` and commit the result. Its `esriPaths`, `honuaEndpoints`, and `capabilityMaturity` fields are derived from the server's endpoint registry; a hand edit to them cannot survive the drift guard. Note `capabilityMaturity` is the ADR-0058 capability tier (*is this route in the release?*), **not** the parity `status` (*how much of Esri's documented behaviour does it support?*) — a Stub on an in-release route correctly reads `status: stub`, `capabilityMaturity: ["implemented"]`.
 - **What is enforced.** `GeoServicesParityMatrixDriftTests` (in `Honua.Architecture.Tests`) fails the build when: a served GeoServices operation carries **no** judgement (served-but-unclassified); a judgement names an operation that is **not served** (the over-claim direction); an operation recorded Not implemented *is* served (the under-claim direction); one operation carries two judgements; a served Esri service type has no home in the matrix; a `Partial`/`Stub` states no gap; an `evidence` path does not resolve to a real file; or the committed export is not byte-identical to freshly-generated output. **Do not satisfy any of it by relabelling a status** — `Stub` is a deliberate, honest category and must keep its meaning. If a gate here pressures you to upgrade a status, the gate is wrong.
 - **What is not enforced (read this before trusting a status).** The gate proves a claimed operation *exists* and that nothing served is unclassified. It never proves a status is the *right* one. Nothing mechanically stops a `Partial` whose parameter coverage has since regressed, or a `Stub` mislabelled `Implemented`. Those remain human review, anchored by `lastReviewed` in the judgement source and the release checklist.

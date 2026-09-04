@@ -312,9 +312,6 @@ internal sealed class ParityOperationBuckets
     /// <summary>Operations whose documented Esri behaviour is supported.</summary>
     public ParityOperation[] Implemented { get; init; } = [];
 
-    /// <summary>Operations available for opt-in evaluation but not a GA contract in the current release.</summary>
-    public ParityOperation[] Preview { get; init; } = [];
-
     /// <summary>Operations supporting only a subset of documented behaviour.</summary>
     public ParityOperation[] Partial { get; init; } = [];
 
