@@ -183,6 +183,7 @@ internal static class GpxFormatReader
         var coordinates = new List<Coordinate>();
         var parts = new List<NetTopologySuite.Geometries.Geometry>();
         var isTrack = pointElement == "trkpt";
+        var gpxNamespace = reader.NamespaceURI;
         string? pendingName = null;
 
         using var subtree = reader.ReadSubtree();
@@ -196,7 +197,7 @@ internal static class GpxFormatReader
             {
                 case XmlNodeType.Element:
                     pendingName = null;
-                    if (isTrack && subtree.LocalName == "trkseg")
+                    if (isTrack && subtree.Depth == 1 && subtree.NamespaceURI == gpxNamespace && subtree.LocalName == "trkseg")
                     {
                         AddSegment();
                     }
@@ -230,7 +231,7 @@ internal static class GpxFormatReader
                     break;
 
                 case XmlNodeType.EndElement:
-                    if (isTrack && subtree.LocalName == "trkseg")
+                    if (isTrack && subtree.Depth == 1 && subtree.NamespaceURI == gpxNamespace && subtree.LocalName == "trkseg")
                     {
                         AddSegment();
                     }

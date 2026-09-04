@@ -18,6 +18,7 @@ public sealed class GpxSegmentRoundtripTests
     [InlineData("<trkseg/><trkseg><trkpt lon=\"0\" lat=\"0\"/><trkpt lon=\"1\" lat=\"0\"/></trkseg><trkseg/>", "LINESTRING (0 0, 1 0)")]
     [InlineData("<trkseg><trkpt lon=\"0\" lat=\"0\"/><trkpt lon=\"1\" lat=\"0\"/></trkseg><trkseg><trkpt lon=\"10\" lat=\"0\"/></trkseg>", "GEOMETRYCOLLECTION (LINESTRING (0 0, 1 0), POINT (10 0))")]
     [InlineData("<trkseg><trkpt lon=\"10\" lat=\"0\"/></trkseg>", "POINT (10 0)")]
+    [InlineData("<trkseg><trkpt lon=\"0\" lat=\"0\"/><extensions><ext:trkseg xmlns:ext=\"urn:example:extension\">metadata</ext:trkseg></extensions><trkpt lon=\"1\" lat=\"0\"/></trkseg>", "LINESTRING (0 0, 1 0)")]
     public async Task ImportExport_DisconnectedTrackSegments_PreservesGeometryAndAttributes(string segments, string expectedWkt)
     {
         await using var input = new MemoryStream(Encoding.UTF8.GetBytes(
