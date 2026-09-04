@@ -42,11 +42,11 @@ services:
       Security__ConnectionEncryption__Salt: aG9udWEtZ3AtcmVsaWFiaWxpdHktc2FsdA==
       Kestrel__Endpoints__Http__Url: http://+:8080
       Kestrel__Endpoints__Http__Protocols: Http1
-      Oidc__Enabled: "true"
-      Oidc__Generic__Enabled: "true"
-      Oidc__Generic__Authority: ${HONUA_GP_OIDC_ISSUER:?set HONUA_GP_OIDC_ISSUER}
-      Oidc__Generic__ClientId: ${HONUA_GP_OIDC_AUDIENCE:?set HONUA_GP_OIDC_AUDIENCE}
-      Oidc__TokenValidation__SymmetricSigningKey: ${HONUA_GP_OIDC_SIGNING_KEY:?set HONUA_GP_OIDC_SIGNING_KEY}
+      Oidc__Enabled: ${HONUA_GP_OIDC_ENABLED:-false}
+      Oidc__Generic__Enabled: ${HONUA_GP_OIDC_ENABLED:-false}
+      Oidc__Generic__Authority: ${HONUA_GP_OIDC_ISSUER:-https://gp-qualification.invalid}
+      Oidc__Generic__ClientId: ${HONUA_GP_OIDC_AUDIENCE:-gp-lifecycle}
+      Oidc__TokenValidation__SymmetricSigningKey: ${HONUA_GP_OIDC_SIGNING_KEY:-honua-gp-local-signing-key-0123456789}
       Oidc__TokenValidation__EnableTokenReplayProtection: "false"
       ExecutionAdmission__Enabled: "true"
       ExecutionAdmission__MaxConcurrentJobsPerPartition: ${HONUA_GP_MAX_CONCURRENT_PARTITION:-10000}

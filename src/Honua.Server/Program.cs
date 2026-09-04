@@ -1408,6 +1408,10 @@ app.UseHonuaTenantStatusEnforcement();
 // posture is still edge enforcement (ADR-0004).
 app.UseRateLimiting();
 
+// Reject invalid Esri portal tokens only after the shared rate limiter has metered the
+// request, so repeated bad credentials cannot bypass the configured source-IP bucket.
+app.UsePortalTokenAuthenticationRejection();
+
 // Add limits enforcement middleware (after auth, before request logging)
 app.UseLimitsEnforcement();
 

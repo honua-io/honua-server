@@ -41,6 +41,23 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates the Esri GeoServices invalid-token envelope. The HTTP response remains
+    /// 200 per the GeoServices wire convention while the body carries code 498, which
+    /// distinguishes a supplied-but-invalid token from a missing credential (499).
+    /// </summary>
+    internal static IResult CreateInvalidToken(HttpContext context, string detail = "Invalid token.")
+    {
+        var errorResponse = new StandardErrorResponse(
+            StatusCodes.Status401Unauthorized,
+            "Invalid Token",
+            detail);
+        return StandardErrorResponseFormatter.FormatError(
+            context,
+            errorResponse,
+            new ErrorResponseFormatterOptions { GeoServicesBodyCode = GeoServicesErrorCodes.InvalidToken });
+    }
+
+    /// <summary>
     /// Creates a Forbidden error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>
