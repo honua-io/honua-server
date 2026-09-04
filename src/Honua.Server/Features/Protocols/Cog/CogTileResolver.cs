@@ -145,10 +145,16 @@ internal sealed class CogTileResolver : ICogTileResolver
 
         if (!CanServeRequestedFormat(format, contentType))
         {
-            if (_logger.IsEnabled(LogLevel.Debug))
+            var requestedFormat = format switch
             {
-                CogLog.UnsupportedTileFormat(_logger, registration.Id, FormatName(format), contentType);
-            }
+                RasterFormat.PNG => "PNG",
+                RasterFormat.JPEG => "JPEG",
+                RasterFormat.TIFF => "TIFF",
+                RasterFormat.Raw => "Raw",
+                RasterFormat.COG => "COG",
+                _ => "Unknown"
+            };
+            CogLog.UnsupportedTileFormat(_logger, registration.Id, requestedFormat, contentType);
             return null;
         }
 
@@ -366,16 +372,6 @@ internal sealed class CogTileResolver : ICogTileResolver
         RasterFormat.TIFF or RasterFormat.COG => contentType == "image/tiff",
         RasterFormat.Raw => contentType == "application/octet-stream",
         _ => false
-    };
-
-    private static string FormatName(RasterFormat format) => format switch
-    {
-        RasterFormat.PNG => "PNG",
-        RasterFormat.JPEG => "JPEG",
-        RasterFormat.TIFF => "TIFF",
-        RasterFormat.Raw => "Raw",
-        RasterFormat.COG => "COG",
-        _ => "Unknown"
     };
 
     private sealed record CachedCogMetadata(CogMetadata Metadata, string ETag);
