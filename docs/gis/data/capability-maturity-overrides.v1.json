@@ -29,6 +29,13 @@
       "decision": "honua-release#100 / decision D0.2; see honua-release#86 and honua-server#3279 for the rest of the scene keys"
     },
     {
+      "capability": "fieldops.offline-sync",
+      "maturity": "preview",
+      "reasonCode": "release-deferred",
+      "reason": "Operator ruling 2026-09-03 classifies offline sync as Preview in 2026.1; the full GA claim is deferred to release/2026.2 while security and isolation fixes land.",
+      "decision": "honua-release#266 / OPERATOR RULING 2026-09-03"
+    },
+    {
       "capability": "scene.bim-ingest",
       "maturity": "experimental",
       "reasonCode": "release-deferred",

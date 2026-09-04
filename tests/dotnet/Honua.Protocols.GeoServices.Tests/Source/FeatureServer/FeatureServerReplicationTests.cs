@@ -230,6 +230,8 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
 
         var createContent = await createResponse.Content.ReadAsStringAsync();
         using var createDoc = JsonDocument.Parse(createContent);
+        createDoc.RootElement.ValueKind.Should().Be(JsonValueKind.Object, createContent);
+        createDoc.RootElement.TryGetProperty("replicaID", out _).Should().BeTrue(createContent);
         var replicaId = createDoc.RootElement.GetProperty("replicaID").GetString();
 
         var response = await _fixture.Client.GetAsync(

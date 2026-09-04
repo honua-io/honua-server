@@ -14,10 +14,11 @@ This is the one-time decision record for applying the
 it records the disposition of every key the audit named as a factually-wrong allowlist
 reason, a mis-attributed route, or a shallow-evidence GA claim.
 
-> **Update (2026-08, #2430).** `sync.offline` (disconnected-sync / replicas) has since been
-> promoted from `Experimental` to `Implemented` (GA) after conflict-resolution hardening, so
-> the "do not promote an existing experimental capability" non-goal below no longer describes
-> the current state for that key, and the registry-flag examples in this record are stale.
+> **Update (OPERATOR RULING 2026-09-03, honua-release#266).** `sync.offline`
+> (disconnected-sync / replicas) is **Preview** in 2026.1. The earlier #2430 promotion to
+> `Implemented` (GA) is superseded: security and isolation hardening remains in 2026.1,
+> while the remaining protocol-completeness gaps are deferred to release/2026.2.
+> The registry-flag examples in this record are therefore stale for the current release claim.
 > The registry-flag experimental route groups today are `versioning.branch` (the VMS REST
 > surface) and `security.mtls` (demoted back to experimental in #2958). Every other
 > disposition in this record stands.
@@ -164,6 +165,6 @@ job still completes rather than being silently lost or permanently wedged.
   were reused where they reached; where they did not reach (`analytics.slice`,
   `scene.catalog`), the demotion is documentation-only per the scope decision above.
 - Promoting any existing experimental capability (`versioning.branch`, `security.mtls`).
-  (`sync.offline` was promoted to GA later, in #2430 — outside the scope of this re-grade.)
+  (`sync.offline` is handled by the 2026-09-03 operator ruling above.)
 - Building server-side DR automation. Architecture decision: the server stays
   stateless; DR is owned by IaC/managed-database tooling.

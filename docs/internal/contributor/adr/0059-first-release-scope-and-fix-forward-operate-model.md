@@ -184,6 +184,13 @@ deployment. It lights up when the customer opts in.
 > stay in the entitlement/UI-gated set, and the **Mobile** bullet (honua-mobile SDK,
 > honua-collect field data collection) is unchanged.
 
+> **Update (OPERATOR RULING 2026-09-03; honua-release#266).** The #2430 promotion above is
+> superseded for the 2026.1 release claim: **offline sync and replicas (`sync.offline`) are
+> Preview**, not GA. The runtime registry, capability manifest, FeatureServer replica routes,
+> field-collection routes, feature catalog, and parity export must all say Preview. Security and
+> isolation hardening remains in 2026.1; protocol-parity and completeness gaps are deferred to
+> `release/2026.2`.
+
 **Two mechanisms hold this set OFF — not one uniform registry flag.** The
 route-bearing experimental capabilities — **temporal** analytics/versioning
 (`/api/v1/temporal/*`), **disconnected-sync / replicas**, **realtime

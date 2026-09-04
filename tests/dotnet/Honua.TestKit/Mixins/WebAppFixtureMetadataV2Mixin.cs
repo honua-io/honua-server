@@ -29,6 +29,8 @@ namespace Honua.TestKit.Mixins;
 /// </remarks>
 internal static class WebAppFixtureMetadataV2Mixin
 {
+    private static readonly string[] DefaultFeatureServerCapabilities = ["Query", "Create", "Update", "Delete", "Sync"];
+
     /// <summary>
     /// Default service id used by the test seed (mirrors <see cref="WebAppFixture.TestServiceId"/>).
     /// </summary>
@@ -100,7 +102,11 @@ internal static class WebAppFixtureMetadataV2Mixin
                 "test",
                 route: "/ogc/features",
                 protocols: allProtocols,
-                accessPolicy: new AccessPolicy { AllowAnonymous = true });
+                accessPolicy: new AccessPolicy { AllowAnonymous = true },
+                options: new Dictionary<string, JsonElement>
+                {
+                    ["capabilities"] = JsonSerializer.SerializeToElement(DefaultFeatureServerCapabilities)
+                });
 
         // server.yaml binds only layers 0..2 to service "test"; do not publish helper
         // resource ids here or service-level FeatureServer queries will drift from the
@@ -187,7 +193,14 @@ internal static class WebAppFixtureMetadataV2Mixin
         // layer ids that server.yaml seeds so /rest/services has services to return and
         // downstream FeatureServer/MapServer handler ports can resolve them by layer id.
         builder
-            .AddService("svc-test-feature", "test", protocols: [MetadataV2ServiceProtocols.FeatureServer])
+            .AddService(
+                "svc-test-feature",
+                "test",
+                protocols: [MetadataV2ServiceProtocols.FeatureServer],
+                options: new Dictionary<string, JsonElement>
+                {
+                    ["capabilities"] = JsonSerializer.SerializeToElement(DefaultFeatureServerCapabilities)
+                })
             .AddService("svc-test-map", "test", protocols: [MetadataV2ServiceProtocols.MapServer])
             .AddService("svc-test-stac", "test", route: "/stac", protocols: [MetadataV2ServiceProtocols.Stac]);
         foreach (var layerIndex in defaultServiceLayerIndices)

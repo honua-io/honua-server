@@ -101,6 +101,7 @@ internal sealed class CapabilityMaturityOverrides
         "planned" => CapabilityMaturity.Planned,
         "deferred" => CapabilityMaturity.Deferred,
         "experimental" => CapabilityMaturity.Experimental,
+        FeatureCatalogGenerator.MaturityPreview => CapabilityMaturity.Preview,
         "partial" => CapabilityMaturity.Partial,
         FeatureCatalogGenerator.MaturityImplemented => CapabilityMaturity.Implemented,
         _ => null,
