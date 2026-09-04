@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Text.Json;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -84,9 +85,13 @@ public sealed class AdminLogoutDependencyLossTests
         unavailable = true;
         using var failed = await client.PostAsync(path, saml ? content : null);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, failed.StatusCode);
+        Assert.Equal("true", Assert.Single(failed.Headers.GetValues("Honua-Retryable")));
         Assert.False(failed.Headers.TryGetValues("Set-Cookie", out var cookies) &&
             cookies.Any(cookie => cookie.StartsWith(AdminAuthSessionStore.AuthSessionCookieName + "=", StringComparison.Ordinal)));
-        Assert.DoesNotContain("Dependency unavailable", await failed.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var failureBody = await failed.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("Dependency unavailable", failureBody, StringComparison.Ordinal);
+        using var failure = JsonDocument.Parse(failureBody);
+        Assert.True(failure.RootElement.GetProperty("retryable").GetBoolean());
 
         unavailable = false;
         // The failed response must be honest: revocation has not yet happened.
