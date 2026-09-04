@@ -370,10 +370,48 @@ public sealed class RateLimitingMiddlewareTests
             "the endpoint scope includes the HTTP verb, so POST has its own counter");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task InvokeAsync_RedisOutage_EnforcesLocalSubjectAndEndpointLimits(bool endpointPolicy)
+    {
+        var redis = Substitute.For<StackExchange.Redis.IConnectionMultiplexer>();
+        var database = Substitute.For<StackExchange.Redis.IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction(Arg.Any<object>()).Returns(_ =>
+            throw new StackExchange.Redis.RedisConnectionException(
+                StackExchange.Redis.ConnectionFailureType.UnableToConnect, "Redis unavailable"));
+        var middleware = CreateMiddleware(limit: endpointPolicy ? 100 : 2, redis: redis);
+        var subject = Guid.NewGuid().ToString("N");
+
+        for (var request = 1; request <= 10; request++)
+        {
+            var context = CreateContext("198.51.100.90", subject: subject,
+                endpointName: endpointPolicy ? "outage-endpoint" : null, endpointLimit: 2);
+            await middleware.InvokeAsync(context);
+            context.Response.StatusCode.Should().Be(request <= 2
+                ? StatusCodes.Status200OK
+                : StatusCodes.Status429TooManyRequests);
+            if (request > 2)
+            {
+                context.Response.Headers.RetryAfter.Should().NotBeEmpty();
+                context.Response.Headers["X-RateLimit-Remaining"].ToString().Should().Be("0");
+            }
+        }
+
+        // Another subject retains its own allowance during the same outage.
+        var otherSubject = CreateContext("198.51.100.91", subject: Guid.NewGuid().ToString("N"),
+            endpointName: endpointPolicy ? "outage-endpoint" : null, endpointLimit: 2);
+        await middleware.InvokeAsync(otherSubject);
+        otherSubject.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
     private static RateLimitingMiddleware CreateMiddleware(
         bool enabled = true,
         int limit = 1,
-        IRateLimitPolicyStore? policyStore = null)
+        IRateLimitPolicyStore? policyStore = null,
+        StackExchange.Redis.IConnectionMultiplexer? redis = null)
     {
         policyStore ??= Substitute.For<IRateLimitPolicyStore>();
 
@@ -390,7 +428,7 @@ public sealed class RateLimitingMiddlewareTests
                 GlobalRequestsPerMinute = limit
             }),
             NullLogger<RateLimitingMiddleware>.Instance,
-            redis: null);
+            redis: redis);
     }
 
     private static DefaultHttpContext CreateContext(
