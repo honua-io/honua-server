@@ -1809,6 +1809,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pyyaml
+        shell: bash
+        run: python -m pip install 'pyyaml>=6,<7'
+
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
         with:

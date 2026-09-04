@@ -15138,7 +15138,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.Rollback_AfterApprovingGates_RequestsCoordinatedRollback",
-        "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.Rollback_FaultInMetadataStep_UnwindsBothReversibleSteps"
+        "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.Rollback_FaultInMetadataStep_StopsWhenMetadataRollbackCannotSettle"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -20632,7 +20632,7 @@
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_Anonymous_Returns401",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_Authenticated_CreatesGroupOwnedByCaller",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_FormToken_AuthenticatesAndPreservesFormForEndpoint",
-        "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_InvalidFormToken_Returns401",
+        "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_InvalidFormToken_Returns498",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_MultipartToken_DoesNotAuthenticate"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
