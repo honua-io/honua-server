@@ -234,14 +234,44 @@ def runtime_with_database(dll):
         subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL, check=True)
 
 
+def production_database_refusal():
+    doc = (ROOT / 'docs/guides/deploy/docker-compose.md').read_text()
+    shipped = re.search(r"cat > docker-compose.yml <<'EOF'\n(.*?)\nEOF", doc, re.S).group(1)
+    project = 'gav-safe-defaults-' + secrets.token_hex(5)
+    env = {k: v for k, v in os.environ.items() if k in ('PATH', 'HOME', 'DOCKER_HOST')}
+    env.update(HONUA_IMAGE='honua-server:qa', HONUA_STORAGE_VOLUME_NAME=project + '-storage')
+    with tempfile.TemporaryDirectory(prefix='honua-safe-compose-') as directory:
+        path = Path(directory) / 'compose.yml'
+        path.write_text(shipped)
+        command = ['docker', 'compose', '--project-name', project, '--env-file', '/dev/null', '-f', str(path)]
+        try:
+            started = subprocess.run(command + ['up', '-d', 'postgres'], env=env, capture_output=True, text=True, timeout=90)
+            for _ in range(40):
+                ps = subprocess.run(command + ['ps', '-a', '--format', 'json'], env=env, capture_output=True, text=True)
+                items = [json.loads(line) for line in ps.stdout.splitlines() if line]
+                if items and items[0].get('State') in ('exited', 'restarting'):
+                    break
+                time.sleep(.25)
+            logs = subprocess.run(command + ['logs', '--no-color', 'postgres'], env=env, capture_output=True, text=True)
+            state = json.loads(subprocess.check_output(['docker', 'inspect', '--format', '{{json .State}}', items[0]['ID']], text=True))
+            print(json.dumps({'case': 'production-postgres-missing-secret', 'compose_up_exit': started.returncode,
+                'container_state': {'status': state['Status'], 'exit': state['ExitCode']},
+                'password_refusal': 'superuser password is not specified' in logs.stdout + logs.stderr}), flush=True)
+        finally:
+            subprocess.run(command + ['down', '-v'], env=env, capture_output=True, check=True, timeout=60)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--runtime', type=Path)
     parser.add_argument('--with-database', action='store_true')
     parser.add_argument('--helm-chart', type=Path)
     parser.add_argument('--helm-executable', type=Path, default=Path('helm'))
+    parser.add_argument('--production-postgres-refusal', action='store_true')
     args = parser.parse_args()
-    if args.helm_chart:
+    if args.production_postgres_refusal:
+        production_database_refusal()
+    elif args.helm_chart:
         helm_render(args.helm_chart, args.helm_executable)
     elif args.runtime:
         (runtime_with_database if args.with_database else runtime)(args.runtime.resolve())
