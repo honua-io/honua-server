@@ -670,6 +670,6 @@ public sealed class RateLimitingMiddlewareTests
 }
 
 [CollectionDefinition("RateLimitingCapacity", DisableParallelization = true)]
-public sealed class RateLimitingCapacityCollection
+public sealed class RateLimitingCapacityTestGroup
 {
 }
