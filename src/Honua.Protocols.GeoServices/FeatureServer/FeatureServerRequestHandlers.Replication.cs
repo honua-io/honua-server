@@ -173,11 +173,6 @@ internal static partial class FeatureServerEndpoints
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
         var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
-        var syncCapabilityError = RequireServiceSyncCapability(context, service);
-        if (syncCapabilityError is not null)
-        {
-            return syncCapabilityError;
-        }
         var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
             context,
             serviceLayers.Select(layer => layer.Resource),
@@ -185,6 +180,12 @@ internal static partial class FeatureServerEndpoints
         if (accessError != null)
         {
             return accessError;
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         var accessibleLayerIds = serviceLayers
@@ -244,11 +245,6 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
-        var syncCapabilityError = RequireServiceSyncCapability(context, service);
-        if (syncCapabilityError is not null)
-        {
-            return syncCapabilityError;
-        }
         var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
         var record = await replicaRepository.GetAsync(replicaId, cancellationToken).ConfigureAwait(false);
         if (record == null || !string.Equals(record.Value.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
@@ -273,6 +269,12 @@ internal static partial class FeatureServerEndpoints
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         var layerServerGens = replicaRecord.SyncModel.Equals("perLayer", StringComparison.OrdinalIgnoreCase)
@@ -337,12 +339,6 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
-        var syncCapabilityError = RequireServiceSyncCapability(context, service);
-        if (syncCapabilityError is not null)
-        {
-            return syncCapabilityError;
-        }
-
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,
@@ -351,6 +347,12 @@ internal static partial class FeatureServerEndpoints
         if (writeAccessError != null)
         {
             return writeAccessError;
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         if (string.IsNullOrWhiteSpace(context.User?.Identity?.Name))
@@ -467,11 +469,6 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
-        var syncCapabilityError = RequireServiceSyncCapability(context, service);
-        if (syncCapabilityError is not null)
-        {
-            return syncCapabilityError;
-        }
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -525,6 +522,12 @@ internal static partial class FeatureServerEndpoints
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
@@ -801,10 +804,8 @@ internal static partial class FeatureServerEndpoints
         CancellationToken cancellationToken)
     {
         // The serverGen-based change-tracking flow is served on the same change-tracking
-        // backend the replica flow uses; it is not gated on the advertised "Sync"
-        // capability token (the replica extractChanges path is served unconditionally too,
-        // and the change tracker is always available). Layer access is still enforced
-        // below so unauthorized callers cannot extract changes.
+        // backend the replica flow uses. Layer access is enforced before the service-local
+        // Sync capability response so unauthorized callers cannot learn service settings.
 
         // Resolve the layers to extract from: the optional layers filter, otherwise all
         // accessible service layers. This reuses the same access-checked resolution the
@@ -826,6 +827,12 @@ internal static partial class FeatureServerEndpoints
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "No accessible layers to extract changes from for this service.");
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         if (!TryParseBoolValue(values, "returnIdsOnly", false, out var returnIdsOnly, out var returnIdsOnlyError))
@@ -1040,12 +1047,6 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
-        var syncCapabilityError = RequireServiceSyncCapability(context, service);
-        if (syncCapabilityError is not null)
-        {
-            return syncCapabilityError;
-        }
-
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,
@@ -1054,6 +1055,12 @@ internal static partial class FeatureServerEndpoints
         if (writeAccessError != null)
         {
             return writeAccessError;
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
@@ -1930,12 +1937,6 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
-        var syncCapabilityError = RequireServiceSyncCapability(context, service);
-        if (syncCapabilityError is not null)
-        {
-            return syncCapabilityError;
-        }
-
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
             service,
@@ -1944,6 +1945,12 @@ internal static partial class FeatureServerEndpoints
         if (writeAccessError != null)
         {
             return writeAccessError;
+        }
+
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
         }
 
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
