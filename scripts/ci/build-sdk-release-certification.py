@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a complete 33 x 3 official-SDK exact-image certification fragment."""
+"""Build a complete 33 x 3 official-SDK preview-tier certification fragment."""
 import argparse
 import hashlib
 import json
@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SCHEMA = "honua.protocol-certification-fragment/v1"
+TIER = "preview"
+PROFILE = "preview-http-baseseed"
 
 # The governed roster row that owns the official-SDK client identity. Its
 # scenarioFacets list — not this producer — decides which facets a cell must
@@ -113,6 +115,7 @@ def main():
                     gap = "published SDK does not expose an executed certification probe for this required 2026.1 capability"
             payload = {
                 "schema": "honua.sdk-protocol-operation-result/v1", "sdk": sdk,
+                "tier": TIER, "profile": PROFILE,
                 "coordinate": coordinate, "install": install, "operation": operation,
                 "result": result, "gap": gap, "operation_results": executed,
                 "required_facets": facets_required, "missing_facets": missing,
@@ -136,9 +139,10 @@ def main():
             observations.append({
                 "capability_key": capability, "surface": CAPABILITY_SURFACES[capability], "operation": operation,
                 "canonical_client": coordinate["package"], "client_version": coordinate["version"],
-                "deployment_target": "exact-candidate-local-docker", "client_id": sdk,
-                "runner_lane": "sdk-release-certification", "protocol_version": "2026.1",
+                "deployment_target": PROFILE, "client_id": sdk,
+                "runner_lane": "sdk-preview-certification", "protocol_version": "2026.1",
                 "protocol_profile": "frozen-2026.1", "performed_by": "published SDK public API",
+                "tier": TIER, "profile": PROFILE,
                 "request_url": None, "exercised_capabilities": [capability] if executed else [],
                 "result": result, "skip_reason": None, "gap": gap,
                 "source_sha": manifest["candidate"]["sourceSha"], "producer_source_sha": args.producer_source_sha,
@@ -161,13 +165,15 @@ def main():
         "missing": [facet for facet in facets_required if facet not in facets_seen],
     }
     facet_scope["complete"] = not facet_scope["missing"]
-    fragment = {"schema": SCHEMA, "producer": "honua-server-sdk-release", "generated_at": generated_at,
+    fragment = {"schema": SCHEMA, "producer": "honua-server-sdk-preview", "generated_at": generated_at,
+        "tier": TIER, "profile": PROFILE,
         "candidate": {"source_sha": manifest["candidate"]["sourceSha"], "image_digest": manifest["candidate"]["imageDigest"]},
         "operation_scope": {"complete": len(observations) == 99, "expected": 99, "observed": len(observations)},
         "facet_scope": facet_scope,
         "observations": observations}
     Path(args.output).write_text(json.dumps(fragment, indent=2) + "\n", encoding="utf-8")
-    summary = {"schema": "honua.sdk-release-certification-report/v1",
+    summary = {"schema": "honua.sdk-preview-certification-report/v1",
+        "tier": TIER, "profile": PROFILE,
         "passed": all(o["result"] == "pass" for o in observations) and facet_scope["complete"],
         "total": len(observations), "passedCells": sum(o["result"] == "pass" for o in observations),
         "failedCells": sum(o["result"] == "fail" for o in observations),

@@ -6,12 +6,12 @@ name: SDK Server Compatibility
   workflow_dispatch:
     inputs:
       server_current_ref:
-        description: 'Optional override for the current server matrix ref. Use a commit SHA for release-candidate evidence.'
+        description: 'Optional override for the current server matrix ref. Use a commit SHA for preview-tier evidence.'
         required: false
         default: HEAD
         type: string
       server_current_image:
-        description: 'Optional exact server image. Release certification requires image@sha256 and records it in evidence.'
+        description: 'Optional exact server image. Preview certification requires image@sha256 and records it in evidence.'
         required: false
         default: ''
         type: string
@@ -21,7 +21,7 @@ name: SDK Server Compatibility
         default: false
         type: boolean
       release_certification:
-        description: 'Require exact current-only source SHA plus immutable candidate image and retain release evidence.'
+        description: 'Require exact current-only source SHA plus immutable candidate image and retain preview evidence.'
         required: false
         default: false
         type: boolean
@@ -652,7 +652,7 @@ jobs:
           exit 1
 
   sdk-release-certification:
-    name: Published SDKs x exact candidate image
+    name: Published SDKs x preview HTTP base-seed
     needs: load-matrix
     if: inputs.release_certification == true
     runs-on: ubuntu-latest
@@ -685,11 +685,11 @@ jobs:
           set -euo pipefail
           manifest=docs/developer/sdk-release-certification.json
           [ "$SERVER_IMAGE" = "$(jq -r '.candidate.image' "$manifest")" ] || {
-            echo '::error::release image differs from the reviewed exact-candidate coordinate'
+            echo '::error::preview image differs from the reviewed candidate coordinate'
             exit 1
           }
           [ "${SERVER_SOURCE_SHA,,}" = "$(jq -r '.candidate.sourceSha' "$manifest")" ] || {
-            echo '::error::release source SHA differs from the reviewed image source pin'
+            echo '::error::preview source SHA differs from the reviewed image source pin'
             exit 1
           }
           docker pull "$SERVER_IMAGE"
@@ -723,7 +723,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Start exact candidate with deterministic seed
+      - name: Start preview HTTP base-seed server
         uses: ./.github/actions/setup-honua-server
         with:
           server-image: ${{ inputs.server_current_image }}
@@ -758,11 +758,12 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Enforce release result after retaining findings
+      - name: Enforce preview result after retaining findings
         if: always()
         shell: bash
         run: |
           test -f results/sdk-release-certification/fragment.json
+          jq -e '.tier == "preview" and .profile == "preview-http-baseseed"' results/sdk-release-certification/fragment.json >/dev/null
           jq -e '.operation_scope == {complete:true,expected:99,observed:99}' results/sdk-release-certification/fragment.json >/dev/null
           # Cell completeness is not facet completeness. The governed honua-sdks
           # roster row requires seven scenario facets; a fragment whose probes

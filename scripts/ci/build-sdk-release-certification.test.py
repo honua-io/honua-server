@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for the official-SDK release certification fragment builder.
+"""Tests for the official-SDK preview-tier certification fragment builder.
 
 The defect this guards against: the builder used to fabricate a single
 ``positive`` facet per cell, so once the positive probes covered every governed
-capability the release job reported green without ever exercising the
+capability the preview job reported green without ever exercising the
 authorization, isolation, paging or schema facets the governed roster requires.
 The facets must come from ``docs/gis/data/client-certification-roster.v1.json``
 and an unexercised facet must keep both the cell and the report failing.
@@ -188,6 +188,18 @@ class FacetEnforcementTests(unittest.TestCase):
             build(results)
         self.assertIn("invented-facet", str(caught.exception))
 
+    def test_preview_tier_and_profile_are_emitted(self) -> None:
+        fragment, report = build(all_facets_passing())
+        self.assertEqual(fragment["tier"], "preview")
+        self.assertEqual(fragment["profile"], "preview-http-baseseed")
+        self.assertEqual(report["tier"], "preview")
+        self.assertEqual(report["profile"], "preview-http-baseseed")
+        for observation in fragment["observations"]:
+            self.assertEqual(observation["tier"], "preview")
+            self.assertEqual(observation["profile"], "preview-http-baseseed")
+            self.assertEqual(observation["evidence_receipt"]["tier"], "preview")
+            self.assertEqual(observation["evidence_receipt"]["profile"], "preview-http-baseseed")
+
 
 class GateTests(unittest.TestCase):
     """The producer's own jq gates must reject a facet-incomplete fragment."""
@@ -198,7 +210,10 @@ class GateTests(unittest.TestCase):
 
     def test_workflow_gate_checks_facet_scope(self) -> None:
         workflow = REPOSITORY_ROOT / ".github/workflows/sdk-server-compatibility.yml"
-        self.assertIn(".facet_scope.complete == true", workflow.read_text(encoding="utf-8"))
+        content = workflow.read_text(encoding="utf-8")
+        self.assertIn('.tier == "preview" and .profile == "preview-http-baseseed"', content)
+        self.assertIn("Published SDKs x preview HTTP base-seed", content)
+        self.assertIn(".facet_scope.complete == true", content)
 
     def test_jq_rejects_an_incomplete_facet_scope(self) -> None:
         if subprocess.run(["which", "jq"], capture_output=True).returncode != 0:

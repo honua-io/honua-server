@@ -1,6 +1,8 @@
 {
   "$schema": "https://honua.io/schemas/sdk-release-certification.v1.json",
   "schemaVersion": 1,
+  "tier": "preview",
+  "profile": "preview-http-baseseed",
   "candidate": {
     "sourceSha": "ac30266fbd153363bebdbed13130accc8ab0c94a",
     "image": "ghcr.io/honua-io/honua-server@sha256:373aa1fdf1bd4153df9cb21e25e43dfc463c0e194fcac13b40a39c4bb390eb72",
