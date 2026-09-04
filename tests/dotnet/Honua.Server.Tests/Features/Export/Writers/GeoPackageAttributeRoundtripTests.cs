@@ -48,6 +48,8 @@ public sealed class GeoPackageAttributeRoundtripTests
     [InlineData(true, "double")]
     [InlineData(false, "decimal")]
     [InlineData(true, "decimal")]
+    [InlineData(true, "double-fraction")]
+    [InlineData(true, "decimal-fraction")]
     public async Task ImportExport_GeoServicesEpochValues_PreserveTemporalMeaning(bool timestamp, string numericType)
     {
         var instant = new DateTimeOffset(2026, 9, 4, 0, 0, 0, TimeSpan.Zero);
@@ -58,8 +60,12 @@ public sealed class GeoPackageAttributeRoundtripTests
         {
             "double" => (double)milliseconds,
             "decimal" => (decimal)milliseconds,
+            "double-fraction" => milliseconds + 0.125d,
+            "decimal-fraction" => milliseconds + 0.125m,
             _ => (object)milliseconds
         };
+        if (numericType.EndsWith("-fraction", StringComparison.Ordinal))
+            instant = instant.AddTicks(1250);
         await RoundtripAsync([new("value", timestamp ? ExportFieldType.DateTime : ExportFieldType.Date, true)],
             [timestamp ? (object)instant : DateOnly.FromDateTime(instant.UtcDateTime)], epoch);
     }
