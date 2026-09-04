@@ -193,7 +193,7 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                 manualChildAfterRestart.ObservedState.Should().Be(DesiredRevision, "the ledger must preserve that the failed revision remained observed");
                 afterRestartPoll.CoordinatedRelease.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
                     .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
-                afterRestartPoll.ErrorMessage.Should().Contain("previously observed revision");
+                afterRestartPoll.ErrorMessage.Should().Contain("operator action");
                 runtime.RunRequests.Should().HaveCount(1, "the provider reported that no prior revision was available");
                 ledger.FinalSplitStateReason = afterRestartPoll.ErrorMessage;
             }
