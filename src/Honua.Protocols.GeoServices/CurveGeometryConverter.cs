@@ -30,7 +30,7 @@ namespace Honua.Protocols.GeoServices;
 /// parse+serialize cycle; it does NOT promise curve re-emission from stored linear geometry.
 /// </para>
 /// </remarks>
-internal static class CurveGeometryConverter
+public static class CurveGeometryConverter
 {
     /// <summary>
     /// Maximum number of densified vertices generated for a single curve segment. A defensive bound

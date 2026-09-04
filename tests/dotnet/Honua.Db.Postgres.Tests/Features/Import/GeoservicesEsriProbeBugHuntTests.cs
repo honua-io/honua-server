@@ -20,7 +20,7 @@ public sealed class GeoservicesEsriProbeBugHuntTests
             {
               "curvePaths": [
                 [
-                  [[0,0], {"c":[[10,0],[5,5],[0,10]]}]
+                  [0,0], {"c":[[10,0],[5,5],[0,10]]}
                 ]
               ]
             }
