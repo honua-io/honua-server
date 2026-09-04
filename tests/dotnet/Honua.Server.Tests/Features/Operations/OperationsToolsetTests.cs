@@ -462,42 +462,20 @@ public sealed class OperationsToolsetTests
         using var provider = services.BuildServiceProvider();
 
         using var scope = provider.CreateScope();
-        var eligible = AdminAccessOperationCatalog.Definitions
-            .Where(static definition => !AdminMcpOperationExclusions.RequiresSecretAwareRuntime(definition.OperationId))
-            .ToArray();
+        var eligible = AdminAccessOperationCatalog.Definitions.ToArray();
         scope.ServiceProvider.GetServices<IOperationExecutor>()
             .Select(static executor => executor.OperationId)
             .Should().BeEquivalentTo(eligible.Select(static definition => definition.OperationId));
-        services.Where(static descriptor => descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
-                descriptor.ImplementationInstance is AdminOperateOperationApprovalRequestMapper)
-            .Select(static descriptor => ((IOperationApprovalRequestMapper)descriptor.ImplementationInstance!).OperationId)
+        scope.ServiceProvider.GetServices<IOperationApprovalRequestMapper>()
+            .OfType<AdminOperateOperationApprovalRequestMapper>()
+            .Select(static mapper => mapper.OperationId)
             .Should().BeEquivalentTo(eligible
                 .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
                 .Select(static definition => definition.OperationId));
     }
 
     [UnitTest]
-    public Task LaneC_ApiKeyCreate_IsRefusedBeforeAcceptance() =>
-        AssertSecretOperationUnavailableAsync("admin.api-key.create");
-
-    [UnitTest]
-    public Task LaneC_ApiKeyRotate_IsRefusedBeforeAcceptance() =>
-        AssertSecretOperationUnavailableAsync("admin.api-key.rotate");
-
-    [UnitTest]
-    public Task LaneC_OAuthClientRegister_IsRefusedBeforeAcceptance() =>
-        AssertSecretOperationUnavailableAsync("admin.oauth-client.register");
-
-    [UnitTest]
-    public Task LaneC_OidcProviderCreate_IsRefusedBeforeAcceptance() =>
-        AssertSecretOperationUnavailableAsync("admin.oidc-provider.create");
-
-    [UnitTest]
-    public Task LaneC_OidcProviderUpdate_IsRefusedBeforeAcceptance() =>
-        AssertSecretOperationUnavailableAsync("admin.oidc-provider.update");
-
-    [UnitTest]
-    public async Task LaneC_RemainingAccessOperations_RegisterAndExecute()
+    public async Task LaneC_AccessOperations_RegisterAndExecute()
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -506,9 +484,7 @@ public sealed class OperationsToolsetTests
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
 
-        var eligible = AdminAccessOperationCatalog.Definitions
-            .Where(static definition => !AdminMcpOperationExclusions.RequiresSecretAwareRuntime(definition.OperationId))
-            .ToArray();
+        var eligible = AdminAccessOperationCatalog.Definitions.ToArray();
         scope.ServiceProvider.GetServices<IOperationExecutor>()
             .Select(static executor => executor.OperationId)
             .Should().BeEquivalentTo(eligible.Select(static definition => definition.OperationId));
@@ -534,6 +510,104 @@ public sealed class OperationsToolsetTests
             new OperationPolicyContext());
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
+    }
+
+    [UnitTest]
+    public void SecretAwareApprovalPayload_ExternalizesOidcClientSecrets_AndReplayConsumesOnce()
+    {
+        var store = new VolatileOperationSecretStore();
+        var secret = Guid.NewGuid().ToString("N");
+        foreach (var operationId in new[] { "admin.oidc-provider.create", "admin.oidc-provider.update" })
+        {
+            var definition = AdminAccessOperationCatalog.Definitions.Single(item => item.OperationId == operationId);
+            var descriptor = AdminAccessOperationCatalog.Descriptors.Single(item => item.OperationId == operationId);
+            var context = new OperationPolicyContext
+            {
+                OperationInstanceId = $"opinst-{Guid.NewGuid():N}",
+                CorrelationId = $"corr-{Guid.NewGuid():N}",
+                PrincipalId = "principal-4187",
+                TenantId = "tenant-4187",
+            };
+            var request = new OperationRequest
+            {
+                OperationId = operationId,
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["name"] = "issuer",
+                    ["clientSecret"] = secret,
+                },
+            };
+
+            var mapper = new AdminOperateOperationApprovalRequestMapper(definition, store);
+            var mapped = mapper.Map(
+                descriptor,
+                request,
+                context,
+                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+            mapped.ExecutionPayload.Should().NotContain(secret);
+            mapped.Plan!.ExecutionPayload.Should().NotContain(secret);
+            mapped.ExecutionPayload.Should().Contain("referenceId");
+            var replay = mapper.MapReplay(mapped).Request;
+            replay.Parameters.Should().NotContainKey("clientSecret");
+
+            var resolved = OperationSecretParameters.Resolve(replay, context, store);
+            resolved.Parameters["clientSecret"].Should().Be(secret);
+            Action secondRead = () => OperationSecretParameters.Resolve(replay, context, store);
+            secondRead.Should().Throw<InvalidOperationException>();
+        }
+    }
+
+    [UnitTest]
+    public async Task SecretAwareAdminApiResult_PersistsOnlyOpaqueReference_AndConsumesOnce()
+    {
+        var store = new VolatileOperationSecretStore();
+        foreach (var operation in new[]
+                 {
+                     (Id: "admin.api-key.create", Output: "key", Parameter: (string?)null),
+                     (Id: "admin.api-key.rotate", Output: "key", Parameter: "key-id"),
+                     (Id: "admin.oauth-client.register", Output: "clientSecret", Parameter: (string?)null),
+                 })
+        {
+            var secret = Guid.NewGuid().ToString("N");
+            var handler = new CapturingOperationHandler(request =>
+            {
+                request.Method.Should().Be(HttpMethod.Post);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Created)
+                {
+                    Content = new StringContent($"{{\"data\":{{\"apiKey\":\"id\",\"key\":\"{secret}\",\"clientSecret\":\"{secret}\"}}}}")
+                });
+            });
+            using var client = new HttpClient(handler);
+            var executor = BuildAccessAdminExecutor(operation.Id, client, store);
+            var context = new OperationPolicyContext
+            {
+                OperationInstanceId = $"opinst-{Guid.NewGuid():N}",
+                PrincipalId = "principal-4187",
+                TenantId = "tenant-4187",
+            };
+
+            var parameters = new Dictionary<string, string?> { ["name"] = "automation" };
+            if (operation.Parameter is not null)
+                parameters["id"] = operation.Parameter;
+            var handle = await executor.SubmitAsync(
+                new OperationRequest
+                {
+                    OperationId = executor.OperationId,
+                    Parameters = parameters,
+                },
+                context);
+
+            var durableEnvelope = JsonSerializer.Serialize(handle);
+            durableEnvelope.Should().NotContain(secret);
+            handle.Result!.Details["response"].Should().NotContain(secret);
+            var reference = handle.Result.SecretReferences.Should().ContainSingle().Subject;
+            reference.Name.Should().Be(operation.Output);
+            store.Consume(reference, handle.OperationInstanceId, handle.OperationId, context.PrincipalId, context.TenantId)
+                .Should().Be(secret);
+            store.Consume(reference, handle.OperationInstanceId, handle.OperationId, context.PrincipalId, context.TenantId)
+                .Should().BeNull();
+        }
     }
 
     [UnitTest]
@@ -745,10 +819,9 @@ public sealed class OperationsToolsetTests
         environment.EnvironmentName.Returns("Test");
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
         using var provider = services.BuildServiceProvider();
-        var mapperCounts = services
-            .Where(static descriptor => descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
-                descriptor.ImplementationInstance is AdminOperateOperationApprovalRequestMapper)
-            .Select(static descriptor => (IOperationApprovalRequestMapper)descriptor.ImplementationInstance!)
+        using var scope = provider.CreateScope();
+        var mapperCounts = scope.ServiceProvider.GetServices<IOperationApprovalRequestMapper>()
+            .OfType<AdminOperateOperationApprovalRequestMapper>()
             .GroupBy(static mapper => mapper.OperationId, StringComparer.Ordinal)
             .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
 
@@ -1647,7 +1720,8 @@ public sealed class OperationsToolsetTests
 
     private static AdminOperateOperationExecutor BuildAccessAdminExecutor(
         string operationId,
-        HttpClient client)
+        HttpClient client,
+        IOperationSecretStore? secretStore = null)
     {
         var definition = AdminAccessOperationCatalog.Definitions.Should()
             .ContainSingle(item => item.OperationId == operationId).Subject;
@@ -1669,47 +1743,8 @@ public sealed class OperationsToolsetTests
             accessor,
             null,
             TimeProvider.System,
-            new OperationLineageAttestationStore(TimeProvider.System));
-    }
-
-    private static async Task AssertSecretOperationUnavailableAsync(string operationId)
-    {
-        var instanceStore = new VolatileOperationInstanceStore();
-        var approvalBridge = Substitute.For<IOperationApprovalBridge>();
-        var catalog = new OperationCatalog(
-            [new AdminAccessOperationDescriptorProvider()],
-            TimeProvider.System);
-        var dispatcher = new OperationDispatcher(
-            catalog,
-            [],
-            new AllowAllPolicyDecisionPoint(),
-            TimeProvider.System,
-            approvalBridge,
-            instanceStore,
-            new VolatileOperationAuditLog());
-        var instanceId = $"opinst-gated-{operationId.Replace('.', '-')}";
-
-        var exception = await Assert.ThrowsAsync<OperationUnavailableException>(() => dispatcher.SubmitAsync(
-            new OperationRequest
-            {
-                OperationId = operationId,
-                Parameters = new Dictionary<string, string?>
-                {
-                    ["secret"] = "must-not-appear-in-a-refusal"
-                }
-            },
-            new OperationPolicyContext
-            {
-                OperationInstanceId = instanceId,
-                ApprovedProposalId = "proposal-must-not-be-created"
-            }));
-
-        exception.OperationId.Should().Be(operationId);
-        exception.Message.Should().Contain("#4187");
-        exception.Message.Should().NotContain("must-not-appear-in-a-refusal");
-        (await instanceStore.GetAsync(instanceId)).Should().BeNull();
-        (await instanceStore.ListActiveAsync()).Should().BeEmpty();
-        approvalBridge.ReceivedCalls().Should().BeEmpty();
+            new OperationLineageAttestationStore(TimeProvider.System),
+            secretStore);
     }
 
     private static OperationDispatcher BuildDispatcher(

@@ -72,6 +72,19 @@ public static class OperationAdminAuthorization
             .ConfigureAwait(false);
         if (!result.Succeeded)
         {
+            // Scoped admin:read keys deliberately do not carry the admin role. They
+            // may observe read-only operation status, but never pass this fallback for
+            // a mutating semantic operation (including consume-once secret retrieval).
+            if (sideEffectClass == OperationSideEffectClass.ReadOnly &&
+                principal.Identity?.IsAuthenticated == true &&
+                AdminApiKeyPermission.IsAuthorized(
+                    principal,
+                    semanticContext.Request.Method,
+                    semanticContext.Request.Path.Value))
+            {
+                return Decision.Allowed();
+            }
+
             return Decision.Denied();
         }
 

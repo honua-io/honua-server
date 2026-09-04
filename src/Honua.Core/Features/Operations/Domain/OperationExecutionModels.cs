@@ -49,6 +49,23 @@ public sealed record OperationRequest
     /// The canonical runtime still owns identity, validation, policy, and actuation.
     /// </summary>
     public Honua.Core.Features.ControlPlane.Abstractions.OperationGatewayRequest? GatewayRequest { get; init; }
+
+    /// <summary>
+    /// Secret inputs captured in an approval payload. References are resolved only by the
+    /// approved REST executor and are never serialized as part of the public request.
+    /// </summary>
+    public IReadOnlyDictionary<string, OperationSecretReference> SecretParameters { get; init; } =
+        new Dictionary<string, OperationSecretReference>(StringComparer.Ordinal);
+}
+
+/// <summary>Opaque, non-secret handle for one-time operation secret material.</summary>
+public sealed record OperationSecretReference
+{
+    /// <summary>Opaque identifier resolved by the operation secret channel.</summary>
+    public required string ReferenceId { get; init; }
+
+    /// <summary>Logical field name, such as <c>key</c> or <c>clientSecret</c>.</summary>
+    public required string Name { get; init; }
 }
 
 /// <summary>
@@ -253,6 +270,12 @@ public sealed record OperationResultSummary
     /// </summary>
     public IReadOnlyDictionary<string, string> Details { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Opaque references for one-time secret outputs. The material is available only through
+    /// the authenticated consume-once channel and is never part of this durable result.
+    /// </summary>
+    public IReadOnlyList<OperationSecretReference> SecretReferences { get; init; } = [];
 }
 
 /// <summary>

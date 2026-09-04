@@ -31,6 +31,19 @@ internal static class OperationsServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<OperationLineageAttestationStore>();
+        if (environment.IsDevelopment() || environment.IsEnvironment("Test"))
+        {
+            services.TryAddSingleton<IOperationSecretStore, VolatileOperationSecretStore>();
+        }
+        else
+        {
+            services.TryAddSingleton<IOperationSecretStore>(sp =>
+                sp.GetService<IConnectionMultiplexer>() is { } redis
+                    ? new RedisOperationSecretStore(
+                        redis,
+                        sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>())
+                    : new UnavailableOperationSecretStore());
+        }
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
         // The real verifier's constructor requires the durable proposal store, and the
         // dispatcher requires a verifier, so hosts composed without the store failed
@@ -150,7 +163,9 @@ internal static class OperationsServiceCollectionExtensions
                 if (definition.Destructive)
                 {
                     services.AddSingleton<IOperationApprovalRequestMapper>(
-                        new AdminApiOperationApprovalRequestMapper(definition));
+                        sp => new AdminApiOperationApprovalRequestMapper(
+                            definition,
+                            sp.GetRequiredService<IOperationSecretStore>()));
                 }
                 services.AddScoped<IOperationExecutor>(sp => new AdminApiOperationExecutor(
                     definition,
@@ -193,7 +208,9 @@ internal static class OperationsServiceCollectionExtensions
                 definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
             {
                 services.AddSingleton<IOperationApprovalRequestMapper>(
-                    new AdminOperateOperationApprovalRequestMapper(definition));
+                    sp => new AdminOperateOperationApprovalRequestMapper(
+                        definition,
+                        sp.GetRequiredService<IOperationSecretStore>()));
             }
             services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
                 definition,
@@ -202,7 +219,8 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IHttpContextAccessor>(),
                 sp.GetService<IAdminApiKeyStore>(),
                 sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<OperationLineageAttestationStore>()));
+                sp.GetRequiredService<OperationLineageAttestationStore>(),
+                sp.GetRequiredService<IOperationSecretStore>()));
         }
 
         services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);

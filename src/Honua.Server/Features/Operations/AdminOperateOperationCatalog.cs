@@ -214,7 +214,8 @@ internal static class AdminOperateOperationCatalog
 }
 
 internal sealed class AdminOperateOperationApprovalRequestMapper(
-    IAdminHttpOperationDefinition definition) : IOperationApprovalRequestMapper
+    IAdminHttpOperationDefinition definition,
+    IOperationSecretStore? secretStore = null) : IOperationApprovalRequestMapper
 {
     public string OperationId => definition.OperationId;
 
@@ -233,7 +234,7 @@ internal sealed class AdminOperateOperationApprovalRequestMapper(
             throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
         }
 
-        var payload = AdminApiOperationApprovalPayload.From(request, context);
+        var payload = AdminApiOperationApprovalPayload.From(request, context, secretStore);
         var serialized = JsonSerializer.Serialize(
             payload,
             AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);

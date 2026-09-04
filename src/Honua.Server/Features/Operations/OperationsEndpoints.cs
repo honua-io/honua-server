@@ -59,6 +59,13 @@ internal static class OperationsEndpoints
             .WithSummary("Get the status of a submitted operation handle")
             .Produces<ApiResponse<OperationStatus>>()
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/handles/{handleId}/secrets/{referenceId}", HandleConsumeOperationSecret)
+            .WithName("ConsumeOperationSecret")
+            .WithSummary("Consume one-time secret material from a completed operation")
+            .Produces<ApiResponse<OperationSecretValueResponse>>()
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     private static async Task<IResult> HandleListOperations(
@@ -278,6 +285,54 @@ internal static class OperationsEndpoints
         return Results.Json(
             ApiResponse<OperationStatus>.CreateSuccess(status),
             OperationsJsonContext.Default.ApiResponseOperationStatus);
+    }
+
+    private static async Task<IResult> HandleConsumeOperationSecret(
+        HttpContext context,
+        string handleId,
+        string referenceId,
+        IOperationInstanceStore instanceStore,
+        IOperationSecretStore secretStore,
+        CancellationToken cancellationToken)
+    {
+        SetNoStore(context);
+        if (!await OperationAdminAuthorization.IsAuthorizedAsync(
+                context,
+                context.User,
+                OperationSideEffectClass.MutatesMetadata,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return Results.Forbid();
+        }
+
+        var handle = await instanceStore.GetAsync(handleId, cancellationToken).ConfigureAwait(false);
+        var reference = handle?.Result?.SecretReferences
+            .SingleOrDefault(item => string.Equals(item.ReferenceId, referenceId, StringComparison.Ordinal));
+        if (handle is null || reference is null)
+        {
+            return NotFound(context, "The requested operation secret was not found.");
+        }
+
+        var principalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
+        var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        var value = secretStore.Consume(
+            reference,
+            handle.OperationInstanceId,
+            handle.OperationId,
+            principalId,
+            tenantId);
+        if (value is null)
+        {
+            return NotFound(context, "The requested operation secret was not found or was already consumed.");
+        }
+
+        return Results.Json(
+            ApiResponse<OperationSecretValueResponse>.CreateSuccess(new OperationSecretValueResponse
+            {
+                Name = reference.Name,
+                Value = value,
+            }),
+            OperationsJsonContext.Default.ApiResponseOperationSecretValueResponse);
     }
 
     private static OperationRequest ToRequest(string operationId, OperationInvokeRequest request)

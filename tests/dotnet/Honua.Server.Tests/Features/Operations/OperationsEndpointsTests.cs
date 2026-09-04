@@ -9,9 +9,11 @@ using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -337,6 +339,89 @@ public sealed class OperationsEndpointsTests
             statusData.GetProperty("handleId").GetString().Should().Be(handleId);
             statusData.GetProperty("status").GetString().Should().Be("Completed");
             statusData.GetProperty("operationId").GetString().Should().Be("service.publish");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Configuration)]
+    [Endpoint("GET /api/v1/operations/handles/{handleId}")]
+    public async Task ReadOnlyPrincipal_CanReadStatusButCannotReadOperationSecret()
+    {
+        var instanceStore = new VolatileOperationInstanceStore();
+        var secretStore = new VolatileOperationSecretStore();
+        var operationInstanceId = $"opinst-{Guid.NewGuid():N}";
+        var secret = Guid.NewGuid().ToString("N");
+        var reference = secretStore.Store(
+            operationInstanceId,
+            "admin.api-key.create",
+            principalId: null,
+            tenantId: null,
+            "key",
+            secret);
+        var handle = new OperationHandle
+        {
+            OperationInstanceId = operationInstanceId,
+            OperationId = "admin.api-key.create",
+            CorrelationId = $"corr-{Guid.NewGuid():N}",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            Result = new OperationResultSummary
+            {
+                Summary = "completed",
+                Details = new Dictionary<string, string>
+                {
+                    ["response"] = "{\"data\":{\"apiKey\":\"id\"}}",
+                },
+                SecretReferences = [reference],
+            },
+        };
+        await instanceStore.TryCreateAsync(handle);
+
+        var fixture = new WebAppFixture()
+            .ReplaceService<IOperationInstanceStore>(instanceStore)
+            .ReplaceService<IOperationSecretStore>(secretStore)
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var bootstrap = fixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+            var createResponse = await bootstrap.PostAsJsonAsync(
+                "/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest
+                {
+                    Name = $"operation-reader-{Guid.NewGuid():N}",
+                    Permissions = ["admin:read"],
+                },
+                JsonOptions);
+            createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            var created = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+                await createResponse.Content.ReadAsStringAsync(),
+                JsonOptions);
+            created?.Data.Should().NotBeNull();
+
+            using var reader = fixture.CreateClient(client =>
+                client.DefaultRequestHeaders.Add("X-API-Key", created!.Data!.Key));
+            var status = await reader.GetAsync($"/api/v1/operations/handles/{operationInstanceId}");
+            var statusBody = await status.Content.ReadAsStringAsync();
+            status.StatusCode.Should().Be(HttpStatusCode.OK);
+            statusBody.Should().NotContain(secret);
+            statusBody.Should().Contain(reference.ReferenceId);
+
+            var consume = await reader.GetAsync(
+                $"/api/v1/operations/handles/{operationInstanceId}/secrets/{reference.ReferenceId}");
+            consume.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         }
         finally
         {
