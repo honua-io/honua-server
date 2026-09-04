@@ -3,9 +3,14 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.Zarr;
 
@@ -19,17 +24,55 @@ namespace Honua.Server.Tests.Features.Protocols.Zarr;
 public sealed class DatacubeTileEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _anonymousFixture = new WebAppFixture()
+        .UseSeed("tests/seed/server.yaml")
+        .ReplaceService<IMetadataV2GraphProvider>(BuildProtectedLayerGraphProvider())
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+        });
     private HttpClient _client = null!;
+    private HttpClient _anonymousClient = null!;
+
+    private static TestMetadataV2GraphProvider BuildProtectedLayerGraphProvider()
+        => new TestMetadataV2GraphBuilder()
+            .AddResource(
+                "res-zarr-layer-0",
+                "Protected Zarr Layer",
+                MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding(
+                "binding-zarr-layer-0",
+                "res-zarr-layer-0",
+                "protected.zarr",
+                storageLayerId: WebAppFixture.TestLayerId,
+                storageType: MetadataV2StorageType.Zarr)
+            .AddService(
+                "svc-zarr",
+                "zarr",
+                protocols: ["OGC-API-Coverages"],
+                accessPolicy: new AccessPolicy { AllowAnonymous = false })
+            .AddPublication(
+                "pub-zarr-layer-0",
+                "svc-zarr",
+                "res-zarr-layer-0",
+                layerIndex: WebAppFixture.TestLayerId,
+                storageBindingId: "binding-zarr-layer-0",
+                publicationType: MetadataV2PublicationType.OgcCollection)
+            .BuildProvider();
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
         _client = _fixture.Client;
+        await _anonymousFixture.InitializeAsync();
+        _anonymousClient = _anonymousFixture.Client;
     }
 
     public async Task DisposeAsync()
     {
         await _fixture.DisposeAsync();
+        await _anonymousFixture.DisposeAsync();
     }
 
     [IntegrationTest]
@@ -42,5 +85,18 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
             $"/api/v1/datacubes/{WebAppFixture.TestLayerId}/tiles/WebMercatorQuad/0/0/0");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}")]
+    public async Task DatacubeTile_WithoutAuthentication_Returns401BeforeStoreLookup()
+    {
+        // Before the per-layer authorization guard, this request reached the Zarr
+        // store and returned 404. A valid layer id must not reveal registration
+        // state or pixels to an anonymous caller.
+        var response = await _anonymousClient.GetAsync(
+            $"/api/v1/datacubes/{WebAppFixture.TestLayerId}/tiles/WebMercatorQuad/0/0/0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 }

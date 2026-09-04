@@ -50,6 +50,28 @@ public class ZarrTileSlicePlannerTests
     }
 
     [Fact]
+    public async Task TryPlan_AscendingYAxis_UsesSouthToNorthStorageRows()
+    {
+        var metadata = (await BuildMetadataAsync(
+            ZarrFixtureBuilder.BuildGroupedZlib(
+                root: "tiles/ascending", rows: 8, cols: 8, chunkRows: 4, chunkCols: 4,
+                sample: (r, c) => r + c, srid: 4326,
+                xMin: 0, yMin: 0, xMax: 8, yMax: 8),
+            "tiles/ascending")) with { YAxisAscending = true };
+
+        var ok = ZarrTileSlicePlanner.TryPlan(
+            metadata, variable: null, new ZarrTileBounds(0, 0, 4, 4),
+            datetime: null, verticalIndex: null, maxOutputBytes: 1024 * 1024,
+            out var slice, out var error);
+
+        ok.Should().BeTrue(error);
+        slice.Should().NotBeNull();
+        slice!.Plan.Request.Start[0].Should().Be(0);
+        slice.Plan.Request.Stop[0].Should().Be(4);
+        slice.YAxisAscending.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task TryPlan_TileOutsideExtent_ReportsNoIntersection()
     {
         var metadata = await BuildMetadataAsync(

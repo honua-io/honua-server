@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -90,6 +92,7 @@ internal static class ZarrEndpoints
         int x,
         int y,
         [FromServices] IZarrStore store,
+        [FromServices] ILayerAccessAuthorizer layerAccessAuthorizer,
         [FromServices] IZarrSubsetReader subsetReader,
         [FromServices] IEnumerable<ICloudRangeReader> rangeReaders,
         [FromServices] ITileMatrixSetRegistry tileMatrixSets,
@@ -99,6 +102,26 @@ internal static class ZarrEndpoints
         if (x < 0 || y < 0 || z < 0)
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Tile coordinates must be non-negative.");
+        }
+
+        // Zarr registrations are storage details, not a publication or access
+        // policy. Authorize the catalog layer before resolving its cloud object so
+        // an anonymous caller cannot bypass lifecycle, tenant, RBAC, or the layer
+        // AccessPolicy by using the datacube route.
+        var access = await layerAccessAuthorizer
+            .AuthorizeLayerAsync(context.User, layerId, AuthorizationOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        if (!access.IsAllowed)
+        {
+            if (access.RequiresAuthentication)
+            {
+                context.Response.Headers.Append("WWW-Authenticate", "Bearer");
+                return StandardErrorHelpers.CreateUnauthorized(
+                    context, "Authentication is required to access this resource.");
+            }
+
+            return StandardErrorHelpers.CreateForbidden(
+                context, "Access to this resource is forbidden.");
         }
 
         var registrations = await store.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
