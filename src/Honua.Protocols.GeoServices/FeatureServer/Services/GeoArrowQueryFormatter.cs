@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Services;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
@@ -49,8 +50,30 @@ internal sealed class GeoArrowQueryFormatter
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
         var features = result.Items;
         var runtimeFields = GeoParquetQueryFormatter.DetectRuntimeFields(features, resource);
+        BinaryArray? geometryArray = null;
+        string[] geometryTypes = [];
+        if (includeGeometry)
+        {
+            (geometryArray, geometryTypes) = GeoParquetFeatureWriter.BuildGeoArrowGeometryArray(
+                features, srid, returnZ, returnM, geometryLimits);
+            if (resource.ReadGeometryType() == MetadataV2GeometryType.Mixed)
+            {
+                // An untyped PostGIS geometry column cannot truthfully advertise the concrete
+                // types observed on one page; GeoParquet's unknown-type representation is [].
+                geometryTypes = [];
+            }
+            else if (features.Length == 0
+                && GeoParquetFeatureWriter.MapGeometryTypeToGeoParquet(
+                    resource.ReadGeometryType(), returnZ) is { } knownType)
+            {
+                // An empty GeoArrow page has no values to inspect; preserve a known layer type
+                // for the same schema self-description emitted by the existing empty-result path.
+                geometryTypes = [knownType];
+            }
+        }
 
-        var schema = BuildSchema(selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, outFields);
+        var schema = BuildSchema(
+            selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, outFields, geometryTypes);
         var recordBatch = BuildRecordBatch(
             features,
             selectedFields,
@@ -61,7 +84,8 @@ internal sealed class GeoArrowQueryFormatter
             returnZ,
             returnM,
             schema,
-            runtimeFields);
+            runtimeFields,
+            geometryArray);
 
         using var stream = new MemoryStream();
         using (var writer = new ArrowStreamWriter(stream, schema, leaveOpen: true))
@@ -80,7 +104,8 @@ internal sealed class GeoArrowQueryFormatter
         int srid,
         bool returnZ,
         List<(string name, IArrowType type)> runtimeFields,
-        string[]? outFields)
+        string[]? outFields,
+        IReadOnlyCollection<string> geometryTypes)
     {
         var fields = new List<Apache.Arrow.Field>(selectedFields.Count + (includeGeometry ? 1 : 0));
 
@@ -125,7 +150,7 @@ internal sealed class GeoArrowQueryFormatter
             }
         }
 
-        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, returnZ);
+        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, geometryTypes);
         return new Apache.Arrow.Schema(fields, schemaMetadata);
     }
 
@@ -157,7 +182,8 @@ internal sealed class GeoArrowQueryFormatter
         bool returnZ,
         bool returnM,
         Apache.Arrow.Schema schema,
-        IReadOnlyList<(string name, IArrowType type)> runtimeFields)
+        IReadOnlyList<(string name, IArrowType type)> runtimeFields,
+        BinaryArray? geometryArray)
     {
         var arrays = new List<IArrowArray>(schema.FieldsList.Count);
 
@@ -169,7 +195,8 @@ internal sealed class GeoArrowQueryFormatter
 
         if (includeGeometry)
         {
-            arrays.Add(BuildGeometryArray(features, outputSrid, geometryLimits, returnZ, returnM));
+            arrays.Add(geometryArray ?? throw new InvalidOperationException(
+                "GeoArrow geometry array was not built for a geometry-bearing response."));
         }
 
         var schemaFieldNames = new HashSet<string>(
@@ -492,31 +519,6 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
-    private static BinaryArray BuildGeometryArray(
-        IReadOnlyList<Feature> features,
-        int outputSrid,
-        GeometryLimits geometryLimits,
-        bool returnZ,
-        bool returnM)
-    {
-        var builder = new BinaryArray.Builder();
-        for (var i = 0; i < features.Count; i++)
-        {
-            var wkb = GeoParquetQueryFormatter.ProcessGeometry(
-                features[i].Geometry, outputSrid, geometryLimits, returnZ, returnM);
-            if (wkb != null)
-            {
-                builder.Append(wkb);
-            }
-            else
-            {
-                builder.AppendNull();
-            }
-        }
-
-        return builder.Build();
-    }
-
     private static string? BuildExtensionMetadata(int srid)
     {
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
@@ -545,7 +547,7 @@ internal sealed class GeoArrowQueryFormatter
         MetadataV2Resource resource,
         bool includeGeometry,
         int srid,
-        bool returnZ)
+        IReadOnlyCollection<string> geometryTypes)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!includeGeometry)
@@ -555,10 +557,8 @@ internal sealed class GeoArrowQueryFormatter
 
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        // The resource schema is authoritative even when a query returns no rows. Preserve
-        // its known geometry type so empty batches remain self-describing to consumers.
-        var geometryTypesPart =
-            $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
+        var geometryTypesPart = JsonSerializer.Serialize(
+            geometryTypes.OrderBy(static type => type, StringComparer.Ordinal));
         var crsPart = GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson)
             ? $@",""crs"":{projJson}"
             : string.Empty;

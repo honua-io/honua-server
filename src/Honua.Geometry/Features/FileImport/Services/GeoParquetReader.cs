@@ -27,13 +27,6 @@ internal static class GeoParquetReader
     private const int YieldInterval = 256;
 
     /// <summary>
-    /// Maximum rows allowed in a single Parquet row group before the import/preview
-    /// paths reject the file. Parquet.Net materializes an entire row group's column
-    /// data in memory, so unbounded row groups defeat the streaming memory contract.
-    /// </summary>
-    internal const long MaxRowsPerRowGroup = 100_000;
-
-    /// <summary>
     /// Error message used when a GeoParquet file uses a non-WKB geometry encoding.
     /// Shared between the import and preview rejection paths.
     /// </summary>
@@ -41,21 +34,15 @@ internal static class GeoParquetReader
         "GeoParquet native geometry encodings are valid GeoParquet 1.1, but this importer supports only WKB geometry encoding.";
 
     /// <summary>
-    /// Builds a rejection message for files containing a row group that exceeds the
-    /// bounded-memory threshold. Shared between the import and preview paths.
-    /// </summary>
-    internal static string BuildLargeRowGroupMessage(long maxRowGroupRows, int rowGroupCount) =>
-        $"GeoParquet file has a row group containing {maxRowGroupRows:N0} rows across {rowGroupCount} row group(s), " +
-        $"exceeding the {MaxRowsPerRowGroup:N0}-row per-row-group limit. Re-export the file with smaller row groups " +
-        "to enable bounded-memory import.";
-
-    /// <summary>
     /// Streams features from a GeoParquet file. The stream must be seekable.
     /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
+        ImportLimits limits,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(limits);
+
         if (!stream.CanSeek)
         {
             throw new InvalidOperationException("GeoParquet reader requires a seekable stream.");
@@ -95,27 +82,23 @@ internal static class GeoParquetReader
         }
 
         // Parquet is a columnar format — Parquet.Net reads all rows of a column within a
-        // row group in a single ReadColumnAsync call. This means each row group's data is
-        // materialized in memory before features are yielded. Well-partitioned files use
-        // many small row groups and work within the import service's bounded-memory contract.
-        // Files with a single large row group (e.g. Honua's own exporter) will spike memory
-        // proportional to the row group size. See follow-on to bound the exporter's row groups.
+        // row group in a single ReadColumnAsync call. The row group is still the natural
+        // streaming unit: its column buffers are released before the next group is read.
         var recordCount = 0;
         for (var rg = 0; rg < reader.RowGroupCount; rg++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            using var rowGroupReader = reader.OpenRowGroupReader(rg);
-
-            // Enforce the per-row-group ceiling even when ExtractMetadataAsync was
-            // bypassed (it is advisory only). Parquet.Net materializes the whole
-            // row group on ReadColumnAsync, so an oversized group defeats the
-            // streaming-memory contract.
-            if (rowGroupReader.RowCount > MaxRowsPerRowGroup)
+            var rowGroupMetadata = reader.Metadata?.RowGroups[rg];
+            if (limits.MaxMemoryBytes > 0 && rowGroupMetadata?.TotalByteSize > limits.MaxMemoryBytes)
             {
                 throw new InvalidDataException(
-                    BuildLargeRowGroupMessage(rowGroupReader.RowCount, reader.RowGroupCount));
+                    $"GeoParquet row group {rg} declares {rowGroupMetadata.TotalByteSize:N0} uncompressed bytes, "
+                    + $"which exceeds ImportLimits.MaxMemoryBytes ({limits.MaxMemoryBytes:N0}). "
+                    + "Split the file into smaller row groups or increase the configured memory limit.");
             }
+
+            using var rowGroupReader = reader.OpenRowGroupReader(rg);
 
             // Read geometry column
             var geometryColumn = await rowGroupReader.ReadColumnAsync(
@@ -259,24 +242,8 @@ internal static class GeoParquetReader
         }
 
         var totalRowCount = reader.Metadata?.NumRows ?? 0;
-        var rowGroupCount = reader.RowGroupCount;
-
-        // Determine the largest row group — Parquet.Net materializes an entire
-        // row group's columns in memory, so any oversized group defeats the
-        // streaming memory contract. OpenRowGroupReader only reads metadata
-        // from the already-loaded footer; no column data is touched here.
-        long maxRowGroupRows = 0;
-        for (var rg = 0; rg < rowGroupCount; rg++)
-        {
-            using var rgReader = reader.OpenRowGroupReader(rg);
-            if (rgReader.RowCount > maxRowGroupRows)
-            {
-                maxRowGroupRows = rgReader.RowCount;
-            }
-        }
-
         stream.Position = 0;
-        return new GeoParquetFileMetadata(geoMeta.Srid, isWkbEncoding, warnings.ToArray(), totalRowCount, rowGroupCount, maxRowGroupRows);
+        return new GeoParquetFileMetadata(geoMeta.Srid, isWkbEncoding, warnings.ToArray(), totalRowCount);
     }
 
     /// <summary>
@@ -286,9 +253,7 @@ internal static class GeoParquetReader
         int? Srid,
         bool IsWkbEncoding,
         string[] Warnings,
-        long TotalRowCount,
-        int RowGroupCount,
-        long MaxRowGroupRowCount);
+        long TotalRowCount);
 
     /// <summary>
     /// Opens a Parquet reader, normalizing library-level I/O and format errors
