@@ -7957,6 +7957,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceBufferTests.Buffer_DocumentedCommaSeparatedPointShorthand_ReturnsPolygon",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceBufferTests.Buffer_GetMissingParameters_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceBufferTests.Buffer_GetWithQueryString_ReturnsPolygon"
       ],
