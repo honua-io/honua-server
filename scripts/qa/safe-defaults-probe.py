@@ -107,7 +107,7 @@ def helm_render(chart, executable):
             print(json.dumps(summary), flush=True)
 
 
-def runtime(dll, database=None):
+def runtime(dll, database=None, storage=None):
     base = {k: v for k, v in os.environ.items() if k in ('PATH', 'HOME', 'DOTNET_ROOT', 'LD_LIBRARY_PATH')}
     base.update(ASPNETCORE_ENVIRONMENT='Production', DOTNET_ENVIRONMENT='Production',
                 Kestrel__Endpoints__Http__Url='http://127.0.0.1:18943',
@@ -119,6 +119,8 @@ def runtime(dll, database=None):
     if database:
         base.update(ConnectionStrings__DefaultConnection=database,
                     HONUA_ADMIN_PASSWORD='Aa1!' + secrets.token_urlsafe(32))
+    if storage:
+        base['FileStorage__LocalStorage__BasePath'] = storage
     scenarios = {
         'community-control': {},
         'missing-db-and-auth': {'ConnectionStrings__DefaultConnection': '', 'HONUA_ADMIN_PASSWORD': ''},
@@ -236,7 +238,8 @@ def runtime_with_database(dll):
                 break
             time.sleep(.5)
         database = f"Host=127.0.0.1;Port={port};Database=qa;Username=qa;Password={env['POSTGRES_PASSWORD']};Timeout=5"
-        runtime(dll, database)
+        with tempfile.TemporaryDirectory(prefix='honua-safe-storage-') as storage:
+            runtime(dll, database, storage)
     finally:
         subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL, check=True)
 
