@@ -325,10 +325,17 @@ internal static class ShapefileExportWriter
 
     // NTS writes a point's sequence layout directly. Match the file header, including
     // the optional M slot on Z shapes, so a following record cannot become its M value.
-    private sealed class ShapeOrdinateOperation(bool hasZ, bool hasM) : GeometryEditor.CoordinateSequenceOperation
+    private sealed class ShapeOrdinateOperation : GeometryEditor.CoordinateSequenceOperation
     {
-        public override CoordinateSequence Edit(CoordinateSequence sequence, Geometry geometry)
+        public ShapeOrdinateOperation(bool hasZ, bool hasM)
         {
+            EditSequence = (sequence, geometry) => MatchShapeOrdinates(sequence, geometry, hasZ, hasM);
+        }
+    }
+
+    private static CoordinateSequence MatchShapeOrdinates(
+        CoordinateSequence sequence, Geometry geometry, bool hasZ, bool hasM)
+    {
             var result = geometry.Factory.CoordinateSequenceFactory.Create(
                 sequence.Count, 2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0), hasM ? 1 : 0);
             for (var i = 0; i < sequence.Count; i++)
@@ -355,7 +362,6 @@ internal static class ShapefileExportWriter
             }
 
             return result;
-        }
     }
 
     private static Geometry NormalizeGeometry(Geometry geometry, ExportGeometryType targetType)
