@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using Honua.Core.Features.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
@@ -369,6 +370,7 @@ internal sealed partial class JobExecutionService(
         // Start heartbeat pump in background.
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
         var heartbeatTask = context.RunHeartbeatPumpAsync(heartbeatCts.Token);
+        using var qualificationScope = ExecutionQualificationBarrier.Begin(operationId, workerId);
 
         // Stops the heartbeat pump and waits for it to finish so that no
         // in-flight heartbeat write can clobber the terminal-state update.
@@ -394,7 +396,28 @@ internal sealed partial class JobExecutionService(
 
         try
         {
-            var result = await executor.ExecuteAsync(running, context, jobCts.Token).ConfigureAwait(false);
+            await ExecutionQualificationBarrier.WaitAsync("claimed", jobCts.Token).ConfigureAwait(false);
+
+            // The qualification lane can deliberately make the executor ignore the
+            // operator-cancellation leg while retaining the independently authoritative
+            // timeout token. This is opt-in and cannot affect ordinary worker runs.
+            var executorCancellationToken = ExecutionQualificationBarrier.IgnoresOperatorCancellation
+                ? timeoutCts.Token
+                : jobCts.Token;
+            var result = await executor.ExecuteAsync(running, context, executorCancellationToken).ConfigureAwait(false);
+
+            if (result.Status == ExecutionJobStatus.Succeeded)
+            {
+                // Artifact publication has already happened inside the executor. Keep the
+                // heartbeat alive while the qualification runner cancels at the final fence;
+                // this proves the terminal CAS cannot turn a late success into readable output.
+                await ExecutionQualificationBarrier.WaitAsync(
+                    "artifact-reference-published-terminal-cas-pending",
+                    jobCts.Token,
+                    ignoreCancellation: ExecutionQualificationBarrier.IgnoresOperatorCancellation)
+                    .ConfigureAwait(false);
+            }
+
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
 
             // Executors are expected to observe cancellation, but a late cancellation can race a

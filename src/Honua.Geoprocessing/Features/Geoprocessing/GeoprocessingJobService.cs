@@ -821,7 +821,11 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                     // it survives a restart and is available to whichever node dequeues the job.
                     SubmitterSecurityContext = resolvedSecurityContext
                 },
-                Spec = spec
+                Spec = spec,
+                // The workload's supported timeout policy must be durable on the job
+                // record. Workers and reconciliation then share the same deadline after
+                // claiming, restart, or a serving-node handoff.
+                TimeoutPolicy = GpResourceProfile.ResolveTimeoutPolicy(spec.Parameters)
             };
 
             var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
