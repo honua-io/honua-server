@@ -40,6 +40,28 @@ internal static partial class WmsRequestHandlers
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "wms-getmap");
 
         var query = context.Request.Query;
+        // Admit the request before any validation can produce an image-formatted
+        // exception. CreateWmsImageException allocates a surface using WIDTH and
+        // HEIGHT, so the lease must cover both successful renders and early errors.
+        // Invalid dimensions intentionally fall back to the bounded 1x1 image size
+        // used by the exception formatter.
+        await using var renderLease = await context.RequestServices
+            .GetRequiredService<RasterRenderCapacityLimiter>()
+            .TryAcquireAsync(
+                TryGetWmsExceptionImageDimension(query, "WIDTH"),
+                TryGetWmsExceptionImageDimension(query, "HEIGHT"),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (renderLease is null)
+        {
+            return CreateWmsServiceException(
+                context,
+                "NoApplicableCode",
+                RasterRenderCapacityLimiter.CapacityExceededMessage,
+                StatusCodes.Status503ServiceUnavailable,
+                allowImageException: false);
+        }
+
         if (!TryGetRequiredQueryValue(query, "LAYERS", out var layersParam))
         {
             return CreateWmsServiceException(context, "MissingParameterValue", "LAYERS parameter is required.");
@@ -172,17 +194,6 @@ internal static partial class WmsRequestHandlers
         activity?.SetTag("wms.time_applied", layerTemporalFilters is not null);
 
         var effectiveTransparent = transparent && string.Equals(imageFormat, "png", StringComparison.OrdinalIgnoreCase);
-        await using var renderLease = await context.RequestServices
-            .GetRequiredService<RasterRenderCapacityLimiter>()
-            .TryAcquireAsync(imageWidth, imageHeight, cancellationToken)
-            .ConfigureAwait(false);
-        if (renderLease is null)
-        {
-            return CreateWmsServiceException(context,
-                "NoApplicableCode",
-                RasterRenderCapacityLimiter.CapacityExceededMessage,
-                StatusCodes.Status503ServiceUnavailable);
-        }
 
         if (bboxOutsideCrsBounds)
         {

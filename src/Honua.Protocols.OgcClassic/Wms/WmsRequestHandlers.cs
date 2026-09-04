@@ -551,7 +551,6 @@ internal static partial class WmsRequestHandlers
             var startFieldType = ResolveTemporalPropertyType(layer.Resource, startFieldName);
             var effectiveStart = requestedStart;
             var effectiveEnd = requestedEnd;
-
             var hasExplicitTime = !string.IsNullOrWhiteSpace(timeParam);
             if (effectiveStart is null && effectiveEnd is null &&
                 temporalRanges[i] is { Max: DateTimeOffset defaultValue })
@@ -621,9 +620,9 @@ internal static partial class WmsRequestHandlers
         }
 
         var before = await QueryNearestWmsTemporalValueAsync(
-            featureReader, layer, fieldName, propertyType, requested, ascending: false, cancellationToken).ConfigureAwait(false);
+            featureReader, layer, fieldName, propertyType, endFieldName, requested, ascending: false, cancellationToken).ConfigureAwait(false);
         var after = await QueryNearestWmsTemporalValueAsync(
-            featureReader, layer, fieldName, propertyType, requested, ascending: true, cancellationToken).ConfigureAwait(false);
+            featureReader, layer, fieldName, propertyType, endFieldName, requested, ascending: true, cancellationToken).ConfigureAwait(false);
 
         if (before is null)
         {
@@ -671,6 +670,7 @@ internal static partial class WmsRequestHandlers
         WmsLayer layer,
         string fieldName,
         TemporalPropertyType propertyType,
+        string? endFieldName,
         DateTimeOffset requested,
         bool ascending,
         CancellationToken cancellationToken)
@@ -679,6 +679,7 @@ internal static partial class WmsRequestHandlers
         {
             PropertyName = fieldName,
             PropertyType = propertyType,
+            EndPropertyName = endFieldName,
             Start = ascending ? requested : null,
             End = ascending ? null : requested
         };
@@ -1336,7 +1337,8 @@ internal static partial class WmsRequestHandlers
         HttpContext? context,
         string code,
         string message,
-        int statusCode = StatusCodes.Status400BadRequest)
+        int statusCode = StatusCodes.Status400BadRequest,
+        bool allowImageException = true)
     {
         if (context is not null)
         {
@@ -1349,7 +1351,7 @@ internal static partial class WmsRequestHandlers
         }
 
         var exceptionsValue = context is null ? null : GetQueryValue(context.Request.Query, "EXCEPTIONS");
-        if (IsWmsImageExceptionFormat(exceptionsValue))
+        if (allowImageException && IsWmsImageExceptionFormat(exceptionsValue))
         {
             return CreateWmsImageException(context, code, message, exceptionsValue);
         }
