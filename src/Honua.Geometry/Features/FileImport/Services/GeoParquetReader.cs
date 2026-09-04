@@ -38,8 +38,11 @@ internal static class GeoParquetReader
     /// </summary>
     internal static async IAsyncEnumerable<IFeature> ReadStreamingAsync(
         Stream stream,
+        ImportLimits limits,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(limits);
+
         if (!stream.CanSeek)
         {
             throw new InvalidOperationException("GeoParquet reader requires a seekable stream.");
@@ -85,6 +88,15 @@ internal static class GeoParquetReader
         for (var rg = 0; rg < reader.RowGroupCount; rg++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            var rowGroupMetadata = reader.Metadata?.RowGroups[rg];
+            if (limits.MaxMemoryBytes > 0 && rowGroupMetadata?.TotalByteSize > limits.MaxMemoryBytes)
+            {
+                throw new InvalidDataException(
+                    $"GeoParquet row group {rg} declares {rowGroupMetadata.TotalByteSize:N0} uncompressed bytes, "
+                    + $"which exceeds ImportLimits.MaxMemoryBytes ({limits.MaxMemoryBytes:N0}). "
+                    + "Split the file into smaller row groups or increase the configured memory limit.");
+            }
 
             using var rowGroupReader = reader.OpenRowGroupReader(rg);
 

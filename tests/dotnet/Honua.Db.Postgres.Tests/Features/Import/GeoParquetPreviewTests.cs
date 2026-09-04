@@ -318,6 +318,18 @@ public sealed class GeoParquetPreviewTests
     }
 
     [Fact]
+    public async Task PreviewFileAsync_GeoParquet_RowGroupExceedingMemoryLimit_ThrowsInvalidDataException()
+    {
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(rowCount: 150_000);
+        var service = CreateService(maxMemoryBytes: 1);
+
+        var act = () => service.PreviewFileAsync(stream, "oversized_rg.parquet");
+
+        await act.Should().ThrowAsync<InvalidDataException>()
+            .WithMessage("*ImportLimits.MaxMemoryBytes*");
+    }
+
+    [Fact]
     public async Task PreviewFileAsync_GeoParquet_MismatchedPrimaryColumn_ThrowsInvalidDataException()
     {
         // Geo metadata references "geometry" but the Parquet schema has no such column
@@ -389,10 +401,16 @@ public sealed class GeoParquetPreviewTests
             .WithMessage("*not a valid Parquet*");
     }
 
-    private static IFileImportService CreateService(int? maxPreviewFeatures = null)
+    private static IFileImportService CreateService(
+        int? maxPreviewFeatures = null,
+        long? maxMemoryBytes = null)
     {
-        var limits = maxPreviewFeatures.HasValue
-            ? new ImportLimits { MaxPreviewFeatures = maxPreviewFeatures.Value }
+        var limits = maxPreviewFeatures.HasValue || maxMemoryBytes.HasValue
+            ? new ImportLimits
+            {
+                MaxPreviewFeatures = maxPreviewFeatures ?? ImportLimits.Default.MaxPreviewFeatures,
+                MaxMemoryBytes = maxMemoryBytes ?? ImportLimits.Default.MaxMemoryBytes
+            }
             : null;
 
         return PreviewImportServiceFactory.Create(limits);

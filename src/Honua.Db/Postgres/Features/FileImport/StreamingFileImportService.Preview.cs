@@ -189,7 +189,7 @@ internal sealed partial class StreamingFileImportService
                 SupportedFileFormat.FileGdb => previewFileGdbLayer.HasValue
                     ? FileGdb.FileGdbReader.ReadLayerStreamingAsync(fileGdbScratch!.GdbPath, previewFileGdbLayer.Value, cancellationToken)
                     : EmptyFeatureStream(cancellationToken),
-                SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, _limits, cancellationToken),
                 _ => throw new NotSupportedException($"Preview not supported for format: {format}")
             };
 

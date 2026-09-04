@@ -455,7 +455,7 @@ public static partial class GeoParquetFeatureWriter
     /// <summary>
     /// Maps metadata v2 geometry type to GeoParquet geometry type string.
     /// </summary>
-    public static string MapGeometryTypeToGeoParquet(MetadataV2GeometryType geometryType, bool returnZ)
+    public static string? MapGeometryTypeToGeoParquet(MetadataV2GeometryType geometryType, bool returnZ)
     {
         var baseType = geometryType switch
         {
@@ -466,10 +466,10 @@ public static partial class GeoParquetFeatureWriter
             MetadataV2GeometryType.MultiLineString => "MultiLineString",
             MetadataV2GeometryType.MultiPolygon => "MultiPolygon",
             MetadataV2GeometryType.GeometryCollection => "GeometryCollection",
-            _ => "Geometry"
+            _ => null
         };
 
-        return returnZ ? $"{baseType} Z" : baseType;
+        return baseType is null ? null : returnZ ? $"{baseType} Z" : baseType;
     }
 
     /// <summary>
@@ -749,44 +749,41 @@ public static partial class GeoParquetFeatureWriter
     }
 
     /// <summary>
-    /// Resolves the concrete GeoParquet geometry type tokens represented by a result page
-    /// after the requested dimension filter is applied. An unknown (mixed/untyped) resource
-    /// intentionally returns an empty list because GeoParquet has no catch-all geometry token.
+    /// Builds a GeoArrow WKB array and returns the concrete GeoParquet-compatible geometry type
+    /// tokens emitted by that same pass. Keeping type discovery beside encoding prevents protocol
+    /// adapters from decoding and filtering every geometry twice.
     /// </summary>
-    public static string[] ResolveGeoParquetGeometryTypes(
+    public static (BinaryArray array, string[] geometryTypes) BuildGeoArrowGeometryArray(
         IReadOnlyList<Feature> features,
-        MetadataV2Resource resource,
         int outputSrid,
         bool returnZ,
         bool returnM,
         GeometryLimits geometryLimits)
     {
         ArgumentNullException.ThrowIfNull(features);
-        ArgumentNullException.ThrowIfNull(resource);
 
-        if (!HasGeometry(resource) || resource.ReadGeometryType() == MetadataV2GeometryType.Mixed)
-        {
-            return [];
-        }
-
-        if (features.Count == 0)
-        {
-            var knownType = MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ);
-            return knownType is null ? [] : [knownType];
-        }
-
+        var builder = new BinaryArray.Builder();
         var geometryTypes = new HashSet<string>(StringComparer.Ordinal);
         foreach (var feature in features)
         {
-            var (_, _, _, geometryType) = ProcessGeometryCore(
+            var (wkb, _, _, geometryType) = ProcessGeometryCore(
                 feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id);
-            if (geometryType != null)
+            if (wkb != null && wkb.Length > 0)
             {
-                geometryTypes.Add(geometryType);
+                builder.Append(wkb);
+                if (geometryType != null)
+                {
+                    geometryTypes.Add(geometryType);
+                }
+            }
+            else
+            {
+                builder.AppendNull();
             }
         }
 
-        return geometryTypes.OrderBy(static type => type, StringComparer.Ordinal).ToArray();
+        return (builder.Build(),
+            geometryTypes.OrderBy(static type => type, StringComparer.Ordinal).ToArray());
     }
 
     /// <summary>

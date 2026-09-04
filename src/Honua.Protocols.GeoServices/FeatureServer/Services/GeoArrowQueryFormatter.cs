@@ -50,8 +50,27 @@ internal sealed class GeoArrowQueryFormatter
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
         var features = result.Items;
         var runtimeFields = GeoParquetQueryFormatter.DetectRuntimeFields(features, resource);
-        var geometryTypes = GeoParquetFeatureWriter.ResolveGeoParquetGeometryTypes(
-            features, resource, srid, returnZ, returnM, geometryLimits);
+        BinaryArray? geometryArray = null;
+        string[] geometryTypes = [];
+        if (includeGeometry)
+        {
+            (geometryArray, geometryTypes) = GeoParquetFeatureWriter.BuildGeoArrowGeometryArray(
+                features, srid, returnZ, returnM, geometryLimits);
+            if (resource.ReadGeometryType() == MetadataV2GeometryType.Mixed)
+            {
+                // An untyped PostGIS geometry column cannot truthfully advertise the concrete
+                // types observed on one page; GeoParquet's unknown-type representation is [].
+                geometryTypes = [];
+            }
+            else if (features.Length == 0
+                && GeoParquetFeatureWriter.MapGeometryTypeToGeoParquet(
+                    resource.ReadGeometryType(), returnZ) is { } knownType)
+            {
+                // An empty GeoArrow page has no values to inspect; preserve a known layer type
+                // for the same schema self-description emitted by the existing empty-result path.
+                geometryTypes = [knownType];
+            }
+        }
 
         var schema = BuildSchema(
             selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, outFields, geometryTypes);
@@ -65,7 +84,8 @@ internal sealed class GeoArrowQueryFormatter
             returnZ,
             returnM,
             schema,
-            runtimeFields);
+            runtimeFields,
+            geometryArray);
 
         using var stream = new MemoryStream();
         using (var writer = new ArrowStreamWriter(stream, schema, leaveOpen: true))
@@ -162,7 +182,8 @@ internal sealed class GeoArrowQueryFormatter
         bool returnZ,
         bool returnM,
         Apache.Arrow.Schema schema,
-        IReadOnlyList<(string name, IArrowType type)> runtimeFields)
+        IReadOnlyList<(string name, IArrowType type)> runtimeFields,
+        BinaryArray? geometryArray)
     {
         var arrays = new List<IArrowArray>(schema.FieldsList.Count);
 
@@ -174,7 +195,8 @@ internal sealed class GeoArrowQueryFormatter
 
         if (includeGeometry)
         {
-            arrays.Add(BuildGeometryArray(features, outputSrid, geometryLimits, returnZ, returnM));
+            arrays.Add(geometryArray ?? throw new InvalidOperationException(
+                "GeoArrow geometry array was not built for a geometry-bearing response."));
         }
 
         var schemaFieldNames = new HashSet<string>(
@@ -487,31 +509,6 @@ internal sealed class GeoArrowQueryFormatter
             if (value != null)
             {
                 builder.Append(value);
-            }
-            else
-            {
-                builder.AppendNull();
-            }
-        }
-
-        return builder.Build();
-    }
-
-    private static BinaryArray BuildGeometryArray(
-        IReadOnlyList<Feature> features,
-        int outputSrid,
-        GeometryLimits geometryLimits,
-        bool returnZ,
-        bool returnM)
-    {
-        var builder = new BinaryArray.Builder();
-        for (var i = 0; i < features.Count; i++)
-        {
-            var wkb = GeoParquetQueryFormatter.ProcessGeometry(
-                features[i].Geometry, outputSrid, geometryLimits, returnZ, returnM);
-            if (wkb != null)
-            {
-                builder.Append(wkb);
             }
             else
             {
