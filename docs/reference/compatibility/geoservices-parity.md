@@ -31,7 +31,7 @@ Status vocabulary:
 
 - **Implemented** — the Esri operation exists at a compatible path and the documented behavior is supported.
 - **Partial** — the operation exists, but only a subset of documented parameters or behavior is supported.
-- **Preview** — the operation is available for opt-in evaluation but is not a GA contract in the current release. Preview is a lifecycle maturity, separate from the implementation-completeness status in the machine-readable matrix.
+- **Preview** — the operation is available for evaluation but is not a GA contract in the current release. Preview is a lifecycle maturity, separate from the implementation-completeness status in the machine-readable matrix.
 - **Stub** — the route exists and returns the spec-shaped response, but the backing data model is deferred; read-style stubs return empty/`false` results and mutation stubs return HTTP 400 rather than fabricating success.
 - **Not implemented** — the operation is not exposed.
 
