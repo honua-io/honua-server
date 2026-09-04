@@ -153,6 +153,7 @@ public sealed class AdminAuthSessionStoreTests
     }
 
     [Theory]
+    [Trait("Tier", "Fast")]
     [InlineData(false)]
     [InlineData(true)]
     public async Task RemoveAuthenticatedSessionAsync_DeleteDenied_RequiresConfirmedAbsence(bool recordExists)
