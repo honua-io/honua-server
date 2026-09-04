@@ -33,6 +33,7 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     {
         _fixture.WithTestLicense(HonuaEdition.Enterprise);
         await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(ServiceId, ["Create", "Update", "Delete"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -73,6 +74,40 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         // DEFAULT now reflects the posted change.
         (await QueryCountAsync(marker, gdbVersion: null)).Should().Be(1,
             "DEFAULT must reflect the version's changes after post");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ServiceApplyEdits_FormGdbVersion_RoutesEditToBranch()
+    {
+        var marker = "vform_" + Guid.NewGuid().ToString("N")[..8];
+        var versionGuid = await CreateVersionAsync("admin." + marker);
+        var edits = $"[{{\"id\":0,\"adds\":{BuildAddsJson(marker)}}}]";
+
+        var addResponse = await PostFormAsync(
+            "/rest/services/" + ServiceId + "/FeatureServer/applyEdits",
+            ("edits", edits),
+            ("gdbVersion", versionGuid),
+            ("f", "json"));
+
+        addResponse.StatusCode.Should().Be(HttpStatusCode.OK,
+            "service-level applyEdits should honor form gdbVersion; body: {0}",
+            await addResponse.Content.ReadAsStringAsync());
+        var responseBody = await addResponse.Content.ReadAsStringAsync();
+        using (var document = JsonDocument.Parse(responseBody))
+        {
+            document.RootElement.TryGetProperty("editResults", out var editResults).Should().BeTrue(
+                "service-level applyEdits should return per-layer results; body: {0}", responseBody);
+            editResults[0]
+                .GetProperty("addResults")[0]
+                .GetProperty("success").GetBoolean().Should().BeTrue();
+        }
+
+        (await QueryCountAsync(marker, versionGuid)).Should().Be(1,
+            "the form-body gdbVersion must route the add into the branch");
+        (await QueryCountAsync(marker, gdbVersion: null)).Should().Be(0,
+            "the form-body gdbVersion must not leak the add into DEFAULT");
     }
 
     [IntegrationTest]

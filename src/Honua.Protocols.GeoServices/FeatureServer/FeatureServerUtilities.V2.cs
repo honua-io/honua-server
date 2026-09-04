@@ -73,7 +73,7 @@ internal static partial class FeatureServerEndpoints
             .ToArray();
 
         var supportedFormats = ReadServiceSupportedFormatsV2(service);
-        var supportsEditing = ServiceSupportsEditingV2(service);
+        var supportsEditing = ServiceSupportsEditingV2(service, publications);
         var srid = service.SpatialReference?.ResolveSrid();
         var spatialReference = srid.HasValue
             ? SpatialReference.Create(srid.Value).ToSpatialReferenceInfo()
@@ -144,7 +144,7 @@ internal static partial class FeatureServerEndpoints
         var supportsOrderBy = supportsAdvancedQueries;
         var supportsDistinct = supportsAdvancedQueries;
         var supportsPagination = supportsAdvancedQueries;
-        var supportsEditing = ServiceSupportsEditingV2(service);
+        var supportsEditing = ServiceSupportsEditingV2(service, publication);
         var supportsAttachments = ResourceSupportsAttachmentsV2(resource);
         var supportsReturningGeometryCentroid = supportsAdvancedQueries && IsPolygonalGeometryTypeV2(resource.ReadGeometryType());
         // The layer advertises queryAttachments only when it declares attachment
@@ -199,7 +199,7 @@ internal static partial class FeatureServerEndpoints
             UniqueIdField = new UniqueIdFieldInfo { Name = objectIdField, IsSystemMaintained = true },
             DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
             PopupInfo = popupInfo.HasValue ? popupInfo.Value : null,
-            Capabilities = BuildLayerCapabilitiesV2(service, resource, supportsAttachmentUploads, offlineSyncEnabled),
+            Capabilities = BuildLayerCapabilitiesV2(service, resource, publication, supportsAttachmentUploads, offlineSyncEnabled),
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
             SupportsCountDistinct = supportsStatistics,
@@ -218,7 +218,10 @@ internal static partial class FeatureServerEndpoints
             // into advancedQueryCapabilities so the nested operations block stays consistent.
             SupportsQueryAttachments = supportsQueryAttachments,
             SupportsAttachmentKeywords = supportsQueryAttachments,
-            SupportsAttachmentsByUploadId = supportsQueryAttachments,
+            // Chunked upload-id attachment operations are not implemented. Direct attachment
+            // routes may be available, but this flag must remain false until an uploads resource
+            // and its register/upload lifecycle are served (#4052, #4104).
+            SupportsAttachmentsByUploadId = false,
             SupportsQueryRelated = supportsRelated,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
             SupportsCoordinatesQuantization = true,
@@ -322,8 +325,9 @@ internal static partial class FeatureServerEndpoints
 
     /// <summary>
     /// Reads capabilities from the service's <c>Options["capabilities"]</c> JsonElement when
-    /// present; otherwise defaults to <c>"Query"</c>. Emits <c>Create/Update/Delete/Editing</c>
-    /// when any of those edit-capability tokens are present, and <c>Uploads</c> when any
+    /// present; otherwise defaults to <c>"Query"</c>. Emits each of <c>Create</c>,
+    /// <c>Update</c>, and <c>Delete</c> only when that operation is declared, and emits
+    /// <c>Editing</c> when at least one edit operation is declared. It emits <c>Uploads</c> when any
     /// publication's backing resource declares attachment support and the runtime has
     /// attachment uploads enabled.
     /// </summary>
@@ -332,6 +336,11 @@ internal static partial class FeatureServerEndpoints
 
     internal static string BuildServiceCapabilitiesV2(MetadataV2Service service, bool offlineSyncEnabled)
         => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled);
+
+    internal static string BuildServiceCapabilitiesV2(
+        MetadataV2Service service,
+        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications)
+        => BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads: false, offlineSyncEnabled: true);
 
     private static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,
@@ -350,13 +359,7 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Query");
         }
 
-        if (ServiceSupportsEditingV2(service))
-        {
-            capabilities.Add("Create");
-            capabilities.Add("Update");
-            capabilities.Add("Delete");
-            capabilities.Add("Editing");
-        }
+        AddDeclaredEditCapabilities(capabilities, service, publications);
 
         if (declared.Any(capability => capability.Equals("Extract", StringComparison.OrdinalIgnoreCase)))
         {
@@ -387,6 +390,7 @@ internal static partial class FeatureServerEndpoints
     private static string BuildLayerCapabilitiesV2(
         MetadataV2Service service,
         MetadataV2Resource resource,
+        MetadataV2Publication publication,
         bool supportsAttachmentUploads,
         bool offlineSyncEnabled)
     {
@@ -401,13 +405,7 @@ internal static partial class FeatureServerEndpoints
             capabilities.Add("Query");
         }
 
-        if (ServiceSupportsEditingV2(service))
-        {
-            capabilities.Add("Create");
-            capabilities.Add("Update");
-            capabilities.Add("Delete");
-            capabilities.Add("Editing");
-        }
+        AddDeclaredEditCapabilities(capabilities, service, [(publication, resource)]);
 
         if (declared.Any(capability => capability.Equals("Extract", StringComparison.OrdinalIgnoreCase)))
         {
@@ -906,13 +904,76 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static bool ServiceSupportsEditingV2(MetadataV2Service service)
+        => ServiceSupportsOperationV2(service, "Create") ||
+           ServiceSupportsOperationV2(service, "Update") ||
+           ServiceSupportsOperationV2(service, "Delete");
+
+    private static bool ServiceSupportsEditingV2(
+        MetadataV2Service service,
+        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications)
+        => publications.Count == 0
+            ? ServiceSupportsEditingV2(service)
+            : publications.Any(pair =>
+                ServiceSupportsOperationV2(service, "Create", pair.Publication) ||
+                ServiceSupportsOperationV2(service, "Update", pair.Publication) ||
+                ServiceSupportsOperationV2(service, "Delete", pair.Publication));
+
+    private static bool ServiceSupportsEditingV2(MetadataV2Service service, MetadataV2Publication publication)
+        => ServiceSupportsOperationV2(service, "Create", publication) ||
+           ServiceSupportsOperationV2(service, "Update", publication) ||
+           ServiceSupportsOperationV2(service, "Delete", publication);
+
+    internal static bool ServiceSupportsOperationV2(MetadataV2Service service, string operation)
+        => ServiceSupportsOperationV2(service, operation, publication: null);
+
+    internal static bool ServiceSupportsOperationV2(
+        MetadataV2Service service,
+        string operation,
+        MetadataV2Publication? publication)
     {
-        var capabilities = ReadServiceCapabilitiesV2(service);
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentException.ThrowIfNullOrWhiteSpace(operation);
+
+        var capabilities = publication?.Capabilities is { Count: > 0 }
+            ? publication.Capabilities
+            : ReadServiceCapabilitiesV2(service);
         return capabilities.Any(capability =>
-            capability.Equals("Create", StringComparison.OrdinalIgnoreCase) ||
-            capability.Equals("Update", StringComparison.OrdinalIgnoreCase) ||
-            capability.Equals("Delete", StringComparison.OrdinalIgnoreCase) ||
+            capability.Equals(operation, StringComparison.OrdinalIgnoreCase) ||
             capability.Equals("Editing", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void AddDeclaredEditCapabilities(
+        List<string> capabilities,
+        MetadataV2Service service,
+        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)>? publications = null)
+    {
+        var hasPublications = publications is { Count: > 0 };
+        var supportsCreate = hasPublications
+            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Create", pair.Publication))
+            : ServiceSupportsOperationV2(service, "Create");
+        var supportsUpdate = hasPublications
+            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Update", pair.Publication))
+            : ServiceSupportsOperationV2(service, "Update");
+        var supportsDelete = hasPublications
+            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Delete", pair.Publication))
+            : ServiceSupportsOperationV2(service, "Delete");
+
+        if (supportsCreate)
+        {
+            capabilities.Add("Create");
+        }
+        if (supportsUpdate)
+        {
+            capabilities.Add("Update");
+        }
+        if (supportsDelete)
+        {
+            capabilities.Add("Delete");
+        }
+        if (supportsCreate || supportsUpdate || supportsDelete)
+        {
+            capabilities.Add("Editing");
+        }
     }
 
     private static bool ServiceSupportsAdvancedQueriesV2(MetadataV2Service service)
