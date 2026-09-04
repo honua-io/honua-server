@@ -12,6 +12,10 @@ helper = (root / "src/Honua.Server/Startup/StartupConfigurationHelpers.cs").read
 start = helper.index("    public static void AddSecurityConfiguration(")
 end = helper.index("    /// <summary>", start)
 method = helper[start:end]
+runner = (root / "src/Honua.Db/Postgres/Features/Infrastructure/Migrations/PostgresDatabaseMigrationRunner.cs").read_text()
+gate_start = runner.index("    private InvalidOperationException? TryBuildContractGateRejection(")
+gate_end = runner.index("    /// <summary>", gate_start)
+gate = runner[gate_start:gate_end].replace("private InvalidOperationException?", "public InvalidOperationException?", 1)
 with tempfile.TemporaryDirectory(prefix="honua-packaging-probe-") as directory:
     probe = Path(directory)
     (probe / "Probe.csproj").write_text('''<Project Sdk="Microsoft.NET.Sdk">
@@ -19,7 +23,10 @@ with tempfile.TemporaryDirectory(prefix="honua-packaging-probe-") as directory:
 <ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
 </Project>''')
     (probe / "Helpers.cs").write_text("using Microsoft.Extensions.Configuration;\nusing Microsoft.Extensions.Configuration.Json;\nusing Microsoft.Extensions.Hosting;\nstatic class Helpers {\n" + method + "}\n")
+    (probe / "Gate.cs").write_text("using Honua.Core.Configuration;\nusing Honua.Core.Features.Infrastructure.Migrations;\nsealed class GateProbe(MigrationSafetyOptions options) {\nprivate readonly MigrationSafetyOptions _safetyOptions = options;\nprivate readonly string? _contractApprovalToken = null;\n" + gate + "}\n")
     for name, source in {
+        "MigrationSafetyOptions.cs": "src/Honua.Core/Configuration/MigrationSafetyOptions.cs",
+        "MigrationSafetyClassifier.cs": "src/Honua.Core/Features/Infrastructure/Migrations/MigrationSafetyClassifier.cs",
         "SecretReferenceResolver.cs": "src/Honua.Hosting/Features/Helpers/SecretReferenceResolver.cs",
         "HostValidationMiddleware.cs": "src/Honua.Hosting/Features/Middleware/HostValidationMiddleware.cs",
     }.items():
@@ -45,6 +52,10 @@ namespace Honua.Infrastructure.Middleware {
 }
 ''')
     (probe / "Program.cs").write_text('''using System.Net;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Migrations;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.FileProviders;
@@ -88,7 +99,19 @@ hosts["PUBLIC_BASE_URL"] = "https://honua.example.com";
 var corrected = await Request("/api/v1/admin/config");
 Console.WriteLine($"With explicit PUBLIC_BASE_URL: HTTP {corrected}");
 Console.WriteLine($"Documented production host accepted: {(initial == 204 ? "PASS" : "FAIL")}");
-Environment.ExitCode = secretPassed && initial == 204 ? 0 : 1;
+var policies = new ConfigurationManager();
+policies["Database:MigrationSafety:ContractApplyPolicy"] = "2";
+var services = new ServiceCollection();
+services.AddOptions<MigrationSafetyOptions>().Bind(policies.GetSection(MigrationSafetyOptions.SectionName));
+using var provider = services.BuildServiceProvider();
+var options = provider.GetRequiredService<IOptions<MigrationSafetyOptions>>().Value;
+var classified = new[] { MigrationSafetyClassifier.Classify("002_RemoveOldColumn.sql", "-- honua:compatibility-review reason=reviewed expansion cleanup\\nALTER TABLE example DROP COLUMN legacy;") };
+Console.WriteLine($"Default contract policy requires approval: {new GateProbe(new()).TryBuildContractGateRejection(classified, true) is not null}");
+Console.WriteLine($"Bound numeric contract policy: {(int)options.ContractApplyPolicy}; defined: {Enum.IsDefined(options.ContractApplyPolicy)}");
+var policyBlocked = new GateProbe(options).TryBuildContractGateRejection(classified, true) is not null;
+Console.WriteLine($"Undefined contract policy requires approval: {policyBlocked}");
+Console.WriteLine($"Invalid migration policy fails closed: {(policyBlocked ? "PASS" : "FAIL")}");
+Environment.ExitCode = secretPassed && initial == 204 && policyBlocked ? 0 : 1;
 
 sealed class ProductionEnvironment : IHostEnvironment {
     public string EnvironmentName { get; set; } = "Production";
