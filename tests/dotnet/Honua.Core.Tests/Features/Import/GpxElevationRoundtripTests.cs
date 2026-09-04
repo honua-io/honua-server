@@ -47,4 +47,44 @@ public sealed class GpxElevationRoundtripTests
         Assert.All(roundtrip.Geometry.Coordinates, c => Assert.True(double.IsNaN(c.M)));
         Assert.Equal("Profile", Assert.IsType<string>(roundtrip.Attributes["name"]));
     }
+
+    [Fact]
+    public async Task ReadStreamingAsync_MissingElevation_DoesNotInventOrShiftSamples()
+    {
+        using var input = new MemoryStream(Encoding.UTF8.GetBytes("""
+            <gpx><trk><trkseg>
+            <trkpt lat="0" lon="0"><ele>30</ele></trkpt>
+            <trkpt lat="1" lon="1"><extensions><ext:ele xmlns:ext="urn:example:extension">999</ext:ele></extensions></trkpt>
+            <trkpt lat="2" lon="2"><ele>40</ele></trkpt>
+            </trkseg></trk></gpx>
+            """));
+        var features = new List<IFeature>();
+        await foreach (var feature in GpxFormatReader.ReadStreamingAsync(input, CancellationToken.None))
+        {
+            features.Add(feature);
+        }
+
+        var geometry = Assert.Single(features).Geometry;
+        Assert.Equal(3, geometry.NumPoints);
+        Assert.Equal(30, geometry.Coordinates[0].Z);
+        Assert.True(double.IsNaN(geometry.Coordinates[1].Z));
+        Assert.Equal(40, geometry.Coordinates[2].Z);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-number")]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    public async Task ReadStreamingAsync_InvalidElevation_RejectsInsteadOfDiscardingValue(string elevation)
+    {
+        using var input = new MemoryStream(Encoding.UTF8.GetBytes(
+            $"<gpx><rte><rtept lat=\"0\" lon=\"0\"><ele>{elevation}</ele></rtept><rtept lat=\"1\" lon=\"1\"/></rte></gpx>"));
+        await Assert.ThrowsAsync<InvalidDataException>(async () =>
+        {
+            await using var features = GpxFormatReader.ReadStreamingAsync(input, CancellationToken.None).GetAsyncEnumerator();
+            await features.MoveNextAsync();
+        });
+    }
+
 }

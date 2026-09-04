@@ -250,12 +250,14 @@ internal static class GpxFormatReader
         CancellationToken cancellationToken)
     {
         var coordinate = new CoordinateZ(longitude, latitude, double.NaN);
+        var gpxNamespace = reader.NamespaceURI;
         using var point = reader.ReadSubtree();
         await point.ReadAsync();
         while (await point.ReadAsync())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (point.NodeType != XmlNodeType.Element || point.LocalName != "ele")
+            if (point.NodeType != XmlNodeType.Element || point.Depth != 1 ||
+                point.NamespaceURI != gpxNamespace || point.LocalName != "ele")
             {
                 continue;
             }
