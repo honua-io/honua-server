@@ -782,7 +782,7 @@
       "edition": "Enterprise",
       "status": null,
       "entryCount": 15,
-      "provingTestCount": 27,
+      "provingTestCount": 28,
       "maturity": {
         "experimental": 15
       },
