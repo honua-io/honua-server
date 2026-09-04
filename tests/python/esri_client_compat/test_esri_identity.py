@@ -97,7 +97,7 @@ def test_services_directory_does_not_duplicate_name_and_type() -> None:
 
 
 def test_arcgis_python_username_password_login_and_feature_query() -> None:
-    arcgis = pytest.importorskip("arcgis")
+    pytest.importorskip("arcgis", reason="arcgis is required for the Esri client compatibility lane")
     from arcgis.features import FeatureLayer
     from arcgis.gis import GIS
 
