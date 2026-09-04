@@ -162,25 +162,36 @@ internal sealed partial class GdalVectorConvertJobExecutor(
             cancellationToken.ThrowIfCancellationRequested();
             await context.ReportProgressAsync(80, "Encoding conversion artifact", cancellationToken).ConfigureAwait(false);
 
-            var outputBytes = await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
-            if (outputBytes.Length == 0)
+            var outputLength = new FileInfo(outputPath).Length;
+            if (outputLength == 0)
             {
                 return JobExecutionResult.Failed("ogr2ogr produced an empty output dataset.");
             }
 
-            if (outputBytes.Length > opts.MaxArtifactBytes)
+            if (outputLength > opts.MaxArtifactBytes)
             {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputBytes.Length, opts.MaxArtifactBytes);
+                Log.ArtifactTooLarge(logger, job.OperationId, outputLength, opts.MaxArtifactBytes);
                 return JobExecutionResult.Failed(
-                    $"Converted artifact size {outputBytes.Length} bytes exceeds configured " +
+                    $"Converted artifact size {outputLength} bytes exceeds configured " +
                     $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
             }
 
-            var artifactUri = GdalDataUri.Build(targetMeta.ContentType, outputBytes);
-            await context.PublishArtifactAsync(artifactUri, cancellationToken).ConfigureAwait(false);
+            var publishError = await GdalArtifactPublisher.PublishFileAsync(
+                context,
+                opts,
+                logger,
+                job.OperationId,
+                outputPath,
+                targetMeta.ContentType,
+                "Converted artifact",
+                cancellationToken).ConfigureAwait(false);
+            if (publishError is not null)
+            {
+                return JobExecutionResult.Failed(publishError);
+            }
             await context.ReportProgressAsync(100, "Conversion completed", cancellationToken).ConfigureAwait(false);
 
-            Log.ConversionCompleted(logger, job.OperationId, targetFormat, outputBytes.Length);
+            Log.ConversionCompleted(logger, job.OperationId, targetFormat, outputLength);
             return JobExecutionResult.Succeeded();
         }
         finally
