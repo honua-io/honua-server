@@ -320,14 +320,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             firstStream?.Release();
             if (firstTask is not null)
             {
-                try
-                {
-                    await firstTask;
-                }
-                catch (Exception)
-                {
-                    // Preserve the primary assertion while ensuring the isolated schema is dropped.
-                }
+                // Observe completion without allowing cleanup to replace the primary assertion.
+                await ((Task)firstTask).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
 
             await fixture.DropSchemaAsync(schema);
