@@ -267,13 +267,6 @@ internal sealed partial class GeoservicesImportService
         if (value is null)
             return null;
 
-        try
-        {
-            return Convert.FromBase64String(value);
-        }
-        catch (FormatException)
-        {
-            return null;
-        }
+        return Convert.FromBase64String(value);
     }
 }

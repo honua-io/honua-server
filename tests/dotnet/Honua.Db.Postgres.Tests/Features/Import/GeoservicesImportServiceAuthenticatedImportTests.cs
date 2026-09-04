@@ -179,17 +179,19 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
 
     private sealed class PrivateFeatureServerHandler(string expectedToken) : HttpMessageHandler
     {
-        private readonly string _escapedToken = Uri.EscapeDataString(expectedToken);
+        private readonly string _expectedAuthorization = $"Bearer {expectedToken}";
 
         public List<string> SanitizedPaths { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
-            pathAndQuery.Should().Contain($"token={_escapedToken}");
+            request.Headers.TryGetValues("X-Esri-Authorization", out var values).Should().BeTrue();
+            values!.Single().Should().Be(_expectedAuthorization);
+            pathAndQuery.Should().NotContain(_expectedAuthorization);
             request.Headers.Authorization.Should().BeNull();
 
-            var sanitizedPath = pathAndQuery.Replace($"&token={_escapedToken}", string.Empty, StringComparison.Ordinal);
+            var sanitizedPath = pathAndQuery;
             SanitizedPaths.Add(sanitizedPath);
 
             var payload = sanitizedPath switch
@@ -253,17 +255,19 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
 
     private sealed class ExpiredTokenFeatureServerHandler(string expectedToken) : HttpMessageHandler
     {
-        private readonly string _escapedToken = Uri.EscapeDataString(expectedToken);
+        private readonly string _expectedAuthorization = $"Bearer {expectedToken}";
 
         public List<string> SanitizedPaths { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
-            pathAndQuery.Should().Contain($"token={_escapedToken}");
+            request.Headers.TryGetValues("X-Esri-Authorization", out var values).Should().BeTrue();
+            values!.Single().Should().Be(_expectedAuthorization);
+            pathAndQuery.Should().NotContain(_expectedAuthorization);
             request.Headers.Authorization.Should().BeNull();
 
-            var sanitizedPath = pathAndQuery.Replace($"&token={_escapedToken}", string.Empty, StringComparison.Ordinal);
+            var sanitizedPath = pathAndQuery;
             SanitizedPaths.Add(sanitizedPath);
 
             // Metadata + count succeed; the first paged query rejects the token with 401.

@@ -304,8 +304,9 @@ public sealed class GeoservicesImportServiceScanTests
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(_expectedToken))
             {
-                pathAndQuery.Should().Contain($"token={Uri.EscapeDataString(_expectedToken)}");
-                pathAndQuery = pathAndQuery.Replace($"&token={Uri.EscapeDataString(_expectedToken)}", string.Empty, StringComparison.Ordinal);
+                request.Headers.TryGetValues("X-Esri-Authorization", out var values).Should().BeTrue();
+                values!.Single().Should().Be($"Bearer {_expectedToken}");
+                pathAndQuery.Should().NotContain(_expectedToken);
             }
 
             var rendererJson = _rendererUrl == null

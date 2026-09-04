@@ -22,6 +22,12 @@ internal sealed partial class GeoservicesImportService
     private static readonly string[] NestedCoordinatePropertyNames = ["rings", "paths"];
 
     internal static string? ConvertEsriGeometryToGeoJson(JsonElement geometry)
+        => ConvertEsriGeometryToGeoJsonWithLayerDimensions(geometry, null, null);
+
+    private static string? ConvertEsriGeometryToGeoJsonWithLayerDimensions(
+        JsonElement geometry,
+        bool? layerHasZ,
+        bool? layerHasM)
     {
         // Esri JSON geometry format is similar to GeoJSON but not identical
         // This converts common geometry types to GeoJSON
@@ -32,9 +38,9 @@ internal sealed partial class GeoservicesImportService
             // must not promote it to GeoJSON Z. When the flag is absent (older/partial
             // payloads) we keep the historical behavior of treating index 2 as Z.
             var hasExplicitZ = geometry.TryGetProperty("hasZ", out var hasZFlag);
-            var coordsCarryZ = !hasExplicitZ || hasZFlag.ValueKind != JsonValueKind.False;
-            var coordsCarryM = geometry.TryGetProperty("hasM", out var hasMFlag) &&
-                hasMFlag.ValueKind == JsonValueKind.True;
+            var coordsCarryZ = layerHasZ ?? (!hasExplicitZ || hasZFlag.ValueKind != JsonValueKind.False);
+            var coordsCarryM = layerHasM ?? (geometry.TryGetProperty("hasM", out var hasMFlag) &&
+                hasMFlag.ValueKind == JsonValueKind.True);
 
             if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y))
             {
@@ -140,7 +146,7 @@ internal sealed partial class GeoservicesImportService
     /// </summary>
     internal static string? ConvertEsriGeometryToWkt(JsonElement geometry, bool hasZ, bool hasM)
     {
-        var geoJson = ConvertEsriGeometryToGeoJson(geometry);
+        var geoJson = ConvertEsriGeometryToGeoJsonWithLayerDimensions(geometry, hasZ, hasM);
         if (geoJson is null)
             return null;
 
@@ -317,11 +323,9 @@ internal sealed partial class GeoservicesImportService
                 if (property.Value.ValueKind != JsonValueKind.Array)
                     continue;
 
-                foreach (var coordinate in property.Value.EnumerateArray())
-                {
-                    if (coordinate.ValueKind == JsonValueKind.Array && coordinate.GetArrayLength() >= 2)
-                        coordinates.Add(ExtractDimensions(coordinate, carryZ, carryM));
-                }
+                coordinates.AddRange(property.Value.EnumerateArray()
+                    .Where(coordinate => coordinate.ValueKind == JsonValueKind.Array && coordinate.GetArrayLength() >= 2)
+                    .Select(coordinate => ExtractDimensions(coordinate, carryZ, carryM)));
                 break;
             }
         }

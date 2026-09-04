@@ -43,16 +43,55 @@ public sealed class ArcGisEsriProbeBugHuntTests
     }
 
     [Fact]
+    public async Task OAuthCredential_SendsResolvedAccessToken()
+    {
+        var handler = new RecordingHandler("{\"serviceDescription\":\"OAuth test\",\"layers\":[]}");
+        var client = CreateClient(handler);
+
+        await client.DiscoverServiceAsync(
+            ServiceUrl,
+            timeoutSeconds: 5,
+            maxRetries: 0,
+            CancellationToken.None,
+            new GeoservicesCredentialDescriptor
+            {
+                Mode = GeoservicesAuthenticationModes.OAuth,
+                AccessToken = "oauth-access-token"
+            });
+
+        Assert.Equal("Bearer oauth-access-token", handler.LastEsriAuthorization);
+    }
+
+    [Fact]
     public async Task ServiceMetadata_200ErrorEnvelope_IsRejected()
     {
         var handler = new RecordingHandler("{\"error\":{\"code\":499,\"message\":\"Token required\"}}");
         var client = CreateClient(handler);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.DiscoverServiceAsync(
+        var exception = await Assert.ThrowsAsync<ArcGisAuthenticationException>(() => client.DiscoverServiceAsync(
             ServiceUrl,
             timeoutSeconds: 5,
             maxRetries: 0,
             CancellationToken.None));
+        Assert.Equal(ArcGisAuthenticationFailureKind.CredentialRequired, exception.Kind);
+    }
+
+    [Fact]
+    public async Task LayerMetadata_ReadsNestedPaginationCapability()
+    {
+        var handler = new SequenceHandler(
+            "{\"id\":0,\"name\":\"Parcels\",\"advancedQueryCapabilities\":{\"supportsPagination\":false},\"fields\":[]}",
+            "{\"count\":0}");
+        var client = CreateClient(handler);
+
+        var layer = await client.GetLayerInfoAsync(
+            ServiceUrl,
+            layerId: 0,
+            timeoutSeconds: 5,
+            maxRetries: 0,
+            CancellationToken.None);
+
+        Assert.False(layer.SupportsPagination);
     }
 
     [Fact]

@@ -52,6 +52,10 @@ public sealed class GeoservicesEsriProbeImportTests(PostgresFixture fixture)
             result.Success.Should().BeTrue(result.ErrorMessage);
             result.FeatureCount.Should().Be(4);
             handler.Paths.Should().Contain(path => path.Contains("objectIds=", StringComparison.Ordinal));
+            handler.Paths.Where(path => path.Contains("objectIds=", StringComparison.Ordinal))
+                .Should().OnlyContain(path =>
+                    !path.Contains("resultOffset=", StringComparison.Ordinal) &&
+                    !path.Contains("resultRecordCount=", StringComparison.Ordinal));
 
             await using var verification = await fixture.DataSource.OpenConnectionAsync();
             await using var command = new NpgsqlCommand(
