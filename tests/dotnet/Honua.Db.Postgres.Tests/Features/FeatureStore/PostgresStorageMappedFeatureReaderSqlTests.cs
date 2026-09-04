@@ -171,6 +171,65 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     }
 
     [Fact]
+    public void BuildStatisticsAggregateExpression_WithDateTimeMinMax_OrdersChronologically()
+    {
+        var expression = PostgresStorageMappedFeatureReader.BuildStatisticsAggregateExpression(
+            StatisticType.Max,
+            "(\"attributes\" ->> 'created_at')",
+            MetadataV2FieldType.DateTime);
+
+        expression.Should().Contain("MAX(CASE WHEN NULLIF(((\"attributes\" ->> 'created_at'))::text, '') ~ '^-?[0-9]+$'");
+        expression.Should().Contain("to_timestamp");
+        expression.Should().Contain("::timestamptz END)");
+    }
+
+    [Fact]
+    public void BuildSourceMappedStatisticsSql_PreservesHavingOrderByAndPagination()
+    {
+        var reader = CreateReader(CreateResource());
+        var sqlBuilderType = typeof(PostgresStorageMappedFeatureReader).GetNestedType(
+            "SqlBuilder",
+            BindingFlags.NonPublic);
+        var sqlBuilder = Activator.CreateInstance(sqlBuilderType!);
+        sqlBuilder.Should().NotBeNull();
+        var query = new FeatureQuery
+        {
+            OutStatistics = [new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "objectid",
+                OutStatisticFieldName = "feature_count"
+            }],
+            GroupByFields = ["name"],
+            Having = [new HavingCondition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "objectid",
+                Operator = HavingComparisonOperator.GreaterThan,
+                Value = 0
+            }],
+            OrderBy = [new OrderByClause("feature_count", ascending: false)],
+            Limit = 10,
+            Offset = 20
+        };
+
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendStatisticsHaving", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [sqlBuilder, query]);
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendStatisticsOrderBy", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [sqlBuilder, query]);
+        typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("AppendPagination", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [sqlBuilder, query, false]);
+
+        var sql = sqlBuilder!.ToString();
+        sql.Should().Contain("HAVING COUNT(NULLIF((\"objectid\")::text, '')::numeric) > $1");
+        sql.Should().Contain("ORDER BY COUNT(NULLIF((\"objectid\")::text, '')::numeric) DESC");
+        sql.Should().Contain("LIMIT $2 OFFSET $3");
+    }
+
+    [Fact]
     public void BuildAttributesExpressionText_WithWideOutFields_ChunksJsonbBuildObjectCalls()
     {
         var fields = Enumerable.Range(1, 51)

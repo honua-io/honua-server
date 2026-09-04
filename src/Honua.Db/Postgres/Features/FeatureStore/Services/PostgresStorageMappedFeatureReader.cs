@@ -130,17 +130,21 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return QueryResult<Feature>.Create(totalCount, items, hasMoreResults);
     }
 
-    public Task<byte[]?> QueryFlatGeobufAsync(
+    public async Task<byte[]?> QueryFlatGeobufAsync(
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken = default)
-        => QueryFlatGeobufAsyncCore(query, cancellationToken);
+    {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+        return await QueryFlatGeobufAsyncCore(query, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         var sql = new SqlBuilder();
         sql.Append(CultureInfo.InvariantCulture, $"SELECT {_primaryKeyColumn}::bigint FROM {_qualifiedTableName}");
         AppendFilter(sql, query);
@@ -187,7 +191,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return null;
         }
 
-        var effectiveQuery = query ?? new FeatureQuery();
+        var effectiveQuery = await ApplyReadSecurityAsync(
+            query ?? new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryExpression = BuildGeometryExpression(effectiveQuery);
         var sql = new SqlBuilder();
         sql.Append(CultureInfo.InvariantCulture, $"""
@@ -221,7 +226,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             srid);
     }
 
-    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken = default)
@@ -231,7 +236,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             throw new ArgumentException("OutStatistics must be specified for a statistics query.", nameof(query));
         }
 
-        return ExecuteStatisticsQueryAsync(query, cancellationToken);
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+        return await ExecuteStatisticsQueryAsync(query, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(
@@ -286,6 +292,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         if (!query.Limit.HasValue || query.Limit.Value == int.MaxValue)
         {
             var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
@@ -312,6 +319,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         var sql = BuildFeatureSelect(query, probeLimit: false);
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateReadCommand(connection, sql);
@@ -600,10 +608,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     {
         var needsFilter = query.EnforcedSqlFilter is null;
         var needsFieldMask = query.EnforcedMaskedFields is null;
-        if (!needsFilter && !needsFieldMask)
-        {
-            return query;
-        }
 
         if (needsFilter &&
             _resource.PermanentFilter is { Expression: { Length: > 0 } } &&
@@ -637,6 +641,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
         }
 
+        FeatureQuerySecurity.Validate(query);
         return query;
     }
 
@@ -718,6 +723,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             sql.Append(CultureInfo.InvariantCulture, $" GROUP BY {string.Join(", ", groupByExpressions)}");
         }
 
+        AppendStatisticsHaving(sql, query);
+        AppendStatisticsOrderBy(sql, query);
+        AppendPagination(sql, query);
+
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateReadCommand(connection, sql);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -749,7 +758,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         MetadataV2FieldType fieldType)
     {
         var numericExpression = BuildNullableNumericExpression(fieldExpression);
-        var orderedExpression = IsNumericFieldType(fieldType) ? numericExpression : fieldExpression;
+        var orderedExpression = IsNumericFieldType(fieldType)
+            ? numericExpression
+            : IsTemporalFieldType(fieldType)
+                ? BuildEpochAwareTemporalExpression(fieldExpression, fieldType)
+                : fieldExpression;
         return statisticType switch
         {
             StatisticType.Count => IsNumericFieldType(fieldType)
@@ -773,6 +786,101 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Double
             or MetadataV2FieldType.Float;
+
+    private static bool IsTemporalFieldType(MetadataV2FieldType fieldType)
+        => fieldType is MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.Date
+            or MetadataV2FieldType.Time;
+
+    private static string BuildEpochAwareTemporalExpression(
+        string fieldExpression,
+        MetadataV2FieldType fieldType)
+    {
+        var nullSafe = $"NULLIF(({fieldExpression})::text, '')";
+        var timestamp = $"CASE WHEN {nullSafe} ~ '^-?[0-9]+$' " +
+                        $"THEN to_timestamp({nullSafe}::double precision / 1000.0) " +
+                        $"ELSE {nullSafe}::timestamptz END";
+        return fieldType switch
+        {
+            MetadataV2FieldType.DateTime => timestamp,
+            MetadataV2FieldType.Date => $"({timestamp})::date",
+            MetadataV2FieldType.Time => $"{nullSafe}::time",
+            _ => fieldExpression
+        };
+    }
+
+    private void AppendStatisticsHaving(SqlBuilder sql, FeatureQuery query)
+    {
+        if (query.Having is not { IsDefaultOrEmpty: false } conditions)
+        {
+            return;
+        }
+
+        var clauses = new List<string>(conditions.Length);
+        foreach (var condition in conditions)
+        {
+            var field = ResolveFieldDefinition(condition.OnStatisticField);
+            var fieldExpression = ResolveColumnExpression(condition.OnStatisticField, sql);
+            var aggregate = BuildStatisticsAggregateExpression(
+                condition.StatisticType,
+                fieldExpression,
+                condition.FieldType ?? field.Type);
+            var comparison = condition.Operator switch
+            {
+                HavingComparisonOperator.Equal => "=",
+                HavingComparisonOperator.NotEqual => "<>",
+                HavingComparisonOperator.GreaterThan => ">",
+                HavingComparisonOperator.GreaterThanOrEqual => ">=",
+                HavingComparisonOperator.LessThan => "<",
+                HavingComparisonOperator.LessThanOrEqual => "<=",
+                _ => throw new ArgumentOutOfRangeException(nameof(query))
+            };
+            clauses.Add($"{aggregate} {comparison} {sql.AddParameter(condition.Value)}");
+        }
+
+        sql.Append(CultureInfo.InvariantCulture, $" HAVING {string.Join(" AND ", clauses)}");
+    }
+
+    private void AppendStatisticsOrderBy(SqlBuilder sql, FeatureQuery query)
+    {
+        if (query.OrderBy is not { IsDefaultOrEmpty: false } orderBy)
+        {
+            return;
+        }
+
+        var statistics = query.OutStatistics.GetValueOrDefault();
+        var groupByFields = query.GroupByFields.GetValueOrDefault();
+        var expressions = new List<string>(orderBy.Length);
+        foreach (var clause in orderBy)
+        {
+            string expression;
+            var statistic = statistics.FirstOrDefault(candidate =>
+                candidate.OutStatisticFieldName.Equals(clause.Field, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(statistic.OnStatisticField))
+            {
+                var field = ResolveFieldDefinition(statistic.OnStatisticField);
+                expression = BuildStatisticsAggregateExpression(
+                    statistic.StatisticType,
+                    ResolveColumnExpression(statistic.OnStatisticField, sql),
+                    statistic.FieldType ?? field.Type);
+            }
+            else
+            {
+                var groupField = groupByFields.FirstOrDefault(field =>
+                    field.Equals(clause.Field, StringComparison.OrdinalIgnoreCase));
+                if (string.IsNullOrEmpty(groupField))
+                {
+                    throw new ArgumentException($"Statistics ORDER BY field '{clause.Field}' was not declared.");
+                }
+
+                expression = ResolveColumnExpression(groupField, sql);
+            }
+
+            expressions.Add($"{expression} {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
+        }
+
+        sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", expressions)}");
+    }
 
     private string ConvertSqlFilter(SqlFragment sqlFilter, SqlBuilder sql)
     {
@@ -1159,13 +1267,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger => "::bigint",
             MetadataV2FieldType.Double or MetadataV2FieldType.Float => "::double precision",
             MetadataV2FieldType.Boolean => "::boolean",
-            MetadataV2FieldType.DateTime => "::timestamptz",
-            MetadataV2FieldType.Date => "::date",
-            MetadataV2FieldType.Time => "::time",
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date or MetadataV2FieldType.Time => null,
             _ => null,
         };
 
-        return sortCast is null ? column : $"{column}{sortCast}";
+        return field.Type is MetadataV2FieldType.DateTime
+            or MetadataV2FieldType.Date
+            or MetadataV2FieldType.Time
+            ? BuildEpochAwareTemporalExpression(column, field.Type)
+            : sortCast is null ? column : $"{column}{sortCast}";
     }
 
     private MetadataV2Field ResolveFieldDefinition(string fieldName)
