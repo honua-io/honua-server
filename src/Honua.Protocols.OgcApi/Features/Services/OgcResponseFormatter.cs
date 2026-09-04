@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Features.Shared.Services;
 using System.IO;
 using System.Net;
 using System.Security;
@@ -945,11 +946,11 @@ internal static class OgcResponseFormatter
         // Data rows
         foreach (var feature in features)
         {
-            var row = new List<string> { feature.Id?.ToString() ?? "" };
+            var row = new List<string?> { feature.Id?.ToString() };
             row.AddRange(fieldNames.Select(fieldName =>
                 feature.Properties?.TryGetValue(fieldName, out var fieldValue) == true
-                    ? fieldValue?.ToString() ?? ""
-                    : ""));
+                    ? fieldValue?.ToString()
+                    : null));
 
             var geometryValue = BuildCsvGeometryValue(feature.Geometry);
             row.Add(geometryValue);
@@ -1004,22 +1005,8 @@ internal static class OgcResponseFormatter
         }
     }
 
-    private static string EscapeCsvField(string field)
-    {
-        if (string.IsNullOrEmpty(field))
-        {
-            return "";
-        }
-
-        field = NeutralizePotentialSpreadsheetFormula(field);
-
-        if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
-        {
-            return $"\"{field.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-        }
-
-        return field;
-    }
+    private static string EscapeCsvField(string? field) => CsvFieldFormatter.Escape(
+        field is null ? null : NeutralizePotentialSpreadsheetFormula(field));
 
     private static string NeutralizePotentialSpreadsheetFormula(string field)
     {

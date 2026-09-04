@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Shared.Services;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Infrastructure.Services;
@@ -95,14 +96,5 @@ internal static class CsvExportWriter
         };
     }
 
-    private static string EscapeCsvField(string value)
-    {
-        if (value.Length == 0)
-            return "\"\"";
-
-        if (value.AsSpan().IndexOfAny(',', '"', '\n') >= 0 || value.Contains('\r'))
-            return string.Concat("\"", value.Replace("\"", "\"\""), "\"");
-
-        return value;
-    }
+    private static string EscapeCsvField(string value) => CsvFieldFormatter.Escape(value);
 }

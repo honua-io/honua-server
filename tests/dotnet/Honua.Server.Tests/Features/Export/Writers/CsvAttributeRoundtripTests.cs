@@ -3,6 +3,10 @@
 
 using System.Collections.Immutable;
 using System.Text;
+using System.Reflection;
+using Honua.Protocols.Ogc.Common;
+using Honua.Protocols.Ogc.Api.Features.Services;
+using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Io.Export;
 using Honua.Io.Export.Writers;
@@ -71,6 +75,45 @@ public sealed class CsvAttributeRoundtripTests
         {
             Assert.Null(roundtrip.Geometry);
         }
+    }
+
+    [Theory]
+    [InlineData(false, "\"\"", "")]
+    [InlineData(true, "\"\"", "")]
+    [InlineData(false, "   ", "   ")]
+    [InlineData(true, "   ", "   ")]
+    [InlineData(false, "\"a, b\"", "a, b")]
+    [InlineData(true, "\"a, b\"", "a, b")]
+    public async Task ImportExport_ProtocolCsv_PreservesStringsAndNulls(bool wfs, string cell, string expected)
+    {
+        var source = Assert.Single(await ReadAsync($"note,missing\n{cell},\n"));
+        string csv;
+        if (wfs)
+        {
+            // Exercise the actual field formatter used by both WFS CSV response paths.
+            var escape = typeof(Wfs20Handler).GetMethod("EscapeCsv", BindingFlags.NonPublic | BindingFlags.Static)!;
+            var note = (string)escape.Invoke(null, [source.Attributes["note"]])!;
+            var missing = (string)escape.Invoke(null, [null])!;
+            csv = $"note,missing\n{note},{missing}\n";
+        }
+        else
+        {
+            csv = OgcResponseFormatter.BuildCsvResponse([new GeoJsonFeature
+            {
+                Id = 1,
+                Properties = new Dictionary<string, object?>
+                {
+                    ["note"] = source.Attributes["note"],
+                    ["missing"] = null
+                }
+            }], ["note", "missing"]);
+        }
+
+        var roundtrip = Assert.Single(await ReadAsync(csv));
+        Assert.Equal(expected, Assert.IsType<string>(roundtrip.Attributes["note"]));
+        Assert.False(roundtrip.Attributes.Exists("missing"));
+        Assert.Null(source.Geometry);
+        Assert.Null(roundtrip.Geometry);
     }
 
     private static async Task<IFeature> ExportAndReadAsync(IFeature source)

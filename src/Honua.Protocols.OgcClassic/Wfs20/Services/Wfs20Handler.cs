@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Globalization;
+using Honua.Core.Features.Shared.Services;
 using System.Security;
 using System.Security.Claims;
 using System.Text;
@@ -1968,19 +1969,7 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static string EscapeCsv(string? value)
-    {
-        var safeValue = value ?? string.Empty;
-        if (!safeValue.Contains(',') &&
-            !safeValue.Contains('"') &&
-            !safeValue.Contains('\n') &&
-            !safeValue.Contains('\r'))
-        {
-            return safeValue;
-        }
-
-        return $"\"{safeValue.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-    }
+    private static string EscapeCsv(string? value) => CsvFieldFormatter.Escape(value);
 
     private static string XmlEscape(string value) => SecurityElement.Escape(value) ?? string.Empty;
 
