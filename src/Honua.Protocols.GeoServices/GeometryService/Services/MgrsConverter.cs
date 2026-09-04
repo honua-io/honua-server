@@ -51,8 +51,18 @@ internal static class MgrsConverter
     /// <param name="latitude">Latitude in decimal degrees (WGS84).</param>
     /// <param name="precision">Number of digits per easting/northing component (0-5).</param>
     /// <param name="addSpaces">When true, inserts spaces (USNG/Esri default formatting).</param>
+    /// <param name="rounding">When true, rounds rather than truncates at the requested precision.</param>
+    /// <param name="oldStyle">When true, uses the legacy MGRS AL row-letter scheme.</param>
+    /// <param name="zoneOneAt180">When true, assigns longitude 180 to UTM zone 1.</param>
     /// <returns>The grid reference string.</returns>
-    public static string ToMgrs(double longitude, double latitude, int precision = 5, bool addSpaces = true)
+    public static string ToMgrs(
+        double longitude,
+        double latitude,
+        int precision = 5,
+        bool addSpaces = true,
+        bool rounding = false,
+        bool oldStyle = false,
+        bool zoneOneAt180 = false)
     {
         if (latitude < -80.0 || latitude > 84.0)
         {
@@ -63,13 +73,25 @@ internal static class MgrsConverter
 
         precision = Math.Clamp(precision, 0, 5);
 
-        var normalizedLongitude = NormalizeLongitude(longitude);
+        var normalizedLongitude = zoneOneAt180 && Math.Abs(longitude - 180.0) <= 1e-12
+            ? -180.0
+            : NormalizeLongitude(longitude);
         var zone = ComputeUtmZone(normalizedLongitude, latitude);
         var bandLetter = GetLatitudeBand(latitude);
 
         var (easting, northing) = ProjectToUtm(normalizedLongitude, latitude, zone);
+        if (rounding && precision > 0)
+        {
+            var resolution = Math.Pow(10, 5 - precision);
+            easting = Math.Round(easting / resolution, MidpointRounding.AwayFromZero) * resolution;
+            northing = Math.Round(northing / resolution, MidpointRounding.AwayFromZero) * resolution;
+        }
 
         var (columnLetter, rowLetter) = GetGridSquareLetters(zone, easting, northing);
+        if (oldStyle)
+        {
+            rowLetter = ShiftRowLetter(rowLetter, 10);
+        }
 
         var gridEasting = (long)Math.Floor(easting) % 100_000L;
         var gridNorthing = (long)Math.Floor(northing) % 100_000L;
@@ -108,8 +130,9 @@ internal static class MgrsConverter
     /// Converts an MGRS / USNG grid reference string to a WGS84 longitude/latitude pair.
     /// </summary>
     /// <param name="mgrs">The grid reference string (spaces optional).</param>
+    /// <param name="oldStyle">Whether the input uses the legacy MGRS AL row-letter scheme.</param>
     /// <returns>A tuple of (longitude, latitude) in decimal degrees (WGS84).</returns>
-    public static (double Longitude, double Latitude) FromMgrs(string mgrs)
+    public static (double Longitude, double Latitude) FromMgrs(string mgrs, bool oldStyle = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(mgrs);
 
@@ -154,6 +177,10 @@ internal static class MgrsConverter
 
         var columnLetter = cleaned[index];
         var rowLetter = cleaned[index + 1];
+        if (oldStyle)
+        {
+            rowLetter = ShiftRowLetter(rowLetter, -10);
+        }
         index += 2;
 
         var digits = cleaned[index..];
@@ -429,6 +456,17 @@ internal static class MgrsConverter
     {
         var truncated = value / (long)Math.Pow(10, 5 - precision);
         return truncated.ToString(CultureInfo.InvariantCulture).PadLeft(precision, '0');
+    }
+
+    private static char ShiftRowLetter(char letter, int offset)
+    {
+        var index = RowLettersOdd.IndexOf(letter, StringComparison.Ordinal);
+        if (index < 0)
+        {
+            throw new FormatException($"Invalid 100km row letter '{letter}'.");
+        }
+
+        return RowLettersOdd[(index + offset + RowLettersOdd.Length) % RowLettersOdd.Length];
     }
 
     private static double NormalizeLongitude(double longitude)

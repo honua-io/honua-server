@@ -55,10 +55,10 @@ In ArcGIS Pro, the layer should draw, the attribute table should open, and a def
 ## Troubleshoot
 
 - **"Cannot add data" / 404 on the URL** — check the service id with `honua services`. See [troubleshooting](../deploy/troubleshooting.md).
-- **Credential prompt loops or 401** — verify the account works against `/sharing/rest/generateToken` directly (command above). Token issuance returns 403 over plain HTTP unless `RequireHttps` is disabled.
+- **Credential prompt loops or 401** — run the `PortalCompat.generateToken` example in **Token auth** above with the same account. Token issuance returns 403 over plain HTTP unless `RequireHttps` is disabled.
 - **`generateToken` returns 402 Payment Required** — the `identity.portal-token` entitlement is not active in your edition configuration.
 - **Layer draws but some operations fail** — Honua implements broad but not total GeoServices parity; check the operation in the [GeoServices parity reference](../../reference/compatibility/geoservices-parity.md) before debugging further.
-- **Scene layers (I3S/SceneServer) return 402** — I3S serving is Enterprise-gated and not part of open-core.
+- **Scene layers (I3S/SceneServer) return 404 or 402** — the default is 404 until experimental capability `serve.i3s-scene` is enabled; an enabled route without the Enterprise entitlement returns 402.
 
 ## Next steps
 

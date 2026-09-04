@@ -1180,7 +1180,7 @@
       "edition": "Enterprise",
       "status": null,
       "entryCount": 10,
-      "provingTestCount": 41,
+      "provingTestCount": 42,
       "maturity": {
         "implemented": 10
       },
@@ -1717,7 +1717,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 48,
-      "provingTestCount": 117,
+      "provingTestCount": 121,
       "maturity": {
         "implemented": 48
       },
