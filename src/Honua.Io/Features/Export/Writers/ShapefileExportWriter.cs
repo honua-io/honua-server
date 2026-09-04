@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Collections.Immutable;
 using Honua.Infrastructure.Services;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries.Utilities;
 using NetTopologySuite.IO.Esri;
 using NetTopologySuite.IO.Esri.Dbf.Fields;
 using NetTopologySuite.IO.Esri.Dbf;
@@ -103,6 +104,7 @@ internal static class ShapefileExportWriter
             // The NTS shapefile API requires an empty geometry of the file's shape
             // family to emit a Null Shape record; assigning null throws in its setter.
             var nullShape = CreateNullShapeGeometry(geometryType);
+            var ordinateLayout = new ShapeOrdinateOperation(hasZ, hasM || hasZ);
             using (var shpWriter = Shapefile.OpenWrite(shpPath, options))
             {
                 if (File.Exists(prefixPath))
@@ -124,7 +126,8 @@ internal static class ShapefileExportWriter
 
                 if (firstFeature.HasValue && firstGeometry is not null)
                 {
-                    shpWriter.Geometry = NormalizeGeometry(firstGeometry, geometryType);
+                    shpWriter.Geometry = new GeometryEditor(firstGeometry.Factory).Edit(
+                        NormalizeGeometry(firstGeometry, geometryType), ordinateLayout);
                     SetDbfValues(shpWriter.Fields, fields, dbfFieldMap, firstFeature.Value.Attributes);
                     shpWriter.Write();
                     writtenCount++;
@@ -133,9 +136,11 @@ internal static class ShapefileExportWriter
                 while (await enumerator.MoveNextAsync().ConfigureAwait(false))
                 {
                     var feature = enumerator.Current;
-                    shpWriter.Geometry = feature.Geometry is { Length: > 0 }
-                        ? NormalizeGeometry(WkbReaderCache.Get().Read(feature.Geometry), geometryType)
-                        : nullShape;
+                    var geometry = feature.Geometry is { Length: > 0 }
+                        ? WkbReaderCache.Get().Read(feature.Geometry)
+                        : null;
+                    shpWriter.Geometry = geometry is null ? nullShape : new GeometryEditor(geometry.Factory).Edit(
+                        NormalizeGeometry(geometry, geometryType), ordinateLayout);
                     SetDbfValues(shpWriter.Fields, fields, dbfFieldMap, feature.Attributes);
                     shpWriter.Write();
                     writtenCount++;
@@ -316,6 +321,41 @@ internal static class ShapefileExportWriter
             ExportGeometryType.Polygon or ExportGeometryType.MultiPolygon => factory.CreateMultiPolygon([]),
             _ => throw new InvalidOperationException($"Shapefile format does not support geometry type '{geometryType}'.")
         };
+    }
+
+    // NTS writes a point's sequence layout directly. Match the file header, including
+    // the optional M slot on Z shapes, so a following record cannot become its M value.
+    private sealed class ShapeOrdinateOperation(bool hasZ, bool hasM) : GeometryEditor.CoordinateSequenceOperation
+    {
+        public override CoordinateSequence Edit(CoordinateSequence sequence, Geometry geometry)
+        {
+            var result = geometry.Factory.CoordinateSequenceFactory.Create(
+                sequence.Count, 2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0), hasM ? 1 : 0);
+            for (var i = 0; i < sequence.Count; i++)
+            {
+                var z = sequence.GetZ(i);
+                var m = sequence.GetM(i);
+                if ((!hasZ && !double.IsNaN(z)) || (!hasM && !double.IsNaN(m)))
+                {
+                    throw new InvalidOperationException(
+                        "Shapefile export cannot preserve varying ordinate dimensions. Export as CSV or GeoPackage instead.");
+                }
+
+                result.SetX(i, sequence.GetX(i));
+                result.SetY(i, sequence.GetY(i));
+                if (hasZ)
+                {
+                    result.SetZ(i, z);
+                }
+
+                if (hasM)
+                {
+                    result.SetM(i, m);
+                }
+            }
+
+            return result;
+        }
     }
 
     private static Geometry NormalizeGeometry(Geometry geometry, ExportGeometryType targetType)
