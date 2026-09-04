@@ -84,8 +84,8 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
         xml.Should().Contain($"xmlns:wps=\"http://www.opengis.net/wps/2.0\"");
         xml.Should().Contain("<ows:Identifier>geometry.buffer</ows:Identifier>");
-        xml.Should().Contain("<ows:Identifier>result</ows:Identifier>");
-        xml.Should().Contain("<wps:LiteralDataDomain");
+        xml.Should().Contain("<ows:Identifier>featureLayer1</ows:Identifier>");
+        xml.Should().Contain("<LiteralDataDomain").And.NotContain("<wps:LiteralDataDomain");
         xml.Should().Contain("<wps:ProcessOffering processVersion=\"1.0.0\"");
         xml.Should().Contain("<wps:Process>").And.NotContain("<wps:Process processVersion=");
     }
@@ -299,7 +299,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, xml);
         outputs.Select(output => output.Element(ows + "Identifier")?.Value)
-            .Should().Equal("features", "count");
+            .Should().Equal("featureLayer1", "scalar1");
         outputs[0].Element(wps + "Reference")!.Attribute(XName.Get("href", "http://www.w3.org/1999/xlink"))!.Value
             .Should().Be("https://example.test/results/features.geojson");
         xml.Should().NotContain("summary must not replace outputs");

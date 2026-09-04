@@ -1108,6 +1108,33 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_KvpMultiQuery_ProtectedTypeChallengesAnonymous()
+    {
+        await using var fixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+                builder.UseSetting("HONUA_DEV_AUTH", "false")
+                    .UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false"));
+        await fixture.InitializeAsync();
+        fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false });
+
+        using var client = fixture.CreateClient();
+        var response = await client.GetAsync(
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0" +
+            "&TYPENAMES=test_layer,related_test_layer_1" +
+            "&PROPERTYNAME=name%3Bname&FILTER=name%3D%27missing%27%3Bname%3D%27missing%27");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, content);
+        response.Headers.WwwAuthenticate.Should().NotBeEmpty();
+        content.Should().Contain("AccessDenied");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
@@ -2694,13 +2721,18 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
         var nextHref = document.Root?.Attributes()
             .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "next", StringComparison.OrdinalIgnoreCase))?.Value;
         nextHref.Should().NotBeNull(content);
-        nextHref.Should().Contain("%3B", "per-query FILTER values must be encoded as a KVP multi-query list");
+        var nextHrefValue = nextHref ?? throw new InvalidOperationException(content);
+        nextHrefValue.Should().Contain("%3B", "per-query FILTER values must be encoded as a KVP multi-query list");
 
-        var nextResponse = await _fixture.Client.GetAsync(new Uri(nextHref!).PathAndQuery);
+        var nextResponse = await _fixture.Client.GetAsync(new Uri(nextHrefValue).PathAndQuery);
         var nextContent = await nextResponse.Content.ReadAsStringAsync();
         nextResponse.StatusCode.Should().Be(HttpStatusCode.OK, nextContent);
-        nextContent.Should().Contain(secondMarker);
-        nextContent.Should().NotContain(firstMarker);
+        XNamespace honua = "http://honua.io/wfs";
+        var returnedNames = XDocument.Parse(nextContent)
+            .Descendants(honua + "name")
+            .Select(element => element.Value)
+            .ToArray();
+        returnedNames.Should().Contain(secondMarker).And.NotContain(firstMarker);
     }
 
     /// <summary>
