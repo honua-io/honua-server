@@ -77,7 +77,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
             (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
             await harness.Queue.EnqueueAsync(operationId);
 
-            var workerAssembly = Path.Combine(AppContext.BaseDirectory, "Honua.StaleAttemptWorker.dll");
+            var workerAssembly = Path.Join(AppContext.BaseDirectory, "Honua.StaleAttemptWorker.dll");
             File.Exists(workerAssembly).Should().BeTrue();
             staleWorker = StartWorker(
                 workerAssembly,
@@ -145,8 +145,9 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 runningB.ClaimedBy.Should().NotBeNull();
                 workerBId = runningB.ClaimedBy!;
                 workerBId.Should().NotBe(workerA);
-                runningB.LastHeartbeatAt.Should().NotBeNull();
-                await harness.Database.HashSetAsync(receiptKey, "heartbeat:workerB", runningB.LastHeartbeatAt.Value.ToString("O"));
+                var heartbeatAt = runningB.LastHeartbeatAt;
+                heartbeatAt.Should().NotBeNull();
+                await harness.Database.HashSetAsync(receiptKey, "heartbeat:workerB", heartbeatAt.Value.ToString("O"));
                 await harness.Database.HashSetAsync(receiptKey, $"claim:{workerBId}", "attempt=2");
                 await WaitForRedisValueAsync(harness.Database, releaseAwareExecutor.ReadyKey, TimeSpan.FromSeconds(15));
 
