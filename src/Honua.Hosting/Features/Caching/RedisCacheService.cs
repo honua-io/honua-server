@@ -53,6 +53,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CacheWriteInfo> _writeMetadata = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _distributedIndexLock = new(1, 1);
+    private readonly SemaphoreSlim _healthCheckLock = new(1, 1);
+    private readonly string _healthCheckKey = HealthCheckKey + ":" + Guid.NewGuid().ToString("N");
     // Bounded set of invalidation keys that failed to reach Redis during an outage and
     // must be replayed when the connection is restored.
     private readonly ConcurrentQueue<string> _pendingInvalidationKeys = new();
@@ -678,7 +680,14 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     }
 
     /// <inheritdoc />
-    public async Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
+    public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
+    {
+        // A caller may stop waiting while a Redis command is still running. Keep
+        // the probe lock until those commands finish so cleanup cannot race a retry.
+        return ProbeCacheAsync(cancellationToken).WaitAsync(cancellationToken);
+    }
+
+    private async Task<bool> ProbeCacheAsync(CancellationToken cancellationToken)
     {
         if (_distributedCache == null && _redis == null)
         {
@@ -688,19 +697,22 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         // Readiness must probe the configured dependency on every call. A usable local
         // cache or an open retry interval says nothing about distributed-state availability.
+        await _healthCheckLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Exercise the ordinary indexed write/read/delete path, including
             // per-command transaction failures. Expiry bounds interrupted probes.
-            var healthKey = GetPrefixedKey(HealthCheckKey);
+            // One reserved entry per service instance bounds interrupted probes and
+            // separates replicas; the lock serializes overlapping local probes.
+            var healthKey = GetPrefixedKey(_healthCheckKey);
             byte[]? cachedValue;
             if (_redis != null)
             {
                 await SetRedisEntryWithIndexAsync(healthKey, HealthCheckValue, HealthCheckTtl, cancellationToken)
-                    .WaitAsync(cancellationToken).ConfigureAwait(false);
-                cachedValue = await GetRedisEntryAsync(healthKey).WaitAsync(cancellationToken).ConfigureAwait(false);
+                    .ConfigureAwait(false);
+                cachedValue = await GetRedisEntryAsync(healthKey).ConfigureAwait(false);
                 await RemoveRedisEntryWithIndexAsync(healthKey, cancellationToken)
-                    .WaitAsync(cancellationToken).ConfigureAwait(false);
+                    .ConfigureAwait(false);
             }
             else
             {
@@ -723,6 +735,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         {
             RedisCacheServiceLog.RedisHealthCheckFailed(_logger, ex);
             return false;
+        }
+        finally
+        {
+            _healthCheckLock.Release();
         }
     }
 
@@ -1355,6 +1371,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         _fallbackCache.Clear();
         _writeMetadata.Clear();
         _distributedIndexLock.Dispose();
+        _healthCheckLock.Dispose();
         foreach (var semaphore in _keyLocks.Values)
         {
             semaphore.Dispose();

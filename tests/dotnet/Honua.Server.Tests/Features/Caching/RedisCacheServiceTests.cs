@@ -471,11 +471,16 @@ public sealed class RedisCacheServiceTests : IDisposable
         (await cache.IsCacheHealthyAsync()).Should().BeFalse();
         denied = false;
         (await cache.IsCacheHealthyAsync()).Should().BeTrue();
-        await database.Received(denyWrites ? 1 : 2).StringGetAsync($"deployment:{ScopedKeyPrefix}__health_check__");
-        await transaction.Received(2).StringSetAsync($"deployment:{ScopedKeyPrefix}__health_check__",
+        var healthKey = transaction.ReceivedCalls()
+            .First(call => call.GetMethodInfo().Name == nameof(IDatabase.StringSetAsync))
+            .GetArguments()[0]!.ToString()!;
+        var healthKeyPrefix = $"deployment:{ScopedKeyPrefix}__health_check__:";
+        Assert.StartsWith(healthKeyPrefix, healthKey, StringComparison.Ordinal);
+        Assert.True(Guid.TryParseExact(healthKey[healthKeyPrefix.Length..], "N", out _));
+        await database.Received(denyWrites ? 1 : 2).StringGetAsync(healthKey);
+        await transaction.Received(2).StringSetAsync(healthKey,
             Arg.Any<RedisValue>(), TimeSpan.FromSeconds(30));
-        await transaction.Received(2).SetAddAsync($"deployment:{ScopedKeyPrefix}__cache_key_index__",
-            $"deployment:{ScopedKeyPrefix}__health_check__");
+        await transaction.Received(2).SetAddAsync($"deployment:{ScopedKeyPrefix}__cache_key_index__", healthKey);
     }
 
     [Theory]
