@@ -14,6 +14,7 @@ using Honua.Server.Features.Protocols.Cog;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -98,7 +99,7 @@ public sealed class CogRegistrationTileTests
             (await ownTile.Content.ReadAsByteArrayAsync()).Should().Equal(tile);
 
             using var otherTile = await fixture.Client.GetAsync("/rest/services/imagery-b/ImageServer/tile/0/0/0?format=jpg");
-            otherTile.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            await otherTile.AssertGeoServicesErrorAsync(404);
         }
         finally
         {

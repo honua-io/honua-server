@@ -398,6 +398,7 @@ public class ImageServerTileHandlerTests
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
         var context = CreateImageServerContext();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
         var result = await handler.GetImageTileAsync(
             context,
             layerId: 42,
@@ -408,6 +409,7 @@ public class ImageServerTileHandlerTests
             publicationId: "publication-cog",
             cacheLayerId: 7);
 
+        await _rasterStore.Received(1).QueryRastersAsync(42, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
         result.Should().BeOfType<FileContentHttpResult>();
         await cogResolver.Received(1).GetTileForLayerAsync(
             7, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>());
@@ -457,6 +459,7 @@ public class ImageServerTileHandlerTests
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
         var context = CreateImageServerContext();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
         var result = await handler.GetImageTileAsync(
             context,
             layerId: 42,
@@ -467,7 +470,8 @@ public class ImageServerTileHandlerTests
             publicationId: "publication-cog",
             cacheLayerId: 7);
 
-        result.Should().NotBeOfType<FileContentHttpResult>();
+        await _rasterStore.Received(1).QueryRastersAsync(42, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
         await cogResolver.DidNotReceiveWithAnyArgs().GetTileForLayerAsync(
             default, default, default, default, default, default);
     }

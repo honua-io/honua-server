@@ -271,6 +271,8 @@ public class CogTileResolverTests
     }
 
     [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData(-1L, 4)]
     [InlineData(1023L, 4)]
     [InlineData(long.MaxValue, 4)]
