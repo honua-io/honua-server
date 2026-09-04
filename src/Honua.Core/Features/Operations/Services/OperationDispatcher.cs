@@ -84,6 +84,14 @@ public sealed class OperationDispatcher : IOperationInvoker
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(context);
 
+        // Resolve both halves of the runtime contract before accepting an envelope. A
+        // descriptor can remain discoverable while its actuator is deliberately withheld;
+        // such a submission must not create a handle or approval proposal.
+        var descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new OperationNotFoundException(request.OperationId);
+        var executor = ResolveExecutor(request.OperationId);
+
         var createdAt = _clock.GetUtcNow();
         OperationHandle envelope;
         var invocationContext = context;
@@ -205,14 +213,9 @@ public sealed class OperationDispatcher : IOperationInvoker
         var operationInstanceId = envelope.OperationInstanceId;
         var correlationId = envelope.CorrelationId;
 
-        OperationDescriptor descriptor;
-        IOperationExecutor executor;
         OperationValidation validation;
         try
         {
-            descriptor = await _catalog.GetDescriptorAsync(request.OperationId, cancellationToken).ConfigureAwait(false)
-                ?? throw new OperationNotFoundException(request.OperationId);
-            executor = ResolveExecutor(request.OperationId);
             validation = await executor.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -585,7 +588,11 @@ public sealed class OperationDispatcher : IOperationInvoker
     private IOperationExecutor ResolveExecutor(string operationId)
         => _executors.TryGetValue(operationId, out var executor)
             ? executor
-            : throw new OperationNotFoundException(operationId);
+            : AdminMcpOperationExclusions.RequiresSecretAwareRuntime(operationId)
+                ? throw new OperationUnavailableException(
+                    operationId,
+                    $"Operation '{operationId}' is unavailable through the operations runtime until issue #4187 lands.")
+                : throw new OperationNotFoundException(operationId);
 
     private async Task<OperationHandle> BuildDecisionHandleAsync(
         OperationDescriptor descriptor,

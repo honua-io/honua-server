@@ -54,7 +54,7 @@
     "evidenceRefs"
   ],
   "exclusions": {
-    "digest": "e9940a47b5f7a838ab536c4c352b92643cfd0a6318575dd8bc0599073821c53f",
+    "digest": "52ec32f9e4c942b11057f779c664f33df180ff17ff975c62bbed5a8848907fe0",
     "operations": [
       {
         "OpenApiOperationId": "createAdminApiKey",
@@ -90,6 +90,20 @@
         "ToolName": "honua_admin_oauth_client_register",
         "ReasonCode": "one-time-secret",
         "Explanation": "Returns a newly issued OAuth client secret."
+      },
+      {
+        "OpenApiOperationId": "createOidcProvider",
+        "OperationId": "admin.oidc-provider.create",
+        "ToolName": "honua_admin_oidc_provider_create",
+        "ReasonCode": "secret-input",
+        "Explanation": "Accepts secret-bearing OIDC provider configuration."
+      },
+      {
+        "OpenApiOperationId": "updateOidcProvider",
+        "OperationId": "admin.oidc-provider.update",
+        "ToolName": "honua_admin_oidc_provider_update",
+        "ReasonCode": "secret-input",
+        "Explanation": "Accepts secret-bearing OIDC provider configuration."
       },
       {
         "OpenApiOperationId": "getAdminAuthSession",
@@ -1217,50 +1231,6 @@
       "idempotent": null
     },
     {
-      "operationId": "admin.oidc-provider.create",
-      "toolName": "honua_admin_oidc_provider_create",
-      "title": "Create OIDC provider",
-      "inputFields": [
-        "authority",
-        "clientId",
-        "clientSecret",
-        "enabled",
-        "name",
-        "providerType"
-      ],
-      "outputFields": [
-        "approvalLane",
-        "auditId",
-        "authorizationOutcome",
-        "cacheHit",
-        "cacheKey",
-        "code",
-        "correlationId",
-        "createdAt",
-        "details",
-        "deterministic",
-        "error",
-        "evidenceRefs",
-        "handleId",
-        "jobId",
-        "message",
-        "metadataRevision",
-        "operationId",
-        "operationInstanceId",
-        "policyOutcome",
-        "proposalId",
-        "requiresApproval",
-        "resourceIds",
-        "status",
-        "studioAuthorizationCode",
-        "summary",
-        "updatedAt"
-      ],
-      "readOnly": false,
-      "destructive": true,
-      "idempotent": false
-    },
-    {
       "operationId": "admin.oidc-provider.delete",
       "toolName": "honua_admin_oidc_provider_delete",
       "title": "Delete OIDC provider",
@@ -1413,50 +1383,6 @@
       "readOnly": true,
       "destructive": false,
       "idempotent": null
-    },
-    {
-      "operationId": "admin.oidc-provider.update",
-      "toolName": "honua_admin_oidc_provider_update",
-      "title": "Update OIDC provider",
-      "inputFields": [
-        "authority",
-        "clientId",
-        "clientSecret",
-        "enabled",
-        "id",
-        "name"
-      ],
-      "outputFields": [
-        "approvalLane",
-        "auditId",
-        "authorizationOutcome",
-        "cacheHit",
-        "cacheKey",
-        "code",
-        "correlationId",
-        "createdAt",
-        "details",
-        "deterministic",
-        "error",
-        "evidenceRefs",
-        "handleId",
-        "jobId",
-        "message",
-        "metadataRevision",
-        "operationId",
-        "operationInstanceId",
-        "policyOutcome",
-        "proposalId",
-        "requiresApproval",
-        "resourceIds",
-        "status",
-        "studioAuthorizationCode",
-        "summary",
-        "updatedAt"
-      ],
-      "readOnly": false,
-      "destructive": true,
-      "idempotent": false
     },
     {
       "operationId": "admin.rate-limit-policy.create",
