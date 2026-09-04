@@ -136,6 +136,61 @@ public sealed class GeoArrowQueryFormatterTests
     }
 
     [Fact]
+    public async Task FormatAsGeoArrowAsync_WithUntypedGeometry_EmitsEmptyGeometryTypes()
+    {
+        var resource = CreateResourceWithGeometryType(
+            MetadataV2GeometryType.Mixed,
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(1, 2),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            geometryLimits: new GeometryLimits());
+
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
+            .GetProperty("geometry_types").EnumerateArray().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task FormatAsGeoArrowAsync_WithMixed2DAnd3DPage_AdvertisesBothGeometryTypes()
+    {
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false });
+        var features = new[]
+        {
+            Feature.Create(1, CreatePointWkb(1, 2),
+                new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary()),
+            Feature.Create(2, CreatePointWkbWithZm(3, 4, 5, double.NaN),
+                new Dictionary<string, object?> { ["objectid"] = 2L }.ToImmutableDictionary())
+        };
+
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(2, [.. features]),
+            resource,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: true,
+            returnM: false,
+            geometryLimits: new GeometryLimits());
+
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
+            .GetProperty("geometry_types").EnumerateArray()
+            .Select(element => element.GetString()).Should().Equal("Point", "Point Z");
+    }
+
+    [Fact]
     public async Task FormatAsGeoArrowAsync_EmptyResult_PreservesRequestedSchema()
     {
         var layer = CreateLayer(
@@ -613,6 +668,11 @@ public sealed class GeoArrowQueryFormatterTests
         => CreateResource(fields);
 
     private static MetadataV2Resource CreateResource(params MetadataV2Field[] fields)
+        => CreateResourceWithGeometryType(MetadataV2GeometryType.Point, fields);
+
+    private static MetadataV2Resource CreateResourceWithGeometryType(
+        MetadataV2GeometryType geometryType,
+        params MetadataV2Field[] fields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -635,7 +695,7 @@ public sealed class GeoArrowQueryFormatterTests
             Spatial = new MetadataV2ResourceSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Point,
+                GeometryType = geometryType,
                 PrimaryGeometryField = "shape"
             }
         };

@@ -51,7 +51,8 @@ public static class GeoParquetTestFactory
         string encoding = "WKB",
         CrsStyle crs = CrsStyle.ProjJson,
         int rowCount = 1,
-        bool includeNullGeometryRow = false)
+        bool includeNullGeometryRow = false,
+        int? rowGroupSize = null)
     {
         var objectIdField = new DataField<long?>("objectid");
         var nameField = new DataField<string>("name", true);
@@ -105,10 +106,23 @@ public static class GeoParquetTestFactory
         using (var writer = await ParquetWriter.CreateAsync(schema, stream))
         {
             writer.CustomMetadata = metadata;
-            using var rowGroupWriter = writer.CreateRowGroup();
-            await rowGroupWriter.WriteColumnAsync(new ParquetDataColumn(objectIdField, ids));
-            await rowGroupWriter.WriteColumnAsync(new ParquetDataColumn(nameField, names));
-            await rowGroupWriter.WriteColumnAsync(new ParquetDataColumn(geometryField, geoms));
+            var groupSize = rowGroupSize.GetValueOrDefault(totalRows);
+            if (groupSize <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(rowGroupSize), "Row-group size must be positive.");
+            }
+
+            for (var offset = 0; offset < totalRows; offset += groupSize)
+            {
+                var count = Math.Min(groupSize, totalRows - offset);
+                using var rowGroupWriter = writer.CreateRowGroup();
+                await rowGroupWriter.WriteColumnAsync(new ParquetDataColumn(
+                    objectIdField, ids[offset..(offset + count)]));
+                await rowGroupWriter.WriteColumnAsync(new ParquetDataColumn(
+                    nameField, names[offset..(offset + count)]));
+                await rowGroupWriter.WriteColumnAsync(new ParquetDataColumn(
+                    geometryField, geoms[offset..(offset + count)]));
+            }
         }
 
         stream.Position = 0;

@@ -114,14 +114,6 @@ internal sealed partial class StreamingFileImportService
                 warnings = parquetMeta.Warnings;
                 geoParquetTotalRows = parquetMeta.TotalRowCount;
 
-                // Reject files with any oversized row group — consistent with import path
-                if (parquetMeta.MaxRowGroupRowCount > GeoParquetReader.MaxRowsPerRowGroup)
-                {
-                    throw new InvalidDataException(
-                        GeoParquetReader.BuildLargeRowGroupMessage(
-                            parquetMeta.MaxRowGroupRowCount, parquetMeta.RowGroupCount));
-                }
-
                 // Hard-reject non-WKB encoding — consistent with the import path
                 // (ImportFileAsync returns CreateFailure) and the documented contract
                 // ("Non-WKB encodings are rejected" in CONTROL_PLANE_API.md).

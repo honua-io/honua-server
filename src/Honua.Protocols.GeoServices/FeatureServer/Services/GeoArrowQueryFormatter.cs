@@ -11,6 +11,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Services;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
@@ -49,8 +50,11 @@ internal sealed class GeoArrowQueryFormatter
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoArrow");
         var features = result.Items;
         var runtimeFields = GeoParquetQueryFormatter.DetectRuntimeFields(features, resource);
+        var geometryTypes = GeoParquetFeatureWriter.ResolveGeoParquetGeometryTypes(
+            features, resource, srid, returnZ, returnM, geometryLimits);
 
-        var schema = BuildSchema(selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, outFields);
+        var schema = BuildSchema(
+            selectedFields, includeGeometry, resource, srid, returnZ, runtimeFields, outFields, geometryTypes);
         var recordBatch = BuildRecordBatch(
             features,
             selectedFields,
@@ -80,7 +84,8 @@ internal sealed class GeoArrowQueryFormatter
         int srid,
         bool returnZ,
         List<(string name, IArrowType type)> runtimeFields,
-        string[]? outFields)
+        string[]? outFields,
+        IReadOnlyCollection<string> geometryTypes)
     {
         var fields = new List<Apache.Arrow.Field>(selectedFields.Count + (includeGeometry ? 1 : 0));
 
@@ -125,7 +130,7 @@ internal sealed class GeoArrowQueryFormatter
             }
         }
 
-        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, returnZ);
+        var schemaMetadata = BuildSchemaMetadata(resource, includeGeometry, srid, geometryTypes);
         return new Apache.Arrow.Schema(fields, schemaMetadata);
     }
 
@@ -545,7 +550,7 @@ internal sealed class GeoArrowQueryFormatter
         MetadataV2Resource resource,
         bool includeGeometry,
         int srid,
-        bool returnZ)
+        IReadOnlyCollection<string> geometryTypes)
     {
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
         if (!includeGeometry)
@@ -555,10 +560,8 @@ internal sealed class GeoArrowQueryFormatter
 
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        // The resource schema is authoritative even when a query returns no rows. Preserve
-        // its known geometry type so empty batches remain self-describing to consumers.
-        var geometryTypesPart =
-            $@"[""{GeoParquetQueryFormatter.MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), returnZ)}""]";
+        var geometryTypesPart = JsonSerializer.Serialize(
+            geometryTypes.OrderBy(static type => type, StringComparer.Ordinal));
         var crsPart = GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson)
             ? $@",""crs"":{projJson}"
             : string.Empty;

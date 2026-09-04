@@ -286,19 +286,35 @@ public sealed class GeoParquetPreviewTests
     }
 
     [Fact]
-    public async Task PreviewFileAsync_GeoParquet_LargeSingleRowGroup_ThrowsInvalidDataException()
+    public async Task PreviewFileAsync_GeoParquet_LargeSingleRowGroup_IsAccepted()
     {
-        // Create a file with more rows than MaxRowsPerRowGroup (100,000) in a single
-        // row group. Parquet.Net materializes the whole group in memory, so the service
-        // must reject these files to honour the bounded-memory contract.
+        // pyarrow/GeoPandas defaults to a single row group up to 1,048,576 rows.
         await using var stream = await GeoParquetTestFactory.CreateStreamAsync(
-            rowCount: 100_001);
+            rowCount: 150_000);
         var service = CreateService();
 
-        var act = () => service.PreviewFileAsync(stream, "large_rg.parquet");
+        var preview = await service.PreviewFileAsync(stream, "large_rg.parquet");
 
-        await act.Should().ThrowAsync<InvalidDataException>()
-            .WithMessage("*row group*");
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.TotalFeatureCount.Should().Be(150_000);
+        preview.SampleProperties.Should().ContainKey("name");
+    }
+
+    [Fact]
+    public async Task PreviewFileAsync_GeoParquet_DuckDbSizedRowGroups_AreAccepted()
+    {
+        // DuckDB defaults to 122,880-row groups. Exercise both groups around that
+        // boundary instead of requiring clients to re-export with smaller groups.
+        await using var stream = await GeoParquetTestFactory.CreateStreamAsync(
+            rowCount: 150_000,
+            rowGroupSize: 122_880);
+        var service = CreateService();
+
+        var preview = await service.PreviewFileAsync(stream, "duckdb.parquet");
+
+        preview.Format.Should().Be(SupportedFileFormat.GeoParquet);
+        preview.TotalFeatureCount.Should().Be(150_000);
+        preview.SampleProperties.Should().ContainKey("name");
     }
 
     [Fact]
