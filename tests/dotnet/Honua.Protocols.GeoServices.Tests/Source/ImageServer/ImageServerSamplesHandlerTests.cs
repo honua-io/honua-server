@@ -46,7 +46,7 @@ public class ImageServerSamplesHandlerTests
 
         ok.Should().BeTrue(error);
         points.Select(static point => point.X).Should().Equal(0, 2, 4, 6, 8, 10);
-        points.Should().OnlyContain(static point => point.Y == 0 && point.Srid == 4326);
+        points.Should().OnlyContain(static point => Math.Abs(point.Y) <= 1e-12 && point.Srid == 4326);
     }
 
     [UnitTest]

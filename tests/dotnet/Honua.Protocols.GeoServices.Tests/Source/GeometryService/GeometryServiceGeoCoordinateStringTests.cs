@@ -95,9 +95,10 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
             "rounding": true
         }
         """;
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content);
 
         response.Be200Ok();
         var value = (await DeserializeToAsync(response))!.Strings!.Single();
@@ -113,9 +114,10 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
         {"sr":4326,"coordinates":[[180,0]],"conversionType":"MGRS",
          "conversionMode":"mgrsNewWith180InZone01","addSpaces":false}
         """;
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content);
 
         response.Be200Ok();
         (await DeserializeToAsync(response))!.Strings!.Single().Should().StartWith("1N");

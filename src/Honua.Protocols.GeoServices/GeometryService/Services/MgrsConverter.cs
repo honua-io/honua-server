@@ -73,7 +73,7 @@ internal static class MgrsConverter
 
         precision = Math.Clamp(precision, 0, 5);
 
-        var normalizedLongitude = zoneOneAt180 && longitude == 180.0
+        var normalizedLongitude = zoneOneAt180 && Math.Abs(longitude - 180.0) <= 1e-12
             ? -180.0
             : NormalizeLongitude(longitude);
         var zone = ComputeUtmZone(normalizedLongitude, latitude);

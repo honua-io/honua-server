@@ -490,9 +490,10 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
         }
         """;
 
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/generalize",
-            new StringContent(body, Encoding.UTF8, "application/json"));
+            content);
 
         response.Be200Ok();
         var result = JsonSerializer.Deserialize(

@@ -12,8 +12,8 @@ public sealed class GeoServicesDocumentationTruthTests
     public void ParityDocs_DoNotAdvertiseRejectedExportParameters()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var parity = File.ReadAllText(Path.Combine(root, "docs", "reference", "compatibility", "geoservices-parity.md"));
-        var judgment = File.ReadAllText(Path.Combine(root, "docs", "gis", "data", "geoservices-parity-judgment.json"));
+        var parity = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "reference", "compatibility", "geoservices-parity.md"));
+        var judgment = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "gis", "data", "geoservices-parity-judgment.json"));
 
         parity.Should().Contain("png/png8/png24/png32/jpg/jpeg").And.NotContain("png/png8/png24/png32/jpg/gif");
         parity.Should().Contain("Explicit `noData` overrides and non-`UNKNOWN` `pixelType` values return 501");
@@ -26,8 +26,8 @@ public sealed class GeoServicesDocumentationTruthTests
     public void GeometryAndCatalogClaims_MatchDescriptorsAndKnownCaveats()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var parity = File.ReadAllText(Path.Combine(root, "docs", "reference", "compatibility", "geoservices-parity.md"));
-        var judgment = File.ReadAllText(Path.Combine(root, "docs", "gis", "data", "geoservices-parity-judgment.json"));
+        var parity = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "reference", "compatibility", "geoservices-parity.md"));
+        var judgment = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "gis", "data", "geoservices-parity-judgment.json"));
 
         parity.Should().Contain("it intentionally omits `currentVersion`");
         parity.Should().Contain("Known parameter-level caveats:").And.NotContain("caveats (the complete list)");
@@ -41,15 +41,15 @@ public sealed class GeoServicesDocumentationTruthTests
     public void MigrationGuide_DescribesImplementedAndGatedSurfaces()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var protocol = File.ReadAllText(Path.Combine(root, "docs", "reference", "protocols", "geoservices-rest.md"));
-        var migration = File.ReadAllText(Path.Combine(root, "docs", "guides", "migrate", "arcgis-apps-and-sdks.md"));
+        var protocol = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "reference", "protocols", "geoservices-rest.md"));
+        var migration = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "guides", "migrate", "arcgis-apps-and-sdks.md"));
 
         protocol.Should().Contain("`queryContingentValues` is implemented");
         protocol.Should().Contain("experimental capability `serve.i3s-scene`");
         protocol.Should().Contain("routes return 404 until `versioning.branch` is enabled");
         migration.Should().Contain("MapServer WMTS supports WebMercatorQuad, WorldCRS84Quad");
         migration.Should().Contain("Incremental Postgres change tracking");
-        var pro = File.ReadAllText(Path.Combine(root, "docs", "guides", "connect", "arcgis-pro.md"));
+        var pro = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "guides", "connect", "arcgis-pro.md"));
         pro.Should().Contain("run the `PortalCompat.generateToken` example").And.NotContain("command above");
         pro.Should().Contain("default is 404 until experimental capability `serve.i3s-scene` is enabled");
     }
