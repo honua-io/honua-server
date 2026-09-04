@@ -141,6 +141,8 @@ public sealed class AdminAuthSessionStoreTests
         var cache = Substitute.For<IDistributedCache>();
         cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException(new IOException("Redis unavailable")));
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<byte[]?>(new IOException("Redis unavailable")));
         using var memory = new MemoryCache(new MemoryCacheOptions());
         var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
         var sessionId = await store.CreatePendingSessionAsync("oidc", "state", "verifier",
