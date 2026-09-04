@@ -18,20 +18,22 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
             return services;
 
         services.TryAddSingleton<OperationLineageAttestationStore>();
+        // Keep standalone composition fail-closed while the normal server composition
+        // supplies the environment-appropriate encrypted/volatile implementation.
+        services.TryAddSingleton<IOperationSecretStore, UnavailableOperationSecretStore>();
         services.AddSingleton<AdminAccessOperationRegistrationMarker>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider,
             AdminAccessOperationDescriptorProvider>());
         foreach (var definition in AdminAccessOperationCatalog.Definitions)
         {
-            if (AdminMcpOperationExclusions.RequiresSecretAwareRuntime(definition.OperationId))
-                continue;
-
             var descriptor = AdminAccessOperationCatalog.Descriptors.Single(
                 item => item.OperationId == definition.OperationId);
             if (definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
             {
                 services.AddSingleton<IOperationApprovalRequestMapper>(
-                    new AdminOperateOperationApprovalRequestMapper(definition));
+                    sp => new AdminOperateOperationApprovalRequestMapper(
+                        definition,
+                        sp.GetRequiredService<IOperationSecretStore>()));
             }
             services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
                 definition,
@@ -40,7 +42,8 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
                 sp.GetRequiredService<IHttpContextAccessor>(),
                 sp.GetService<IAdminApiKeyStore>(),
                 sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<OperationLineageAttestationStore>()));
+                sp.GetRequiredService<OperationLineageAttestationStore>(),
+                sp.GetRequiredService<IOperationSecretStore>()));
         }
 
         services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);

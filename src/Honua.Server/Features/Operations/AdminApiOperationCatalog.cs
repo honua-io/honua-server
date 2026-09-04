@@ -220,7 +220,8 @@ internal sealed class AdminApiOperationDescriptorProvider : IOperationDescriptor
 }
 
 internal sealed class AdminApiOperationApprovalRequestMapper(
-    AdminApiOperationCatalog.Definition definition) : IOperationApprovalRequestMapper
+    AdminApiOperationCatalog.Definition definition,
+    IOperationSecretStore? secretStore = null) : IOperationApprovalRequestMapper
 {
     public string OperationId => definition.OperationId;
 
@@ -233,7 +234,7 @@ internal sealed class AdminApiOperationApprovalRequestMapper(
         ArgumentNullException.ThrowIfNull(decision);
         if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
             throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
-        var payload = AdminApiOperationApprovalPayload.From(request, context);
+        var payload = AdminApiOperationApprovalPayload.From(request, context, secretStore);
         var serialized = JsonSerializer.Serialize(payload,
             AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
         return new OperationGatewayRequest
@@ -283,23 +284,33 @@ internal sealed record AdminApiOperationApprovalPayload
     public bool DryRun { get; init; }
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
+    public Dictionary<string, OperationSecretReference> SecretParameters { get; init; } = new(StringComparer.Ordinal);
 
-    public static AdminApiOperationApprovalPayload From(OperationRequest request, OperationPolicyContext context) => new()
+    public static AdminApiOperationApprovalPayload From(
+        OperationRequest request,
+        OperationPolicyContext context,
+        IOperationSecretStore? secretStore = null)
     {
-        OperationId = request.OperationId,
-        Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
-        ConnectionId = request.ConnectionId,
-        ServiceName = request.ServiceName,
-        Fields = request.Fields.ToArray(),
-        DryRun = request.DryRun,
-        TenantId = context.TenantId,
-        SchemaName = context.SchemaName
-    };
+        var captured = OperationSecretParameters.Capture(request, context, secretStore);
+        return new()
+        {
+            OperationId = request.OperationId,
+            Parameters = captured.Parameters,
+            SecretParameters = captured.SecretParameters,
+            ConnectionId = request.ConnectionId,
+            ServiceName = request.ServiceName,
+            Fields = request.Fields.ToArray(),
+            DryRun = request.DryRun,
+            TenantId = context.TenantId,
+            SchemaName = context.SchemaName
+        };
+    }
 
     public OperationRequest ToOperationRequest() => new()
     {
         OperationId = OperationId,
         Parameters = Parameters,
+        SecretParameters = SecretParameters,
         ConnectionId = ConnectionId,
         ServiceName = ServiceName,
         Fields = Fields,
@@ -310,4 +321,5 @@ internal sealed record AdminApiOperationApprovalPayload
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AdminApiOperationApprovalPayload))]
+[JsonSerializable(typeof(OperationSecretReference))]
 internal sealed partial class AdminApiOperationApprovalJsonContext : JsonSerializerContext;

@@ -19,19 +19,22 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAdminApiKeyStore? _adminApiKeyStore;
+    private readonly IOperationSecretStore? _operationSecretStore;
     private readonly TimeProvider _clock;
     private readonly OperationLineageAttestationStore _lineageAttestationStore;
 
     public AdminOperateOperationExecutor(IAdminHttpOperationDefinition definition, IOperationDescriptor descriptor,
         IHttpClientFactory httpClientFactory,
         IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore? adminApiKeyStore, TimeProvider clock,
-        OperationLineageAttestationStore lineageAttestationStore)
+        OperationLineageAttestationStore lineageAttestationStore,
+        IOperationSecretStore? operationSecretStore = null)
     {
         _definition = definition;
         _descriptor = descriptor;
         _httpClientFactory = httpClientFactory;
         _httpContextAccessor = httpContextAccessor;
         _adminApiKeyStore = adminApiKeyStore;
+        _operationSecretStore = operationSecretStore;
         _clock = clock;
         _lineageAttestationStore = lineageAttestationStore;
     }
@@ -64,6 +67,12 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         ArgumentNullException.ThrowIfNull(context);
         var current = _httpContextAccessor.HttpContext
             ?? throw new InvalidOperationException("Admin operations require an active authenticated request.");
+        request = OperationSecretParameters.Resolve(request, context, _operationSecretStore);
+        if (SecretOutputName is not null && _operationSecretStore?.IsAvailable != true)
+        {
+            throw new InvalidOperationException(
+                "Secret-bearing operation execution requires an available operation secret channel.");
+        }
         var dryRun = request.DryRun && _definition.SupportsDryRun;
         var path = BindPath(request, dryRun ? _definition.DryRunPath! : _definition.Path);
         var method = dryRun ? _definition.DryRunMethod ?? _definition.Method : _definition.Method;
@@ -128,6 +137,32 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
             var operationInstanceId = context.OperationInstanceId ?? $"opinst-{Guid.NewGuid():N}";
             var correlationId = context.CorrelationId ?? $"corr-{Guid.NewGuid():N}";
             var now = _clock.GetUtcNow();
+            OperationResultSummary result;
+            try
+            {
+                result = BuildResult(payload, response.IsSuccessStatusCode, operationInstanceId, context);
+            }
+            catch (OperationSecretPersistenceException)
+            {
+                return new OperationHandle
+                {
+                    OperationInstanceId = operationInstanceId,
+                    OperationId = OperationId,
+                    CorrelationId = correlationId,
+                    Status = OperationHandleStatus.Indeterminate,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    Reason = "Admin API actuation succeeded, but its one-time secret could not be durably stored.",
+                    Result = new OperationResultSummary
+                    {
+                        Summary = $"{_definition.Title} outcome is indeterminate.",
+                        Details = new Dictionary<string, string>(StringComparer.Ordinal)
+                        {
+                            ["response"] = SanitizeResponse(payload),
+                        },
+                    },
+                };
+            }
             if (!response.IsSuccessStatusCode)
             {
                 return new OperationHandle
@@ -139,14 +174,9 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
                     CreatedAt = now,
                     UpdatedAt = now,
                     Reason = $"Admin API returned HTTP {(int)response.StatusCode} ({response.StatusCode}).",
-                    Result = new OperationResultSummary
+                    Result = result with
                     {
-                        Summary = $"{_definition.Title} failed.",
-                        Details = new Dictionary<string, string>(StringComparer.Ordinal)
-                        {
-                            ["statusCode"] = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture),
-                            ["response"] = payload
-                        }
+                        Details = AddStatusCode(result.Details, (int)response.StatusCode),
                     }
                 };
             }
@@ -158,14 +188,154 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
                 Status = OperationHandleStatus.Completed,
                 CreatedAt = now,
                 UpdatedAt = now,
-                Result = new OperationResultSummary
-                {
-                    Summary = $"{_definition.Title} completed.",
-                    Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = payload }
-                }
+                Result = result,
             };
         }
     }
+
+    private OperationResultSummary BuildResult(
+        string payload,
+        bool success,
+        string operationInstanceId,
+        OperationPolicyContext context)
+    {
+        var secretReferences = new List<OperationSecretReference>();
+        var response = payload;
+        if (RequiresSecretSanitization)
+        {
+            if (success && SecretOutputName is { } secretName &&
+                TryGetResponseSecret(payload, secretName, out var secret))
+            {
+                var store = _operationSecretStore
+                    ?? throw new InvalidOperationException("Secret-bearing operation result requires the operation secret channel.");
+                try
+                {
+                    secretReferences.Add(store.Store(
+                        operationInstanceId,
+                        OperationId,
+                        context.PrincipalId,
+                        context.TenantId,
+                        secretName,
+                        secret));
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    throw new OperationSecretPersistenceException();
+                }
+            }
+
+            response = SanitizeResponse(payload);
+        }
+
+        return new OperationResultSummary
+        {
+            Summary = $"{_definition.Title} {(success ? "completed" : "failed")}.",
+            Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = response },
+            SecretReferences = secretReferences,
+        };
+    }
+
+    private static Dictionary<string, string> AddStatusCode(
+        IReadOnlyDictionary<string, string> details,
+        int statusCode)
+    {
+        var result = details.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        result["statusCode"] = statusCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return result;
+    }
+
+    private bool RequiresSecretSanitization =>
+        SecretOutputName is not null ||
+        string.Equals(OperationId, "admin.oidc-provider.create", StringComparison.Ordinal) ||
+        string.Equals(OperationId, "admin.oidc-provider.update", StringComparison.Ordinal);
+
+    private string? SecretOutputName => OperationId switch
+    {
+        "admin.api-key.create" or "admin.api-key.rotate" => "key",
+        "admin.oauth-client.register" => "clientSecret",
+        _ => null,
+    };
+
+    private static bool TryGetResponseSecret(string payload, string name, out string secret)
+    {
+        secret = string.Empty;
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            var current = document.RootElement.TryGetProperty("data", out var data)
+                ? data
+                : document.RootElement;
+            if (!current.TryGetProperty(name, out var value) ||
+                value.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(value.GetString()))
+            {
+                return false;
+            }
+
+            secret = value.GetString()!;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string SanitizeResponse(string payload)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            var buffer = new System.Buffers.ArrayBufferWriter<byte>();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                WriteSanitized(writer, document.RootElement);
+            }
+
+            return Encoding.UTF8.GetString(buffer.WrittenSpan);
+        }
+        catch (JsonException)
+        {
+            return "{}";
+        }
+    }
+
+    private static void WriteSanitized(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (string.Equals(property.Name, "key", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(property.Name, "clientSecret", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    writer.WritePropertyName(property.Name);
+                    WriteSanitized(writer, property.Value);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var value in element.EnumerateArray())
+                {
+                    WriteSanitized(writer, value);
+                }
+
+                writer.WriteEndArray();
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
+    }
+
+    private sealed class OperationSecretPersistenceException : Exception;
 
     private static Uri BuildLocalUri(HttpContext current, string pathAndQuery)
     {

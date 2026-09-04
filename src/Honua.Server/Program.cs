@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Reflection;
+using Microsoft.AspNetCore.DataProtection;
 // ✅ DEPENDENCY INVERSION: Server uses Core abstractions only
 using Honua.Core.Configuration;
 using Honua.Core.Features.Caching;
@@ -203,7 +204,11 @@ if (clientCertificateMode != ClientCertificateAuthenticationMode.Disabled)
         });
     });
 }
-builder.Services.AddDataProtection();
+// Keep the protector purpose stable across replay nodes. Production deployments must also
+// persist/share the ASP.NET data-protection key ring; otherwise an approved operation whose
+// envelope was created on another node fails closed instead of being replayed with plaintext.
+builder.Services.AddDataProtection()
+    .SetApplicationName("Honua.Server");
 
 // Enable Aspire integrations only when Aspire configuration is present.
 var useAspire = builder.Configuration.GetSection("Aspire").Exists();
@@ -313,6 +318,16 @@ if (!string.IsNullOrWhiteSpace(redisInfrastructureConnectionString))
         ProgramLog.RedisStartupConnectionFailed(startupLogger, ex);
         // Do not register IConnectionMultiplexer — services that request it via GetService<> will receive null
     }
+}
+
+if (connectedRedis is not null)
+{
+    // The operation-secret protector is intentionally backed by the same Redis authority
+    // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
+    builder.Services.AddDataProtection()
+        .SetApplicationName("Honua.Server")
+        .AddKeyManagementOptions(options =>
+            options.XmlRepository = new RedisDataProtectionKeyRepository(connectedRedis));
 }
 
 // Configure Serilog for structured logging with AOT compatibility
