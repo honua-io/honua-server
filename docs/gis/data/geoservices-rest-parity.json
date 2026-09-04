@@ -25,6 +25,7 @@
       "implemented",
       "partial",
       "stub",
+      "preview",
       "not_implemented"
     ],
     "parameter": [
@@ -151,34 +152,6 @@
             "notes": "Batch edits across layers using a JSON array of per-layer edit payloads."
           },
           {
-            "name": "Create Replica",
-            "status": "implemented",
-            "esriPaths": [
-              "/FeatureServer/createReplica"
-            ],
-            "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/createReplica"
-            ],
-            "capabilityMaturity": [
-              "preview"
-            ],
-            "notes": "Registers offline replica state in distributed cache when available, otherwise in memory."
-          },
-          {
-            "name": "Extract Changes",
-            "status": "implemented",
-            "esriPaths": [
-              "/FeatureServer/extractChanges"
-            ],
-            "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/extractChanges"
-            ],
-            "capabilityMaturity": [
-              "preview"
-            ],
-            "notes": "First sync returns full adds; later syncs do not provide database-grade incremental change tracking."
-          },
-          {
             "name": "Get Estimates (service)",
             "status": "implemented",
             "esriPaths": [
@@ -265,34 +238,6 @@
               "preview"
             ],
             "notes": "Lists registered replica metadata for the service and returns a single replica descriptor by id. Backed by the same replica store as createReplica/synchronizeReplica."
-          },
-          {
-            "name": "Synchronize Replica",
-            "status": "implemented",
-            "esriPaths": [
-              "/FeatureServer/synchronizeReplica"
-            ],
-            "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica"
-            ],
-            "capabilityMaturity": [
-              "preview"
-            ],
-            "notes": "Supports download, upload, and bidirectional sync directions."
-          },
-          {
-            "name": "Unregister Replica",
-            "status": "implemented",
-            "esriPaths": [
-              "/FeatureServer/unRegisterReplica"
-            ],
-            "honuaEndpoints": [
-              "POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica"
-            ],
-            "capabilityMaturity": [
-              "preview"
-            ],
-            "notes": ""
           },
           {
             "name": "validateSQL (service)",
@@ -612,6 +557,64 @@
               "implemented"
             ],
             "notes": ""
+          }
+        ],
+        "preview": [
+          {
+            "name": "Create Replica",
+            "status": "preview",
+            "esriPaths": [
+              "/FeatureServer/createReplica"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/createReplica"
+            ],
+            "capabilityMaturity": [
+              "preview"
+            ],
+            "notes": "Preview/opt-in in 2026.1. Registers offline replica state in distributed cache when available, otherwise in memory; full parity is deferred to release/2026.2."
+          },
+          {
+            "name": "Extract Changes",
+            "status": "preview",
+            "esriPaths": [
+              "/FeatureServer/extractChanges"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/extractChanges"
+            ],
+            "capabilityMaturity": [
+              "preview"
+            ],
+            "notes": "Preview/opt-in in 2026.1. Full Esri offline-sync parity is deferred to release/2026.2."
+          },
+          {
+            "name": "Synchronize Replica",
+            "status": "preview",
+            "esriPaths": [
+              "/FeatureServer/synchronizeReplica"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica"
+            ],
+            "capabilityMaturity": [
+              "preview"
+            ],
+            "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions; broader parity is deferred to release/2026.2."
+          },
+          {
+            "name": "Unregister Replica",
+            "status": "preview",
+            "esriPaths": [
+              "/FeatureServer/unRegisterReplica"
+            ],
+            "honuaEndpoints": [
+              "POST /rest/services/{serviceId}/FeatureServer/unRegisterReplica"
+            ],
+            "capabilityMaturity": [
+              "preview"
+            ],
+            "notes": "Preview/opt-in in 2026.1; full lifecycle parity is deferred to release/2026.2."
           }
         ],
         "partial": [],
@@ -1423,6 +1426,7 @@
             "notes": ""
           }
         ],
+        "preview": [],
         "partial": [
           {
             "name": "WMTS",
@@ -1903,6 +1907,7 @@
             "notes": "Renders a small thumbnail of the raster item through the shared export pipeline; honours f=json for an href envelope. Note the served path is {rasterId}/thumbnail, not {rasterId}/info/thumbnail."
           }
         ],
+        "preview": [],
         "partial": [
           {
             "name": "WCS",
@@ -2591,6 +2596,7 @@
             "notes": "Composes a Mapbox GL v8 style document from the layer\u0027s stored MapLibre style through the shared style projection, rewriting source, sprite, and glyph URLs onto this service; falls back to a deterministic default style when the layer has none stored."
           }
         ],
+        "preview": [],
         "partial": [
           {
             "name": "Service metadata",
@@ -3096,6 +3102,7 @@
             "notes": ""
           }
         ],
+        "preview": [],
         "partial": [],
         "stub": [],
         "notImplemented": []
@@ -3401,6 +3408,7 @@
             "notes": "Resolves the published task name against the built-in IProcessCatalog, validates inputs, persists GPServer route metadata, and returns an Esri job envelope. Implemented in #723."
           }
         ],
+        "preview": [],
         "partial": [],
         "stub": [],
         "notImplemented": []
@@ -3545,6 +3553,7 @@
             "notes": "Honors text, maxSuggestions, countryCode(s), searchExtent, and location bias where the provider supports them."
           }
         ],
+        "preview": [],
         "partial": [],
         "stub": [],
         "notImplemented": []
@@ -3732,6 +3741,7 @@
             "notes": "Parses facilities, defaultBreaks, inSR/outSR, travelDirection, barriers/polylineBarriers/polygonBarriers, and travelMode, validates provider-advertised travel-direction/barrier/mode support, and returns Esri saPolygons."
           }
         ],
+        "preview": [],
         "partial": [
           {
             "name": "LocationAllocation solveLocationAllocation",
@@ -3892,6 +3902,7 @@
             "notes": "Polls the durable job runner for an async reconcile/post; a job GUID belonging to another service or version returns 404."
           }
         ],
+        "preview": [],
         "partial": [
           {
             "name": "Service metadata",
@@ -3989,6 +4000,7 @@
             "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Does not emit folders; currentVersion is deliberately omitted (see knownLimitations)."
           }
         ],
+        "preview": [],
         "partial": [],
         "stub": [
           {
@@ -4156,6 +4168,7 @@
             "notes": "Accepts GET and form-encoded POST with a valid portal token supplied as Bearer authorization, X-Esri-Authorization, access_token, or token. Returns the OAuth2 subject, username, and display name; invalid or missing credentials use the OAuth2 invalid_request/invalid_token envelopes."
           }
         ],
+        "preview": [],
         "partial": [
           {
             "name": "Group; createGroup; addUsers; removeUsers; delete group",

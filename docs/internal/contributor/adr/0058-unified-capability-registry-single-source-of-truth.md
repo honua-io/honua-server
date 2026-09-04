@@ -233,6 +233,11 @@ ADR gives the registry, and the manifest lever the Console release gate
 > last-write-wins; and delete-vs-delete field-collection conflicts are now
 > produced as conflicts instead of being silently treated as idempotent.
 
+> **Amendment (2026-09-03, honua-release#266 / #264).** The operator ruling supersedes
+> this earlier GA note for release 2026.1: offline sync is Preview. Registry, catalog,
+> parity, and lifecycle artifacts must report Preview; non-security parity is deferred
+> to release/2026.2.
+
 **(b) Edition/entitlement + Console-UI gating** covers the remainder of the
 experimental + disabled set — the capabilities that are **not** held back by a
 route-level registry flag: SSO/OIDC/SAML/SCIM, **forms** authoring + **field

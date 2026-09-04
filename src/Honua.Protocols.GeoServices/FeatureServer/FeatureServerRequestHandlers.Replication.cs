@@ -40,6 +40,22 @@ internal static partial class FeatureServerEndpoints
             "GeoServices offline sync");
 
     /// <summary>
+    /// Enforces the service-local sync contract after the deployment-wide Preview gate has
+    /// passed. A service without the declared <c>Sync</c> capability advertises
+    /// <c>syncEnabled=false</c>; allowing replica lifecycle calls anyway would create state
+    /// that Esri clients cannot discover or safely reconcile (#4114).
+    /// </summary>
+    private static IResult? RequireServiceSyncCapability(
+        HttpContext context,
+        MetadataV2Service service)
+        => ServiceSupportsSyncV2(service)
+            ? null
+            : StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Offline sync is not enabled for this service.",
+                ["The FeatureServer service must declare the Sync capability before replica operations can be used."]);
+
+    /// <summary>
     /// Validates a replica upload against the shared edit limits before the sync pipeline runs.
     /// Returns the client-facing message when a limit is exceeded, or <c>null</c> when the upload is
     /// within limits.
@@ -157,6 +173,11 @@ internal static partial class FeatureServerEndpoints
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
         var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
+        }
         var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
             context,
             serviceLayers.Select(layer => layer.Resource),
@@ -223,6 +244,11 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
+        }
         var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
         var record = await replicaRepository.GetAsync(replicaId, cancellationToken).ConfigureAwait(false);
         if (record == null || !string.Equals(record.Value.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
@@ -311,6 +337,11 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
+        }
 
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
@@ -436,6 +467,11 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
+        }
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -1004,6 +1040,11 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
+        }
 
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
@@ -1889,6 +1930,11 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
+        var syncCapabilityError = RequireServiceSyncCapability(context, service);
+        if (syncCapabilityError is not null)
+        {
+            return syncCapabilityError;
+        }
 
         var writeAccessError = await RequireAnyServiceResourceWriteAccessBeforeBodyAsync(
             context,
