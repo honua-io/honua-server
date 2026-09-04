@@ -379,9 +379,21 @@ public sealed class RateLimitingMiddlewareTests
         var redis = Substitute.For<StackExchange.Redis.IConnectionMultiplexer>();
         var database = Substitute.For<StackExchange.Redis.IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        database.CreateTransaction(Arg.Any<object>()).Returns(_ =>
-            throw new StackExchange.Redis.RedisConnectionException(
-                StackExchange.Redis.ConnectionFailureType.UnableToConnect, "Redis unavailable"));
+        var unavailable = true;
+        var transaction = Substitute.For<StackExchange.Redis.ITransaction>();
+        var redisCounts = new Dictionary<string, long>();
+        transaction.ExecuteAsync().Returns(true);
+        transaction.SortedSetLengthAsync(Arg.Any<StackExchange.Redis.RedisKey>()).Returns(call =>
+        {
+            var key = call.ArgAt<StackExchange.Redis.RedisKey>(0).ToString();
+            redisCounts.TryGetValue(key, out var count);
+            redisCounts[key] = ++count;
+            return Task.FromResult(count);
+        });
+        database.CreateTransaction(Arg.Any<object>()).Returns(_ => unavailable
+            ? throw new StackExchange.Redis.RedisConnectionException(
+                StackExchange.Redis.ConnectionFailureType.UnableToConnect, "Redis unavailable")
+            : transaction);
         var middleware = CreateMiddleware(limit: endpointPolicy ? 100 : 2, redis: redis);
         var subject = Guid.NewGuid().ToString("N");
 
@@ -405,6 +417,18 @@ public sealed class RateLimitingMiddlewareTests
             endpointName: endpointPolicy ? "outage-endpoint" : null, endpointLimit: 2);
         await middleware.InvokeAsync(otherSubject);
         otherSubject.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+
+        // Once Redis recovers, its sliding-window budget takes over again.
+        unavailable = false;
+        for (var request = 1; request <= 3; request++)
+        {
+            var context = CreateContext("198.51.100.90", subject: subject,
+                endpointName: endpointPolicy ? "outage-endpoint" : null, endpointLimit: 2);
+            await middleware.InvokeAsync(context);
+            context.Response.StatusCode.Should().Be(request <= 2
+                ? StatusCodes.Status200OK
+                : StatusCodes.Status429TooManyRequests);
+        }
     }
 
     private static RateLimitingMiddleware CreateMiddleware(
