@@ -21,11 +21,13 @@ namespace Honua.Server.Tests.Features.Identity;
 public sealed class AdminLogoutDependencyLossTests
 {
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
     [Endpoint("POST /api/v1/admin/auth/logout")]
     [Endpoint("POST /saml/slo")]
-    public async Task Logout_DistributedCacheOutage_Returns503UntilRevocationCanBeRetried(bool saml)
+    public async Task Logout_DistributedCacheOutage_Returns503UntilRevocationCanBeRetried(bool saml, bool warmCache)
     {
         // Keep the authoritative record across an outage, just as Redis does when DEL fails.
         var backingCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
@@ -43,6 +45,8 @@ public sealed class AdminLogoutDependencyLossTests
                 ? Task.FromException(new IOException("Dependency unavailable"))
                 : backingCache.RemoveAsync(call.ArgAt<string>(0), call.ArgAt<CancellationToken>(1)));
 
+        using var issuerMemory = new MemoryCache(new MemoryCacheOptions());
+        var issuer = new AdminAuthSessionStore(issuerMemory, NullLogger<AdminAuthSessionStore>.Instance, cache);
         using var memory = new MemoryCache(new MemoryCacheOptions());
         using var otherMemory = new MemoryCache(new MemoryCacheOptions());
         var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
@@ -63,9 +67,13 @@ public sealed class AdminLogoutDependencyLossTests
                 builder.UseSetting("Saml:IdpSigningCertificate", SamlTestAssertions.ToBase64Der(certificate));
             });
         await fixture.InitializeAsync();
-        var sessionId = await store.CreateAuthenticatedSessionAsync("saml", "token", null,
+        var sessionId = await issuer.CreateAuthenticatedSessionAsync("saml", "token", null,
             [new AdminAuthSessionClaim { Type = "sub", Value = "admin" }],
             DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
+        if (warmCache)
+        {
+            Assert.NotNull(await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+        }
         Assert.NotNull(await otherReplica.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
         using var client = fixture.CreateClient(allowAutoRedirect: false);
         client.DefaultRequestHeaders.Add("Cookie", $"{AdminAuthSessionStore.AuthSessionCookieName}={sessionId}");

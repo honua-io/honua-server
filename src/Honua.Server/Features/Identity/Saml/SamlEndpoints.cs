@@ -9,6 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -348,7 +349,7 @@ internal static partial class SamlEndpoints
             {
                 await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
             }
-            catch (AdminAuthSessionRevocationException)
+            catch (ServiceUnavailableException)
             {
                 return StandardErrorHelpers.CreateServiceUnavailable(
                     context,

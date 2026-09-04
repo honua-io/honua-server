@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
@@ -236,7 +237,7 @@ internal sealed partial class AdminAuthSessionStore(
                 // A local eviction cannot revoke the authoritative shared session. The caller
                 // must preserve the cookie and report failure so revocation can be retried.
                 cancellationToken.ThrowIfCancellationRequested();
-                throw new AdminAuthSessionRevocationException(ex);
+                throw new ServiceUnavailableException("The shared admin session could not be revoked.", ex);
             }
         }
     }

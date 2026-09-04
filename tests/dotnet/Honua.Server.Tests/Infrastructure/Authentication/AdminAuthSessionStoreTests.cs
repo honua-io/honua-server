@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -129,7 +130,7 @@ public sealed class AdminAuthSessionStoreTests
             [new AdminAuthSessionClaim { Type = "sub", Value = "admin" }],
             DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
 
-        await Assert.ThrowsAsync<AdminAuthSessionRevocationException>(() =>
+        await Assert.ThrowsAsync<ServiceUnavailableException>(() =>
             store.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None));
         Assert.Null(await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
     }

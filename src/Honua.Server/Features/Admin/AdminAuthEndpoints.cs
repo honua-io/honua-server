@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Authentication.ClientCertificates;
@@ -503,7 +504,7 @@ internal static class AdminAuthEndpoints
             {
                 await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
             }
-            catch (AdminAuthSessionRevocationException)
+            catch (ServiceUnavailableException)
             {
                 return StandardErrorHelpers.CreateServiceUnavailable(
                     context,
