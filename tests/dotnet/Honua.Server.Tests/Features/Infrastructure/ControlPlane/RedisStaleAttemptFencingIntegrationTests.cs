@@ -145,9 +145,10 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 runningB.ClaimedBy.Should().NotBeNull();
                 workerBId = runningB.ClaimedBy!;
                 workerBId.Should().NotBe(workerA);
-                var heartbeatAt = runningB.LastHeartbeatAt;
-                heartbeatAt.Should().NotBeNull();
-                await harness.Database.HashSetAsync(receiptKey, "heartbeat:workerB", heartbeatAt!.Value.ToString("O"));
+                var heartbeatAt = runningB.LastHeartbeatAt
+                    ?? throw new InvalidOperationException(
+                        "Attempt 2 must publish a heartbeat timestamp once the job reports Running.");
+                await harness.Database.HashSetAsync(receiptKey, "heartbeat:workerB", heartbeatAt.ToString("O"));
                 await harness.Database.HashSetAsync(receiptKey, $"claim:{workerBId}", "attempt=2");
                 await WaitForRedisValueAsync(harness.Database, releaseAwareExecutor.ReadyKey, TimeSpan.FromSeconds(15));
 
