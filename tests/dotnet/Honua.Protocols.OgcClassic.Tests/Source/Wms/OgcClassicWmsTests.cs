@@ -511,6 +511,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             "/rest/services/%20/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/xml");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("InvalidParameterValue");
     }
 
     [IntegrationTest]
@@ -995,6 +997,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
         await fixture.InitializeAsync();
+        // Keep the spatial rendering fixture independent of WMS default TIME selection.
+        fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, clearTemporal: true);
 
         try
         {
@@ -1043,6 +1047,8 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
         await fixture.InitializeAsync();
+        // Keep the spatial rendering fixture independent of WMS default TIME selection.
+        fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, clearTemporal: true);
 
         try
         {
