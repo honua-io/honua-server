@@ -76,6 +76,27 @@ public sealed class GPServerEsriTaskAliasesTests
         GPServerEsriTaskAliases.TryResolveProcessId("geometry.buffer", out _).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("overlay.clip")]
+    [InlineData("overlay.intersect")]
+    [InlineData("overlay.union")]
+    [InlineData("proximity.near")]
+    [InlineData("proximity.near-table")]
+    [InlineData("statistics.summarize")]
+    [InlineData("statistics.frequency")]
+    [InlineData("statistics.calculate")]
+    [InlineData("generalization.dissolve")]
+    public void FeatureSetCapableProcess_PreservesFeatureCollectionInput(string processId)
+    {
+        GPServerEsriTaskAliases.AcceptsFeatureCollections(processId).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CatalogLayerOnlyProcess_DoesNotPretendToAcceptFeatureSet()
+    {
+        GPServerEsriTaskAliases.AcceptsFeatureCollections("generalization.simplify-layer").Should().BeFalse();
+    }
+
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]

@@ -468,14 +468,17 @@ internal sealed class CapabilityManifestService(
             Capability("publication.metadata-release", "publication", context, policyCapability: "catalog.publish", requiresEnvironment: true),
             Capability("upload.file", "upload", context, entitlementKey: "import.file", policyCapability: "metadata.write"),
             Capability("edit.features", "edit", context, entitlementKey: FeatureCatalog.FeatureServerEditsKey, policyCapability: "features.edit"),
-            // Branch versioning (VMS) — built-experimental, gated OFF the GA surface by
-            // default (#2480 / ADR-0058). Mirrors the registry descriptor order
+            // Branch versioning (VMS) — 2026.1 Preview, gated off by default
+            // (#2480 / ADR-0058). Mirrors the registry descriptor order
             // (CapabilityRegistry.BuildManifestCapabilityDescriptors) so the hand-curated and
             // registry-derived Capabilities[] stay byte-identical.
             Capability("versioning.branch", "versioning", context,
-                maturity: CapabilityMaturity.Experimental,
+                maturity: CapabilityMaturity.Preview,
                 entitlementKey: FeatureCatalog.BranchVersioningKey,
                 configured: IsExperimentalEnabled("versioning.branch")),
+            Capability("routing.solve", "routing", context,
+                maturity: CapabilityMaturity.Preview,
+                configured: IsExperimentalEnabled("routing.solve")),
             // Aggregated operate status (A12) — the server-authoritative operate/status surface. Ungated
             // GA; read-authorized (ops:read) at the HTTP layer. Kept last to mirror the registry order.
             Capability("operate.status", "operate", context, requiresAuthentication: true),
@@ -637,6 +640,7 @@ internal sealed class CapabilityManifestService(
             ["upload.file"] = new() { EntitlementKey = "import.file", PolicyCapability = "metadata.write" },
             ["edit.features"] = new() { EntitlementKey = FeatureCatalog.FeatureServerEditsKey, PolicyCapability = "features.edit" },
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
+            ["routing.solve"] = new(),
             ["operate.status"] = new() { RequiresAuthentication = true },
             ["ops.findings"] = new() { RequiresAuthentication = true },
             ["ops.autonomy"] = new()

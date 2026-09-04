@@ -54,6 +54,20 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// </summary>
 internal static class GPServerEsriTaskAliases
 {
+    private static readonly HashSet<string> FeatureCollectionProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "overlay.clip", "overlay.intersect", "overlay.union", "overlay.erase", "overlay.merge", "overlay.split",
+        "proximity.near", "proximity.near-table", "statistics.summarize", "statistics.frequency",
+        "statistics.calculate", "generalization.dissolve", "data-management.append",
+        "analytics.spatial-join-managed", "analytics.cluster-managed", "analytics.buffer-aggregate-managed",
+        "analytics.density-managed", "analytics.hotspot-managed", "enrichment.enrich", "source.geojson",
+        "transform.attribute-rename", "transform.attribute-cast", "transform.computed-field",
+        "transform.attribute-filter", "transform.attribute-join", "transform.aggregate", "transform.pivot",
+        "transform.unpivot", "transform.spatial-filter", "transform.clip", "transform.dedup", "transform.reproject"
+    };
+
+    internal static bool AcceptsFeatureCollections(string processId)
+        => FeatureCollectionProcesses.Contains(processId);
     /// <summary>
     /// Internal process ID -&gt; Esri-conventional task name, for processes with an
     /// obvious, documented Esri GP tool equivalent.

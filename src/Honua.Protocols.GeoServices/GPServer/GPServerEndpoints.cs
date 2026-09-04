@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -651,7 +652,11 @@ internal static class GPServerEndpoints
         };
 
         return SetSpanErrorAndReturn(
-            Results.Json(response, GPServerJsonContext.Default.GPExecuteResponse, contentType: "application/json"),
+            Results.Json(response, GPServerJsonContext.Default.GPExecuteResponse,
+                statusCode: esriStatus == "esriJobCancelled"
+                    ? StatusCodes.Status409Conflict
+                    : StatusCodes.Status500InternalServerError,
+                contentType: "application/json"),
             $"Synchronous execution {esriStatus}");
     }
 
@@ -686,7 +691,7 @@ internal static class GPServerEndpoints
                     var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(value, workingSrid, outSr);
                     if (outcome.Reprojected)
                     {
-                        value = outcome.Value;
+                        value = outcome.Value ?? value;
                     }
                     else if (outcome.CapabilityMessage is not null)
                     {
@@ -717,11 +722,17 @@ internal static class GPServerEndpoints
                     value = GPServerOutputReprojection.NormalizeGeoJsonWinding(value) ?? value;
                 }
 
+                var jsonValue = GPServerResultValueMapper.Map(
+                    artifact.Kind,
+                    value,
+                    artifact.Uri is not null || artifact.Metadata.ContainsKey(
+                        Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged));
+
                 results.Add(new GPResultResponse
                 {
                     ParamName = paramName,
                     DataType = dataType,
-                    Value = value
+                    Value = jsonValue
                 });
             }
         }
@@ -1083,11 +1094,17 @@ internal static class GPServerEndpoints
                 value = GPServerOutputReprojection.NormalizeGeoJsonWinding(value) ?? value;
             }
 
+            var jsonValue = GPServerResultValueMapper.Map(
+                artifact.Kind,
+                value,
+                artifact.Uri is not null || artifact.Metadata.ContainsKey(
+                    Honua.Core.Features.Geoprocessing.Raster.RasterOutputArtifactMetadata.Staged));
+
             var response = new GPResultResponse
             {
                 ParamName = publishedName,
                 DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = value
+                Value = jsonValue
             };
 
             return Results.Json(response, GPServerJsonContext.Default.GPResultResponse,
@@ -1322,6 +1339,70 @@ internal static class GPServerEndpoints
         string? workspace = null;
         bool? overwriteOutput = null;
         List<string>? unsupported = null;
+
+        // ArcGIS 10.6.1+ sends execution controls in a JSON `context` object.
+        // Parse it before env:* so the legacy spelling remains an explicit
+        // override while context.outSR is not silently discarded.
+        if (allParams.TryGetValue("context", out var contextValue) &&
+            !string.IsNullOrWhiteSpace(contextValue))
+        {
+            try
+            {
+                using var contextDocument = JsonDocument.Parse(contextValue);
+                var contextRoot = contextDocument.RootElement;
+                if (contextRoot.ValueKind != JsonValueKind.Object)
+                {
+                    throw new JsonException("context must be a JSON object");
+                }
+
+                if (contextRoot.TryGetProperty("outSR", out var contextOutSr) &&
+                    !TryParseSpatialReferenceValue(contextOutSr.GetRawText(), out outSr))
+                {
+                    return SetSpanErrorAndReturn(
+                        StandardErrorHelpers.CreateBadRequest(context, "context.outSR is not a valid WKID or spatial-reference object."),
+                        "Invalid context.outSR");
+                }
+
+                if (contextRoot.TryGetProperty("processSR", out var contextProcessSr) &&
+                    !TryParseSpatialReferenceValue(contextProcessSr.GetRawText(), out processSr))
+                {
+                    return SetSpanErrorAndReturn(
+                        StandardErrorHelpers.CreateBadRequest(context, "context.processSR is not a valid WKID or spatial-reference object."),
+                        "Invalid context.processSR");
+                }
+
+                if (contextRoot.TryGetProperty("workspace", out var contextWorkspace))
+                {
+                    workspace = contextWorkspace.GetString();
+                    if (string.IsNullOrWhiteSpace(workspace))
+                    {
+                        return SetSpanErrorAndReturn(
+                            StandardErrorHelpers.CreateBadRequest(context, "context.workspace value must not be empty."),
+                            "Invalid context.workspace");
+                    }
+                }
+
+                if (contextRoot.TryGetProperty("overwriteOutput", out var contextOverwrite))
+                {
+                    var rawOverwrite = contextOverwrite.ValueKind == JsonValueKind.String
+                        ? contextOverwrite.GetString()
+                        : contextOverwrite.GetRawText();
+                    if (!TryParseBooleanValue(rawOverwrite, out var parsedOverwrite))
+                    {
+                        return SetSpanErrorAndReturn(
+                            StandardErrorHelpers.CreateBadRequest(context, "context.overwriteOutput is not a valid boolean."),
+                            "Invalid context.overwriteOutput");
+                    }
+                    overwriteOutput = parsedOverwrite;
+                }
+            }
+            catch (JsonException)
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context, "context must be a valid JSON object."),
+                    "Invalid GP context");
+            }
+        }
 
         foreach (var (key, value) in allParams)
         {
@@ -1700,7 +1781,9 @@ internal static class GPServerEndpoints
         // and single-feature FeatureSet payloads into canonical base64-WKB + srid.
         // Native string / base64-WKB inputs pass through untouched. Multi-feature
         // FeatureSets surface a capability error rather than dropping features.
-        var esriResult = GPServerEsriInputTranslation.Translate(inputs);
+        var esriResult = GPServerEsriInputTranslation.Translate(
+            inputs,
+            GPServerEsriTaskAliases.AcceptsFeatureCollections(definition.ProcessId));
         if (esriResult.CapabilityMessage is not null)
         {
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);

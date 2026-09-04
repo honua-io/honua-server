@@ -16,6 +16,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 /// </summary>
 internal static class ImageServerV2Lookups
 {
+    internal const string ResolvedLayerContextItem = "honua.imageserver.resolved-layer";
     /// <summary>
     /// Resolved view of an ImageServer publication / resource pair, exposing the small
     /// surface the handlers need without v1 types.
@@ -51,6 +52,21 @@ internal static class ImageServerV2Lookups
 
         var resource = snapshot.ResolveResource(pub);
         return Project(pub, resource);
+    }
+
+    /// <summary>Resolves the publication selected by a service-scoped route.</summary>
+    public static ResolvedImageLayer? FindForRequest(
+        MetadataV2GraphSnapshot snapshot,
+        int layerId,
+        HttpContext context)
+    {
+        if (context.Items[ResolvedLayerContextItem] is ImageServerLayerResolution resolution &&
+            resolution.LayerId == layerId && resolution.PublicationId is { Length: > 0 } publicationId)
+        {
+            return FindByPublicationId(snapshot, publicationId);
+        }
+
+        return FindByLayerIndex(snapshot, layerId);
     }
 
     /// <summary>

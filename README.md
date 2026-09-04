@@ -63,8 +63,8 @@ Every published layer is reachable through every protocol its service enables. T
 | GeoServices GPServer | `/rest/services/{id}/GPServer` | ArcGIS Pro, async geoprocessing clients |
 | GeoServices GeocodeServer | `/rest/services/{locator}/GeocodeServer` | Esri geocoding clients (`findAddressCandidates`) |
 | GeoServices VectorTileServer | `/rest/services/{id}/VectorTileServer` | Esri vector-tile clients, ArcGIS SDKs |
-| GeoServices NAServer **(Pro)** | `/rest/services/{id}/NAServer` | Esri routing / network-analysis clients |
-| GeoServices VersionManagementServer **(Enterprise, experimental)** | `/rest/services/{id}/VersionManagementServer` | Esri branch-versioning editing workflows |
+| GeoServices NAServer **(Pro, Preview)** | `/rest/services/{id}/NAServer` | Esri routing / network-analysis clients |
+| GeoServices VersionManagementServer **(Enterprise, Preview)** | `/rest/services/{id}/VersionManagementServer` | Esri branch-versioning editing workflows |
 | Portal token issuance | `/sharing/rest/generateToken` | Esri clients using username/password tokens |
 | OGC API Features | `/ogc/features` | QGIS, GDAL, OpenLayers, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients |

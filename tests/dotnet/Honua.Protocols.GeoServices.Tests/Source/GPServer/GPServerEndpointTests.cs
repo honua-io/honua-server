@@ -413,6 +413,63 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task ExecutePost_FailedTerminalJob_ReturnsNonSuccessStatus()
+    {
+        var terminal = Substitute.For<IGeoprocessingJobTerminalService>();
+        terminal.WaitForResultAsync(
+                Arg.Any<string>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new GeoprocessingTerminalResult(
+                GeoprocessingTerminalResultOutcome.Failed,
+                new ExecutionJobRecord
+                {
+                    OperationId = "failed-sync",
+                    Status = ExecutionJobStatus.Failed,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    Spec = new ExecutionJobSpec
+                    {
+                        Kind = ExecutionJobKind.Geoprocessing,
+                        TargetKind = BatchComputeTargetKind.KubernetesJob,
+                        Backend = "local",
+                        WorkloadName = "failed-sync",
+                    },
+                    ErrorMessage = "tool failed",
+                }));
+
+        var executeFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(new SyncExecuteGeoprocessingJobService());
+                services.RemoveAll<IGeoprocessingJobTerminalService>();
+                services.AddSingleton(terminal);
+            });
+
+        await executeFixture.InitializeAsync();
+        try
+        {
+            using var client = executeFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json", ["wkb"] = PointWkbBase64, ["srid"] = "4326", ["distance"] = "10"
+            });
+
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed");
+        }
+        finally
+        {
+            await executeFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
     public async Task ExecutePost_AsyncOnlyTask_Returns400WithCapabilityMessage()
@@ -728,7 +785,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
                 ["srid"] = "4326",
                 ["distance"] = "25.5",
                 ["geodesic"] = "true",
-                ["context"] = "{\"extent\":{}}"
+                ["context"] = "{\"extent\":{},\"outSR\":{\"wkid\":3857}}"
             });
 
             var response = await client.PostAsync(
@@ -757,7 +814,8 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("submittedVia", "GPServer"));
             recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.serviceId", ServiceId));
             recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.taskName", "geometry.buffer"));
-            recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.context", "{\"extent\":{}}"));
+            recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.context", "{\"extent\":{},\"outSR\":{\"wkid\":3857}}"));
+            recordingService.LastProtocolMetadata.Should().Contain(new KeyValuePair<string, string>("gpserver.env.outSR", "3857"));
         }
         finally
         {
@@ -851,7 +909,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             var root = doc.RootElement;
             root.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             root.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
-            root.GetProperty("value").GetString().Should().Be("https://example.test/artifacts/output.geojson");
+            root.GetProperty("value").GetProperty("url").GetString().Should().Be("https://example.test/artifacts/output.geojson");
         }
         finally
         {
@@ -888,15 +946,10 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             var root = doc.RootElement;
             root.TryGetProperty("error", out _).Should().BeFalse("env:outSR must be honored, not error");
-            var value = root.GetProperty("value").GetString();
-            value.Should().StartWith(GeoJsonDataUriPrefix);
-
-            // The served geometry must be reprojected 4326 -> 3857 (Web Mercator
-            // magnitude), not the original WGS 84 coordinates [1, 2].
-            var base64 = value![GeoJsonDataUriPrefix.Length..];
-            using var feature = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(base64)));
-            var coords = feature.RootElement.GetProperty("geometry").GetProperty("coordinates");
-            Math.Abs(coords[0].GetDouble()).Should().BeGreaterThan(1000.0,
+            var featureSet = root.GetProperty("value");
+            featureSet.GetProperty("features").GetArrayLength().Should().Be(1);
+            var x = featureSet.GetProperty("features")[0].GetProperty("geometry").GetProperty("x");
+            Math.Abs(x.GetDouble()).Should().BeGreaterThan(1000.0,
                 "lon 1.0 in EPSG:4326 reprojects to ~111319 in EPSG:3857");
         }
         finally

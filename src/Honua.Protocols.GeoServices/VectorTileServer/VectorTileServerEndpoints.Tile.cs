@@ -117,7 +117,7 @@ internal static partial class VectorTileServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var primary = ResolvePrimaryTiledPublication(snapshot, service);
+            var primary = VectorTilePublicationResolver.ResolvePrimary(snapshot, service);
             if (primary is null)
             {
                 return StandardErrorHelpers.CreateNotFound(context,
@@ -175,33 +175,4 @@ internal static partial class VectorTileServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Resolves the service's primary tiled publication. Prefers an
-    /// <see cref="MetadataV2PublicationType.EsriVectorTileLayer"/> publication (the type the
-    /// VectorTileServer adapter advertises); falls back to the first resolvable publication so
-    /// services that publish their tiled layer under a different publication type still render.
-    /// </summary>
-    private static (MetadataV2Publication Publication, MetadataV2Resource Resource)? ResolvePrimaryTiledPublication(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
-    {
-        (MetadataV2Publication Publication, MetadataV2Resource Resource)? fallback = null;
-        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
-        {
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
-            {
-                continue;
-            }
-
-            if (publication.PublicationType == MetadataV2PublicationType.EsriVectorTileLayer)
-            {
-                return (publication, resource!);
-            }
-
-            fallback ??= (publication, resource!);
-        }
-
-        return fallback;
-    }
 }

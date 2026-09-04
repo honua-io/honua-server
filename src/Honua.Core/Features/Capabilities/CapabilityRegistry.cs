@@ -343,10 +343,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("publication.metadata-release", "publication", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("upload.file", "upload", "import.file", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("edit.features", "edit", FeatureCatalog.FeatureServerEditsKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
-            // Branch versioning (VMS REST surface) — built-experimental (ADR-0058 / BH6-001/BH6-002 fix).
-            // The VMS endpoints are gated OFF the GA surface by default (versioning.branch descriptor).
-            // Opt in via Capabilities:Experimental:versioning.branch:Enabled=true.
-            ("versioning.branch", "versioning", FeatureCatalog.BranchVersioningKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            // Branch versioning (VMS REST surface) is a 2026.1 Preview: it remains
+            // opt-in and lifecycle/security qualified, but is not a GA claim.
+            ("versioning.branch", "versioning", FeatureCatalog.BranchVersioningKey, CapabilityKind.Feature, null, CapabilityMaturity.Preview),
+            // NAServer is likewise a 2026.1 Preview. Its route gate is owned by the
+            // protocol adapter; this descriptor keeps manifest/catalog maturity truthful.
+            ("routing.solve", "routing", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
 
             // Aggregated operational status (A12): the server-authoritative operate/status surface —
             // one server-computed verdict + per-domain rollups + SLO/error-budget contract. Ungated GA.

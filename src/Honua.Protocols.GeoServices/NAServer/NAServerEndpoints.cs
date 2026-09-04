@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Capabilities;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.Protocols.GeoServices.NAServer.Models;
 using Honua.Routing.Features.Routing.Abstractions;
@@ -39,13 +40,18 @@ internal static class NAServerEndpoints
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // NAServer is a 2026.1 Preview. Keep the surface opt-in while its
+        // lifecycle/security contract is qualified; broader solver parity is 2026.2.
+        var group = endpoints.MapGroup(RouteBase)
+            .WithCapabilityGate("routing.solve");
+
         // ANONYMOUS by design (#1144, #1266): NAServer Route/ServiceArea solves are
         // stateless geospatial computations over a fixed routing capability — not a
         // metadata-published, per-tenant feature service — so there is no published
         // service to RBAC-gate. This mirrors the GeometryService buffer/simplify/project
         // compute endpoints, which are AllowAnonymous for the same reason. Marked
         // AllowAnonymous so the audit guard records the intentional decision.
-        endpoints.MapGet($"{RouteBase}/Route/solve",
+        group.MapGet("/Route/solve",
                 static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleRouteSolve(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Route Solve (GET)")
@@ -56,7 +62,7 @@ internal static class NAServerEndpoints
             .Produces<NAServerRouteSolveResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{RouteBase}/Route/solve",
+        group.MapPost("/Route/solve",
                 static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleRouteSolve(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Route Solve")
@@ -67,7 +73,7 @@ internal static class NAServerEndpoints
             .Produces<NAServerRouteSolveResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{RouteBase}/ServiceArea/solveServiceArea",
+        group.MapPost("/ServiceArea/solveServiceArea",
                 static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleServiceArea(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Service Area Solve")
@@ -80,7 +86,7 @@ internal static class NAServerEndpoints
 
         // ANONYMOUS by design (same rationale as Route/ServiceArea): a stateless
         // closest-facility computation over the shared routing provider.
-        endpoints.MapPost($"{RouteBase}/ClosestFacility/solveClosestFacility",
+        group.MapPost("/ClosestFacility/solveClosestFacility",
                 static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleClosestFacility(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Closest Facility Solve")
@@ -91,7 +97,7 @@ internal static class NAServerEndpoints
             .Produces<NAServerClosestFacilityResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{RouteBase}/ODCostMatrix/solveODCostMatrix",
+        group.MapPost("/ODCostMatrix/solveODCostMatrix",
                 static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleOdCostMatrix(context, routing, options.Value, ct))
             .WithDisplayName("NAServer OD Cost Matrix Solve")
@@ -102,7 +108,7 @@ internal static class NAServerEndpoints
             .Produces<NAServerOdCostMatrixResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
-        endpoints.MapPost($"{RouteBase}/LocationAllocation/solveLocationAllocation",
+        group.MapPost("/LocationAllocation/solveLocationAllocation",
                 static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleLocationAllocation(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Location Allocation Solve")

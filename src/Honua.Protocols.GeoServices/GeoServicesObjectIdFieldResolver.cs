@@ -13,9 +13,10 @@ internal static class GeoServicesObjectIdFieldResolver
 {
     /// <summary>
     /// Resolves the object-id field name from a Metadata v2 canonical resource. Prefers
-    /// fields tagged with the <c>id.primary</c> semantic role, then falls back to the
-    /// first integer/big-integer field named <c>objectid</c>, <c>id</c>, or <c>fid</c>
-    /// (case-insensitive), and finally to any integer field. When none match, the default
+    /// the field tagged with the <c>id.primary</c> semantic role, then falls back to
+    /// an integer/big-integer field explicitly named <c>objectid</c>. It never promotes
+    /// an arbitrary integer or a conventional <c>id</c>/<c>fid</c> column: doing so can
+    /// expose a non-key attribute as the Esri object id. When none match, the default
     /// <see cref="FieldNames.ObjectId"/> constant is returned.
     /// </summary>
     public static string ResolveObjectIdFieldName(MetadataV2Resource resource)
@@ -25,21 +26,20 @@ internal static class GeoServicesObjectIdFieldResolver
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        var candidate = FindNumericV2Field(resource, FieldNames.ObjectId)
-                        ?? FindNumericV2Field(resource, "id")
-                        ?? FindNumericV2Field(resource, "fid");
-        if (candidate is not null)
-        {
-            return candidate;
-        }
-
-        var primary = resource.FindPrimaryIdField();
+        var primary = resource.SchemaFields.FirstOrDefault(field =>
+            field.SemanticRoles.Contains("id.primary", StringComparer.OrdinalIgnoreCase));
         if (primary is not null && IsObjectIdCompatible(primary))
         {
             return primary;
         }
 
-        return resource.SchemaFields.FirstOrDefault(IsObjectIdCompatible);
+        var conventional = FindNumericV2Field(resource, FieldNames.ObjectId);
+        if (conventional is not null)
+        {
+            return conventional;
+        }
+
+        return null;
     }
 
     private static MetadataV2Field? FindNumericV2Field(MetadataV2Resource resource, string fieldName)

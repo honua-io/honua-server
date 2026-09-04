@@ -265,7 +265,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "analytics",
             Parameters =
             [
-                Param("layerId", "Layer", "Target layer identifier.", ProcessParameterValueType.LayerId, required: true),
+                Param("layerId", "Layer", "Target layer identifier. Supply this or an inline FeatureSet in 'input'.", ProcessParameterValueType.LayerId),
+                Param("input", "Input Features", "Input FeatureSet as a data:application/geo+json;base64 data URI. Supply this or a catalog layer id in 'layerId'.", ProcessParameterValueType.Text),
                 Param("algorithm", "Algorithm", "Clustering algorithm. Allowed values: dbscan, kmeans. Defaults to dbscan.", ProcessParameterValueType.Text,
                     allowedValues: ProcessValueDomains.ClusterAlgorithm),
                 Param("eps", "Epsilon", "Maximum distance between neighbors for DBSCAN, in meters. Must be > 0. Required when algorithm is dbscan. For geographic layers the geometry is transformed to EPSG:3857 (Web Mercator) so eps is evaluated in meters there; those distances overstate ground distance by 1/cos(latitude) (~2x at 60°N).", ProcessParameterValueType.FloatingPoint),

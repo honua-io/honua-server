@@ -333,11 +333,19 @@ internal static class FeatureCatalogGenerator
         }
 
         // Branch versioning (VMS REST surface) — /rest/services/{serviceId}/VersionManagementServer/*
-        // Gated Preview in the BH6-001/BH6-002 fix batch (ADR-0058).
+        // Preview in 2026.1; lifecycle/security are in scope, broader parity is deferred.
         if (route.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase) &&
             route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase))
         {
             return "versioning.branch";
+        }
+
+        // NAServer is a 2026.1 Preview; only lifecycle/security qualification is
+        // in scope for this release amendment.
+        if (route.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase) &&
+            route.Contains("/NAServer/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "routing.solve";
         }
 
         return null;

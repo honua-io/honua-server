@@ -56,7 +56,7 @@ internal sealed class ImageServerSlicesHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is null)
+            if (ImageServerV2Lookups.FindForRequest(snapshot, layerId, context) is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");

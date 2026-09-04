@@ -590,7 +590,7 @@ internal sealed class ImageServerWmtsHandler(
         // adapting to the same shared raster-store primitives as the identify operation.
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         PixelValueResult? pixel = null;
-        if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is { } resolved)
+        if (ImageServerV2Lookups.FindForRequest(snapshot, layerId, context) is { } resolved)
         {
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetQueryString(query, "mosaicRule"));
             var selectionQuery = new RasterSelectionQuery

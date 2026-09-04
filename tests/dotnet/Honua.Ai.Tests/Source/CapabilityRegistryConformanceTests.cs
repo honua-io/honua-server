@@ -87,6 +87,7 @@ public sealed class CapabilityRegistryConformanceTests
         "upload.file",
         "edit.features",
         "versioning.branch",
+        "routing.solve",
         "operate.status",
     ];
 

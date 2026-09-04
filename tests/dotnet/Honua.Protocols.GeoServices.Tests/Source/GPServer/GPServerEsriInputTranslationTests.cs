@@ -138,6 +138,31 @@ public sealed class GPServerEsriInputTranslationTests
     }
 
     [UnitTest]
+    public void Translate_FeatureCollectionProcess_PreservesAllFeaturesAsGeoJsonCollection()
+    {
+        var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["input"] =
+                """
+                {"geometryType":"esriGeometryPoint","spatialReference":{"wkid":4326},"features":[
+                  {"geometry":{"x":1,"y":2},"attributes":{"name":"a"}},
+                  {"geometry":{"x":3,"y":4},"attributes":{"name":"b"}}
+                ]}
+                """
+        };
+
+        var result = GPServerEsriInputTranslation.Translate(inputs, allowFeatureCollections: true);
+
+        result.CapabilityMessage.Should().BeNull();
+        result.InputSpatialReference.Should().Be(4326);
+        var geoJson = Encoding.UTF8.GetString(Convert.FromBase64String(
+            result.Inputs["input"].Split(',', 2)[1]));
+        using var document = System.Text.Json.JsonDocument.Parse(geoJson);
+        document.RootElement.GetProperty("type").GetString().Should().Be("FeatureCollection");
+        document.RootElement.GetProperty("features").GetArrayLength().Should().Be(2);
+    }
+
+    [UnitTest]
     public void Translate_FeatureSetMissingGeometry_SurfacesCapabilityMessage()
     {
         var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

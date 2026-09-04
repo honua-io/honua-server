@@ -368,7 +368,7 @@ internal sealed class ImageServerRasterMetadataHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindForRequest(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");

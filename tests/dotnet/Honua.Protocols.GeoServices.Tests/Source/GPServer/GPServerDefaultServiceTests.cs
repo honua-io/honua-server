@@ -159,7 +159,7 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             var resultRoot = resultDoc.RootElement;
             resultRoot.GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             resultRoot.GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
-            resultRoot.GetProperty("value").GetString().Should().StartWith("data:application/geo+json;base64,");
+            resultRoot.GetProperty("value").GetProperty("features").GetArrayLength().Should().Be(1);
         }
         finally
         {

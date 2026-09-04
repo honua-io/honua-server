@@ -48,7 +48,13 @@ internal static class GPServerEsriInputTranslation
     /// place). Values may be simple strings, base64 WKB, GP unit objects, or
     /// Esri geometry / FeatureSet JSON.
     /// </param>
-    public static EsriInputTranslationResult Translate(IReadOnlyDictionary<string, string> inputs)
+    /// <param name="allowFeatureCollections">
+    /// When true, retain all FeatureSet features as a canonical GeoJSON
+    /// FeatureCollection for layer-scoped catalog processes.
+    /// </param>
+    public static EsriInputTranslationResult Translate(
+        IReadOnlyDictionary<string, string> inputs,
+        bool allowFeatureCollections = false)
     {
         ArgumentNullException.ThrowIfNull(inputs);
 
@@ -98,6 +104,23 @@ internal static class GPServerEsriInputTranslation
                                 $"Input '{key}' is an empty FeatureSet; supply at least one feature with a geometry.",
                             InputSpatialReference: inputSpatialReference)
                         { Translated = false };
+                    }
+
+                    if (allowFeatureCollections)
+                    {
+                        if (!TryConvertFeatureSetToGeoJson(root, out var geoJson, out var collectionSrid, out var collectionError))
+                        {
+                            return new EsriInputTranslationResult(
+                                translated, false,
+                                $"Input '{key}' FeatureSet could not be translated: {collectionError}",
+                                inputSpatialReference)
+                            { Translated = false };
+                        }
+
+                        translated[key] = geoJson;
+                        inputSpatialReference ??= collectionSrid;
+                        anyTranslated = true;
+                        continue;
                     }
 
                     if (featureCount > 1)
@@ -186,6 +209,83 @@ internal static class GPServerEsriInputTranslation
             CapabilityMessage: null,
             InputSpatialReference: inputSpatialReference)
         { Translated = anyTranslated };
+    }
+
+    private static bool TryConvertFeatureSetToGeoJson(
+        JsonElement featureSet,
+        out string dataUri,
+        out int? spatialReference,
+        out string? error)
+    {
+        dataUri = string.Empty;
+        spatialReference = ReadSpatialReference(featureSet);
+        error = null;
+        var features = new List<string>();
+
+        foreach (var feature in featureSet.GetProperty("features").EnumerateArray())
+        {
+            if (!feature.TryGetProperty("geometry", out var geometry) || geometry.ValueKind != JsonValueKind.Object)
+            {
+                error = "each feature must contain a geometry object";
+                return false;
+            }
+
+            if (!TryConvertEsriGeometryToGeoJson(geometry, out var geoGeometry, out var geometryError))
+            {
+                error = geometryError;
+                return false;
+            }
+
+            var properties = feature.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object
+                ? attributes.GetRawText()
+                : "{}";
+            features.Add($"{{\"type\":\"Feature\",\"properties\":{properties},\"geometry\":{geoGeometry}}}");
+        }
+
+        var collection = $"{{\"type\":\"FeatureCollection\",\"features\":[{string.Join(',', features)}]}}";
+        dataUri = "data:application/geo+json;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(collection));
+        return true;
+    }
+
+    private static bool TryConvertEsriGeometryToGeoJson(JsonElement geometry, out string json, out string? error)
+    {
+        json = string.Empty;
+        error = null;
+        if (geometry.TryGetProperty("x", out var x) && geometry.TryGetProperty("y", out var y))
+        {
+            json = $"{{\"type\":\"Point\",\"coordinates\":[{x.GetRawText()},{y.GetRawText()}]}}";
+            return true;
+        }
+
+        if (geometry.TryGetProperty("points", out var points))
+        {
+            json = $"{{\"type\":\"MultiPoint\",\"coordinates\":{points.GetRawText()}}}";
+            return true;
+        }
+
+        if (geometry.TryGetProperty("paths", out var paths))
+        {
+            var type = paths.GetArrayLength() == 1 ? "LineString" : "MultiLineString";
+            var coordinates = type == "LineString" ? paths[0].GetRawText() : paths.GetRawText();
+            json = $"{{\"type\":\"{type}\",\"coordinates\":{coordinates}}}";
+            return true;
+        }
+
+        if (geometry.TryGetProperty("rings", out var rings))
+        {
+            json = $"{{\"type\":\"Polygon\",\"coordinates\":{rings.GetRawText()}}}";
+            return true;
+        }
+
+        if (geometry.TryGetProperty("xmin", out var xmin) && geometry.TryGetProperty("ymin", out var ymin) &&
+            geometry.TryGetProperty("xmax", out var xmax) && geometry.TryGetProperty("ymax", out var ymax))
+        {
+            json = $"{{\"type\":\"Polygon\",\"coordinates\":[[[{xmin.GetRawText()},{ymin.GetRawText()}],[{xmax.GetRawText()},{ymin.GetRawText()}],[{xmax.GetRawText()},{ymax.GetRawText()}],[{xmin.GetRawText()},{ymax.GetRawText()}],[{xmin.GetRawText()},{ymin.GetRawText()}]]]}}";
+            return true;
+        }
+
+        error = "geometry type is not supported";
+        return false;
     }
 
     private static bool LooksLikeJsonObject(string? value)

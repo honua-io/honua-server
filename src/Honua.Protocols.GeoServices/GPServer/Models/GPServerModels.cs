@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.GPServer.Models;
@@ -159,7 +160,9 @@ internal sealed class GPResultResponse
     public string? DataType { get; set; }
 
     /// <summary>Result value.</summary>
-    public object? Value { get; set; }
+    // Esri GP values are polymorphic: inline FeatureSets and hosted {url}
+    // references are both valid. JsonElement keeps that contract AOT-safe.
+    public JsonElement Value { get; set; }
 }
 
 /// <summary>

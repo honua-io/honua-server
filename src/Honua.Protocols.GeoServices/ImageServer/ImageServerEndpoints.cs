@@ -3859,12 +3859,7 @@ internal static class ImageServerEndpoints
         return (GetString(merged, "f"), null);
     }
 
-    private static async Task<(
-        int LayerId,
-        string? PublicationId,
-        int? PublicationLayerIndex,
-        IResult? ErrorResult)>
-        ResolveImageServiceLayerIdAsync(
+    private static async Task<ImageServerLayerResolution> ResolveImageServiceLayerIdAsync(
         string serviceId,
         HttpContext context,
         CancellationToken cancellationToken,
@@ -3877,11 +3872,20 @@ internal static class ImageServerEndpoints
             context,
             authorizationOperation,
             cancellationToken).ConfigureAwait(false);
-        return (
+        var result = new ImageServerLayerResolution(
             resolution.LayerId,
             resolution.PublicationId,
             resolution.PublicationLayerIndex,
-            resolution.ErrorResult);
+            resolution.ErrorResult)
+        {
+            ServiceId = resolution.ServiceId,
+            MergeStrategy = resolution.MergeStrategy
+        };
+        if (result.ErrorResult is null)
+        {
+            context.Items[ImageServerV2Lookups.ResolvedLayerContextItem] = result;
+        }
+        return result;
     }
 
     private static async Task<IResult?> ValidateImageLayerAsync(
@@ -3905,6 +3909,11 @@ internal static class ImageServerEndpoints
             Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query)
     {
         var resolver = context.RequestServices.GetRequiredService<IImageServerLayerResolver>();
+        if (context.Items[ImageServerV2Lookups.ResolvedLayerContextItem] is ImageServerLayerResolution selected &&
+            selected.LayerId == layerId)
+        {
+            return selected;
+        }
         return await resolver.ValidateLayerAsync(
             layerId,
             context,

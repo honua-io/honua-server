@@ -156,7 +156,7 @@ internal static partial class VectorTileServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var primary = ResolvePrimaryStylePublication(snapshot, service, context);
+            var primary = VectorTilePublicationResolver.ResolvePrimary(snapshot, service, context);
             if (primary is null)
             {
                 return StandardErrorHelpers.CreateNotFound(
@@ -200,54 +200,6 @@ internal static partial class VectorTileServerEndpoints
             scope.RecordException(ex);
             throw;
         }
-    }
-
-    /// <summary>
-    /// Resolves the primary, access-permitted vector tile publication for the service (preferring
-    /// the publication flagged <see cref="MetadataV2Publication.IsPrimary"/>, then the lowest
-    /// layer index) together with its backing resource.
-    /// </summary>
-    private static (MetadataV2Publication Publication, MetadataV2Resource Resource)? ResolvePrimaryStylePublication(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service,
-        HttpContext context)
-    {
-        (MetadataV2Publication Publication, MetadataV2Resource Resource)? best = null;
-        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
-        {
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
-            {
-                continue;
-            }
-
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
-            {
-                continue;
-            }
-
-            if (best is null
-                || IsPreferredPublication(publication, best.Value.Publication))
-            {
-                best = (publication, resource!);
-            }
-        }
-
-        return best;
-    }
-
-    private static bool IsPreferredPublication(
-        MetadataV2Publication candidate,
-        MetadataV2Publication current)
-    {
-        if (candidate.IsPrimary != current.IsPrimary)
-        {
-            return candidate.IsPrimary;
-        }
-
-        var candidateIndex = candidate.LayerIndex ?? int.MaxValue;
-        var currentIndex = current.LayerIndex ?? int.MaxValue;
-        return candidateIndex < currentIndex;
     }
 
     /// <summary>

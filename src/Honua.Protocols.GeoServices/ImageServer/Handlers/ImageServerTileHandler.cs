@@ -78,7 +78,7 @@ internal sealed class ImageServerTileHandler
             // Validate layer exists in the Metadata v2 graph
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var resolved = publicationId is null
-                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                ? ImageServerV2Lookups.FindForRequest(snapshot, layerId, context)
                 : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
             if (resolved is null)
             {
@@ -313,7 +313,7 @@ internal sealed class ImageServerTileHandler
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var resolved = publicationId is null
-                ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+                ? ImageServerV2Lookups.FindForRequest(snapshot, layerId, context)
                 : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
             if (resolved is null)
             {

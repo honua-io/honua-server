@@ -102,8 +102,6 @@ public sealed class CapabilityManifestRegistryProjectionTests
         // sync.offline promoted to Implemented (GA) in #2430 — no longer omitted.
         // realtime.feature-streams promoted to Implemented (GA) in #2428 — no longer omitted.
         // alerts.geofence promoted in #2427 — not omitted.
-        // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
-        "versioning.branch",
         // security.mtls was promoted to Implemented (GA) in #2431, then DEMOTED back to
         // experimental in #2958 (release-safety follow-up): the always-on client-certificate
         // scheme/RBAC layer interposed on admin requests regardless of bearer-token validity.
@@ -113,6 +111,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
     private static readonly string[] PreviewManifestCapabilityIds =
     [
         "sync.offline",
+        "versioning.branch",
+        "routing.solve",
         "alerts.geofence",
         "realtime.feature-streams",
         "serve.sensorthings",

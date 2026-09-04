@@ -39,7 +39,7 @@ public sealed class DatumTransformSqlTests
     }
 
     [UnitTest]
-    public void BuildTransformExpression_SelectionWithPipeline_EmitsThreeArgumentForm()
+    public void BuildTransformExpression_ProjPipeline_UsesPostGisTwoArgumentForm()
     {
         var selection = new DatumTransformationSelection
         {
@@ -51,7 +51,7 @@ public sealed class DatumTransformSqlTests
 
         var sql = DatumTransformSql.BuildTransformExpression("geom", 4326, selection);
 
-        sql.Should().Be("ST_Transform(geom, '+proj=pipeline +step +proj=noop', 4326)");
+        sql.Should().Be("ST_Transform(geom, 4326)");
     }
 
     [UnitTest]
@@ -72,11 +72,7 @@ public sealed class DatumTransformSqlTests
 
         var sql = DatumTransformSql.BuildTransformExpression("geom", 4269, selection);
 
-        sql.Should().Be(
-            "ST_Transform(geom, '+proj=pipeline " +
-            "+step +proj=unitconvert +xy_in=rad +xy_out=deg +inv " +
-            "+step +proj=hgridshift +grids=us_noaa_conus.tif +inv " +
-            "+step +proj=unitconvert +xy_in=deg +xy_out=rad +inv', 4269)");
+        sql.Should().Be("ST_Transform(geom, 4269)");
     }
 
     [UnitTest]
@@ -94,7 +90,7 @@ public sealed class DatumTransformSqlTests
 
         var sql = DatumTransformSql.BuildTransformExpression("geom", 4269, selection);
 
-        sql.Should().Be("ST_Transform(geom, '+proj=pipeline +step +proj=hgridshift +grids=us_noaa_conus.tif', 4269)");
+        sql.Should().Be("ST_Transform(geom, 4269)");
     }
 
     [UnitTest]

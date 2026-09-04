@@ -91,48 +91,79 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
 
         var inputs = new StepInputReader(job.Spec.Parameters);
 
-        DagSourceRequest request;
-        try
-        {
-            request = BuildSourceRequest(inputs);
-        }
-        catch (TransformInputException ex)
-        {
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        await context.ReportProgressAsync(5, $"Resolving {ProcessId} source layer", cancellationToken).ConfigureAwait(false);
-
-        using var scope = _serviceScopeFactory.CreateScope();
-        var source = ResolveHonuaLayerSource(scope.ServiceProvider);
-        if (source is null)
-        {
-            Log.SourceUnavailable(_logger, job.OperationId, ProcessId);
-            return JobExecutionResult.Failed(
-                $"The {ProcessId} process is unavailable in this deployment: it reads a Honua catalog layer " +
-                $"through the {HonuaLayerSourceId} connector, which is not configured here.");
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        await context.ReportProgressAsync(20, $"Streaming layer features for {ProcessId}", cancellationToken).ConfigureAwait(false);
-
+        IDagFeatureSource? source = null;
         List<IFeature> features;
-        try
+        using var scope = _serviceScopeFactory.CreateScope();
+
+        // Layer-scoped Esri tools such as Dissolve may receive a FeatureSet instead
+        // of a catalog layer id. The GPServer adapter has already converted that
+        // FeatureSet to the canonical GeoJSON data URI. Keep the normal catalog
+        // path as the default and opt individual executors in explicitly.
+        if (SupportsInlineFeatureCollection && inputs.TryGet("input", out var inlineInput))
         {
-            features = await ReadLayerAsync(source, request, cancellationToken).ConfigureAwait(false);
+            if (inputs.TryGet("layerId", out _))
+            {
+                return JobExecutionResult.Failed(
+                    $"Invalid {ProcessId} inputs: supply exactly one of 'input' or 'layerId'.");
+            }
+
+            if (!FeatureCollectionArtifact.TryParseDataUri(
+                    inlineInput,
+                    out var collection,
+                    out var parseError,
+                    Options.CurrentValue.MaxArtifactBytes))
+            {
+                return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: 'input' {parseError}");
+            }
+
+            features = [.. collection];
+            cancellationToken.ThrowIfCancellationRequested();
+            await context.ReportProgressAsync(20, $"Reading inline features for {ProcessId}", cancellationToken)
+                .ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        else
         {
-            throw;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Intentionally broad: any source-read failure must become a Failed job
-            // result rather than crash the worker; the full exception is logged and
-            // only the exception type name reaches the result.
-            Log.SourceReadFailed(_logger, job.OperationId, ProcessId, ex);
-            return JobExecutionResult.Failed($"{ProcessId} failed reading the source layer: {ex.GetType().Name}.");
+            DagSourceRequest request;
+            try
+            {
+                request = BuildSourceRequest(inputs);
+            }
+            catch (TransformInputException ex)
+            {
+                return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await context.ReportProgressAsync(5, $"Resolving {ProcessId} source layer", cancellationToken).ConfigureAwait(false);
+
+            source = ResolveHonuaLayerSource(scope.ServiceProvider);
+            if (source is null)
+            {
+                Log.SourceUnavailable(_logger, job.OperationId, ProcessId);
+                return JobExecutionResult.Failed(
+                    $"The {ProcessId} process is unavailable in this deployment: it reads a Honua catalog layer " +
+                    $"through the {HonuaLayerSourceId} connector, which is not configured here.");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await context.ReportProgressAsync(20, $"Streaming layer features for {ProcessId}", cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                features = await ReadLayerAsync(source, request, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Intentionally broad: any source-read failure must become a Failed job
+                // result rather than crash the worker; the full exception is logged and
+                // only the exception type name reaches the result.
+                Log.SourceReadFailed(_logger, job.OperationId, ProcessId, ex);
+                return JobExecutionResult.Failed($"{ProcessId} failed reading the source layer: {ex.GetType().Name}.");
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -141,8 +172,10 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         List<IFeature> output;
         try
         {
-            output = await ApplyCoreAsync(new LayerOpContext(features, source), inputs, cancellationToken)
-                .ConfigureAwait(false);
+            output = source is null
+                ? Apply(features, inputs, cancellationToken)
+                : await ApplyCoreAsync(new LayerOpContext(features, source), inputs, cancellationToken)
+                    .ConfigureAwait(false);
         }
         catch (TransformInputException ex)
         {
@@ -194,6 +227,13 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         CancellationToken cancellationToken)
         => throw new NotSupportedException(
             $"{GetType().Name} must override {nameof(Apply)} or {nameof(ApplyCoreAsync)}.");
+
+    /// <summary>
+    /// Allows a layer-aware executor to opt into an inline FeatureCollection input
+    /// in addition to its catalog-layer input. This is intentionally false by
+    /// default because most layer operations rely on a resolved catalog connector.
+    /// </summary>
+    protected virtual bool SupportsInlineFeatureCollection => false;
 
     /// <summary>
     /// Asynchronous apply seam. The default delegates to the synchronous

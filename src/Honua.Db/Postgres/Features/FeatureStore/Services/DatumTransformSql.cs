@@ -29,7 +29,8 @@ internal static class DatumTransformSql
     /// <returns>The reprojection SQL expression.</returns>
     public static string BuildTransformExpression(string operand, int toSrid, DatumTransformationSelection? selection)
     {
-        if (selection?.ProjPipeline is { Length: > 0 } pipeline)
+        if (selection?.ProjPipeline is { Length: > 0 } pipeline &&
+            !pipeline.TrimStart().StartsWith("+proj=pipeline", StringComparison.OrdinalIgnoreCase))
         {
             // A PROJ pipeline is direction-sensitive (a +proj=hgridshift NADCON/NTv2 step
             // shifts the opposite way from its inverse). The catalog stores the forward
@@ -41,6 +42,11 @@ internal static class DatumTransformSql
             var orientedPipeline = ProjPipelineInverter.Orient(pipeline, selection.TransformForward);
             return $"ST_Transform({operand}, {QuoteLiteral(orientedPipeline)}, {toSrid})";
         }
+
+        // PostGIS's three-argument overload takes a source CRS in its middle
+        // argument, not a PROJ pipeline. Passing +proj=pipeline here raises a
+        // server error (notably for the catalog NAD27/NAD83 selection #4075).
+        // Let PROJ/PostGIS select the valid operation from the SRIDs instead.
 
         return $"ST_Transform({operand}, {toSrid})";
     }

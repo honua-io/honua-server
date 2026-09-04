@@ -34,6 +34,8 @@ internal sealed class LayerDissolveExecutor : LayerSourcedFeatureExecutor
 
     protected override string ProcessId => HandledProcessId;
 
+    protected override bool SupportsInlineFeatureCollection => true;
+
     protected override List<IFeature> Apply(
         List<IFeature> source,
         StepInputReader inputs,
