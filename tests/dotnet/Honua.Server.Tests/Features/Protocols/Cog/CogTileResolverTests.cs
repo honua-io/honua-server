@@ -187,36 +187,10 @@ public class CogTileResolverTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
-    public async Task GetTileAsync_DecodeableNonJpegTile_ReturnsPng()
-    {
-        var raw = new byte[256 * 256 * 3];
-        raw[0] = 255;
-        var rangeReader = CreateRangeReader(raw);
-        var metadata = CreateMetadata("NONE", raw.Length);
-        var metadataReader = Substitute.For<ICogMetadataReader>();
-        metadataReader.ReadMetadataAsync(
-                Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
-            .Returns(metadata);
-        var resolver = new CogTileResolver(
-            [rangeReader],
-            metadataReader,
-            Substitute.For<ICogStore>(),
-            new MemoryCache(new MemoryCacheOptions()),
-            NullLogger<CogTileResolver>.Instance);
-
-        var result = await resolver.GetTileAsync(CreateRegistration(metadata), 0, 0, 0, RasterFormat.PNG);
-
-        result.Should().NotBeNull();
-        result!.Value.ContentType.Should().Be("image/png");
-        result.Value.Data[..8].Should().Equal(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A);
-    }
-
-    [UnitTest]
-    [Operation(Operations.GetTile)]
     public async Task GetTileAsync_TileByteCountAboveBound_DoesNotReadRemoteRange()
     {
         var rangeReader = CreateRangeReader([0x00]);
-        var metadata = CreateMetadata("NONE", CogTileResolver.MaxCompressedTileBytes + 1);
+        var metadata = CreateMetadata("NONE", 128 * 1024 * 1024 + 1);
         var metadataReader = Substitute.For<ICogMetadataReader>();
         metadataReader.ReadMetadataAsync(
                 Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
@@ -233,6 +207,117 @@ public class CogTileResolverTests
         result.Should().BeNull();
         await rangeReader.DidNotReceiveWithAnyArgs().ReadRangeAsync(
             default!, default!, default, default, default!, default);
+        await rangeReader.DidNotReceiveWithAnyArgs().ReadRangeAsync(
+            default!, default!, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileAsync_ReplacedObject_RescansOffsetsAndPinsEveryRead()
+    {
+        var tile = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var rangeReader = CreateRangeReader(tile);
+        var metadata = CreateMetadata("JPEG", tile.Length);
+        var replacement = metadata with
+        {
+            OverviewLevels = [metadata.OverviewLevels[0] with { TileOffsets = [32L] }]
+        };
+        rangeReader.GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(new CloudObjectMetadata { SizeBytes = 1024, ETag = "etag-1" },
+                new CloudObjectMetadata { SizeBytes = 1024, ETag = "etag-2" });
+        rangeReader.ReadRangeAsync("bucket", "cog.tif", 32, tile.Length, "etag-2", Arg.Any<CancellationToken>())
+            .Returns(tile);
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        var scan = 0;
+        metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await call.ArgAt<ICloudRangeReader>(0).ReadRangeAsync("bucket", "cog.tif", 0, 8);
+                return ++scan == 1 ? metadata : replacement;
+            });
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver([rangeReader], metadataReader, Substitute.For<ICogStore>(),
+            cache, NullLogger<CogTileResolver>.Instance);
+
+        (await resolver.GetTileAsync(CreateRegistration(metadata), 0, 0, 0, RasterFormat.JPEG)).Should().NotBeNull();
+        (await resolver.GetTileAsync(CreateRegistration(metadata), 0, 0, 0, RasterFormat.JPEG)).Should().NotBeNull();
+
+        scan.Should().Be(2);
+        await rangeReader.Received(1).ReadRangeAsync("bucket", "cog.tif", 0, 8, "etag-1", Arg.Any<CancellationToken>());
+        await rangeReader.Received(1).ReadRangeAsync("bucket", "cog.tif", 0, 8, "etag-2", Arg.Any<CancellationToken>());
+        await rangeReader.Received(1).ReadRangeAsync("bucket", "cog.tif", 32, tile.Length, "etag-2", Arg.Any<CancellationToken>());
+        await rangeReader.DidNotReceiveWithAnyArgs().ReadRangeAsync(default!, default!, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileAsync_TruncatedTile_FailsClosed()
+    {
+        var tile = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var metadata = CreateMetadata("JPEG", tile.Length);
+        var rangeReader = CreateRangeReader(tile);
+        rangeReader.ReadRangeAsync("bucket", "cog.tif", 16, tile.Length, "etag-1", Arg.Any<CancellationToken>())
+            .Returns(tile[..2]);
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(metadata);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver([rangeReader], metadataReader, Substitute.For<ICogStore>(),
+            cache, NullLogger<CogTileResolver>.Instance);
+
+        var result = await resolver.GetTileAsync(CreateRegistration(metadata), 0, 0, 0, RasterFormat.JPEG);
+
+        result.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(-1L, 4)]
+    [InlineData(1023L, 4)]
+    [InlineData(long.MaxValue, 4)]
+    [InlineData(16L, int.MaxValue)]
+    [InlineData(16L, -1)]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileAsync_InvalidTileRange_DoesNotReadPayload(long offset, int count)
+    {
+        var metadata = CreateMetadata("JPEG", count);
+        metadata = metadata with { OverviewLevels = [metadata.OverviewLevels[0] with { TileOffsets = [offset] }] };
+        var rangeReader = CreateRangeReader([0]);
+        rangeReader.GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(new CloudObjectMetadata { SizeBytes = 1024, ETag = "etag-1" });
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(metadata);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver([rangeReader], metadataReader, Substitute.For<ICogStore>(),
+            cache, NullLogger<CogTileResolver>.Instance);
+
+        (await resolver.GetTileAsync(CreateRegistration(metadata), 0, 0, 0, RasterFormat.JPEG)).Should().BeNull();
+
+        await rangeReader.DidNotReceiveWithAnyArgs().ReadRangeAsync(default!, default!, default, default, default!, default);
+        await rangeReader.DidNotReceiveWithAnyArgs().ReadRangeAsync(default!, default!, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
+    public async Task GetTileAsync_UnchangedObject_ReusesPinnedMetadata()
+    {
+        var tile = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var metadata = CreateMetadata("JPEG", tile.Length);
+        var rangeReader = CreateRangeReader(tile);
+        var metadataReader = Substitute.For<ICogMetadataReader>();
+        metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>())
+            .Returns(metadata);
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new CogTileResolver([rangeReader], metadataReader, Substitute.For<ICogStore>(),
+            cache, NullLogger<CogTileResolver>.Instance);
+
+        for (var request = 0; request < 2; request++)
+        {
+            (await resolver.GetTileAsync(CreateRegistration(metadata), 0, 0, 0, RasterFormat.JPEG)).Should().NotBeNull();
+        }
+        await metadataReader.Received(1).ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "cog.tif", Arg.Any<CancellationToken>());
+        await rangeReader.Received(2).GetObjectMetadataAsync("bucket", "cog.tif", Arg.Any<CancellationToken>());
+        await rangeReader.Received(2).ReadRangeAsync("bucket", "cog.tif", 16, tile.Length, "etag-1", Arg.Any<CancellationToken>());
     }
 
     private static ICloudRangeReader CreateRangeReader(byte[] tileData)

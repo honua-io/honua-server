@@ -279,6 +279,23 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(800, 1e-10);
     }
 
+    [Theory]
+    [InlineData(1, 0.25)]
+    [InlineData(4, 0.25)]
+    [InlineData(0, double.NaN)]
+    [InlineData(3, double.PositiveInfinity)]
+    [InlineData(12, 1)]
+    [InlineData(15, 0)]
+    public async Task ReadMetadataAsync_UnsafeModelTransformation_RejectsInsteadOfInventingExtent(int element, double value)
+    {
+        var tiff = BuildSyntheticCogBytesWithModelTransformation(100, 50, 500, 1000, 2, 4);
+        System.Buffers.Binary.BinaryPrimitives.WriteDoubleLittleEndian(tiff.AsSpan(110 + element * 8), value);
+
+        var act = () => new CogMetadataExtractor().ReadMetadataAsync(new InMemoryRangeReader(tiff), "bucket", "test.tif");
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
     /// <summary>
     /// Builds a synthetic classic TIFF (little-endian) with georeferencing tags
     /// in TIFF-spec ascending order. Tag 33550 comes before tag 33922.

@@ -417,6 +417,63 @@ public class ImageServerTileHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
+    public async Task GetImageTileAsync_CogFallbackRejectsAmbiguousPublicationIndex()
+    {
+        var graphProvider = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-cog", "cog-layer", MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding("binding-cog", "resource-cog", "cog.rasters", storageLayerId: 42)
+            .AddService("service-cog", "cog-service", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication(
+                "publication-cog",
+                "service-cog",
+                "resource-cog",
+                layerIndex: 7,
+                storageBindingId: "binding-cog",
+                serviceLocalId: "cog-layer",
+                publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .AddResource("resource-other", "other-layer", MetadataV2ResourceType.RasterDataset)
+            .AddStorageBinding("binding-other", "resource-other", "other.rasters", storageLayerId: 99)
+            .AddService("service-other", "other-service", protocols: [ServiceProtocols.ImageServer])
+            .AddPublication("publication-other", "service-other", "resource-other", layerIndex: 7,
+                storageBindingId: "binding-other", publicationType: MetadataV2PublicationType.EsriImageLayer)
+            .BuildProvider();
+        var cogResolver = Substitute.For<ICogTileResolver>();
+        cogResolver.GetTileForLayerAsync(
+                7, 0, 0, 0, RasterFormat.PNG, Arg.Any<CancellationToken>())
+            .Returns(new CogTileLookup(new RasterResult
+            {
+                Data = [0x89, 0x50, 0x4E, 0x47],
+                ContentType = "image/png",
+                Width = 256,
+                Height = 256,
+                Srid = 3857
+            }, false));
+        var handler = new ImageServerTileHandler(
+            graphProvider,
+            _rasterStore,
+            NullLogger<ImageServerTileHandler>.Instance,
+            cogResolver);
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+
+        var context = CreateImageServerContext();
+        var result = await handler.GetImageTileAsync(
+            context,
+            layerId: 42,
+            level: 0,
+            row: 0,
+            col: 0,
+            format: "png",
+            publicationId: "publication-cog",
+            cacheLayerId: 7);
+
+        result.Should().NotBeOfType<FileContentHttpResult>();
+        await cogResolver.DidNotReceiveWithAnyArgs().GetTileForLayerAsync(
+            default, default, default, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_CloudCacheHit_ReturnsStoredTileWithoutRendering()
     {
         var cachedTile = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0xCA, 0xFE };
