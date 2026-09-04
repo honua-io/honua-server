@@ -262,7 +262,7 @@ internal static class GeoServicesRequestValueHelpers
     {
         error = QueryParameterValidationHelpers.GetValidationError(
             queryValidator,
-            query.Keys.ToArray(),
+            query.Keys.Where(static key => !key.Equals("callback", StringComparison.OrdinalIgnoreCase)).ToArray(),
             allowedParameters);
         return error == null;
     }
@@ -275,7 +275,7 @@ internal static class GeoServicesRequestValueHelpers
     {
         error = QueryParameterValidationHelpers.GetValidationError(
             queryValidator,
-            values.Keys.ToArray(),
+            values.Keys.Where(static key => !key.Equals("callback", StringComparison.OrdinalIgnoreCase)).ToArray(),
             allowedParameters);
         return error == null;
     }

@@ -53,6 +53,18 @@ internal sealed partial class FeatureQueryBuilder
 
             AppendStatisticsOrderByClause(sql, query.OrderBy, statistics, groupByFields);
 
+            if (query.Limit.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" LIMIT ${paramIndex++}");
+                parameters.Add(query.Limit.Value);
+            }
+
+            if (query.Offset.HasValue)
+            {
+                sql.Append(CultureInfo.InvariantCulture, $" OFFSET ${paramIndex++}");
+                parameters.Add(query.Offset.Value);
+            }
+
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
         finally

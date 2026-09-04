@@ -27,7 +27,13 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     private const int TestLayerId = 0;
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(
+            TestServiceId,
+            ["Create", "Update", "Delete"]);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 

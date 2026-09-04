@@ -169,11 +169,19 @@ internal static partial class WmsRequestHandlers
         // but identify returned features across all times (and an invalid TIME was silently
         // accepted instead of InvalidDimensionValue) (#1991). Parsed against queryLayers so
         // each queried layer gets its own temporal filter slot.
-        var temporalResult = TryParseWmsLayerTemporalFilters(context, query, queryLayers);
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var temporalResult = await TryResolveWmsLayerTemporalFiltersAsync(
+            context,
+            query,
+            queryLayers,
+            featureReader,
+            logger,
+            cancellationToken).ConfigureAwait(false);
         if (temporalResult.Error != null)
         {
             return temporalResult.Error;
         }
+        AppendWmsWarnings(context, temporalResult.Warnings);
 
         var temporalFiltersByStorageLayerId = temporalResult.Filters is null
             ? null
@@ -209,7 +217,6 @@ internal static partial class WmsRequestHandlers
             mapX + toleranceX,
             mapY + toleranceY);
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var remaining = Math.Min(featureCount, 1000);
 
         var plainText = new StringBuilder();

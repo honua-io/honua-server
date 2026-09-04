@@ -45,7 +45,8 @@ internal sealed class FeatureServerQueryServices(
         string[]? outFields,
         bool suppressObjectId = false,
         bool returnCentroid = false,
-        int? requestedOutputSrid = null)
+        int? requestedOutputSrid = null,
+        QuantizationTransform? quantizationTransform = null)
         => _queryFormatter.FormatQueryResultAsync(
             result,
             resource,
@@ -59,5 +60,6 @@ internal sealed class FeatureServerQueryServices(
             outFields,
             suppressObjectId,
             returnCentroid,
-            requestedOutputSrid);
+            requestedOutputSrid,
+            quantizationTransform);
 }

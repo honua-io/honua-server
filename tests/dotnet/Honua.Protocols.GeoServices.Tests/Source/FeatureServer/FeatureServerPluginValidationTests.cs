@@ -64,6 +64,9 @@ public sealed class FeatureServerPluginValidationTests : IAsyncLifetime
         _fixture.ReplaceService(_pluginServices.GetRequiredService<IPluginEditPipeline>());
 
         await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(
+            TestServiceId,
+            ["Create", "Update", "Delete"]);
     }
 
     public async Task DisposeAsync()

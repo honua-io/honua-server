@@ -32,10 +32,11 @@ public sealed class ApplyEditsRequest
 
     /// <summary>
     /// Whether to rollback all changes on failure.
-    /// Default is false for applyEdits, true for standalone endpoints (addFeatures, updateFeatures, deleteFeatures).
+    /// Default is true, matching the Esri applyEdits contract. Standalone endpoints also
+    /// force this value to true when it was omitted.
     /// </summary>
     [JsonPropertyName("rollbackOnFailure")]
-    public bool RollbackOnFailure { get; set; } = false;
+    public bool RollbackOnFailure { get; set; } = true;
 
     /// <summary>
     /// Tracks whether rollbackOnFailure was explicitly provided in the request.

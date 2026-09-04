@@ -293,6 +293,19 @@ public sealed class FeatureServerQueryGapsTests : IClassFixture<WebAppFixture>
         exceeded.ValueKind.Should().Be(JsonValueKind.False);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithJsonpCallback_IsAccepted()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?f=json&callback=esriCallback");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("features");
+    }
+
     private static long? GetObjectId(Dictionary<string, object?> attributes)
     {
         if (!attributes.TryGetValue("objectid", out var value) || value is null)

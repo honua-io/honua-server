@@ -261,7 +261,7 @@ internal static partial class FeatureServerEndpoints
     internal static CancellationToken GetTimeoutAwareCancellationToken(HttpContext context)
         => GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
 
-    private static AdvancedQueryCapabilities BuildAdvancedQueryCapabilities(
+    internal static AdvancedQueryCapabilities BuildAdvancedQueryCapabilities(
         bool supportsAdvancedQueries,
         bool supportsStatistics,
         bool supportsOrderBy,

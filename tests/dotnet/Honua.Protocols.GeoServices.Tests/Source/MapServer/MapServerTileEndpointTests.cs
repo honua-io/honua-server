@@ -64,6 +64,38 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
         layers.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task IsTileLayerVisibleAtScale_AdvertisedMinScale_GatesOverviewTile()
+    {
+        const string serviceId = "svc-tile-scale";
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource-tile-scale", "Scale gated")
+            .AddStorageBinding("binding-tile-scale", "resource-tile-scale", "features", storageLayerId: 17)
+            .AddService(serviceId, "Scale gated", protocols: [ServiceProtocols.MapServer])
+            .AddPublication(
+                "publication-tile-scale",
+                serviceId,
+                "resource-tile-scale",
+                layerIndex: 0,
+                storageBindingId: "binding-tile-scale",
+                publicationType: MetadataV2PublicationType.EsriMapLayer)
+            .Build();
+        graph = graph with
+        {
+            Resources = graph.Resources.Select(resource => resource with
+            {
+                Display = new MetadataV2ResourceDisplay { MinScale = 50_000 }
+            }).ToArray()
+        };
+        var snapshot = await new TestMetadataV2GraphProvider(graph).GetCurrentAsync();
+        var layer = MapServerEndpoints.ResolveTileLayerDescriptors(
+            snapshot,
+            snapshot.Index.ServicesById[serviceId]).Should().ContainSingle().Subject;
+
+        MapServerEndpoints.IsTileLayerVisibleAtScale(layer.Resource, z: 2).Should().BeFalse();
+        MapServerEndpoints.IsTileLayerVisibleAtScale(layer.Resource, z: 15).Should().BeTrue();
+    }
+
     [IntegrationTest]
     [Operation(Operations.Tile)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}")]

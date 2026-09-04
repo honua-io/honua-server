@@ -21,5 +21,6 @@ internal static class ServerCoreSchemaMigrations
         "Honua.Server.Migrations.063_CreateRasterOverviews.sql",
         "Honua.Server.Migrations.064_CreateRasterFootprints.sql",
         "Honua.Server.Migrations.109_AdoptConfiguredGuardedSchema.sql",
-        "Honua.Server.Migrations.110_PreserveGovernedLineage.sql");
+        "Honua.Server.Migrations.110_PreserveGovernedLineage.sql",
+        "Honua.Server.Migrations.001_CreateHonuaSchema.sql");
 }

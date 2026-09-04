@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
@@ -12,6 +14,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -39,7 +42,18 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static async Task<IResult> HandleLegend(HttpContext context)
     {
-        if (!TryValidateMetadataFormat(context.Request.Query, out var formatError))
+        var (values, readError) = await TryReadMapServerRequestValuesAsync(context).ConfigureAwait(false);
+        if (values == null)
+        {
+            if (GeoServicesRequestValueHelpers.TryGetUnsupportedMediaType(readError, out var receivedContentType))
+            {
+                return GeoServicesRequestValueHelpers.CreateUnsupportedRequestContentTypeResult(context, receivedContentType);
+            }
+
+            return StandardErrorHelpers.CreateBadRequest(context, readError ?? "Invalid request body.");
+        }
+
+        if (!TryValidateMetadataFormat(values, out var formatError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, formatError ?? "Output format is not supported.");
         }
@@ -64,7 +78,7 @@ internal static partial class MapServerEndpoints
 
         try
         {
-            return await HandleLegendCoreAsync(context, serviceId, logger, scope, cancellationToken);
+            return await HandleLegendCoreAsync(context, serviceId, values, logger, scope, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -84,6 +98,7 @@ internal static partial class MapServerEndpoints
     private static async Task<IResult> HandleLegendCoreAsync(
         HttpContext context,
         string serviceId,
+        Dictionary<string, StringValues> values,
         ILogger logger,
         HonuaTelemetryScope scope,
         CancellationToken cancellationToken)
@@ -114,7 +129,7 @@ internal static partial class MapServerEndpoints
             return accessError;
         }
 
-        if (!TryParseLegendSwatchSize(context.Request.Query, out var swatchWidth, out var swatchHeight, out var sizeError))
+        if (!TryParseLegendSwatchSize(GetValue(values, "size"), out var swatchWidth, out var swatchHeight, out var sizeError))
         {
             return StandardErrorHelpers.CreateBadRequest(context, sizeError ?? "Invalid size parameter.");
         }
@@ -124,7 +139,7 @@ internal static partial class MapServerEndpoints
             context,
             snapshot,
             legendLayerDescriptors.Select(static layer => new DynamicLayerCandidate(layer.LayerId, layer.Resource)));
-        if (!TryParseDynamicLayers(context.Request.Query.TryGetValue("dynamicLayers", out var dlValues) ? dlValues.ToString() : null, dynamicLayerResolver, queryValidator, out var dynamicLayers, out var dynamicLayersError))
+        if (!TryParseDynamicLayers(GetValue(values, "dynamicLayers"), dynamicLayerResolver, queryValidator, out var dynamicLayers, out var dynamicLayersError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 dynamicLayersError ?? "Invalid dynamicLayers parameter.");
@@ -182,7 +197,28 @@ internal static partial class MapServerEndpoints
                 styleLayers = StyleTranslator.ParseStyleLayers(style?.MapLibreStyleJson);
             }
 
-            var entries = BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);
+            List<LegendEntry> entries;
+            if (layer.DrawingInfoJson is { } drawingInfoJson &&
+                TryBuildClassifiedRendererEntries(
+                    drawingInfoJson,
+                    layer,
+                    geoServicesStyleConverter,
+                    swatchWidth,
+                    swatchHeight,
+                    out var classifiedEntries,
+                    out var classifiedError))
+            {
+                if (classifiedError is not null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, classifiedError);
+                }
+
+                entries = classifiedEntries!;
+            }
+            else
+            {
+                entries = BuildLegendEntries(styleLayers, layer.GeometryType, swatchWidth, swatchHeight);
+            }
 
             legendLayers.Add(new LegendLayerInfo
             {
@@ -240,7 +276,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static bool TryParseLegendSwatchSize(
-        IQueryCollection query,
+        string? sizeValue,
         out int width,
         out int height,
         out string? error)
@@ -249,44 +285,40 @@ internal static partial class MapServerEndpoints
         height = DefaultLegendSwatchHeight;
         error = null;
 
-        if (query.TryGetValue("size", out var sizeValues))
+        if (!string.IsNullOrWhiteSpace(sizeValue))
         {
-            var sizeValue = sizeValues.ToString();
-            if (!string.IsNullOrWhiteSpace(sizeValue))
+            var parts = sizeValue.Split(',', StringSplitOptions.TrimEntries);
+            if (parts.Length == 2)
             {
-                var parts = sizeValue.Split(',', StringSplitOptions.TrimEntries);
-                if (parts.Length == 2)
+                if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) ||
+                    width <= 0 || width > MaxLegendSwatchDimension)
                 {
-                    if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) ||
-                        width <= 0 || width > MaxLegendSwatchDimension)
-                    {
-                        error = $"Invalid size width. Expected an integer between 1 and {MaxLegendSwatchDimension}.";
-                        return false;
-                    }
-
-                    if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out height) ||
-                        height <= 0 || height > MaxLegendSwatchDimension)
-                    {
-                        error = $"Invalid size height. Expected an integer between 1 and {MaxLegendSwatchDimension}.";
-                        return false;
-                    }
-                }
-                else if (parts.Length == 1)
-                {
-                    if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) ||
-                        width <= 0 || width > MaxLegendSwatchDimension)
-                    {
-                        error = $"Invalid size parameter. Expected an integer between 1 and {MaxLegendSwatchDimension}.";
-                        return false;
-                    }
-
-                    height = width;
-                }
-                else
-                {
-                    error = "Invalid size parameter. Expected format: size or width,height.";
+                    error = $"Invalid size width. Expected an integer between 1 and {MaxLegendSwatchDimension}.";
                     return false;
                 }
+
+                if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out height) ||
+                    height <= 0 || height > MaxLegendSwatchDimension)
+                {
+                    error = $"Invalid size height. Expected an integer between 1 and {MaxLegendSwatchDimension}.";
+                    return false;
+                }
+            }
+            else if (parts.Length == 1)
+            {
+                if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out width) ||
+                    width <= 0 || width > MaxLegendSwatchDimension)
+                {
+                    error = $"Invalid size parameter. Expected an integer between 1 and {MaxLegendSwatchDimension}.";
+                    return false;
+                }
+
+                height = width;
+            }
+            else
+            {
+                error = "Invalid size parameter. Expected format: size or width,height.";
+                return false;
             }
         }
 
@@ -329,15 +361,117 @@ internal static partial class MapServerEndpoints
                 continue;
             }
 
+            var classes = LegendClassifier.Classify(styleLayer);
+            foreach (var legendClass in classes.Classes)
+            {
+                var swatchBytes = SkiaMapRenderer.RenderLegendSwatch(
+                    styleLayer,
+                    geometryType,
+                    swatchWidth,
+                    swatchHeight,
+                    legendClass.Properties);
+
+                entries.Add(new LegendEntry
+                {
+                    Label = legendClass.Label,
+                    Values = classes.IsDataDriven
+                        ? [.. legendClass.Properties.Values.Select(FormatLegendValue)]
+                        : null,
+                    ImageData = Convert.ToBase64String(swatchBytes),
+                    ContentType = "image/png",
+                    Width = swatchWidth,
+                    Height = swatchHeight
+                });
+            }
+        }
+
+        return entries;
+    }
+
+    private static bool TryBuildClassifiedRendererEntries(
+        string drawingInfoJson,
+        LegendLayerDescriptor layer,
+        IGeoServicesStyleConverter geoServicesStyleConverter,
+        int swatchWidth,
+        int swatchHeight,
+        out List<LegendEntry>? entries,
+        out string? error)
+    {
+        entries = null;
+        error = null;
+
+        using var document = JsonDocument.Parse(drawingInfoJson);
+        if (!document.RootElement.TryGetProperty("renderer", out var renderer) ||
+            renderer.ValueKind != JsonValueKind.Object ||
+            !renderer.TryGetProperty("type", out var typeElement))
+        {
+            return false;
+        }
+
+        var rendererType = typeElement.GetString();
+        var infosProperty = rendererType switch
+        {
+            "uniqueValue" => "uniqueValueInfos",
+            "classBreaks" => "classBreakInfos",
+            _ => null
+        };
+        if (infosProperty is null ||
+            !renderer.TryGetProperty(infosProperty, out var infos) ||
+            infos.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        entries = [];
+        foreach (var info in infos.EnumerateArray())
+        {
+            if (info.ValueKind != JsonValueKind.Object ||
+                !info.TryGetProperty("symbol", out var symbol) ||
+                symbol.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var simpleDrawingInfo = BuildSimpleDrawingInfo(symbol);
+            if (!TryConvertDynamicLayerDrawingInfo(
+                    layer.LayerId,
+                    simpleDrawingInfo,
+                    layer.StyleLayerId,
+                    layer.LayerName,
+                    layer.GeometryType,
+                    geoServicesStyleConverter,
+                    out var simpleStyleJson,
+                    out error))
+            {
+                return true;
+            }
+
+            var styleLayer = SelectLegendStyleLayer(
+                StyleTranslator.ParseStyleLayers(simpleStyleJson),
+                layer.GeometryType);
+            if (styleLayer is null)
+            {
+                continue;
+            }
+
+            var valueProperty = string.Equals(rendererType, "uniqueValue", StringComparison.Ordinal)
+                ? "value"
+                : "classMaxValue";
+            var value = info.TryGetProperty(valueProperty, out var valueElement)
+                ? FormatLegendValue(valueElement)
+                : string.Empty;
+            var label = info.TryGetProperty("label", out var labelElement) && labelElement.ValueKind == JsonValueKind.String
+                ? labelElement.GetString()
+                : value;
             var swatchBytes = SkiaMapRenderer.RenderLegendSwatch(
                 styleLayer,
-                geometryType,
+                layer.GeometryType,
                 swatchWidth,
                 swatchHeight);
-
             entries.Add(new LegendEntry
             {
-                Label = styleLayer.Id ?? styleLayer.Type,
+                Label = label,
+                Values = string.Equals(rendererType, "uniqueValue", StringComparison.Ordinal) ? [value] : null,
                 ImageData = Convert.ToBase64String(swatchBytes),
                 ContentType = "image/png",
                 Width = swatchWidth,
@@ -345,8 +479,92 @@ internal static partial class MapServerEndpoints
             });
         }
 
-        return entries;
+        if (renderer.TryGetProperty("defaultSymbol", out var defaultSymbol) &&
+            defaultSymbol.ValueKind == JsonValueKind.Object)
+        {
+            var simpleDrawingInfo = BuildSimpleDrawingInfo(defaultSymbol);
+            if (!TryConvertDynamicLayerDrawingInfo(
+                    layer.LayerId,
+                    simpleDrawingInfo,
+                    layer.StyleLayerId,
+                    layer.LayerName,
+                    layer.GeometryType,
+                    geoServicesStyleConverter,
+                    out var simpleStyleJson,
+                    out error))
+            {
+                return true;
+            }
+
+            var styleLayer = SelectLegendStyleLayer(
+                StyleTranslator.ParseStyleLayers(simpleStyleJson),
+                layer.GeometryType);
+            if (styleLayer is not null)
+            {
+                var defaultLabel = renderer.TryGetProperty("defaultLabel", out var defaultLabelElement) &&
+                                   defaultLabelElement.ValueKind == JsonValueKind.String
+                    ? defaultLabelElement.GetString()
+                    : "Other";
+                var swatchBytes = SkiaMapRenderer.RenderLegendSwatch(
+                    styleLayer,
+                    layer.GeometryType,
+                    swatchWidth,
+                    swatchHeight);
+                entries.Add(new LegendEntry
+                {
+                    Label = defaultLabel,
+                    ImageData = Convert.ToBase64String(swatchBytes),
+                    ContentType = "image/png",
+                    Width = swatchWidth,
+                    Height = swatchHeight
+                });
+            }
+        }
+
+        return entries.Count > 0;
     }
+
+    private static string BuildSimpleDrawingInfo(JsonElement symbol)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("renderer");
+            writer.WriteStartObject();
+            writer.WriteString("type", "simple");
+            writer.WritePropertyName("symbol");
+            symbol.WriteTo(writer);
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static MapLibreStyleLayer? SelectLegendStyleLayer(
+        MapLibreStyleLayer[] styleLayers,
+        MetadataV2GeometryType geometryType)
+    {
+        var preferredType = geometryType switch
+        {
+            MetadataV2GeometryType.Point or MetadataV2GeometryType.MultiPoint => "circle",
+            MetadataV2GeometryType.LineString or MetadataV2GeometryType.MultiLineString => "line",
+            MetadataV2GeometryType.Polygon or MetadataV2GeometryType.MultiPolygon => "fill",
+            _ => null
+        };
+        return styleLayers.FirstOrDefault(layer => string.Equals(layer.Type, preferredType, StringComparison.Ordinal))
+            ?? styleLayers.FirstOrDefault(static layer => layer.Type is not null and not "background");
+    }
+
+    private static string FormatLegendValue(object? value)
+        => value switch
+        {
+            JsonElement { ValueKind: JsonValueKind.String } element => element.GetString() ?? string.Empty,
+            JsonElement element => element.ToString(),
+            IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+            _ => value?.ToString() ?? string.Empty
+        };
 
     private static string? MapGeometryTypeToLayerType(MetadataV2GeometryType geometryType)
     {

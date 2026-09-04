@@ -232,14 +232,13 @@ internal sealed class ManagedHotSpotExecutor(
             originPoint.Y - distanceBand,
             originPoint.Y + distanceBand);
 
-        var bandSquared = distanceBand * distanceBand;
         double valueSum = 0;
         var count = 0;
         foreach (var candidate in index.Query(envelope))
         {
             var dx = points[candidate].X - originPoint.X;
             var dy = points[candidate].Y - originPoint.Y;
-            if ((dx * dx) + (dy * dy) <= bandSquared)
+            if (ManagedDistance.IsWithin(dx, dy, distanceBand))
             {
                 valueSum += points[candidate].Value;
                 count++;

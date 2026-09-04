@@ -40,7 +40,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -706,6 +706,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         // plain select clause emits the distance column). Distance is only meaningful with a
         // spatial filter, so this affects a narrow slice of queries.
         if ((query.Limit.HasValue || query.Offset.HasValue) &&
+            !query.Distinct &&
             !FeatureQueryBuilder.ShouldComputeDistance(query.SpatialFilter))
         {
             return await executeOptimized(layerId, query, geometryStorageType, cancellationToken);

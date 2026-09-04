@@ -90,11 +90,24 @@ public sealed class MapServerRenderCapacityTests : IClassFixture<MapServerRender
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
 
         var content = await response.Content.ReadAsStringAsync();
-        // PA-069 (#2418): a WMS ServiceExceptionReport MUST be returned with HTTP 200 OK
-        // per WMS 1.3.0 §7.3.3.4 — the capacity-exhausted condition is signalled through
-        // the XML exception body (NoApplicableCode), not the HTTP status.
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        // WMS 1.3.0 §7.3.3.4 defines the ServiceExceptionReport payload; it does
+        // not turn a capacity failure into a successful HTTP response.
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, content);
         content.Should().Contain("NoApplicableCode");
+        content.Should().Contain("Raster rendering capacity is currently exhausted");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task WmsImageException_WhenRasterCapacityUnavailable_ReturnsServiceUnavailableXml()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=32&HEIGHT=32&CRS=EPSG:4326&LAYERS=does-not-exist&STYLES=&FORMAT=image/png&EXCEPTIONS=application/vnd.ogc.se_blank");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, content);
+        content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("Raster rendering capacity is currently exhausted");
     }
 }

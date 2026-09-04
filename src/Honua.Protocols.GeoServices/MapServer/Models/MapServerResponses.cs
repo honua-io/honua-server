@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.Models;
 
 namespace Honua.Protocols.GeoServices.MapServer.Models;
@@ -158,6 +159,12 @@ internal sealed class MapServerResponse
     /// </summary>
     [JsonPropertyName("tileInfo")]
     public TileInfo? TileInfo { get; init; }
+
+    /// <summary>
+    /// Aggregate time information for time-aware map layers.
+    /// </summary>
+    [JsonPropertyName("timeInfo")]
+    public FeatureServerTimeInfo? TimeInfo { get; init; }
 }
 
 /// <summary>
@@ -695,6 +702,18 @@ internal sealed class MapServerLayerResponse
     public bool SupportsPagination { get; init; }
 
     /// <summary>
+    /// Detailed query capabilities consumed by ArcGIS clients.
+    /// </summary>
+    [JsonPropertyName("advancedQueryCapabilities")]
+    public AdvancedQueryCapabilities? AdvancedQueryCapabilities { get; init; }
+
+    /// <summary>
+    /// Time configuration and available extent for this layer.
+    /// </summary>
+    [JsonPropertyName("timeInfo")]
+    public FeatureServerTimeInfo? TimeInfo { get; init; }
+
+    /// <summary>
     /// Parent layer identifier (-1 for root layers).
     /// </summary>
     [JsonPropertyName("parentLayerId")]
@@ -999,6 +1018,12 @@ internal sealed class LegendEntry
     /// </summary>
     [JsonPropertyName("label")]
     public string? Label { get; init; }
+
+    /// <summary>
+    /// Renderer values represented by this legend class.
+    /// </summary>
+    [JsonPropertyName("values")]
+    public string[]? Values { get; init; }
 
     /// <summary>
     /// Base64-encoded legend image data.

@@ -588,6 +588,7 @@ BEGIN
             SELECT
                 sl.service_name,
                 COALESCE(s.description, '') AS service_description,
+                COALESCE(s.capabilities, ARRAY['Query']::text[]) AS service_capabilities,
                 l.layer_id,
                 l.layer_name,
                 COALESCE(l.description, '') AS layer_description,
@@ -856,7 +857,7 @@ BEGIN
             FROM layer_rows
         ),
         service_names AS (
-            SELECT DISTINCT service_name, service_part, service_access_policy
+            SELECT DISTINCT service_name, service_part, service_access_policy, service_capabilities
             FROM layer_rows
         ),
         service_rows AS (
@@ -875,7 +876,7 @@ BEGIN
                     -- (honua-server#1412.)
                     'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
                     'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
-                    'options', '{}'::jsonb,
+                    'options', jsonb_build_object('capabilities', to_jsonb(service_capabilities)),
                     'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
@@ -1016,7 +1017,7 @@ BEGIN
                     'layerIndex', layer_id,
                     'serviceLocalId', layer_part,
                     'supportedFormats', '[]'::jsonb,
-                    'capabilities', '[]'::jsonb,
+                    'capabilities', to_jsonb(service_capabilities),
                     'status', (SELECT value FROM status_doc),
                     'options', '{}'::jsonb,
                     'extensions', '{}'::jsonb

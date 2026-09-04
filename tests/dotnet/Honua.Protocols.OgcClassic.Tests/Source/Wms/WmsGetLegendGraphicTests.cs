@@ -118,9 +118,7 @@ public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(LegendUrl("VERSION=1.3.0&FORMAT=image/png"));
 
         var content = await response.Content.ReadAsStringAsync();
-        // WMS 1.3.0 section 7.3.3.4: a ServiceExceptionReport is returned with HTTP 200;
-        // the failure is carried entirely by the XML body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("MissingParameterValue");
     }
@@ -134,9 +132,7 @@ public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
             LegendUrl("VERSION=1.3.0&LAYER=does-not-exist&FORMAT=image/png"));
 
         var content = await response.Content.ReadAsStringAsync();
-        // WMS 1.3.0 section 7.3.3.4: a ServiceExceptionReport is returned with HTTP 200;
-        // the failure is carried entirely by the XML body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("LayerNotDefined");
     }
@@ -150,9 +146,7 @@ public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
             LegendUrl($"VERSION=1.3.0&LAYER={WebAppFixture.TestLayerId}&FORMAT=image/svg%2Bxml"));
 
         var content = await response.Content.ReadAsStringAsync();
-        // WMS 1.3.0 section 7.3.3.4: a ServiceExceptionReport is returned with HTTP 200;
-        // the failure is carried entirely by the XML body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidFormat");
     }
@@ -166,9 +160,7 @@ public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
             LegendUrl($"VERSION=1.3.0&LAYER={WebAppFixture.TestLayerId}&STYLE=nope&FORMAT=image/png"));
 
         var content = await response.Content.ReadAsStringAsync();
-        // WMS 1.3.0 section 7.3.3.4: a ServiceExceptionReport is returned with HTTP 200;
-        // the failure is carried entirely by the XML body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("StyleNotDefined");
     }
@@ -182,9 +174,7 @@ public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
             LegendUrl($"VERSION=1.3.0&LAYER={WebAppFixture.TestLayerId}&FORMAT=image/png&SCALE=0"));
 
         var content = await response.Content.ReadAsStringAsync();
-        // WMS 1.3.0 section 7.3.3.4: a ServiceExceptionReport is returned with HTTP 200;
-        // the failure is carried entirely by the XML body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
     }
@@ -198,9 +188,7 @@ public sealed class WmsGetLegendGraphicTests : IAsyncLifetime
             LegendUrl($"VERSION=1.3.0&LAYER={WebAppFixture.TestLayerId}&FORMAT=image/png&WIDTH=9999"));
 
         var content = await response.Content.ReadAsStringAsync();
-        // WMS 1.3.0 section 7.3.3.4: a ServiceExceptionReport is returned with HTTP 200;
-        // the failure is carried entirely by the XML body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidDimensionValue");
     }

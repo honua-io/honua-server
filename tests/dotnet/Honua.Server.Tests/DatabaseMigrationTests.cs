@@ -945,6 +945,51 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         result.Error.Should().NotBeNull("error details should be provided");
     }
 
+    [Fact]
+    public async Task CoreSchemaGuard_WhenInitialJournaledTableIsMissing_RejectsStartupPlan()
+    {
+        var isolatedConnectionString = await _postgres.CreateIsolatedDatabaseAsync(
+            nameof(CoreSchemaGuard_WhenInitialJournaledTableIsMissing_RejectsStartupPlan));
+        var databaseName = new Npgsql.NpgsqlConnectionStringBuilder(isolatedConnectionString).Database!;
+        try
+        {
+            var connectionString = isolatedConnectionString;
+            var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+            var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+
+            (await runner.RunMigrationsAsync(
+                connectionString,
+                Assembly.GetAssembly(typeof(Program))!)).Successful.Should().BeTrue();
+
+            await using (var connection = new Npgsql.NpgsqlConnection(connectionString))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "DROP TABLE honua.layers CASCADE;";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var failedPlan = await runner.PlanMigrationsAsync(
+                connectionString,
+                Assembly.GetAssembly(typeof(Program))!);
+            failedPlan.Successful.Should().BeFalse();
+            failedPlan.Error.Should().BeOfType<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+            failedPlan.Error!.Message.Should().Contain("table layers");
+
+            var failedRun = await runner.RunMigrationsAsync(
+                connectionString,
+                Assembly.GetAssembly(typeof(Program))!);
+            failedRun.Successful.Should().BeFalse();
+            failedRun.Error.Should().BeOfType<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaFloorException>();
+            failedRun.Error!.Message.Should().Contain("Honua.Server.Migrations.001_CreateHonuaSchema.sql");
+            failedRun.Error.Message.Should().Contain("table layers");
+        }
+        finally
+        {
+            await _postgres.DropDatabaseAsync(databaseName);
+        }
+    }
+
     private async Task<Npgsql.NpgsqlConnection> OpenSchemaConnectionAsync()
     {
         var connection = new Npgsql.NpgsqlConnection(_connectionString);

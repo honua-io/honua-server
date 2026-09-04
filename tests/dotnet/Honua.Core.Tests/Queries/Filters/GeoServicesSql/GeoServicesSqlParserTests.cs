@@ -95,6 +95,19 @@ public class GeoServicesSqlParserTests
     }
 
     [Fact]
+    public void Parse_IntervalLiteral_ProducesIntervalFunction()
+    {
+        var expression = _parser.Parse("created_at >= CURRENT_TIMESTAMP - INTERVAL '7' DAY");
+
+        var binary = (BinaryExpression)expression;
+        var subtract = (BinaryExpression)binary.Right;
+        var interval = (FunctionCall)subtract.Right;
+        interval.FunctionName.Should().Be("INTERVAL");
+        interval.Arguments.Should().HaveCount(2);
+        ((Literal)interval.Arguments[1]).Value.Should().Be("DAY");
+    }
+
+    [Fact]
     public void Parse_TimestampLiteralAtMidnightWithoutOffset_Accepted()
     {
         // The exact literal from the issue report. Midnight collapses to a Date

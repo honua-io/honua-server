@@ -17,7 +17,7 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms;
 /// Configures the test layer with explicit Metadata V2 temporal metadata so
 /// the dimension is opt-in (fallback-only layers do not advertise a time dimension)
 /// and exercises both GetCapabilities advertising and GetMap TIME parameter
-/// acceptance/rejection.
+/// acceptance and per-layer temporal semantics.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Wms13)]
@@ -107,7 +107,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=not-a-time");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidDimensionValue");
@@ -116,17 +116,32 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetMap_NonTimeAwareLayer_WithTime_ReturnsServiceException()
+    public async Task Wms_GetMap_NonTimeAwareLayer_WithTime_IgnoresTimeAndReturnsImage()
     {
         await ClearLayerTemporalAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2024-06-15T12:00:00Z");
 
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
-        content.Should().Contain("ServiceExceptionReport");
-        content.Should().Contain("InvalidDimensionValue");
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(content));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_MixedTimeAndNonTimeLayers_WithTime_IgnoresTimeForNonTimeLayer()
+    {
+        await ConfigureLayerAsTimeAwareAsync();
+        _fixture.UpdateV2ResourceMetadata(1, clearTemporal: true);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId},1&STYLES=,&FORMAT=image/png&TIME=2024-06-15T12:00:00Z");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(content));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
     [IntegrationTest]
@@ -141,6 +156,22 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Warning").Should().ContainSingle(value => value.Contains("Default value used", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_TimeInterval_UsesAdvertisedDefaultWithoutNearestSubstitution()
+    {
+        await ConfigureLayerWithIntervalAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.GetValues("Warning").Should().ContainSingle(value => value.Contains("Default value used", StringComparison.Ordinal));
+        response.Headers.GetValues("Warning").Should().NotContain(value => value.Contains("Nearest value used", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
@@ -167,43 +198,81 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetMap_InvalidEndTimeField_WithTime_ReturnsServiceException()
+    public async Task Wms_GetMap_InvalidEndTimeField_WithTime_IgnoresTimeAndReturnsImage()
     {
         // Companion to the GetCapabilities case: when capabilities does not
         // advertise a time dimension because EndTimeField is misconfigured,
-        // GetMap with TIME= must be rejected with InvalidDimensionValue —
-        // matching the documented contract that capabilities and request
-        // validation share the same opt-in resolvability gate (now via
-        // TemporalExtentHelpers.TryResolveOptInTemporalFields).
+        // GetMap must ignore TIME because the resource does not advertise a
+        // resolvable time dimension.
         await ConfigureLayerWithInvalidEndTimeFieldAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2024-06-15T12:00:00Z");
 
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
-        content.Should().Contain("ServiceExceptionReport");
-        content.Should().Contain("InvalidDimensionValue");
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(content));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
     [IntegrationTest]
     [Operation(Operations.Wms)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
-    public async Task Wms_GetMap_InvalidStartTimeField_WithTime_ReturnsServiceException()
+    public async Task Wms_GetMap_InvalidStartTimeField_WithTime_IgnoresTimeAndReturnsImage()
     {
-        // Pre-existing behavior pinned by the new shared opt-in resolver:
-        // a non-existent StartTimeField must reject TIME with
-        // InvalidDimensionValue, not silently fall through to a filter
-        // referencing a non-temporal column.
+        // A resource whose temporal metadata does not resolve does not advertise
+        // a TIME dimension, so WMS C.3.5 requires TIME to be ignored.
         await ConfigureLayerWithInvalidStartTimeFieldAsync();
 
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2024-06-15T12:00:00Z");
 
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(content));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetFeatureInfo_NonTimeAwareLayer_WithTime_IgnoresTime()
+    {
+        await ClearLayerTemporalAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=41&J=74&TIME=2024-06-15T12:00:00Z");
+
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
-        content.Should().Contain("ServiceExceptionReport");
-        content.Should().Contain("InvalidDimensionValue");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
+        content.Should().NotContain("ServiceExceptionReport");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_InvalidLayer_WithBlankExceptions_ReturnsHttp200Image()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=32&HEIGHT=32&CRS=EPSG:4326&LAYERS=does-not-exist&STYLES=&FORMAT=image/png&EXCEPTIONS=application/vnd.ogc.se_blank");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(content));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/WMS")]
+    public async Task Wms_GetMap_TimeAwareLayer_WithUnmatchedInstant_UsesNearestAndWarns()
+    {
+        await ConfigureLayerAsTimeAwareAsync();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&TIME=2024-06-15T12:00:00Z");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        response.Headers.GetValues("Warning").Should().ContainSingle(value => value.Contains("Nearest value used", StringComparison.Ordinal));
     }
 
     [IntegrationTest]
@@ -272,7 +341,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId},1&STYLES=,&FORMAT=image/png&TIME=current");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidDimensionValue");
     }
@@ -311,6 +380,18 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
             temporal: new MetadataV2ResourceTemporal { StartTimeField = "timestamp" });
+        return Task.CompletedTask;
+    }
+
+    private Task ConfigureLayerWithIntervalAsync()
+    {
+        _fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            temporal: new MetadataV2ResourceTemporal
+            {
+                StartTimeField = "timestamp",
+                EndTimeField = "event_date",
+            });
         return Task.CompletedTask;
     }
 

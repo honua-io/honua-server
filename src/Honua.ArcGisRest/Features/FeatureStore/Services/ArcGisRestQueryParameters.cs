@@ -36,7 +36,9 @@ internal static class ArcGisRestQueryParameters
         builder.Append(serviceUrl).Append('/').Append(layerId).Append("/query?f=json");
         AppendCommonQueryParameters(builder, query);
         AppendOutFields(builder, query);
-        AppendReturnGeometry(builder, returnGeometry: true);
+        // Esri warns that geometry is unreliable alongside returnDistinctValues.
+        // Distinct federated reads therefore request attribute rows only.
+        AppendReturnGeometry(builder, returnGeometry: !query.Distinct);
         AppendOutSr(builder, query);
         AppendOrderBy(builder, query);
         AppendPaging(builder, query);

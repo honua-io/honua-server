@@ -450,6 +450,45 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     [Fact]
+    public async Task StreamQueryAsync_WithLowercaseObjectId_DoesNotEmitCaseVariantAlias()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        streamingStore.StreamFeaturesAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => (IAsyncEnumerable<Feature>)StreamFeatures(
+            [
+                Feature.Create(
+                    42,
+                    geometry: null,
+                    ImmutableDictionary<string, object?>.Empty
+                        .Add("objectid", 42L)
+                        .Add("name", "alpha"))
+            ]));
+
+        var sut = CreateSut(featureReader, streamingStore);
+        var context = CreateHttpContext();
+        var service = CreateService();
+        var resource = CreateResource();
+        var publication = CreatePublication(service, resource);
+
+        await sut.StreamQueryAsync(
+            service,
+            resource,
+            publication,
+            7,
+            new FeatureQuery { Limit = 1 },
+            new QueryParameters { F = "json", ReturnGeometry = false },
+            outputSrid: null,
+            context: context,
+            cancellationToken: CancellationToken.None);
+
+        using var document = JsonDocument.Parse(await ReadResponseAsync(context));
+        var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
+        attributes.GetProperty("objectid").GetInt64().Should().Be(42);
+        attributes.TryGetProperty("OBJECTID", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task StreamQueryAsync_WithOutputSrid_SetsTopLevelSpatialReferenceOnly()
     {
         var featureReader = Substitute.For<IFeatureReader>();

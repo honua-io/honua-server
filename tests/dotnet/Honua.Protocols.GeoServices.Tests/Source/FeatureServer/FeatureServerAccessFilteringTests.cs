@@ -101,7 +101,7 @@ public sealed class FeatureServerAccessFilteringTests
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
-    public async Task LayerMetadata_WithAttachmentSurface_AdvertisesUploads()
+    public async Task LayerMetadata_WithAttachmentSurface_DoesNotAdvertiseUnsupportedUploadId()
     {
         using var factory = CreateFactory();
         using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
@@ -124,7 +124,7 @@ public sealed class FeatureServerAccessFilteringTests
         // to issue the request when it is absent/false.
         root.GetProperty("supportsQueryAttachments").GetBoolean().Should().BeTrue();
         root.GetProperty("supportsAttachmentKeywords").GetBoolean().Should().BeTrue();
-        root.GetProperty("supportsAttachmentsByUploadId").GetBoolean().Should().BeTrue();
+        root.GetProperty("supportsAttachmentsByUploadId").GetBoolean().Should().BeFalse();
 
         // Regression for the operations-block inconsistency: the @arcgis/core JS SDK
         // reads supportsQueryAttachments off the nested advancedQueryCapabilities

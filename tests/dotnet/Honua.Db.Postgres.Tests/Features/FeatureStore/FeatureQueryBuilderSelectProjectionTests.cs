@@ -48,6 +48,50 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
     }
 
     [Fact]
+    public void BuildSelectQuery_WithDistinct_ExcludesFeatureIdentityAndGeometryFromProjection()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("category"),
+            Limit = 10001
+        };
+
+        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("SELECT DISTINCT 0::bigint AS objectid, NULL AS geometry");
+        result.Sql.Should().Contain("LIMIT $");
+        result.Sql.Should().NotContain("ST_AsBinary(geometry)");
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithDistinct_PreservesRequestedObjectIdAndOrderBy()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("objectid", "category"),
+            OrderBy = ImmutableArray.Create(new OrderByClause(
+                "category",
+                ascending: false,
+                fieldType: MetadataV2FieldType.String)),
+            Limit = 2,
+            Offset = 4
+        };
+
+        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("jsonb_build_object($2::text, objectid");
+        result.Sql.Should().Contain("ORDER BY NULLIF(attributes::jsonb ->> $4::text, '') DESC, attributes ASC");
+        result.Sql.Should().Contain("LIMIT $5 OFFSET $6");
+        // LIMIT/OFFSET are bound by FeatureDataAccess after the projection/filter
+        // parameters, so only the three field-name parameters belong here.
+        result.WhereParameters.Should().Equal("objectid", "category", "category");
+    }
+
+    [Fact]
     public void BuildOptimizedSelectQuery_WithOutFields_ProjectsRequestedAttributes()
     {
         var queryBuilder = CreateQueryBuilder();

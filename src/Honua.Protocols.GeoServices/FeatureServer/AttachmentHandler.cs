@@ -408,7 +408,14 @@ internal static partial class AttachmentHandler
                 deleteResults.Add(new DeleteAttachmentResult
                 {
                     ObjectId = attachmentId,
-                    Success = success
+                    Success = success,
+                    Error = success
+                        ? null
+                        : new EditError
+                        {
+                            Code = 1000,
+                            Description = "Attachment not found."
+                        }
                 });
             }
 

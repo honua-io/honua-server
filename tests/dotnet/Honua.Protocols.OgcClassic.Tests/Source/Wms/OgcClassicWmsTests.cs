@@ -95,7 +95,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=not-a-version");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
@@ -110,7 +110,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.2");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
@@ -125,7 +125,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.2.3.4");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
@@ -427,7 +427,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&BBOX=bad&WIDTH=256&HEIGHT=256&SRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
         content.Should().Contain("<ServiceExceptionReport version=\"1.1.1\">");
         content.Should().NotContain("xmlns=\"http://www.opengis.net/ogc\"");
@@ -443,7 +443,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&BBOX=1,0,0,1&WIDTH=200&HEIGHT=200&SRS=EPSG:4326&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
@@ -485,7 +485,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&WIDTH=256&HEIGHT=256&CRS=EPSG:4326");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -510,7 +510,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             "/rest/services/%20/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -521,7 +521,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WFS&REQUEST=GetCapabilities");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]
@@ -546,7 +546,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&WIDTH=256&HEIGHT=256&CRS=CRS:84&FORMAT=image/png&LAYERS=NonExistant&STYLES=");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("LayerNotDefined");
@@ -561,7 +561,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&WIDTH=256&HEIGHT=256&CRS=CRS:84&FORMAT=image/png&LAYERS=NonExistant&STYLES=&EXCEPTIONS=application/vnd.ogc.se_xml");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("LayerNotDefined");
@@ -576,7 +576,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=1,0,0,1&WIDTH=200&HEIGHT=200&CRS=CRS:84&FORMAT=image/png&LAYERS={WebAppFixture.TestLayerId}&STYLES=");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
@@ -660,7 +660,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&X=41&Y=74");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidPoint");
@@ -751,7 +751,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.1.1&BBOX=-180,-90,180,90&SRS=EPSG:4326&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=text/plain&I=41&J=74");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidPoint");
@@ -900,7 +900,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={Uri.EscapeDataString(invalidFilter)}");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
@@ -919,7 +919,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={twoFilters}");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
     }
@@ -934,7 +934,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={Uri.EscapeDataString(scalarFilter)}");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("InvalidParameterValue");
@@ -950,7 +950,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-90,-180,90,180&WIDTH=256&HEIGHT=256&CRS=EPSG:4326&LAYERS={WebAppFixture.TestLayerId}&STYLES=&FORMAT=image/png&FILTER={Uri.EscapeDataString(notFilter)}");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         content.Should().Contain("InvalidParameterValue");
     }
 
@@ -1121,7 +1121,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
             $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&BBOX=-180,-90,180,90&WIDTH=256&HEIGHT=256&CRS=CRS:84&FORMAT=image/png&LAYERS=NonExistant&STYLES=");
 
         var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("ServiceExceptionReport");
         content.Should().Contain("LayerNotDefined");

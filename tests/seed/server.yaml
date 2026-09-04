@@ -2532,7 +2532,8 @@ sql:
           SELECT md5(COALESCE(string_agg(row_signature, '|' ORDER BY row_signature), ''))
           INTO current_fingerprint
           FROM (
-              SELECT 's:' || s.service_name || '|' || COALESCE(s.metadata::text, '') AS row_signature
+              SELECT 's:' || s.service_name || '|' || COALESCE(s.metadata::text, '')
+                  || '|' || COALESCE(s.capabilities::text, '') AS row_signature
               FROM honua.services s
               UNION ALL
               SELECT 'l:' || l.layer_id::text || '|' || l.layer_name || '|' || l.table_name
@@ -2596,6 +2597,7 @@ sql:
                   SELECT
                       sl.service_name,
                       COALESCE(s.description, '') AS service_description,
+                      COALESCE(s.capabilities, ARRAY['Query']::text[]) AS service_capabilities,
                       l.layer_id,
                       l.layer_name,
                       COALESCE(l.description, '') AS layer_description,
@@ -2861,7 +2863,7 @@ sql:
                   FROM layer_rows
               ),
               service_names AS (
-                  SELECT DISTINCT service_name, service_part, service_access_policy
+                  SELECT DISTINCT service_name, service_part, service_access_policy, service_capabilities
                   FROM layer_rows
               ),
               service_rows AS (
@@ -2872,7 +2874,7 @@ sql:
                           'publicationIds', '[]'::jsonb,
                           'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
                           'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
-                          'options', '{}'::jsonb,
+                          'options', jsonb_build_object('capabilities', to_jsonb(service_capabilities)),
                           'accessPolicy', service_access_policy,
                           'status', (SELECT value FROM status_doc),
                           'extensions', '{}'::jsonb
@@ -3013,7 +3015,7 @@ sql:
                           'layerIndex', layer_id,
                           'serviceLocalId', layer_part,
                           'supportedFormats', '[]'::jsonb,
-                          'capabilities', '[]'::jsonb,
+                          'capabilities', to_jsonb(service_capabilities),
                           'status', (SELECT value FROM status_doc),
                           'options', '{}'::jsonb,
                           'extensions', '{}'::jsonb

@@ -37,5 +37,6 @@ internal interface IFeatureServerQueryServices
         string[]? outFields,
         bool suppressObjectId = false,
         bool returnCentroid = false,
-        int? requestedOutputSrid = null);
+        int? requestedOutputSrid = null,
+        QuantizationTransform? quantizationTransform = null);
 }

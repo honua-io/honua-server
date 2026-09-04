@@ -448,6 +448,28 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
 
     protected override string TranslateFunction(FunctionCall function, FilterTranslationContext context)
     {
+        if (string.Equals(function.FunctionName, "INTERVAL", StringComparison.OrdinalIgnoreCase))
+        {
+            if (function.Arguments.Count != 2 ||
+                function.Arguments[0] is not Literal value ||
+                function.Arguments[1] is not Literal unit ||
+                unit.Value is not string unitText ||
+                value.Type is not (LiteralType.Text or LiteralType.Number) ||
+                !new[] { "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND" }
+                    .Contains(unitText, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("INTERVAL requires a supported value and unit.");
+            }
+
+            var translatedValue = TranslateExpression(value, context);
+            if (value.Type == LiteralType.Number)
+            {
+                translatedValue = $"({translatedValue})::text";
+            }
+
+            return $"({translatedValue} || ' {unitText.ToLowerInvariant()}')::interval";
+        }
+
         if (string.Equals(function.FunctionName, "GEODISTANCE", StringComparison.OrdinalIgnoreCase))
         {
             return TranslateGeoDistance(function, context);

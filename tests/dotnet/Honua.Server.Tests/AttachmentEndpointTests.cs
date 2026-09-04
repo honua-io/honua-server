@@ -520,7 +520,34 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
 
         // Assert
+        ((int)response.StatusCode).Should().Be(200);
         await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DeleteAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
+    public async Task DeleteAttachments_ForMissingAttachment_ReturnsFailureErrorObject()
+    {
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { new StringContent("999"), "attachmentIds" }
+        };
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/deleteAttachments", form);
+
+        response.Be200Ok();
+        var result = JsonSerializer.Deserialize(
+            await response.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.DeleteAttachmentsResponse);
+        result.Should().NotBeNull();
+        result!.DeleteAttachmentResults.Should().ContainSingle();
+        var deleteResult = result.DeleteAttachmentResults[0];
+        deleteResult.Success.Should().BeFalse();
+        deleteResult.Error.Should().NotBeNull();
+        deleteResult.Error!.Code.Should().Be(1000);
+        deleteResult.Error.Description.Should().NotBeNullOrWhiteSpace();
     }
 
     [IntegrationTest]

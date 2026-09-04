@@ -325,7 +325,10 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             unsupported.Add("gdbVersion");
         }
 
-        if (!string.IsNullOrWhiteSpace(queryParams.SqlFormat))
+        if (!string.IsNullOrWhiteSpace(queryParams.SqlFormat) &&
+            !queryParams.SqlFormat.Equals("standard", StringComparison.OrdinalIgnoreCase) &&
+            !queryParams.SqlFormat.Equals("native", StringComparison.OrdinalIgnoreCase) &&
+            !queryParams.SqlFormat.Equals("none", StringComparison.OrdinalIgnoreCase))
         {
             unsupported.Add("sqlFormat");
         }
