@@ -58,6 +58,50 @@ public sealed class MapServerRasterPagingTests
     }
 
     [UnitTest]
+    public async Task QueryAllRasterFeaturePagesAsync_NonPagedReader_KeepsEachReadBounded()
+    {
+        const int pageSize = 2;
+        var feature = Feature.Create(1, geometry: null, ImmutableDictionary<string, object?>.Empty);
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryAsync(17, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<FeatureQuery>(1).Offset switch
+            {
+                null or 0 => QueryResult<Feature>.Create(3, ImmutableArray.Create(feature, feature), hasMoreResults: true),
+                pageSize => QueryResult<Feature>.Create(3, ImmutableArray.Create(feature)),
+                _ => QueryResult<Feature>.Empty()
+            });
+        var query = new FeatureQuery
+        {
+            Limit = pageSize,
+            OrderBy = [new OrderByClause("objectid")]
+        };
+
+        var total = 0;
+        await foreach (var page in RasterMapRenderingPipeline.QueryAllRasterFeaturePagesAsync(
+                           reader,
+                           layerId: 17,
+                           query,
+                           CancellationToken.None))
+        {
+            total += page.Length;
+        }
+
+        total.Should().Be(3);
+        await reader.Received(1).QueryAsync(
+            17,
+            Arg.Is<FeatureQuery>(candidate =>
+                candidate.Offset == pageSize &&
+                candidate.Limit == pageSize &&
+                candidate.OrderBy.HasValue &&
+                candidate.OrderBy.Value[0].Field == "objectid"),
+            Arg.Any<CancellationToken>());
+        await reader.DidNotReceive().QueryAsync(
+            17,
+            Arg.Is<FeatureQuery>(candidate => candidate.Limit == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task TryRenderAllRasterPointPagesAsync_FullFirstPage_ReadsAndRendersFollowingPage()
     {
         var reader = Substitute.For<IFeatureReader, IRasterPointReader>();

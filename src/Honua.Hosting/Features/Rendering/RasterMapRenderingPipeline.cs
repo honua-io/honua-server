@@ -1403,22 +1403,34 @@ internal static class RasterMapRenderingPipeline
         FeatureQuery query,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (featureReader is not IPagedFeatureReader pagedFeatureReader)
-        {
-            var result = await featureReader.QueryAsync(
-                layerId,
-                query with { Limit = null, Offset = null },
-                cancellationToken).ConfigureAwait(false);
-            if (!result.Items.IsDefaultOrEmpty)
-            {
-                yield return result.Items;
-            }
-
-            yield break;
-        }
-
+        // ArcGIS raster operations do not define a feature-count truncation contract (#4044).
+        // Treat the configured limit as a bounded page size, not a total cap: every page is
+        // rendered immediately, while the request timeout token bounds total database/render work.
         var pageSize = Math.Max(1, query.Limit ?? MaxFeaturesPerLayer);
         var offset = query.Offset ?? 0;
+        if (featureReader is not IPagedFeatureReader pagedFeatureReader)
+        {
+            while (true)
+            {
+                var result = await featureReader.QueryAsync(
+                    layerId,
+                    query with { Limit = pageSize, Offset = offset },
+                    cancellationToken).ConfigureAwait(false);
+                if (result.Items.IsDefaultOrEmpty)
+                {
+                    yield break;
+                }
+
+                yield return result.Items;
+                if (result.Items.Length < pageSize)
+                {
+                    yield break;
+                }
+
+                offset = checked(offset + result.Items.Length);
+            }
+        }
+
         while (true)
         {
             var page = await pagedFeatureReader.QueryPageAsync(
