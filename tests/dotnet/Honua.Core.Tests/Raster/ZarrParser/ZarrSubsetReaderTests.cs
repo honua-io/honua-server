@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -417,6 +419,94 @@ public class ZarrSubsetReaderTests
             var actual = BitConverter.ToUInt64(subset.Data, i * sizeof(ulong));
             actual.Should().Be(fillValue, $"cell {i} should be filled with {fillValue} (BH2-015)");
         }
+    }
+
+    [Fact]
+    public async Task ReadSubsetAsync_FloatNaNStringFillValue_MissingChunkFillsWithNaN()
+    {
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["datasets/nan/.zarray"] = Encoding.UTF8.GetBytes(
+                "{\"chunks\":[2,2],\"compressor\":null,\"dtype\":\"<f4\",\"fill_value\":\"NaN\",\"filters\":null,\"order\":\"C\",\"shape\":[2,2],\"zarr_format\":2}")
+        };
+
+        var metadata = await new ZarrMetadataExtractor()
+            .ReadMetadataAsync(new InMemoryZarrRangeReader(objects), "bucket", "datasets/nan");
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
+            new InMemoryZarrRangeReader(objects),
+            "bucket",
+            "datasets/nan",
+            metadata,
+            new ZarrSubsetRequest { Variable = "nan", Start = [0, 0], Stop = [2, 2] });
+
+        for (var i = 0; i < 4; i++)
+        {
+            float.IsNaN(BitConverter.ToSingle(subset.Data, i * sizeof(float))).Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task ReadSubsetAsync_V2NestedDimensionSeparator_UsesSlashChunkKeys()
+    {
+        var raw = new byte[4 * sizeof(float)];
+        for (var i = 0; i < 4; i++)
+        {
+            Buffer.BlockCopy(BitConverter.GetBytes(7f), 0, raw, i * sizeof(float), sizeof(float));
+        }
+
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["datasets/nested/.zarray"] = Encoding.UTF8.GetBytes(
+                "{\"chunks\":[2,2],\"compressor\":null,\"dimension_separator\":\"/\",\"dtype\":\"<f4\",\"fill_value\":-9999,\"filters\":null,\"order\":\"C\",\"shape\":[2,2],\"zarr_format\":2}"),
+            ["datasets/nested/0/0"] = raw
+        };
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/nested");
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
+            reader,
+            "bucket",
+            "datasets/nested",
+            metadata,
+            new ZarrSubsetRequest { Variable = "nested", Start = [0, 0], Stop = [2, 2] });
+
+        subset.Data.Should().Equal(raw);
+    }
+
+    [Fact]
+    public async Task ReadSubsetAsync_IncompressibleCompressedChunk_ReadsFullObject()
+    {
+        var uncompressed = new byte[256 * 256];
+        new Random(4215).NextBytes(uncompressed);
+        byte[] compressed;
+        using (var output = new MemoryStream())
+        {
+            using (var zlib = new ZLibStream(output, CompressionLevel.NoCompression, leaveOpen: true))
+            {
+                zlib.Write(uncompressed);
+            }
+            compressed = output.ToArray();
+        }
+        compressed.Length.Should().BeGreaterThan(uncompressed.Length);
+
+        var objects = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["datasets/random/.zarray"] = Encoding.UTF8.GetBytes(
+                "{\"chunks\":[256,256],\"compressor\":{\"id\":\"zlib\"},\"dtype\":\"|u1\",\"fill_value\":0,\"filters\":null,\"order\":\"C\",\"shape\":[256,256],\"zarr_format\":2}"),
+            ["datasets/random/0.0"] = compressed
+        };
+        var reader = new InMemoryZarrRangeReader(objects);
+        var metadata = await new ZarrMetadataExtractor().ReadMetadataAsync(reader, "bucket", "datasets/random");
+
+        var subset = await new ZarrSubsetReader().ReadSubsetAsync(
+            reader,
+            "bucket",
+            "datasets/random",
+            metadata,
+            new ZarrSubsetRequest { Variable = "random", Start = [0, 0], Stop = [256, 256] });
+
+        subset.Data.Should().Equal(uncompressed);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Authorization.Abstractions;
@@ -42,6 +43,19 @@ public interface ILayerAccessAuthorizer
     Task<AccessDecision> AuthorizeLayerAsync(
         ClaimsPrincipal principal,
         int layerId,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Evaluates access to a resolved publication, its owning resource, and service.
+    /// This overload is for protocol surfaces whose route id is a publication index
+    /// rather than a storage-layer id.
+    /// </summary>
+    Task<AccessDecision> AuthorizePublicationAsync(
+        ClaimsPrincipal principal,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default);
 }

@@ -37,4 +37,14 @@ internal sealed class NullLayerAccessAuthorizer : ILayerAccessAuthorizer
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
         => Task.FromResult(AccessDecision.Allowed());
+
+    /// <inheritdoc />
+    public Task<AccessDecision> AuthorizePublicationAsync(
+        ClaimsPrincipal principal,
+        Honua.Core.Features.Metadata.Domain.V2.MetadataV2Publication publication,
+        Honua.Core.Features.Metadata.Domain.V2.MetadataV2Resource resource,
+        Honua.Core.Features.Metadata.Domain.V2.MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(AccessDecision.Allowed());
 }
