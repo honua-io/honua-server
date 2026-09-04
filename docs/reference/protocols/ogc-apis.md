@@ -144,6 +144,12 @@ Read-only catalog discovery over published services and layers (record ids `laye
 
 `/items` parameters: `limit` (cap 1000), `offset`, `ids`, `type` (`service`/`dataset`), `externalIds`, `q`, `bbox`, `datetime`. Record create/update/delete, harvesting, facets, and CQL filtering are not implemented.
 
+## OGC API - Environmental Data Retrieval (EDR) — Preview
+
+The `/edr` surface is Preview in release 2026.1. Functional CRS, temporal
+selection, output-format, and MULTIPOINT coordinate corrections are deferred to
+release 2026.2.
+
 ## OGC API Styles
 
 | Method | Path | Purpose |

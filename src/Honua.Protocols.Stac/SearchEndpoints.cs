@@ -875,7 +875,7 @@ internal static class SearchEndpoints
             : (false, null, null, result.ErrorMessage, result.IsUnknownField);
     }
 
-    private static bool TryBuildSortOrder(
+    internal static bool TryBuildSortOrder(
         MetadataV2Resource resource,
         ImmutableArray<StacSortDefinition> sortby,
         out ImmutableArray<OrderByClause> orderBy,
@@ -894,25 +894,12 @@ internal static class SearchEndpoints
                 return false;
             }
 
-            if (!TryNormalizePropertyName(sort.Field, out var normalizedField))
-            {
-                error = $"Invalid sort field '{sort.Field}'.";
-                orderBy = default;
-                return false;
-            }
-
-            if (!availableFields.ContainsKey(normalizedField))
+            if (!TryResolveCanonicalSortField(resource, sort.Field, availableFields, out var normalizedField, out var fieldType))
             {
                 error = $"Unknown sort field '{sort.Field}'.";
                 orderBy = default;
                 return false;
             }
-
-            // Carry the schema field type so numeric properties sort numerically rather
-            // than lexicographically (FeatureQueryBuilder only casts when FieldType is set).
-            var fieldType = availableFields.TryGetValue(normalizedField, out var schemaField)
-                ? schemaField.Type
-                : (MetadataV2FieldType?)null;
 
             if (string.Equals(sort.Direction, "desc", StringComparison.OrdinalIgnoreCase))
             {
@@ -936,6 +923,86 @@ internal static class SearchEndpoints
         return true;
     }
 
+    /// <summary>
+    /// Resolves the STAC Item Search canonical fields to the source attribute that
+    /// produces the same value as the item mapper. The queryables documents advertise
+    /// <c>id</c> and <c>datetime</c> even when neither is a physical column; rejecting
+    /// those names here made the advertised Sort extension unusable (#4147).
+    /// </summary>
+    private static bool TryResolveCanonicalSortField(
+        MetadataV2Resource resource,
+        string requestedField,
+        Dictionary<string, MetadataV2Field> availableFields,
+        out string fieldName,
+        out MetadataV2FieldType? fieldType)
+    {
+        fieldName = string.Empty;
+        fieldType = null;
+        if (!TryNormalizePropertyName(requestedField, out var normalized))
+        {
+            return false;
+        }
+
+        if (string.Equals(normalized, "id", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var candidate in new[] { "stac_id", "item_id", "id" })
+            {
+                if (availableFields.TryGetValue(candidate, out var idField))
+                {
+                    fieldName = idField.Name;
+                    fieldType = idField.Type;
+                    return true;
+                }
+            }
+
+            var primaryId = resource.FindPrimaryIdField();
+            fieldName = primaryId?.Name ?? "objectid";
+            fieldType = primaryId?.Type ?? MetadataV2FieldType.Integer;
+            return true;
+        }
+
+        if (string.Equals(normalized, "datetime", StringComparison.OrdinalIgnoreCase))
+        {
+            var configuredTime = resource.ReadTemporalFields().StartTimeField;
+            if (!string.IsNullOrWhiteSpace(configuredTime) &&
+                availableFields.TryGetValue(configuredTime, out var configuredField))
+            {
+                fieldName = configuredField.Name;
+                fieldType = configuredField.Type;
+                return true;
+            }
+
+            foreach (var candidate in TemporalFieldDefaults.TemporalFallbackFieldNames)
+            {
+                if (availableFields.TryGetValue(candidate, out var temporalField) &&
+                    temporalField.Type is MetadataV2FieldType.Date
+                        or MetadataV2FieldType.DateTime
+                        or MetadataV2FieldType.Time)
+                {
+                    fieldName = temporalField.Name;
+                    fieldType = temporalField.Type;
+                    return true;
+                }
+            }
+
+            // Items without a source temporal value all receive the same deterministic
+            // fallback instant. Object-id ordering is therefore the only meaningful and
+            // stable order for this otherwise valid canonical sort field.
+            fieldName = "objectid";
+            fieldType = MetadataV2FieldType.Integer;
+            return true;
+        }
+
+        if (!availableFields.TryGetValue(normalized, out var schemaField))
+        {
+            return false;
+        }
+
+        fieldName = schemaField.Name;
+        fieldType = schemaField.Type;
+        return true;
+    }
+
     // TODO(#1035 follow-up): the V2 fields lookup is now keyed on
     // <see cref="MetadataV2Resource.SchemaFields"/>, so query parameters like
     // <c>fields=+properties.foo</c> only resolve when the V2 graph carries <c>foo</c>
@@ -944,7 +1011,7 @@ internal static class SearchEndpoints
     // and will return "Unknown fields include" until the V2 graph is rederived
     // from the v1 catalog or the fixtures are ported to publish via the V2 builder
     // directly. See task #55 (Port test fixtures off v1).
-    private static bool TryBuildFieldSelection(
+    internal static bool TryBuildFieldSelection(
         MetadataV2Resource resource,
         StacFieldsExtension fields,
         out ImmutableArray<string> outFields,
@@ -955,6 +1022,14 @@ internal static class SearchEndpoints
         var availableFields = schemaFields
             .Where(field => field.Type != MetadataV2FieldType.Geometry)
             .ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        // `datetime` and `id` are STAC canonical properties. They are included in
+        // validation only; include-all must continue to select physical schema fields
+        // so synthetic names are never sent to a provider as requested columns.
+        var canonicalFields = new Dictionary<string, MetadataV2Field>(availableFields, StringComparer.OrdinalIgnoreCase)
+        {
+            ["datetime"] = new MetadataV2Field { Name = "datetime", Type = MetadataV2FieldType.DateTime, Nullable = true },
+            ["id"] = new MetadataV2Field { Name = "id", Type = MetadataV2FieldType.String, Nullable = true }
+        };
 
         var includeAll = false;
         var requestedIncludes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1003,7 +1078,7 @@ internal static class SearchEndpoints
                     continue;
                 }
 
-                if (!availableFields.ContainsKey(normalized))
+                if (!canonicalFields.ContainsKey(normalized))
                 {
                     error = $"Unknown fields include '{include}'.";
                     outFields = default;
@@ -1044,7 +1119,7 @@ internal static class SearchEndpoints
                     continue;
                 }
 
-                if (!availableFields.ContainsKey(normalized))
+                if (!canonicalFields.ContainsKey(normalized))
                 {
                     error = $"Unknown fields exclude '{exclude}'.";
                     outFields = default;
@@ -1079,7 +1154,8 @@ internal static class SearchEndpoints
         var temporalFields = resource.ReadTemporalFields();
         var timeField = temporalFields.StartTimeField;
         var endTimeField = temporalFields.EndTimeField;
-        var requiresUnprojectedAttributes = selected.Any(IsReservedAttributeProjectionName);
+        var requiresUnprojectedAttributes = selected.Any(IsReservedAttributeProjectionName) ||
+            includedTopLevelFields.Contains("id");
         var queryFields = requiresUnprojectedAttributes
             ? default
             : selected.Length == 0
@@ -1180,7 +1256,7 @@ internal static class SearchEndpoints
             ? projection.IncludedTopLevelFields.Contains(field)
             : !projection.ExcludedTopLevelFields.Contains(field);
 
-    private sealed record StacFieldProjection(
+    internal sealed record StacFieldProjection(
         IReadOnlySet<string>? SelectedProperties,
         bool IsIncludeMode,
         IReadOnlySet<string> IncludedTopLevelFields,

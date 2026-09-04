@@ -332,6 +332,13 @@ internal static class FeatureCatalogGenerator
             return "serve.sensorthings";
         }
 
+        // OGC API - EDR is Preview in release 2026.1; remaining functional
+        // query corrections are deferred to release/2026.2.
+        if (route.StartsWith("/edr", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.ogc-api-edr";
+        }
+
         // Branch versioning (VMS REST surface) — /rest/services/{serviceId}/VersionManagementServer/*
         // Gated Preview in the BH6-001/BH6-002 fix batch (ADR-0058).
         if (route.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase) &&

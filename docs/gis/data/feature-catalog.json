@@ -5727,7 +5727,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5741,7 +5741,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5757,7 +5757,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_UnknownCollection_Returns404"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5781,7 +5781,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ValidParameterNameSubset_ReturnsOnlyRequestedParameters"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5805,7 +5805,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ValidParameterNameSubset_ReturnsOnlyRequestedParameter"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5820,7 +5820,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -12675,6 +12675,7 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_PreservesAndOrNotNullTruthTable",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_WithIds_NotUnknownDoesNotMatch",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_WithIds_TypedUnknownPreservesKleeneLogic",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_CanonicalStacFields_AreAcceptedByFieldsAndSort",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_IncludeMode_PropertyOnlyInclude_RequiredFieldsAlwaysPresent",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_NoFilters_ReturnsItems",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_RecordsSharedTelemetryForSearchWork",
