@@ -1,7 +1,7 @@
 # Run from this directory: promtool test rules prometheus-errors.test.yml
 # Both series use the actual HonuaTelemetry.cs labels and a 100% failure rate.
 rule_files:
-  - ../../../../docs/guides/deploy/examples/prometheus-alerts.yml
+  - ../../../docs/guides/deploy/examples/prometheus-alerts.yml
 evaluation_interval: 1m
 tests:
   - interval: 1m
