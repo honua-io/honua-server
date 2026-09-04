@@ -32,7 +32,7 @@ internal interface IOperateStatusService
 internal sealed class OperateStatusService : IOperateStatusService
 {
     /// <summary>The payload schema version. Additive changes bump the minor component.</summary>
-    internal const string SchemaVersion = "1.0";
+    internal const string SchemaVersion = "1.1";
 
     private const int MaxTopFindings = 5;
 
@@ -78,8 +78,7 @@ internal sealed class OperateStatusService : IOperateStatusService
                 .ToList(),
             ParkedDeploys: deploys.Parked,
             AlertDeadLettered: alerts.DeadLettered ?? 0,
-            AlertDispatchImpaired: (alerts.Enabled && !alerts.DispatcherRunning) || alerts.StoragePollFailing,
-            SloErrorBudgetExhausted: OperateSloEvaluator.IsErrorBudgetExhausted(slo));
+            AlertDispatchImpaired: (alerts.Enabled && !alerts.DispatcherRunning) || alerts.StoragePollFailing);
 
         var (status, reasons) = OperateStatusVerdictEvaluator.Evaluate(signals);
 

@@ -18,7 +18,7 @@ You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the 
 | `GET /monitoring/metrics/{connection-pool,cache,resources,upload-queue,database-resilience}` | admin | Focused operational diagnostics |
 | `GET /monitoring/alerts` | admin | Current alert conditions from production thresholds |
 | `GET /api/v1/admin/observability/{errors,telemetry,events,migrations}` | admin | Error history, tracing status, Operate events, migration state |
-| `GET /api/v1/operate/status` | ops-reader or admin | **Server-authoritative aggregated status** — one server-computed verdict plus per-domain rollups and the availability SLO |
+| `GET /api/v1/operate/status` | ops-reader or admin | **Server-authoritative aggregated status** — one server-computed verdict, per-domain rollups, and an explicitly sourced SLO posture |
 
 ## Aggregated operational status
 
@@ -26,20 +26,31 @@ Instead of stitching the endpoints above and inventing your own "is the system h
 
 > Open Honua Console's **Operate → Health** view. It reads `/api/v1/operate/status`; Console/Operate routes are not exposed by the OpenAPI explorer.
 
-It returns a server-computed `status` (`healthy` / `degraded` / `unhealthy`) with the machine-readable `reasons` that drove it, per-domain rollups (`deploys`, `jobs`, `alerts`, `migrations`, `findings`, `telemetryBackends`) each carrying a `source` hint you can drill down to, and a `schemaVersion` + `generatedAt` so a consumer can version its parsing. The verdict rules are fixed and documented server-side: the health-check roll-up being `Unhealthy` ⇒ `unhealthy`; a `Critical` finding, a deploy parked in manual intervention, dead-lettered alerts, an impaired dispatcher, or an exhausted SLO error budget ⇒ `degraded`; otherwise `healthy`.
+It returns a server-computed `status` (`healthy` / `degraded` / `unhealthy`) with the machine-readable `reasons` that drove it, per-domain rollups (`deploys`, `jobs`, `alerts`, `migrations`, `findings`, `telemetryBackends`) each carrying a `source` hint you can drill down to, and a `schemaVersion` + `generatedAt` so a consumer can version its parsing. The verdict rules are fixed and documented server-side: the health-check roll-up being `Unhealthy` ⇒ `unhealthy`; a `Critical` finding, a deploy parked in manual intervention, dead-lettered alerts, or an impaired dispatcher ⇒ `degraded`; otherwise `healthy`.
 
 With the quickstart `console` profile enabled, open <http://localhost:5174/operate/health> for this status plus the Console health dashboard, and <http://localhost:5174/operate/copilot> for deterministic findings and proposal entry points. Those pages read the same server-owned APIs described here.
 
-### Availability SLO / error budget
+### Platform SLO versus the node-local retained tail
 
-Configure an availability target and the `slo` block evaluates a burn rate and remaining error budget from the in-process, GIS-protocol-partitioned serving-latency window (no metrics database required):
+You may configure an intended availability target and horizon:
 
 ```bash
-Slo__Availability__Target=0.995          # fraction in (0,1); omit to leave the SLO "not configured"
+Slo__Availability__Target=0.995          # operator intent; not itself a platform observation
 Slo__Availability__RollingWindowSeconds=300
 ```
 
-When no target is set, `slo.configured` is `false` with an explicit reason rather than an invented number. v1 evaluates HTTP-5xx serving availability over the aggregator window; the in-band GeoServices error-envelope signal (2xx error envelopes) is not yet folded into the window.
+`slo.configured` remains `false` until a distributed, all-request, in-band-aware query source exists.
+The server does not compute platform availability, burn rate, or error budget from its in-process
+reservoir. Instead, `slo.nodeLocalRetainedTail` names that reservoir honestly as `replica-local`, marks
+`isPlatformSli: false`, and exposes its configured capacity, retained population, samples overwritten
+since reset, actual oldest/newest retained ages, HTTP-5xx-only success ratio, and reset behavior. A
+rolling replacement resets that diagnostic on one replica; it never changes the platform verdict.
+
+Release qualification uses `scripts/scale/check-distributed-availability.py`. Its exact denominator is
+four candidate-bound cells on two replicas: unequal traffic, more than 4,096 requests per exercised
+protocol, HTTP failures plus HTTP-2xx in-band errors, and a rolling replica replacement. Each cell must
+retain the request ledger and raw query artifact; both replicas' query results must equal the ledger's
+failed-outcome numerator divided by its all-serving-request denominator within the frozen tolerance.
 
 ### Read-only ops credential
 

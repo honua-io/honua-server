@@ -109,6 +109,9 @@ jobs:
       - name: Verify terminal error receipt contract
         run: python3 scripts/certification/verify-terminal-error-receipts.py
 
+      - name: Verify distributed availability evidence contract
+        run: python3 scripts/scale/test_check_distributed_availability.py
+
       - name: Verify review-first admission contract
         run: scripts/ci/validate-review-first-dispatch.sh
 
