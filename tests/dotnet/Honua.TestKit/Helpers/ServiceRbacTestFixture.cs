@@ -286,6 +286,7 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
     private readonly AccessPolicy? _betaServiceAccessPolicy;
     private readonly AccessPolicy? _alphaLayerAccessPolicy;
     private readonly AccessPolicy? _betaLayerAccessPolicy;
+    private readonly bool _syncEnabled;
 
     public RbacTestLayerCatalog(
         AccessPolicy? alphaServiceMetadata = null,
@@ -294,6 +295,7 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
         AccessPolicy? betaLayerMetadata = null,
         bool betaAlsoIncludesAlphaLayer = false,
         bool reverseServiceOrder = false,
+        bool syncEnabled = true,
         string? alphaServiceName = null,
         string? betaServiceName = null)
     {
@@ -305,6 +307,7 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
         _betaLayerAccessPolicy = betaLayerMetadata;
         _betaAlsoIncludesAlphaLayer = betaAlsoIncludesAlphaLayer;
         _reverseServiceOrder = reverseServiceOrder;
+        _syncEnabled = syncEnabled;
     }
 
     /// <summary>
