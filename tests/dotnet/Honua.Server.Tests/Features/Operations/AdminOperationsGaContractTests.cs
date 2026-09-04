@@ -5,6 +5,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
@@ -13,6 +14,8 @@ using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -22,6 +25,42 @@ namespace Honua.Server.Tests.Features.Operations;
 
 public sealed class AdminOperationsGaContractTests
 {
+    [UnitTest]
+    public async Task AdminMutation_AuditDetails_PreserveEffectiveTenant()
+    {
+        var tenant = new RequestTenantContext();
+        tenant.Set("tenant-a", TenantContextSource.Claim);
+        AuditEvent? recorded = null;
+        var audit = Substitute.For<IAuditLog>();
+        audit.RecordAsync(Arg.Do<AuditEvent>(value => recorded = value), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<string?>("audit-test"));
+        using var services = new ServiceCollection()
+            .AddSingleton<ITenantContext>(tenant).AddSingleton(audit).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Method = "PUT";
+        context.Request.Path = "/api/v1/admin/metadata/layers/1/filter";
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "operator"),
+            new Claim("tenant_id", "tenant-a"),
+            new Claim(ClaimTypes.Role, "admin")
+        ], "test"));
+        context.SetEndpoint(new RouteEndpoint(_ => Task.CompletedTask,
+            RoutePatternFactory.Parse("/api/v1/admin/metadata/layers/{layerId}/filter"),
+            0, EndpointMetadataCollection.Empty, "Set layer filter"));
+        var resolver = Substitute.For<IAuditActionResolver>();
+        resolver.Resolve(Arg.Any<string>(), Arg.Any<string?>()).Returns(new AuditActionDescriptor
+        {
+            EventType = AuditEventType.AdminAction, Action = "admin.config.update", ResourceType = "admin"
+        });
+        var middleware = new AuditLogMiddleware(_ => Task.CompletedTask, resolver);
+
+        await middleware.InvokeAsync(context);
+
+        recorded.Should().NotBeNull();
+        recorded!.Details.Should().Contain("tenant-a", "the shared audit table must identify the effective target tenant");
+    }
+
     [UnitTest]
     public void AdminApprovalPlan_ReviewerProjection_IdentifiesTargetAndChange()
     {
