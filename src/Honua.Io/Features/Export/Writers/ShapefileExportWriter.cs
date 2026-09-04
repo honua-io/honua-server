@@ -2,12 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.IO.Compression;
+using System.Text;
 using System.Globalization;
 using System.Collections.Immutable;
 using Honua.Infrastructure.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO.Esri;
 using NetTopologySuite.IO.Esri.Dbf.Fields;
+using NetTopologySuite.IO.Esri.Dbf;
 using NetTopologySuite.IO.Esri.Shapefiles.Writers;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
@@ -47,7 +49,7 @@ internal static class ShapefileExportWriter
             // "export.shp" is a compile-time relative literal, so it cannot be rooted.
             var shpPath = Path.Join(scratchDir, "export.shp");
             var warnings = new List<string>();
-            var skippedNullGeometry = 0;
+
 
             // Build DBF field name mappings (unique and <=10 chars)
             var dbfFieldMap = BuildDbfFieldMap(fields, warnings);
@@ -64,24 +66,59 @@ internal static class ShapefileExportWriter
             // 3D input is silently flattened to 2D on export (#2744).
             Feature? firstFeature = null;
             Geometry? firstGeometry = null;
-            while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+            // Keep leading unlocated rows on disk while determining the shape dimensions.
+            // A DBF spool preserves their fields and order without unbounded memory buffering.
+            var prefixDirectory = Path.Join(scratchDir, "prefix");
+            Directory.CreateDirectory(prefixDirectory);
+            var prefixPath = Path.Join(prefixDirectory, "null-rows.dbf");
+            DbfWriter? prefixWriter = null;
+            try
             {
-                var candidate = enumerator.Current;
-                if (candidate.Geometry is null || candidate.Geometry.Length == 0)
+                while (await enumerator.MoveNextAsync().ConfigureAwait(false))
                 {
-                    skippedNullGeometry++;
-                    continue;
-                }
+                    var candidate = enumerator.Current;
+                    if (candidate.Geometry is null || candidate.Geometry.Length == 0)
+                    {
+                        prefixWriter ??= new DbfWriter(prefixPath, dbfFields, Encoding.UTF8);
+                        SetDbfValues(prefixWriter.Fields, fields, dbfFieldMap, candidate.Attributes);
+                        prefixWriter.Write();
+                        continue;
+                    }
 
-                firstFeature = candidate;
-                firstGeometry = WkbReaderCache.Get().Read(candidate.Geometry);
-                break;
+                    firstFeature = candidate;
+                    firstGeometry = WkbReaderCache.Get().Read(candidate.Geometry);
+                    break;
+                }
+            }
+            finally
+            {
+                prefixWriter?.Dispose();
             }
 
             var (hasZ, hasM) = DetectZM(firstGeometry);
-            var options = new ShapefileWriterOptions(MapShapeType(geometryType, hasZ, hasM), dbfFields);
+            var options = new ShapefileWriterOptions(MapShapeType(geometryType, hasZ, hasM), dbfFields)
+            {
+                Encoding = Encoding.UTF8
+            };
             using (var shpWriter = Shapefile.OpenWrite(shpPath, options))
             {
+                if (File.Exists(prefixPath))
+                {
+                    using var prefixReader = new DbfReader(prefixPath, Encoding.UTF8);
+                    while (prefixReader.Read())
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        shpWriter.Geometry = null;
+                        foreach (var field in prefixReader.Fields)
+                        {
+                            shpWriter.Fields[field.Name].Value = field.Value;
+                        }
+
+                        shpWriter.Write();
+                        writtenCount++;
+                    }
+                }
+
                 if (firstFeature.HasValue && firstGeometry is not null)
                 {
                     shpWriter.Geometry = NormalizeGeometry(firstGeometry, geometryType);
@@ -93,22 +130,20 @@ internal static class ShapefileExportWriter
                 while (await enumerator.MoveNextAsync().ConfigureAwait(false))
                 {
                     var feature = enumerator.Current;
-                    if (feature.Geometry is null || feature.Geometry.Length == 0)
-                    {
-                        skippedNullGeometry++;
-                        continue;
-                    }
-
-                    shpWriter.Geometry = NormalizeGeometry(WkbReaderCache.Get().Read(feature.Geometry), geometryType);
+                    shpWriter.Geometry = feature.Geometry is { Length: > 0 }
+                        ? NormalizeGeometry(WkbReaderCache.Get().Read(feature.Geometry), geometryType)
+                        : null;
                     SetDbfValues(shpWriter.Fields, fields, dbfFieldMap, feature.Attributes);
                     shpWriter.Write();
                     writtenCount++;
                 }
             }
 
-            if (skippedNullGeometry > 0)
+            Directory.Delete(prefixDirectory, recursive: true);
+            if (warnings.Count > 0)
             {
-                warnings.Add($"{skippedNullGeometry} feature(s) skipped due to null geometry.");
+                await File.WriteAllLinesAsync(Path.Join(scratchDir, "export-warnings.txt"),
+                    warnings, cancellationToken).ConfigureAwait(false);
             }
 
             // Write .prj file if CRS WKT available
@@ -138,7 +173,7 @@ internal static class ShapefileExportWriter
             await using var outputZip = File.OpenRead(zipPath);
             await outputZip.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
 
-            return new ShapefileWriteResult(writtenCount, skippedNullGeometry, warnings);
+            return new ShapefileWriteResult(writtenCount, 0, warnings);
         }
         finally
         {

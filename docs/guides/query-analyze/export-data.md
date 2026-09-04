@@ -61,3 +61,5 @@ Expected: a row/column tuple such as `(5, 12)` with a populated `geometry` colum
 - [Query features](query-features.md)
 - [Run geoprocessing](run-geoprocessing.md)
 - [Connect Excel and Power BI](../connect/excel-power-bi.md)
+
+Shapefile downloads preserve records without geometry as null shapes with their attributes. When field names must change to fit DBF limits, the ZIP includes `export-warnings.txt` listing each change. This manifest is included in synchronous and background downloads; completed background job status also exposes `warnings` and the actual exported feature count.
