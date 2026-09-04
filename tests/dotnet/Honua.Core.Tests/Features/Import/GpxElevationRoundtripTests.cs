@@ -5,7 +5,6 @@ using System.Text;
 using Honua.Core.Features.FileImport.Services;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
-using Xunit;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -32,7 +31,7 @@ public sealed class GpxElevationRoundtripTests
 
         var source = Assert.Single(imported);
         // GeoJSON is a supported output for GPX-imported features and retains elevation.
-        using var exported = new MemoryStream(Encoding.UTF8.GetBytes(new GeoJsonWriter().Write(source)));
+        using var exported = new MemoryStream(Encoding.UTF8.GetBytes(new GeoJsonWriter { Dimension = 3 }.Write(new FeatureCollection { source })));
         var reimported = new List<IFeature>();
         await foreach (var feature in new StreamingGeoJsonReader().ReadFeaturesAsync(exported))
         {
