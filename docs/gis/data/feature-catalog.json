@@ -14433,6 +14433,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Discover_WithArcGisAuthenticationFailure_PreservesClientStatus",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Discover_WithConfiguredAllowlistRejectsUnlistedHostBeforeDiscovery",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Discover_WithCredentialQueryParameter_ReturnsBadRequest",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Discover_WithEmbeddedCredentials_ReturnsBadRequest",
@@ -17895,6 +17896,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Generalize_DeviationUnitConvertsToSpatialReferenceUnits",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Generalize_PostPolyline_RemovesNearCollinearVertices"
       ],
       "proof_ledger_surface": "geometry-service",
@@ -18046,7 +18048,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceGeoCoordinateStringTests.ToGeoCoordinateString_AddSpacesIsHonoredIndependentlyOfRounding",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceGeoCoordinateStringTests.ToGeoCoordinateString_BatchCoordinates_ReturnsOneStringPerInput",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceGeoCoordinateStringTests.ToGeoCoordinateString_ConversionModeIsApplied",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceGeoCoordinateStringTests.ToGeoCoordinateString_Mgrs_ReturnsGridStrings",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceGeoCoordinateStringTests.ToGeoCoordinateString_MissingCoordinates_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceGeoCoordinateStringTests.ToGeoCoordinateString_UnsupportedConversionType_Returns400",
