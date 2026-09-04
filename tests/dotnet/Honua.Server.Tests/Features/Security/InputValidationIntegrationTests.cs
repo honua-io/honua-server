@@ -12,6 +12,7 @@ using Microsoft.Extensions.Hosting;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Extensions;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Security;
 
@@ -39,6 +40,8 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
     {
         await _fixture.InitializeAsync();
         _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
+        // Production ignores test schema headers; this isolated host reads the baseline graph.
+        _fixture.GetService<TestMetadataV2GraphProvider>().SetGraph(_fixture.GetCurrentV2GraphSnapshot().Graph);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();

@@ -230,10 +230,10 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         document.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
     }
 
-    private async Task MarkObjectIdFieldNonEditableAsync()
+    private Task MarkObjectIdFieldNonEditableAsync()
     {
         var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
-        var snapshot = await provider.GetCurrentAsync();
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resources = snapshot.Graph.Resources
             .Select(resource => resource.Metadata.Id == $"res-layer-{WebAppFixture.TestLayerId}"
                 ? resource with
@@ -254,6 +254,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
                 Resources = resources,
             },
             schema: _fixture.CurrentSchema);
+        return Task.CompletedTask;
     }
 
     private async Task<JsonValueKind> ReadFeatureGeometryKindAsync(long objectId)
