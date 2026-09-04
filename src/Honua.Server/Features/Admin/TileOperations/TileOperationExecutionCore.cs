@@ -1074,21 +1074,26 @@ internal sealed partial class TileOperationExecutionCore
         TileOperationStartRequest request,
         int layerId)
     {
-        if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var byStorageLayer))
-        {
-            return byStorageLayer;
-        }
-
+        // A service-scoped archive names its layer by the publication's index
+        // within that service; that number is not a storage-layer id. Resolve
+        // the requested service's publication first so the archive's name and
+        // vector_layers describe the resource the caller asked for, and only
+        // then fall back to the global storage-layer index.
         if (!string.IsNullOrWhiteSpace(request.ServiceId) &&
             snapshot.FindService(request.ServiceId) is { } service)
         {
-            foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
+            var publication = snapshot.PublicationsForService(service.Metadata.Id)
+                .Where(candidate => candidate.LayerIndex == layerId || snapshot.ResolveStorageLayerId(candidate) == layerId)
+                .FirstOrDefault();
+            if (publication is not null)
             {
-                if (publication.LayerIndex == layerId || snapshot.ResolveStorageLayerId(publication) == layerId)
-                {
-                    return snapshot.ResolveResource(publication);
-                }
+                return snapshot.ResolveResource(publication);
             }
+        }
+
+        if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var byStorageLayer))
+        {
+            return byStorageLayer;
         }
 
         return null;
