@@ -50,6 +50,7 @@
     <ProjectReference Include="..\..\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\Honua.Geometry\Honua.Geometry.csproj" />
     <ProjectReference Include="..\Postgres.Shared\Honua.Postgres.Shared.csproj" />
+    <ProjectReference Include="..\..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" />
   </ItemGroup>
 
   <ItemGroup>

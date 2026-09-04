@@ -14,6 +14,8 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
+using Honua.Protocols.GeoServices;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
@@ -305,32 +307,14 @@ internal sealed partial class GeoservicesImportService
 
     private static double[][] ReadCurvePath(JsonElement path, bool carryZ, bool carryM)
     {
-        var coordinates = new List<double[]>();
-        foreach (var segment in path.EnumerateArray())
+        var curveGeometry = new GeoServicesGeometry
         {
-            if (segment.ValueKind == JsonValueKind.Array && segment.GetArrayLength() >= 2 &&
-                segment[0].ValueKind == JsonValueKind.Number)
-            {
-                coordinates.Add(ExtractDimensions(segment, carryZ, carryM));
-                continue;
-            }
+            HasZ = carryZ,
+            HasM = carryM,
+            CurvePaths = [path.EnumerateArray().ToArray()]
+        };
 
-            if (segment.ValueKind != JsonValueKind.Object)
-                continue;
-
-            foreach (var property in segment.EnumerateObject())
-            {
-                if (property.Value.ValueKind != JsonValueKind.Array)
-                    continue;
-
-                coordinates.AddRange(property.Value.EnumerateArray()
-                    .Where(coordinate => coordinate.ValueKind == JsonValueKind.Array && coordinate.GetArrayLength() >= 2)
-                    .Select(coordinate => ExtractDimensions(coordinate, carryZ, carryM)));
-                break;
-            }
-        }
-
-        return coordinates.ToArray();
+        return CurveGeometryConverter.Densify(curveGeometry).Paths?[0] ?? [];
     }
 
     /// <summary>
