@@ -255,7 +255,10 @@ internal sealed partial class FeatureQueryBuilder
                 continue;
             }
 
-            if (!DatabaseSchema.CanUseJsonPath(fieldName) || !seenFields.Add(fieldName))
+            var isDistinctObjectId = query.Distinct &&
+                (fieldName.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase)
+                 || fieldName.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase));
+            if ((!DatabaseSchema.CanUseJsonPath(fieldName) && !isDistinctObjectId) || !seenFields.Add(fieldName))
             {
                 continue;
             }
@@ -269,8 +272,10 @@ internal sealed partial class FeatureQueryBuilder
             // has an integer-subscript form) unambiguous.
             var fieldParamIndex = paramIndex++;
             parameters.Add(fieldName);
-            projectedFields.Add(
-                $"${fieldParamIndex}::text, {DatabaseSchema.AttributesColumn} -> ${fieldParamIndex}::text");
+            var valueExpression = isDistinctObjectId
+                ? DatabaseSchema.ObjectIdColumn
+                : $"{DatabaseSchema.AttributesColumn} -> ${fieldParamIndex}::text";
+            projectedFields.Add($"${fieldParamIndex}::text, {valueExpression}");
         }
 
         if (projectedFields.Count == 0)

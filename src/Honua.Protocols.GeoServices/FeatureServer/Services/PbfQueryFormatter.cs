@@ -585,24 +585,28 @@ internal sealed class PbfQueryFormatter
     {
         var lengths = new List<uint>();
         var coords = new List<long>();
+        // A client quantization transform describes XY precision only. Esri's PBF
+        // schema carries independent Z/M scales, so keep the established six-decimal
+        // ordinate precision instead of accidentally reusing the XY tolerance.
+        var ordinateScale = quantizationTransform is null ? scale : DefaultQuantizationScale;
         long prevX = 0, prevY = 0;
 
         switch (geometry)
         {
             case Point pt:
-                AppendCoordinate(coords, pt.Coordinate, scale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
+                AppendCoordinate(coords, pt.Coordinate, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
                 break;
 
             case MultiPoint mp:
                 lengths.Add((uint)mp.NumGeometries);
                 for (int i = 0; i < mp.NumGeometries; i++)
                 {
-                    AppendCoordinate(coords, mp.GetGeometryN(i).Coordinate, scale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
+                    AppendCoordinate(coords, mp.GetGeometryN(i).Coordinate, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
                 }
                 break;
 
             case LineString ls:
-                AppendCoordinateSequence(coords, ls.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform: quantizationTransform);
+                AppendCoordinateSequence(coords, ls.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform: quantizationTransform);
                 lengths.Add((uint)ls.NumPoints);
                 break;
 
@@ -614,18 +618,18 @@ internal sealed class PbfQueryFormatter
                     // Each path restarts delta encoding from an absolute first vertex.
                     prevX = 0;
                     prevY = 0;
-                    AppendCoordinateSequence(coords, line.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform: quantizationTransform);
+                    AppendCoordinateSequence(coords, line.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform: quantizationTransform);
                 }
                 break;
 
             case Polygon poly:
-                EncodePolygon(poly, coords, lengths, scale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
+                EncodePolygon(poly, coords, lengths, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
                 break;
 
             case MultiPolygon mpoly:
                 for (int i = 0; i < mpoly.NumGeometries; i++)
                 {
-                    EncodePolygon((Polygon)mpoly.GetGeometryN(i), coords, lengths, scale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
+                    EncodePolygon((Polygon)mpoly.GetGeometryN(i), coords, lengths, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
                 }
                 break;
         }
@@ -638,6 +642,7 @@ internal sealed class PbfQueryFormatter
         List<long> coords,
         List<uint> lengths,
         double scale,
+        double ordinateScale,
         ref long prevX,
         ref long prevY,
         bool returnZ,
@@ -655,7 +660,7 @@ internal sealed class PbfQueryFormatter
         prevX = 0;
         prevY = 0;
         AppendCoordinateSequence(
-            coords, exterior.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM,
+            coords, exterior.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM,
             quantizationTransform: quantizationTransform,
             reverse: ShouldReverseRing(exterior, clockwise: true));
 
@@ -667,7 +672,7 @@ internal sealed class PbfQueryFormatter
             prevX = 0;
             prevY = 0;
             AppendCoordinateSequence(
-                coords, ring.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM,
+                coords, ring.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM,
                 quantizationTransform: quantizationTransform,
                 reverse: ShouldReverseRing(ring, clockwise: false));
         }
@@ -693,6 +698,7 @@ internal sealed class PbfQueryFormatter
         List<long> coords,
         Coordinate coord,
         double scale,
+        double ordinateScale,
         ref long prevX,
         ref long prevY,
         bool returnZ,
@@ -711,13 +717,13 @@ internal sealed class PbfQueryFormatter
         if (returnZ)
         {
             var z = double.IsNaN(coord.Z) ? 0d : coord.Z;
-            coords.Add((long)Math.Round(z * scale));
+            coords.Add((long)Math.Round(z * ordinateScale));
         }
 
         if (returnM)
         {
             var m = double.IsNaN(coord.M) ? 0d : coord.M;
-            coords.Add((long)Math.Round(m * scale));
+            coords.Add((long)Math.Round(m * ordinateScale));
         }
     }
 
@@ -725,6 +731,7 @@ internal sealed class PbfQueryFormatter
         List<long> coords,
         CoordinateSequence sequence,
         double scale,
+        double ordinateScale,
         ref long prevX,
         ref long prevY,
         bool returnZ,
@@ -750,7 +757,7 @@ internal sealed class PbfQueryFormatter
                     z = 0d;
                 }
 
-                coords.Add((long)Math.Round(z * scale));
+                coords.Add((long)Math.Round(z * ordinateScale));
             }
 
             if (returnM)
@@ -761,7 +768,7 @@ internal sealed class PbfQueryFormatter
                     m = 0d;
                 }
 
-                coords.Add((long)Math.Round(m * scale));
+                coords.Add((long)Math.Round(m * ordinateScale));
             }
         }
     }
@@ -826,19 +833,19 @@ internal sealed class PbfQueryFormatter
         }
 
         // field 2: scale (Scale: xScale=1, yScale=2, mScale=3, zScale=4).
-        // Z/M ordinates are quantized at the same precision as X/Y, so their scales
-        // must be emitted whenever those ordinates are present, or decoders dequantize
-        // them with the default 0.0 scale and every Z/M collapses to 0.
+        // Z/M ordinates retain the independent six-decimal default precision when a
+        // client supplies an XY quantization transform.
+        var ordinateScale = 1.0 / DefaultQuantizationScale;
         var scaleMsg = new ProtobufWriter(48);
         scaleMsg.WriteDouble(1, scaleX);   // xScale
         scaleMsg.WriteDouble(2, scaleY);   // yScale
         if (hasM)
         {
-            scaleMsg.WriteDouble(3, scaleX);   // mScale
+            scaleMsg.WriteDouble(3, ordinateScale);   // mScale
         }
         if (hasZ)
         {
-            scaleMsg.WriteDouble(4, scaleX);   // zScale
+            scaleMsg.WriteDouble(4, ordinateScale);   // zScale
         }
         transform.WriteMessage(2, ref scaleMsg);
         scaleMsg.Dispose();

@@ -1317,7 +1317,8 @@ internal sealed class StreamingQueryFormatter
         // path byte-for-byte equivalent for that common default projection.
         if (outFieldLookup is null &&
             objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) &&
-            (feature.Attributes is null || !feature.Attributes.ContainsKey("OBJECTID")))
+            (feature.Attributes is null || !feature.Attributes.Keys.Any(
+                static key => key.Equals("OBJECTID", StringComparison.OrdinalIgnoreCase))))
         {
             writer.WriteNumber("OBJECTID", GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
         }

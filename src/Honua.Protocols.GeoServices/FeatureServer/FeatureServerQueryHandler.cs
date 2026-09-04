@@ -702,7 +702,7 @@ internal sealed partial class FeatureServerQueryHandler(
                     // Fetch one probe row beyond the Esri transfer limit so the response
                     // can truthfully report exceededTransferLimit without unbounded stats.
                     Limit = checked(queryLimits.MaxRecordCount + 1),
-                    Offset = null,
+                    Offset = query.Offset,
                     OrderBy = statisticsOrderBy.IsDefaultOrEmpty ? null : statisticsOrderBy,
                     Distinct = false
                 };
@@ -1062,6 +1062,9 @@ internal sealed partial class FeatureServerQueryHandler(
                     outFields = parsed.Length == 0 ? null : parsed;
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
+                var distinctObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(queryLayer.Resource);
+                var suppressDistinctObjectId = shouldApplyDistinct &&
+                    !outFields!.Any(field => field.Equals(distinctObjectIdFieldName, StringComparison.OrdinalIgnoreCase));
 
                 // The raw point fast path emits a pre-serialized compact JSON payload; f=pjson
                 // needs indentation, so skip the fast path and fall through to the materialized
@@ -1095,13 +1098,15 @@ internal sealed partial class FeatureServerQueryHandler(
                     return await CreateCachedMemoryResultAsync(payload, "application/json");
                 }
 
-                // Push DISTINCT into the provider and fetch one probe row past the
-                // requested page so late-arriving values remain visible to paging.
-                // Preserve the requested offset: the provider applies it after DISTINCT,
-                // rather than forcing the handler to discard the first page in memory.
+                // Providers that advertise distinct-before-pagination receive a one-row
+                // probe after the requested page. Other providers use a complete
+                // materialized fallback so OFFSET is never applied before de-duplication.
+                var providerAppliesDistinct = shouldApplyDistinct && _queryExecutor.SupportsDistinctValues;
                 var distinctScanLimit = checked((query.Limit ?? queryLimits.MaxRecordCount) + 1);
                 var queryForExecution = shouldApplyDistinct
-                    ? query with { Limit = distinctScanLimit }
+                    ? providerAppliesDistinct
+                        ? query with { Limit = distinctScanLimit }
+                        : query with { Distinct = false, Limit = null, Offset = null }
                     : query;
                 var queryStopwatch = Stopwatch.StartNew();
                 // Pass the authenticated caller so plugin computed-field providers (#1562) can
@@ -1121,9 +1126,13 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 if (shouldApplyDistinct)
                 {
-                    var distinctScanTruncated = result.Items.Length >= distinctScanLimit;
+                    var distinctScanTruncated = providerAppliesDistinct && result.Items.Length >= distinctScanLimit;
                     result = ApplyDistinctValues(result, outFields!);
-                    result = ApplyPaginationWindow(result, offset: null, limit: query.Limit, scanTruncated: distinctScanTruncated);
+                    result = ApplyPaginationWindow(
+                        result,
+                        offset: providerAppliesDistinct ? null : query.Offset,
+                        limit: query.Limit,
+                        scanTruncated: distinctScanTruncated);
                 }
 
                 (object? formattedResponse, string? contentType) = await _queryServices.FormatQueryResultAsync(
@@ -1137,7 +1146,7 @@ internal sealed partial class FeatureServerQueryHandler(
                     validatedParams.GeometryPrecision,
                     validatedParams.MaxAllowableOffset,
                     outFields,
-                    suppressObjectId: shouldApplyDistinct,
+                    suppressObjectId: suppressDistinctObjectId,
                     returnCentroid: validatedParams.ReturnCentroid,
                     requestedOutputSrid: requestedOutSrAlias,
                     quantizationTransform: quantizationTransform);
@@ -1849,7 +1858,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 GroupByFields = groupByFields,
                 Having = havingConditions,
                 Limit = checked(queryLimits.MaxRecordCount + 1),
-                Offset = null,
+                Offset = query.Offset,
                 OrderBy = statisticsOrderBy.IsDefaultOrEmpty ? null : statisticsOrderBy,
                 Distinct = false
             };
@@ -1979,11 +1988,18 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
-        // Push DISTINCT into the provider and fetch one probe row past the requested
-        // page. Preserve the requested offset so paging happens after de-duplication.
+        var distinctObjectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(queryLayer.Resource);
+        var suppressDistinctObjectId = shouldApplyDistinct &&
+            !outFields!.Any(field => field.Equals(distinctObjectIdFieldName, StringComparison.OrdinalIgnoreCase));
+        // Providers that advertise distinct-before-pagination receive a one-row probe
+        // after the requested page. Other providers use a complete materialized fallback
+        // so OFFSET is never applied before de-duplication.
+        var providerAppliesDistinct = shouldApplyDistinct && _queryExecutor.SupportsDistinctValues;
         var distinctScanLimit = checked((query.Limit ?? queryLimits.MaxRecordCount) + 1);
         var queryForExecution = shouldApplyDistinct
-            ? query with { Limit = distinctScanLimit }
+            ? providerAppliesDistinct
+                ? query with { Limit = distinctScanLimit }
+                : query with { Distinct = false, Limit = null, Offset = null }
             : query;
         var queryStopwatch = Stopwatch.StartNew();
         QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(
@@ -1998,9 +2014,13 @@ internal sealed partial class FeatureServerQueryHandler(
 
         if (shouldApplyDistinct)
         {
-            var distinctScanTruncated = queryResult.Items.Length >= distinctScanLimit;
+            var distinctScanTruncated = providerAppliesDistinct && queryResult.Items.Length >= distinctScanLimit;
             queryResult = ApplyDistinctValues(queryResult, outFields!);
-            queryResult = ApplyPaginationWindow(queryResult, offset: null, limit: query.Limit, scanTruncated: distinctScanTruncated);
+            queryResult = ApplyPaginationWindow(
+                queryResult,
+                offset: providerAppliesDistinct ? null : query.Offset,
+                limit: query.Limit,
+                scanTruncated: distinctScanTruncated);
         }
 
         var requestedOutputSrid = await ResolveRequestedWebMercatorAliasAsync(validatedParams, outputSrid, cancellationToken).ConfigureAwait(false);
@@ -2016,7 +2036,7 @@ internal sealed partial class FeatureServerQueryHandler(
             validatedParams.GeometryPrecision,
             validatedParams.MaxAllowableOffset,
             outFields,
-            suppressObjectId: shouldApplyDistinct,
+            suppressObjectId: suppressDistinctObjectId,
             returnCentroid: validatedParams.ReturnCentroid,
             requestedOutputSrid: requestedOutputSrid).ConfigureAwait(false);
 
