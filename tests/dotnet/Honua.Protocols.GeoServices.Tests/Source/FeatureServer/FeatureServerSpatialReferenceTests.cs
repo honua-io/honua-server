@@ -30,6 +30,9 @@ public sealed class FeatureServerSpatialReferenceTests : IAsyncLifetime
         // cannot silently drop earlier arguments here.
         _fixture.UseSeed(Path.Join("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(
+            WebAppFixture.TestServiceId,
+            ["Create", "Update", "Delete"]);
 
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         _pointObjectId = await SpatialReferenceTestData.InsertPointAsync(

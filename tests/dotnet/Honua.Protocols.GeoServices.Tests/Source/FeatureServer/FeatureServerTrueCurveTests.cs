@@ -43,6 +43,9 @@ public sealed class FeatureServerTrueCurveTests : IAsyncLifetime
         // cannot silently drop earlier arguments here.
         _fixture.UseSeed(Path.Join("tests", "seed", "spatial-reference.yaml"));
         await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(
+            WebAppFixture.TestServiceId,
+            ["Create", "Update", "Delete"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
