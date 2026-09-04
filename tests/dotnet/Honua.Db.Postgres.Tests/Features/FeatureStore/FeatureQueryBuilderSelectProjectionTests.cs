@@ -48,6 +48,24 @@ public sealed class FeatureQueryBuilderSelectProjectionTests
     }
 
     [Fact]
+    public void BuildSelectQuery_WithDistinct_ExcludesFeatureIdentityAndGeometryFromProjection()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ImmutableArray.Create("category"),
+            Limit = 10001
+        };
+
+        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("SELECT DISTINCT 0::bigint AS objectid, NULL AS geometry");
+        result.Sql.Should().Contain("LIMIT $");
+        result.Sql.Should().NotContain("ST_AsBinary(geometry)");
+    }
+
+    [Fact]
     public void BuildOptimizedSelectQuery_WithOutFields_ProjectsRequestedAttributes()
     {
         var queryBuilder = CreateQueryBuilder();

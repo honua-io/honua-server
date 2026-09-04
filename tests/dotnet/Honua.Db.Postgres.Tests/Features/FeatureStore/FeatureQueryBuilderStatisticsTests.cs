@@ -112,6 +112,28 @@ public sealed class FeatureQueryBuilderStatisticsTests
     }
 
     [Fact]
+    public void BuildStatisticsQuery_WithLimit_EmitsLimitAfterOrderBy()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "objectid",
+                OutStatisticFieldName = "feature_count"
+            }),
+            GroupByFields = ImmutableArray.Create("category"),
+            Limit = 10001
+        };
+
+        var result = queryBuilder.BuildStatisticsQuery(layerId: 1, query);
+
+        result.Sql.Should().EndWith("LIMIT $2");
+        result.WhereParameters.Should().ContainSingle().Which.Should().Be(10001);
+    }
+
+    [Fact]
     public void BuildStatisticsQuery_WithOrderByGroupByField_OrdersByTheGroupedExpression()
     {
         var queryBuilder = CreateQueryBuilder();

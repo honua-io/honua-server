@@ -245,7 +245,17 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             AppendWhereClause(sql, query, ref paramIndex, parameters);
             AppendTemporalFilter(sql, query, ref paramIndex, parameters);
             AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
-            AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            if (query.Distinct)
+            {
+                // The distinct projection contains only the JSON attribute object;
+                // order by that projected alias so pagination is deterministic without
+                // reintroducing feature identity into the distinct set.
+                sql.Append(" ORDER BY attributes");
+            }
+            else
+            {
+                AppendOrderByClause(sql, query, ref paramIndex, parameters);
+            }
             AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
             AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
 

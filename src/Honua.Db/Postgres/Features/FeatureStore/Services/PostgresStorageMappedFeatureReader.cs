@@ -394,14 +394,33 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var attributesSelect = BuildAttributesExpression(query, sql);
         var distanceSelect = BuildDistanceSelectExpression(query, sql);
 
-        sql.Append(CultureInfo.InvariantCulture, $"""
-            SELECT {_primaryKeyColumn}::bigint AS objectid,
-                   {geometrySelect} AS geometry,
-                   {attributesSelect} AS attributes{distanceSelect}
-            FROM {_qualifiedTableName}
-            """);
+        if (query.Distinct)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $"""
+                SELECT DISTINCT 0::bigint AS objectid,
+                       NULL AS geometry,
+                       {attributesSelect} AS attributes
+                FROM {_qualifiedTableName}
+                """);
+        }
+        else
+        {
+            sql.Append(CultureInfo.InvariantCulture, $"""
+                SELECT {_primaryKeyColumn}::bigint AS objectid,
+                       {geometrySelect} AS geometry,
+                       {attributesSelect} AS attributes{distanceSelect}
+                FROM {_qualifiedTableName}
+                """);
+        }
         AppendFilter(sql, query);
-        AppendOrderBy(sql, query);
+        if (query.Distinct)
+        {
+            sql.Append(CultureInfo.InvariantCulture, " ORDER BY attributes");
+        }
+        else
+        {
+            AppendOrderBy(sql, query);
+        }
         AppendPagination(sql, query, probeLimit);
         return sql;
     }

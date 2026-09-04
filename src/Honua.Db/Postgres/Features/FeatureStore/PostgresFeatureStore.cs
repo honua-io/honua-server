@@ -706,6 +706,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         // plain select clause emits the distance column). Distance is only meaningful with a
         // spatial filter, so this affects a narrow slice of queries.
         if ((query.Limit.HasValue || query.Offset.HasValue) &&
+            !query.Distinct &&
             !FeatureQueryBuilder.ShouldComputeDistance(query.SpatialFilter))
         {
             return await executeOptimized(layerId, query, geometryStorageType, cancellationToken);

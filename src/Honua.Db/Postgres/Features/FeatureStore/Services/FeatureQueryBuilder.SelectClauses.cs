@@ -76,8 +76,20 @@ internal sealed partial class FeatureQueryBuilder
         else
         {
             var featureSource = BuildVersionedFeatureSource(query, "features", ref paramIndex, parameters);
-            sql.Append(CultureInfo.InvariantCulture,
-                $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            if (query.Distinct)
+            {
+                // Distinct values are attribute rows, not features: including objectid or
+                // geometry in the DISTINCT projection would make every row unique. Keep the
+                // reader's stable three-column shape while returning a null synthetic id and
+                // geometry for the protocol formatter to suppress.
+                sql.Append(CultureInfo.InvariantCulture,
+                    $"SELECT DISTINCT 0::bigint AS {DatabaseSchema.ObjectIdColumn}, NULL AS {DatabaseSchema.GeometryColumn}, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            }
+            else
+            {
+                sql.Append(CultureInfo.InvariantCulture,
+                    $"SELECT {DatabaseSchema.ObjectIdColumn}, {geometrySelect}, {attributesSelect} AS {DatabaseSchema.AttributesColumn} FROM {featureSource} WHERE {DatabaseSchema.LayerIdColumn} = $1");
+            }
         }
     }
 

@@ -321,17 +321,6 @@ internal sealed partial class FeatureServerQueryHandler(
                 return (null, StandardErrorHelpers.CreateInternalServerError(context, "Query execution failed"));
             }
 
-            // BH2-001: Reject returnDistinctValues when the resultOffset exceeds the safe in-memory
-            // scan threshold (10 Ã— MaxRecordCount). Serving a high-offset distinct page requires
-            // loading every row up to the offset before deduplication, making the effective scan
-            // size proportional to the offset regardless of the requested page size.
-            if (validatedParams.ReturnDistinctValues && (query.Value.Offset ?? 0) > queryLimits.MaxRecordCount * 10)
-            {
-                return (null, StandardErrorHelpers.CreateBadRequest(context,
-                    "Unsupported query parameters",
-                    [$"returnDistinctValues is not supported with resultOffset exceeding {queryLimits.MaxRecordCount * 10}."]));
-            }
-
             var response = await ExecuteJsonQueryResponseAsync(
                 serviceId,
                 layerId,
@@ -710,7 +699,9 @@ internal sealed partial class FeatureServerQueryHandler(
                     OutStatistics = statisticsDefs,
                     GroupByFields = groupByFields,
                     Having = havingConditions,
-                    Limit = queryLimits.MaxRecordCount,
+                    // Fetch one probe row beyond the Esri transfer limit so the response
+                    // can truthfully report exceededTransferLimit without unbounded stats.
+                    Limit = checked(queryLimits.MaxRecordCount + 1),
                     Offset = null,
                     OrderBy = statisticsOrderBy.IsDefaultOrEmpty ? null : statisticsOrderBy,
                     Distinct = false
@@ -733,7 +724,11 @@ internal sealed partial class FeatureServerQueryHandler(
                 stopwatch.Stop();
                 FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
-                var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
+                var statisticsExceeded = statisticsRows.Length > queryLimits.MaxRecordCount;
+                var boundedStatisticsRows = statisticsExceeded
+                    ? statisticsRows[..queryLimits.MaxRecordCount]
+                    : statisticsRows;
+                var statisticsFeatures = boundedStatisticsRows.Select(row => new GeoServicesFeature
                 {
                     Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
                     Geometry = null,
@@ -742,7 +737,11 @@ internal sealed partial class FeatureServerQueryHandler(
                 }).ToArray();
 
                 HonuaTelemetry.SetSuccess(featureActivity, statisticsFeatures.Length);
-                var statisticsResponse = new QueryResponse { Features = statisticsFeatures };
+                var statisticsResponse = new QueryResponse
+                {
+                    Features = statisticsFeatures,
+                    ExceededTransferLimit = statisticsExceeded
+                };
                 return await CreateCachedResultAsync(statisticsResponse, FeatureServerJsonContext.Default.QueryResponse, "application/json");
             }
 
@@ -913,12 +912,16 @@ internal sealed partial class FeatureServerQueryHandler(
             var isGeobuf = string.Equals(format, "geobuf", StringComparison.OrdinalIgnoreCase);
             var isParquet = string.Equals(format, "parquet", StringComparison.OrdinalIgnoreCase);
             var isArrow = string.Equals(format, "arrow", StringComparison.OrdinalIgnoreCase);
-            // Esri json coordinate quantization (quantizationParameters) applies only to the
-            // GeoServices json featureSet, not geojson or the binary export formats.
+            // Esri coordinate quantization applies to GeoServices JSON and PBF. Parse it
+            // before choosing streaming so both encoders receive the same transform.
             var isGeoJson = string.Equals(format, "geojson", StringComparison.OrdinalIgnoreCase);
             var isEsriJson = !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow && !isGeoJson;
+            var hasUnknownRequestedFields = !string.IsNullOrWhiteSpace(validatedParams.OutFields) &&
+                validatedParams.OutFields.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Any(field => !queryLayer.Resource.SchemaFields.Any(schemaField =>
+                        schemaField.Name.Equals(field, StringComparison.OrdinalIgnoreCase)));
             QuantizationTransform? quantizationTransform = null;
-            if (isEsriJson &&
+            if ((isEsriJson || isPbf) &&
                 !FeatureQuantizer.TryParse(validatedParams.QuantizationParameters, out quantizationTransform, out var quantizationError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, quantizationError ?? "Invalid quantizationParameters.");
@@ -929,7 +932,14 @@ internal sealed partial class FeatureServerQueryHandler(
             // is accept-and-ignore (#1460): Honua already returns the page plus
             // exceededTransferLimit, so it does not change the streaming decision.
             var useStreaming = effectiveLimit > StreamingThreshold && !isPbf && !isFgb && !isGeobuf && !isParquet && !isArrow
-                && quantizationTransform is null;
+                && quantizationTransform is null
+                // The materialized formatter discovers runtime fields (notably the
+                // returnDistance column) and emits pjson/102100 aliases consistently.
+                && !prettyJson
+                && requestedOutSrAlias is null
+                && !validatedParams.ReturnDistance
+                && !hasUnknownRequestedFields
+                && !validatedParams.ReturnDistinctValues;
 
             if (!useStreaming)
             {
@@ -1053,18 +1063,6 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
                 var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
 
-                // BH2-001: Reject returnDistinctValues when the resultOffset exceeds the safe in-memory
-                // scan threshold (10 Ã— MaxRecordCount). Serving a high-offset distinct page requires
-                // loading every row up to the offset before deduplication, making the effective scan
-                // size proportional to the offset regardless of the requested page size.
-                if (shouldApplyDistinct && (query.Offset ?? 0) > queryLimits.MaxRecordCount * 10)
-                {
-                    return StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        "Unsupported query parameters",
-                        [$"returnDistinctValues is not supported with resultOffset exceeding {queryLimits.MaxRecordCount * 10}."]);
-                }
-
                 // The raw point fast path emits a pre-serialized compact JSON payload; f=pjson
                 // needs indentation, so skip the fast path and fall through to the materialized
                 // formatter where the pretty flag is honored (#1824).
@@ -1097,12 +1095,13 @@ internal sealed partial class FeatureServerQueryHandler(
                     return await CreateCachedMemoryResultAsync(payload, "application/json");
                 }
 
-                // DISTINCT is applied in memory, so bound the source-row scan at the
-                // transfer limit (plus the requested window) instead of materializing
-                // the whole layer; a truncated scan surfaces as exceededTransferLimit.
-                var distinctScanLimit = ComputeDistinctScanLimit(query, queryLimits);
+                // Push DISTINCT into the provider and fetch one probe row past the
+                // requested page so late-arriving values remain visible to paging.
+                // Preserve the requested offset: the provider applies it after DISTINCT,
+                // rather than forcing the handler to discard the first page in memory.
+                var distinctScanLimit = checked((query.Limit ?? queryLimits.MaxRecordCount) + 1);
                 var queryForExecution = shouldApplyDistinct
-                    ? query with { Limit = distinctScanLimit, Offset = null }
+                    ? query with { Limit = distinctScanLimit }
                     : query;
                 var queryStopwatch = Stopwatch.StartNew();
                 // Pass the authenticated caller so plugin computed-field providers (#1562) can
@@ -1122,9 +1121,9 @@ internal sealed partial class FeatureServerQueryHandler(
 
                 if (shouldApplyDistinct)
                 {
-                    var distinctScanTruncated = result.HasMoreResults || result.Items.Length >= distinctScanLimit;
+                    var distinctScanTruncated = result.Items.Length >= distinctScanLimit;
                     result = ApplyDistinctValues(result, outFields!);
-                    result = ApplyPaginationWindow(result, query.Offset, query.Limit, distinctScanTruncated);
+                    result = ApplyPaginationWindow(result, offset: null, limit: query.Limit, scanTruncated: distinctScanTruncated);
                 }
 
                 (object? formattedResponse, string? contentType) = await _queryServices.FormatQueryResultAsync(
@@ -1140,7 +1139,8 @@ internal sealed partial class FeatureServerQueryHandler(
                     outFields,
                     suppressObjectId: shouldApplyDistinct,
                     returnCentroid: validatedParams.ReturnCentroid,
-                    requestedOutputSrid: requestedOutSrAlias);
+                    requestedOutputSrid: requestedOutSrAlias,
+                    quantizationTransform: quantizationTransform);
 
                 FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, result.Items.Length, result.TotalCount);
                 HonuaTelemetry.SetSuccess(featureActivity, result.Items.Length);
@@ -1848,7 +1848,7 @@ internal sealed partial class FeatureServerQueryHandler(
                 OutStatistics = statisticsDefs,
                 GroupByFields = groupByFields,
                 Having = havingConditions,
-                Limit = null,
+                Limit = checked(queryLimits.MaxRecordCount + 1),
                 Offset = null,
                 OrderBy = statisticsOrderBy.IsDefaultOrEmpty ? null : statisticsOrderBy,
                 Distinct = false
@@ -1865,7 +1865,11 @@ internal sealed partial class FeatureServerQueryHandler(
             stopwatch.Stop();
             FeatureServerLog.QueryExecuted(_logger, "statistics", serviceId, layerId, stopwatch.Elapsed.TotalMilliseconds);
 
-            var statisticsFeatures = statisticsRows.Select(row => new GeoServicesFeature
+            var statisticsExceeded = statisticsRows.Length > queryLimits.MaxRecordCount;
+            var boundedStatisticsRows = statisticsExceeded
+                ? statisticsRows[..queryLimits.MaxRecordCount]
+                : statisticsRows;
+            var statisticsFeatures = boundedStatisticsRows.Select(row => new GeoServicesFeature
             {
                 Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
                 Geometry = null,
@@ -1873,7 +1877,11 @@ internal sealed partial class FeatureServerQueryHandler(
                 IncludeGeometry = false
             }).ToArray();
 
-            return new QueryResponse { Features = statisticsFeatures };
+            return new QueryResponse
+            {
+                Features = statisticsFeatures,
+                ExceededTransferLimit = statisticsExceeded
+            };
         }
 
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(queryLayer.Resource);
@@ -1971,12 +1979,11 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         var shouldApplyDistinct = validatedParams.ReturnDistinctValues && outFields is { Length: > 0 };
-        // DISTINCT is applied in memory, so bound the source-row scan at the
-        // transfer limit (plus the requested window) instead of materializing
-        // the whole layer; a truncated scan surfaces as exceededTransferLimit.
-        var distinctScanLimit = ComputeDistinctScanLimit(query, queryLimits);
+        // Push DISTINCT into the provider and fetch one probe row past the requested
+        // page. Preserve the requested offset so paging happens after de-duplication.
+        var distinctScanLimit = checked((query.Limit ?? queryLimits.MaxRecordCount) + 1);
         var queryForExecution = shouldApplyDistinct
-            ? query with { Limit = distinctScanLimit, Offset = null }
+            ? query with { Limit = distinctScanLimit }
             : query;
         var queryStopwatch = Stopwatch.StartNew();
         QueryResult<Feature> queryResult = await _queryExecutor.QueryWithValidationAsync(
@@ -1991,9 +1998,9 @@ internal sealed partial class FeatureServerQueryHandler(
 
         if (shouldApplyDistinct)
         {
-            var distinctScanTruncated = queryResult.HasMoreResults || queryResult.Items.Length >= distinctScanLimit;
+            var distinctScanTruncated = queryResult.Items.Length >= distinctScanLimit;
             queryResult = ApplyDistinctValues(queryResult, outFields!);
-            queryResult = ApplyPaginationWindow(queryResult, query.Offset, query.Limit, distinctScanTruncated);
+            queryResult = ApplyPaginationWindow(queryResult, offset: null, limit: query.Limit, scanTruncated: distinctScanTruncated);
         }
 
         var requestedOutputSrid = await ResolveRequestedWebMercatorAliasAsync(validatedParams, outputSrid, cancellationToken).ConfigureAwait(false);
@@ -2981,23 +2988,6 @@ internal sealed partial class FeatureServerQueryHandler(
         => string.Equals(requiredProtocol, MapServerProtocol, StringComparison.OrdinalIgnoreCase)
             ? HonuaTelemetry.Protocols.MapServer
             : HonuaTelemetry.Protocols.FeatureServer;
-
-    // Computes the bounded number of source rows to scan for an in-memory
-    // returnDistinctValues evaluation: the configured transfer limit (or the
-    // requested window when it is larger) plus one row so a truncated scan can
-    // be detected and reported as exceededTransferLimit.
-    //
-    // BH2-001: Cap at MaxRecordCount * 2 + 1 so a caller with a very large
-    // resultOffset cannot force a multi-million-row materialization. A request
-    // whose offset+limit window exceeds this cap will still see a valid (possibly
-    // empty) page plus exceededTransferLimit=true — it cannot force an OOM.
-    private static int ComputeDistinctScanLimit(FeatureQuery query, QueryLimits queryLimits)
-    {
-        var requestedWindow = Math.Max(0, query.Offset ?? 0) + Math.Max(0, query.Limit ?? 0);
-        var uncapped = Math.Max(queryLimits.MaxRecordCount, requestedWindow) + 1;
-        var cap = queryLimits.MaxRecordCount * 2 + 1;
-        return Math.Min(uncapped, cap);
-    }
 
     private static QueryResult<Feature> ApplyPaginationWindow(
         QueryResult<Feature> result,
