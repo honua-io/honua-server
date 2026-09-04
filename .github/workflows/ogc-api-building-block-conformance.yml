@@ -131,6 +131,7 @@ jobs:
           HONUA_CONFORMANCE_SOURCE_SHA: ${{ steps.candidate.outputs.sha }}
           HONUA_CONFORMANCE_SERVER_IMAGE: honua-server:ogcapi-${{ steps.candidate.outputs.sha }}
           HONUA_CONFORMANCE_RESULTS_DIR: ogcapi-conformance-results
+          PYTHON_BIN: ${{ runner.temp }}/ogcapi-venv/bin/python
         run: bash scripts/conformance/ogcapi/run-building-block-conformance.sh
 
       - name: Upload OGC API conformance evidence
