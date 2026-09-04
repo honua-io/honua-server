@@ -147,7 +147,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 workerBId.Should().NotBe(workerA);
                 var heartbeatAt = runningB.LastHeartbeatAt;
                 heartbeatAt.Should().NotBeNull();
-                await harness.Database.HashSetAsync(receiptKey, "heartbeat:workerB", heartbeatAt.Value.ToString("O"));
+                await harness.Database.HashSetAsync(receiptKey, "heartbeat:workerB", heartbeatAt!.Value.ToString("O"));
                 await harness.Database.HashSetAsync(receiptKey, $"claim:{workerBId}", "attempt=2");
                 await WaitForRedisValueAsync(harness.Database, releaseAwareExecutor.ReadyKey, TimeSpan.FromSeconds(15));
 
