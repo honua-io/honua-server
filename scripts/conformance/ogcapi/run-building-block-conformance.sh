@@ -12,8 +12,9 @@ COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-honua-ogcapi-building-blocks}"
 SERVER_IMAGE="${HONUA_CONFORMANCE_SERVER_IMAGE:-honua-server:latest}"
 SOURCE_SHA="${HONUA_CONFORMANCE_SOURCE_SHA:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
 SERVER_PORT="${HONUA_CONFORMANCE_SERVER_PORT:-8091}"
-BASE_URL="${HONUA_BASE_URL:-http://localhost:${SERVER_PORT}}"
+BASE_URL="${HONUA_BASE_URL:-http://127.0.0.1:${SERVER_PORT}}"
 RESULTS_DIR="${HONUA_CONFORMANCE_RESULTS_DIR:-ogcapi-conformance-results}"
+COLLECTION_ID="${HONUA_CONFORMANCE_COLLECTION_ID:-}"
 
 export COMPOSE_PROJECT_NAME
 export HONUA_CITE_FEATURES_SERVER_PORT="$SERVER_PORT"
@@ -131,6 +132,26 @@ wait_for_service honua-server 300
 wait_for_endpoint "$BASE_URL/ogc/features/conformance"
 wait_for_endpoint "$BASE_URL/ogc/features/collections"
 
+curl --silent --show-error --fail "$BASE_URL/ogc/features/collections" \
+    > "$RESULTS_DIR/collections.json"
+if [[ -z "$COLLECTION_ID" ]]; then
+    COLLECTION_ID="$(python3 - "$RESULTS_DIR/collections.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    collections = json.load(stream).get("collections", [])
+if not collections or not isinstance(collections[0].get("id"), str):
+    raise SystemExit("the candidate returned no usable OGC Features collection")
+print(collections[0]["id"])
+PY
+)"
+fi
+if [[ -z "$COLLECTION_ID" ]]; then
+    echo "candidate collection ID is empty" >&2
+    exit 1
+fi
+
 curl --silent --show-error --fail "$BASE_URL/ogc/features/conformance" \
     > "$RESULTS_DIR/conformance.json"
 cat > "$RESULTS_DIR/candidate.json" <<EOF
@@ -138,7 +159,8 @@ cat > "$RESULTS_DIR/candidate.json" <<EOF
   "sourceSha": "$SOURCE_SHA",
   "image": "$SERVER_IMAGE",
   "imageRevision": "$IMAGE_REVISION",
-  "baseUrl": "$BASE_URL"
+  "baseUrl": "$BASE_URL",
+  "collectionId": "$COLLECTION_ID"
 }
 EOF
 
@@ -201,11 +223,11 @@ run_validator() {
 : > "$RESULTS_DIR/validator-status.tsv"
 run_validator cql2 \
     python3 "$HERE/cql2_validator.py" \
-    --base-url "$BASE_URL" --collection 0 --geom-field shape --category-field category
+    --base-url "$BASE_URL" --collection "$COLLECTION_ID" --geom-field shape --category-field category
 run_validator mvt \
-    node "$HERE/mvt_validator.mjs" --base-url "$BASE_URL" --collection 0
+    node "$HERE/mvt_validator.mjs" --base-url "$BASE_URL" --collection "$COLLECTION_ID"
 run_validator maps \
-    node "$HERE/maps_validator.mjs" --base-url "$BASE_URL" --collection 0
+    node "$HERE/maps_validator.mjs" --base-url "$BASE_URL" --collection "$COLLECTION_ID"
 run_validator schemathesis \
     bash "$HERE/run-schemathesis.sh" --base-url "$BASE_URL" --max-examples "${SCHEMATHESIS_MAX_EXAMPLES:-15}"
 
@@ -228,7 +250,7 @@ cat > "$RESULTS_DIR/summary.md" <<EOF
 
 | Validator | Exit code |
 | --- | ---: |
-$(awk -F '\t' '{ printf "| `%s` | %s |\n", \$1, \$2 }' "$RESULTS_DIR/validator-status.tsv")
+$(sed -e 's/^/| `/; s/\t/` | /; s/$/ |/' "$RESULTS_DIR/validator-status.tsv")
 
 The lane runs the complete existing validator set. A validator failure is
 blocking; no validator is treated as optional or skipped.
