@@ -24,6 +24,21 @@ public sealed class CapabilityGateResolverTests
     // remains built-experimental and gated off by default.)
     private const string ExperimentalId = "versioning.branch";
 
+    [Fact]
+    public void Resolve_LifecycleOnlyPreview_StillRequiresItsEdition()
+    {
+        var descriptor = Experimental(HonuaEdition.Enterprise) with
+        {
+            Maturity = CapabilityMaturity.Preview,
+            RequiresOptIn = false,
+        };
+
+        var result = CapabilityGateResolver.Resolve(descriptor, CapabilityGateContext.Default);
+
+        result.Enabled.Should().BeFalse();
+        result.ReasonCode.Should().Be(CapabilityReasonCodes.LicenseRequired);
+    }
+
     private static CapabilityDescriptor Experimental(HonuaEdition? minimumEdition = null) => new()
     {
         Id = ExperimentalId,
