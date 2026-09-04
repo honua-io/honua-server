@@ -6,7 +6,7 @@ Honua's support for the cloud-native geospatial format family: what each format 
 
 | Format | Role | Register / produce | Serve / consume | Status |
 |---|---|---|---|---|
-| COG / GeoTIFF | Registered source + import | `POST /api/v1/admin/cloud-rasters` (S3/Azure, in place) or file import `POST /api/v1/admin/import/raster` | ImageServer (`exportImage`, `identify`, tiles), WCS 2.0.1, OGC API Coverages | Serving live |
+| COG / GeoTIFF | Registered source + import | `POST /api/v1/admin/cloud-rasters` (S3/Azure, in place) or file import `POST /api/v1/admin/import/raster` | Registered cloud objects: ImageServer WebMercatorQuad tiles only; imported GeoTIFFs use the normal raster pipeline | Preview; cloud tile serving is Pro-gated |
 | PMTiles | Produced artifact | Tile-operations jobs (`archive`, `publish`) — see [Publish tiles](../../guides/publish/publish-tiles.md) | `GET`/`HEAD /api/v1/tiles/pmtiles/{artifactId}` (HTTP range requests) | Serving live |
 | GeoParquet | Import + wire format | File import (`.parquet`, `.geoparquet`) | FeatureServer `f=parquet` (GeoParquet 1.1.0, shared response formatter) | Live |
 | GeoArrow | Wire format | — | FeatureServer `f=arrow` (Arrow IPC stream, shared response formatter) | Live |
@@ -17,11 +17,15 @@ Honua's support for the cloud-native geospatial format family: what each format 
 
 ## COG and cloud rasters
 
-Register a raster that already lives in object storage — no copy, no conversion:
+Register a raster that already lives in object storage — no copy, no conversion. Cloud registration is
+currently a Preview ImageServer tile fallback, not a general raster source:
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/cloud-rasters` with `{"layerId":"imagery","name":"Imagery 2026","provider":"AwsS3","bucket":"my-rasters","objectKey":"imagery/2026.tif"}`.
 
-The registered raster serves through the same pipeline as imported rasters: GeoServices ImageServer, WCS 2.0.1, and OGC API Coverages. Workflow detail: [Publish rasters](../../guides/publish/publish-rasters.md).
+The registered object is considered only by the ImageServer WebMercatorQuad tile fallback after the
+PostGIS tile path. `exportImage`, `identify`, WCS 2.0.1, and OGC API Coverages do not read registered
+cloud COGs. The tile object must be an EPSG:3857, GoogleMapsCompatible-aligned COG; other grids fail
+closed rather than being reprojected. Workflow detail: [Publish rasters](../../guides/publish/publish-rasters.md).
 
 Imported rasters can be deleted (`DELETE /api/v1/admin/import/raster/{rasterId}`) and have their descriptive metadata updated (`PATCH /api/v1/admin/import/raster/{rasterId}` — `name`/`description`/`acquisitionDate`); cloud-registered COGs use `DELETE /api/v1/admin/cloud-rasters/{id}`. These admin operations are the canonical equivalents of Esri ImageServer's `deleteRasters`/`updateRaster` — see the [ImageServer admin-op mapping](../compatibility/imageserver-admin-mapping.md).
 

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.CogParser;
@@ -19,6 +20,7 @@ namespace Honua.Server.Features.Protocols.Cog;
 internal sealed class CogTileResolver : ICogTileResolver
 {
     private static readonly TimeSpan MetadataCacheDuration = TimeSpan.FromMinutes(30);
+    internal const int MaxCompressedTileBytes = 128 * 1024 * 1024;
 
     /// <summary>
     /// Builds the memory-cache key for a registration's COG metadata.
@@ -55,7 +57,7 @@ internal sealed class CogTileResolver : ICogTileResolver
         int level,
         int row,
         int col,
-        RasterFormat format, // Not yet used — tiles are served in native COG compression (JPEG passthrough / DEFLATE).
+        RasterFormat format,
         CancellationToken cancellationToken = default)
     {
         var reader = _rangeReaders.FirstOrDefault(r => r.Provider == registration.Provider);
@@ -64,9 +66,24 @@ internal sealed class CogTileResolver : ICogTileResolver
             throw new InvalidOperationException($"No range reader configured for provider {registration.Provider}.");
         }
 
+        // Pin every metadata/tile read to the current object identity. The registration stores
+        // the logical catalog binding, not a mutable object ETag, so a HEAD is required even
+        // when the parsed IFD is cached.
+        var objectMetadata = await reader.GetObjectMetadataAsync(
+            registration.Bucket, registration.ObjectKey, cancellationToken).ConfigureAwait(false);
+        if (objectMetadata.SizeBytes <= 0 || string.IsNullOrWhiteSpace(objectMetadata.ETag))
+        {
+            CogLog.MetadataScanFailed(
+                _logger,
+                new InvalidDataException("COG object has no usable ETag or size for a pinned tile read."),
+                registration.Id);
+            return null;
+        }
+
         // Tier 1: In-memory metadata cache
         var cacheKey = MetadataCacheKey(registration.Id);
-        var (metadata, metadataSource) = await GetOrLoadMetadataAsync(cacheKey, registration, reader, cancellationToken).ConfigureAwait(false);
+        var (metadata, metadataSource) = await GetOrLoadMetadataAsync(
+            cacheKey, registration, reader, objectMetadata.ETag, cancellationToken).ConfigureAwait(false);
 
         // Skip COGs with unsupported compression rather than throwing.
         // The foreach loop in GetTileForLayerAsync will try the next COG.
@@ -95,15 +112,23 @@ internal sealed class CogTileResolver : ICogTileResolver
         var offset = overviewLevel.TileOffsets[tileIndex];
         var length = overviewLevel.TileByteCounts[tileIndex];
 
-        if (offset == 0 || length == 0)
+        if (offset <= 0 || length <= 0)
         {
             return null; // Empty tile
+        }
+
+        if (length > MaxCompressedTileBytes
+            || offset > objectMetadata.SizeBytes
+            || length > objectMetadata.SizeBytes - offset)
+        {
+            CogLog.CogTileNotFound(_logger, registration.Id, level, row, col);
+            return null;
         }
 
         // Single range read for the tile data
         var tileData = await reader.ReadRangeAsync(
             registration.Bucket, registration.ObjectKey,
-            offset, length,
+            offset, length, objectMetadata.ETag,
             cancellationToken).ConfigureAwait(false);
 
         // Decompress based on compression type, reversing the tile's predictor when it declares one.
@@ -113,7 +138,23 @@ internal sealed class CogTileResolver : ICogTileResolver
             metadata.BitsPerSample,
             metadata.Predictor,
             metadata.IsLittleEndian);
-        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
+        var (decompressedData, contentType) = TileDecompressor.Decompress(
+            tileData,
+            metadata.Compression,
+            layout,
+            jpegTables: metadata.JpegTables);
+
+        if (contentType == "application/octet-stream")
+        {
+            if (format != RasterFormat.PNG)
+            {
+                CogLog.UnsupportedTileFormat(_logger, registration.Id, format.ToString(), contentType);
+                return null;
+            }
+
+            decompressedData = CogTilePngEncoder.Encode(decompressedData, metadata);
+            contentType = "image/png";
+        }
 
         if (!CanServeRequestedFormat(format, contentType))
         {
@@ -144,14 +185,14 @@ internal sealed class CogTileResolver : ICogTileResolver
 
     /// <inheritdoc />
     public async Task<CogTileLookup> GetTileForLayerAsync(
-        int layerId,
+        int publicationLayerIndex,
         int level,
         int row,
         int col,
         RasterFormat format,
         CancellationToken cancellationToken = default)
     {
-        var cogs = await _cogStore.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var cogs = await _cogStore.ListByLayerAsync(publicationLayerIndex, cancellationToken).ConfigureAwait(false);
         if (cogs.Length == 0)
         {
             return new CogTileLookup(null, false);
@@ -196,36 +237,27 @@ internal sealed class CogTileResolver : ICogTileResolver
         string cacheKey,
         CogRegistration registration,
         ICloudRangeReader reader,
+        string expectedETag,
         CancellationToken cancellationToken)
     {
-        if (_cache.TryGetValue(cacheKey, out CogMetadata? cached) && cached != null)
+        if (_cache.TryGetValue(cacheKey, out CachedCogMetadata? cached)
+            && cached is not null
+            && string.Equals(cached.ETag, expectedETag, StringComparison.Ordinal))
         {
-            return (cached, "memory");
-        }
-
-        // Tier 2: Database cache — only use if overview levels have tile offsets.
-        // PHASE-1: The DB currently stores overview summaries (level, width, height)
-        // but not tile offsets; ifd_cache is always null. This tier activates once
-        // IFD cache serialization is implemented (entries with empty TileOffsets
-        // fall through to cloud scan).
-        if (registration.Metadata is { OverviewLevels.Length: > 0 } &&
-            registration.Metadata.OverviewLevels[0].TileOffsets.Length > 0)
-        {
-            _cache.Set(cacheKey, registration.Metadata, new MemoryCacheEntryOptions
-            {
-                SlidingExpiration = MetadataCacheDuration
-            });
-            return (registration.Metadata, "database");
+            return (cached.Metadata, "memory");
         }
 
         // Tier 3: Cloud scan
         var metadata = await _metadataReader.ReadMetadataAsync(
-            reader, registration.Bucket, registration.ObjectKey, cancellationToken).ConfigureAwait(false);
+            new ETagPinnedRangeReader(reader, expectedETag),
+            registration.Bucket,
+            registration.ObjectKey,
+            cancellationToken).ConfigureAwait(false);
 
         // Persist to database
         await _cogStore.UpdateMetadataAsync(registration.Id, metadata, ifdCache: null, cancellationToken).ConfigureAwait(false);
 
-        _cache.Set(cacheKey, metadata, new MemoryCacheEntryOptions
+        _cache.Set(cacheKey, new CachedCogMetadata(metadata, expectedETag), new MemoryCacheEntryOptions
         {
             SlidingExpiration = MetadataCacheDuration
         });
@@ -354,4 +386,35 @@ internal sealed class CogTileResolver : ICogTileResolver
         RasterFormat.Raw => contentType == "application/octet-stream",
         _ => false
     };
+
+    private sealed record CachedCogMetadata(CogMetadata Metadata, string ETag);
+
+    /// <summary>Adapts legacy metadata readers so every range they issue is conditional.</summary>
+    private sealed class ETagPinnedRangeReader(ICloudRangeReader inner, string expectedETag) : ICloudRangeReader
+    {
+        public CloudStorageProvider Provider => inner.Provider;
+
+        public Task<byte[]> ReadRangeAsync(
+            string bucket, string key, long offset, int length,
+            CancellationToken cancellationToken = default)
+            => inner.ReadRangeAsync(bucket, key, offset, length, expectedETag, cancellationToken);
+
+        public Task<byte[]> ReadRangeAsync(
+            string bucket, string key, long offset, int length, string etag,
+            CancellationToken cancellationToken = default)
+            => inner.ReadRangeAsync(bucket, key, offset, length, expectedETag, cancellationToken);
+
+        public Task<Stream> ReadRangeStreamAsync(
+            string bucket, string key, long offset, int length,
+            CancellationToken cancellationToken = default)
+            => inner.ReadRangeStreamAsync(bucket, key, offset, length, cancellationToken);
+
+        public Task<long> GetObjectSizeAsync(
+            string bucket, string key, CancellationToken cancellationToken = default)
+            => inner.GetObjectSizeAsync(bucket, key, cancellationToken);
+
+        public Task<CloudObjectMetadata> GetObjectMetadataAsync(
+            string bucket, string key, CancellationToken cancellationToken = default)
+            => inner.GetObjectMetadataAsync(bucket, key, cancellationToken);
+    }
 }
