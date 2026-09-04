@@ -2719,12 +2719,11 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
         var document = XDocument.Parse(content);
         var nextHref = document.Root?.Attributes()
-            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "next", StringComparison.OrdinalIgnoreCase))?.Value;
-        nextHref.Should().NotBeNull(content);
-        var nextHrefValue = nextHref ?? throw new InvalidOperationException(content);
-        nextHrefValue.Should().Contain("%3B", "per-query FILTER values must be encoded as a KVP multi-query list");
+            .FirstOrDefault(attribute => string.Equals(attribute.Name.LocalName, "next", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? throw new InvalidOperationException(content);
+        nextHref.Should().Contain("%3B", "per-query FILTER values must be encoded as a KVP multi-query list");
 
-        var nextResponse = await _fixture.Client.GetAsync(new Uri(nextHrefValue).PathAndQuery);
+        var nextResponse = await _fixture.Client.GetAsync(new Uri(nextHref).PathAndQuery);
         var nextContent = await nextResponse.Content.ReadAsStringAsync();
         nextResponse.StatusCode.Should().Be(HttpStatusCode.OK, nextContent);
         XNamespace honua = "http://honua.io/wfs";
