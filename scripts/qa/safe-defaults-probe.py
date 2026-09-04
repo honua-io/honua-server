@@ -128,6 +128,7 @@ def runtime(dll, database=None):
         'dev-auth-in-production': {'HONUA_DEV_AUTH': 'true'},
         'invalid-inline-license': {'Licensing__LicenseContent': '{invalid'},
         'missing-license-file': {'Licensing__LicensePath': '/tmp/nonexistent-safe-defaults-license.json'},
+        'unsupported-license-secret-reference': {'Licensing__LicenseContentSecretRef': 'unsupported:local-qa'},
         'pro-dev-grant-in-production': {'Licensing__DevGrantEdition': 'Pro'},
         'enterprise-dev-grant-in-production': {'Licensing__DevGrantEdition': 'Enterprise'},
     }
