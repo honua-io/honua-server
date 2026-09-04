@@ -1266,7 +1266,7 @@ sql:
           dedupe_key TEXT NOT NULL,
           -- rule_id is nullable and `source` discriminates rule-driven (gis) vs
           -- operations-notification (ops) events, mirroring 075_AddAlertOpsSource.sql
-          -- (#2427 alerts GA) so this migration-skipping integration fixture matches
+          -- (#2427 alert pipeline; Preview in 2026.1) so this migration-skipping integration fixture matches
           -- the canonical alert_events shape the alert stores write to.
           rule_id BIGINT REFERENCES honua.alert_rules(rule_id) ON DELETE CASCADE,
           zone_id BIGINT NULL REFERENCES honua.alert_zones(zone_id) ON DELETE SET NULL,

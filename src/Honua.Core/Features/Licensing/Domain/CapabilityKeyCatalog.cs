@@ -50,8 +50,8 @@ public static class CapabilityKeyCatalog
     public const string PreviewStatus = "preview";
 
     /// <summary>
-    /// Release-posture value marking a capability as Preview. Preview capabilities are
-    /// implemented and qualified, but are not an advertised GA commitment.
+    /// Release-posture value marking an implemented capability as Preview,
+    /// without an advertised GA commitment.
     /// </summary>
     public const string PreviewStatus = "preview";
 

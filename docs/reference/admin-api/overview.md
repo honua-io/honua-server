@@ -46,6 +46,11 @@ Customer alert zones, rules, evaluation, and delivery channels are Preview in
 existing feature-status log event; this opt-in does not constitute a GA
 availability or support commitment.
 
+The [2026.1 operator ruling](https://github.com/honua-io/honua-release/issues/268)
+does not relax the mandatory [domain-audit integrity](https://github.com/honua-io/honua-server/issues/3865)
+or [fail-closed tenant isolation](https://github.com/honua-io/honua-server/issues/3859)
+release gates on this Preview surface.
+
 Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist; every other admin endpoint requires authentication.
 
 ## OpenAPI specs

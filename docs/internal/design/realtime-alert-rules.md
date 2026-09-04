@@ -8,7 +8,8 @@ deploy/job-event notifications). The customer surface remains OFF by default and
 
 > **Upgrade note (#3055):** The binding fix makes `Alerts:Enabled` (or `Alerts__Enabled` as an
 > environment variable) effective with the source-generated configuration binder. Deployments that
-> already set it to `true` will start the alert processing workers after upgrading and restarting.
+> already set it to `true` will start the alert processing workers after upgrading and restarting
+> when the canonical `alerts.geofence` capability opt-in is also enabled.
 > Remove the setting or set it to `false` before upgrading if activation is not intended.
 
 **Issue:** honua-server#1169 (2026.1 Preview ruling supersedes the earlier #2427 GA claim)
