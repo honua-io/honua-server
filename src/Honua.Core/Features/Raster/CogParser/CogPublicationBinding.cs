@@ -14,6 +14,7 @@ public static class CogPublicationBinding
     /// </summary>
     public static MetadataV2Publication? Resolve(MetadataV2GraphSnapshot snapshot, int layerIndex)
     {
+        ArgumentNullException.ThrowIfNull(snapshot);
         MetadataV2Publication? match = null;
         foreach (var publication in snapshot.Graph.Publications)
         {

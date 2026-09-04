@@ -163,14 +163,14 @@ internal sealed class CogTileResolver : ICogTileResolver
 
     /// <inheritdoc />
     public async Task<CogTileLookup> GetTileForLayerAsync(
-        int publicationLayerIndex,
+        int layerId,
         int level,
         int row,
         int col,
         RasterFormat format,
         CancellationToken cancellationToken = default)
     {
-        var cogs = await _cogStore.ListByLayerAsync(publicationLayerIndex, cancellationToken).ConfigureAwait(false);
+        var cogs = await _cogStore.ListByLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         if (cogs.Length == 0)
         {
             return new CogTileLookup(null, false);

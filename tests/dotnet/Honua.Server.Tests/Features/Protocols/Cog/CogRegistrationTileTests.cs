@@ -25,11 +25,11 @@ namespace Honua.Server.Tests.Features.Protocols.Cog;
 
 /// <summary>Exercises the registration-to-ImageServer binding through HTTP and the real COG store.</summary>
 [Collection("Database")]
-[Protocol(TestProtocols.Cog)]
+[Protocol(TestProtocols.Cog, TestProtocols.ImageServer)]
 public sealed class CogRegistrationTileTests
 {
     [IntegrationTest]
-    [Operation(Operations.CogAdmin)]
+    [Operation(Operations.CogAdmin, Operations.GetTile)]
     [Endpoint("POST /api/v1/admin/cloud-rasters")]
     [Endpoint("GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}")]
     public async Task RegisteredCog_DistinctStorageAndPublicationIds_ServesOnlyBoundService()
@@ -57,8 +57,14 @@ public sealed class CogRegistrationTileTests
         metadataReader.ReadMetadataAsync(Arg.Any<ICloudRangeReader>(), "bucket", "bound.tif", Arg.Any<CancellationToken>())
             .Returns(new CogMetadata(256, 256, 3, "uint8", 3857, "JPEG", 256, 256,
                 [new CogOverviewLevel(0, 256, 256, 8, [16L], [tile.Length])],
-                new RasterExtent { XMin = -20037508.342789244, YMin = -20037508.342789244,
-                    XMax = 20037508.342789244, YMax = 20037508.342789244, Srid = 3857 }));
+                new RasterExtent
+                {
+                    XMin = -20037508.342789244,
+                    YMin = -20037508.342789244,
+                    XMax = 20037508.342789244,
+                    YMax = 20037508.342789244,
+                    Srid = 3857
+                }));
         var rasterStore = Substitute.For<IRasterStore>();
         rasterStore.QueryRastersAsync(default, default!, default).ReturnsForAnyArgs(Array.Empty<RasterInfo>());
         var fixture = new WebAppFixture().ConfigureServices(services =>
@@ -78,7 +84,11 @@ public sealed class CogRegistrationTileTests
         {
             using var registration = await fixture.Client.PostAsJsonAsync("/api/v1/admin/cloud-rasters", new
             {
-                layerId = 1, name = "bound-cog", provider = "AwsS3", bucket = "bucket", objectKey = "bound.tif"
+                layerId = 1,
+                name = "bound-cog",
+                provider = "AwsS3",
+                bucket = "bucket",
+                objectKey = "bound.tif"
             });
             registration.StatusCode.Should().Be(HttpStatusCode.Created);
 
