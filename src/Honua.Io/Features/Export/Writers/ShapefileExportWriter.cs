@@ -336,32 +336,32 @@ internal static class ShapefileExportWriter
     private static CoordinateSequence MatchShapeOrdinates(
         CoordinateSequence sequence, Geometry geometry, bool hasZ, bool hasM)
     {
-            var result = geometry.Factory.CoordinateSequenceFactory.Create(
-                sequence.Count, 2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0), hasM ? 1 : 0);
-            for (var i = 0; i < sequence.Count; i++)
+        var result = geometry.Factory.CoordinateSequenceFactory.Create(
+            sequence.Count, 2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0), hasM ? 1 : 0);
+        for (var i = 0; i < sequence.Count; i++)
+        {
+            var z = sequence.GetZ(i);
+            var m = sequence.GetM(i);
+            if ((!hasZ && !double.IsNaN(z)) || (!hasM && !double.IsNaN(m)))
             {
-                var z = sequence.GetZ(i);
-                var m = sequence.GetM(i);
-                if ((!hasZ && !double.IsNaN(z)) || (!hasM && !double.IsNaN(m)))
-                {
-                    throw new InvalidOperationException(
-                        "Shapefile export cannot preserve varying ordinate dimensions. Export as CSV or GeoPackage instead.");
-                }
-
-                result.SetX(i, sequence.GetX(i));
-                result.SetY(i, sequence.GetY(i));
-                if (hasZ)
-                {
-                    result.SetZ(i, z);
-                }
-
-                if (hasM)
-                {
-                    result.SetM(i, m);
-                }
+                throw new InvalidOperationException(
+                    "Shapefile export cannot preserve varying ordinate dimensions. Export as CSV or GeoPackage instead.");
             }
 
-            return result;
+            result.SetX(i, sequence.GetX(i));
+            result.SetY(i, sequence.GetY(i));
+            if (hasZ)
+            {
+                result.SetZ(i, z);
+            }
+
+            if (hasM)
+            {
+                result.SetM(i, m);
+            }
+        }
+
+        return result;
     }
 
     private static Geometry NormalizeGeometry(Geometry geometry, ExportGeometryType targetType)

@@ -63,3 +63,5 @@ Expected: a row/column tuple such as `(5, 12)` with a populated `geometry` colum
 - [Connect Excel and Power BI](../connect/excel-power-bi.md)
 
 Shapefile downloads preserve records without geometry as null shapes with their attributes. When field names must change to fit DBF limits, the ZIP includes `export-warnings.txt` listing each change. This manifest is included in synchronous and background downloads; completed background job status also exposes `warnings` and the actual exported feature count.
+
+Shapefile records use one ordinate layout for the entire file. If a later feature introduces Z or M dimensions that this layout cannot preserve, export fails explicitly; use CSV or GeoPackage for mixed ordinate layouts.
