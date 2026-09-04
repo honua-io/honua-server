@@ -234,9 +234,9 @@ internal static class CoreEndpoints
                 // complete class suite.
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
 
-                // CRS, filtering, CQL2, and Part 4 remain implemented or
-                // test-covered in places, but are not advertised until an exact
-                // candidate conformance lane proves their complete classes.
+            // CRS, filtering, CQL2, and Part 4 remain implemented or
+            // test-covered in places, but are not advertised until an exact
+            // candidate conformance lane proves their complete classes.
             ).AddRange(OgcConformanceUris.Common)
               .AddRange(OgcConformanceUris.VendorExtensions),
             Links = OgcCoreMetadataUtilities.BuildConformanceLinks(
