@@ -2659,7 +2659,12 @@ internal sealed partial class FeatureServerQueryHandler(
                 {
                     StatisticType = statisticType,
                     OnStatisticField = onField,
-                    OutStatisticFieldName = outAlias
+                    OutStatisticFieldName = outAlias,
+                    FieldType = fieldTypes.TryGetValue(onField, out var resolvedFieldType)
+                        ? resolvedFieldType
+                        : string.Equals(onField, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase)
+                            ? MetadataV2FieldType.BigInteger
+                            : null
                 });
             }
 

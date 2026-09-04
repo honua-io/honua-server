@@ -943,10 +943,10 @@
       "category": "Geocoding",
       "edition": "Community",
       "status": null,
-      "entryCount": 10,
-      "provingTestCount": 61,
+      "entryCount": 11,
+      "provingTestCount": 62,
       "maturity": {
-        "implemented": 10
+        "implemented": 11
       },
       "noSurface": null,
       "cite": [],
@@ -1061,10 +1061,10 @@
       "category": "Identity",
       "edition": "Community",
       "status": null,
-      "entryCount": 18,
-      "provingTestCount": 66,
+      "entryCount": 20,
+      "provingTestCount": 68,
       "maturity": {
-        "implemented": 18
+        "implemented": 20
       },
       "noSurface": null,
       "cite": [],
@@ -1616,7 +1616,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 420,
+      "provingTestCount": 421,
       "maturity": {
         "implemented": 49
       },
@@ -1831,7 +1831,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 40,
+      "provingTestCount": 42,
       "maturity": {
         "implemented": 4
       },
@@ -1992,7 +1992,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 21,
-      "provingTestCount": 275,
+      "provingTestCount": 279,
       "maturity": {
         "implemented": 21
       },

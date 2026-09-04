@@ -29,6 +29,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         if (_geometryColumn == null)
         {
             // FlatGeobuf is a geometry-bearing format; a non-spatial source layer has
@@ -46,6 +47,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFlatGeobufFe
         FeatureQuery query,
         CancellationToken cancellationToken = default)
     {
+        query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
         if (_geometryColumn == null)
         {
             return null;

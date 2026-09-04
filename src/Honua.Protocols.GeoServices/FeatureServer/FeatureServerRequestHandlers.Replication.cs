@@ -4,6 +4,7 @@
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -176,6 +177,7 @@ internal static partial class FeatureServerEndpoints
         var replicas = await replicaStore.ListByServiceAsync(serviceId, cancellationToken).ConfigureAwait(false);
 
         var response = replicas
+            .Where(record => IsReplicaOwnerOrAdmin(context, record.OwnerId))
             .Where(record => record.LayerIds.Length > 0 && record.LayerIds.All(accessibleLayerIds.Contains))
             .Select(record => new ReplicaSummary
             {
@@ -233,6 +235,11 @@ internal static partial class FeatureServerEndpoints
         // it back through `record.Value` inside the closure below defeats the null guard
         // above from a static-analysis standpoint even though it is provably non-null here.
         var replicaRecord = record.Value;
+        if (!IsReplicaOwnerOrAdmin(context, replicaRecord.OwnerId))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
 
         var replica = ToReplicaState(replicaRecord);
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
@@ -315,6 +322,13 @@ internal static partial class FeatureServerEndpoints
             return writeAccessError;
         }
 
+        if (string.IsNullOrWhiteSpace(context.User?.Identity?.Name))
+        {
+            return StandardErrorHelpers.CreateForbidden(
+                context,
+                "An authenticated identity is required to create a replica.");
+        }
+
         var replicaStore = context.RequestServices.GetRequiredService<IReplicaStore>();
 
         var (values, readError) = await TryReadRequestValuesAsync(context.Request, cancellationToken);
@@ -376,7 +390,8 @@ internal static partial class FeatureServerEndpoints
             serviceId,
             syncModel,
             layerIds,
-            now);
+            now,
+            ResolveReplicaOwner(context));
         var registered = await replicaStore.RegisterAtCurrentGenerationAsync(
             record,
             cancellationToken: cancellationToken);
@@ -458,6 +473,12 @@ internal static partial class FeatureServerEndpoints
         }
 
         if (!string.Equals(replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        if (!IsReplicaOwnerOrAdmin(context, replica.OwnerId))
         {
             return StandardErrorHelpers.CreateNotFound(context,
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
@@ -562,20 +583,12 @@ internal static partial class FeatureServerEndpoints
             if (changesByLayer.TryGetValue(layer.StorageLayerId, out var layerChangeList))
             {
                 // Collect objectIds by operation type
-                var insertIds = layerChangeList
-                    .Where(c => c.Operation == FeatureChangeOperation.Insert)
-                    .Select(c => c.ObjectId)
-                    .ToArray();
-
-                var updateIds = layerChangeList
-                    .Where(c => c.Operation == FeatureChangeOperation.Update)
-                    .Select(c => c.ObjectId)
-                    .ToArray();
-
-                var deleteIds = layerChangeList
-                    .Where(c => c.Operation == FeatureChangeOperation.Delete)
-                    .Select(c => c.ObjectId)
-                    .ToArray();
+                var (insertIds, updateIds, deleteIds) = await FilterChangesForReadAsync(
+                    context,
+                    layer,
+                    layerChangeList,
+                    featureReader,
+                    cancellationToken);
 
                 if (insertIds.Length > queryLimits.MaxRecordCount ||
                     updateIds.Length > queryLimits.MaxRecordCount ||
@@ -657,6 +670,47 @@ internal static partial class FeatureServerEndpoints
     /// migration 059 seeds and resolve through the incremental change-log path instead (#1876). Returns a
     /// bad-request <see cref="IResult"/> when the snapshot exceeds the configured per-layer record limit.
     /// </summary>
+    private static async Task<(long[] InsertIds, long[] UpdateIds, long[] DeleteIds)> FilterChangesForReadAsync(
+        HttpContext context,
+        ReplicaLayerV2 layer,
+        IReadOnlyList<FeatureChange> changes,
+        IFeatureReader featureReader,
+        CancellationToken cancellationToken)
+    {
+        // The change log contains server history, not the caller's row-visibility view.
+        // Re-query current IDs through the shared reader seam so counts and payloads agree.
+        var candidateIds = changes
+            .Where(change => change.Operation is FeatureChangeOperation.Insert or FeatureChangeOperation.Update)
+            .Select(change => change.ObjectId)
+            .Distinct()
+            .ToArray();
+        var visibleSet = new HashSet<long>();
+        var visibleIds = candidateIds;
+        if (visibleIds.Length > 0)
+        {
+            var visible = await featureReader.QueryObjectIdsAsync(
+                    layer.StorageLayerId,
+                    new FeatureQuery
+                    {
+                        ObjectIds = ImmutableArray.Create(visibleIds),
+                        ExcludeAttributes = true
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            visibleSet = visible.ToHashSet();
+        }
+
+        var rlsSource = context.RequestServices.GetService<IRowLevelSecurityFilterSource>();
+        var hasVisibilityPolicy = !string.IsNullOrWhiteSpace(layer.Resource.PermanentFilter?.Expression) ||
+                                  rlsSource is not null &&
+                                  await rlsSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false) is not null;
+        // A deleted row is no longer queryable, so its former owner/claims cannot be
+        // re-authorized. Suppressing delete IDs is the only fail-closed behavior until
+        // the change log carries a pre-delete row snapshot.
+
+        return ReplicaSecurity.FilterChangeIds(changes, visibleSet, hasVisibilityPolicy);
+    }
+
     private static async Task<(LayerChanges? Changes, IResult? Error)> BuildLayerSnapshotAddsAsync(
         HttpContext context,
         string replicaId,
@@ -787,18 +841,12 @@ internal static partial class FeatureServerEndpoints
                 continue;
             }
 
-            var insertIds = layerChangeList
-                .Where(c => c.Operation == FeatureChangeOperation.Insert)
-                .Select(c => c.ObjectId)
-                .ToArray();
-            var updateIds = layerChangeList
-                .Where(c => c.Operation == FeatureChangeOperation.Update)
-                .Select(c => c.ObjectId)
-                .ToArray();
-            var deleteIds = layerChangeList
-                .Where(c => c.Operation == FeatureChangeOperation.Delete)
-                .Select(c => c.ObjectId)
-                .ToArray();
+            var (insertIds, updateIds, deleteIds) = await FilterChangesForReadAsync(
+                context,
+                layer,
+                layerChangeList,
+                featureReader,
+                cancellationToken);
 
             if (insertIds.Length > queryLimits.MaxRecordCount ||
                 updateIds.Length > queryLimits.MaxRecordCount ||
@@ -999,6 +1047,12 @@ internal static partial class FeatureServerEndpoints
         }
 
         if (!string.Equals(replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
+        if (!IsReplicaOwnerOrAdmin(context, replica.OwnerId))
         {
             return StandardErrorHelpers.CreateNotFound(context,
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
@@ -1878,6 +1932,12 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
+        if (!IsReplicaOwnerOrAdmin(context, replica.OwnerId))
+        {
+            return StandardErrorHelpers.CreateNotFound(context,
+                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+        }
+
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
@@ -2151,12 +2211,24 @@ internal static partial class FeatureServerEndpoints
         record.ServiceId,
         record.SyncModel,
         record.LayerIds,
-        record.CreatedAt)
+        record.CreatedAt,
+        record.OwnerId)
     {
         LastSyncTime = record.LastSyncTime,
         LastSyncGeneration = record.LastSyncGeneration,
         UploadBaseGeneration = record.UploadBaseGeneration
     };
+
+    private static string ResolveReplicaOwner(HttpContext context)
+        => context.User?.Identity?.Name is { Length: > 0 } name
+            ? name
+            : throw new InvalidOperationException("An authenticated identity is required to create a replica.");
+
+    private static bool IsReplicaOwnerOrAdmin(HttpContext context, string? ownerId)
+        => ReplicaSecurity.CanAccess(
+            ownerId,
+            context.User?.Identity?.Name,
+            ServiceDataEditorAuthorization.IsAdminPrincipal(context));
 
     // Per-operation authorization (BH3-001/BH3-014) does NOT cleanly apply to replica write
     // access: this gate covers replica lifecycle operations (create / unregister — which are not

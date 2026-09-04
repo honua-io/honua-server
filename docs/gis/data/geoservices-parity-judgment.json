@@ -2806,6 +2806,14 @@
           "notes": "RFC 7662 introspection over opaque, JWT, and refresh tokens, admin-authorized. Off by default (EnableIntrospection \u2192 404 when disabled). Emits active, sub, username, scope, token_type, and exp; client_id, iat, nbf, aud, iss, and jti are not emitted."
         },
         {
+          "name": "OAuth2 userinfo",
+          "status": "implemented",
+          "esriPaths": [
+            "/sharing/rest/oauth2/userinfo"
+          ],
+          "notes": "Accepts GET and form-encoded POST with a valid portal token supplied as Bearer authorization, X-Esri-Authorization, access_token, or token. Returns the OAuth2 subject, username, and display name; invalid or missing credentials use the OAuth2 invalid_request/invalid_token envelopes."
+        },
+        {
           "name": "OAuth2 revoke",
           "status": "implemented",
           "esriPaths": [

@@ -13,7 +13,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 public sealed class FeatureQueryBuilderStatisticsTests
 {
     [Fact]
-    public void BuildStatisticsQuery_OnlyCastsNumericAggregatesToNumeric()
+    public void BuildStatisticsQuery_CastsNumericAndTemporalAggregatesToTypedExpressions()
     {
         var queryBuilder = CreateQueryBuilder();
         var query = new FeatureQuery
@@ -29,7 +29,8 @@ public sealed class FeatureQueryBuilderStatisticsTests
                 {
                     StatisticType = StatisticType.Max,
                     OnStatisticField = "created_at",
-                    OutStatisticFieldName = "max_created_at"
+                    OutStatisticFieldName = "max_created_at",
+                    FieldType = MetadataV2FieldType.DateTime
                 },
                 new StatisticDefinition
                 {
@@ -48,7 +49,7 @@ public sealed class FeatureQueryBuilderStatisticsTests
         var result = queryBuilder.BuildStatisticsQuery(layerId: 1, query);
 
         result.Sql.Should().Contain("MIN(attributes->>'name') AS \"min_name\"");
-        result.Sql.Should().Contain("MAX(attributes->>'created_at') AS \"max_created_at\"");
+        result.Sql.Should().Contain("MAX(CASE WHEN NULLIF((attributes->>'created_at')::text, '') ~ '^-?[0-9]+$'");
         result.Sql.Should().Contain("SUM((attributes->>'count')::numeric) AS \"sum_count\"");
         result.Sql.Should().Contain("AVG((attributes->>'ratio')::numeric) AS \"avg_ratio\"");
         result.Sql.Should().NotContain("MIN((attributes->>'name')::numeric)");

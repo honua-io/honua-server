@@ -7,6 +7,8 @@ on:
       source_sha: { description: Full candidate source SHA, required: true, type: string }
       soak_seconds: { description: Sustained soak duration, required: true, default: '3600', type: string }
       soak_concurrency: { description: Concurrent jobs per wave, required: true, default: '8', type: string }
+      backlog_jobs: { description: 'Backlog jobs; must not exceed the cost cap', required: true, default: '20', type: string }
+      cost_cap: { description: Maximum backlog cost, required: true, default: '20', type: string }
 permissions:
   contents: read
   packages: read
@@ -18,6 +20,10 @@ jobs:
       HONUA_SERVER_IMAGE: ${{ inputs.server_image }}
       HONUA_WORKER_IMAGE: ${{ inputs.worker_image }}
       HONUA_GP_SOURCE_SHA: ${{ inputs.source_sha }}
+      HONUA_GP_LANE: resilience
+      HONUA_GP_OIDC_ENABLED: 'true'
+      HONUA_GP_BACKLOG_JOBS: ${{ inputs.backlog_jobs }}
+      HONUA_GP_BACKLOG_COST_CAP: ${{ inputs.cost_cap }}
       HONUA_GP_RUN_SOAK: 'true'
       HONUA_GP_SOAK_SECONDS: ${{ inputs.soak_seconds }}
       HONUA_GP_SOAK_CONCURRENCY: ${{ inputs.soak_concurrency }}
@@ -43,4 +49,18 @@ jobs:
           name: gp-resilience-receipts-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/gp-resilience/*.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
+      - name: Build immutable resilience evidence pack
+        if: always()
+        run: |
+          set -euo pipefail
+          find artifacts/gp-resilience -maxdepth 1 -type f -name '*.json' ! -name '.*' -print0 | sort -z | tar --null -T - -czf "artifacts/gp-resilience-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz"
+          sha256sum "artifacts/gp-resilience-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz" > "artifacts/gp-resilience-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz.sha256"
+      - name: Retain immutable resilience evidence pack
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: gp-resilience-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gp-resilience-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz*
+          if-no-files-found: error
+          retention-days: 90

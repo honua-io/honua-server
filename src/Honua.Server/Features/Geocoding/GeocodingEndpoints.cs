@@ -115,6 +115,13 @@ internal static class GeocodingEndpoints
             .WithName("FindAddressCandidatesAlias")
             .WithTags("GeocodeServer");
 
+        endpoints.MapPost("/rest/services/GeocodeServer/findAddressCandidates", static (HttpContext context, GeocodingHandler handler) =>
+                handler.HandleFindAddressCandidatesAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
+            .WithDisplayName("Find Address Candidates (Alias, POST)")
+            .WithName("FindAddressCandidatesAliasPost")
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/GeocodeServer/reverseGeocode", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleReverseGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Reverse Geocode (Alias)")

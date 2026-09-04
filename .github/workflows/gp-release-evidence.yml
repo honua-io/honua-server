@@ -1,0 +1,126 @@
+name: GP Release Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      lifecycle_run_id:
+        description: Completed GP Lifecycle Qualification run ID
+        required: true
+        type: string
+      resilience_run_id:
+        description: Completed GP Resilience Qualification run ID
+        required: true
+        type: string
+      server_image:
+        description: Exact server image digest used by both qualification runs
+        required: true
+        type: string
+      worker_image:
+        description: Exact worker image digest used by both qualification runs
+        required: true
+        type: string
+      source_sha:
+        description: Full source SHA used by both qualification runs
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      SERVER_IMAGE: ${{ inputs.server_image }}
+      WORKER_IMAGE: ${{ inputs.worker_image }}
+    steps:
+      - name: Download exact qualification receipts
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/lifecycle evidence/resilience
+          gh run download "${{ inputs.lifecycle_run_id }}" --repo "${GITHUB_REPOSITORY}" --dir evidence/lifecycle
+          gh run download "${{ inputs.resilience_run_id }}" --repo "${GITHUB_REPOSITORY}" --dir evidence/resilience
+
+      - name: Validate both executed summaries and identities
+        run: |
+          set -euo pipefail
+          [[ "${SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "${SERVER_IMAGE}" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]
+          [[ "${WORKER_IMAGE}" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]
+          lifecycle_summary="$(find evidence/lifecycle -type f -name summary.json -print -quit)"
+          resilience_summary="$(find evidence/resilience -type f -name summary.json -print -quit)"
+          [[ -n "${lifecycle_summary}" && -n "${resilience_summary}" ]]
+          jq -e --arg source "${SOURCE_SHA}" --arg server "${SERVER_IMAGE}" --arg worker "${WORKER_IMAGE}" '
+            .lane == "lifecycle" and .missing_scenarios == [] and .duplicate_receipts == [] and
+            .declared_scenario_count == .receipt_count and .failed == 0 and
+            all(.scenarios[]; .outcome == "pass" and .source_sha == $source and
+              .candidate.requested.server_image == $server and
+              .candidate.requested.worker_image == $worker and
+              .candidate.observed != null and (.started_at|length) > 0 and (.completed_at|length) > 0 and
+              (.attempt_count|type) == "number" and (.state_transitions|type) == "array" and
+              (.disruptions|type) == "array" and (.output|has("bytes") and has("sha256")) and
+              (.github.run_url|length) > 0)' "${lifecycle_summary}"
+          jq -e --arg source "${SOURCE_SHA}" --arg server "${SERVER_IMAGE}" --arg worker "${WORKER_IMAGE}" '
+            .lane == "resilience" and .missing_scenarios == [] and .duplicate_receipts == [] and
+            .declared_scenario_count == .receipt_count and .failed == 0 and
+            all(.scenarios[]; .outcome == "pass" and .source_sha == $source and
+              .candidate.requested.server_image == $server and
+              .candidate.requested.worker_image == $worker and
+              .candidate.observed != null and (.started_at|length) > 0 and (.completed_at|length) > 0 and
+              (.attempt_count|type) == "number" and (.state_transitions|type) == "array" and
+              (.disruptions|type) == "array" and (.output|has("bytes") and has("sha256")) and
+              (.github.run_url|length) > 0)' "${resilience_summary}"
+          lifecycle_run="$(gh run view "${{ inputs.lifecycle_run_id }}" --repo "${GITHUB_REPOSITORY}" --json headSha,url,conclusion)"
+          resilience_run="$(gh run view "${{ inputs.resilience_run_id }}" --repo "${GITHUB_REPOSITORY}" --json headSha,url,conclusion)"
+          jq -e --arg source "${SOURCE_SHA}" '.headSha == $source and .conclusion == "success"' <<<"${lifecycle_run}"
+          jq -e --arg source "${SOURCE_SHA}" '.headSha == $source and .conclusion == "success"' <<<"${resilience_run}"
+
+      - name: Create immutable evidence package
+        run: |
+          set -euo pipefail
+          package="gp-qualification-${SOURCE_SHA}"
+          mkdir -p "${package}/lifecycle" "${package}/resilience"
+          find evidence/lifecycle -type f -name '*.json' -exec cp '{}' "${package}/lifecycle/" ';'
+          find evidence/resilience -type f -name '*.json' -exec cp '{}' "${package}/resilience/" ';'
+          find "${package}" -type f -name '*.json' -print0 | sort -z | tar --null -T - -czf "${package}.payload.tar.gz"
+          payload_sha="$(sha256sum "${package}.payload.tar.gz" | cut -d' ' -f1)"
+          entries='[]'
+          while IFS= read -r -d '' file; do
+            digest="$(sha256sum "${file}" | cut -d' ' -f1)"
+            relative="${file#${package}/}"
+            entries="$(jq --arg path "${relative}" --arg sha "${digest}" '. + [{path:$path,sha256:$sha}]' <<<"${entries}")"
+          done < <(find "${package}" -type f -name '*.json' -print0 | sort -z)
+          jq -n --arg schema honua.gp-release-evidence.v1 --arg source "${SOURCE_SHA}" \
+            --arg server "${SERVER_IMAGE}" --arg worker "${WORKER_IMAGE}" \
+            --arg payload_sha "${payload_sha}" --arg lifecycle_run "${{ inputs.lifecycle_run_id }}" \
+            --arg resilience_run "${{ inputs.resilience_run_id }}" --argjson entries "${entries}" \
+            '{schema:$schema,source_sha:$source,server_image:$server,worker_image:$worker,payload_artifact_sha256:$payload_sha,qualification_runs:{lifecycle:$lifecycle_run,resilience:$resilience_run},receipts:$entries}' \
+            > "${package}/manifest.json"
+          tar -czf "${package}.tar.gz" "${package}" "${package}.payload.tar.gz"
+          sha256sum "${package}.tar.gz" > "${package}.tar.gz.sha256"
+
+      - name: Retain and publish immutable evidence
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: gp-release-evidence-${{ inputs.source_sha }}
+          path: gp-qualification-${{ inputs.source_sha }}.tar.gz*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish immutable GitHub release asset
+        run: |
+          set -euo pipefail
+          tag="gp-qualification-${SOURCE_SHA}"
+          if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "immutable qualification release already exists: ${tag}" >&2
+            exit 1
+          fi
+          gh release create "${tag}" --repo "${GITHUB_REPOSITORY}" --target "${SOURCE_SHA}" \
+            --latest=false \
+            --title "GP qualification ${SOURCE_SHA}" \
+            --notes "Immutable GP Lifecycle and Resilience qualification evidence for ${SOURCE_SHA}." \
+            "gp-qualification-${SOURCE_SHA}.tar.gz" "gp-qualification-${SOURCE_SHA}.tar.gz.sha256"
