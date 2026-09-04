@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import socket
 import subprocess
 import tempfile
 import time
@@ -152,6 +153,12 @@ def runtime(dll, database=None):
                 scenarios[f'{edition.lower()}-{state}'] = {'Licensing__LicenseContent': envelope}
     for case, updates in scenarios.items():
         env = base | updates
+        with socket.socket() as http_socket, socket.socket() as grpc_socket:
+            http_socket.bind(('127.0.0.1', 0))
+            grpc_socket.bind(('127.0.0.1', 0))
+            url = f'http://127.0.0.1:{http_socket.getsockname()[1]}'
+            env['Kestrel__Endpoints__Http__Url'] = url
+            env['Kestrel__Endpoints__Grpc__Url'] = f'http://127.0.0.1:{grpc_socket.getsockname()[1]}'
         process = subprocess.Popen(['dotnet', str(dll)], cwd=ROOT / 'src/Honua.Server',
             env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         # Drain in a thread: keep all unredacted logs only in memory.
@@ -165,7 +172,7 @@ def runtime(dll, database=None):
                 if process.poll() is not None:
                     break
                 try:
-                    with urllib.request.urlopen('http://127.0.0.1:18943/healthz/live', timeout=.3) as response:
+                    with urllib.request.urlopen(url + '/healthz/live', timeout=.3) as response:
                         statuses['/healthz/live'] = response.status
                     break
                 except (OSError, urllib.error.URLError):
@@ -173,7 +180,7 @@ def runtime(dll, database=None):
             if statuses:
                 for path in ['/healthz/ready', '/api/v1/admin/config', '/ogc/features', '/rest/services']:
                     try:
-                        with urllib.request.urlopen('http://127.0.0.1:18943' + path, timeout=3) as response:
+                        with urllib.request.urlopen(url + path, timeout=3) as response:
                             statuses[path] = response.status
                     except urllib.error.HTTPError as error:
                         statuses[path] = error.code
@@ -181,7 +188,7 @@ def runtime(dll, database=None):
                         statuses[path] = 'timeout-or-unavailable'
             license_state = None
             if statuses and env.get('HONUA_ADMIN_PASSWORD'):
-                request = urllib.request.Request('http://127.0.0.1:18943/api/v1/admin/license/',
+                request = urllib.request.Request(url + '/api/v1/admin/license/',
                     headers={'X-API-Key': env['HONUA_ADMIN_PASSWORD']})
                 try:
                     with urllib.request.urlopen(request, timeout=5) as response:
