@@ -21,16 +21,18 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Protocol(TestProtocols.FeatureServer)]
 [Operation(Operations.GetTile)]
 [Collection("Database")]
-public class MvtTileCacheTtlTests : IClassFixture<WebAppFixture>
+public class MvtTileCacheTtlTests : IAsyncLifetime
 {
     private const int TestLayerId = 0;
 
-    private readonly WebAppFixture _fixture;
+    // The standard fixture authenticates every request through the development
+    // bypass. Disable it so requests without credentials exercise public caching.
+    private readonly WebAppFixture _fixture = new WebAppFixture()
+        .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
 
-    public MvtTileCacheTtlTests(WebAppFixture fixture)
-    {
-        _fixture = fixture;
-    }
+    public Task InitializeAsync() => _fixture.InitializeAsync();
+
+    public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
     [Endpoint("GET /tiles/{layerId}/{z}/{x}/{y}.mvt")]
@@ -100,7 +102,9 @@ public class MvtTileCacheTtlOverrideTests
         }
 
         public WebAppFixture App { get; } =
-            new WebAppFixture().ReplaceService<IOptions<TileOptions>>(Options.Create(TileOptionsValue));
+            new WebAppFixture()
+                .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"))
+                .ReplaceService<IOptions<TileOptions>>(Options.Create(TileOptionsValue));
 
         public Task InitializeAsync() => App.InitializeAsync();
 
