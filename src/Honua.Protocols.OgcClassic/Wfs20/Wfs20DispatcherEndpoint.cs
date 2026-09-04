@@ -20,6 +20,7 @@ internal static class Wfs20DispatcherEndpoint
 {
     internal const string ParsedXmlDocumentItemKey = "__honua_wfs20_parsed_xml_document";
     internal const string ParsedXmlQueriesItemKey = "__honua_wfs20_parsed_xml_queries";
+    internal const string RequestParameterValuesItemKey = "__honua_wfs20_request_parameter_values";
     private const string Wfs11Version = "1.1.0";
     private const string Wfs10Version = "1.0.0";
 
@@ -1177,6 +1178,7 @@ internal static class Wfs20DispatcherEndpoint
 
         if (!HttpMethods.IsPost(context.Request.Method))
         {
+            context.Items[RequestParameterValuesItemKey] = values;
             return new WfsRequestParameters(values);
         }
 
@@ -1199,6 +1201,7 @@ internal static class Wfs20DispatcherEndpoint
 
         if (string.IsNullOrWhiteSpace(body))
         {
+            context.Items[RequestParameterValuesItemKey] = values;
             return new WfsRequestParameters(values);
         }
 
@@ -1215,6 +1218,7 @@ internal static class Wfs20DispatcherEndpoint
         var root = document.Root ?? throw new InvalidDataException("Invalid WFS XML request body.");
         context.Items[ParsedXmlDocumentItemKey] = document;
         ApplyXmlParameters(context, root, values);
+        context.Items[RequestParameterValuesItemKey] = values;
         return new WfsRequestParameters(values);
     }
 
