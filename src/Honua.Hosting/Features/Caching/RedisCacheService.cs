@@ -700,8 +700,12 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
             return true;
         }
-        // Intentional: this is a health-probe boundary; a probe failure must resolve to a
-        // health verdict rather than throw out of the health check.
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        // Intentional: dependency failures resolve to a health verdict, while caller
+        // cancellation above retains the readiness check's cancellation contract.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RedisCacheServiceLog.RedisHealthCheckFailed(_logger, ex);
