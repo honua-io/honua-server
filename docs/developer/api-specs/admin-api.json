@@ -9073,7 +9073,7 @@
           "Alerts"
         ],
         "summary": "List Alert Rule Events",
-        "description": "List the trigger events raised by one alert rule, newest first, with cursor paging. Part of the Preview geofence alerting surface, which is capability-gated: the whole route family returns 404 with the stable experimental-disabled reason when alerts.geofence is not opted in.",
+        "description": "List the trigger events raised by one alert rule, newest first, with cursor paging. Part of the Preview geofence alerting surface: when alerts.geofence is not opted in, the whole route family is not registered and requests return an ordinary unmatched-route 404 without an experimental-disabled problem reason.",
         "operationId": "listAlertRuleEvents",
         "parameters": [
           {
