@@ -299,6 +299,45 @@ def production_database_refusal(with_password=False):
             subprocess.run(command + ['down', '-v'], env=env, capture_output=True, check=True, timeout=60)
 
 
+def verify_runtime(path):
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line]
+    results = {row['case']: row for row in rows}
+    refused = {'missing-db-and-auth', 'missing-auth', 'missing-db', 'missing-master-key',
+               'weak-admin', 'dev-auth-in-production', 'pro-dev-grant-in-production',
+               'enterprise-dev-grant-in-production'}
+    serving = {
+        'community-control': ('Community', True, 'NoLicenseConfigured', False),
+        'invalid-inline-license': ('Community', False, 'Malformed', False),
+        'missing-license-file': ('Community', False, 'MissingFile', False),
+        'unsupported-license-secret-reference': ('Community', True, 'NoLicenseConfigured', False),
+    }
+    for edition in ['Community', 'Pro', 'Enterprise']:
+        serving[f'{edition.lower()}-valid'] = (edition, True, 'Valid', edition != 'Community')
+        serving[f'{edition.lower()}-invalid-signature'] = ('Community', False, 'InvalidSignature', False)
+        serving[f'{edition.lower()}-expired'] = ('Community', False, 'Expired', False)
+    expected = refused | set(serving)
+    failures = []
+    if set(results) != expected or len(rows) != len(expected):
+        failures.append('Missing, duplicate or unexpected runtime cases')
+    for case in refused & set(results):
+        row = results[case]
+        if row['exit_before_stop'] in (None, 0) or row['http_statuses'] or row['license_state'] is not None:
+            failures.append(case + ': did not refuse before HTTP listening')
+    for case in set(serving) & set(results):
+        row = results[case]
+        status = row['http_statuses']
+        license_state = row['license_state'] or {}
+        actual = tuple(license_state.get(key) for key in ['edition', 'isValid', 'validationState', 'active_paid_probe'])
+        if (row['exit_before_stop'] is not None or status.get('/healthz/live') != 200 or
+            status.get('/healthz/ready') != 200 or status.get('/api/v1/admin/config') != 401 or
+            status.get('/ogc/features') != 200 or status.get('/rest/services') != 200 or actual != serving[case]):
+            failures.append(case + ': unexpected HTTP or license contract')
+    print(json.dumps({'runtime_cases': len(rows), 'expected_refusals': len(refused),
+        'expected_serving_cases': len(serving), 'failures': failures}))
+    if failures:
+        raise SystemExit(1)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--runtime', type=Path)
@@ -309,8 +348,11 @@ if __name__ == '__main__':
     parser.add_argument('--case')
     parser.add_argument('--without-postgis-init', action='store_true')
     parser.add_argument('--production-postgres-preflight', action='store_true')
+    parser.add_argument('--verify-runtime', type=Path)
     args = parser.parse_args()
-    if args.production_postgres_preflight:
+    if args.verify_runtime:
+        verify_runtime(args.verify_runtime)
+    elif args.production_postgres_preflight:
         production_database_refusal(with_password=True)
     elif args.production_postgres_refusal:
         production_database_refusal()
