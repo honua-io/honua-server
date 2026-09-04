@@ -44,7 +44,12 @@ public sealed class TileOperationProviderRoutingTests
         var core = CreateCore(services);
         var request = new TileOperationStartRequest
         {
-            Operation = operation, ServiceId = serviceId, LayerId = layerId, MinZoom = 0, MaxZoom = 0, MaxTiles = 1,
+            Operation = operation,
+            ServiceId = serviceId,
+            LayerId = layerId,
+            MinZoom = 0,
+            MaxZoom = 0,
+            MaxTiles = 1,
             TileMatrixSetId = "WebMercatorQuad"
         };
 
@@ -72,7 +77,15 @@ public sealed class TileOperationProviderRoutingTests
     {
         var fallback = Substitute.For<ITileProvider>();
         using var services = CreateServices(fallback, routed: null);
-        var request = new TileOperationStartRequest { Operation = "seed", ServiceId = "routed", LayerId = 0 };
+        var request = new TileOperationStartRequest
+        {
+            Operation = "seed",
+            ServiceId = "routed",
+            LayerId = 0,
+            MinZoom = 0,
+            MaxZoom = 0,
+            TileMatrixSetId = "WebMercatorQuad"
+        };
 
         var act = () => CreateCore(services).ExecuteAsync(
             TileOperationProgress.CreateInitial("unsupported-job", "seed", "routed", 0, "WebMercatorQuad"),
@@ -110,7 +123,14 @@ public sealed class TileOperationProviderRoutingTests
         var first = Substitute.For<ITileProvider>();
         var second = Substitute.For<ITileProvider>();
         using var services = CreateServices(fallback, first, second, collideWithStorageId: true);
-        var request = new TileOperationStartRequest { Operation = "seed", LayerId = 41, MinZoom = 0, MaxZoom = 0 };
+        var request = new TileOperationStartRequest
+        {
+            Operation = "seed",
+            LayerId = 41,
+            MinZoom = 0,
+            MaxZoom = 0,
+            TileMatrixSetId = "WebMercatorQuad"
+        };
 
         var act = () => CreateCore(services).ExecuteAsync(
             TileOperationProgress.CreateInitial("ambiguous-job", "seed", null, 41, "WebMercatorQuad"),
@@ -159,9 +179,16 @@ public sealed class TileOperationProviderRoutingTests
         var connections = Substitute.For<ISecureConnectionRegistry>();
         connections.GetConnectionAsync("connection", Arg.Any<CancellationToken>()).Returns(new DataConnection
         {
-            ConnectionId = Guid.NewGuid(), Name = "routed", Host = "provider.example.test", Port = 5432,
-            DatabaseName = "spatial", Username = "honua", Provider = DataProviderNames.Postgis,
-            SecretRef = "env:HONUA_TEST_PROVIDER", SecretType = "environment", CreatedBy = "test"
+            ConnectionId = Guid.NewGuid(),
+            Name = "routed",
+            Host = "provider.example.test",
+            Port = 5432,
+            DatabaseName = "spatial",
+            Username = "honua",
+            Provider = DataProviderNames.Postgis,
+            SecretRef = "env:HONUA_TEST_PROVIDER",
+            SecretType = "environment",
+            CreatedBy = "test"
         });
         var services = new ServiceCollection();
         services.AddSingleton<IMetadataV2GraphProvider>(graph);

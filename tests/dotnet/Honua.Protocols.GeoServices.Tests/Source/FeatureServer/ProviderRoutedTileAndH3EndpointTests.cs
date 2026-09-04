@@ -338,7 +338,7 @@ public sealed class ProviderRoutedTileAndH3EndpointTests :
                     connectionId: "routed-connection", storageLayerId: 42)
                 .AddService(
                     "service-routed", "routed",
-                    protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.VectorTileServer, MetadataV2ServiceProtocols.OgcFeatures])
+                    protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.VectorTileServer, ServiceProtocols.OgcFeatures])
                 .AddPublication(
                     "publication-secondary-ogc", "service-routed", "resource-secondary",
                     layerIndex: 0, storageBindingId: "binding-secondary",
