@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Edr.Models;
@@ -20,7 +21,9 @@ public static class EdrEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        var group = app.MapGroup("/edr").WithTags("OGC API - EDR");
+        var group = app.MapGroup("/edr")
+            .WithCapabilityGate("serve.ogc-api-edr")
+            .WithTags("OGC API - EDR");
 
         group.MapGet(string.Empty, GetLandingPage)
             .WithDisplayName("EDR API Landing Page")

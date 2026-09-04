@@ -489,7 +489,7 @@
       "capability_key": "serve.ogc-api-edr",
       "surface": "ogc-api-edr",
       "operation": "serve.ogc-api-edr",
-      "maturity": "supported",
+      "maturity": "preview",
       "canonical_client": "OGC CITE",
       "client_lane": "cite-ogc-api-edr",
       "client_version": "ets-selection@ac30266fbd153363bebdbed13130accc8ab0c94a",

@@ -883,10 +883,9 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 18,
-      "provingTestCount": 149,
+      "provingTestCount": 150,
       "maturity": {
-        "implemented": 12,
-        "preview": 6
+        "preview": 18
       },
       "noSurface": null,
       "cite": [],
@@ -1992,11 +1991,11 @@
       "displayName": "OGC API - EDR",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "preview",
       "entryCount": 6,
       "provingTestCount": 29,
       "maturity": {
-        "implemented": 6
+        "preview": 6
       },
       "noSurface": null,
       "cite": [],
@@ -2012,7 +2011,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 270,
+      "provingTestCount": 273,
       "maturity": {
         "implemented": 19
       },
@@ -2188,7 +2187,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 12,
-      "provingTestCount": 121,
+      "provingTestCount": 122,
       "maturity": {
         "implemented": 12
       },

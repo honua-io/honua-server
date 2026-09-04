@@ -169,14 +169,9 @@ internal static class GpxFormatReader
         ParseLineFeatureAsync(reader, factory, "rtept", cancellationToken);
 
     /// <summary>
-    /// Parses a GPX line container (<c>&lt;trk&gt;</c> or <c>&lt;rte&gt;</c>) into a
-    /// <see cref="LineString"/> feature. The container's subtree is walked in a single forward
-    /// pass, collecting every <paramref name="pointElement"/> (<c>trkpt</c>/<c>rtept</c>) across
-    /// any nesting (e.g. multiple <c>&lt;trkseg&gt;</c>) and recording the first <c>&lt;name&gt;</c>
-    /// as an attribute. It deliberately avoids <c>ReadElementContentAsString</c>: that call
-    /// advances the reader past the element that follows <c>&lt;name&gt;</c>, and combined with the
-    /// caller's loop it silently skipped the first point — dropping a two-point route to zero
-    /// features (honua-server#2354).
+    /// Parses a track or route without connecting disconnected track segments. Singleton
+    /// segments remain points; line segments remain lines. Reading text without advancing
+    /// past its element also preserves the first point following a name (honua-server#2354).
     /// </summary>
     private static async Task<IFeature?> ParseLineFeatureAsync(
         XmlReader reader,
@@ -186,6 +181,9 @@ internal static class GpxFormatReader
     {
         var attributes = new AttributesTable();
         var coordinates = new List<Coordinate>();
+        var parts = new List<NetTopologySuite.Geometries.Geometry>();
+        var isTrack = pointElement == "trkpt";
+        var gpxNamespace = reader.NamespaceURI;
         string? pendingName = null;
 
         using var subtree = reader.ReadSubtree();
@@ -199,7 +197,11 @@ internal static class GpxFormatReader
             {
                 case XmlNodeType.Element:
                     pendingName = null;
-                    if (string.Equals(subtree.LocalName, pointElement, StringComparison.Ordinal))
+                    if (isTrack && subtree.Depth == 1 && subtree.NamespaceURI == gpxNamespace && subtree.LocalName == "trkseg")
+                    {
+                        AddSegment();
+                    }
+                    else if (string.Equals(subtree.LocalName, pointElement, StringComparison.Ordinal))
                     {
                         var lat = subtree.GetAttribute("lat");
                         var lon = subtree.GetAttribute("lon");
@@ -207,7 +209,7 @@ internal static class GpxFormatReader
                             double.TryParse(lat, NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) &&
                             double.TryParse(lon, NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
                         {
-                            coordinates.Add(new Coordinate(longitude, latitude));
+                            coordinates.Add(await ReadPointCoordinateAsync(subtree, longitude, latitude, cancellationToken));
                         }
                     }
                     else if (string.Equals(subtree.LocalName, "name", StringComparison.Ordinal) &&
@@ -229,17 +231,71 @@ internal static class GpxFormatReader
                     break;
 
                 case XmlNodeType.EndElement:
+                    if (isTrack && subtree.Depth == 1 && subtree.NamespaceURI == gpxNamespace && subtree.LocalName == "trkseg")
+                    {
+                        AddSegment();
+                    }
+
                     pendingName = null;
                     break;
             }
         }
 
-        if (coordinates.Count >= 2)
+        AddSegment();
+        if (parts.Count == 0)
         {
-            var geometry = factory.CreateLineString(coordinates.ToArray());
-            return new Feature(geometry, attributes);
+            return null;
         }
 
-        return null;
+        // BuildGeometry keeps homogeneous segments as MultiLineString/MultiPoint and
+        // retains isolated samples alongside lines in a GeometryCollection.
+        return new Feature(factory.BuildGeometry(parts), attributes);
+
+        void AddSegment()
+        {
+            if (coordinates.Count == 1)
+            {
+                parts.Add(factory.CreatePoint(coordinates[0]));
+            }
+            else if (coordinates.Count >= 2)
+            {
+                parts.Add(factory.CreateLineString(coordinates.ToArray()));
+            }
+
+            coordinates.Clear();
+        }
     }
+
+    private static async Task<Coordinate> ReadPointCoordinateAsync(
+        XmlReader reader,
+        double longitude,
+        double latitude,
+        CancellationToken cancellationToken)
+    {
+        var coordinate = new CoordinateZ(longitude, latitude, double.NaN);
+        var gpxNamespace = reader.NamespaceURI;
+        using var point = reader.ReadSubtree();
+        await point.ReadAsync();
+        while (await point.ReadAsync())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (point.NodeType != XmlNodeType.Element || point.Depth != 1 ||
+                point.NamespaceURI != gpxNamespace || point.LocalName != "ele")
+            {
+                continue;
+            }
+
+            var text = await point.ReadElementContentAsStringAsync();
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var elevation) ||
+                !double.IsFinite(elevation))
+            {
+                throw new InvalidDataException("GPX point elevation must be a finite number.");
+            }
+
+            coordinate.Z = elevation;
+        }
+
+        return coordinate;
+    }
+
 }
