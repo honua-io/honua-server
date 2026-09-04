@@ -36,8 +36,9 @@ records include links to GeoServices FeatureServer and MapServer surfaces.
   `dataset` in this slice).
 - `externalIds` filters against stable source identifiers such as layer id,
   layer name, or service name.
-- `q` performs case-insensitive all-term matching over id, title, and
-  description text.
+- `q` is a comma-separated list of case-insensitive search terms with OR
+  semantics over id, title, and description text; whitespace within a term is
+  preserved.
 - `bbox` intersects record extents when an extent is known.
 - `datetime` filters record metadata timestamps when present; catalog records
   without timestamps are excluded when the filter is supplied.

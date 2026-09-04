@@ -45,6 +45,32 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
     }
 
     [Fact]
+    public async Task QueryPageAsync_WithSecurityPolicies_ValidatesBeforeThePagedProbe()
+    {
+        // OGC NumberMatchedPolicy=OmitWhenExpensive uses this IPagedFeatureReader
+        // path. The security seam must run before the LIMIT+1 probe can evaluate an
+        // OGC filter over a masked value (#4166, #4154).
+        var resource = CreateResource();
+        var rlsSource = Substitute.For<IRowLevelSecurityFilterSource>();
+        rlsSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(new SqlFragment("\"tenant_id\" = @p0", ["tenant-a"]));
+        var fieldMaskSource = Substitute.For<IFieldMaskSource>();
+        fieldMaskSource.ResolveAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(["secret"]);
+        var reader = CreateReader(resource, rlsSource, fieldMaskSource, attributesColumn: "attributes");
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("\"attributes\" ->> 'secret' LIKE @p0", ["1%"]),
+            Limit = 1
+        };
+
+        var act = () => reader.QueryPageAsync(5, query, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<ArgumentException>())
+            .Which.Message.Should().Contain("secret");
+    }
+
+    [Fact]
     public void ResolveAttributeFields_WithEnforcedMask_DropsMaskedTileAttribute()
     {
         var resource = CreateResource();

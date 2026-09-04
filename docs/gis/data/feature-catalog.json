@@ -5727,7 +5727,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5741,7 +5741,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5757,7 +5757,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_UnknownCollection_Returns404"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5781,7 +5781,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ValidParameterNameSubset_ReturnsOnlyRequestedParameters"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5805,7 +5805,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ValidParameterNameSubset_ReturnsOnlyRequestedParameter"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5820,7 +5820,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -6909,6 +6909,7 @@
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.OgcApiFeatures_LandingPageAndConformance_ReturnValidResponses",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetConformance_ShouldReturnConformanceClasses",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetConformance_AdvertisesOnlyEvidenceBackedFeaturesClasses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetConformance_DoesNotAdvertiseGmlSf0",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetConformance_ReturnsCacheHeaders",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetConformance_ReturnsValidConformanceDeclarationWithRequiredClasses"
@@ -12692,6 +12693,7 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_PreservesAndOrNotNullTruthTable",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_WithIds_NotUnknownDoesNotMatch",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_WithIds_TypedUnknownPreservesKleeneLogic",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_CanonicalStacFields_AreAcceptedByFieldsAndSort",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_IncludeMode_PropertyOnlyInclude_RequiredFieldsAlwaysPresent",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_NoFilters_ReturnsItems",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_RecordsSharedTelemetryForSearchWork",
@@ -17574,6 +17576,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.CreateFeature_WithAdvertisedAlternateContentCrs_TransformsIntoLayerSrid",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.CreateFeature_WithNon4326Layer_MatchingContentCrs_CreatesFeature",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.ProjectedCollection_AbsentContentCrs_DefaultsToCrs84ForGetPutRoundTrip",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.CreateItem_WithConflictingTopLevelAndPropertyIds_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.CreateItem_WithTopLevelStringFeatureId_StoresPublicIdentifier",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.CreateFeature_WhenEventPublishFails_ReturnsCreated",
@@ -22018,6 +22021,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.UpdateFeature_WithoutApiKey_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.ProjectedCollection_AbsentContentCrs_DefaultsToCrs84ForGetPutRoundTrip",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.PutItem_WithInternalObjectIdPayloadId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.PutItem_WithMismatchedPublicIdProperty_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.PutItem_WithStringFeatureId_UsesPublicIdentifier",
