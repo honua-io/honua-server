@@ -14,7 +14,7 @@ namespace Honua.Server.Features.Protocols.Cog;
 
 /// <summary>
 /// Resolves tile coordinates to cloud range reads for direct COG tile serving.
-/// Uses a three-tier metadata cache: in-memory → database → cloud scan.
+/// Caches parsed metadata in memory under the cloud object ETag and persists scan summaries.
 /// </summary>
 internal sealed class CogTileResolver : ICogTileResolver
 {
@@ -145,7 +145,10 @@ internal sealed class CogTileResolver : ICogTileResolver
 
         if (!CanServeRequestedFormat(format, contentType))
         {
-            CogLog.UnsupportedTileFormat(_logger, registration.Id, FormatName(format), contentType);
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                CogLog.UnsupportedTileFormat(_logger, registration.Id, FormatName(format), contentType);
+            }
             return null;
         }
 
