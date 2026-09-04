@@ -241,8 +241,10 @@ if re.search(r"- name: Run \.NET Tests \(Server Governance/Drift\)", TEXT) or (
 require(
     r"server-governance-drift:\n"
     r"\s+name: Server Governance/Drift\n"
-    r"\s+if: \$\{\{ github\.ref == 'refs/heads/trunk' \}\}",
-    "run Server Governance/Drift only on the trailing trunk matrix",
+    r"\s+if: \$\{\{ github\.ref == 'refs/heads/trunk' && "
+    r"\(inputs\.full_ci == true \|\| inputs\.trunk_red_failing_jobs == '' \|\| "
+    r"contains\(inputs\.trunk_red_failing_jobs, 'Server Governance/Drift'\)\) \}\}",
+    "run Server Governance/Drift only on the trailing trunk matrix and its selected trunk-red verification",
     text=CI_TEXT,
 )
 require(
