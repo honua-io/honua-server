@@ -1012,6 +1012,20 @@ class PostGISFixture:
 
     def _seed_metadata_v2_snapshot(self, conn: psycopg.Connection) -> None:
         """Seed a Metadata v2 snapshot that mirrors the v1 compatibility catalog."""
+        # The STAC compatibility fixture seeds the metadata snapshot directly rather than
+        # through seed_test_catalog. Keep the schema-floor receipt alongside the physical
+        # metadata-v2 baseline so the migration-skipping Python server can load it.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.schema_versions (
+                scriptname TEXT PRIMARY KEY,
+                applied TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            INSERT INTO public.schema_versions (scriptname)
+            VALUES ('Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql')
+            ON CONFLICT (scriptname) DO NOTHING;
+            """
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS honua.metadata_v2_snapshots (
