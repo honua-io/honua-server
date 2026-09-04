@@ -230,10 +230,14 @@ internal sealed partial class AdminAuthSessionStore(
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // Intentional: the memory-tier entry is already removed above, and the distributed
-            // entry still expires on its own TTL, so a removal failure here is non-fatal — log
-            // and continue rather than fail the caller's request.
             AdminAuthSessionLog.DistributedCacheRemoveFailed(_logger, GetKeyFamily(key), LogValueRedactor.Hash(key), ex);
+            if (keyPrefix == AuthSessionKeyPrefix)
+            {
+                // A local eviction cannot revoke the authoritative shared session. The caller
+                // must preserve the cookie and report failure so revocation can be retried.
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new AdminAuthSessionRevocationException(ex);
+            }
         }
     }
 

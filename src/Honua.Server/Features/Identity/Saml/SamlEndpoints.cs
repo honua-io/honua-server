@@ -14,6 +14,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -234,7 +235,11 @@ internal static partial class SamlEndpoints
         // session and finish. No signed request to validate in this direction.
         if (string.IsNullOrWhiteSpace(form["SAMLRequest"]) && !string.IsNullOrWhiteSpace(form["SAMLResponse"]))
         {
-            await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false);
+            var terminationError = await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false);
+            if (terminationError is not null)
+            {
+                return terminationError;
+            }
             SamlLog.SingleLogoutProcessed(logger, "(sp-initiated)");
             return TypedResults.NoContent();
         }
@@ -307,7 +312,11 @@ internal static partial class SamlEndpoints
             return LogoutRejected(context, "SAML logout request issuer does not match the configured IdP.");
         }
 
-        await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false);
+        var logoutError = await TerminateLocalSessionAsync(context, sessionStore).ConfigureAwait(false);
+        if (logoutError is not null)
+        {
+            return logoutError;
+        }
 
         var nameId = logoutRequest.Element(XName.Get("NameID", SamlAssertionNs))?.Value?.Trim();
         SamlLog.SingleLogoutProcessed(logger, string.IsNullOrEmpty(nameId) ? "(unknown)" : nameId);
@@ -330,12 +339,22 @@ internal static partial class SamlEndpoints
     private const string SamlAssertionNs = "urn:oasis:names:tc:SAML:2.0:assertion";
     private const string SamlProtocolNs = "urn:oasis:names:tc:SAML:2.0:protocol";
 
-    private static async Task TerminateLocalSessionAsync(HttpContext context, AdminAuthSessionStore sessionStore)
+    private static async Task<IResult?> TerminateLocalSessionAsync(HttpContext context, AdminAuthSessionStore sessionStore)
     {
         if (context.Request.Cookies.TryGetValue(AdminAuthSessionStore.AuthSessionCookieName, out var sessionId) &&
             !string.IsNullOrWhiteSpace(sessionId))
         {
-            await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
+            try
+            {
+                await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
+            }
+            catch (AdminAuthSessionRevocationException)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    "Session could not be terminated. Retry logout when the session store is available.",
+                    retryable: true);
+            }
         }
 
         context.Response.Cookies.Delete(
@@ -348,6 +367,7 @@ internal static partial class SamlEndpoints
                 Secure = context.Request.IsHttps,
                 Path = "/",
             });
+        return null;
     }
 
     private static string BuildLogoutResponse(SamlAuthenticationOptions opts, string? inResponseTo)

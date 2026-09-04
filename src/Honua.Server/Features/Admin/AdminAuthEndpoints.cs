@@ -499,7 +499,17 @@ internal static class AdminAuthEndpoints
 
         if (!string.IsNullOrWhiteSpace(sessionId))
         {
-            await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
+            try
+            {
+                await sessionStore.RemoveAuthenticatedSessionAsync(sessionId, context.RequestAborted).ConfigureAwait(false);
+            }
+            catch (AdminAuthSessionRevocationException)
+            {
+                return StandardErrorHelpers.CreateServiceUnavailable(
+                    context,
+                    "Session could not be terminated. Retry logout when the session store is available.",
+                    retryable: true);
+            }
         }
 
         DeleteCookie(context.Response, AdminAuthSessionStore.AuthSessionCookieName);
