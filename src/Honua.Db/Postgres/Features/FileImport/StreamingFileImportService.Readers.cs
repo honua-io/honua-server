@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
@@ -177,12 +178,35 @@ internal sealed partial class StreamingFileImportService
                 }
 
                 var name = reader.GetName(i);
-                var value = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                var value = ReadGeoPackageAttribute(reader, i);
                 attributes.Add(name, value);
             }
 
             yield return new Feature(geometry, attributes);
         }
+    }
+
+    private static object? ReadGeoPackageAttribute(SqliteDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        // SQLite storage classes erase logical BOOLEAN/DATE/DATETIME distinctions.
+        // Restore those values from the declared GeoPackage column type.
+        return reader.GetDataTypeName(ordinal).ToUpperInvariant() switch
+        {
+            "BOOLEAN" => reader.GetValue(ordinal) switch
+            {
+                0L => false,
+                1L => true,
+                _ => throw new InvalidDataException($"GeoPackage BOOLEAN field '{reader.GetName(ordinal)}' must contain 0 or 1.")
+            },
+            "DATE" => DateOnly.ParseExact(reader.GetString(ordinal), "yyyy-MM-dd", CultureInfo.InvariantCulture),
+            "DATETIME" => DateTimeOffset.Parse(reader.GetString(ordinal), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal),
+            _ => reader.GetValue(ordinal)
+        };
     }
 
     private static async Task<IReadOnlyList<GeoPackageLayerInfo>> GetGeoPackageLayersAsync(

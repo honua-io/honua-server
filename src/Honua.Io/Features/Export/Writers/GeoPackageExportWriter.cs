@@ -56,12 +56,15 @@ internal static class GeoPackageExportWriter
 
         await CreateMetadataTablesAsync(connection, cancellationToken).ConfigureAwait(false);
         await InsertSpatialRefAsync(connection, srid, srsName, srsWkt, cancellationToken).ConfigureAwait(false);
-        await CreateFeatureTableAsync(connection, fields, geometryType, cancellationToken).ConfigureAwait(false);
+        var usedNames = fields.Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var idColumn = ReserveColumnName("fid", usedNames);
+        var geometryColumn = ReserveColumnName("geom", usedNames);
+        await CreateFeatureTableAsync(connection, fields, geometryType, idColumn, geometryColumn, cancellationToken).ConfigureAwait(false);
         await RegisterContentsAsync(connection, srid, cancellationToken).ConfigureAwait(false);
 
-        var insertSummary = await InsertFeaturesAsync(connection, features, fields, srid, cancellationToken)
+        var insertSummary = await InsertFeaturesAsync(connection, features, fields, srid, geometryColumn, cancellationToken)
             .ConfigureAwait(false);
-        await RegisterGeometryColumnAsync(connection, geometryType, srid, insertSummary.Dimensions, cancellationToken).ConfigureAwait(false);
+        await RegisterGeometryColumnAsync(connection, geometryType, srid, geometryColumn, insertSummary.Dimensions, cancellationToken).ConfigureAwait(false);
 
         return insertSummary.TotalInserted;
     }
@@ -156,12 +159,13 @@ internal static class GeoPackageExportWriter
     }
 
     private static async Task CreateFeatureTableAsync(
-        SqliteConnection connection, ExportField[] fields, ExportGeometryType geometryType, CancellationToken ct)
+        SqliteConnection connection, ExportField[] fields, ExportGeometryType geometryType,
+        string idColumn, string geometryColumn, CancellationToken ct)
     {
         var columns = new List<string>
         {
-            "fid INTEGER PRIMARY KEY AUTOINCREMENT",
-            $"geom {MapGpkgGeometryType(geometryType)}"
+            $"{QuoteIdentifier(idColumn)} INTEGER PRIMARY KEY AUTOINCREMENT",
+            $"{QuoteIdentifier(geometryColumn)} {MapGpkgGeometryType(geometryType)}"
         };
 
         foreach (var field in fields)
@@ -189,14 +193,15 @@ internal static class GeoPackageExportWriter
     }
 
     private static async Task RegisterGeometryColumnAsync(
-        SqliteConnection connection, ExportGeometryType geometryType, int srid, GeometryDimensionMetadata dimensions, CancellationToken ct)
+        SqliteConnection connection, ExportGeometryType geometryType, int srid, string geometryColumn, GeometryDimensionMetadata dimensions, CancellationToken ct)
     {
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = """
             INSERT INTO gpkg_geometry_columns (table_name, column_name, geometry_type_name, srs_id, z, m)
-            VALUES ($table, 'geom', $geomType, $srid, $z, $m);
+            VALUES ($table, $geometryColumn, $geomType, $srid, $z, $m);
             """;
         cmd.Parameters.AddWithValue("$table", TableName);
+        cmd.Parameters.AddWithValue("$geometryColumn", geometryColumn);
         cmd.Parameters.AddWithValue("$geomType", MapGpkgGeometryType(geometryType));
         cmd.Parameters.AddWithValue("$srid", srid);
         cmd.Parameters.AddWithValue("$z", dimensions.Z);
@@ -209,6 +214,7 @@ internal static class GeoPackageExportWriter
         IAsyncEnumerable<Feature> features,
         ExportField[] fields,
         int srid,
+        string geometryColumn,
         CancellationToken ct)
     {
         var totalInserted = 0;
@@ -221,7 +227,7 @@ internal static class GeoPackageExportWriter
         var wkbReader = new WkbReader();
 
         // Build parameterized INSERT statement
-        var fieldNames = new List<string> { "geom" };
+        var fieldNames = new List<string> { QuoteIdentifier(geometryColumn) };
         var paramNames = new List<string> { "$geom" };
         for (var i = 0; i < fields.Length; i++)
         {
@@ -361,8 +367,9 @@ internal static class GeoPackageExportWriter
         ExportFieldType.Integer => "INTEGER",
         ExportFieldType.BigInteger => "INTEGER",
         ExportFieldType.Double or ExportFieldType.Float => "REAL",
-        ExportFieldType.Boolean => "INTEGER",
-        ExportFieldType.DateTime or ExportFieldType.Date => "TEXT",
+        ExportFieldType.Boolean => "BOOLEAN",
+        ExportFieldType.DateTime => "DATETIME",
+        ExportFieldType.Date => "DATE",
         ExportFieldType.Time => "TEXT",
         ExportFieldType.Binary => "BLOB",
         _ => "TEXT"
@@ -376,7 +383,10 @@ internal static class GeoPackageExportWriter
         return fieldType switch
         {
             ExportFieldType.Boolean when value is bool b => b ? 1 : 0,
+            ExportFieldType.DateTime when value is DateTime dt => dt.ToString("O", CultureInfo.InvariantCulture),
             ExportFieldType.DateTime when value is DateTimeOffset dto => dto.ToString("O", CultureInfo.InvariantCulture),
+            ExportFieldType.Date when value is DateOnly date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ExportFieldType.Date when value is DateTime dt => dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ExportFieldType.Date when value is DateTimeOffset dto => dto.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ExportFieldType.Time when value is TimeSpan ts => ts.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),
             _ => value
@@ -412,6 +422,17 @@ internal static class GeoPackageExportWriter
         }
 
         return anyWithoutDimension ? (byte)2 : (byte)1;
+    }
+
+    private static string ReserveColumnName(string preferred, HashSet<string> usedNames)
+    {
+        var candidate = preferred;
+        for (var suffix = 1; !usedNames.Add(candidate); suffix++)
+        {
+            candidate = preferred + "_" + suffix.ToString(CultureInfo.InvariantCulture);
+        }
+
+        return candidate;
     }
 
     // Wraps an identifier in double-quote delimiters and escapes embedded double-quotes
