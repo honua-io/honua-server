@@ -259,6 +259,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Create", "Update", "Delete"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -3110,6 +3111,166 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         applyEditsResponse.AddResults.Should().HaveCount(1);
         applyEditsResponse.AddResults![0].Success.Should().BeTrue();
         applyEditsResponse.AddResults[0].ObjectId.Should().BeGreaterThan(0);
+        applyEditsResponse.UpdateResults.Should().NotBeNull().And.BeEmpty();
+        applyEditsResponse.DeleteResults.Should().NotBeNull().And.BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_FormControls_AreHonored()
+    {
+        var edits = """
+            [{"id":0,"adds":[{"attributes":{"name":"form controls"}}]}]
+            """;
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["edits"] = edits,
+            ["useGlobalIds"] = "true",
+            ["returnEditMoment"] = "false",
+            ["rollbackOnFailure"] = "true",
+            ["gdbVersion"] = "sde.DEFAULT",
+            ["f"] = "json"
+        });
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits", form);
+
+        await response.AssertGeoServicesErrorAsync(400);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("useGlobalIds is not supported");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    public async Task ApplyEdits_ServiceLevel_AttachmentPayload_IsRejectedInsteadOfDropped()
+    {
+        var request = """
+            [{
+              "id": 0,
+              "adds": [{"attributes": {"name": "attachment payload"}}],
+              "attachments": [{"parentObjectId": 1, "adds": []}],
+              "assetMaps": [{"parentObjectId": 1}]
+            }]
+            """;
+        using var content = new StringContent(request, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits", content);
+
+        await response.AssertGeoServicesErrorAsync(400);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("attachments and assetMaps edits are not supported");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_RejectsEditKindMissingFromDeclaredCapabilities()
+    {
+        _fixture.EnableV2ServiceEditingCapabilities(TestServiceId, ["Update"]);
+        using var content = new StringContent(
+            "{\"adds\":[{\"attributes\":{\"name\":\"undeclared create\"}}]}",
+            Encoding.UTF8,
+            "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits", content);
+
+        await response.AssertGeoServicesErrorAsync(400);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Create edits are not enabled");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_WithAttributeOnlyUpdate_ReturnsSuccess()
+    {
+        var addPayload = """
+            {
+              "features": [
+                {
+                  "attributes": {
+                    "name": "ApplyEdits attribute-only target",
+                    "description": "Description should survive"
+                  },
+                  "geometry": { "x": -122.35, "y": 37.77 }
+                }
+              ]
+            }
+            """;
+
+        using var addContent = new StringContent(addPayload, Encoding.UTF8, "application/json");
+        var addResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            addContent);
+        addResponse.Be200Ok();
+
+        var addResult = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            await addResponse.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var objectId = addResult!.AddResults![0].ObjectId!.Value;
+
+        var applyPayload = $$"""
+            {
+              "updates": [
+                {
+                  "attributes": {
+                    "objectid": {{objectId}},
+                    "name": "ApplyEdits attribute-only updated"
+                  }
+                }
+              ]
+            }
+            """;
+
+        using var applyContent = new StringContent(applyPayload, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+            applyContent);
+
+        response.Be200Ok();
+        var result = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            await response.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
+        result.Should().NotBeNull();
+        result!.Success.Should().BeTrue();
+        result.UpdateResults.Should().ContainSingle().Which.Success.Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Calculate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/calculate")]
+    public async Task Calculate_AcceptsEsriValueAndSqlExpressionForms()
+    {
+        var addPayload = """
+            {"features":[{"attributes":{"name":"calculate source","description":"before"}}]}
+            """;
+        using var addContent = new StringContent(addPayload, Encoding.UTF8, "application/json");
+        var addResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures", addContent);
+        addResponse.Be200Ok();
+        var addResult = JsonSerializer.Deserialize<ApplyEditsResponse>(
+            await addResponse.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.ApplyEditsResponse);
+        var objectId = addResult!.AddResults![0].ObjectId!.Value;
+
+        var calcExpression = $$"""[{"field":"name","sqlExpression":"UPPER(name)"},{"field":"description","value":"value-form"}]""";
+        using var calculateContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["calcExpression"] = calcExpression,
+            ["where"] = $"objectid={objectId}"
+        });
+        var calculateResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/calculate", calculateContent);
+
+        calculateResponse.Be200Ok();
+        var calculateBody = await calculateResponse.Content.ReadAsStringAsync();
+        calculateBody.Should().Contain("\"success\":true");
+
+        var queryResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/query?f=json&objectIds={objectId}&returnGeometry=false");
+        queryResponse.Be200Ok();
+        using var queryDocument = JsonDocument.Parse(await queryResponse.Content.ReadAsStringAsync());
+        var attributes = queryDocument.RootElement.GetProperty("features")[0].GetProperty("attributes");
+        attributes.GetProperty("name").GetString().Should().Be("CALCULATE SOURCE");
+        attributes.GetProperty("description").GetString().Should().Be("value-form");
     }
 
     [IntegrationTest]
@@ -4203,7 +4364,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
-    public async Task ApplyEdits_ServiceLevel_WithRollbackOnFailure_RollsBackAllLayerEdits()
+    public async Task ApplyEdits_ServiceLevel_DefaultRollbackOnFailure_RollsBackAllLayerEdits()
     {
         // Bug B regression: with rollbackOnFailure=true a valid add must NOT persist when a
         // sibling edit targeting the same layer fails. The two array elements both target
@@ -4233,7 +4394,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         using var requestContent = new StringContent(request, Encoding.UTF8, "application/json");
         var response = await _fixture.Client.PostAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?rollbackOnFailure=true&f=json",
+            $"/rest/services/{TestServiceId}/FeatureServer/applyEdits?f=json",
             requestContent);
 
         response.Be200Ok();

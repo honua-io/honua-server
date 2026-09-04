@@ -51,6 +51,19 @@ public sealed class ServiceLayerEdits
 
     [JsonPropertyName("f")]
     public string? F { get; set; }
+
+    /// <summary>
+    /// Attachment edits are recognized so the service-level endpoint can reject them
+    /// explicitly instead of silently dropping them while fanning out layer edits.
+    /// </summary>
+    [JsonPropertyName("attachments")]
+    public JsonElement? Attachments { get; set; }
+
+    /// <summary>
+    /// Asset-map edits are recognized so they cannot be silently dropped either.
+    /// </summary>
+    [JsonPropertyName("assetMaps")]
+    public JsonElement? AssetMaps { get; set; }
 }
 
 /// <summary>
