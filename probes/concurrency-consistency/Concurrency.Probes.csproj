@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <Compile Include="../../src/Honua.Hosting/Features/Caching/CacheServiceResponseCache.cs" Link="Production/CacheServiceResponseCache.cs" />
+    <Compile Include="../../src/Honua.Core/Features/Caching/Abstractions/ICacheService.cs" Link="Production/ICacheService.cs" />
+    <Compile Include="../../src/Honua.Core/Features/Infrastructure/Caching/IResponseCache.cs" Link="Production/IResponseCache.cs" />
+    <Compile Include="../../src/Honua.Core/Features/Caching/CacheEntryMetadata.cs" Link="Production/CacheEntryMetadata.cs" />
+  </ItemGroup>
+</Project>
