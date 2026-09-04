@@ -27,7 +27,6 @@ internal static class ServiceCollectionExtensions
             new PostgresRasterStore(
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ILogger<PostgresRasterStore>>(),
-                provider.GetRequiredService<IDatabaseSchemaGuard>(),
                 schemaName));
 
         // Register the map renderer implementation
@@ -43,7 +42,6 @@ internal static class ServiceCollectionExtensions
                 provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 provider.GetRequiredService<ICrsDetectionService>(),
                 provider.GetRequiredService<ILogger<PostgresRasterImportService>>(),
-                provider.GetRequiredService<IDatabaseSchemaGuard>(),
                 schemaName));
 
         // Register COG catalog store

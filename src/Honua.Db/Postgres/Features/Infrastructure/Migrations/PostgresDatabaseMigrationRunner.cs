@@ -2,9 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Diagnostics;
-using System.Globalization;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using DbUp;
 using DbUp.Engine;
 using Honua.Core.Configuration;
@@ -17,7 +15,7 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
-internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
+internal sealed class PostgresDatabaseMigrationRunner : IDatabaseMigrationRunner
 {
     private const long MigrationLockKey = 8_044_282_257_919_950_151;
     private const string SafeMigrationFailureMessage = "Database migration failed.";
@@ -27,36 +25,24 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan _backupCommandTimeout = TimeSpan.FromHours(1);
-    private static readonly IComparer<string> _migrationScriptNameComparer = new MigrationScriptNameComparer();
 
     private readonly MigrationSafetyOptions _safetyOptions;
     private readonly IDatabaseMigrationBackupHookRecorder? _backupHookRecorder;
     private readonly string? _contractApprovalToken;
     private readonly string _metadataSchemaVariable;
-    private readonly bool _includeConfiguredSchemaAdoption;
-    private readonly IDatabaseSchemaGuard _schemaGuard;
-    private readonly PostgresCoreSchemaMigrationManifest _migrations;
 
     public PostgresDatabaseMigrationRunner(
-        IDatabaseSchemaGuard schemaGuard,
-        PostgresCoreSchemaMigrationManifest migrations,
         IOptions<MigrationSafetyOptions>? safetyOptions = null,
         IConfiguration? configuration = null,
         IDatabaseMigrationBackupHookRecorder? backupHookRecorder = null)
     {
-        _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
-        _migrations = migrations ?? throw new ArgumentNullException(nameof(migrations));
         _safetyOptions = safetyOptions?.Value ?? new MigrationSafetyOptions();
         _backupHookRecorder = backupHookRecorder;
         var configuredMetadataSchema = configuration?["Database:Schema"];
-        var metadataSchema = string.IsNullOrWhiteSpace(configuredMetadataSchema)
-            ? PostgresSchemaConfiguration.DefaultMetadataSchema
-            : configuredMetadataSchema.Trim();
-        _metadataSchemaVariable = SchemaSearchPath.ValidateAndQuote(metadataSchema);
-        _includeConfiguredSchemaAdoption = !string.Equals(
-            metadataSchema,
-            PostgresSchemaConfiguration.DefaultMetadataSchema,
-            StringComparison.Ordinal);
+        _metadataSchemaVariable = SchemaSearchPath.ValidateAndQuote(
+            string.IsNullOrWhiteSpace(configuredMetadataSchema)
+                ? PostgresSchemaConfiguration.DefaultMetadataSchema
+                : configuredMetadataSchema);
 
         // The contract-apply approval is an explicit top-level operator signal
         // (HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>), read via the IConfiguration indexer (Abstractions
@@ -68,7 +54,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         _contractApprovalToken = string.IsNullOrWhiteSpace(rawApproval) ? null : rawApproval.Trim();
     }
 
-    public async Task<DatabaseMigrationPlan> PlanMigrationsAsync(
+    public Task<DatabaseMigrationPlan> PlanMigrationsAsync(
         string connectionString,
         Assembly migrationsAssembly,
         CancellationToken cancellationToken = default)
@@ -78,42 +64,29 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             ValidateArguments(connectionString, migrationsAssembly);
             cancellationToken.ThrowIfCancellationRequested();
 
-            var usesCanonicalMigrationRoots = UsesCanonicalMigrationRoots(migrationsAssembly);
-            var includeRasterProviderMigrations = false;
-            if (usesCanonicalMigrationRoots)
-            {
-                await using var connection = new NpgsqlConnection(connectionString);
-                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-                includeRasterProviderMigrations = await HasPostGisRasterAsync(connection, cancellationToken)
-                    .ConfigureAwait(false);
-                await _schemaGuard.VerifyConsistencyAsync(connection, cancellationToken).ConfigureAwait(false);
-            }
-
             var upgrader = BuildUpgrader(
                 BuildMigrationConnectionString(connectionString),
                 migrationsAssembly,
-                _metadataSchemaVariable,
-                includeRasterProviderMigrations,
-                _includeConfiguredSchemaAdoption,
-                _migrations.ConfiguredSchemaAdoptionMigration);
+                _metadataSchemaVariable);
             var scripts = upgrader.GetScriptsToExecute();
             var pendingScripts = scripts.Select(script => script.Name).ToArray();
             var classifications = ClassifyScripts(scripts);
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var executedButNotDiscoveredScripts = upgrader.GetExecutedButNotDiscoveredScripts().ToArray();
 
-            return DatabaseMigrationPlan.Succeeded(
-                pendingScripts,
-                executedButNotDiscoveredScripts,
-                classifications,
-                journalIsNonEmpty);
+            return Task.FromResult(
+                DatabaseMigrationPlan.Succeeded(
+                    pendingScripts,
+                    executedButNotDiscoveredScripts,
+                    classifications,
+                    journalIsNonEmpty));
         }
         // Intentionally broad: map any planning failure (bad connection string, DbUp/journal errors,
         // etc.) to the typed DatabaseMigrationPlan.Failed result with a sanitized message; the raw
         // exception is carried on the result for the caller to log without leaking it to end users.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            return DatabaseMigrationPlan.Failed(ex, SafeMigrationFailureMessage);
+            return Task.FromResult(DatabaseMigrationPlan.Failed(ex, SafeMigrationFailureMessage));
         }
     }
 
@@ -245,23 +218,10 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             return DatabaseMigrationResult.Failed(error, error.Message);
         }
 
+        var upgrader = BuildUpgrader(migrationConnectionString, migrationsAssembly, _metadataSchemaVariable);
+
         try
         {
-            var usesCanonicalMigrationRoots = UsesCanonicalMigrationRoots(migrationsAssembly);
-            var includeRasterProviderMigrations = usesCanonicalMigrationRoots &&
-                await HasPostGisRasterAsync(lockConnection, cancellationToken).ConfigureAwait(false);
-            var upgrader = BuildUpgrader(
-                migrationConnectionString,
-                migrationsAssembly,
-                _metadataSchemaVariable,
-                includeRasterProviderMigrations,
-                _includeConfiguredSchemaAdoption,
-                _migrations.ConfiguredSchemaAdoptionMigration);
-            if (usesCanonicalMigrationRoots)
-            {
-                await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
-            }
-
             var classifications = ClassifyScripts(upgrader.GetScriptsToExecute());
             var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var migrationRunId = CreateMigrationRunId();
@@ -297,19 +257,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 return DatabaseMigrationResult.Failed(error, SafeMigrationFailureMessage, appliedScripts);
             }
 
-            // A successful DbUp result is not sufficient evidence by itself: guarded migrations
-            // may contain conditional/idempotent SQL. Reconcile the journal with required physical
-            // objects/effects before reporting readiness or an upgrade receipt.
-            if (usesCanonicalMigrationRoots)
-            {
-                await _schemaGuard.VerifyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
-            }
-
             return DatabaseMigrationResult.Succeeded(appliedScripts);
-        }
-        catch (DatabaseSchemaFloorException ex)
-        {
-            return DatabaseMigrationResult.Failed(ex, ex.Message);
         }
         finally
         {
@@ -336,109 +284,15 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private static UpgradeEngine BuildUpgrader(
         string connectionString,
         Assembly migrationsAssembly,
-        string metadataSchemaVariable,
-        bool includeRasterProviderMigrations,
-        bool includeConfiguredSchemaAdoption,
-        string configuredSchemaAdoptionMigration)
-    {
-        var builder = DeployChanges.To
+        string metadataSchemaVariable) =>
+        DeployChanges.To
             .PostgresqlDatabase(connectionString)
             .JournalToPostgresqlTable("public", "schema_versions")
+            .WithScriptsEmbeddedInAssembly(migrationsAssembly)
             .WithVariable("HonuaSchema", metadataSchemaVariable)
             .WithTransaction()
-            .LogToConsole();
-
-        // Production has two canonical numbered roots: provider schema and server schema.
-        // Synthetic migration assemblies used by the safety-gate tests remain intentionally
-        // isolated and must not pull PostGIS migrations into their plain-PostgreSQL fixture.
-        var migrationAssemblies = includeRasterProviderMigrations
-            ? new[] { typeof(PostgresDatabaseMigrationRunner).Assembly, migrationsAssembly }
-            : new[] { migrationsAssembly };
-
-        return builder
-            .WithScriptsEmbeddedInAssemblies(
-                migrationAssemblies,
-                // Migration 109 is a contract-phase move that only has meaning for a
-                // non-default Database:Schema. Omitting it at discovery time keeps an
-                // existing default-schema upgrade out of the nonce gate altogether.
-                name => name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase) &&
-                    (includeConfiguredSchemaAdoption ||
-                     !string.Equals(name, configuredSchemaAdoptionMigration, StringComparison.Ordinal)))
-            .WithScriptNameComparer(_migrationScriptNameComparer)
+            .LogToConsole()
             .Build();
-    }
-
-    private bool UsesCanonicalMigrationRoots(Assembly migrationsAssembly)
-        => string.Equals(
-            migrationsAssembly.GetName().Name,
-            _migrations.ApplicationMigrationAssemblyName,
-            StringComparison.Ordinal);
-
-    private static async Task<bool> HasPostGisRasterAsync(
-        NpgsqlConnection connection,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_catalog.pg_extension
-                WHERE extname = 'postgis_raster')
-            """;
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
-    }
-
-    private sealed partial class MigrationScriptNameComparer : IComparer<string>
-    {
-        public int Compare(string? x, string? y)
-        {
-            if (ReferenceEquals(x, y))
-            {
-                return 0;
-            }
-
-            if (x is null)
-            {
-                return -1;
-            }
-
-            if (y is null)
-            {
-                return 1;
-            }
-
-            var numberComparison = ReadMigrationNumber(x).CompareTo(ReadMigrationNumber(y));
-            if (numberComparison != 0)
-            {
-                return numberComparison;
-            }
-
-            // At the same number, establish the core metadata schema before provider objects
-            // that reference it (notably Honua.Postgres migration 001 -> honua.layers).
-            var rootComparison = ReadRootOrder(x).CompareTo(ReadRootOrder(y));
-            return rootComparison != 0 ? rootComparison : StringComparer.Ordinal.Compare(x, y);
-        }
-
-        private static int ReadMigrationNumber(string name)
-        {
-            var match = MigrationNumberPattern().Match(name);
-            return match.Success && int.TryParse(
-                match.Groups[1].Value,
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out var number)
-                ? number
-                : int.MaxValue;
-        }
-
-        private static int ReadRootOrder(string name)
-            => name.Contains(".Server.Migrations.", StringComparison.Ordinal) ? 0
-                : name.Contains(".Postgres.Migrations.", StringComparison.Ordinal) ? 1
-                : 0;
-
-        [GeneratedRegex(@"(?:^|\.)0*(\d+)_", RegexOptions.CultureInvariant)]
-        private static partial Regex MigrationNumberPattern();
-    }
 
     private static async Task<bool> TryAcquireMigrationLockAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {

@@ -46,7 +46,6 @@ internal static partial class FeatureServerEndpoints
     /// <param name="supportsGeobufOutput">Whether the runtime supports geobuf output.</param>
     /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
     /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Enterprise entitlement).</param>
-    /// <param name="offlineSyncEnabled">Whether disconnected-sync routes are enabled by lifecycle configuration.</param>
     private static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
@@ -54,8 +53,7 @@ internal static partial class FeatureServerEndpoints
         QueryLimits queryLimits,
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads,
-        bool branchVersioningEnabled,
-        bool offlineSyncEnabled)
+        bool branchVersioningEnabled)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
@@ -96,15 +94,15 @@ internal static partial class FeatureServerEndpoints
             FullExtent = serviceExtent,
             MaxRecordCount = queryLimits.MaxRecordCount,
             SupportedQueryFormats = NormalizeSupportedQueryFormats(supportedFormats, supportsGeobufOutput),
-            Capabilities = BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads, offlineSyncEnabled),
+            Capabilities = BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads),
             Fields = visibleFields,
             ObjectIdField = objectIdField,
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
             HasGeometryProperties = hasGeometry,
             AllowGeometryUpdates = supportsEditing,
-            SyncEnabled = offlineSyncEnabled && ServiceSupportsSyncV2(service),
-            SyncCapabilities = offlineSyncEnabled && ServiceSupportsSyncV2(service) ? new FeatureServerSyncCapabilities() : null,
+            SyncEnabled = ServiceSupportsSyncV2(service),
+            SyncCapabilities = ServiceSupportsSyncV2(service) ? new FeatureServerSyncCapabilities() : null,
             HasVersionedData = branchVersioningEnabled,
             IsDataVersioned = branchVersioningEnabled,
             SupportsBranchVersioning = branchVersioningEnabled,
@@ -128,8 +126,7 @@ internal static partial class FeatureServerEndpoints
         JsonElement? popupInfo,
         FeatureServerExtrusionInfo? extrusionInfo,
         bool supportsGeobufOutput,
-        bool supportsAttachmentUploads,
-        bool offlineSyncEnabled)
+        bool supportsAttachmentUploads)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(resource);
@@ -199,7 +196,7 @@ internal static partial class FeatureServerEndpoints
             UniqueIdField = new UniqueIdFieldInfo { Name = objectIdField, IsSystemMaintained = true },
             DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
             PopupInfo = popupInfo.HasValue ? popupInfo.Value : null,
-            Capabilities = BuildLayerCapabilitiesV2(service, resource, supportsAttachmentUploads, offlineSyncEnabled),
+            Capabilities = BuildLayerCapabilitiesV2(service, resource, supportsAttachmentUploads),
             SupportsAdvancedQueries = supportsAdvancedQueries,
             SupportsStatistics = supportsStatistics,
             SupportsCountDistinct = supportsStatistics,
@@ -328,16 +325,12 @@ internal static partial class FeatureServerEndpoints
     /// attachment uploads enabled.
     /// </summary>
     internal static string BuildServiceCapabilitiesV2(MetadataV2Service service)
-        => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled: true);
-
-    internal static string BuildServiceCapabilitiesV2(MetadataV2Service service, bool offlineSyncEnabled)
-        => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled);
+        => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false);
 
     private static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
-        bool supportsAttachmentUploads,
-        bool offlineSyncEnabled)
+        bool supportsAttachmentUploads)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
@@ -367,7 +360,7 @@ internal static partial class FeatureServerEndpoints
         // createReplica / synchronizeReplica endpoints are served, but Esri SDK
         // clients only attempt the sync surface when the capabilities string
         // includes "Sync"; omitting it left a working sync backend unreachable.
-        if (offlineSyncEnabled && ServiceSupportsSyncV2(service))
+        if (ServiceSupportsSyncV2(service))
         {
             capabilities.Add("Sync");
         }
@@ -387,8 +380,7 @@ internal static partial class FeatureServerEndpoints
     private static string BuildLayerCapabilitiesV2(
         MetadataV2Service service,
         MetadataV2Resource resource,
-        bool supportsAttachmentUploads,
-        bool offlineSyncEnabled)
+        bool supportsAttachmentUploads)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(resource);
@@ -418,7 +410,7 @@ internal static partial class FeatureServerEndpoints
         // createReplica / synchronizeReplica endpoints are served, but Esri SDK
         // clients only attempt the sync surface when the capabilities string
         // includes "Sync"; omitting it left a working sync backend unreachable.
-        if (offlineSyncEnabled && ServiceSupportsSyncV2(service))
+        if (ServiceSupportsSyncV2(service))
         {
             capabilities.Add("Sync");
         }

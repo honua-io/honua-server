@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Security.Claims;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
@@ -74,9 +73,6 @@ internal sealed class PublishServiceTool : IMcpTool
 
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         var argument = McpToolHelpers.ParseArguments(arguments, McpJsonContext.Default.McpPublishServiceArgument);
-        var authorizationOutcome = await ServicePublishMcpAuthorization
-            .EnsureAuthorizedAndApprovedAsync(httpContext, principal, cancellationToken)
-            .ConfigureAwait(false);
 
         var invoker = httpContext.RequestServices.GetService<IOperationInvoker>();
         if (invoker is null)
@@ -91,8 +87,7 @@ internal sealed class PublishServiceTool : IMcpTool
             PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
             TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
             SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
-            AuthorizationOutcome = authorizationOutcome,
-            Roles = principal.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray(),
+            AuthorizationOutcome = "authorized",
             ScopeGoverned = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog.IsScopeGoverned(principal),
             RecognizedScopes = Honua.Core.Features.Authorization.Domain.OperatorScopeCatalog
                 .CollectRecognizedScopes(principal).OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),

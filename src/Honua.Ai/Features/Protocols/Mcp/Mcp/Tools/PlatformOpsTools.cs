@@ -9,12 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-internal interface IEvidenceBoundProposalTool
-{
-    string OperationId { get; }
-    string TargetProperty { get; }
-}
-
 /// <summary>
 /// MCP tool that returns the declared platform-release co-versioning snapshot.
 /// </summary>
@@ -256,7 +250,7 @@ internal sealed class ProposeDeployPlanTool(ILogger<ProposeDeployPlanTool> logge
     protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken) => reader.ProposeDeployPlanAsync(principal, argument, cancellationToken);
 }
 
-internal sealed class ProposeDeployOperationTool(ILogger<ProposeDeployOperationTool> logger) : GovernedPlatformMutationTool<McpDeployMutationArgument>(logger), IEvidenceBoundProposalTool
+internal sealed class ProposeDeployOperationTool(ILogger<ProposeDeployOperationTool> logger) : GovernedPlatformMutationTool<McpDeployMutationArgument>(logger)
 {
     public const string ToolName = "honua_propose_deploy_operation";
     public override string Name => ToolName;
@@ -265,11 +259,9 @@ internal sealed class ProposeDeployOperationTool(ILogger<ProposeDeployOperationT
     protected override JsonElement InputSchema => McpPlatformOpsSchemas.DeployMutationInputSchema;
     protected override JsonTypeInfo<McpDeployMutationArgument> ArgumentTypeInfo => McpJsonContext.Default.McpDeployMutationArgument;
     protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken) => reader.ProposeDeployOperationAsync(principal, argument, cancellationToken);
-    string IEvidenceBoundProposalTool.OperationId => "control-plane.deploy";
-    string IEvidenceBoundProposalTool.TargetProperty => "targetId";
 }
 
-internal sealed class ProposeMetadataReleaseTool(ILogger<ProposeMetadataReleaseTool> logger) : GovernedPlatformMutationTool<McpMetadataReleaseMutationArgument>(logger), IEvidenceBoundProposalTool
+internal sealed class ProposeMetadataReleaseTool(ILogger<ProposeMetadataReleaseTool> logger) : GovernedPlatformMutationTool<McpMetadataReleaseMutationArgument>(logger)
 {
     public const string ToolName = "honua_propose_metadata_release";
     public override string Name => ToolName;
@@ -278,8 +270,6 @@ internal sealed class ProposeMetadataReleaseTool(ILogger<ProposeMetadataReleaseT
     protected override JsonElement InputSchema => McpPlatformOpsSchemas.MetadataReleaseMutationInputSchema;
     protected override JsonTypeInfo<McpMetadataReleaseMutationArgument> ArgumentTypeInfo => McpJsonContext.Default.McpMetadataReleaseMutationArgument;
     protected override Task<McpProposeOperationOutput> ProposeAsync(IMcpPlatformOpsReader reader, ClaimsPrincipal principal, McpMetadataReleaseMutationArgument argument, CancellationToken cancellationToken) => reader.ProposeMetadataReleaseAsync(principal, argument, cancellationToken);
-    string IEvidenceBoundProposalTool.OperationId => "control-plane.metadata-release";
-    string IEvidenceBoundProposalTool.TargetProperty => "targetEnvironment";
 }
 
 internal sealed class ProposePlatformReleaseConvergenceTool(ILogger<ProposePlatformReleaseConvergenceTool> logger) : GovernedPlatformMutationTool<McpPlatformReleaseConvergenceArgument>(logger)

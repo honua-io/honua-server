@@ -28,10 +28,7 @@ internal static class SceneGenerationServiceCollectionExtensions
     /// </remarks>
     public static IServiceCollection AddSceneGeneration(
         this IServiceCollection services,
-        IConfiguration configuration,
-        bool scene3dTilesEnabled,
-        bool sceneBimEnabled,
-        bool scenePointCloudEnabled)
+        IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -41,44 +38,31 @@ internal static class SceneGenerationServiceCollectionExtensions
             return services;
         }
 
-        if (!scene3dTilesEnabled && !sceneBimEnabled && !scenePointCloudEnabled)
-        {
-            return services;
-        }
-
         services.Configure<SceneGenerationServerOptions>(
             configuration.GetSection(SceneGenerationServerOptions.SectionName));
 
         services.TryAddScoped<ISceneFeatureSource, PostgresSceneFeatureSource>();
-        if (scene3dTilesEnabled)
-        {
-            services.TryAddScoped<SceneTilesPublishExecutor>();
-            services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishExecutor, SceneTilesPublishExecutor>());
-        }
+        services.TryAddScoped<SceneTilesPublishExecutor>();
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishExecutor, SceneTilesPublishExecutor>());
 
         // CityGML/BIM ingest path (#1207): registered alongside the feature-layer
         // executor so the Enterprise-gated admin ingest endpoint can resolve it.
-        if (sceneBimEnabled)
-        {
-            services.TryAddScoped<CityGmlScenePublishExecutor>();
-        }
+        services.TryAddScoped<CityGmlScenePublishExecutor>();
 
         // LAS/LAZ/COPC point-cloud ingest path (#1201): registered alongside the
         // other scene executors so the Enterprise-gated admin point-cloud ingest
         // endpoint can resolve it.
-        if (scenePointCloudEnabled)
-        {
-            services.TryAddScoped<PointCloudScenePublishExecutor>();
-        }
+        services.TryAddScoped<PointCloudScenePublishExecutor>();
 
-        if (scenePointCloudEnabled)
-        {
-            // LAZ/COPC decompression + projected-CRS reprojection auto-dispatch
-            // (#1854): bind the request principal only when point-cloud ingest is composed.
-            services.Configure<PointCloudDecompressionOptions>(
-                configuration.GetSection(PointCloudDecompressionOptions.SectionName));
-            services.TryAddSingleton<IPointCloudDecompressorFactory, GeoprocessingPointCloudDecompressorFactory>();
-        }
+        // LAZ/COPC decompression + projected-CRS reprojection auto-dispatch
+        // (#1854): a factory that binds the request principal to a decompressor
+        // submitting the canonical pcloud.translate worker job. Registered as a
+        // singleton over the always-present IGeoprocessingJobService; the ingest
+        // endpoint resolves it optionally and only engages it for compressed or
+        // projected uploads, so an absent worker still rejects such input cleanly.
+        services.Configure<PointCloudDecompressionOptions>(
+            configuration.GetSection(PointCloudDecompressionOptions.SectionName));
+        services.TryAddSingleton<IPointCloudDecompressorFactory, GeoprocessingPointCloudDecompressorFactory>();
 
         return services;
     }

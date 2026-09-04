@@ -3,8 +3,6 @@
 
 using System.Collections.Immutable;
 using System.Net;
-using System.Net.Http.Json;
-using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Alerts.Abstractions;
@@ -145,64 +143,6 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
         document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
     }
 
-    [IntegrationTest]
-    [Endpoint("DELETE /api/v1/admin/alerts/rules/{ruleId}")]
-    public async Task DeleteRule_AfterDeliveredOrDeadLetterIncident_RetainsHistoricalEvidence()
-    {
-        var migrationSchema = await _fixture.Postgres.CreateIsolatedSchemaAsync(nameof(AlertOpsAdminEndpointsTests));
-        var migration = await _fixture.Postgres.RunEmbeddedMigrationsUnderLockAsync(
-            migrationSchema,
-            _fixture.Postgres.ConnectionString,
-            Assembly.GetAssembly(typeof(Program))!);
-        migration.Successful.Should().BeTrue(migration.Error?.ToString());
-        await _fixture.Postgres.DropSchemaAsync(migrationSchema);
-
-        foreach (var dispatchStatus in new short[] { 0, 1, 2, 3, 4 })
-        {
-            var ruleId = await SeedActiveRuleAsync(dispatchStatus);
-            var eventId = await SeedRuleIncidentAsync(ruleId, dispatchStatus);
-
-            var acknowledge = await _client.PostAsJsonAsync(
-                $"/api/v1/admin/observability/alerts/{eventId}/acknowledge",
-                new { note = "operator acknowledged", correlationId = $"retention-{eventId}" });
-            acknowledge.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            var resolve = await _client.PostAsJsonAsync(
-                $"/api/v1/admin/observability/alerts/{eventId}/resolve",
-                new { note = "operator resolved", correlationId = $"retention-{eventId}" });
-            resolve.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            var beforeDelete = await ReadRetainedEvidenceAsync(eventId);
-            beforeDelete.EventCount.Should().Be(1);
-            beforeDelete.DispatchStatus.Should().Be(dispatchStatus);
-
-            var delete = await _client.DeleteAsync($"/api/v1/admin/alerts/rules/{ruleId}");
-            delete.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            var evidence = await ReadRetainedEvidenceAsync(eventId);
-            evidence.EventCount.Should().Be(1);
-            evidence.RuleId.Should().BeNull("the mutable rule reference is detached, not cascaded");
-            evidence.DispatchCount.Should().Be(1);
-            evidence.DispatchStatus.Should().Be(dispatchStatus);
-            evidence.LifecycleCount.Should().Be(1);
-            evidence.LifecycleStatus.Should().Be(3, "the resolution remains queryable");
-            evidence.Actor.Should().Be("admin");
-            evidence.AuditCount.Should().BeGreaterThanOrEqualTo(2, "acknowledge and resolve domain audit actions survive");
-
-            var dispatchStore = _fixture.GetService<IAlertDispatchStore>();
-            var claimed = await dispatchStore.ClaimPendingAsync(5000, DateTimeOffset.UtcNow.AddMinutes(6));
-            claimed.Should().NotContain(item => item.EventId == eventId,
-                "dispatches detached from deleted rules must not be delivered");
-
-            if (dispatchStatus == 4)
-            {
-                _ = await dispatchStore.RedriveDeadLettersAsync(DateTimeOffset.UtcNow, 5000);
-                (await ReadRetainedEvidenceAsync(eventId)).DispatchStatus.Should().Be(4,
-                    "retained dead letters detached from deleted rules must not be redriven");
-            }
-        }
-    }
-
     /// <summary>
     /// Appends an ops-source alert event (no rule reference) and enqueues one pending
     /// dispatch row for <paramref name="channel"/>. Returns the persisted event id.
@@ -229,119 +169,9 @@ public sealed class AlertOpsAdminEndpointsTests : IAsyncLifetime
         });
 
         eventId.Should().NotBeNull();
-        var persistedEventId = eventId.GetValueOrDefault();
-        await dispatchStore.EnqueueAsync(persistedEventId, ImmutableArray.Create(channel));
-        return persistedEventId;
+        await dispatchStore.EnqueueAsync(eventId!.Value, ImmutableArray.Create(channel));
+        return eventId!.Value;
     }
-
-    private async Task<long> SeedRuleIncidentAsync(long ruleId, short dispatchStatus)
-    {
-        var eventStore = _fixture.GetService<IAlertEventStore>();
-        var dispatchStore = _fixture.GetService<IAlertDispatchStore>();
-        var eventId = await eventStore.TryAppendAsync(new AlertEventEnvelope
-        {
-            DedupeKey = $"rule:{ruleId}:generation:1",
-            RuleId = ruleId,
-            ServiceId = "retention-service",
-            LayerId = 7,
-            ObjectId = 42,
-            TriggerType = AlertTriggerType.Threshold,
-            Generation = 1,
-            Severity = AlertSeverity.Warning,
-            OccurredAt = DateTimeOffset.UtcNow,
-            PayloadJson = "{\"value\":51}",
-            IncidentStatus = AlertIncidentStatus.Started,
-        });
-        eventId.Should().NotBeNull();
-        var persistedEventId = eventId.GetValueOrDefault();
-        await dispatchStore.EnqueueAsync(persistedEventId, [AlertChannelType.Webhook]);
-
-        var dataSource = _fixture.GetService<NpgsqlDataSource>();
-        await using var connection = await dataSource.OpenConnectionAsync();
-        var claimToken = Guid.NewGuid();
-        await using var command = new NpgsqlCommand("""
-            UPDATE honua.alert_dispatch
-            SET status = 1,
-                claim_token = @claim_token,
-                updated_at = now()
-            WHERE event_id = @event_id AND @status <> 0;
-
-            UPDATE honua.alert_dispatch
-            SET status = @status,
-                attempts = CASE WHEN @status = 4 THEN max_attempts ELSE 1 END,
-                delivered_at = CASE WHEN @status = 2 THEN now() ELSE NULL END,
-                last_error = CASE WHEN @status = 4 THEN 'provider exhausted' ELSE NULL END,
-                claim_token = NULL,
-                updated_at = now()
-            WHERE event_id = @event_id AND @status IN (2, 3, 4);
-            """, connection);
-        command.Parameters.AddWithValue("status", dispatchStatus);
-        command.Parameters.AddWithValue("event_id", persistedEventId);
-        command.Parameters.AddWithValue("claim_token", claimToken);
-        var expectedUpdates = dispatchStatus is 0 ? 0 : dispatchStatus is 1 ? 1 : 2;
-        (await command.ExecuteNonQueryAsync()).Should().Be(expectedUpdates);
-        return persistedEventId;
-    }
-
-    private async Task<long> SeedActiveRuleAsync(short dispatchStatus)
-    {
-        var dataSource = _fixture.GetService<NpgsqlDataSource>();
-        await using var connection = await dataSource.OpenConnectionAsync();
-        await using var command = new NpgsqlCommand("""
-            INSERT INTO honua.alert_rules
-                (service_id, layer_id, rule_name, trigger_type, conditions,
-                 severity, edition_required, channels, is_active)
-            VALUES
-                (@service_id, 7, @rule_name, 4,
-                 '{"field":"speed","operator":">","value":50}'::jsonb,
-                 'warning', 1, ARRAY['webhook'], TRUE)
-            RETURNING rule_id;
-            """, connection);
-        command.Parameters.AddWithValue("service_id", $"retention-{dispatchStatus}-{Guid.NewGuid():N}");
-        command.Parameters.AddWithValue("rule_name", $"retention-{dispatchStatus}");
-        return (long)(await command.ExecuteScalarAsync())!;
-    }
-
-    private async Task<RetainedEvidence> ReadRetainedEvidenceAsync(long eventId)
-    {
-        var dataSource = _fixture.GetService<NpgsqlDataSource>();
-        await using var connection = await dataSource.OpenConnectionAsync();
-        await using var command = new NpgsqlCommand("""
-            SELECT
-                (SELECT COUNT(*) FROM honua.alert_events WHERE event_id = @event_id),
-                (SELECT rule_id FROM honua.alert_events WHERE event_id = @event_id),
-                (SELECT COUNT(*) FROM honua.alert_dispatch WHERE event_id = @event_id),
-                (SELECT status FROM honua.alert_dispatch WHERE event_id = @event_id),
-                (SELECT COUNT(*) FROM honua.alert_event_lifecycle WHERE event_id = @event_id),
-                (SELECT lifecycle_status FROM honua.alert_event_lifecycle WHERE event_id = @event_id),
-                (SELECT resolved_by FROM honua.alert_event_lifecycle WHERE event_id = @event_id),
-                (SELECT COUNT(*) FROM honua.audit_log
-                 WHERE resource_id = @resource_id AND action IN ('alert.acknowledge', 'alert.resolve'));
-            """, connection);
-        command.Parameters.AddWithValue("event_id", eventId);
-        command.Parameters.AddWithValue("resource_id", eventId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        await using var reader = await command.ExecuteReaderAsync();
-        (await reader.ReadAsync()).Should().BeTrue();
-        return new RetainedEvidence(
-            reader.GetInt64(0),
-            reader.IsDBNull(1) ? null : reader.GetInt64(1),
-            reader.GetInt64(2),
-            reader.IsDBNull(3) ? null : reader.GetInt16(3),
-            reader.GetInt64(4),
-            reader.IsDBNull(5) ? null : reader.GetInt16(5),
-            reader.IsDBNull(6) ? null : reader.GetString(6),
-            reader.GetInt64(7));
-    }
-
-    private sealed record RetainedEvidence(
-        long EventCount,
-        long? RuleId,
-        long DispatchCount,
-        short? DispatchStatus,
-        long LifecycleCount,
-        short? LifecycleStatus,
-        string? Actor,
-        long AuditCount);
 
     private async Task SetDispatchStateAsync(long eventId, short status, int attempts)
     {

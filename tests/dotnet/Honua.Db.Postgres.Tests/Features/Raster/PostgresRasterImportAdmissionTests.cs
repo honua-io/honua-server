@@ -5,7 +5,6 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Raster;
-using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -35,8 +34,7 @@ public sealed class PostgresRasterImportAdmissionTests
             var service = new PostgresRasterImportService(
                 connectionProvider,
                 Substitute.For<ICrsDetectionService>(),
-                NullLogger<PostgresRasterImportService>.Instance,
-                FixtureBypassDatabaseSchemaGuard.Instance);
+                NullLogger<PostgresRasterImportService>.Instance);
 
             var result = await service.ImportAsync(new RasterImportRequest
             {

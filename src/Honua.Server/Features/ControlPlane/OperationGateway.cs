@@ -38,7 +38,6 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IProposalNotifier _notifier;
     private readonly ILogger<OperationGateway> _logger;
-    private readonly IOperationProposalEvidenceValidator? _evidenceValidator;
 
     public OperationGateway(
         IGuardrailLadder ladder,
@@ -46,8 +45,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         IEnumerable<IOperationExecutor> executors,
         IServiceScopeFactory scopeFactory,
         IProposalNotifier notifier,
-        ILogger<OperationGateway> logger,
-        IOperationProposalEvidenceValidator? evidenceValidator = null)
+        ILogger<OperationGateway> logger)
     {
         ArgumentNullException.ThrowIfNull(executors);
         _ladder = ladder;
@@ -55,7 +53,6 @@ internal sealed partial class OperationGateway : IOperationGateway
         _scopeFactory = scopeFactory;
         _notifier = notifier;
         _logger = logger;
-        _evidenceValidator = evidenceValidator;
     }
 
     public async Task<OperationGatewayResult> RouteAsync(
@@ -229,29 +226,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         string proposalId,
         string approvedBy,
         CancellationToken cancellationToken = default)
-        => await ApplyApprovedProposalCoreAsync(
-            proposalId,
-            new OperationProposalApprovalContext { ApprovedBy = approvedBy, TenantId = string.Empty },
-            hasApprovalContext: false,
-            cancellationToken).ConfigureAwait(false);
-
-    public async Task<OperationProposal?> ApplyApprovedProposalAsync(
-        string proposalId,
-        OperationProposalApprovalContext approval,
-        CancellationToken cancellationToken = default)
-        => await ApplyApprovedProposalCoreAsync(
-            proposalId,
-            approval,
-            hasApprovalContext: true,
-            cancellationToken).ConfigureAwait(false);
-
-    private async Task<OperationProposal?> ApplyApprovedProposalCoreAsync(
-        string proposalId,
-        OperationProposalApprovalContext approval,
-        bool hasApprovalContext,
-        CancellationToken cancellationToken)
     {
-        var approvedBy = approval.ApprovedBy;
         var proposal = await _proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
         if (proposal == null)
         {
@@ -263,18 +238,6 @@ internal sealed partial class OperationGateway : IOperationGateway
             await ReconcileAutonomyProposalResolutionAsync(proposal, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException(
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
-        }
-
-        if (proposal.Evidence is not null)
-        {
-            if (!hasApprovalContext || _evidenceValidator is null)
-            {
-                throw new InvalidOperationException(
-                    "Evidence-bound proposals require the authenticated approval validation boundary.");
-            }
-
-            await _evidenceValidator.ValidateApprovalAsync(proposal, approval, cancellationToken)
-                .ConfigureAwait(false);
         }
 
         // Atomically claim the proposal before invoking the executor.
@@ -605,9 +568,6 @@ internal sealed partial class OperationGateway : IOperationGateway
             SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
             GuardrailDecision = decision,
             AutonomyMetadata = NormalizeAutonomyContext(request.AutonomyContext, actionDiscriminator: request.ActionDiscriminator),
-            Evidence = request.Evidence is null
-                ? null
-                : request.Evidence with { PolicyRevision = ComputePolicyRevision(decision) },
             Audit = new OperationAuditInfo
             {
                 OperationInstanceId = request.OperationInstanceId,
@@ -984,15 +944,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 BlastRadius = proposal.AutonomyMetadata.BlastRadius,
                 EvidenceRefs = proposal.AutonomyMetadata.EvidenceRefs,
             },
-        Evidence = proposal.Evidence,
     };
-
-    internal static string ComputePolicyRevision(GuardrailDecision decision)
-    {
-        var material = System.Text.Encoding.UTF8.GetBytes(
-            $"{decision.OperationClass}|{decision.Tier}|{decision.Edition}|{decision.Source}");
-        return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(material));
-    }
 
     private async Task<OpsAutonomyRouteDecision> EvaluateAutonomyAsync(
         OperationGatewayRequest request,

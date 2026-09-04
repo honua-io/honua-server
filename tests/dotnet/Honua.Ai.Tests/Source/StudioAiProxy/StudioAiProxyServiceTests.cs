@@ -400,7 +400,6 @@ public sealed class StudioAiProxyServiceTests
             Certification = new StudioAiTranscriptCertification
             {
                 CandidateId = "candidate-7",
-                TenantId = "tenant-7",
                 ReleaseId = "release-9",
                 EndpointIdentity = "candidate-proxy",
                 ActionId = "deploy",
@@ -475,132 +474,6 @@ public sealed class StudioAiProxyServiceTests
         adapter.DisposeCount.Should().Be(1, fixtureId);
     }
 
-    [UnitTest]
-    public async Task StreamChatAsync_OutputAtExactEventByteLimit_Succeeds()
-    {
-        var start = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "provider-model" };
-        var delta = new StudioAiChatEvent { Type = StudioAiChatEventType.TextDelta, Text = "é" };
-        var stop = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn };
-        var exactBytes = new[] { start, delta, stop }.Max(evt =>
-            JsonSerializer.SerializeToUtf8Bytes(evt, StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length);
-        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
-        config.MaxEventBytes = exactBytes;
-        var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true, _ => Events(
-            start,
-            delta,
-            stop));
-        var service = CreateService(config, adapter);
-
-        var events = await CollectAsync(service, Request(), new StudioAiProxyCallSummary());
-
-        events.Should().Contain(delta);
-        events.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
-    }
-
-    [UnitTest]
-    public async Task StreamChatAsync_OutputOneByteOverLimit_CancelsDisposesAndEmitsOnlyFailureTerminal()
-    {
-        var state = new DisposalState();
-        var oversized = new StudioAiChatEvent { Type = StudioAiChatEventType.TextDelta, Text = "é" };
-        var eventBytes = JsonSerializer.SerializeToUtf8Bytes(oversized, StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length;
-        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
-        config.MaxEventBytes = eventBytes - 1;
-        var adapter = new FakeAdapter(StudioAiProxyConfiguration.AnthropicKind, true, _ => DisposableEvents(state, oversized));
-        var service = CreateService(config, adapter);
-        var summary = new StudioAiProxyCallSummary();
-
-        var events = await CollectAsync(service, Request(), summary);
-
-        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error
-            && e.ErrorCode == "studio_ai/provider_output_too_large");
-        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop
-            || e.Type == StudioAiChatEventType.TranscriptProvenance);
-        state.Disposed.Should().BeTrue();
-        summary.Succeeded.Should().BeFalse();
-    }
-
-    [UnitTest]
-    public async Task StreamChatAsync_ProvenanceOverEventByteLimit_EmitsOnlyFailureTerminal()
-    {
-        var start = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "provider-model" };
-        var stop = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn };
-        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
-        config.MaxEventBytes = new[] { start, stop }.Max(evt =>
-            JsonSerializer.SerializeToUtf8Bytes(evt, StudioAiProxyJsonContext.Default.StudioAiChatEvent).Length);
-        var service = CreateSigningService(config, new FakeAdapter(
-            StudioAiProxyConfiguration.AnthropicKind, true, _ => Events(start, stop)));
-        var summary = new StudioAiProxyCallSummary();
-
-        var events = await CollectAsync(service, CertifiedRequest(), summary);
-
-        events.Should().ContainSingle(evt => evt.Type == StudioAiChatEventType.Error
-            && evt.ErrorCode == "studio_ai/provider_output_too_large");
-        events.Should().NotContain(evt => evt.Type == StudioAiChatEventType.MessageStop
-            || evt.Type == StudioAiChatEventType.TranscriptProvenance);
-        summary.Succeeded.Should().BeFalse();
-    }
-
-    [UnitTest]
-    public async Task StreamChatAsync_ProvenanceOverEventCountLimit_EmitsOnlyFailureTerminal()
-    {
-        var start = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "provider-model" };
-        var stop = new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.EndTurn };
-        var config = ConfigWithOneAnthropicProvider("claude", isDefault: true);
-        config.MaxResponseEventCount = 2;
-        var service = CreateSigningService(config, new FakeAdapter(
-            StudioAiProxyConfiguration.AnthropicKind, true, _ => Events(start, stop)));
-        var summary = new StudioAiProxyCallSummary();
-
-        var events = await CollectAsync(service, CertifiedRequest(), summary);
-
-        events.Should().ContainSingle(evt => evt.Type == StudioAiChatEventType.Error
-            && evt.ErrorCode == "studio_ai/provider_output_too_large");
-        events.Should().NotContain(evt => evt.Type == StudioAiChatEventType.MessageStop
-            || evt.Type == StudioAiChatEventType.TranscriptProvenance);
-        summary.Succeeded.Should().BeFalse();
-    }
-
-    private static StudioAiChatRequest Request() => new()
-    {
-        Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
-    };
-
-    private static StudioAiChatRequest CertifiedRequest() => new()
-    {
-        Certification = new StudioAiTranscriptCertification
-        {
-            CandidateId = "candidate-7",
-            ReleaseId = "release-9",
-            EndpointIdentity = "candidate-proxy",
-            ActionId = "compose-map",
-            RunNonce = "nonce"
-        },
-        Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "hi" }]
-    };
-
-    private static async IAsyncEnumerable<StudioAiChatEvent> DisposableEvents(
-        DisposalState state,
-        params StudioAiChatEvent[] events)
-    {
-        try
-        {
-            foreach (var evt in events)
-            {
-                yield return evt;
-                await Task.Yield();
-            }
-        }
-        finally
-        {
-            state.Disposed = true;
-        }
-    }
-
-    private sealed class DisposalState
-    {
-        public bool Disposed { get; set; }
-    }
-
     private static async IAsyncEnumerable<StudioAiChatEvent> ThrowingEvents(StudioAiChatRequest request)
     {
         await Task.Yield();
@@ -639,23 +512,6 @@ public sealed class StudioAiProxyServiceTests
             adapters,
             new StudioAiTranscriptSigner(Options.Create(configuration), TimeProvider.System),
             NullLogger<StudioAiProxyService>.Instance);
-
-    private static StudioAiProxyService CreateSigningService(
-        StudioAiProxyConfiguration configuration,
-        params IStudioAiProxyAdapter[] adapters)
-    {
-        configuration.TranscriptSigning.KeyId = "test-key";
-        configuration.TranscriptSigning.PrivateKeyReference = "secret://studio-key";
-        var secrets = Substitute.For<ISecretProvider>();
-        secrets.IsSecretReference("secret://studio-key").Returns(true);
-        secrets.GetSecretOrDefaultAsync("secret://studio-key", null, Arg.Any<CancellationToken>())
-            .Returns(Convert.ToBase64String(new byte[32]));
-        return new StudioAiProxyService(
-            Options.Create(configuration),
-            adapters,
-            new StudioAiTranscriptSigner(Options.Create(configuration), TimeProvider.System, secrets),
-            NullLogger<StudioAiProxyService>.Instance);
-    }
 
     private static StudioAiProxyConfiguration ConfigWithOneAnthropicProvider(string name, bool isDefault) => new()
     {

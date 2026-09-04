@@ -288,12 +288,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // conflict-review routes ship on the default first-release surface. Still
             // Pro-edition gated (fieldops.offline-sync entitlement) — GA means no longer
             // hidden/unadvertised, not free-tier.
-            ("serve.3d-tiles-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
-            ("serve.i3s-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
-            ("scene.catalog", "scene", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
-            ("scene.bim-ingest", "scene", FeatureCatalog.SceneBimIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
-            ("scene.pointcloud-ingest", "scene", FeatureCatalog.ScenePointCloudIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
-            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Preview),
+            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             // Realtime remains opt-in Preview until the per-transport qualification
             // denominator passes against the exact release candidate (#3810).
             ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Preview),
@@ -304,7 +299,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // First Experimental->Implemented promotion; engine ships as shared,
             // un-gated GA infrastructure. Workers still self-gate on
             // AlertOptions.Enabled (default false); GA does not mean on-by-default.
-            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null, CapabilityMaturity.Preview),
+            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("jobs.runner", "jobs", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("ai.spec-apply", "ai", FeatureCatalog.AiSpecApplyKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("ai.grounding", "ai", FeatureCatalog.AiGroundingKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
