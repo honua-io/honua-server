@@ -7,6 +7,7 @@ using Honua.Core.Features.FileImport.Services;
 using Honua.Io.Export;
 using Honua.Io.Export.Writers;
 using NetTopologySuite.IO;
+using Xunit;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Tests.Features.Export.Writers;
