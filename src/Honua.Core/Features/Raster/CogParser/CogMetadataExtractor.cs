@@ -56,7 +56,6 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         double[]? modelTransformation = null;
         double tiepointI = 0, tiepointJ = 0;
         int rasterType = 1; // RasterPixelIsArea is the GeoTIFF default.
-        byte[]? jpegTables = null;
 
         while (currentOffset > 0 && levelIndex < MaxOverviewLevels)
         {
@@ -167,10 +166,6 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                         modelTransformation = await ExtractModelTransformationAsync(
                             reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
                         break;
-                    case TiffConstants.TagJpegTables when levelIndex == 0:
-                        jpegTables = await ExtractBytesAsync(
-                            reader, bucket, key, entry, parser, cancellationToken).ConfigureAwait(false);
-                        break;
                 }
             }
 
@@ -193,10 +188,11 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
                 // dropping its off-diagonal terms would silently serve the wrong pixels.
                 if (modelTransformation is { Length: 16 })
                 {
-                    var shearTolerance = Math.Max(
-                        Math.Max(Math.Abs(modelTransformation[0]), Math.Abs(modelTransformation[5])), 1d) * 1e-9;
-                    if (Math.Abs(modelTransformation[1]) > shearTolerance
-                        || Math.Abs(modelTransformation[4]) > shearTolerance
+                    if (modelTransformation.Any(value => !double.IsFinite(value))
+                        || modelTransformation[1] != 0 || modelTransformation[4] != 0
+                        || modelTransformation[2] != 0 || modelTransformation[6] != 0
+                        || modelTransformation[12] != 0 || modelTransformation[13] != 0
+                        || modelTransformation[14] != 0 || modelTransformation[15] != 1
                         || modelTransformation[0] <= 0
                         || modelTransformation[5] >= 0)
                     {
@@ -233,6 +229,12 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
 
                     xMax = xMin + pixelScaleX * width;
                     yMin = yMax - pixelScaleY * height;
+                    if (!double.IsFinite(xMin) || !double.IsFinite(yMax)
+                        || !double.IsFinite(xMax) || !double.IsFinite(yMin)
+                        || pixelScaleX <= 0 || pixelScaleY <= 0)
+                    {
+                        throw new InvalidDataException("COG georeferencing does not describe a finite north-up grid.");
+                    }
                 }
                 // Exact-zero check is intentional and safe here: xMax/xMin are
                 // declared with a literal 0 default (line above) and are only
@@ -280,7 +282,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
             tileWidth, tileHeight,
             overviewLevels.ToArray(),
             new RasterExtent { XMin = xMin, YMin = yMin, XMax = xMax, YMax = yMax, Srid = srid },
-            bitsPerSample, predictor, parser.IsLittleEndian, jpegTables);
+            bitsPerSample, predictor, parser.IsLittleEndian);
     }
 
     private static async Task<long[]> ReadLongArrayFromEntryAsync(
@@ -448,32 +450,6 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         }
 
         return values;
-    }
-
-    private static async Task<byte[]?> ExtractBytesAsync(
-        ICloudRangeReader reader, string bucket, string key,
-        IfdEntry entry, TiffIfdParser parser, CancellationToken ct)
-    {
-        if (entry.Count <= 0 || entry.Count > MaxExternalArrayElements)
-        {
-            return null;
-        }
-
-        if (entry.IsInline)
-        {
-            var value = unchecked((uint)entry.ValueOrOffset);
-            var bytes = new byte[checked((int)entry.Count)];
-            for (var i = 0; i < bytes.Length; i++)
-            {
-                var shift = parser.IsLittleEndian ? i * 8 : (bytes.Length - i - 1) * 8;
-                bytes[i] = (byte)(value >> shift);
-            }
-
-            return bytes;
-        }
-
-        var totalBytes = GetValidatedExternalArrayByteCount(entry);
-        return await reader.ReadRangeAsync(bucket, key, entry.ValueOrOffset, totalBytes, ct).ConfigureAwait(false);
     }
 
     private static async Task<(double ScaleX, double ScaleY)> ExtractPixelScaleAsync(

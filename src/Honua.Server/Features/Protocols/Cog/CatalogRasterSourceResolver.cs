@@ -305,25 +305,13 @@ internal sealed class CatalogRasterSourceResolver(
     /// <summary>
     /// Translates the service-local layer index persisted by the COG registration into the
     /// backing storage-layer id consumed by the authorization and feature-store seams. The
-    /// registration schema carries no service id, so a numeric collision that resolves to more
-    /// than one storage layer is ambiguous and must fail closed.
+    /// registration schema carries no service id, so a numeric collision between routable
+    /// publications is ambiguous and must fail closed.
     /// </summary>
     private static int? ResolveStorageLayerId(MetadataV2GraphSnapshot snapshot, int publicationLayerId)
     {
-        var publications = snapshot.Graph.Publications
-            .Where(publication => publication.LayerIndex == publicationLayerId && snapshot.IsRoutable(publication))
-            .ToArray();
-        if (publications.Length == 0)
-        {
-            return null;
-        }
-
-        var storageLayerIds = publications
-            .Select(snapshot.ResolveStorageLayerId)
-            .Distinct()
-            .ToArray();
-
-        return storageLayerIds.Length == 1 ? storageLayerIds[0] : null;
+        var publication = CogPublicationBinding.Resolve(snapshot, publicationLayerId);
+        return publication is null ? null : snapshot.ResolveStorageLayerId(publication);
     }
 
     private sealed record ResolvedCogRegistration(CogRegistration Registration, int StorageLayerId);

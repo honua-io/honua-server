@@ -25,8 +25,8 @@ public static class TileDecompressor
 
     /// <summary>
     /// Decompresses tile data and returns the content type for the response.
-    /// Equivalent to calling the layout-aware overload with <see cref="TilePixelLayout.None"/>;
-    /// use that overload for tiles that declare a predictor.
+    /// Equivalent to calling <see cref="Decompress(byte[], string, in TilePixelLayout, int)"/>
+    /// with <see cref="TilePixelLayout.None"/>; use that overload for tiles that declare a predictor.
     /// </summary>
     /// <param name="tileData">Raw compressed tile bytes from the COG</param>
     /// <param name="compression">TIFF compression name (JPEG, DEFLATE, LZW, ZSTD, NONE)</param>
@@ -59,7 +59,6 @@ public static class TileDecompressor
     /// Maximum allowed decompressed size; pass the tile's expected pixel-buffer size when known.
     /// Exceeding it throws <see cref="InvalidDataException"/> (decompression-bomb guard).
     /// </param>
-    /// <param name="jpegTables">Optional TIFF JPEGTables payload used to reconstruct abbreviated JPEG tiles.</param>
     /// <returns>Decompressed data and the appropriate content type</returns>
     /// <exception cref="UnsupportedTileCodecException">The tile's codec cannot be decoded.</exception>
     /// <exception cref="UnsupportedTilePredictorException">The tile's predictor cannot be reversed.</exception>
@@ -67,13 +66,12 @@ public static class TileDecompressor
         byte[] tileData,
         string compression,
         in TilePixelLayout layout,
-        int maxDecompressedBytes = DefaultMaxDecompressedBytes,
-        byte[]? jpegTables = null)
+        int maxDecompressedBytes = DefaultMaxDecompressedBytes)
     {
         switch (compression)
         {
             case "JPEG":
-                return (JpegTables.Combine(tileData, jpegTables), "image/jpeg");
+                return (tileData, "image/jpeg"); // Zero-copy passthrough — tile is a standalone JPEG
 
             case "NONE" or "":
                 // NONE tiles are already pixel data; a predictor still has to be reversed, but the
@@ -97,65 +95,6 @@ public static class TileDecompressor
 
             default:
                 throw new UnsupportedTileCodecException(compression, SupportedCodecs);
-        }
-    }
-
-    /// <summary>
-    /// Reconstructs a standalone JPEG from a TIFF abbreviated JPEG tile and its optional
-    /// JPEGTables tag (347). TIFF JPEG tiles commonly omit the DQT/DHT segments and rely on
-    /// the shared table payload, so returning the tile bytes verbatim produces an image that
-    /// browsers and GIS clients cannot decode.
-    /// </summary>
-    private static class JpegTables
-    {
-        public static byte[] Combine(byte[] tile, byte[]? tables)
-        {
-            ArgumentNullException.ThrowIfNull(tile);
-            if (tables is null || tables.Length == 0)
-            {
-                return tile;
-            }
-
-            var tableStart = tables.AsSpan();
-            if (tableStart.Length >= 2 && tableStart[0] == 0xFF && tableStart[1] == 0xD8)
-            {
-                tableStart = tableStart[2..];
-            }
-
-            if (tableStart.Length >= 2 && tableStart[^2] == 0xFF && tableStart[^1] == 0xD9)
-            {
-                tableStart = tableStart[..^2];
-            }
-
-            if (tableStart.IsEmpty)
-            {
-                return tile;
-            }
-
-            var tileStart = tile.AsSpan();
-            var hasSoi = tileStart.Length >= 2 && tileStart[0] == 0xFF && tileStart[1] == 0xD8;
-            var hasEoi = tileStart.Length >= 2 && tileStart[^2] == 0xFF && tileStart[^1] == 0xD9;
-            var suffix = hasEoi ? 0 : 2;
-            var result = new byte[checked(2 + tableStart.Length + tile.Length - (hasSoi ? 2 : 0) + suffix)];
-            var offset = 0;
-            result[offset++] = 0xFF;
-            result[offset++] = 0xD8;
-            tableStart.CopyTo(result.AsSpan(offset));
-            offset += tableStart.Length;
-            if (hasSoi)
-            {
-                tileStart = tileStart[2..];
-            }
-
-            tileStart.CopyTo(result.AsSpan(offset));
-            offset += tileStart.Length;
-            if (!hasEoi)
-            {
-                result[offset++] = 0xFF;
-                result[offset] = 0xD9;
-            }
-
-            return result;
         }
     }
 

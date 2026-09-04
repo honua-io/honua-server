@@ -391,7 +391,7 @@ public class CogMetadataExtractorTests
         const int entryCount = 10;
         const uint scaleOffset = 134;
         const uint tiepointOffset = 158;
-        const uint geoKeyOffset = 230;
+        const uint geoKeyOffset = tiepointOffset + 6 * sizeof(double);
         writer.Write((ushort)entryCount);
         WriteIfdEntry(writer, 256, 4, 1, (uint)width);
         WriteIfdEntry(writer, 257, 4, 1, (uint)height);

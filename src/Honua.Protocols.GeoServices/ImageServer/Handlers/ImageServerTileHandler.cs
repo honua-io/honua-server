@@ -10,6 +10,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Infrastructure.Authentication;
@@ -236,10 +237,13 @@ internal sealed class ImageServerTileHandler
             }
 
             // Fallback: Check COGs (Pro edition required)
-            if (_cogTileResolver != null)
+            if (_cogTileResolver != null
+                && resolvedLayer.Publication.LayerIndex is { } publicationLayerIndex
+                && CogPublicationBinding.Resolve(snapshot, publicationLayerIndex)?.Metadata.Id
+                    == resolvedLayer.Publication.Metadata.Id)
             {
                 var lookup = await _cogTileResolver.GetTileForLayerAsync(
-                    publicationLayerIndex: resolvedLayer.Publication.LayerIndex ?? layerId,
+                    publicationLayerIndex,
                     level,
                     row,
                     col,

@@ -21,7 +21,6 @@ namespace Honua.Core.Features.Raster.Domain;
 /// <param name="BitsPerSample">Bits per sample (TIFF tag 258), needed to reverse a predictor.</param>
 /// <param name="Predictor">TIFF predictor (tag 317): 1 = none, 2 = horizontal differencing.</param>
 /// <param name="IsLittleEndian">Byte order of the source TIFF, which multi-byte samples are stored in.</param>
-/// <param name="JpegTables">Optional TIFF JPEGTables payload used to reconstruct abbreviated JPEG tiles.</param>
 public sealed record CogMetadata(
     int Width,
     int Height,
@@ -35,8 +34,7 @@ public sealed record CogMetadata(
     RasterExtent Extent,
     int BitsPerSample = 8,
     int Predictor = 1,
-    bool IsLittleEndian = true,
-    byte[]? JpegTables = null);
+    bool IsLittleEndian = true);
 
 /// <summary>
 /// One IFD resolution level within a COG.

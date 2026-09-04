@@ -1,6 +1,6 @@
 # Publish rasters
 
-You'll have raster data imported into PostGIS and served through ImageServer, WCS, and OGC API Coverages in about 10 minutes. Direct cloud COG registration is a Preview ImageServer tile fallback only.
+You'll have raster data imported into PostGIS and served through ImageServer, WCS, and OGC API Coverages in about 10 minutes. Direct cloud COG tile serving currently uses the Preview ImageServer tile fallback only.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a target layer id in the catalog.
 
@@ -46,7 +46,7 @@ Run `POST /api/v1/admin/cloud-rasters` with this body:
 }
 ```
 
-Providers: `AwsS3` and `AzureBlob` (a matching range reader must be configured). Manage registrations with `GET /api/v1/admin/cloud-rasters?layerId=1`, `GET|DELETE /api/v1/admin/cloud-rasters/{id}`, and `POST /api/v1/admin/cloud-rasters/{id}/refresh` to re-scan metadata. ImageServer tile requests use PostGIS first and fall back to registered COGs; the Preview fallback requires an EPSG:3857 GoogleMapsCompatible-aligned grid, serves JPEG tiles directly and decodes DEFLATE/LZW/ZSTD/uncompressed tiles to PNG, and is Pro-gated (`raster.cloud-cog-serving`). Registered cloud COGs are not read by `exportImage`, `identify`, WCS, or OGC API Coverages.
+Providers: `AwsS3` and `AzureBlob` (a matching range reader must be configured). Manage registrations with `GET /api/v1/admin/cloud-rasters?layerId=1`, `GET|DELETE /api/v1/admin/cloud-rasters/{id}`, and `POST /api/v1/admin/cloud-rasters/{id}/refresh` to re-scan metadata. ImageServer tile requests use PostGIS first and fall back to registered COGs; the Preview fallback requires an EPSG:3857 GoogleMapsCompatible-aligned grid, can pass through standalone JPEG tiles for `format=jpg` (TIFF-JPEG tiles requiring shared JPEGTables are not assembled), while DEFLATE/LZW/ZSTD/uncompressed samples have no image encoder and cannot be delivered by this route, and is Pro-gated (`raster.cloud-cog-serving`). Registered cloud COGs are not read by `exportImage`, `identify`, WCS, or OGC API Coverages.
 
 ## Verify
 
@@ -90,7 +90,7 @@ Run `POST /api/v1/admin/multidim-coverages` with this body:
 - **`'layerId' is required and must be a valid integer.`** — the multipart request is missing the `layerId` form field; rasters attach to an existing catalog layer.
 - **`Raster import request is invalid.` for PNG/JPEG** — those formats need a `.pgw`/`.jgw`/`.wld` world file; add the sidecar or supply `srid` plus a `.prj`.
 - **Homogeneity error on upload** — the new raster's SRID or band count differs from the layer's first raster; use a separate layer or reproject/restack the source.
-- **COG tiles not served from cloud** — check the registration with `GET /api/v1/admin/cloud-rasters/{id}`, confirm a range reader is configured for the provider, and verify that the object has an ETag and uses JPEG, DEFLATE, LZW, ZSTD, or uncompressed tiles.
+- **COG tiles not served from cloud** — check the registration with `GET /api/v1/admin/cloud-rasters/{id}`, confirm a range reader is configured for the provider, and verify that the object has an ETag and standalone JPEG tiles. The decoder understands DEFLATE/LZW/ZSTD/uncompressed data, but the tile route cannot encode those samples as PNG/JPEG/TIFF; its default `format=png` does not transcode JPEG either.
 - **Web tiles misaligned** — direct COG tile serving requires an EPSG:3857 GoogleMapsCompatible grid. Other SRIDs and grids fail closed; use the imported PostGIS path for reprojection and general raster operations.
 
 More help: [troubleshooting](../deploy/troubleshooting.md).
@@ -100,3 +100,7 @@ More help: [troubleshooting](../deploy/troubleshooting.md).
 - [Publish terrain and elevation](publish-terrain-and-elevation.md) — serve a DEM as Terrain-RGB tiles and elevation queries.
 - [Publish tiles](publish-tiles.md) — tile cache operations.
 - [Publish layers](publish-layers.md) — vector layer publishing.
+
+Cloud COG `layerId` is the service-local publication index, not the backing storage layer ID.
+It must identify one routable publication across the catalog; colliding indexes fail closed.
+Cloud-format GA vs Preview remains pending an operator ruling; ImageServer itself is Preview.

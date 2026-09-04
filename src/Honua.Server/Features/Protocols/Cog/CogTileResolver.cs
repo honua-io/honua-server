@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.CogParser;
@@ -130,6 +129,10 @@ internal sealed class CogTileResolver : ICogTileResolver
             registration.Bucket, registration.ObjectKey,
             offset, length, objectMetadata.ETag,
             cancellationToken).ConfigureAwait(false);
+        if (tileData.Length != length)
+        {
+            return null;
+        }
 
         // Decompress based on compression type, reversing the tile's predictor when it declares one.
         var layout = new TilePixelLayout(
@@ -138,23 +141,7 @@ internal sealed class CogTileResolver : ICogTileResolver
             metadata.BitsPerSample,
             metadata.Predictor,
             metadata.IsLittleEndian);
-        var (decompressedData, contentType) = TileDecompressor.Decompress(
-            tileData,
-            metadata.Compression,
-            layout,
-            jpegTables: metadata.JpegTables);
-
-        if (contentType == "application/octet-stream")
-        {
-            if (format != RasterFormat.PNG)
-            {
-                CogLog.UnsupportedTileFormat(_logger, registration.Id, FormatName(format), contentType);
-                return null;
-            }
-
-            decompressedData = CogTilePngEncoder.Encode(decompressedData, metadata);
-            contentType = "image/png";
-        }
+        var (decompressedData, contentType) = TileDecompressor.Decompress(tileData, metadata.Compression, layout);
 
         if (!CanServeRequestedFormat(format, contentType))
         {
@@ -238,9 +225,9 @@ internal sealed class CogTileResolver : ICogTileResolver
             return (cached.Metadata, "memory");
         }
 
-        // Tier 3: Cloud scan
+        // Scan the current object: persisted summaries have no pinned identity or tile offsets.
         var metadata = await _metadataReader.ReadMetadataAsync(
-            new ETagPinnedRangeReader(reader, expectedETag),
+            new CogPinnedRangeReader(reader, expectedETag),
             registration.Bucket,
             registration.ObjectKey,
             cancellationToken).ConfigureAwait(false);
@@ -390,32 +377,4 @@ internal sealed class CogTileResolver : ICogTileResolver
 
     private sealed record CachedCogMetadata(CogMetadata Metadata, string ETag);
 
-    /// <summary>Adapts legacy metadata readers so every range they issue is conditional.</summary>
-    private sealed class ETagPinnedRangeReader(ICloudRangeReader inner, string expectedETag) : ICloudRangeReader
-    {
-        public CloudStorageProvider Provider => inner.Provider;
-
-        public Task<byte[]> ReadRangeAsync(
-            string bucket, string key, long offset, int length,
-            CancellationToken cancellationToken = default)
-            => inner.ReadRangeAsync(bucket, key, offset, length, expectedETag, cancellationToken);
-
-        public Task<byte[]> ReadRangeAsync(
-            string bucket, string key, long offset, int length, string etag,
-            CancellationToken cancellationToken = default)
-            => inner.ReadRangeAsync(bucket, key, offset, length, expectedETag, cancellationToken);
-
-        public Task<Stream> ReadRangeStreamAsync(
-            string bucket, string key, long offset, int length,
-            CancellationToken cancellationToken = default)
-            => inner.ReadRangeStreamAsync(bucket, key, offset, length, cancellationToken);
-
-        public Task<long> GetObjectSizeAsync(
-            string bucket, string key, CancellationToken cancellationToken = default)
-            => inner.GetObjectSizeAsync(bucket, key, cancellationToken);
-
-        public Task<CloudObjectMetadata> GetObjectMetadataAsync(
-            string bucket, string key, CancellationToken cancellationToken = default)
-            => inner.GetObjectMetadataAsync(bucket, key, cancellationToken);
-    }
 }

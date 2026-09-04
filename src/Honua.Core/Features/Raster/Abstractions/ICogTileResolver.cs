@@ -39,7 +39,7 @@ public interface ICogTileResolver
     /// the first matching tile. Encapsulates store lookup and license check.
     /// </summary>
     Task<CogTileLookup> GetTileForLayerAsync(
-        int publicationLayerIndex,
+        int layerId,
         int level,
         int row,
         int col,

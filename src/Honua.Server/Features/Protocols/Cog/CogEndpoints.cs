@@ -193,13 +193,13 @@ internal static class CogEndpoints
             }
 
             var metadata = await metadataReader.ReadMetadataAsync(
-                new RefreshPinnedRangeReader(reader, objectMetadata.ETag),
+                new CogPinnedRangeReader(reader, objectMetadata.ETag),
                 registration.Bucket,
                 registration.ObjectKey,
                 cancellationToken);
 
             // Warn about non-web-mercator CRS
-            if (metadata.Srid is not (3857 or 4326) and > 0)
+            if (metadata.Srid != 3857)
             {
                 CogLog.NonWebMercatorCrs(logger, id, metadata.Srid);
             }
@@ -235,8 +235,7 @@ internal static class CogEndpoints
     }
 
     /// <summary>
-    /// Returns true when the Metadata v2 graph contains any publication whose service-local layer
-    /// index matches the supplied id.
+    /// Returns true only for a unique routable publication matching the service-local layer index.
     /// </summary>
     private static async Task<bool> LayerPublicationExistsAsync(
         IMetadataV2GraphProvider graphProvider,
@@ -244,8 +243,7 @@ internal static class CogEndpoints
         CancellationToken cancellationToken)
     {
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return snapshot.Graph.Publications.Any(publication =>
-            publication.LayerIndex == layerId && snapshot.IsRoutable(publication));
+        return CogPublicationBinding.Resolve(snapshot, layerId) is not null;
     }
 
     private static CogRegistrationResponse ToResponse(CogRegistration reg) => new()
@@ -267,27 +265,4 @@ internal static class CogEndpoints
         CreatedAt = reg.CreatedAt
     };
 
-    private sealed class RefreshPinnedRangeReader(ICloudRangeReader inner, string expectedETag) : ICloudRangeReader
-    {
-        public CloudStorageProvider Provider => inner.Provider;
-
-        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length,
-            CancellationToken cancellationToken = default)
-            => inner.ReadRangeAsync(bucket, key, offset, length, expectedETag, cancellationToken);
-
-        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, string etag,
-            CancellationToken cancellationToken = default)
-            => inner.ReadRangeAsync(bucket, key, offset, length, expectedETag, cancellationToken);
-
-        public Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length,
-            CancellationToken cancellationToken = default)
-            => inner.ReadRangeStreamAsync(bucket, key, offset, length, cancellationToken);
-
-        public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
-            => inner.GetObjectSizeAsync(bucket, key, cancellationToken);
-
-        public Task<CloudObjectMetadata> GetObjectMetadataAsync(string bucket, string key,
-            CancellationToken cancellationToken = default)
-            => inner.GetObjectMetadataAsync(bucket, key, cancellationToken);
-    }
 }
