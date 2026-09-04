@@ -35,11 +35,11 @@ public interface ICogTileResolver
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Looks up all COGs for a layer, checks edition gating, and returns
+    /// Looks up all COGs for a publication's service-local layer index, checks edition gating, and returns
     /// the first matching tile. Encapsulates store lookup and license check.
     /// </summary>
     Task<CogTileLookup> GetTileForLayerAsync(
-        int layerId,
+        int publicationLayerIndex,
         int level,
         int row,
         int col,

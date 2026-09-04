@@ -239,7 +239,12 @@ internal sealed class ImageServerTileHandler
             if (_cogTileResolver != null)
             {
                 var lookup = await _cogTileResolver.GetTileForLayerAsync(
-                    layerId, level, row, col, rasterFormat, cancellationToken);
+                    publicationLayerIndex: resolvedLayer.Publication.LayerIndex ?? layerId,
+                    level,
+                    row,
+                    col,
+                    rasterFormat,
+                    cancellationToken);
 
                 if (lookup.EditionGateHit)
                 {
