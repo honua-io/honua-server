@@ -405,11 +405,24 @@ public sealed class RedisCacheServiceTests : IDisposable
     public async Task IsCacheHealthyAsync_DistributedCacheOutage_ProbesDuringFallbackAndRecovery()
     {
         var unavailable = false;
+        byte[]? storedValue = null;
         var distributedCache = Substitute.For<IDistributedCache>();
+        distributedCache.SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(),
+                Arg.Any<DistributedCacheEntryOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                if (unavailable)
+                {
+                    return Task.FromException(new IOException("Redis unavailable"));
+                }
+
+                storedValue = call.ArgAt<byte[]>(1);
+                return Task.CompletedTask;
+            });
         distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => unavailable
                 ? Task.FromException<byte[]?>(new IOException("Redis unavailable"))
-                : Task.FromResult<byte[]?>(null));
+                : Task.FromResult(storedValue));
         using var cache = new RedisCacheService(distributedCache,
             Options.Create(new CacheOptions { EnableFallback = true, RetryIntervalSeconds = 300 }),
             NullLogger<RedisCacheService>.Instance, _performanceMonitor);
@@ -424,19 +437,26 @@ public sealed class RedisCacheServiceTests : IDisposable
         (await cache.IsCacheHealthyAsync()).Should().BeTrue();
     }
 
-    [UnitTest]
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData(false)]
+    [InlineData(true)]
     [Operation(Operations.Cache)]
-    public async Task IsCacheHealthyAsync_CacheReadDenied_ReportsUnhealthyUntilPermissionsRecover()
+    public async Task IsCacheHealthyAsync_CacheCommandDenied_ReportsUnhealthyUntilPermissionsRecover(bool denyWrites)
     {
         var denied = true;
         var redis = Substitute.For<IConnectionMultiplexer>();
         var database = Substitute.For<IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
         database.PingAsync(Arg.Any<CommandFlags>()).Returns(TimeSpan.Zero);
+        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>())
+            .Returns(_ => denied && denyWrites
+                ? Task.FromException<bool>(new RedisServerException("READONLY writes unavailable"))
+                : Task.FromResult(true));
         database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(_ => denied
+            .Returns(_ => denied && !denyWrites
                 ? Task.FromException<RedisValue>(new RedisServerException("NOPERM cache read denied"))
-                : Task.FromResult(RedisValue.Null));
+                : Task.FromResult((RedisValue)"1"));
         using var cache = new RedisCacheService(Substitute.For<IDistributedCache>(),
             Options.Create(_options), NullLogger<RedisCacheService>.Instance,
             _performanceMonitor, redis, "deployment:");
@@ -445,7 +465,9 @@ public sealed class RedisCacheServiceTests : IDisposable
         (await cache.IsCacheHealthyAsync()).Should().BeFalse();
         denied = false;
         (await cache.IsCacheHealthyAsync()).Should().BeTrue();
-        await database.Received(2).StringGetAsync($"deployment:{ScopedKeyPrefix}__health_check__");
+        await database.Received(denyWrites ? 1 : 2).StringGetAsync($"deployment:{ScopedKeyPrefix}__health_check__");
+        await database.Received(2).StringSetAsync($"deployment:{ScopedKeyPrefix}__health_check__",
+            Arg.Any<RedisValue>(), TimeSpan.FromSeconds(30));
     }
 
     [Theory]
@@ -466,8 +488,9 @@ public sealed class RedisCacheServiceTests : IDisposable
         var redis = Substitute.For<IConnectionMultiplexer>();
         var database = Substitute.For<IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
-        var ping = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
-        database.PingAsync(Arg.Any<CommandFlags>()).Returns(ping.Task);
+        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>()).Returns(true);
+        var read = new TaskCompletionSource<RedisValue>(TaskCreationOptions.RunContinuationsAsynchronously);
+        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(read.Task);
         using var cache = new RedisCacheService(distributedCache,
             Options.Create(new CacheOptions { EnableFallback = true }),
             NullLogger<RedisCacheService>.Instance, _performanceMonitor,

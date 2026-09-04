@@ -33,6 +33,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 {
     private const string CacheType = "layer-catalog";
     private const string HealthCheckKey = "__health_check__";
+    private static readonly byte[] HealthCheckValue = "1"u8.ToArray();
+    private static readonly TimeSpan HealthCheckTtl = TimeSpan.FromSeconds(30);
     private const string CacheKeyIndexKey = "__cache_key_index__";
     private const int MaxKeyLocks = 1000;
     // Maximum number of invalidation keys buffered during a Redis outage.  When the
@@ -688,17 +690,30 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         // cache or an open retry interval says nothing about distributed-state availability.
         try
         {
+            // A reachable Redis can still deny reads or be read-only. Exercise both
+            // cache operations under the same storage prefix as ordinary entries.
+            // The reserved key expires even if this instance stops probing.
+            var healthKey = GetPrefixedKey(HealthCheckKey);
             if (_redis != null)
             {
                 var db = _redis.GetDatabase();
-                _ = await db.PingAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                _ = await _distributedCache!.GetAsync(HealthCheckKey, cancellationToken).ConfigureAwait(false);
+                var storageKey = GetRedisStorageKey(healthKey);
+                if (!await db.StringSetAsync(storageKey, HealthCheckValue, HealthCheckTtl)
+                    .WaitAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    return false;
+                }
+
+                var value = await db.StringGetAsync(storageKey)
+                    .WaitAsync(cancellationToken).ConfigureAwait(false);
+                return value == "1";
             }
 
-            return true;
+            await _distributedCache!.SetAsync(healthKey, HealthCheckValue,
+                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
+                cancellationToken).ConfigureAwait(false);
+            var cachedValue = await _distributedCache.GetAsync(healthKey, cancellationToken).ConfigureAwait(false);
+            return cachedValue is not null && cachedValue.AsSpan().SequenceEqual(HealthCheckValue);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

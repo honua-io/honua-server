@@ -25,9 +25,11 @@ namespace Honua.Server.Tests.Features.Caching;
 [Protocol(TestProtocols.Health)]
 public sealed class RedisReadinessOutageTests
 {
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Operation(Operations.HealthCheck)]
-    public async Task IsCacheHealthyAsync_RedisAllowsPingButDeniesReads_ReportsUnhealthyUntilRecovery()
+    public async Task IsCacheHealthyAsync_RedisAllowsPingButDeniesCacheCommands_ReportsUnhealthyUntilRecovery(bool denyWrites)
     {
         await using var container = new RedisBuilder("redis:7.2-alpine").Build();
         await container.StartAsync();
@@ -37,12 +39,12 @@ public sealed class RedisReadinessOutageTests
             NullLogger<RedisCacheService>.Instance, Substitute.For<IPerformanceMonitor>(), redis);
         Assert.True(await cache.IsCacheHealthyAsync());
 
-        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "-get"]);
+        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", denyWrites ? "-set" : "-get"]);
         Assert.Equal("OK", denied.Stdout.Trim());
         _ = await redis.GetDatabase().PingAsync();
         Assert.False(await cache.IsCacheHealthyAsync());
 
-        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "+get"]);
+        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", denyWrites ? "+set" : "+get"]);
         Assert.Equal("OK", restored.Stdout.Trim());
         Assert.True(await cache.IsCacheHealthyAsync());
     }
