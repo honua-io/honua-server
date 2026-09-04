@@ -384,13 +384,25 @@ internal static class GeoPackageExportWriter
         {
             ExportFieldType.Boolean when value is bool b => b ? 1 : 0,
             ExportFieldType.DateTime => FormatDateTime(value),
-            ExportFieldType.Date when value is DateOnly date => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            ExportFieldType.Date when value is DateTime dt => dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            ExportFieldType.Date when value is DateTimeOffset dto => dto.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            ExportFieldType.Date when IsEpochValue(value) => EpochToUtc(value).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ExportFieldType.Date => FormatDate(value),
             ExportFieldType.Time when value is TimeSpan ts => ts.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),
             _ => value
         };
+    }
+
+    private static string FormatDate(object value)
+    {
+        var date = value switch
+        {
+            DateOnly day => day,
+            DateTime timestamp => DateOnly.FromDateTime(timestamp),
+            DateTimeOffset timestamp => DateOnly.FromDateTime(timestamp.DateTime),
+            _ when IsEpochValue(value) => DateOnly.FromDateTime(EpochToUtc(value)),
+            string text when DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal, out var timestamp) => DateOnly.FromDateTime(timestamp.DateTime),
+            _ => throw new InvalidDataException("GeoPackage DATE values must contain a valid date.")
+        };
+        return date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     }
 
     private static string FormatDateTime(object value)

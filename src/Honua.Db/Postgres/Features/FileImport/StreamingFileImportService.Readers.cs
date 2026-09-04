@@ -24,6 +24,9 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    private static readonly string[] GeoPackageTimestampFormats =
+        ["yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK", "yyyy-MM-dd'T'HH:mm:ssK"];
+
     /// <summary>
     /// Stream Shapefile features from extracted components on disk.
     /// </summary>
@@ -207,7 +210,7 @@ internal sealed partial class StreamingFileImportService
                 DateTimeStyles.None, out var date)
                 ? date
                 : throw new InvalidDataException($"GeoPackage DATE field '{reader.GetName(ordinal)}' must contain a valid ISO date."),
-            "DATETIME" => DateTimeOffset.TryParse(reader.GetString(ordinal), CultureInfo.InvariantCulture,
+            "DATETIME" => DateTimeOffset.TryParseExact(reader.GetString(ordinal), GeoPackageTimestampFormats, CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal, out var timestamp)
                 ? timestamp
                 : throw new InvalidDataException($"GeoPackage DATETIME field '{reader.GetName(ordinal)}' must contain a valid timestamp."),

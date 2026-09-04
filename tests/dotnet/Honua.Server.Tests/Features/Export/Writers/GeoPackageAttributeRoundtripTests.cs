@@ -74,6 +74,9 @@ public sealed class GeoPackageAttributeRoundtripTests
     [InlineData(false, "not-a-date")]
     [InlineData(false, "2026-02-30")]
     [InlineData(true, "not-a-timestamp")]
+    [InlineData(true, "2026-09-04")]
+    [InlineData(true, "12:00:00")]
+    [InlineData(true, "September 4, 2026")]
     [InlineData(true, "2026-13-01T00:00:00Z")]
     public async Task Import_MalformedTemporalCell_ReportsInvalidData(bool timestamp, string value)
     {
@@ -104,7 +107,28 @@ public sealed class GeoPackageAttributeRoundtripTests
         }
     }
 
-    private static async Task RoundtripAsync(ExportField[] fields, object[] values, object? geoServicesEpoch = null)
+    [Theory]
+    [InlineData("2026-09-04")]
+    [InlineData("2026-09-04T12:00:00Z")]
+    [InlineData("2026-09-04T23:00:00-10:00")]
+    [InlineData("09/04/2026")]
+    public async Task ImportExport_DateStrings_PreserveCalendarDate(string storedDate)
+    {
+        await RoundtripAsync([new("value", ExportFieldType.Date, true)],
+            [new DateOnly(2026, 9, 4)], storedDate);
+    }
+
+    [Theory]
+    [InlineData("2026-09-04T01:02:03")]
+    [InlineData("2026-09-04T01:02:03.1234567")]
+    public async Task ImportExport_TimestampWithoutOffset_PreservesUtcInstant(string storedTimestamp)
+    {
+        var expected = DateTimeOffset.Parse(storedTimestamp, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal);
+        await RoundtripAsync([new("value", ExportFieldType.DateTime, true)], [expected], sourceTimestamp: storedTimestamp);
+    }
+
+    private static async Task RoundtripAsync(ExportField[] fields, object[] values, object? storedValue = null, string? sourceTimestamp = null)
     {
         var scratch = Path.Join(Path.GetTempPath(), $"honua-gpkg-roundtrip-{Guid.NewGuid():N}");
         Directory.CreateDirectory(scratch);
@@ -140,7 +164,7 @@ public sealed class GeoPackageAttributeRoundtripTests
                     command.Parameters.AddWithValue($"@p{i}", values[i] switch
                     {
                         DateOnly date => date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                        DateTimeOffset instant => instant.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+                        DateTimeOffset instant => sourceTimestamp ?? instant.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
                         _ => values[i]
                     });
                 }
@@ -154,9 +178,9 @@ public sealed class GeoPackageAttributeRoundtripTests
             var imported = await ReadAsync(input);
             Assert.Equal(2, imported.Count);
             AssertAttributes(imported[0], fields, values);
-            // GeoServices edits may store accepted date fields as epoch milliseconds.
-            if (geoServicesEpoch is not null)
-                imported[0].Attributes[fields[0].Name] = geoServicesEpoch;
+            // Edits may store accepted date fields as epoch milliseconds or date strings.
+            if (storedValue is not null)
+                imported[0].Attributes[fields[0].Name] = storedValue;
             Assert.Equal(2, await GeoPackageExportWriter.WriteAsync(output, Rows(imported, fields), fields,
                 ExportGeometryType.Point, 4326, "EPSG:4326", null, CancellationToken.None));
             var roundtrip = await ReadAsync(output);
