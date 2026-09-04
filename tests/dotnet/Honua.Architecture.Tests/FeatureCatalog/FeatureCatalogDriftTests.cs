@@ -178,16 +178,15 @@ public sealed class FeatureCatalogDriftTests
             .Select(entry => entry.Route)
             .ToArray();
 
-        // /api/v1/admin/alerts/* and /api/v1/temporal/* were promoted to GA; neither remains an
-        // experimental route group, so both are intentionally absent from this set.
+        // /api/v1/temporal/* was promoted to GA and intentionally remains absent from this set.
+        // /api/v1/admin/alerts/* is opt-in Preview and is therefore not part of the default
+        // advertised surface even though its maturity is preview rather than experimental.
         // /api/v1/admin/security/client-certificates/* was promoted to GA in #2431 but DEMOTED
         // back to experimental in #2958, so it IS a flipped experimental route group today.
         experimentalRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/security/client-certificates", StringComparison.OrdinalIgnoreCase));
-        // /api/v1/admin/services/{serviceId}/replicas* was promoted to GA (Implemented) in #2430
-        // — no longer an experimental route group, so it is intentionally absent from this
-        // sanity set.
-        // /api/v1/streaming/features* was promoted to GA (Implemented) in #2428 — no longer an
-        // experimental route group, so it is intentionally absent from this sanity set.
+        // /api/v1/admin/services/{serviceId}/replicas* is not part of the FeatureServer sync
+        // route family; the gated FeatureServer routes are covered by the preview set below.
+        // /api/v1/streaming/features* remains Preview, so it is intentionally absent here.
         // Branch versioning (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
 
         var previewRoutes = catalog.Entries
@@ -198,6 +197,20 @@ public sealed class FeatureCatalogDriftTests
         previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/sta/v1.1", StringComparison.OrdinalIgnoreCase));
         experimentalRoutes.Should().Contain(route => route.Contains("/VersionManagementServer", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [ArchitectureTest]
+    public void GatedProductionRouteFamilies_AreProjectedAsNonGa()
+    {
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/api/v1/admin/alerts/rules")
+            .Should().Be("alerts.geofence");
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute(
+                "/rest/services/{serviceId}/FeatureServer/createReplica")
+            .Should().Be("sync.offline");
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/api/v1/admin/scenes/ingest/citygml")
+            .Should().Be("scene.bim-ingest");
+        FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/scenes/{sceneId}/tileset.json")
+            .Should().Be("serve.3d-tiles-scene");
     }
 
     [ArchitectureTest]

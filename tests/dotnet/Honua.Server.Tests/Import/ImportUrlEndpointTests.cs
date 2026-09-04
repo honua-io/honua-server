@@ -93,6 +93,53 @@ public sealed class ImportUrlEndpointTests : IAsyncLifetime
         content.Should().Contain("GeoJson");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/imports")]
+    public async Task CompatibilityPluralImportRoute_WithSupportedPublicS3Source_ImportsData()
+    {
+        using var response = await _client.PostAsync(
+            "/api/v1/admin/imports",
+            JsonContent("""
+            {
+              "sourceUrl": "https://s3.amazonaws.com/sample-bucket/test.geojson",
+              "tableName": "plural_remote_url_import_table",
+              "overwriteExisting": true
+            }
+            """));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("plural_remote_url_import_table");
+        content.Should().Contain("GeoJson");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/imports/jobs")]
+    public async Task CompatibilityPluralImportJobs_ReturnsActiveJobs()
+    {
+        using var response = await _client.GetAsync("/api/v1/admin/imports/jobs");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/imports/jobs/{jobId}")]
+    public async Task CompatibilityPluralImportJobStatus_UnknownJob_ReturnsNotFound()
+    {
+        using var response = await _client.GetAsync("/api/v1/admin/imports/jobs/unknown-job");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/imports/jobs/{jobId}/cancel")]
+    public async Task CompatibilityPluralImportJobCancel_UnknownJob_ReturnsNotFound()
+    {
+        using var response = await _client.PostAsync("/api/v1/admin/imports/jobs/unknown-job/cancel", content: null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     private static StringContent JsonContent(string json)
         => new(json, Encoding.UTF8, "application/json");
 

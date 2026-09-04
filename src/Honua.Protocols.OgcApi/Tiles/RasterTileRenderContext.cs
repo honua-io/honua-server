@@ -18,9 +18,11 @@ namespace Honua.Protocols.Ogc.Api.Tiles;
 /// <param name="TileLimits">Server-wide tile limits (per-tile feature budget).</param>
 /// <param name="TileOptions">Tile options controlling cache-control max-age.</param>
 /// <param name="Activity">Active tile-generation telemetry span, or <see langword="null"/>.</param>
+/// <param name="TileMatrixSetId">Identifier of the tile matrix set used for the request.</param>
 internal sealed record RasterTileRenderContext(
     TileBounds Bounds,
     int FilterSrid,
     TileLimits TileLimits,
     TileOptions TileOptions,
-    Activity? Activity);
+    Activity? Activity,
+    string TileMatrixSetId);

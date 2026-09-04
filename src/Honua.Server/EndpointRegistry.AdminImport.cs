@@ -9,6 +9,12 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> AdminImportEndpoints =>
     [
+        // Compatibility import routes retained for clients that used the plural resource name.
+        new("POST", "/api/v1/admin/imports"),
+        new("GET", "/api/v1/admin/imports/jobs"),
+        new("GET", "/api/v1/admin/imports/jobs/{jobId}"),
+        new("POST", "/api/v1/admin/imports/jobs/{jobId}/cancel"),
+
         // v1 admin import endpoints (primary)
         new("GET", "/api/v1/admin/import/formats"),
         new("POST", "/api/v1/admin/import/formats"),

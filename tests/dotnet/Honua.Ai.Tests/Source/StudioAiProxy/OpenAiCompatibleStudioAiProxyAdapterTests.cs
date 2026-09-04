@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy;
@@ -141,6 +143,33 @@ public sealed class OpenAiCompatibleStudioAiProxyAdapterTests
         events.Should().ContainSingle();
         events[0].Type.Should().Be(StudioAiChatEventType.Error);
         events[0].ErrorMessage.Should().Contain("502");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_DrippingErrorBody_IsDeadlineBoundDisposedAndNextRequestRecovers()
+    {
+        var stalled = new StudioAiProxyStallingStream("provider-secret prompt tool-arguments");
+        var handler = new StudioAiProxySequenceHttpMessageHandler(
+            () => new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StreamContent(stalled) },
+            () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(TextTurnFixture, Encoding.UTF8, "text/event-stream") });
+        var adapter = new OpenAiCompatibleStudioAiProxyAdapter(
+            new StudioAiProxyMockHttpClientFactory(handler), new StudioAiProxyApiKeyResolver(),
+            NullLogger<OpenAiCompatibleStudioAiProxyAdapter>.Instance);
+        var options = DefaultOptions();
+        options.TimeoutSeconds = 1;
+
+        var stopwatch = Stopwatch.StartNew();
+        var failed = await CollectAsync(adapter, options, ToolFreeRequest());
+
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+        failed.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error);
+        failed.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+        failed.Single().ErrorMessage.Should().Be("Provider request timed out.");
+        stalled.WasDisposed.Should().BeTrue();
+
+        options.TimeoutSeconds = 30;
+        var recovered = await CollectAsync(adapter, options, ToolFreeRequest());
+        recovered.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
     }
 
     [UnitTest]

@@ -4,7 +4,7 @@ Install the Honua Python SDK, construct a client, authenticate with an API key, 
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), Python 3.11 or newer, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The data-plane SDK ships as `honua-sdk` on PyPI and is imported as `honua_sdk`. The current release is **0.1.4** and requires **Python ≥ 3.11**. A companion control-plane package, `honua-admin` (imported as `honua_admin`, class `HonuaAdminClient`), wraps `/api/v1/admin/*`.
+The data-plane SDK ships as `honua-sdk` on PyPI and is imported as `honua_sdk`. The current release is **0.1.11** and requires **Python ≥ 3.11**. A companion control-plane package, `honua-admin` (imported as `honua_admin`, class `HonuaAdminClient`), is currently **0.1.8** and wraps `/api/v1/admin/*`.
 
 ## Steps
 

@@ -28,7 +28,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// <summary>
 /// Reads a provider-bound PostGIS table directly from the storage mapping persisted in Metadata v2.
 /// </summary>
-internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReader, IPagedFeatureReader, IStreamingFeatureStore
+internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReader, IDistinctFeatureReader, IPagedFeatureReader, IStreamingFeatureStore
 {
     private const string UnsupportedWhereClauseMessage =
         "WHERE clause format not supported for source-backed PostGIS layers.";
@@ -394,15 +394,31 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var attributesSelect = BuildAttributesExpression(query, sql);
         var distanceSelect = BuildDistanceSelectExpression(query, sql);
 
-        sql.Append(CultureInfo.InvariantCulture, $"""
-            SELECT {_primaryKeyColumn}::bigint AS objectid,
-                   {geometrySelect} AS geometry,
-                   {attributesSelect} AS attributes{distanceSelect}
-            FROM {_qualifiedTableName}
-            """);
-        AppendFilter(sql, query);
-        AppendOrderBy(sql, query);
-        AppendPagination(sql, query, probeLimit);
+        if (query.Distinct)
+        {
+            sql.Append(CultureInfo.InvariantCulture, "SELECT objectid, geometry, attributes FROM (SELECT DISTINCT 0::bigint AS objectid, NULL AS geometry, ");
+            sql.Append(CultureInfo.InvariantCulture, attributesSelect);
+            sql.Append(CultureInfo.InvariantCulture, $" AS attributes FROM {_qualifiedTableName}");
+            AppendFilter(sql, query);
+            sql.Append(CultureInfo.InvariantCulture, ") AS distinct_values");
+            AppendDistinctOrderBy(sql, query);
+        }
+        else
+        {
+            sql.Append(CultureInfo.InvariantCulture, $"""
+                SELECT {_primaryKeyColumn}::bigint AS objectid,
+                       {geometrySelect} AS geometry,
+                       {attributesSelect} AS attributes{distanceSelect}
+                FROM {_qualifiedTableName}
+                """);
+            AppendFilter(sql, query);
+            AppendOrderBy(sql, query);
+            AppendPagination(sql, query, probeLimit);
+        }
+        if (query.Distinct)
+        {
+            AppendPagination(sql, query, probeLimit);
+        }
         return sql;
     }
 
@@ -436,23 +452,37 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return "'{}'::jsonb::text";
         }
 
-        return BuildAttributesExpressionText(fields, useMapping: true, sql.AddParameter);
+        return BuildAttributesExpressionText(
+            fields,
+            useMapping: true,
+            sql.AddParameter,
+            query.Distinct ? _primaryKeyColumn : null);
     }
 
     private string BuildAttributesExpressionText(
         MetadataV2Field[] fields,
         bool useMapping,
-        Func<object?, string> addParameter)
-        => BuildAttributesExpressionText(fields, useMapping ? _mapping.AttributesColumn : null, addParameter);
+        Func<object?, string> addParameter,
+        string? distinctObjectIdExpression = null)
+        => BuildAttributesExpressionText(
+            fields,
+            useMapping ? _mapping.AttributesColumn : null,
+            addParameter,
+            distinctObjectIdExpression);
 
     private static string BuildAttributesExpressionText(
         MetadataV2Field[] fields,
         string? attributesColumn,
-        Func<object?, string> addParameter)
+        Func<object?, string> addParameter,
+        string? distinctObjectIdExpression = null)
     {
         var chunks = fields
             .Chunk(MaxJsonbBuildObjectPairs)
-            .Select(chunk => BuildAttributesExpressionChunk(chunk, attributesColumn, addParameter));
+            .Select(chunk => BuildAttributesExpressionChunk(
+                chunk,
+                attributesColumn,
+                addParameter,
+                distinctObjectIdExpression));
 
         return $"({string.Join(" || ", chunks)})::text";
     }
@@ -460,7 +490,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private static string BuildAttributesExpressionChunk(
         IEnumerable<MetadataV2Field> fields,
         string? attributesColumn,
-        Func<object?, string> addParameter)
+        Func<object?, string> addParameter,
+        string? distinctObjectIdExpression = null)
     {
         var parts = new List<string>();
         var jsonbAccessor = string.IsNullOrWhiteSpace(attributesColumn)
@@ -480,7 +511,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             // value round-trips with its declared type (an integer field returns a JSON
             // number, not a string). Text-like types keep the text accessor (->>) so existing
             // string/date formatting is unchanged.
-            if (jsonbAccessor is not null)
+            if (distinctObjectIdExpression is not null && IsObjectIdField(field.Name))
+            {
+                parts.Add(distinctObjectIdExpression);
+            }
+            else if (jsonbAccessor is not null)
             {
                 var accessor = PreservesJsonType(field.Type) ? "->" : "->>";
                 parts.Add($"{jsonbAccessor} {accessor} {keyExpression}");
@@ -493,6 +528,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         return $"jsonb_build_object({string.Join(", ", parts)})";
     }
+
+    private static bool IsObjectIdField(string fieldName)
+        => fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase)
+            || fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether a field's value should be projected with the jsonb-preserving
@@ -1088,6 +1127,26 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {_primaryKeyColumn}");
+    }
+
+    private static void AppendDistinctOrderBy(SqlBuilder sql, FeatureQuery query)
+    {
+        if (!query.OrderBy.HasValue || query.OrderBy.Value.IsDefaultOrEmpty)
+        {
+            sql.Append(CultureInfo.InvariantCulture, " ORDER BY attributes");
+            return;
+        }
+
+        var clauses = new List<string>();
+        foreach (var clause in query.OrderBy.Value)
+        {
+            var key = sql.AddParameter(clause.Field);
+            var expression = $"NULLIF(attributes::jsonb ->> {key}::text, '')";
+            clauses.Add($"{expression} {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
+        }
+
+        clauses.Add("attributes ASC");
+        sql.Append(CultureInfo.InvariantCulture, $" ORDER BY {string.Join(", ", clauses)}");
     }
 
     private static void AppendPagination(SqlBuilder sql, FeatureQuery query, bool probeLimit = false)

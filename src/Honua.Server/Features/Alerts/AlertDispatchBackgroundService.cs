@@ -100,6 +100,12 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                     var eventStore = scope.ServiceProvider.GetRequiredService<IAlertEventStore>();
                     var lifecycleStore = scope.ServiceProvider.GetRequiredService<IAlertLifecycleStore>();
 
+                    // Readiness measures whether the dispatcher loop is alive, not whether an
+                    // arbitrary remote webhook is responsive. Stamp before claiming/dispatching
+                    // the batch so a slow or black-holed sink cannot make every replica appear
+                    // dead while the loop is still making progress (#30).
+                    Interlocked.Exchange(ref _lastPollAtTicks, now.UtcTicks);
+
                     // Resolved per batch so the entitlement is read LIVE: a dispatch queued while
                     // its channel was entitled can sit in the outbox across a license expiry —
                     // suppressed, retrying, or dead-lettered and revived — and the admission-time
@@ -138,8 +144,6 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
                         await PurgeDeliveredAsync(dispatchStore, now, stoppingToken).ConfigureAwait(false);
                         lastRetentionSweep = now;
                     }
-
-                    Interlocked.Exchange(ref _lastPollAtTicks, now.UtcTicks);
 
                     if (batch.Count == 0)
                     {

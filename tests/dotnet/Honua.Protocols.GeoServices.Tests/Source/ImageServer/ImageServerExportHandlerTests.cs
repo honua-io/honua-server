@@ -1302,15 +1302,17 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
-    public async Task ExportImageAsync_WithValidNoData_AllowsExport()
+    public async Task ExportImageAsync_WithValidNoData_ReturnsNotImplementedInsteadOfIgnoringIt()
     {
-        SetupSuccessfulExport();
+        SetupLayerAndRasters();
 
         var context = CreateImageServerContext();
         var request = CreateRequest(noData: "0,0,0", noDataInterpretation: "esriNoDataMatchAll");
         var result = await _handler.ExportImageAsync(context, 1, request);
 
-        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+        await _rasterStore.DidNotReceive()
+            .ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

@@ -189,24 +189,6 @@ internal static partial class WmsRequestHandlers
             return Results.Bytes(outsideBytes, contentType);
         }
 
-        if (TryHandleCiteWmsGetMap(
-                context,
-                service,
-                renderLayers,
-                query,
-                requestedExtent,
-                imageWidth,
-                imageHeight,
-                imageFormat,
-                contentType,
-                effectiveTransparent,
-                backgroundColor,
-                layerFilters,
-                out var citeResult))
-        {
-            return citeResult;
-        }
-
         // Resolve the source SRID per requested layer: the V2 graph carries spatial
         // metadata on the service and on each resource, and they can diverge for
         // services that aggregate resources from heterogeneous CRSes. Walk the

@@ -68,12 +68,12 @@ Clients that fetched tokens from an ArcGIS Server `/arcgis/tokens/` or Portal `g
 | Area | Status |
 |---|---|
 | FeatureServer query, edits, attachments, related records | Works unchanged at the Honua URL ([parity detail](../../reference/compatibility/geoservices-parity.md)). |
-| MapServer export, identify, find, legend, tiles | Works unchanged; WMTS is WebMercatorQuad-only. |
+| MapServer export, identify, find, legend, tiles | Works unchanged; MapServer WMTS supports WebMercatorQuad, WorldCRS84Quad, and configured custom matrix sets. |
 | Esri Leaflet, `arcgis-rest-js` | Work by URL swap — no codemod needed. |
 | Service URL shape | Needs attention: no `/arcgis` prefix, no folders; remap every URL (step 1). |
 | Token endpoint URL | Needs attention: move to `/sharing/rest/generateToken` (step 5). |
-| Change tracking, true curves, 3D queries (FeatureServer) | Not implemented — check the parity reference before relying on them. |
-| Portal item/group browsing, scene layers (I3S) | Limited sharing surface; I3S is Enterprise-gated — verify against the parity reference. |
+| Change tracking, true curves, 3D queries (FeatureServer) | Incremental Postgres change tracking, true-curve input densification, and Z/M queries are implemented; other stores use snapshot sync and curves are not preserved losslessly on output. |
+| Portal item/group browsing, scene layers (I3S) | Limited sharing surface; I3S is experimental, off by default, and Enterprise-gated — verify against the parity reference. |
 
 ## Verify
 

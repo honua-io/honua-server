@@ -88,6 +88,12 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
+      # These values make the documented local reverse-proxy/Console hostnames valid
+      # inputs to the production host-validation middleware when this file is reused.
+      PUBLIC_BASE_URL: "${HONUA_PUBLIC_BASE_URL:-http://localhost:8080}"
+      HostValidation__AllowedHosts__0: "${HONUA_ALLOWED_HOST_0:-localhost}"
+      HostValidation__AllowedHosts__1: "${HONUA_ALLOWED_HOST_1:-127.0.0.1}"
+      HostValidation__AllowedHosts__2: "${HONUA_ALLOWED_HOST_2:-honua}"
       Database__MigrationSafety__ContractApplyPolicy: "${HONUA_CONTRACT_APPLY_POLICY:-Gate}"
       Licensing__DevGrantEdition: "${HONUA_DEV_GRANT_EDITION:-}"
       HONUA_ENABLE_OBSERVABILITY_TEST_SEED: "${HONUA_ENABLE_OBSERVABILITY_TEST_SEED:-false}"
@@ -159,7 +165,7 @@ services:
       honua:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/operate"]
+      test: ["CMD-SHELL", "test -s /app/wwwroot/version.json"]
       interval: 30s
       timeout: 10s
       retries: 5

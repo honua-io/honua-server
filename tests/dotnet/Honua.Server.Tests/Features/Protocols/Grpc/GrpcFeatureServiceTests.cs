@@ -76,7 +76,8 @@ public sealed class GrpcFeatureServiceTests
                 outboxCapabilityProvider: _outboxCapabilityProvider),
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions()),
-            NullLogger<HonuaFeatureService>.Instance);
+            NullLogger<HonuaFeatureService>.Instance,
+            new GrpcApplyEditsIdempotencyStore());
 
         // Default: valid service/layer
         _resourceValidator
@@ -1234,7 +1235,8 @@ public sealed class GrpcFeatureServiceTests
             _featureChangeEventPublisher,
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions { StreamBatchSize = 1 }),
-            NullLogger<HonuaFeatureService>.Instance);
+            NullLogger<HonuaFeatureService>.Instance,
+            new GrpcApplyEditsIdempotencyStore());
 
         var features = Enumerable.Range(1, 3)
             .Select(i => Feature.Create(i, null))

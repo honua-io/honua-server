@@ -211,7 +211,7 @@ restore last.
 
    ```bash
    Database__MigrationSafety__ContractApplyPolicy=Gate
-   HONUA_APPROVE_CONTRACT_MIGRATIONS=true
+   HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce printed by the migration safety error>
    Database__MigrationSafety__BackupCommand="your-backup-command"
    ```
 

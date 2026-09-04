@@ -241,13 +241,29 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
             var paramIndex = 2;
             var parameters = new List<object>();
 
-            buildSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex, parameters);
-            AppendWhereClause(sql, query, ref paramIndex, parameters);
-            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
-            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
-            AppendOrderByClause(sql, query, ref paramIndex, parameters);
-            AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
-            AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+            if (query.Distinct)
+            {
+                // Wrap the provider-side distinct projection so ordering can address
+                // projected JSON attributes without reintroducing feature identity.
+                sql.Append("SELECT objectid, geometry, attributes FROM (");
+                buildSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex, parameters);
+                AppendWhereClause(sql, query, ref paramIndex, parameters);
+                AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+                AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+                sql.Append(") AS distinct_values");
+                AppendDistinctOrderByClause(sql, query, ref paramIndex, parameters);
+                AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+            }
+            else
+            {
+                buildSelectClause(sql, query, geometryStorageType, isKnnQuery, spatialFilter, ref paramIndex, parameters);
+                AppendWhereClause(sql, query, ref paramIndex, parameters);
+                AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+                AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+                AppendOrderByClause(sql, query, ref paramIndex, parameters);
+                AppendKnnOrdering(sql, isKnnQuery, spatialFilter, query, geometryStorageType, ref paramIndex);
+                AppendPagination(sql, isKnnQuery, query, spatialFilter, ref paramIndex);
+            }
 
             return new CoreParameterizedQuery(sql.ToString(), parameters);
         }
@@ -568,12 +584,17 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 }
             }
 
+            var attributesSelect = BuildMaskedAttributesColumn(
+                ResolveMaskedFields(query ?? new FeatureQuery()),
+                ref paramIndex,
+                parameters);
+
             sql.Append(CultureInfo.InvariantCulture, $@"
             SELECT ST_AsMVT(tile, 'layer', $6, 'geom') AS mvt
             FROM (
                 SELECT
                     {DatabaseSchema.ObjectIdColumn},
-                    {DatabaseSchema.AttributesColumn},
+                    {attributesSelect},
                     ST_AsMVTGeom(
                         {geometryForTile},
                         {tileEnvelope},
@@ -685,12 +706,17 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
                 tileEnvelopeForFilter = tileEnvelopeWithBuffer;
             }
 
+            var attributesSelect = BuildMaskedAttributesColumn(
+                ResolveMaskedFields(query ?? new FeatureQuery()),
+                ref paramIndex,
+                parameters);
+
             sql.Append(CultureInfo.InvariantCulture, $@"
             SELECT ST_AsMVT(tile, 'layer', $3, 'geom') AS mvt
             FROM (
                 SELECT
                     {DatabaseSchema.ObjectIdColumn},
-                    {DatabaseSchema.AttributesColumn},
+                    {attributesSelect},
                     ST_AsMVTGeom(
                         {geometryForTile},
                         {tileEnvelope},

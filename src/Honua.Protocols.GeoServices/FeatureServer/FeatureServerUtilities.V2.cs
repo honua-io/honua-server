@@ -288,7 +288,7 @@ internal static partial class FeatureServerEndpoints
     /// <c>esriFieldTypeOID</c> regardless of its SQL type so that Esri clients can
     /// locate the OID field by type (see issue #1299).
     /// </summary>
-    private static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName)
+    internal static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName)
     {
         ArgumentNullException.ThrowIfNull(field);
 
@@ -307,7 +307,7 @@ internal static partial class FeatureServerEndpoints
             // mapped to 0 and breaks inserts/updates). String fields source their length
             // from the canonical field's declared varchar length, falling back to the
             // Esri-conventional default; non-string fields report their declared length.
-            Length = !isObjectId && field.Type == MetadataV2FieldType.String
+            Length = !isObjectId && geoServicesType == "esriFieldTypeString"
                 ? GeoServicesFieldConventions.ResolveStringFieldLength(field.Length)
                 : field.Length,
             Nullable = field.Nullable && !isObjectId,
@@ -839,23 +839,26 @@ internal static partial class FeatureServerEndpoints
         };
 
     private static string MapFieldTypeToSqlV2(MetadataV2FieldType type)
+        // Metadata v2 deliberately erases the provider's physical SQL type. Emit only
+        // portable Esri sqlType enumeration members we can prove from the logical type;
+        // sqlTypeOther is the Esri-safe value when that relationship is ambiguous.
         => type switch
         {
-            MetadataV2FieldType.String => "TEXT",
-            MetadataV2FieldType.Integer => "INTEGER",
-            MetadataV2FieldType.BigInteger => "BIGINT",
-            MetadataV2FieldType.Double => "DOUBLE PRECISION",
-            MetadataV2FieldType.Float => "REAL",
-            MetadataV2FieldType.Boolean => "BOOLEAN",
-            MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
-            MetadataV2FieldType.Date => "DATE",
-            MetadataV2FieldType.Time => "TIME",
-            MetadataV2FieldType.Json => "JSONB",
-            MetadataV2FieldType.Binary => "BYTEA",
-            MetadataV2FieldType.Uuid => "UUID",
-            MetadataV2FieldType.Geometry => "GEOMETRY",
-            MetadataV2FieldType.Geography => "GEOGRAPHY",
-            _ => "TEXT"
+            MetadataV2FieldType.String => "sqlTypeNVarchar",
+            MetadataV2FieldType.Integer => "sqlTypeInteger",
+            MetadataV2FieldType.BigInteger => "sqlTypeOther",
+            MetadataV2FieldType.Double => "sqlTypeFloat",
+            MetadataV2FieldType.Float => "sqlTypeFloat",
+            MetadataV2FieldType.Boolean => "sqlTypeOther",
+            MetadataV2FieldType.DateTime => "sqlTypeOther",
+            MetadataV2FieldType.Date => "sqlTypeOther",
+            MetadataV2FieldType.Time => "sqlTypeNVarchar",
+            MetadataV2FieldType.Json => "sqlTypeNVarchar",
+            MetadataV2FieldType.Binary => "sqlTypeOther",
+            MetadataV2FieldType.Uuid => "sqlTypeOther",
+            MetadataV2FieldType.Geometry => "sqlTypeOther",
+            MetadataV2FieldType.Geography => "sqlTypeOther",
+            _ => "sqlTypeOther"
         };
 
     /// <summary>

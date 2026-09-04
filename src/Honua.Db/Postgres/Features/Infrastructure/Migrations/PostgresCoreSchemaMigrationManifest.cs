@@ -19,7 +19,8 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         string rasterOverviewsMigration,
         string rasterFootprintsMigration,
         string configuredSchemaAdoptionMigration,
-        string governedLineageMigration)
+        string governedLineageMigration,
+        string? initialSchemaMigration = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationMigrationAssemblyName);
         ArgumentException.ThrowIfNullOrWhiteSpace(metadataV2SnapshotMigration);
@@ -40,6 +41,7 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         RasterFootprintsMigration = rasterFootprintsMigration;
         ConfiguredSchemaAdoptionMigration = configuredSchemaAdoptionMigration;
         GovernedLineageMigration = governedLineageMigration;
+        InitialSchemaMigration = initialSchemaMigration;
     }
 
     public string ApplicationMigrationAssemblyName { get; }
@@ -59,4 +61,10 @@ internal sealed class PostgresCoreSchemaMigrationManifest
     public string ConfiguredSchemaAdoptionMigration { get; }
 
     public string GovernedLineageMigration { get; }
+
+    /// <summary>
+    /// Journal identity for the foundational Honua metadata schema. Older synthetic manifests
+    /// may omit this because they intentionally exercise only provider-owned floors.
+    /// </summary>
+    public string? InitialSchemaMigration { get; }
 }

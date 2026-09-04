@@ -77,7 +77,31 @@ internal sealed class ImageServerSamplesHandler
                     "Only JSON format is supported. Use f=json or f=pjson.");
             }
 
-            if (!ImageServerGeometryHelpers.TryGetSamplePoints(GetString(values, "geometry"), out var samplePoints, out var geometryError))
+            var maxSampleCount = ResolveSampleCount(GetString(values, "sampleCount"));
+            var sampleDistanceRaw = GetString(values, "sampleDistance");
+            double? sampleDistance = null;
+            if (!string.IsNullOrWhiteSpace(sampleDistanceRaw))
+            {
+                if (!double.TryParse(sampleDistanceRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDistance) ||
+                    !double.IsFinite(parsedDistance) || parsedDistance <= 0)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, "sampleDistance must be a positive finite number.");
+                }
+
+                sampleDistance = parsedDistance;
+            }
+
+            var interpolation = GetString(values, "interpolation");
+            if (!string.IsNullOrWhiteSpace(interpolation) &&
+                !string.Equals(interpolation, "RSP_NearestNeighbor", StringComparison.OrdinalIgnoreCase))
+            {
+                return StandardErrorHelpers.CreateNotImplemented(
+                    context,
+                    "getSamples supports RSP_NearestNeighbor interpolation only.");
+            }
+
+            if (!ImageServerGeometryHelpers.TryGetSamplePoints(
+                    GetString(values, "geometry"), sampleDistance, maxSampleCount, out var samplePoints, out var geometryError))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, geometryError ?? "Invalid geometry");
                 return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometry.");
@@ -115,7 +139,6 @@ internal sealed class ImageServerSamplesHandler
             }
 
             var requestSrid = ImageServerGeometryHelpers.TryParseSrid(GetString(values, "sr"));
-            var maxSampleCount = ResolveSampleCount(GetString(values, "sampleCount"));
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetString(values, "mosaicRule"));
 
             var samples = new List<SampleEntry>(Math.Min(samplePoints.Count, maxSampleCount));

@@ -66,6 +66,21 @@ public class ArcGisRestQueryParametersTests
     }
 
     [Fact]
+    public void BuildFeatureQueryUrl_DistinctValues_DisablesGeometry()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ["category"]
+        };
+
+        var url = ArcGisRestQueryParameters.BuildFeatureQueryUrl(ServiceUrl, 0, query, token: null);
+
+        Assert.Contains("returnDistinctValues=true", url, StringComparison.Ordinal);
+        Assert.Contains("returnGeometry=false", url, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AllArcGisUrls_DoesNotPlaceTokenInUrl()
     {
         const string token = "abc-123";

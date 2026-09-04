@@ -265,9 +265,11 @@ internal static class FeatureCatalogGenerator
         // surface (implemented) like any other GA capability. Edition entitlements
         // (Community vs Pro) still apply, but those are not an experimental-maturity concern.
 
-        // Geofence alerting — /api/v1/admin/alerts/* was promoted to GA (Implemented)
-        // in #2427, so it is no longer a flipped experimental group: its routes fall
-        // through to the in-release surface (implemented) like any other GA capability.
+        // Geofence alerting is registered only when its Preview capability flag is enabled.
+        if (route.StartsWith("/api/v1/admin/alerts/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "alerts.geofence";
+        }
 
         // Native mTLS (client certificates) — /api/v1/admin/security/client-certificates/* was
         // promoted to GA (Implemented) in #2431, then DEMOTED back to experimental in #2958
@@ -280,10 +282,41 @@ internal static class FeatureCatalogGenerator
             return "security.mtls";
         }
 
-        // Disconnected-sync replica / conflict review (/api/v1/admin/services/{serviceId}/replicas/*,
-        // including the conflict list/detail/resolve surfaces) was promoted to GA (Implemented)
-        // in #2430, so it is no longer a flipped experimental group: its routes fall through to
-        // the in-release surface (implemented) like any other GA capability.
+        // Disconnected-sync replica routes are opt-in Preview and carry the same gate as the
+        // runtime endpoints in FeatureServerEndpoints.cs.
+        if (route.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase)
+            && route.Contains("/FeatureServer/", StringComparison.OrdinalIgnoreCase)
+            && (route.Contains("/replicas", StringComparison.OrdinalIgnoreCase)
+                || route.EndsWith("/createReplica", StringComparison.OrdinalIgnoreCase)
+                || route.EndsWith("/extractChanges", StringComparison.OrdinalIgnoreCase)
+                || route.EndsWith("/synchronizeReplica", StringComparison.OrdinalIgnoreCase)
+                || route.EndsWith("/unRegisterReplica", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "sync.offline";
+        }
+
+        // Scene ingest is built-experimental and registered only when its named flag is enabled.
+        if (route.StartsWith("/api/v1/admin/scenes/ingest/citygml", StringComparison.OrdinalIgnoreCase))
+        {
+            return "scene.bim-ingest";
+        }
+
+        if (route.StartsWith("/api/v1/admin/scenes/ingest/pointcloud", StringComparison.OrdinalIgnoreCase))
+        {
+            return "scene.pointcloud-ingest";
+        }
+
+        // Hosted 3D Tiles routes are built-experimental and share the serve.3d-tiles-scene flag.
+        if (route.StartsWith("/scenes/", StringComparison.OrdinalIgnoreCase)
+            && !route.Contains("/SceneServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.3d-tiles-scene";
+        }
+
+        if (route.StartsWith("/api/v1/admin/scenes/generate", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.3d-tiles-scene";
+        }
 
         // Realtime feature streaming remains opt-in Preview until exact-candidate
         // transport qualification passes (#3810).
