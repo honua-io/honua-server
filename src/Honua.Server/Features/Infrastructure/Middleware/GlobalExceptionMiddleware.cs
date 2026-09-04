@@ -155,19 +155,27 @@ internal sealed class GlobalExceptionMiddleware(
             IncludeDebugInfo = _includeDebugDetails
         };
 
-        // Handle ServiceUnavailable with Retry-After header
-        if (exception is ServiceUnavailableException serviceEx && serviceEx.RetryAfterSeconds.HasValue)
+        // Temporary unavailability is retryable even without a delay hint. Keep
+        // metadata consistent when authentication fails before an endpoint runs.
+        if (exception is ServiceUnavailableException serviceEx)
         {
-            context.Response.Headers["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var headers = new Dictionary<string, string>
+            {
+                ["Honua-Retryable"] = "true"
+            };
+            if (serviceEx.RetryAfterSeconds.HasValue)
+            {
+                headers["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+
             options = new ErrorResponseFormatterOptions
             {
                 IncludeAdditionalDetails = options.IncludeAdditionalDetails,
                 IncludeDebugInfo = options.IncludeDebugInfo,
                 ContentType = options.ContentType,
-                AdditionalHeaders = new Dictionary<string, string>
-                {
-                    ["Retry-After"] = serviceEx.RetryAfterSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                }
+                AdditionalHeaders = headers,
+                Retryable = true,
+                RetryAfterSeconds = serviceEx.RetryAfterSeconds
             };
         }
 
