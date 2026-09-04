@@ -26,10 +26,13 @@ namespace Honua.Server.Tests.Features.Caching;
 public sealed class RedisReadinessOutageTests
 {
     [IntegrationTheory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData("get")]
+    [InlineData("@write")]
+    [InlineData("sadd")]
+    [InlineData("srem")]
+    [InlineData("del")]
     [Operation(Operations.HealthCheck)]
-    public async Task IsCacheHealthyAsync_RedisAllowsPingButDeniesCacheCommands_ReportsUnhealthyUntilRecovery(bool denyWrites)
+    public async Task IsCacheHealthyAsync_RedisAllowsPingButDeniesCacheCommands_ReportsUnhealthyUntilRecovery(string deniedCommand)
     {
         await using var container = new RedisBuilder("redis:7.2-alpine").Build();
         await container.StartAsync();
@@ -41,12 +44,12 @@ public sealed class RedisReadinessOutageTests
 
         // Expiring writes may use SETEX/PSETEX rather than SET, depending on
         // client optimization. Deny the whole write category for this case.
-        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", denyWrites ? "-@write" : "-get"]);
+        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "-" + deniedCommand]);
         Assert.Equal("OK", denied.Stdout.Trim());
         _ = await redis.GetDatabase().PingAsync();
         Assert.False(await cache.IsCacheHealthyAsync());
 
-        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", denyWrites ? "+@write" : "+get"]);
+        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "+" + deniedCommand]);
         Assert.Equal("OK", restored.Stdout.Trim());
         Assert.True(await cache.IsCacheHealthyAsync());
     }

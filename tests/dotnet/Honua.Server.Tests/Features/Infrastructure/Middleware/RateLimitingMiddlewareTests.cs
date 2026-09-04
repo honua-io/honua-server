@@ -431,6 +431,51 @@ public sealed class RateLimitingMiddlewareTests
         }
     }
 
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("trim", false)]
+    [InlineData("add", false)]
+    [InlineData("expire", false)]
+    [InlineData("trim", true)]
+    [InlineData("add", true)]
+    [InlineData("expire", true)]
+    public async Task InvokeAsync_RedisMutationFailure_EnforcesLocalLimits(string failedCommand, bool endpointPolicy)
+    {
+        var redis = Substitute.For<StackExchange.Redis.IConnectionMultiplexer>();
+        var database = Substitute.For<StackExchange.Redis.IDatabase>();
+        var transaction = Substitute.For<StackExchange.Redis.ITransaction>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync().Returns(true);
+        transaction.SortedSetLengthAsync(Arg.Any<StackExchange.Redis.RedisKey>()).Returns(0L);
+        var failure = new StackExchange.Redis.RedisServerException("Redis mutation unavailable");
+        transaction.SortedSetRemoveRangeByScoreAsync(Arg.Any<StackExchange.Redis.RedisKey>(),
+                Arg.Any<double>(), Arg.Any<double>())
+            .Returns(_ => failedCommand == "trim" ? Task.FromException<long>(failure) : Task.FromResult(0L));
+        transaction.SortedSetAddAsync(Arg.Any<StackExchange.Redis.RedisKey>(),
+                Arg.Any<StackExchange.Redis.RedisValue>(), Arg.Any<double>())
+            .Returns(_ => failedCommand == "add" ? Task.FromException<bool>(failure) : Task.FromResult(true));
+        transaction.KeyExpireAsync(Arg.Any<StackExchange.Redis.RedisKey>(), Arg.Any<TimeSpan?>())
+            .Returns(_ => failedCommand == "expire" ? Task.FromException<bool>(failure) : Task.FromResult(true));
+        var middleware = CreateMiddleware(limit: endpointPolicy ? 100 : 2, redis: redis);
+        var subject = Guid.NewGuid().ToString("N");
+
+        for (var request = 1; request <= 3; request++)
+        {
+            var context = CreateContext("198.51.100.92", subject: subject,
+                endpointName: endpointPolicy ? "partial-failure-endpoint" : null, endpointLimit: 2);
+            await middleware.InvokeAsync(context);
+            context.Response.StatusCode.Should().Be(request <= 2
+                ? StatusCodes.Status200OK
+                : StatusCodes.Status429TooManyRequests);
+            if (request == 3)
+            {
+                context.Response.Headers.RetryAfter.Should().NotBeEmpty();
+                context.Response.Headers["X-RateLimit-Remaining"].ToString().Should().Be("0");
+            }
+        }
+    }
+
     private static RateLimitingMiddleware CreateMiddleware(
         bool enabled = true,
         int limit = 1,
