@@ -51,7 +51,7 @@
     },
     {
       "adapterKind": "bedrock",
-      "failurePhase": "provider-stream-timeout",
+      "failurePhase": "stall-before-first-event",
       "configuredDeadlineMilliseconds": 1000,
       "maximumObservedElapsedMilliseconds": 3000,
       "emittedEventTypes": ["messageStart", "error"],
@@ -62,10 +62,10 @@
     }
   ],
   "testTranscript": {
-    "command": "/home/mike/.dotnet/dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj --no-restore --filter FullyQualifiedName~OpenAiCompatibleStudioAiProxyAdapterTests|FullyQualifiedName~AnthropicStudioAiProxyAdapterTests",
-    "passed": 24,
+    "command": "dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj --no-restore --filter \"FullyQualifiedName~OpenAiCompatibleStudioAiProxyAdapterTests|FullyQualifiedName~AnthropicStudioAiProxyAdapterTests|FullyQualifiedName~BedrockStudioAiProxyAdapterTests\"",
+    "passed": 42,
     "failed": 0,
     "skipped": 0,
-    "durationSeconds": 1
+    "durationSeconds": 2
   }
 }
