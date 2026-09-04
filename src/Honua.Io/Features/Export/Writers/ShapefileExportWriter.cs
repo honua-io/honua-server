@@ -100,6 +100,9 @@ internal static class ShapefileExportWriter
             {
                 Encoding = Encoding.UTF8
             };
+            // The NTS shapefile API requires an empty geometry of the file's shape
+            // family to emit a Null Shape record; assigning null throws in its setter.
+            var nullShape = CreateNullShapeGeometry(geometryType);
             using (var shpWriter = Shapefile.OpenWrite(shpPath, options))
             {
                 if (File.Exists(prefixPath))
@@ -108,7 +111,7 @@ internal static class ShapefileExportWriter
                     while (prefixReader.Read())
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        shpWriter.Geometry = null;
+                        shpWriter.Geometry = nullShape;
                         foreach (var field in prefixReader.Fields)
                         {
                             shpWriter.Fields[field.Name].Value = field.Value;
@@ -132,7 +135,7 @@ internal static class ShapefileExportWriter
                     var feature = enumerator.Current;
                     shpWriter.Geometry = feature.Geometry is { Length: > 0 }
                         ? NormalizeGeometry(WkbReaderCache.Get().Read(feature.Geometry), geometryType)
-                        : null;
+                        : nullShape;
                     SetDbfValues(shpWriter.Fields, fields, dbfFieldMap, feature.Attributes);
                     shpWriter.Write();
                     writtenCount++;
@@ -300,6 +303,19 @@ internal static class ShapefileExportWriter
         }
 
         throw new InvalidOperationException("Unable to generate a unique DBF field name within the 10-character limit.");
+    }
+
+    private static Geometry CreateNullShapeGeometry(ExportGeometryType geometryType)
+    {
+        var factory = new GeometryFactory();
+        return geometryType switch
+        {
+            ExportGeometryType.Point or ExportGeometryType.None => factory.CreatePoint(),
+            ExportGeometryType.MultiPoint => factory.CreateMultiPoint([]),
+            ExportGeometryType.LineString or ExportGeometryType.MultiLineString => factory.CreateMultiLineString([]),
+            ExportGeometryType.Polygon or ExportGeometryType.MultiPolygon => factory.CreateMultiPolygon([]),
+            _ => throw new InvalidOperationException($"Shapefile format does not support geometry type '{geometryType}'.")
+        };
     }
 
     private static Geometry NormalizeGeometry(Geometry geometry, ExportGeometryType targetType)

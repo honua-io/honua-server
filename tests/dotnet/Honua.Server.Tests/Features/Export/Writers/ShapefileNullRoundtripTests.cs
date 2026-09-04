@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 using Honua.Core.Features.FileImport.Services;
@@ -10,7 +11,6 @@ using Honua.Io.Export.Writers;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetTopologySuite.IO;
 using NetTopologySuite.IO.Esri;
-using Xunit;
 using Feature = Honua.Core.Features.FeatureStore.Domain.Feature;
 
 namespace Honua.Server.Tests.Features.Export.Writers;
@@ -43,14 +43,17 @@ public sealed class ShapefileNullRoundtripTests
             output.Position = 0;
             using var zip = new ZipArchive(output, ZipArchiveMode.Read, leaveOpen: true);
             zip.ExtractToDirectory(scratch);
-            var roundtrip = Shapefile.ReadAllFeatures(Path.Join(scratch, "export.shp"));
+            var roundtrip = Shapefile.ReadAllFeatures(Path.Join(scratch, "export.shp")).ToArray();
             Assert.Equal(source.Count, roundtrip.Length);
+            var shapeBytes = await File.ReadAllBytesAsync(Path.Join(scratch, "export.shp"));
+            var recordOffset = 100;
             for (var i = 0; i < source.Count; i++)
             {
                 Assert.Equal(source[i].Attributes["name"], Assert.IsType<string>(roundtrip[i].Attributes["name"]));
                 if (source[i].Geometry is null)
                 {
                     Assert.True(roundtrip[i].Geometry is null || roundtrip[i].Geometry.IsEmpty);
+                    Assert.Equal(0, BinaryPrimitives.ReadInt32LittleEndian(shapeBytes.AsSpan(recordOffset + 8, 4)));
                 }
                 else
                 {
@@ -58,7 +61,11 @@ public sealed class ShapefileNullRoundtripTests
                     Assert.True(double.IsNaN(roundtrip[i].Geometry.Coordinate.Z));
                     Assert.True(double.IsNaN(roundtrip[i].Geometry.Coordinate.M));
                 }
+
+                recordOffset += 8 + 2 * BinaryPrimitives.ReadInt32BigEndian(shapeBytes.AsSpan(recordOffset + 4, 4));
             }
+
+            Assert.Equal(shapeBytes.Length, recordOffset);
         }
         finally
         {
