@@ -278,10 +278,15 @@ public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
         public Task<CoordinatedStepResult> ObserveAsync(string childOperationId, CancellationToken cancellationToken = default)
             => Task.FromResult(new CoordinatedStepResult { Outcome = ObserveOutcome, ChildOperationId = childOperationId });
 
-        public Task RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)
+        public Task<CoordinatedStepResult> RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)
         {
             RollbackCalls++;
-            return Task.CompletedTask;
+            return Task.FromResult(new CoordinatedStepResult
+            {
+                Outcome = CoordinatedStepOutcome.Pending,
+                ChildOperationId = childOperationId,
+                Detail = "container rollback requested"
+            });
         }
     }
 

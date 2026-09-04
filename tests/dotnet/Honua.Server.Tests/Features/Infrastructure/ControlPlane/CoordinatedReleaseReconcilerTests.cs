@@ -165,6 +165,101 @@ public sealed class CoordinatedReleaseReconcilerTests
             "the container rollback threw, so it must not be recorded as rolled back");
     }
 
+    [Fact]
+    public async Task Reconcile_RestartWhileContainerRollbackPending_WaitsForChildAndDoesNotRequestTwice()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = await CreateAsync(store);
+        var container = new FakeContainerStep { RollbackPollsBeforeTerminal = 2 };
+        var metadata = new FakeMetadataStep { ObserveOutcome = CoordinatedStepOutcome.Failed };
+        var reconciler = CreateReconciler(store, container, metadata);
+
+        WorkflowOperationRecord? pending = null;
+        for (var i = 0; i < 30; i++)
+        {
+            await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+            pending = await store.GetAsync(operation.OperationId);
+            if (pending!.Status == WorkflowOperationStatus.AwaitingApproval)
+            {
+                var service = new CoordinatedReleaseControlService([(IWorkflowOperationStore)store]);
+                await service.ApproveGateAsync(operation.OperationId, pending.CoordinatedRelease!.CurrentStep, "operator", "approved", default);
+            }
+
+            var containerState = pending.CoordinatedRelease!.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout);
+            if (containerState.Status == CoordinatedReleaseStepStatus.RollbackRequested)
+            {
+                break;
+            }
+        }
+
+        var pendingAfterDrive = pending ?? throw new InvalidOperationException("The coordinated release did not produce a pending operation.");
+        pendingAfterDrive.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        pendingAfterDrive.CoordinatedRelease!.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
+            .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
+        container.RollbackCalls.Should().Be(1);
+
+        var restarted = CreateReconciler(store, container, metadata);
+        var final = await DriveAsync(store, operation.OperationId, restarted, autoApprove: true);
+
+        final.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        container.RollbackCalls.Should().Be(1, "restart must observe the existing child rollback rather than request it again");
+        container.ObserveRollbackCalls.Should().BeGreaterThanOrEqualTo(2);
+    }
+
+    [Fact]
+    public async Task Reconcile_ChildReportsWrongRolledBackRevision_EscalatesParent()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = await CreateAsync(store);
+        var container = new FakeContainerStep { RolledBackRevision = "honua/server:wrong" };
+        var metadata = new FakeMetadataStep { ObserveOutcome = CoordinatedStepOutcome.Failed };
+        var reconciler = CreateReconciler(store, container, metadata);
+
+        var final = await DriveAsync(store, operation.OperationId, reconciler, autoApprove: true);
+
+        final.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        final.ErrorMessage.Should().Contain("expected prior image");
+        final.CoordinatedRelease!.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
+            .Should().Be(CoordinatedReleaseStepStatus.RollbackRequested);
+    }
+
+    [Fact]
+    public async Task Reconcile_AutomaticallyRolledBackChildWithWrongRevision_EscalatesParent()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = await CreateAsync(store);
+        var container = new FakeContainerStep
+        {
+            ObserveOutcome = CoordinatedStepOutcome.RolledBack,
+            RolledBackRevision = "honua/server:wrong"
+        };
+        var reconciler = CreateReconciler(store, container, new FakeMetadataStep());
+
+        var final = await DriveAsync(store, operation.OperationId, reconciler, autoApprove: true);
+
+        final.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        final.ErrorMessage.Should().Contain("expected prior image");
+        container.RollbackCalls.Should().Be(0, "an already-rolled-back child must not receive a second rollback request");
+    }
+
+    [Fact]
+    public async Task Reconcile_ContainerRollbackRequestRace_DoesNotWaitOnSucceededChild()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = await CreateAsync(store);
+        var container = new FakeContainerStep { RollbackOutcome = CoordinatedStepOutcome.Succeeded };
+        var metadata = new FakeMetadataStep { ObserveOutcome = CoordinatedStepOutcome.Failed };
+        var reconciler = CreateReconciler(store, container, metadata);
+
+        var final = await DriveAsync(store, operation.OperationId, reconciler, autoApprove: true);
+
+        final.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        final.ErrorMessage.Should().Contain("lost a concurrency race");
+        final.CoordinatedRelease!.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout).Status
+            .Should().NotBe(CoordinatedReleaseStepStatus.RolledBack);
+        container.RollbackCalls.Should().Be(1);
+    }
+
     // ---- helpers ---------------------------------------------------------
 
     private static CoordinatedReleaseReconciler CreateReconciler(
@@ -297,12 +392,17 @@ public sealed class CoordinatedReleaseReconcilerTests
 
     private sealed class FakeContainerStep : ICoordinatedContainerStepExecutor
     {
+        private bool _rollbackRequested;
         public int StartCalls { get; private set; }
         public int RollbackCalls { get; private set; }
         public long StartedAtTicks { get; private set; }
         public long RolledBackAtTicks { get; private set; }
         public CoordinatedStepOutcome ObserveOutcome { get; init; } = CoordinatedStepOutcome.Succeeded;
         public bool ThrowOnRollback { get; init; }
+        public int RollbackPollsBeforeTerminal { get; init; }
+        public int ObserveRollbackCalls { get; private set; }
+        public string RolledBackRevision { get; init; } = "honua/server:v20";
+        public CoordinatedStepOutcome RollbackOutcome { get; init; } = CoordinatedStepOutcome.Pending;
 
         public Task<CoordinatedStepResult> StartAsync(CoordinatedReleaseContext context, WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
         {
@@ -317,9 +417,31 @@ public sealed class CoordinatedReleaseReconcilerTests
         }
 
         public Task<CoordinatedStepResult> ObserveAsync(string childOperationId, CancellationToken cancellationToken = default)
-            => Task.FromResult(new CoordinatedStepResult { Outcome = ObserveOutcome, ChildOperationId = childOperationId });
+        {
+            if (_rollbackRequested)
+            {
+                ObserveRollbackCalls++;
+                return Task.FromResult(new CoordinatedStepResult
+                {
+                    Outcome = ObserveRollbackCalls <= RollbackPollsBeforeTerminal
+                        ? CoordinatedStepOutcome.Pending
+                        : CoordinatedStepOutcome.RolledBack,
+                    ChildOperationId = childOperationId,
+                    ObservedRevision = RolledBackRevision,
+                    Detail = "container rollback observation"
+                });
+            }
 
-        public Task RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)
+            return Task.FromResult(new CoordinatedStepResult
+            {
+                Outcome = ObserveOutcome,
+                ChildOperationId = childOperationId,
+                ObservedRevision = ObserveOutcome == CoordinatedStepOutcome.RolledBack ? RolledBackRevision : null,
+                ExpectedRevision = ObserveOutcome == CoordinatedStepOutcome.RolledBack ? "honua/server:v20" : null
+            });
+        }
+
+        public Task<CoordinatedStepResult> RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)
         {
             RollbackCalls++;
             RolledBackAtTicks = DateTime.UtcNow.Ticks + RollbackCalls;
@@ -328,12 +450,19 @@ public sealed class CoordinatedReleaseReconcilerTests
                 throw new InvalidOperationException("Container rollback failed: provider deploy-rollback call errored.");
             }
 
-            return Task.CompletedTask;
+            _rollbackRequested = true;
+            return Task.FromResult(new CoordinatedStepResult
+            {
+                Outcome = RollbackOutcome,
+                ChildOperationId = childOperationId,
+                Detail = "container rollback requested"
+            });
         }
     }
 
     private sealed class FakeMetadataStep : ICoordinatedMetadataStepExecutor
     {
+        private bool _rollbackRequested;
         public int StartCalls { get; private set; }
         public int RollbackCalls { get; private set; }
         public long StartedAtTicks { get; private set; }
@@ -353,12 +482,17 @@ public sealed class CoordinatedReleaseReconcilerTests
         }
 
         public Task<CoordinatedStepResult> ObserveAsync(string childOperationId, CancellationToken cancellationToken = default)
-            => Task.FromResult(new CoordinatedStepResult { Outcome = ObserveOutcome, ChildOperationId = childOperationId });
+            => Task.FromResult(new CoordinatedStepResult
+            {
+                Outcome = _rollbackRequested ? CoordinatedStepOutcome.RolledBack : ObserveOutcome,
+                ChildOperationId = childOperationId
+            });
 
         public Task RollbackAsync(string childOperationId, CancellationToken cancellationToken = default)
         {
             RollbackCalls++;
             RolledBackAtTicks = DateTime.UtcNow.Ticks + RollbackCalls;
+            _rollbackRequested = true;
             return Task.CompletedTask;
         }
     }
