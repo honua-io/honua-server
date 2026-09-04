@@ -251,9 +251,10 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
 
         var featureId = NormalizeFeatureId(created.Id);
         featureId.Should().NotBeNull();
+        var requiredFeatureId = featureId ?? throw new InvalidOperationException("Created feature did not have a numeric identifier.");
 
         var getResponse = await _fixture.Client.GetAsync(
-            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items/{featureId}");
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items/{requiredFeatureId}");
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var getContent = await getResponse.Content.ReadAsStringAsync();
         var fetched = JsonSerializer.Deserialize(getContent, OgcJsonContext.Default.GeoJsonFeature);
@@ -264,7 +265,7 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
         // Before the fix this second write treated CRS84 coordinates as EPSG:3857.
         using var replaceRequest = new HttpRequestMessage(
             HttpMethod.Put,
-            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items/{featureId}")
+            $"/ogc/features/collections/{SpatialReferenceTestLayerCatalog.PointLayerId}/items/{requiredFeatureId}")
         {
             Content = new StringContent(getContent, Encoding.UTF8, "application/geo+json")
         };
@@ -282,11 +283,12 @@ public sealed class OgcFeaturesSpatialReferenceTests : IClassFixture<OgcFeatures
         var storedCoordinates = await SpatialReferenceTestData.GetGeometryCoordinatesAsync(
             _fixture.Postgres,
             schema,
-            featureId.Value,
+            requiredFeatureId,
             SpatialReferenceTestLayerCatalog.PointLayerId);
         storedCoordinates.Should().NotBeNull();
-        storedCoordinates!.Value.X.Should().BeApproximately(-13627665.27, 2d);
-        storedCoordinates.Value.Y.Should().BeApproximately(4547675.35, 2d);
+        var requiredStoredCoordinates = storedCoordinates ?? throw new InvalidOperationException("Updated feature did not have stored geometry coordinates.");
+        requiredStoredCoordinates.X.Should().BeApproximately(-13627665.27, 2d);
+        requiredStoredCoordinates.Y.Should().BeApproximately(4547675.35, 2d);
     }
 
     [IntegrationTest]
