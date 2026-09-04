@@ -11,7 +11,7 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | GeoJSON | `.geojson`, `.json` | FeatureCollection, Feature, or bare geometry. |
 | Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf` (plus `.shx`/`.prj`); bare `.shp` uploads are rejected. |
 | GeoPackage | `.gpkg` | OGC SQLite-based format. |
-| GPX | `.gpx` | GPS exchange format. Track segment boundaries are preserved as separate lines. Singleton segments remain points, with a geometry collection when a track contains both points and lines. |
+| GPX | `.gpx` | GPS exchange format. Track segment boundaries are preserved as separate lines; singleton segments remain points, with a geometry collection for mixed tracks. Track and route elevations are preserved as Z ordinates; absent elevation remains absent, and invalid elevation rejects the import. |
 | KML / KMZ | `.kml`, `.kmz` | Keyhole Markup Language, plain or zipped. |
 | WKT | `.wkt` | Well-known text geometries. |
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. |
@@ -117,3 +117,5 @@ See the protocol pages for parameters: [vector tiles](protocols/vector-tiles.md)
 - [Import files guide](../guides/publish/import-files.md)
 - [Export data guide](../guides/query-analyze/export-data.md)
 - [Environment variables — imports and limits](configuration/environment-variables.md#imports-and-limits)
+
+New import tables retain source geometry ordinate dimensions while enforcing the requested SRID. Migration 111 enables this for GPX elevations and other dimensional input. Existing append/upsert tables keep their declared geometry constraints.
