@@ -413,21 +413,6 @@ CREATE TABLE IF NOT EXISTS features (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- The canonical migration runner creates the change-tracking function before this CI
--- fixture provisions the runtime table. Reattach the trigger after the table exists so
--- transactional outbox writes can link each mutation to its feature_changes row.
-DO $$
-BEGIN
-    IF to_regclass('honua.features') IS NOT NULL
-       AND to_regprocedure('honua.track_feature_changes()') IS NOT NULL THEN
-        DROP TRIGGER IF EXISTS trigger_track_feature_changes ON honua.features;
-        CREATE TRIGGER trigger_track_feature_changes
-            AFTER INSERT OR UPDATE OR DELETE ON honua.features
-            FOR EACH ROW
-            EXECUTE FUNCTION honua.track_feature_changes();
-    END IF;
-END $$;
-
 CREATE INDEX IF NOT EXISTS idx_service_layers_service_name ON honua.service_layers(service_name);
 CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);
 CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
