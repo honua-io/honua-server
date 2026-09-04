@@ -853,18 +853,18 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         queryResponse.SpatialReference!.Wkid.Should().Be(4326);
     }
 
-    [Theory]
-    [InlineData("standard")]
-    [InlineData("native")]
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
-    public async Task QueryRelatedRecords_WithSqlFormat_IsAccepted(string sqlFormat)
+    public async Task QueryRelatedRecords_WithSqlFormat_IsAccepted()
     {
-        var response = await GetWithRetryAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&sqlFormat={sqlFormat}");
+        foreach (var sqlFormat in new[] { "standard", "native" })
+        {
+            var response = await GetWithRetryAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&sqlFormat={sqlFormat}");
 
-        response.Be200Ok();
+            response.Be200Ok();
+        }
     }
 
     [IntegrationTest]
