@@ -44,12 +44,23 @@ public sealed class RedisReadinessOutageTests
 
         // Expiring writes may use SETEX/PSETEX rather than SET, depending on
         // client optimization. Deny the whole write category for this case.
-        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "-" + deniedCommand]);
+        // KeyDeleteAsync uses UNLINK on Redis 4+, so deny both delete forms.
+        var deniedCommands = new List<string> { "redis-cli", "ACL", "SETUSER", "default", "-" + deniedCommand };
+        if (deniedCommand == "del")
+        {
+            deniedCommands.Add("-unlink");
+        }
+        var denied = await container.ExecAsync(deniedCommands);
         Assert.Equal("OK", denied.Stdout.Trim());
         _ = await redis.GetDatabase().PingAsync();
         Assert.False(await cache.IsCacheHealthyAsync());
 
-        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "+" + deniedCommand]);
+        var restoredCommands = new List<string> { "redis-cli", "ACL", "SETUSER", "default", "+" + deniedCommand };
+        if (deniedCommand == "del")
+        {
+            restoredCommands.Add("+unlink");
+        }
+        var restored = await container.ExecAsync(restoredCommands);
         Assert.Equal("OK", restored.Stdout.Trim());
         Assert.True(await cache.IsCacheHealthyAsync());
     }
