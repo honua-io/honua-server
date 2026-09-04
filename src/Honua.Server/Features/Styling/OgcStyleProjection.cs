@@ -155,6 +155,64 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             return await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
         }
 
+        return await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored, encoding, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<OgcStylesheet?> GetAssociatedStylesheetAsync(
+        string resourceId,
+        string styleId,
+        OgcStyleEncoding encoding,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(resourceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
+
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.Index.ResourcesById.TryGetValue(resourceId, out var resource))
+        {
+            return null;
+        }
+
+        // Phase 1 styles are keyed by the collection resource name and live in the
+        // per-layer store. Read that store directly so an unrelated standalone style
+        // with the same global identifier can never shadow the collection style.
+        if (string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal))
+        {
+            var storageLayerId = snapshot.ResolveStorageLayerId(resource);
+            if (!storageLayerId.HasValue)
+            {
+                return null;
+            }
+
+            var stored = await _styleCatalog
+                .GetLayerStyleAsync(storageLayerId.Value, cancellationToken)
+                .ConfigureAwait(false);
+            return stored is null || string.IsNullOrWhiteSpace(stored.MapLibreStyleJson)
+                ? null
+                : await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored, encoding, cancellationToken)
+                    .ConfigureAwait(false);
+        }
+
+        var isAssociatedCatalogStyle = resource.StyleResourceIds.Any(styleResourceId =>
+            snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) &&
+            styleResource.Type == MetadataV2ResourceType.Style &&
+            string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
+
+        return isAssociatedCatalogStyle
+            ? await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false)
+            : null;
+    }
+
+    private async Task<OgcStylesheet?> ProjectLayerStylesheetAsync(
+        MetadataV2Resource resource,
+        int storageLayerId,
+        LayerStyleDefinition stored,
+        OgcStyleEncoding encoding,
+        CancellationToken cancellationToken)
+    {
+
         var mapLibreJson = stored.MapLibreStyleJson!;
         if (encoding == OgcStyleEncoding.MapboxStyle)
         {
@@ -166,7 +224,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             // Esri renderer is a server-side projection of the canonical MapLibre style (ADR-0002): the style
             // service back-generates drawingInfo from the stored MapLibre. The console never converts.
             var drawingInfo = await _styleService
-                .GetDrawingInfoAsync(resource, storageLayerId.Value, cancellationToken)
+                .GetDrawingInfoAsync(resource, storageLayerId, cancellationToken)
                 .ConfigureAwait(false);
             if (drawingInfo is not { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) })
             {
@@ -179,7 +237,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 OgcStyleEncoding.EsriDrawingInfo);
         }
 
-        var sld = DeriveSld(mapLibreJson, resource, storageLayerId.Value, encoding);
+        var sld = DeriveSld(mapLibreJson, resource, storageLayerId, encoding);
         return sld;
     }
 

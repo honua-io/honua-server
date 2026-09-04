@@ -119,12 +119,6 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
-            var rasterOptionsError = ValidateRasterBackgroundOptions(resource, renderRequest.Value);
-            if (rasterOptionsError is not null)
-            {
-                return CreateBadRequestResult(context, rasterOptionsError);
-            }
-
             var parsedRenderRequest = renderRequest.Value;
             (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
                 parsedRenderRequest,
@@ -380,14 +374,6 @@ internal sealed class OgcMapsRenderingHandler
             }
 
             var parsedRenderRequest = renderRequest.Value;
-            var rasterOptionsError = entries
-                .Select(entry => ValidateRasterBackgroundOptions(entry.Resource, parsedRenderRequest))
-                .FirstOrDefault(static error => error is not null);
-            if (rasterOptionsError is not null)
-            {
-                return CreateBadRequestResult(context, rasterOptionsError);
-            }
-
             (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
                 parsedRenderRequest,
                 context,
@@ -506,8 +492,22 @@ internal sealed class OgcMapsRenderingHandler
                 }
             }
 
-            var styleIsAssociated = IsStyleAssociatedWithResource(snapshot, resource, styleId);
-            if (!styleIsAssociated)
+            var styleMayBeAssociated =
+                string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal) ||
+                IsStyleAssociatedWithResource(snapshot, resource, styleId);
+            if (!styleMayBeAssociated)
+            {
+                return CreateNotFoundResult(context, $"Style '{styleId}' is not associated with collection {layerId}");
+            }
+
+            var stylesheet = await _styleProjection
+                .GetAssociatedStylesheetAsync(
+                    resource.Metadata.Id,
+                    styleId,
+                    OgcStyleEncoding.MapboxStyle,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (stylesheet is null)
             {
                 return CreateNotFoundResult(context, $"Style '{styleId}' is not associated with collection {layerId}");
             }
@@ -563,6 +563,7 @@ internal sealed class OgcMapsRenderingHandler
                     styleId,
                     resource,
                     service,
+                    stylesheet.Content,
                     styledRequest,
                     context,
                     scope,
@@ -620,6 +621,7 @@ internal sealed class OgcMapsRenderingHandler
         string styleId,
         MetadataV2Resource resource,
         MetadataV2Service? service,
+        string mapLibreStyleJson,
         MapRenderRequest renderRequest,
         HttpContext? context,
         HonuaTelemetryScope scope,
@@ -645,16 +647,6 @@ internal sealed class OgcMapsRenderingHandler
                 context,
                 "Format 'tiff' is not supported for styled vector collections. Supported formats: png, jpeg.");
         }
-
-        var stylesheet = await _styleProjection
-            .GetStylesheetAsync(styleId, OgcStyleEncoding.MapboxStyle, cancellationToken)
-            .ConfigureAwait(false);
-        if (stylesheet is null)
-        {
-            return CreateNotFoundResult(context, $"Style '{styleId}' not found");
-        }
-
-        var mapLibreStyleJson = stylesheet.Content;
 
         var geometryType = resource.ReadGeometryType();
         var serviceSrid = service?.SpatialReference?.ResolveSrid()
@@ -738,19 +730,6 @@ internal sealed class OgcMapsRenderingHandler
             snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) &&
             styleResource.Type == MetadataV2ResourceType.Style &&
             string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
-
-    internal static string? ValidateRasterBackgroundOptions(
-        MetadataV2Resource resource,
-        MapRenderRequest request)
-    {
-        if (resource.Type != MetadataV2ResourceType.RasterDataset ||
-            (request.Transparent && string.IsNullOrWhiteSpace(request.BackgroundColor)))
-        {
-            return null;
-        }
-
-        return "The transparent=false and bgcolor parameters are not currently supported for raster-backed OGC API Maps rendering.";
-    }
 
     /// <summary>
     /// Creates a not-found result using StandardErrorHelpers when context is available,

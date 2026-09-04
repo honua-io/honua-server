@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Raster.Abstractions;
 using Honua.Protocols.Ogc.Api.Maps.Handlers;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -65,43 +64,43 @@ public class OgcMapsRenderingHandlerTests
             styleId).Should().BeTrue();
     }
 
-    [Theory]
-    [InlineData(false, null)]
-    [InlineData(true, "0xFF0000")]
-    public void ValidateRasterBackgroundOptions_RejectsUnsupportedRasterOptions(
-        bool transparent,
-        string? backgroundColor)
+    [Fact]
+    public void IsStyleAssociatedWithResource_ReferencedDataResource_ReturnsFalse()
     {
-        var raster = new MetadataV2Resource
+        const string styleId = "roads";
+        var referencedDataResource = new MetadataV2Resource
         {
-            Type = MetadataV2ResourceType.RasterDataset
+            Metadata = new MetadataV2ObjectMetadata { Id = "not-a-style", Name = styleId },
+            Type = MetadataV2ResourceType.FeatureDataset
         };
-        var request = new MapRenderRequest
+        var resource = new MetadataV2Resource
         {
-            BoundingBox = [-180, -90, 180, 90],
-            Width = 256,
-            Height = 256,
-            Transparent = transparent,
-            BackgroundColor = backgroundColor
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-roads", Name = "collection" },
+            StyleResourceIds = [referencedDataResource.Metadata.Id]
         };
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph { Resources = [resource, referencedDataResource] },
+            "\"test\"",
+            DateTimeOffset.UnixEpoch);
 
-        OgcMapsRenderingHandler.ValidateRasterBackgroundOptions(raster, request)
-            .Should().Contain("not currently supported");
+        OgcMapsRenderingHandler.IsStyleAssociatedWithResource(snapshot, resource, styleId)
+            .Should().BeFalse();
     }
 
     [Fact]
-    public void ValidateRasterBackgroundOptions_AllowsDefaultRasterRendering()
+    public void IsStyleAssociatedWithResource_MissingReferencedResource_ReturnsFalse()
     {
-        var raster = new MetadataV2Resource { Type = MetadataV2ResourceType.RasterDataset };
-        var request = new MapRenderRequest
+        var resource = new MetadataV2Resource
         {
-            BoundingBox = [-180, -90, 180, 90],
-            Width = 256,
-            Height = 256,
-            Transparent = true
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource-roads", Name = "roads" },
+            StyleResourceIds = ["missing-style"]
         };
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph { Resources = [resource] },
+            "\"test\"",
+            DateTimeOffset.UnixEpoch);
 
-        OgcMapsRenderingHandler.ValidateRasterBackgroundOptions(raster, request)
-            .Should().BeNull();
+        OgcMapsRenderingHandler.IsStyleAssociatedWithResource(snapshot, resource, "missing")
+            .Should().BeFalse();
     }
 }

@@ -11,6 +11,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
@@ -24,8 +25,8 @@ namespace Honua.Infrastructure.Rendering;
 /// <remarks>
 /// <para>Behavior is <b>raster-first, vector-fallback</b>: whenever the wrapped renderer
 /// produces raster bytes (a layer backed by a raster coverage), those native bytes are
-/// returned unchanged, so raster rendering — including format, GDAL encoding, temporal
-/// mosaics, and multi-layer <c>ST_Union</c> merges — is untouched. Only when the raster
+/// returned after applying any requested opaque PNG/JPEG background. Format, temporal
+/// mosaics, and multi-layer <c>ST_Union</c> behavior otherwise remain untouched. Only when the raster
 /// path yields no data <b>and</b> the requested layer(s) carry geometry does this decorator
 /// render the features through the shared Skia pipeline
 /// (<see cref="RasterMapRenderingPipeline.RenderBoundStyleVectorLayersAsync"/>), applying
@@ -62,7 +63,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         var rasterResult = await _inner.RenderCollectionMapAsync(layerId, request, cancellationToken).ConfigureAwait(false);
         if (rasterResult.Data.Length > 0)
         {
-            return rasterResult;
+            return ApplyBackgroundOptions(rasterResult, request);
         }
 
         return await TryRenderStyledVectorAsync(
@@ -82,7 +83,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         var rasterResult = await _inner.RenderDatasetMapAsync(layerIds, request, cancellationToken).ConfigureAwait(false);
         if (rasterResult.Data.Length > 0)
         {
-            return rasterResult;
+            return ApplyBackgroundOptions(rasterResult, request);
         }
 
         return await TryRenderStyledVectorAsync(
@@ -120,6 +121,38 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         // Raster coverage (or a format the Skia path cannot encode): defer to the raster
         // renderer, which reports an honest NotSupported for styled raster output.
         return await _inner.RenderStyledMapAsync(layerId, styleId, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static RasterResult ApplyBackgroundOptions(RasterResult result, MapRenderRequest request)
+    {
+        if (request.Transparent ||
+            request.Format is not (RasterFormat.PNG or RasterFormat.JPEG))
+        {
+            return result;
+        }
+
+        using var source = SKBitmap.Decode(result.Data);
+        if (source is null)
+        {
+            return result;
+        }
+
+        using var surface = SKSurface.Create(
+            new SKImageInfo(source.Width, source.Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+        if (surface is null)
+        {
+            return result;
+        }
+
+        surface.Canvas.Clear(
+            RasterMapRenderingPipeline.ResolveBackgroundColor(request.BackgroundColor) ?? SKColors.White);
+        surface.Canvas.DrawBitmap(source, 0, 0);
+
+        using var image = surface.Snapshot();
+        using var data = image.Encode(
+            request.Format == RasterFormat.JPEG ? SKEncodedImageFormat.Jpeg : SKEncodedImageFormat.Png,
+            request.Quality ?? 100);
+        return result with { Data = data.ToArray() };
     }
 
     private async Task<RasterResult> TryRenderStyledVectorAsync(

@@ -223,6 +223,23 @@ public sealed class StyledVectorMapRenderTests : IAsyncLifetime
             "a real style that is not associated with the collection must not be rendered (#4165)");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Render)]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}/styles/{styleId}/map")]
+    public async Task GetStyledMap_UnassociatedStyleCollidingWithCollectionName_ReturnsNotFound()
+    {
+        var catalog = _fixture.GetService<IStyleCatalog>();
+        var styleId = GetCollectionStyleId(TemporalVectorLayerId);
+        (await catalog.CreateStyleAsync(styleId, CircleStyle("#ff0000"))).Should().NotBeNull();
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/maps/collections/{TemporalVectorLayerId}/styles/{Uri.EscapeDataString(styleId)}/map" +
+            "?bbox=-123,37,-121,39&f=png");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "a standalone style must not become associated merely by colliding with the collection name (#4165)");
+    }
+
     private string GetCollectionStyleId(int layerId)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
