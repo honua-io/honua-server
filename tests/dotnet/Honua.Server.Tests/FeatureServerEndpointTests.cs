@@ -3001,6 +3001,53 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task ApplyEdits_LayerLevel_AddsOnly_IncludesEmptyUpdateAndDeleteResults()
+    {
+        // Regression (#4100): Esri clients expect all three result arrays even when the
+        // request contains only one edit kind.
+        var request = """
+            {
+                "adds": [
+                    {
+                        "attributes": {
+                            "name": "Layer-level all-arrays feature"
+                        },
+                        "geometry": {
+                            "x": -122.4194,
+                            "y": 37.7749
+                        }
+                    }
+                ]
+            }
+            """;
+        using var content = new StringContent(request, Encoding.UTF8, "application/json");
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/applyEdits",
+            content);
+
+        response.Be200Ok();
+        var responseContent = await response.Content.ReadAsStringAsync();
+
+        using var jsonDoc = JsonDocument.Parse(responseContent);
+        var root = jsonDoc.RootElement;
+
+        root.TryGetProperty("addResults", out var addResults).Should().BeTrue();
+        addResults.ValueKind.Should().Be(JsonValueKind.Array);
+        addResults.GetArrayLength().Should().Be(1);
+
+        root.TryGetProperty("updateResults", out var updateResults).Should().BeTrue();
+        updateResults.ValueKind.Should().Be(JsonValueKind.Array);
+        updateResults.GetArrayLength().Should().Be(0);
+
+        root.TryGetProperty("deleteResults", out var deleteResults).Should().BeTrue();
+        deleteResults.ValueKind.Should().Be(JsonValueKind.Array);
+        deleteResults.GetArrayLength().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
     public async Task ApplyEdits_ServiceLevel_WithMalformedJson_DoesNotLeakParserDetails()
     {
