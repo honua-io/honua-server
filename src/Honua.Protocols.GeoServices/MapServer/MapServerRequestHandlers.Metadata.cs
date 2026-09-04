@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -14,6 +15,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.Protocols.GeoServices.Models;
 using Honua.ServiceDefaults;
@@ -91,11 +93,20 @@ internal static partial class MapServerEndpoints
                 .ToArray();
 
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var timeInfos = await Task.WhenAll(visibleLayers.Select(layer =>
+                FeatureServerEndpoints.BuildTimeInfoV2Async(
+                    layer.Resource,
+                    layer.Publication,
+                    snapshot,
+                    featureReader,
+                    cancellationToken))).ConfigureAwait(false);
             var response = MapServiceToMapServerResponse(
                 service,
                 visibleLayers,
                 limitsOptions.Query.MaxRecordCount,
-                limitsOptions.Tiles.MaxTileZoom);
+                limitsOptions.Tiles.MaxTileZoom,
+                MergeServiceTimeInfo(timeInfos));
 
             stopwatch.Stop();
             scope.SetSuccess(visibleLayers.Length);
@@ -175,6 +186,13 @@ internal static partial class MapServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var drawingInfo = ResolveMapServerDrawingInfo(resource, snapshot);
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var timeInfo = await FeatureServerEndpoints.BuildTimeInfoV2Async(
+                resource,
+                publication,
+                snapshot,
+                featureReader,
+                cancellationToken).ConfigureAwait(false);
 
             var response = MapLayerToMapServerLayerResponse(
                 service,
@@ -182,7 +200,8 @@ internal static partial class MapServerEndpoints
                 resource,
                 snapshot,
                 limitsOptions.Query.MaxRecordCount,
-                drawingInfo);
+                drawingInfo,
+                timeInfo: timeInfo);
 
             stopwatch.Stop();
             scope.SetSuccess(1);
@@ -229,7 +248,8 @@ internal static partial class MapServerEndpoints
         MetadataV2Service service,
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
         int maxRecordCount,
-        int maxTileZoom)
+        int maxTileZoom,
+        FeatureServerTimeInfo? timeInfo)
     {
         var serviceSpatialReference = ResolveServiceSpatialReference(service, layers);
         var serviceExtent = ResolveServiceExtent(layers, serviceSpatialReference);
@@ -279,6 +299,7 @@ internal static partial class MapServerEndpoints
             SupportedQueryFormats = string.Join(",", NormalizeSupportedQueryFormats(service.Settings?.SupportedFormats)),
             MinScale = ResolveServiceMinScale(layers) ?? 0,
             MaxScale = ResolveServiceMaxScale(layers) ?? 0,
+            TimeInfo = timeInfo,
             DocumentInfo = new MapServerDocumentInfo
             {
                 Title = service.Metadata.Name ?? "",
@@ -296,22 +317,17 @@ internal static partial class MapServerEndpoints
         const double webMercatorOrigin = SpatialConstants.WebMercatorExtent;
         const int tileSize = 256;
         const int dpi = 96;
-        // Esri's scale convention uses 39.37 inches per meter (not 1/0.0254 = 39.3701),
-        // which is what produces the canonical AGOL WebMercator lods values.
-        const double inchesPerMeter = 39.37;
-
         var effectiveMaxZoom = Math.Clamp(maxTileZoom, 0, TileMath.MaxSupportedZoomLevel);
         var lods = new LevelOfDetail[effectiveMaxZoom + 1];
         for (var z = 0; z <= effectiveMaxZoom; z++)
         {
-            var matrixSize = 1L << z;
-            var resolution = 2.0 * webMercatorOrigin / (tileSize * (double)matrixSize);
+            var resolution = CalculateTileResolution(z);
 
             // Esri tiling-scheme convention: scale derives from the declared dpi
             // (z0 = 591657527.591555 for WebMercator), not the OGC 0.28mm pixel
             // (which yields 559082264.03, ~5.5% off the scheme every Esri client
             // compares against, toggling minScale/maxScale visibility one LOD off).
-            var scale = resolution * dpi * inchesPerMeter;
+            var scale = CalculateTileScale(z);
             lods[z] = new LevelOfDetail
             {
                 Level = z,
@@ -350,7 +366,8 @@ internal static partial class MapServerEndpoints
         int? publicLayerIdOverride = null,
         string? layerNameOverride = null,
         string? definitionExpression = null,
-        IReadOnlyList<MapServerFieldInfo>? extraFields = null)
+        IReadOnlyList<MapServerFieldInfo>? extraFields = null,
+        FeatureServerTimeInfo? timeInfo = null)
     {
         var sourcePublicLayerId = publication.LayerIndex
             ?? snapshot.ResolveStorageLayerId(publication)
@@ -417,8 +434,66 @@ internal static partial class MapServerEndpoints
             // layer, so advertise the capability here too — previously this flag was
             // left false, and clients reading MapServer layer metadata incorrectly
             // concluded statistics were unavailable.
-            SupportsStatistics = true
+            SupportsStatistics = true,
+            AdvancedQueryCapabilities = FeatureServerEndpoints.BuildAdvancedQueryCapabilities(
+                supportsAdvancedQueries: true,
+                supportsStatistics: true,
+                supportsOrderBy: true,
+                supportsDistinct: true,
+                supportsPagination: true),
+            TimeInfo = timeInfo
         };
+    }
+
+    private static FeatureServerTimeInfo? MergeServiceTimeInfo(
+        IReadOnlyList<FeatureServerTimeInfo?> layerTimeInfos)
+    {
+        var timeInfos = layerTimeInfos.Where(static info => info?.TimeExtent is { Length: 2 }).ToArray();
+        if (timeInfos.Length == 0)
+        {
+            return null;
+        }
+
+        var minimums = timeInfos
+            .Select(static info => info!.TimeExtent![0])
+            .Where(static value => value.HasValue)
+            .Select(static value => value!.Value)
+            .ToArray();
+        var maximums = timeInfos
+            .Select(static info => info!.TimeExtent![1])
+            .Where(static value => value.HasValue)
+            .Select(static value => value!.Value)
+            .ToArray();
+        long? min = minimums.Length > 0 ? minimums.Min() : null;
+        long? max = maximums.Length > 0 ? maximums.Max() : null;
+        var first = timeInfos[0]!;
+        return new FeatureServerTimeInfo
+        {
+            StartTimeField = timeInfos.All(info => string.Equals(info!.StartTimeField, first.StartTimeField, StringComparison.OrdinalIgnoreCase))
+                ? first.StartTimeField
+                : null,
+            EndTimeField = timeInfos.All(info => string.Equals(info!.EndTimeField, first.EndTimeField, StringComparison.OrdinalIgnoreCase))
+                ? first.EndTimeField
+                : null,
+            TrackIdField = timeInfos.All(info => string.Equals(info!.TrackIdField, first.TrackIdField, StringComparison.OrdinalIgnoreCase))
+                ? first.TrackIdField
+                : null,
+            TimeExtent = [min, max]
+        };
+    }
+
+    private static double CalculateTileResolution(int z)
+    {
+        const int tileSize = 256;
+        var matrixSize = 1L << z;
+        return 2.0 * SpatialConstants.WebMercatorExtent / (tileSize * (double)matrixSize);
+    }
+
+    private static double CalculateTileScale(int z)
+    {
+        const int dpi = 96;
+        const double inchesPerMeter = 39.37;
+        return CalculateTileResolution(z) * dpi * inchesPerMeter;
     }
 
     private static MapServerMetadataLayerDescriptor[] ResolveMapServerMetadataLayers(

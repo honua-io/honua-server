@@ -559,7 +559,7 @@ internal static partial class FeatureServerEndpoints
     /// and probes the feature store for the range. Returns null when the resource does not
     /// declare opt-in temporal fields.
     /// </summary>
-    private static async Task<FeatureServerTimeInfo?> BuildTimeInfoV2Async(
+    internal static async Task<FeatureServerTimeInfo?> BuildTimeInfoV2Async(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
         MetadataV2GraphSnapshot snapshot,
@@ -576,8 +576,9 @@ internal static partial class FeatureServerEndpoints
             return null;
         }
 
-        var storageLayerId = publication.LayerIndex
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
             ?? snapshot.ResolveStorageLayerId(resource)
+            ?? publication.LayerIndex
             ?? -1;
         if (storageLayerId < 0)
         {
