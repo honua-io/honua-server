@@ -402,6 +402,30 @@ public sealed class RedisCacheServiceTests : IDisposable
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task IsCacheHealthyAsync_DistributedCacheOutage_ProbesDuringFallbackAndRecovery()
+    {
+        var unavailable = false;
+        var distributedCache = Substitute.For<IDistributedCache>();
+        distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => unavailable
+                ? Task.FromException<byte[]?>(new IOException("Redis unavailable"))
+                : Task.FromResult<byte[]?>(null));
+        using var cache = new RedisCacheService(distributedCache,
+            Options.Create(new CacheOptions { EnableFallback = true, RetryIntervalSeconds = 300 }),
+            NullLogger<RedisCacheService>.Instance, _performanceMonitor);
+        (await cache.IsCacheHealthyAsync()).Should().BeTrue();
+
+        unavailable = true;
+        await cache.GetAsync<MetadataV2Field>("layer:outage");
+        cache.IsUsingFallback.Should().BeTrue();
+        (await cache.IsCacheHealthyAsync()).Should().BeFalse();
+
+        unavailable = false;
+        (await cache.IsCacheHealthyAsync()).Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task TryRestoreRedisAsync_WhenRedisRecovers_ClearsFallbackState()
     {
         var distributedCache = Substitute.For<IDistributedCache>();

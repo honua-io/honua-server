@@ -55,8 +55,6 @@ public sealed class RedisReadinessOutageTests
         await container.StopAsync();
         if (enterFallback)
         {
-            distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromException<byte[]?>(new IOException("Redis unavailable")));
             await cache.GetAsync<MetadataV2Field>("layer:outage");
             Assert.True(cache.IsUsingFallback);
         }
