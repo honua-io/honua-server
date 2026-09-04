@@ -303,6 +303,72 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
 
     [IntegrationTest]
     [Operation(Operations.Densify)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
+    public async Task Densify_EllipticArc_AcceptsEsriTrueCurve()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [{
+                    "curvePaths": [[[10,0], {"a":[[0,5],[0,0],1,0,0,10,0.5]}]]
+                }]
+            },
+            "sr": 3857,
+            "maxSegmentLength": 1000,
+            "lengthUnit": "esriMeters"
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/densify",
+            requestContent);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        var path = document.RootElement.GetProperty("geometries")[0].GetProperty("paths")[0];
+        path.GetArrayLength().Should().BeGreaterThan(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Densify)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
+    public async Task Densify_FiveElementArc_AcceptsIssueReproduction()
+    {
+        // Preserve the exact payload from #4117. Esri documents four elements for a
+        // center-form circle and seven for an ellipse, but clients in the probe sent a
+        // fifth trailing rotation value; treating it as the circular form is compatible
+        // with that probe shape while the documented seven-element ellipse stays covered.
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [{
+                    "curvePaths": [[[0,0], {"a":[[10,0],[5,0],0,0,1.0]}]]
+                }]
+            },
+            "sr": 3857,
+            "maxSegmentLength": 1000,
+            "lengthUnit": "esriMeters"
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/densify",
+            requestContent);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        document.RootElement.GetProperty("geometries")[0].GetProperty("paths")[0]
+            .GetArrayLength().Should().BeGreaterThan(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Densify)]
     [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/densify")]
     public async Task Densify_GetMissingMaxSegmentLength_Returns400()
     {

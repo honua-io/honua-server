@@ -42,7 +42,7 @@ internal static class DatumTransformationParser
         // Bare WKID form.
         if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wkid))
         {
-            request = new DatumTransformationRequest(wkid, TransformForward: true);
+            request = new DatumTransformationRequest(wkid, TransformForward: true, TransformForwardSpecified: false);
             return true;
         }
 
@@ -88,13 +88,20 @@ internal static class DatumTransformationParser
             }
 
             var transformForward = true;
-            if (first.TryGetProperty("transformForward", out var forwardElement) &&
-                (forwardElement.ValueKind == JsonValueKind.True || forwardElement.ValueKind == JsonValueKind.False))
+            var transformForwardSpecified = first.TryGetProperty("transformForward", out var forwardElement);
+            if (transformForwardSpecified &&
+                forwardElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                errorMessage = "Invalid datumTransformation: 'transformForward' must be a boolean.";
+                return false;
+            }
+
+            if (transformForwardSpecified)
             {
                 transformForward = forwardElement.GetBoolean();
             }
 
-            request = new DatumTransformationRequest(wkid, transformForward);
+            request = new DatumTransformationRequest(wkid, transformForward, transformForwardSpecified);
             return true;
         }
         catch (JsonException)
@@ -110,4 +117,8 @@ internal static class DatumTransformationParser
 /// </summary>
 /// <param name="Wkid">The Esri geotransformation WKID requested by the client.</param>
 /// <param name="TransformForward">Whether the transformation applies in its forward direction.</param>
-internal readonly record struct DatumTransformationRequest(int Wkid, bool TransformForward);
+/// <param name="TransformForwardSpecified">Whether the client explicitly supplied the direction.</param>
+internal readonly record struct DatumTransformationRequest(
+    int Wkid,
+    bool TransformForward,
+    bool TransformForwardSpecified = false);

@@ -205,6 +205,7 @@ internal sealed class FindTransformationsParameters
 {
     public int InSR { get; init; }
     public int OutSR { get; init; }
+    public int NumOfResults { get; init; } = 1;
 }
 
 /// <summary>
