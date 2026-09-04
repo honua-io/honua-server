@@ -277,6 +277,65 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.Project)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_WithSingleWkidTransformationObject_AppliesSelectedPipeline()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": -100.0, "y": 40.0}]
+            },
+            "inSR": 4269,
+            "outSR": 4326,
+            "transformation": {"wkid": 108001}
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var point = document.RootElement.GetProperty("geometries")[0];
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-100.0, 1e-9);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(40.0, 1e-9);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
+    public async Task Project_ProjectedSourceTransformation_ResolvesAgainstGeodeticBase()
+    {
+        // pyproj 3.7.2 EPSG:26910 -> EPSG:4326 reference: the UTM zone 10N
+        // central-meridian point (500000, 0) maps to (-123, 0).
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPoint",
+                "geometries": [{"x": 500000.0, "y": 0.0}]
+            },
+            "inSR": 26910,
+            "outSR": 4326,
+            "transformation": 108001,
+            "transformForward": true
+        }
+        """;
+
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/project", content);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var point = document.RootElement.GetProperty("geometries")[0];
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-123.0, 1e-8);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(0.0, 1e-8);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Project)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public async Task Project_WithUnsupportedEsriTransformation_Returns400()
     {
         var body = """
