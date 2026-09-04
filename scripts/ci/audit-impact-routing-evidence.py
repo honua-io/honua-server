@@ -312,18 +312,21 @@ def current_blobs(root: Path) -> dict[str, str]:
     blobs["native_policy_inputs_sha256"] = hashlib.sha256(
         json.dumps(manifest, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    # The semantic manifest contains only the code and policy that decide what a
-    # receipt means: the two classifiers and the native routing policy. Workflow
-    # and resolver pins remain in the receipt and the full native input manifest
-    # as provenance. The native policy owns the legacy serving/worker workflow
-    # path/variant rules; native-image-impact.py validates those declarations
-    # against the live workflows and fails closed before emitting evidence.
-    # Operational workflow edits (for example an actions/checkout bump or a
-    # display-label change) therefore do not reset the cohort.
+    # The semantic manifest contains the code and policy that decide what a
+    # receipt means, including which source runs are eligible for collection.
+    # The native policy owns the legacy serving/worker workflow path/variant
+    # rules; native-image-impact.py validates those declarations against the
+    # live workflows and fails closed before emitting evidence. Those
+    # serving/worker blobs remain provenance, so operational edits there (for
+    # example an actions/checkout bump) do not reset the cohort.
     semantic_manifest = [
         ["pr_gate_classifier", blobs["pr_gate_classifier"]],
+        ["pr_gate_observer", blobs["pr_gate_observer"]],
+        ["pr_gate_workflow", blobs["pr_gate_workflow"]],
         ["native_classifier", blobs["native_classifier"]],
         ["native_routing_policy", blobs["native_routing_policy"]],
+        ["native_observer", blobs["native_observer"]],
+        ["trusted_run_resolver", blobs["trusted_run_resolver"]],
     ]
     blobs["policy_generation_sha256"] = hashlib.sha256(
         json.dumps(semantic_manifest, separators=(",", ":")).encode("utf-8")
@@ -1656,9 +1659,10 @@ def markdown(ledger: dict[str, Any]) -> str:
         "|---|---|",
         rows,
         "",
-        "Cohort drift is not receipt loss: classifier or routing-policy changes start a new "
-        + "semantic generation. Workflow and resolver blob pins remain provenance, so "
-        + "routing-irrelevant maintenance does not reset the cohort.",
+        "Cohort drift is not receipt loss: classifier, routing-policy, observer, resolver, or "
+        + "authoritative gate workflow changes start a new semantic generation. Legacy "
+        + "serving/worker workflow pins remain provenance because their routing declarations "
+        + "are validated by the native policy.",
         "A successful observer shell without one exact stable-name receipt is never counted. ",
         "Reuse is *build* reuse only: the GDAL worker's Trivy scan is re-run on every head "
         "because its verdict depends on the vulnerability database at scan time, never on a "
