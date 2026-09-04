@@ -1,5 +1,12 @@
 name: Impact Routing Evidence Ledger
 
+# Cohort reset contract: only changes to the impact classifiers or native
+# routing policy start a new semantic generation because those are the code and
+# policy that decide what a receipt means. Workflow and resolver blob pins are
+# retained as provenance; workflow maintenance, including docs or labels, does
+# not reset the evidence cohort. Keep the 60-sample floor, seven-day green
+# requirement, and report-only promotion boundary unchanged.
+
 on:
   workflow_dispatch:
   schedule:
