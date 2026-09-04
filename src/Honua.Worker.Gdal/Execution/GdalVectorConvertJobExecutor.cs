@@ -168,14 +168,6 @@ internal sealed partial class GdalVectorConvertJobExecutor(
                 return JobExecutionResult.Failed("ogr2ogr produced an empty output dataset.");
             }
 
-            if (outputLength > opts.MaxArtifactBytes)
-            {
-                Log.ArtifactTooLarge(logger, job.OperationId, outputLength, opts.MaxArtifactBytes);
-                return JobExecutionResult.Failed(
-                    $"Converted artifact size {outputLength} bytes exceeds configured " +
-                    $"MaxArtifactBytes={opts.MaxArtifactBytes}.");
-            }
-
             var publishError = await GdalArtifactPublisher.PublishFileAsync(
                 context,
                 opts,

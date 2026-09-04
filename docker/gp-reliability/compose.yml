@@ -110,7 +110,7 @@ services:
       Geoprocessing__OutputStaging__SweepInterval: 00:00:01
       Geoprocessing__OutputStaging__SweepGrace: 00:00:01
       Geoprocessing__OutputStaging__OrphanRetention: 00:00:02
-      HONUA_GP_QUALIFICATION_BARRIER_ROOT: /var/run/honua/qualification
+      HONUA_GP_QUALIFICATION_BARRIER_ROOT: ${HONUA_GP_QUALIFICATION_BARRIER_ROOT:-}
       HONUA_GP_QUALIFICATION_EXECUTOR_MODE: ${HONUA_GP_QUALIFICATION_EXECUTOR_MODE:-}
     depends_on:
       redis:
