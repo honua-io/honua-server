@@ -106,15 +106,18 @@ public sealed class FeatureServerAccessFilteringTests
         using var factory = CreateFactory();
         using var client = ServiceRbacTestFixture.CreateClient(factory, "reader");
 
-        var response = await client.PostAsync(
-            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
-            new FormUrlEncodedContent(new Dictionary<string, string>
+        using var content = new FormUrlEncodedContent(
+            new Dictionary<string, string>
             {
                 ["f"] = "json",
                 ["replicaName"] = "sync-disabled",
                 ["layers"] = "0",
                 ["syncModel"] = "perReplica"
-            }));
+            });
+
+        var response = await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            content);
 
         await response.AssertGeoServicesErrorAsync((int)HttpStatusCode.BadRequest);
         var body = await response.Content.ReadAsStringAsync();
