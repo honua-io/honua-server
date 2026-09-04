@@ -237,6 +237,48 @@ public class CogMetadataExtractorTests
         metadata.Extent.YMin.Should().BeApproximately(0.0, 1e-10);   // 50  - 1.0 * 50
     }
 
+    [Fact]
+    public async Task ReadMetadataAsync_PixelIsPointAndNonZeroTiepointCoordinates_NormalizesToPixelCorner()
+    {
+        var tiffData = BuildSyntheticCogBytesWithPixelPoint(
+            width: 100,
+            height: 50,
+            scaleX: 2,
+            scaleY: 4,
+            tiepointI: 3,
+            tiepointJ: 5,
+            tiepointX: 100,
+            tiepointY: 200);
+
+        var metadata = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiffData), "test-bucket", "test.tif");
+
+        metadata.Extent.XMin.Should().BeApproximately(93, 1e-10);
+        metadata.Extent.YMax.Should().BeApproximately(222, 1e-10);
+        metadata.Extent.XMax.Should().BeApproximately(293, 1e-10);
+        metadata.Extent.YMin.Should().BeApproximately(22, 1e-10);
+    }
+
+    [Fact]
+    public async Task ReadMetadataAsync_ModelTransformation_ComputesNorthUpExtent()
+    {
+        var tiffData = BuildSyntheticCogBytesWithModelTransformation(
+            width: 100,
+            height: 50,
+            originX: 500,
+            originY: 1000,
+            scaleX: 2,
+            scaleY: 4);
+
+        var metadata = await new CogMetadataExtractor().ReadMetadataAsync(
+            new InMemoryRangeReader(tiffData), "test-bucket", "test.tif");
+
+        metadata.Extent.XMin.Should().BeApproximately(500, 1e-10);
+        metadata.Extent.YMax.Should().BeApproximately(1000, 1e-10);
+        metadata.Extent.XMax.Should().BeApproximately(700, 1e-10);
+        metadata.Extent.YMin.Should().BeApproximately(800, 1e-10);
+    }
+
     /// <summary>
     /// Builds a synthetic classic TIFF (little-endian) with georeferencing tags
     /// in TIFF-spec ascending order. Tag 33550 comes before tag 33922.
@@ -316,6 +358,82 @@ public class CogMetadataExtractorTests
 
         writer.Write((uint)0); // no next IFD
 
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildSyntheticCogBytesWithPixelPoint(
+        int width, int height, double scaleX, double scaleY,
+        double tiepointI, double tiepointJ, double tiepointX, double tiepointY)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        writer.Write((uint)8);
+
+        const int entryCount = 10;
+        const uint scaleOffset = 134;
+        const uint tiepointOffset = 158;
+        const uint geoKeyOffset = 230;
+        writer.Write((ushort)entryCount);
+        WriteIfdEntry(writer, 256, 4, 1, (uint)width);
+        WriteIfdEntry(writer, 257, 4, 1, (uint)height);
+        WriteIfdEntry(writer, 259, 3, 1, 1);
+        WriteIfdEntry(writer, 322, 4, 1, 256);
+        WriteIfdEntry(writer, 323, 4, 1, 256);
+        WriteIfdEntry(writer, 324, 4, 1, 5000);
+        WriteIfdEntry(writer, 325, 4, 1, 1000);
+        WriteIfdEntry(writer, 33550, 12, 3, scaleOffset);
+        WriteIfdEntry(writer, 33922, 12, 6, tiepointOffset);
+        WriteIfdEntry(writer, 34735, 3, 8, geoKeyOffset);
+        writer.Write((uint)0);
+        writer.Write(scaleX);
+        writer.Write(scaleY);
+        writer.Write(0d);
+        writer.Write(tiepointI);
+        writer.Write(tiepointJ);
+        writer.Write(0d);
+        writer.Write(tiepointX);
+        writer.Write(tiepointY);
+        writer.Write(0d);
+        writer.Write((ushort)1);
+        writer.Write((ushort)1);
+        writer.Write((ushort)0);
+        writer.Write((ushort)1);
+        writer.Write((ushort)1025);
+        writer.Write((ushort)0);
+        writer.Write((ushort)1);
+        writer.Write((ushort)2);
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildSyntheticCogBytesWithModelTransformation(
+        int width, int height, double originX, double originY, double scaleX, double scaleY)
+    {
+        using var ms = new MemoryStream();
+        using var writer = new BinaryWriter(ms);
+        writer.Write((ushort)0x4949);
+        writer.Write((ushort)42);
+        writer.Write((uint)8);
+
+        const int entryCount = 8;
+        const uint matrixOffset = 110;
+        writer.Write((ushort)entryCount);
+        WriteIfdEntry(writer, 256, 4, 1, (uint)width);
+        WriteIfdEntry(writer, 257, 4, 1, (uint)height);
+        WriteIfdEntry(writer, 259, 3, 1, 1);
+        WriteIfdEntry(writer, 322, 4, 1, 256);
+        WriteIfdEntry(writer, 323, 4, 1, 256);
+        WriteIfdEntry(writer, 324, 4, 1, 5000);
+        WriteIfdEntry(writer, 325, 4, 1, 1000);
+        WriteIfdEntry(writer, 34264, 12, 16, matrixOffset);
+        writer.Write((uint)0);
+
+        // Row-major 4x4 raster-to-model matrix: x=originX+scaleX*i, y=originY-scaleY*j.
+        writer.Write(scaleX); writer.Write(0d); writer.Write(0d); writer.Write(originX);
+        writer.Write(0d); writer.Write(-scaleY); writer.Write(0d); writer.Write(originY);
+        writer.Write(0d); writer.Write(0d); writer.Write(1d); writer.Write(0d);
+        writer.Write(0d); writer.Write(0d); writer.Write(0d); writer.Write(1d);
         return ms.ToArray();
     }
 

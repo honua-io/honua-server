@@ -6,6 +6,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.Cog.Models;
 using Honua.Infrastructure.Authentication;
@@ -184,7 +185,18 @@ internal static class CogEndpoints
 
         try
         {
-            var metadata = await metadataReader.ReadMetadataAsync(reader, registration.Bucket, registration.ObjectKey, cancellationToken);
+            var objectMetadata = await reader.GetObjectMetadataAsync(
+                registration.Bucket, registration.ObjectKey, cancellationToken);
+            if (objectMetadata.SizeBytes <= 0 || string.IsNullOrWhiteSpace(objectMetadata.ETag))
+            {
+                throw new InvalidDataException("COG metadata refresh requires a non-empty object with an ETag.");
+            }
+
+            var metadata = await metadataReader.ReadMetadataAsync(
+                new RefreshPinnedRangeReader(reader, objectMetadata.ETag),
+                registration.Bucket,
+                registration.ObjectKey,
+                cancellationToken);
 
             // Warn about non-web-mercator CRS
             if (metadata.Srid is not (3857 or 4326) and > 0)
@@ -193,7 +205,7 @@ internal static class CogEndpoints
             }
 
             // Warn about unsupported compression
-            if (metadata.Compression is not ("JPEG" or "DEFLATE" or "NONE" or ""))
+            if (!TileDecompressor.IsSupported(metadata.Compression))
             {
                 CogLog.UnsupportedCompression(logger, metadata.Compression, id);
             }
@@ -254,4 +266,28 @@ internal static class CogEndpoints
         MetadataScannedAt = reg.MetadataScannedAt,
         CreatedAt = reg.CreatedAt
     };
+
+    private sealed class RefreshPinnedRangeReader(ICloudRangeReader inner, string expectedETag) : ICloudRangeReader
+    {
+        public CloudStorageProvider Provider => inner.Provider;
+
+        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length,
+            CancellationToken cancellationToken = default)
+            => inner.ReadRangeAsync(bucket, key, offset, length, expectedETag, cancellationToken);
+
+        public Task<byte[]> ReadRangeAsync(string bucket, string key, long offset, int length, string etag,
+            CancellationToken cancellationToken = default)
+            => inner.ReadRangeAsync(bucket, key, offset, length, expectedETag, cancellationToken);
+
+        public Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length,
+            CancellationToken cancellationToken = default)
+            => inner.ReadRangeStreamAsync(bucket, key, offset, length, cancellationToken);
+
+        public Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
+            => inner.GetObjectSizeAsync(bucket, key, cancellationToken);
+
+        public Task<CloudObjectMetadata> GetObjectMetadataAsync(string bucket, string key,
+            CancellationToken cancellationToken = default)
+            => inner.GetObjectMetadataAsync(bucket, key, cancellationToken);
+    }
 }
