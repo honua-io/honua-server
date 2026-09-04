@@ -47,6 +47,32 @@ public sealed class CsvAttributeRoundtripTests
         Assert.False(roundtrip.Attributes.Exists("missing"));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ImportExport_LeadingWhitespaceBeforeHeader_PreservesSchemaAndData(bool hasGeometry)
+    {
+        const string wkt = "POINT ZM (-157.1234567890123 21.1234567890123 30.125 40.25)";
+        var header = hasGeometry ? "WKT,note,missing" : "note,missing";
+        var row = hasGeometry ? $"{wkt},   ," : "   ,";
+        var source = Assert.Single(await ReadAsync($"\n   \n\t \n{header}\n{row}\n"));
+        Assert.Equal("   ", Assert.IsType<string>(source.Attributes["note"]));
+        Assert.False(source.Attributes.Exists("field_1"));
+        var roundtrip = await ExportAndReadAsync(source);
+        Assert.Equal("   ", Assert.IsType<string>(roundtrip.Attributes["note"]));
+        Assert.False(roundtrip.Attributes.Exists("missing"));
+        if (hasGeometry)
+        {
+            Assert.True(new WKTReader().Read(wkt).EqualsExact(roundtrip.Geometry));
+            Assert.Equal(30.125, roundtrip.Geometry.Coordinate.Z);
+            Assert.Equal(40.25, roundtrip.Geometry.Coordinate.M);
+        }
+        else
+        {
+            Assert.Null(roundtrip.Geometry);
+        }
+    }
+
     private static async Task<IFeature> ExportAndReadAsync(IFeature source)
     {
         using var output = new MemoryStream();

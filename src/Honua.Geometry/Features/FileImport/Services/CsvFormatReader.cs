@@ -492,7 +492,10 @@ internal static class CsvFormatReader
                 break;
             }
 
-            if (string.IsNullOrEmpty(record))
+            // Leading padding is not a header. After the header, whitespace can
+            // be a real value in an attribute-only row and must remain intact.
+            if (string.IsNullOrEmpty(record) ||
+                (sampleRecords.Count == 0 && string.IsNullOrWhiteSpace(record)))
             {
                 continue;
             }
