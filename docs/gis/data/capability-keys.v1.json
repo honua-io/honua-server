@@ -637,7 +637,8 @@
       "displayName": "OGC API - EDR",
       "category": "Serve",
       "edition": "Community",
-      "description": "Query environmental data resources through OGC API - Environmental Data Retrieval."
+      "description": "Query environmental data resources through OGC API - Environmental Data Retrieval.",
+      "status": "preview"
     },
     {
       "key": "serve.ogc-api-features",

@@ -63,6 +63,7 @@ public sealed class CapabilityRegistryConformanceTests
         "temporal.animation-api",
         "serve.3d-tiles-scene",
         "serve.i3s-scene",
+        "serve.ogc-api-edr",
         "scene.catalog",
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
