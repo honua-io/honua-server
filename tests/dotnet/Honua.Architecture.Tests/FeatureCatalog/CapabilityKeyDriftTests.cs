@@ -213,6 +213,22 @@ public sealed class CapabilityKeyDriftTests
     }
 
     [ArchitectureTest]
+    public void ImageServerAndWmts_ArePreviewInRegistryAndEveryCatalogProjection()
+    {
+        var registry = new CapabilityRegistry();
+        var catalog = LoadCommittedCatalog();
+        foreach (var capability in new[] { "serve.geoservices-imageserver", "serve.wmts" })
+        {
+            registry.Find(capability).Should().NotBeNull();
+            registry.Find(capability)!.Maturity.Should().Be(CapabilityMaturity.Preview);
+
+            var entries = catalog.Entries.Where(entry => entry.Capability == capability).ToArray();
+            entries.Should().NotBeEmpty();
+            entries.Should().OnlyContain(entry => entry.Maturity == "preview");
+        }
+    }
+
+    [ArchitectureTest]
     public void CommittedCapabilityKeysJson_MatchesCapabilityKeyCatalog()
     {
         var committed = LoadCommittedCapabilityKeysDocument();

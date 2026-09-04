@@ -149,6 +149,41 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
+    public async Task ExportImageAsync_WithDisabledGdalDrivers_ReportsUnsupportedFormat()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertImageServerProbeRasterAsync(schemaName);
+            var connectionString = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+            {
+                Options = "-c postgis.gdal_enabled_drivers=DISABLE_ALL",
+            };
+            await using var dataSource = NpgsqlDataSource.Create(connectionString.ConnectionString);
+            var store = new PostgresRasterStore(
+                new FixtureConnectionProvider(dataSource),
+                NullLogger<PostgresRasterStore>.Instance,
+                FixtureBypassDatabaseSchemaGuard.Instance,
+                schemaName);
+
+            var export = () => store.ExportImageAsync(LayerId, rasterId, new RasterQuery
+            {
+                OutputFormat = RasterFormat.PNG,
+                OutputWidth = 64,
+                OutputHeight = 64,
+            });
+
+            await export.Should().ThrowAsync<NotSupportedException>()
+                .WithMessage("The requested raster export format is not available on this server.");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
     public async Task ExportImageAsync_WithMinMaxStretch_RescalesFloatRasterTo8Bit()
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));

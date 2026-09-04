@@ -1250,6 +1250,23 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_UnavailableExportFormat_ReturnsNotImplementedWithoutProviderDetails()
+    {
+        SetupLayerAndRasters();
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new NotSupportedException("Private provider configuration details"));
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ExportImageAsync(context, 1, CreateRequest(responseFormat: "image"));
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+        context.Response.Body.Position = 0;
+        using var reader = new StreamReader(context.Response.Body);
+        (await reader.ReadToEndAsync()).Should().NotContain("Private provider configuration details");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_TemporaryStorageLimitExceeded_ReturnsServiceUnavailable()
     {
         SetupLayerAndRasters();
