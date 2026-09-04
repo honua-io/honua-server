@@ -183,8 +183,13 @@ internal static partial class MapServerEndpoints
             }
             var renderExtent = transformResult.Extent;
 
-            imageWidth = Math.Clamp(imageWidth, 1, maxDimensionW);
-            imageHeight = Math.Clamp(imageHeight, 1, maxDimensionH);
+            if (imageWidth > maxDimensionW || imageHeight > maxDimensionH)
+            {
+                return CreateExportBadRequest(
+                    context,
+                    responseFormat,
+                    $"Requested image size exceeds the service maximum of {maxDimensionW}x{maxDimensionH} pixels.");
+            }
 
             var backgroundColorValue = GetValue(values, "backgroundColor");
             SKColor? backgroundColor = null;
@@ -435,16 +440,19 @@ internal static partial class MapServerEndpoints
                         layer.StorageLayerId,
                         cancellationToken).ConfigureAwait(false);
                 }
+                var stableOrderField = resource.FindPrimaryIdField();
                 var featureQuery = CreateRasterFeatureQuery(
                     stylePlan,
                     spatialFilter,
                     serviceSrid,
                     imageSrid,
                     maxFeatures,
-                    sqlFilter);
+                    sqlFilter,
+                    stableOrderField: stableOrderField?.Name ?? GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource),
+                    stableOrderFieldType: stableOrderField?.Type);
                 var geometryType = resource.ReadGeometryType();
 
-                var renderedPointCount = await TryRenderRasterPointFastPathAsync(
+                var renderedPointCount = await TryRenderAllRasterPointPagesAsync(
                     canvas,
                     featureReader,
                     layer.StorageLayerId,
@@ -462,15 +470,15 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                var features = await QueryRasterFeaturesAsync(featureReader, layer.StorageLayerId, featureQuery, cancellationToken);
-
-                if (features.Length == 0)
+                await foreach (var features in QueryAllRasterFeaturePagesAsync(
+                                   featureReader,
+                                   layer.StorageLayerId,
+                                   featureQuery,
+                                   cancellationToken).ConfigureAwait(false))
                 {
-                    continue;
+                    totalFeatureCount += features.Length;
+                    RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, geometryType, renderZoom);
                 }
-
-                totalFeatureCount += features.Length;
-                RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, geometryType, renderZoom);
             }
 
             stopwatch.Stop();
@@ -1136,6 +1144,11 @@ internal static partial class MapServerEndpoints
 
             var spec = layersParam.Trim();
             var (visibility, requestedStaticLayerIds) = ParseLayerVisibilitySpec(spec);
+            if (IsAllLayersHiddenSentinel(visibility, requestedStaticLayerIds))
+            {
+                return (Array.Empty<ExportRenderLayer>(), null);
+            }
+
             if (requestedStaticLayerIds.Count == 0)
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
@@ -1181,6 +1194,11 @@ internal static partial class MapServerEndpoints
         {
             var spec = layersParam.Trim();
             var (visibility, ids) = ParseLayerVisibilitySpec(spec);
+            if (IsAllLayersHiddenSentinel(visibility, ids))
+            {
+                return (Array.Empty<ExportRenderLayer>(), null);
+            }
+
             requestedIds = ids;
             selected = visibility switch
             {
@@ -1257,6 +1275,13 @@ internal static partial class MapServerEndpoints
 
         return (renderLayers.ToArray(), null);
     }
+
+    private static bool IsAllLayersHiddenSentinel(
+        ExportLayerVisibility visibility,
+        HashSet<int> layerIds)
+        => visibility == ExportLayerVisibility.Show &&
+           layerIds.Count == 1 &&
+           layerIds.Contains(-1);
 
     private static bool TryConvertDynamicLayerDrawingInfo(
         int dynamicLayerId,

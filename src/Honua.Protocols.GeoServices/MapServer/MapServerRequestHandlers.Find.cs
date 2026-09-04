@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Globalization;
-using System.Collections.Immutable;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -253,13 +252,6 @@ internal static partial class MapServerEndpoints
                     searchPushedDown = true;
                 }
 
-                var outFields = fieldsToSearch
-                    .Select(field => field.Name)
-                    .Append(displayField)
-                    .Append(objectIdField)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToImmutableArray();
-
                 var pageSize = Math.Clamp(Math.Max(maxFindResults * 10, 50), 50, 500);
                 var offset = 0;
 
@@ -271,7 +263,6 @@ internal static partial class MapServerEndpoints
                         OutputSrid = outputSrid,
                         Limit = pageSize,
                         Offset = offset,
-                        OutFields = outFields,
                         SqlFilter = layerSqlFilter
                     };
 

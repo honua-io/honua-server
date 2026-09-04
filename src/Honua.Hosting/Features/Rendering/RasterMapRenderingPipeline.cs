@@ -5,6 +5,7 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Data.Common;
+using System.Runtime.CompilerServices;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -142,14 +143,18 @@ internal static class RasterMapRenderingPipeline
         int LayerId,
         bool HasGeometry,
         MetadataV2GeometryType GeometryType,
-        VerticalSelection? VerticalSelection = null);
+        VerticalSelection? VerticalSelection = null,
+        string? StableOrderField = null,
+        MetadataV2FieldType? StableOrderFieldType = null);
 
     internal static RenderLayerDescriptor CreateRenderLayerDescriptorFromV2(
         int layerId,
         bool hasGeometry,
         MetadataV2GeometryType geometryType,
-        VerticalSelection? verticalSelection = null)
-        => new(layerId, hasGeometry, geometryType, verticalSelection);
+        VerticalSelection? verticalSelection = null,
+        string? stableOrderField = null,
+        MetadataV2FieldType? stableOrderFieldType = null)
+        => new(layerId, hasGeometry, geometryType, verticalSelection, stableOrderField, stableOrderFieldType);
 
     /// <summary>
     /// Renders a raster tile from v2 resource render descriptors using the default
@@ -364,9 +369,11 @@ internal static class RasterMapRenderingPipeline
                 maxFeatures,
                 temporalFilter: layerTemporalFilters is { Count: > 0 } && layerIndex < layerTemporalFilters.Count
                     ? layerTemporalFilters[layerIndex]
-                    : null);
+                    : null,
+                stableOrderField: layer.StableOrderField,
+                stableOrderFieldType: layer.StableOrderFieldType);
 
-            var renderedPointCount = await TryRenderRasterPointFastPathAsync(
+            var renderedPointCount = await TryRenderAllRasterPointPagesAsync(
                 canvas,
                 featureReader,
                 layer.LayerId,
@@ -384,15 +391,15 @@ internal static class RasterMapRenderingPipeline
                 continue;
             }
 
-            var features = await QueryRasterFeaturesAsync(featureReader, layer.LayerId, featureQuery, cancellationToken)
-                .ConfigureAwait(false);
-            if (features.Length == 0)
+            await foreach (var features in QueryAllRasterFeaturePagesAsync(
+                               featureReader,
+                               layer.LayerId,
+                               featureQuery,
+                               cancellationToken).ConfigureAwait(false))
             {
-                continue;
+                totalFeatureCount += features.Length;
+                RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, layer.GeometryType, renderZoom);
             }
-
-            totalFeatureCount += features.Length;
-            RenderLayerToCanvas(canvas, features, stylePlan.StyleLayers, transform, layer.GeometryType, renderZoom);
         }
 
         var imageBytes = SkiaMapRenderer.EncodeSurface(surface, "png");
@@ -1207,7 +1214,9 @@ internal static class RasterMapRenderingPipeline
         int? outputSrid,
         int limit,
         SqlFragment? sqlFilter = null,
-        TemporalFilter? temporalFilter = null)
+        TemporalFilter? temporalFilter = null,
+        string? stableOrderField = null,
+        MetadataV2FieldType? stableOrderFieldType = null)
     {
         var referencedFields = stylePlan.ReferencedFields;
 
@@ -1219,6 +1228,9 @@ internal static class RasterMapRenderingPipeline
             Limit = limit,
             SqlFilter = sqlFilter,
             TemporalFilter = temporalFilter,
+            OrderBy = string.IsNullOrWhiteSpace(stableOrderField)
+                ? null
+                : [new OrderByClause(stableOrderField, ascending: true, stableOrderFieldType)],
             OutFields = referencedFields.Length > 0 ? ImmutableArray.CreateRange(referencedFields) : null,
             ExcludeAttributes = referencedFields.Length == 0
         };
@@ -1259,6 +1271,60 @@ internal static class RasterMapRenderingPipeline
 
         RenderProjectedCirclePoints(canvas, points, transform, circleStyle);
         return points.Length;
+    }
+
+    internal static async Task<int> TryRenderAllRasterPointPagesAsync(
+        SKCanvas canvas,
+        IFeatureReader featureReader,
+        int layerId,
+        MetadataV2GeometryType geometryType,
+        RasterStylePlan stylePlan,
+        FeatureQuery featureQuery,
+        SkiaMapRenderer.RenderExtent renderExtent,
+        int imageWidth,
+        int imageHeight,
+        Func<double, double, SKPoint> transform,
+        CancellationToken cancellationToken)
+    {
+        if (featureReader is not IRasterPointReader rasterPointReader ||
+            !TryCreateRasterPointFastPathQuery(
+                geometryType,
+                stylePlan,
+                featureQuery,
+                renderExtent,
+                imageWidth,
+                imageHeight,
+                out var pointQuery,
+                out var circleStyle))
+        {
+            return -1;
+        }
+
+        var pageSize = Math.Max(1, pointQuery.Limit ?? MaxFeaturesPerLayer);
+        var offset = pointQuery.Offset ?? 0;
+        var total = 0;
+        while (true)
+        {
+            var points = await rasterPointReader.QueryProjectedPointsAsync(
+                layerId,
+                pointQuery with { Limit = pageSize, Offset = offset },
+                cancellationToken).ConfigureAwait(false);
+            if (points.Length == 0)
+            {
+                break;
+            }
+
+            RenderProjectedCirclePoints(canvas, points, transform, circleStyle);
+            total += points.Length;
+            if (points.Length < pageSize)
+            {
+                break;
+            }
+
+            offset = checked(offset + points.Length);
+        }
+
+        return total;
     }
 
     private static bool TryCreateRasterPointFastPathQuery(
@@ -1329,6 +1395,61 @@ internal static class RasterMapRenderingPipeline
 
         var result = await featureReader.QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         return result.Items;
+    }
+
+    internal static async IAsyncEnumerable<ImmutableArray<Feature>> QueryAllRasterFeaturePagesAsync(
+        IFeatureReader featureReader,
+        int layerId,
+        FeatureQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // ArcGIS raster operations do not define a feature-count truncation contract (#4044).
+        // Treat the configured limit as a bounded page size, not a total cap: every page is
+        // rendered immediately, while the request timeout token bounds total database/render work.
+        var pageSize = Math.Max(1, query.Limit ?? MaxFeaturesPerLayer);
+        var offset = query.Offset ?? 0;
+        if (featureReader is not IPagedFeatureReader pagedFeatureReader)
+        {
+            while (true)
+            {
+                var result = await featureReader.QueryAsync(
+                    layerId,
+                    query with { Limit = pageSize, Offset = offset },
+                    cancellationToken).ConfigureAwait(false);
+                if (result.Items.IsDefaultOrEmpty)
+                {
+                    yield break;
+                }
+
+                yield return result.Items;
+                if (result.Items.Length < pageSize)
+                {
+                    yield break;
+                }
+
+                offset = checked(offset + result.Items.Length);
+            }
+        }
+
+        while (true)
+        {
+            var page = await pagedFeatureReader.QueryPageAsync(
+                layerId,
+                query with { Limit = pageSize, Offset = offset },
+                cancellationToken).ConfigureAwait(false);
+            if (page.Items.IsDefaultOrEmpty)
+            {
+                yield break;
+            }
+
+            yield return page.Items;
+            if (!page.HasMoreResults)
+            {
+                yield break;
+            }
+
+            offset = checked(offset + page.Items.Length);
+        }
     }
 
     private static void RenderProjectedCirclePoints(

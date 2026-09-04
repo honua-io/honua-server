@@ -10925,6 +10925,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Metadata_ReturnsServiceInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Metadata_SupportedImageFormatTypes_DoesNotAdvertiseGif",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Metadata_WithInvalidIdentifier_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerMetadataFaultIsolationTests.MapServer_Metadata_WhenTemporalExtentFails_OmitsTimeInfoAndReturnsMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerQueryLimitsTests.MapServer_Metadata_WithCustomMaxRecordCount_AdvertisesConfiguredLimit",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerTileLimitsTests.ServiceMetadata_WithMaxTileZoom24_AdvertisesZoom24InTileInfo",
         "Honua.Server.Tests.Features.Security.GeoServicesRouteValidationTests.MapServer_Metadata_AllowsNumericLeadingServiceId"
@@ -11210,6 +11211,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithMalformedSizePair_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithMalformedTime_DoesNotLeakInputOrParserDetails",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithProjectedBbox_In3857_ReturnsImageJson",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithSizeExceedingAdvertisedMaximum_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithTime_ReturnsImageJson",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithUnsupportedDynamicLayerRenderer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Export_WithUnsupportedImageSr_DoesNotLeakTransformDetails",
@@ -11479,6 +11481,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ClientCompatErrorHandlingTests.MapServer_UnknownLayerId_ReturnsErrorEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_LayerMetadata_ReturnsLayerInfo",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerMetadataFaultIsolationTests.MapServer_Metadata_WhenTemporalExtentFails_OmitsTimeInfoAndReturnsMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerObjectIdFieldTests.LayerMetadata_WithStringIdAndNumericObjectId_UsesNumericObjectIdField",
         "Honua.Server.Tests.MapServerSublayerRelationshipMetadataTests.MapServerSublayerMetadata_MatchesFeatureServerRelationshipsAndAttachments",
         "Honua.Server.Tests.MapServerSublayerRelationshipMetadataTests.MapServerSublayerMetadata_SurfacesRelationshipsAndHasAttachments"
