@@ -300,7 +300,9 @@ def production_database_refusal(with_password=False):
 
 
 def verify_runtime(path):
-    rows = [json.loads(line) for line in path.read_text().splitlines() if line]
+    content = path.read_text()
+    rows = json.loads(content) if content.lstrip().startswith('[') else [
+        json.loads(line) for line in content.splitlines() if line]
     results = {row['case']: row for row in rows}
     refused = {'missing-db-and-auth', 'missing-auth', 'missing-db', 'missing-master-key',
                'weak-admin', 'dev-auth-in-production', 'pro-dev-grant-in-production',
