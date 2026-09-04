@@ -170,6 +170,8 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 using var anonymousResponse = await anonymousClient.GetAsync("/api/v1/capabilities/manifest");
                 using var anonymousDocument = await ReadDocumentAsync(anonymousResponse);
                 var anonymousCapability = GetCapability(anonymousDocument.RootElement, "admin.multi-tenancy");
+                anonymousCapability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                anonymousCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 anonymousCapability.GetProperty("available").GetBoolean().Should().BeFalse();
                 anonymousCapability.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
                 anonymousCapability.GetProperty("entitlementKey").GetString().Should().Be(FeatureCatalog.MultiTenancyKey);
@@ -178,8 +180,11 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
                 using var adminClient = fixture.CreateAdminClient();
                 using var adminResponse = await adminClient.GetAsync("/api/v1/capabilities/manifest");
                 using var adminDocument = await ReadDocumentAsync(adminResponse);
-                GetCapability(adminDocument.RootElement, "admin.multi-tenancy")
-                    .GetProperty("available").GetBoolean().Should().BeTrue();
+                var adminCapability = GetCapability(adminDocument.RootElement, "admin.multi-tenancy");
+                adminCapability.GetProperty("available").GetBoolean().Should().BeTrue();
+                adminCapability.GetProperty("lifecycle").GetString().Should().Be("preview",
+                    "opting into a trial must never promote tenancy to GA");
+                adminCapability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
             }
             finally
             {
