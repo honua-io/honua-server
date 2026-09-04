@@ -340,7 +340,7 @@ export class FeatureServerClient {
       data.updates = options.updates;
     }
     if (options.deletes) {
-        data.deletes = options.deletes;
+      data.deletes = options.deletes;
     }
     if (options.rollbackOnFailure !== undefined) {
       data.rollbackOnFailure = options.rollbackOnFailure;
