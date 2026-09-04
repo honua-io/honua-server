@@ -3885,7 +3885,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_WithoutAdminAuthorization_IsRejected"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -3904,7 +3904,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.GetReplica_WithoutAdminAuthorization_IsRejected"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -3921,7 +3921,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ListConflicts_WhenProviderDoesNotSupportReview_ReturnsNotImplemented"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -3937,7 +3937,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.GetConflict_ReportsWhetherClientEditWasApplied"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -4984,7 +4984,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -5001,7 +5001,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -5017,7 +5017,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -13529,7 +13529,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "mobile-runtime-auth-diagnostics",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -15970,7 +15970,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WithUnknownAction_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -16637,7 +16637,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -16658,7 +16658,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -17394,7 +17394,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "mobile-runtime-auth-diagnostics",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -18746,6 +18746,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAccessFilteringTests.CreateReplica_WhenServiceDoesNotAdvertiseSync_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_InvalidService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_LayersAsJsonArray_ReturnsReplicaId",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_MissingReplicaName_ReturnsBadRequest",

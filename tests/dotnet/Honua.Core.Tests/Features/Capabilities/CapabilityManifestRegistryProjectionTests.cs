@@ -99,7 +99,8 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
         // temporal.* promoted to Implemented (GA) in #2429 — no longer omitted.
-        // sync.offline promoted to Implemented (GA) in #2430 — no longer omitted.
+        // sync.offline is Preview in 2026.1 and remains in the manifest projection when the
+        // deployment-wide Preview gate is enabled.
         // realtime.feature-streams promoted to Implemented (GA) in #2428 — no longer omitted.
         // alerts.geofence promoted in #2427 — not omitted.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.

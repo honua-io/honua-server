@@ -2,12 +2,13 @@
   "schemaVersion": 1,
   "lastReviewed": "2026-09-03",
   "trackingIssue": "#2863",
-  "readme": "HAND-AUTHORED JUDGEMENT SOURCE for the published GeoServices REST parity matrix. This file carries ONLY what is human judgement: how completely each Esri operation is implemented, and the gap prose. It deliberately does NOT carry a route roster \u2014 which routes exist is derived from the generated capability data (EndpointRegistry.All via FeatureCatalogGenerator) by GeoServicesRouteRoster, and the published matrix (docs/gis/data/geoservices-rest-parity.json) is GENERATED from the join of the two. Regenerate with scripts/generate-geoservices-parity.sh after editing this file. The esriPaths below are the join keys: they are the served routes normalized to their Esri-relative form by collapsing the service-instance address (see GeoServicesRouteRoster). GeoServicesParityMatrixDriftTests fails if any served operation is unclassified here, or if any esriPath here is not served. Status vocabulary: implemented | partial | stub. \"stub\" means the route exists and returns the spec-shaped response but the backing model is deferred \u2014 read-stubs return empty/false and mutation-stubs return HTTP 400 rather than fabricating success. NEVER upgrade a status to make a gate pass; if a gate creates that pressure, the gate is wrong.",
+  "readme": "HAND-AUTHORED JUDGEMENT SOURCE for the published GeoServices REST parity matrix. This file carries ONLY what is human judgement: how completely each Esri operation is implemented, and the gap prose. It deliberately does NOT carry a route roster \u2014 which routes exist is derived from the generated capability data (EndpointRegistry.All via FeatureCatalogGenerator) by GeoServicesRouteRoster, and the published matrix (docs/gis/data/geoservices-rest-parity.json) is GENERATED from the join of the two. Regenerate with scripts/generate-geoservices-parity.sh after editing this file. The esriPaths below are the join keys: they are the served routes normalized to their Esri-relative form by collapsing the service-instance address (see GeoServicesRouteRoster). GeoServicesParityMatrixDriftTests fails if any served operation is unclassified here, or if any esriPath here is not served. Status vocabulary: implemented | partial | stub | preview. \"preview\" means the route is available for opt-in evaluation but is not a GA contract in the current release. \"stub\" means the route exists and returns the spec-shaped response but the backing model is deferred \u2014 read-stubs return empty/false and mutation-stubs return HTTP 400 rather than fabricating success. NEVER upgrade a status to make a gate pass; if a gate creates that pressure, the gate is wrong.",
   "statusVocabulary": {
     "operation": [
       "implemented",
       "partial",
       "stub",
+      "preview",
       "not_implemented"
     ],
     "parameter": [
@@ -139,35 +140,35 @@
         },
         {
           "name": "Create Replica",
-          "status": "implemented",
+          "status": "preview",
           "esriPaths": [
             "/FeatureServer/createReplica"
           ],
-          "notes": "Registers offline replica state in distributed cache when available, otherwise in memory."
+          "notes": "Preview/opt-in in 2026.1. Registers offline replica state in distributed cache when available, otherwise in memory; full parity is deferred to release/2026.2."
         },
         {
           "name": "Extract Changes",
-          "status": "implemented",
+          "status": "preview",
           "esriPaths": [
             "/FeatureServer/extractChanges"
           ],
-          "notes": "First sync returns full adds; later syncs do not provide database-grade incremental change tracking."
+          "notes": "Preview/opt-in in 2026.1. Full Esri offline-sync parity is deferred to release/2026.2."
         },
         {
           "name": "Synchronize Replica",
-          "status": "implemented",
+          "status": "preview",
           "esriPaths": [
             "/FeatureServer/synchronizeReplica"
           ],
-          "notes": "Supports download, upload, and bidirectional sync directions."
+          "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions; broader parity is deferred to release/2026.2."
         },
         {
           "name": "Unregister Replica",
-          "status": "implemented",
+          "status": "preview",
           "esriPaths": [
             "/FeatureServer/unRegisterReplica"
           ],
-          "notes": ""
+          "notes": "Preview/opt-in in 2026.1; full lifecycle parity is deferred to release/2026.2."
         },
         {
           "name": "Get Estimates (service)",

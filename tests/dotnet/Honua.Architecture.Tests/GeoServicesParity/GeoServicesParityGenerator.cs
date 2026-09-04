@@ -50,7 +50,7 @@ internal static class GeoServicesParityGenerator
     public const string MatrixRelativePath = "docs/gis/data/geoservices-rest-parity.json";
 
     /// <summary>Statuses a served operation may carry.</summary>
-    public static readonly string[] ServedStatuses = ["implemented", "partial", "stub"];
+    public static readonly string[] ServedStatuses = ["implemented", "partial", "stub", "preview"];
 
     /// <summary>
     /// Joins the derived roster against the judgement source and reports every
@@ -161,6 +161,7 @@ internal static class GeoServicesParityGenerator
                 var buckets = new ParityOperationBuckets
                 {
                     Implemented = Bucket(operations, "implemented"),
+                    Preview = Bucket(operations, "preview"),
                     Partial = Bucket(operations, "partial"),
                     Stub = Bucket(operations, "stub"),
                     NotImplemented = service.AbsentList
