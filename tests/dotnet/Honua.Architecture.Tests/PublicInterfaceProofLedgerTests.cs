@@ -32,6 +32,7 @@ public sealed partial class PublicInterfaceProofLedgerTests
     private static readonly HashSet<string> AllowedStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "implemented",
+        "preview",
         "planned",
         "bounded-child-ticket"
     };

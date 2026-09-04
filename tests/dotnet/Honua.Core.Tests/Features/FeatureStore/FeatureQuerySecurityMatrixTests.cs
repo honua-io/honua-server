@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
@@ -17,6 +18,23 @@ public sealed class FeatureQuerySecurityMatrixTests
     public static IEnumerable<object[]> MaskedQueryCases()
     {
         yield return ["primary where", new FeatureQuery { Where = "secret = 1" }];
+        // OGC CQL2 is translated before it reaches the shared provider seam. These
+        // JSONB accessor shapes cover filter and per-field queryable predicates on
+        // storage-backed OGC Features resources (#4154).
+        yield return ["OGC CQL2 text filter", new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("\"attributes\" ->> 'secret' LIKE @p0", ["1%"])
+        }];
+        yield return ["OGC CQL2 JSON numeric filter", new FeatureQuery
+        {
+            SqlFilter = new SqlFragment(
+                "NULLIF(\"attributes\" ->> 'secret', '')::integer >= @p0",
+                [100])
+        }];
+        yield return ["OGC queryable parameter", new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("\"attributes\" ->> 'secret' = @p0", ["classified"])
+        }];
         yield return ["outStatistics", new FeatureQuery
         {
             OutStatistics = ImmutableArray.Create(new StatisticDefinition
@@ -43,6 +61,10 @@ public sealed class FeatureQuerySecurityMatrixTests
         yield return ["orderBy", new FeatureQuery
         {
             OrderBy = ImmutableArray.Create(new OrderByClause("secret"))
+        }];
+        yield return ["OGC sortby", new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(new OrderByClause("secret", ascending: false))
         }];
         yield return ["storage mapped statistics", new FeatureQuery
         {

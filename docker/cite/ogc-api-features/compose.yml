@@ -1,6 +1,6 @@
 services:
   honua-server:
-    image: honua-server:latest
+    image: "${HONUA_CITE_SERVER_IMAGE:-honua-server:latest}"
     build:
       context: ../../..
       dockerfile: Dockerfile

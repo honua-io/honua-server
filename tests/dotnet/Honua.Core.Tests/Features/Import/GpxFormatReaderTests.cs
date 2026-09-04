@@ -91,7 +91,7 @@ public sealed class GpxFormatReaderTests
     }
 
     [Fact]
-    public async Task ReadStreamingAsync_TrackWithNameAndSegments_ReturnsSingleLineString()
+    public async Task ReadStreamingAsync_TrackWithNameAndSegments_PreservesLineAndIsolatedPoint()
     {
         // #2354: tracks must collect trkpt points across <trkseg> nesting even when a <name>
         // precedes them, and even when trkpt carries child elements (<ele>).
@@ -114,8 +114,16 @@ public sealed class GpxFormatReaderTests
         var features = await ReadAsync(gpx);
 
         features.Should().ContainSingle();
-        var line = features[0].Geometry.Should().BeOfType<LineString>().Subject;
-        line.Coordinates.Should().HaveCount(3);
+        var geometry = features[0].Geometry.Should().BeOfType<GeometryCollection>().Subject;
+        geometry.NumGeometries.Should().Be(2);
+        var line = geometry.GetGeometryN(0).Should().BeOfType<LineString>().Subject;
+        line.Coordinates.Should().HaveCount(2);
+        line.Coordinates[0].Should().Be(new Coordinate(2, 1));
+        line.Coordinates[1].Should().Be(new Coordinate(4, 3));
+        var point = geometry.GetGeometryN(1).Should().BeOfType<Point>().Subject;
+        point.Coordinate.Should().Be(new Coordinate(6, 5));
+        geometry.NumPoints.Should().Be(3);
+        geometry.Length.Should().Be(line.Length);
         features[0].Attributes["name"].Should().Be("Track 1");
     }
 
