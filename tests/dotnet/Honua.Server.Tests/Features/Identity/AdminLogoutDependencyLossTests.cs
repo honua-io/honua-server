@@ -32,6 +32,7 @@ public sealed class AdminLogoutDependencyLossTests
     [InlineData(true, true, true, true)]
     [Endpoint("POST /api/v1/admin/auth/logout")]
     [Endpoint("POST /saml/slo")]
+    [Endpoint("GET /api/v1/admin/auth/session")]
     public async Task Logout_DistributedCacheOutage_Returns503UntilRevocationCanBeRetried(
         bool saml, bool warmCache, bool readsAvailable = false, bool sessionAbsent = false)
     {
@@ -91,6 +92,10 @@ public sealed class AdminLogoutDependencyLossTests
         if (sessionAbsent)
         {
             await backingCache.RemoveAsync("admin-auth:session:" + sessionId);
+            using var sessionResponse = await client.GetAsync("/api/v1/admin/auth/session");
+            Assert.Equal(HttpStatusCode.OK, sessionResponse.StatusCode);
+            Assert.Contains(sessionResponse.Headers.GetValues("Set-Cookie"), cookie =>
+                cookie.StartsWith(AdminAuthSessionStore.AuthSessionCookieName + "=;", StringComparison.Ordinal));
         }
         using var failed = await client.PostAsync(path, saml ? content : null);
         if (sessionAbsent)
