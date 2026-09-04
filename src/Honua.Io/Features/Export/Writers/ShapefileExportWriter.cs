@@ -72,15 +72,13 @@ internal static class ShapefileExportWriter
             var prefixDirectory = Path.Join(scratchDir, "prefix");
             Directory.CreateDirectory(prefixDirectory);
             var prefixPath = Path.Join(prefixDirectory, "null-rows.dbf");
-            DbfWriter? prefixWriter = null;
-            try
+            using (var prefixWriter = new DbfWriter(prefixPath, dbfFields, Encoding.UTF8))
             {
                 while (await enumerator.MoveNextAsync().ConfigureAwait(false))
                 {
                     var candidate = enumerator.Current;
                     if (candidate.Geometry is null || candidate.Geometry.Length == 0)
                     {
-                        prefixWriter ??= new DbfWriter(prefixPath, dbfFields, Encoding.UTF8);
                         SetDbfValues(prefixWriter.Fields, fields, dbfFieldMap, candidate.Attributes);
                         prefixWriter.Write();
                         continue;
@@ -90,10 +88,6 @@ internal static class ShapefileExportWriter
                     firstGeometry = WkbReaderCache.Get().Read(candidate.Geometry);
                     break;
                 }
-            }
-            finally
-            {
-                prefixWriter?.Dispose();
             }
 
             var (hasZ, hasM) = DetectZM(firstGeometry);
