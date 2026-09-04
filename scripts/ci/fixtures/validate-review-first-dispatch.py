@@ -107,10 +107,11 @@ def main() -> None:
         "if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
         "'pull_request' || github.run_attempt > 1"
     )
-    # Four expensive steps remain in the build/test job and four now live in
-    # the parallel format job (checkout, setup, restore, format). All eight
-    # must stay attempt-2-only when review-first enforcement is enabled.
-    if pr_gate.count(full_condition) != 8:
+    # Seven expensive steps remain in the build/test job (including the
+    # PostGIS pre-pull and server boot smoke) and four now live in the parallel
+    # format job (checkout, setup, restore, format). All eleven must stay
+    # attempt-2-only when review-first enforcement is enabled.
+    if pr_gate.count(full_condition) != 11:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
 
     revalidation_condition = (
