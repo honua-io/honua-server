@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
@@ -132,17 +133,21 @@ internal sealed class TenantContextMiddleware(
             // principals use the same boundary and remain available only on routes
             // carrying the explicit tenant-independent marker. MCP data-bearing
             // operations apply their own tenant requirement to both bearer schemes.
-            var tenantBoundMcpCall = await TenantDenialResponseWriter
-                .IsTenantBoundMcpRequestAsync(context.Request)
-                .ConfigureAwait(false);
-            if ((!context.Request.Path.StartsWithSegments(
-                     "/mcp",
-                     StringComparison.OrdinalIgnoreCase)
-                    || tenantBoundMcpCall)
+            if (!context.Request.Path.StartsWithSegments(
+                    "/mcp",
+                    StringComparison.OrdinalIgnoreCase)
                 && !IsTenantIndependentControlPlaneEndpoint(context))
             {
+                // The bearer is already authenticated. On an endpoint with an explicit
+                // authorization policy, preserve the authorization layer's forbidden
+                // contract for an authenticated caller who lacks tenant binding. Public
+                // routes without authorization metadata retain the 401 tenant-boundary
+                // response used by OGC and other tenant-required reads.
+                var denial = context.GetEndpoint()?.Metadata.GetMetadata<IAuthorizeData>() is not null
+                    ? TenantDenialKind.PermissionDenied
+                    : TenantDenialKind.AuthenticationRequired;
                 await TenantDenialResponseWriter
-                    .WriteAsync(context, TenantDenialKind.AuthenticationRequired)
+                    .WriteAsync(context, denial)
                     .ConfigureAwait(false);
                 return;
             }
