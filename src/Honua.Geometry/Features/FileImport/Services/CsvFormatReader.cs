@@ -218,7 +218,7 @@ internal static class CsvFormatReader
     private static Feature? BuildFeature(
         string[] headers,
         IReadOnlyList<string> fields,
-        IReadOnlySet<int> quotedFields,
+        HashSet<int> quotedFields,
         CsvColumnMapping mapping,
         GeometryFactory geometryFactory,
         WKTReader wktReader,
@@ -550,7 +550,7 @@ internal static class CsvFormatReader
 
     private static int CountOccurrences(string value, char candidate) => value.Count(ch => ch == candidate);
 
-    private static List<string> ParseCsvRecord(string record, char delimiter, ISet<int>? quotedFields = null)
+    private static List<string> ParseCsvRecord(string record, char delimiter, HashSet<int>? quotedFields = null)
     {
         var fields = new List<string>();
         var current = new StringBuilder(record.Length);
