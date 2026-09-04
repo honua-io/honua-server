@@ -57,7 +57,7 @@ public sealed class TileOperationJobServicePublishTests
         {
             Operation = operation,
             ServiceId = serviceScoped ? "requested" : null,
-            LayerId = serviceScoped ? null : 7,
+            LayerId = 7,
             MinZoom = 0,
             MaxZoom = 0,
             MaxTiles = 1
@@ -65,7 +65,8 @@ public sealed class TileOperationJobServicePublishTests
 
         await sut.ProcessQueuedJobAsync(jobId);
 
-        (await sut.GetAsync(jobId))!.Status.Should().Be(OperationStatus.Completed);
+        var progress = await sut.GetAsync(jobId);
+        progress!.Status.Should().Be(OperationStatus.Completed, progress.ErrorMessage);
         stub.LastUploadBytes.Should().NotBeNull();
         var header = PMTilesHeader.ReadFrom(stub.LastUploadBytes!);
         using var metadataBytes = new MemoryStream(stub.LastUploadBytes!,
