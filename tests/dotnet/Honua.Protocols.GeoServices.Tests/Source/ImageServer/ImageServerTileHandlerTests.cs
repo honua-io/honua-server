@@ -397,7 +397,7 @@ public class ImageServerTileHandlerTests
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
-        var context = CreateImageServerContext();
+        var context = CreateImageServerContext(services => services.AddValidationServices());
         context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
         var result = await handler.GetImageTileAsync(
             context,
@@ -458,7 +458,7 @@ public class ImageServerTileHandlerTests
         _rasterStore.QueryRastersAsync(default, default, default)
             .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
 
-        var context = CreateImageServerContext();
+        var context = CreateImageServerContext(services => services.AddValidationServices());
         context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
         var result = await handler.GetImageTileAsync(
             context,
