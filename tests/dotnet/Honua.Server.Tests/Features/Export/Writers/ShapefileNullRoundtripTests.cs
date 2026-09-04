@@ -21,6 +21,8 @@ public sealed class ShapefileNullRoundtripTests
     [InlineData("unlocated,\nlocated,POINT (1.25 2.5)\n")]
     [InlineData("located,POINT (1.25 2.5)\nunlocated,\n")]
     [InlineData("unlocated,\nunlocated-too,\n")]
+    [InlineData("unlocated,\nlocated,POINT Z (1.25 2.5 30)\n")]
+    [InlineData("unlocated,\nlocated,POINT M (1.25 2.5 40)\n")]
     public async Task ImportExport_NullGeometryRows_PreservesEveryRowAndAttribute(string rows)
     {
         await using var input = new MemoryStream(Encoding.UTF8.GetBytes($"name,WKT\n{rows}"));
@@ -58,8 +60,8 @@ public sealed class ShapefileNullRoundtripTests
                 else
                 {
                     Assert.True(source[i].Geometry.EqualsExact(roundtrip[i].Geometry));
-                    Assert.True(double.IsNaN(roundtrip[i].Geometry.Coordinate.Z));
-                    Assert.True(double.IsNaN(roundtrip[i].Geometry.Coordinate.M));
+                    Assert.Equal(source[i].Geometry.Coordinate.Z, roundtrip[i].Geometry.Coordinate.Z);
+                    Assert.Equal(source[i].Geometry.Coordinate.M, roundtrip[i].Geometry.Coordinate.M);
                 }
 
                 recordOffset += 8 + 2 * BinaryPrimitives.ReadInt32BigEndian(shapeBytes.AsSpan(recordOffset + 4, 4));
@@ -100,8 +102,14 @@ public sealed class ShapefileNullRoundtripTests
         var id = 0;
         foreach (var feature in source)
         {
+            // Match import's dimension selection: do not introduce absent Z/M values
+            // while encoding a geometry that only carries XY, XYZ or XYM.
+            var coordinates = feature.Geometry?.Coordinates ?? [];
+            var writer = new WKBWriter(ByteOrder.LittleEndian, false,
+                coordinates.Any(coordinate => !double.IsNaN(coordinate.Z)),
+                coordinates.Any(coordinate => !double.IsNaN(coordinate.M)));
             yield return Feature.Create(++id,
-                feature.Geometry is null ? null : new WKBWriter().Write(feature.Geometry),
+                feature.Geometry is null ? null : writer.Write(feature.Geometry),
                 feature.Attributes.GetNames().ToImmutableDictionary(name => name, name => (object?)feature.Attributes[name]));
         }
 
