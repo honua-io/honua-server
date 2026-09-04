@@ -18,6 +18,9 @@ public static class OperationScopeMapping
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (TryResolveAdminAccessOperation(request.OperationId, out operation))
+            return true;
+
         if (request.GatewayRequest is { } gateway)
         {
             operation = gateway.Kind switch
@@ -70,4 +73,45 @@ public static class OperationScopeMapping
             "studio.draft.delete" => OperatorOperation.Delete,
             _ => default,
         };
+
+    private static bool TryResolveAdminAccessOperation(string operationId, out OperatorOperation operation)
+    {
+        var isAccessFamily = operationId.StartsWith("admin.api-key.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.role.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.user.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.tenant.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.oidc-provider.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.oauth-client.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.oauth-scope.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.rate-limit-policy.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.field-mask-policy.", StringComparison.Ordinal) ||
+            operationId.StartsWith("admin.rls-policy.", StringComparison.Ordinal);
+        if (!isAccessFamily)
+        {
+            operation = default;
+            return false;
+        }
+
+        if (operationId.EndsWith(".list", StringComparison.Ordinal) ||
+            operationId.EndsWith(".get", StringComparison.Ordinal) ||
+            operationId.EndsWith(".status", StringComparison.Ordinal) ||
+            operationId.EndsWith(".test", StringComparison.Ordinal) ||
+            operationId.EndsWith(".export", StringComparison.Ordinal) ||
+            operationId.EndsWith(".effective-permissions", StringComparison.Ordinal) ||
+            operationId.EndsWith(".permissions.get", StringComparison.Ordinal))
+        {
+            operation = default;
+            return false;
+        }
+
+        operation = operationId.EndsWith(".create", StringComparison.Ordinal) ||
+            operationId.EndsWith(".register", StringComparison.Ordinal)
+                ? OperatorOperation.Create
+                : operationId.EndsWith(".delete", StringComparison.Ordinal) ||
+                  operationId.EndsWith(".revoke", StringComparison.Ordinal) ||
+                  operationId.EndsWith(".deprovision", StringComparison.Ordinal)
+                    ? OperatorOperation.Delete
+                    : OperatorOperation.Update;
+        return true;
+    }
 }

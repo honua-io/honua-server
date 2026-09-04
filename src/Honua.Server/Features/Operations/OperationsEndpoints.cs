@@ -121,6 +121,10 @@ internal static class OperationsEndpoints
         {
             return NotFound(context, $"Operation '{id}' was not found.");
         }
+        catch (OperationUnavailableException ex)
+        {
+            return BadRequest(context, ex.Message);
+        }
         catch (ArgumentException ex)
         {
             return BadRequest(context, ex.Message);
@@ -213,6 +217,10 @@ internal static class OperationsEndpoints
         catch (OperationNotFoundException)
         {
             return NotFound(context, $"Operation '{id}' was not found.");
+        }
+        catch (OperationUnavailableException ex)
+        {
+            return BadRequest(context, ex.Message);
         }
         catch (ArgumentException ex)
         {

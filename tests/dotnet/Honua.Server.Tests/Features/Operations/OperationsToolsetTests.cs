@@ -386,6 +386,189 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public async Task LaneC_AccessOperations_RoundTrip_FromOpenApiCatalog_ToEligiblePublishedTools()
+    {
+        var catalog = new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System);
+        var mappers = AdminAccessOperationCatalog.Definitions
+            .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
+            .Select(static definition => new AdminOperateOperationApprovalRequestMapper(definition))
+            .ToArray();
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: mappers);
+
+        var descriptors = (await catalog.GetSnapshotAsync(CancellationToken.None)).Operations;
+        var tools = await source.GetToolsAsync(CancellationToken.None);
+        var expected = descriptors
+            .Where(descriptor => !AdminMcpOperationExclusions.ContainsOperation(descriptor.OperationId))
+            .Select(descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId));
+
+        descriptors.Should().HaveCount(AdminAccessOperationCatalog.Definitions.Count);
+        tools.Select(static tool => tool.Name).Should().BeEquivalentTo(expected);
+        tools.Select(static tool => tool.Name).Should().Contain(
+            "honua_admin_api_key_list", "honua_admin_api_key_effective_permissions");
+        tools.Select(static tool => tool.Name).Should().NotContain(
+            "honua_admin_api_key_create", "honua_admin_api_key_rotate", "honua_admin_oauth_client_register");
+    }
+
+    [UnitTest]
+    public void LaneC_DescriptorsAndExclusions_DiffAgainstCurrentAdminOpenApi()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(
+            RepositoryPaths.Resolve("docs", "developer", "api-specs", "admin-api.json")));
+        var openApiIds = document.RootElement.GetProperty("paths").EnumerateObject()
+            .SelectMany(static path => path.Value.EnumerateObject())
+            .Where(static method => method.Value.ValueKind == JsonValueKind.Object &&
+                method.Value.TryGetProperty("operationId", out _))
+            .Select(static method => method.Value.GetProperty("operationId").GetString()!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var definition in AdminAccessOperationCatalog.Definitions)
+        {
+            openApiIds.Should().Contain(definition.OpenApiOperationId);
+            AdminAccessOperationCatalog.Descriptors.Should().ContainSingle(
+                descriptor => descriptor.OperationId == definition.OperationId);
+        }
+
+        AdminMcpOperationExclusions.All.Select(static exclusion => exclusion.OpenApiOperationId)
+            .Should().OnlyContain(openApiId => openApiIds.Contains(openApiId));
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.api-key.create" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.OneTimeSecretReasonCode);
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.api-key.rotate" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.OneTimeSecretReasonCode);
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.oauth-client.register" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.OneTimeSecretReasonCode);
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.oidc-provider.create" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.SecretInputReasonCode);
+        AdminMcpOperationExclusions.All.Should().ContainSingle(entry =>
+            entry.OperationId == "admin.oidc-provider.update" &&
+            entry.ReasonCode == AdminMcpOperationExclusions.SecretInputReasonCode);
+        AdminMcpOperationExclusions.Digest.Should().MatchRegex("^[0-9a-f]{64}$");
+    }
+
+    [UnitTest]
+    public void LaneC_EachDescriptorHasOneExecutor_AndEachMutationHasOneReplayMapper()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddAdminAccessOperations().AddAdminAccessOperations();
+        using var provider = services.BuildServiceProvider();
+
+        using var scope = provider.CreateScope();
+        var eligible = AdminAccessOperationCatalog.Definitions
+            .Where(static definition => !AdminMcpOperationExclusions.RequiresSecretAwareRuntime(definition.OperationId))
+            .ToArray();
+        scope.ServiceProvider.GetServices<IOperationExecutor>()
+            .Select(static executor => executor.OperationId)
+            .Should().BeEquivalentTo(eligible.Select(static definition => definition.OperationId));
+        services.Where(static descriptor => descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+                descriptor.ImplementationInstance is AdminOperateOperationApprovalRequestMapper)
+            .Select(static descriptor => ((IOperationApprovalRequestMapper)descriptor.ImplementationInstance!).OperationId)
+            .Should().BeEquivalentTo(eligible
+                .Where(static definition => definition.SideEffect != OperationSideEffectClass.ReadOnly)
+                .Select(static definition => definition.OperationId));
+    }
+
+    [UnitTest]
+    public Task LaneC_ApiKeyCreate_IsRefusedBeforeAcceptance() =>
+        AssertSecretOperationUnavailableAsync("admin.api-key.create");
+
+    [UnitTest]
+    public Task LaneC_ApiKeyRotate_IsRefusedBeforeAcceptance() =>
+        AssertSecretOperationUnavailableAsync("admin.api-key.rotate");
+
+    [UnitTest]
+    public Task LaneC_OAuthClientRegister_IsRefusedBeforeAcceptance() =>
+        AssertSecretOperationUnavailableAsync("admin.oauth-client.register");
+
+    [UnitTest]
+    public Task LaneC_OidcProviderCreate_IsRefusedBeforeAcceptance() =>
+        AssertSecretOperationUnavailableAsync("admin.oidc-provider.create");
+
+    [UnitTest]
+    public Task LaneC_OidcProviderUpdate_IsRefusedBeforeAcceptance() =>
+        AssertSecretOperationUnavailableAsync("admin.oidc-provider.update");
+
+    [UnitTest]
+    public async Task LaneC_RemainingAccessOperations_RegisterAndExecute()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        services.AddAdminAccessOperations();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var eligible = AdminAccessOperationCatalog.Definitions
+            .Where(static definition => !AdminMcpOperationExclusions.RequiresSecretAwareRuntime(definition.OperationId))
+            .ToArray();
+        scope.ServiceProvider.GetServices<IOperationExecutor>()
+            .Select(static executor => executor.OperationId)
+            .Should().BeEquivalentTo(eligible.Select(static definition => definition.OperationId));
+
+        var handler = new CapturingOperationHandler(request =>
+        {
+            request.Method.Should().Be(HttpMethod.Get);
+            request.RequestUri!.AbsolutePath.Should().Be("/api/v1/admin/api-keys");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"keys\":[]}")
+            });
+        });
+        using var client = new HttpClient(handler);
+        var executor = BuildAccessAdminExecutor("admin.api-key.list", client);
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = executor.OperationId,
+                Parameters = new Dictionary<string, string?>()
+            },
+            new OperationPolicyContext());
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+    }
+
+    [UnitTest]
+    public async Task LaneC_Validation_RejectsMissingRequiredBodyParametersBeforeApproval()
+    {
+        var definition = AdminAccessOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.api-key.create");
+        var descriptor = AdminAccessOperationCatalog.Descriptors.Single(
+            item => item.OperationId == definition.OperationId);
+        var executor = new AdminOperateOperationExecutor(
+            definition,
+            descriptor,
+            Substitute.For<IHttpClientFactory>(),
+            Substitute.For<IHttpContextAccessor>(),
+            null,
+            TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
+
+        var invalid = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?>()
+        });
+        var valid = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?> { ["name"] = "automation" }
+        });
+
+        invalid.IsValid.Should().BeFalse();
+        invalid.Messages.Should().Contain("Required parameter 'name' is missing.");
+        valid.IsValid.Should().BeTrue();
+    }
+
+    [UnitTest]
     public void LaneD_DescriptorSchemas_DiffCleanlyAgainstAdminApiComponents()
     {
         using var document = JsonDocument.Parse(File.ReadAllText(
@@ -1440,6 +1623,8 @@ public sealed class OperationsToolsetTests
     {
         var definition = AdminOperateOperationCatalog.Definitions.Should()
             .ContainSingle(item => item.OperationId == operationId).Subject;
+        var descriptor = AdminOperateOperationCatalog.Descriptors.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
         var context = new DefaultHttpContext();
@@ -1452,11 +1637,79 @@ public sealed class OperationsToolsetTests
         accessor.HttpContext.Returns(context);
         return new AdminOperateOperationExecutor(
             definition,
+            descriptor,
             factory,
             accessor,
             credentialStore ?? new InMemoryAdminApiKeyStore(TimeProvider.System),
             TimeProvider.System,
             new OperationLineageAttestationStore(TimeProvider.System));
+    }
+
+    private static AdminOperateOperationExecutor BuildAccessAdminExecutor(
+        string operationId,
+        HttpClient client)
+    {
+        var definition = AdminAccessOperationCatalog.Definitions.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
+        var descriptor = AdminAccessOperationCatalog.Descriptors.Should()
+            .ContainSingle(item => item.OperationId == operationId).Subject;
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("public.example.test");
+        context.Connection.LocalPort = 8080;
+        context.Request.Headers["X-API-Key"] = "test-key";
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(context);
+        return new AdminOperateOperationExecutor(
+            definition,
+            descriptor,
+            factory,
+            accessor,
+            null,
+            TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
+    }
+
+    private static async Task AssertSecretOperationUnavailableAsync(string operationId)
+    {
+        var instanceStore = new VolatileOperationInstanceStore();
+        var approvalBridge = Substitute.For<IOperationApprovalBridge>();
+        var catalog = new OperationCatalog(
+            [new AdminAccessOperationDescriptorProvider()],
+            TimeProvider.System);
+        var dispatcher = new OperationDispatcher(
+            catalog,
+            [],
+            new AllowAllPolicyDecisionPoint(),
+            TimeProvider.System,
+            approvalBridge,
+            instanceStore,
+            new VolatileOperationAuditLog());
+        var instanceId = $"opinst-gated-{operationId.Replace('.', '-')}";
+
+        var exception = await Assert.ThrowsAsync<OperationUnavailableException>(() => dispatcher.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = operationId,
+                Parameters = new Dictionary<string, string?>
+                {
+                    ["secret"] = "must-not-appear-in-a-refusal"
+                }
+            },
+            new OperationPolicyContext
+            {
+                OperationInstanceId = instanceId,
+                ApprovedProposalId = "proposal-must-not-be-created"
+            }));
+
+        exception.OperationId.Should().Be(operationId);
+        exception.Message.Should().Contain("#4187");
+        exception.Message.Should().NotContain("must-not-appear-in-a-refusal");
+        (await instanceStore.GetAsync(instanceId)).Should().BeNull();
+        (await instanceStore.ListActiveAsync()).Should().BeEmpty();
+        approvalBridge.ReceivedCalls().Should().BeEmpty();
     }
 
     private static OperationDispatcher BuildDispatcher(

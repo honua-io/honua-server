@@ -11,6 +11,23 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.Operations;
 
+internal interface IAdminHttpOperationDefinition
+{
+    string OperationId { get; }
+    string Title { get; }
+    HttpMethod Method { get; }
+    string Path { get; }
+    string OpenApiOperationId { get; }
+    OperationSideEffectClass SideEffect { get; }
+    OperationBlastRadiusClass BlastRadius { get; }
+    bool SupportsDryRun { get; }
+    string? DryRunPath { get; }
+    HttpMethod? DryRunMethod { get; }
+    string? ContentType { get; }
+    OperationApprovalModel? ApprovalModel { get; }
+    OperationClass OperationClass { get; }
+}
+
 /// <summary>Release and operate descriptors projected from the shipped Admin OpenAPI contract.</summary>
 internal static class AdminOperateOperationCatalog
 {
@@ -27,7 +44,7 @@ internal static class AdminOperateOperationCatalog
         HttpMethod? DryRunMethod = null,
         string? ContentType = null,
         OperationApprovalModel? ApprovalModel = null,
-        OperationClass OperationClass = OperationClass.AdminConfigChange);
+        OperationClass OperationClass = OperationClass.AdminConfigChange) : IAdminHttpOperationDefinition;
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
@@ -68,7 +85,7 @@ internal static class AdminOperateOperationCatalog
         return Definitions.Select(definition => BuildDescriptor(document.RootElement, definition)).ToArray();
     }
 
-    private static OperationDescriptor BuildDescriptor(JsonElement root, Definition definition)
+    internal static OperationDescriptor BuildDescriptor(JsonElement root, IAdminHttpOperationDefinition definition)
     {
         var operation = FindOperation(root, definition.OpenApiOperationId);
         var inputs = BuildInputs(root, operation);
@@ -197,7 +214,7 @@ internal static class AdminOperateOperationCatalog
 }
 
 internal sealed class AdminOperateOperationApprovalRequestMapper(
-    AdminOperateOperationCatalog.Definition definition) : IOperationApprovalRequestMapper
+    IAdminHttpOperationDefinition definition) : IOperationApprovalRequestMapper
 {
     public string OperationId => definition.OperationId;
 

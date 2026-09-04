@@ -50,3 +50,15 @@ public sealed class OperationNotFoundException : Exception
     /// </summary>
     public string OperationId { get; }
 }
+
+/// <summary>Raised when a catalog descriptor is intentionally unavailable to the operation runtime.</summary>
+public sealed class OperationUnavailableException : Exception
+{
+    /// <summary>Initializes an unavailable-operation refusal.</summary>
+    public OperationUnavailableException(string operationId, string reason)
+        : base(reason)
+        => OperationId = operationId;
+
+    /// <summary>The operation identifier that was refused.</summary>
+    public string OperationId { get; }
+}
