@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Reflection;
+using Honua.Db.Postgres.Features.FileImport;
 using Honua.Core.Features.FileImport.Services;
 using Honua.TestKit;
 using NetTopologySuite.Features;
@@ -14,13 +16,19 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class GpxElevationDatabaseRoundtripTests(PostgresFixture fixture)
 {
     [Theory]
-    [InlineData("create_import_table", false)]
-    [InlineData("ensure_import_table", false)]
-    [InlineData("create_import_staging_table", false)]
-    [InlineData("create_import_table", true)]
-    [InlineData("ensure_import_table", true)]
-    [InlineData("create_import_staging_table", true)]
-    public async Task ImportStoreExport_ElevationsAndTwoDimensionalControl_PreserveValues(string createFunction, bool route)
+    [InlineData("create_import_table", false, false)]
+    [InlineData("ensure_import_table", false, false)]
+    [InlineData("create_import_staging_table", false, false)]
+    [InlineData("create_import_table", true, false)]
+    [InlineData("ensure_import_table", true, false)]
+    [InlineData("create_import_staging_table", true, false)]
+    [InlineData("create_import_table", false, true)]
+    [InlineData("ensure_import_table", false, true)]
+    [InlineData("create_import_staging_table", false, true)]
+    [InlineData("create_import_table", true, true)]
+    [InlineData("ensure_import_table", true, true)]
+    [InlineData("create_import_staging_table", true, true)]
+    public async Task ImportStoreExport_ElevationsAndTwoDimensionalControl_PreserveValues(string createFunction, bool route, bool missingElevation)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("gpx_z");
         try
@@ -52,6 +60,13 @@ public sealed class GpxElevationDatabaseRoundtripTests(PostgresFixture fixture)
             var xml = route
                 ? "<gpx><rte><name>Profile</name><rtept lat=\"21.25\" lon=\"-157.5\"><ele>30.125</ele></rtept><rtept lat=\"22.5\" lon=\"-156.25\"><ele>-40.25</ele></rtept></rte></gpx>"
                 : "<gpx><trk><name>Profile</name><trkseg><trkpt lat=\"21.25\" lon=\"-157.5\"><ele>30.125</ele></trkpt><trkpt lat=\"22.5\" lon=\"-156.25\"><ele>-40.25</ele></trkpt></trkseg></trk></gpx>";
+            if (missingElevation)
+            {
+                var pointEnd = route ? "</rtept>" : "</trkpt>";
+                var insertion = xml.IndexOf(pointEnd, StringComparison.Ordinal) + pointEnd.Length;
+                xml = xml.Insert(insertion, route ? "<rtept lat=\"21.5\" lon=\"-157\"/>" : "<trkpt lat=\"21.5\" lon=\"-157\"/>");
+            }
+
             using var input = new MemoryStream(Encoding.UTF8.GetBytes(xml));
             var imported = new List<IFeature>();
             await foreach (var feature in GpxFormatReader.ReadStreamingAsync(input, CancellationToken.None))
@@ -60,7 +75,11 @@ public sealed class GpxElevationDatabaseRoundtripTests(PostgresFixture fixture)
             }
 
             var source = Assert.Single(imported);
-            var wkb = new WKBWriter(NetTopologySuite.IO.ByteOrder.LittleEndian, false, true, false).Write(source.Geometry);
+            var validate = typeof(StreamingFileImportService).GetMethod("ValidateGeometry", BindingFlags.NonPublic | BindingFlags.Static)!;
+            Assert.Null(validate.Invoke(null, [source.Geometry]));
+            var selectWriter = typeof(StreamingFileImportService).GetMethod("SelectWkbWriter", BindingFlags.NonPublic | BindingFlags.Static)!;
+            var writer = (WKBWriter)selectWriter.Invoke(null, [source.Geometry, new WKBWriter()])!;
+            var wkb = writer.Write(source.Geometry);
             await using (var insert = new NpgsqlCommand($"SELECT \"{schema}\".insert_import_feature(@schema, @table, @wkb, 4326, 4326, '{{\"name\":\"Profile\"}}'::jsonb)", connection))
             {
                 insert.Parameters.AddWithValue("schema", schema);
@@ -80,7 +99,8 @@ public sealed class GpxElevationDatabaseRoundtripTests(PostgresFixture fixture)
             Assert.True(await reader.ReadAsync());
             var exported = new WKBReader().Read(reader.GetFieldValue<byte[]>(0));
             Assert.True(source.Geometry.EqualsExact(exported));
-            Assert.Equal(new[] { 30.125, -40.25 }, exported.Coordinates.Select(c => c.Z));
+            Assert.Equal(missingElevation ? new[] { 30.125, double.NaN, -40.25 } : new[] { 30.125, -40.25 },
+                exported.Coordinates.Select(c => c.Z));
             Assert.All(exported.Coordinates, c => Assert.True(double.IsNaN(c.M)));
             Assert.Equal("Profile", Assert.IsType<string>(reader.GetValue(1)));
             Assert.Equal(4326, reader.GetInt32(2));
