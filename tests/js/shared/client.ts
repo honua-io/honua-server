@@ -326,6 +326,7 @@ export class FeatureServerClient {
       adds?: Array<{ geometry?: unknown; attributes: Record<string, unknown> }>;
       updates?: Array<{ geometry?: unknown; attributes: Record<string, unknown> }>;
       deletes?: number[];
+      rollbackOnFailure?: boolean;
     },
     layerId?: number,
   ): Promise<{ status: number; data: ApplyEditsResponse }> {
@@ -339,7 +340,10 @@ export class FeatureServerClient {
       data.updates = options.updates;
     }
     if (options.deletes) {
-      data.deletes = options.deletes;
+        data.deletes = options.deletes;
+    }
+    if (options.rollbackOnFailure !== undefined) {
+      data.rollbackOnFailure = options.rollbackOnFailure;
     }
 
     return this.post<ApplyEditsResponse>(url, data);

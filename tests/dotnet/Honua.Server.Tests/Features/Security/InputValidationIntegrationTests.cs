@@ -242,7 +242,8 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
         content.Should().NotContain("SQL injection attempt detected");
 
         using var document = JsonDocument.Parse(content);
-        document.RootElement.TryGetProperty("addResults", out var addResults).Should().BeTrue();
+        document.RootElement.TryGetProperty("addResults", out var addResults).Should()
+            .BeTrue("the edit response should contain results: {0}", content);
         addResults.GetArrayLength().Should().Be(1);
         addResults[0].GetProperty("success").GetBoolean().Should().BeTrue();
     }
