@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -10,7 +11,6 @@ using Honua.Core.Features.Styling.Abstractions;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
@@ -196,11 +196,16 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         {
             var geometryType = ResolveGeometryType(resource);
             var storageSrid = resource.ReadSrid() ?? requestSrid;
+            var temporalFilter = request.TemporalFiltersByResourceId is not null &&
+                request.TemporalFiltersByResourceId.TryGetValue(resource.Metadata.Id, out var resolvedTemporalFilter)
+                    ? resolvedTemporalFilter
+                    : (TemporalFilter?)null;
             layers.Add(new RasterMapRenderingPipeline.BoundStyleVectorLayer(
                 layerId,
                 geometryType,
                 storageSrid,
-                explicitStyleJson));
+                explicitStyleJson,
+                temporalFilter));
         }
 
         byte[] imageBytes;
@@ -217,7 +222,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
                 RasterMapRenderingPipeline.MaxFeaturesPerLayer,
                 format,
                 request.Transparent,
-                ResolveBackgroundColor(request.BackgroundColor),
+                RasterMapRenderingPipeline.ResolveBackgroundColor(request.BackgroundColor),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException &&
@@ -345,28 +350,6 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         }
     }
 
-    private static SKColor? ResolveBackgroundColor(string? backgroundColor)
-    {
-        if (string.IsNullOrWhiteSpace(backgroundColor))
-        {
-            return null;
-        }
-
-        // OGC background colors arrive as 0xRRGGBB; ignore anything else and fall back to
-        // the default white background used by the shared pipeline.
-        var value = backgroundColor.Trim();
-        if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) &&
-            value.Length == 8 &&
-            uint.TryParse(value.AsSpan(2), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out var rgb))
-        {
-            return new SKColor(
-                (byte)((rgb >> 16) & 0xFF),
-                (byte)((rgb >> 8) & 0xFF),
-                (byte)(rgb & 0xFF));
-        }
-
-        return null;
-    }
 }
 
 /// <summary>

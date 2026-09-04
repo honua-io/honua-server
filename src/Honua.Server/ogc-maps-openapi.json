@@ -86,6 +86,8 @@
           { "$ref": "#/components/parameters/width" },
           { "$ref": "#/components/parameters/height" },
           { "$ref": "#/components/parameters/f" },
+          { "$ref": "#/components/parameters/transparent" },
+          { "$ref": "#/components/parameters/bgcolor" },
           { "$ref": "#/components/parameters/quality" },
           { "$ref": "#/components/parameters/datetime" }
         ],
@@ -190,6 +192,8 @@
           { "$ref": "#/components/parameters/width" },
           { "$ref": "#/components/parameters/height" },
           { "$ref": "#/components/parameters/f" },
+          { "$ref": "#/components/parameters/transparent" },
+          { "$ref": "#/components/parameters/bgcolor" },
           { "$ref": "#/components/parameters/quality" },
           { "$ref": "#/components/parameters/datetime" }
         ],
@@ -302,6 +306,8 @@
           { "$ref": "#/components/parameters/width" },
           { "$ref": "#/components/parameters/height" },
           { "$ref": "#/components/parameters/f" },
+          { "$ref": "#/components/parameters/transparent" },
+          { "$ref": "#/components/parameters/bgcolor" },
           { "$ref": "#/components/parameters/quality" },
           { "$ref": "#/components/parameters/datetime" }
         ],
@@ -622,6 +628,25 @@
           "enum": ["png", "jpeg", "jpg", "tiff", "tif"]
         }
       },
+      "transparent": {
+        "name": "transparent",
+        "in": "query",
+        "description": "Whether PNG output uses a transparent background. Defaults to true; JPEG output is always opaque.",
+        "schema": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "bgcolor": {
+        "name": "bgcolor",
+        "in": "query",
+        "description": "Background color as 0xRRGGBB when transparent is false. Defaults to white.",
+        "schema": {
+          "type": "string",
+          "pattern": "^0x[0-9A-Fa-f]{6}$",
+          "default": "0xFFFFFF"
+        }
+      },
       "quality": {
         "name": "quality",
         "in": "query",
@@ -635,7 +660,7 @@
       "datetime": {
         "name": "datetime",
         "in": "query",
-        "description": "RFC 3339 instant or interval used to select temporal raster mosaic frames. Accepts a single instant (e.g. 2024-02-15T00:00:00Z), a closed interval (start/end), and half-open intervals (start/.., ../end). Honua selects the newest effective acquisition batch within the bounded range across the addressed collection or dataset, then applies bbox windowing and renders rasters from that batch only. Requires the raster.temporal-mosaic entitlement; inactive entitlements return 402 Payment Required.",
+        "description": "RFC 3339 instant or interval used to filter time-enabled vector features or select temporal raster mosaic frames. Accepts a single instant (e.g. 2024-02-15T00:00:00Z), a closed interval (start/end), and half-open intervals (start/.., ../end). Raster maps select the newest effective acquisition batch within the bounded range. Requires the raster.temporal-mosaic entitlement; inactive entitlements return 402 Payment Required.",
         "schema": {
           "type": "string"
         }
