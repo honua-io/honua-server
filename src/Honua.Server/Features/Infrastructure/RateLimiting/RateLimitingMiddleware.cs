@@ -281,9 +281,20 @@ internal sealed partial class RateLimitingMiddleware
     /// </summary>
     private async Task<RateLimitResult> CheckCounterAsync(string counterKey, ResolvedRateLimit resolved)
     {
-        return _redis != null
-            ? await CheckRateLimitRedisAsync(counterKey, resolved)
-            : CheckRateLimitMemory(counterKey, resolved);
+        if (_redis != null)
+        {
+            try
+            {
+                return await CheckRateLimitRedisAsync(counterKey, resolved);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                var (keyFamily, keyHash) = SplitRateLimitKey(counterKey);
+                RateLimitingLog.RedisCounterFallback(_logger, keyFamily, keyHash, ex);
+            }
+        }
+
+        return CheckRateLimitMemory(counterKey, resolved);
     }
 
     /// <summary>

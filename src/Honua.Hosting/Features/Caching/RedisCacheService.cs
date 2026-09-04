@@ -678,47 +678,34 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     /// <inheritdoc />
     public async Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
     {
-        if (_distributedCache == null)
+        if (_distributedCache == null && _redis == null)
         {
             // No Redis configured - report healthy if fallback is enabled
             return _options.EnableFallback;
         }
 
-        if (_isUsingFallback)
-        {
-            // Check if we should retry Redis
-            var lastFailureDt = new DateTime(Volatile.Read(ref _lastRedisFailureTicks), DateTimeKind.Utc);
-            if (DateTime.UtcNow - lastFailureDt > _options.RetryInterval)
-            {
-                var restored = await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
-                return restored || _options.EnableFallback;
-            }
-
-            return _options.EnableFallback;
-        }
-
+        // Readiness must probe the configured dependency on every call. A usable local
+        // cache or an open retry interval says nothing about distributed-state availability.
         try
         {
             if (_redis != null)
             {
                 var db = _redis.GetDatabase();
-                _ = await db.PingAsync().ConfigureAwait(false);
+                _ = await db.PingAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                await _redisGetPolicy.ExecuteAsync(
-                    ct => _distributedCache.GetAsync(HealthCheckKey, ct),
-                    cancellationToken).ConfigureAwait(false);
+                _ = await _distributedCache!.GetAsync(HealthCheckKey, cancellationToken).ConfigureAwait(false);
             }
 
             return true;
         }
         // Intentional: this is a health-probe boundary; a probe failure must resolve to a
-        // health verdict (fallback-availability) rather than throw out of the health check.
+        // health verdict rather than throw out of the health check.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             RedisCacheServiceLog.RedisHealthCheckFailed(_logger, ex);
-            return _options.EnableFallback;
+            return false;
         }
     }
 

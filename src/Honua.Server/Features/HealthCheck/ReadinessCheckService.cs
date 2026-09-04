@@ -88,7 +88,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
 
             Log.HealthCheckExecuted(_logger, "DatabaseHealth", "Healthy", databaseStopwatch.Elapsed.TotalMilliseconds);
 
-            // Check cache health (optional - cache unavailability doesn't make system not ready)
+            // A configured Redis dependency must answer a live probe, even when cache fallback is available.
             if (_cacheHealthChecker != null)
             {
                 currentCheckName = "Cache";
