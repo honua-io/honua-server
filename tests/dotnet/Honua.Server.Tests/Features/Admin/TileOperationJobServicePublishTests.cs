@@ -3,6 +3,8 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.IO.Compression;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -27,6 +29,57 @@ namespace Honua.Server.Tests.Features.Admin;
 
 public sealed class TileOperationJobServicePublishTests
 {
+    [Theory]
+    [InlineData("archive", true, 7)]
+    [InlineData("publish", true, 7)]
+    [InlineData("archive", true, null)]
+    [InlineData("publish", true, null)]
+    [InlineData("archive", false, 7)]
+    [InlineData("publish", false, 7)]
+    public async Task ArchiveOrPublish_SharedStorageLayer_UsesRequestedServiceResourceMetadata(
+        string operation, bool serviceScoped, int? publicationLayerIndex)
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("other", "Other resource", fields:
+                [new MetadataV2Field { Name = "other_field", Type = MetadataV2FieldType.Integer }])
+            .AddStorageBinding("other-binding", "other", "features", storageLayerId: 7)
+            .AddService("requested-service", "requested")
+            .AddResource("requested", "Requested resource", fields:
+                [new MetadataV2Field { Name = "requested_field", Type = MetadataV2FieldType.String }])
+            .AddStorageBinding("requested-binding", "requested", "features", storageLayerId: 7)
+            .AddPublication("requested-publication", "requested-service", "requested",
+                layerIndex: publicationLayerIndex, storageBindingId: "requested-binding")
+            .Build();
+        var stub = new StubCloudStorage();
+        using var serviceProvider = BuildScope(stub, includeCloudStorage: true, graph: graph);
+        var sut = CreateSut(serviceProvider);
+        var jobId = await sut.StartAsync(new TileOperationStartRequest
+        {
+            Operation = operation,
+            ServiceId = serviceScoped ? "requested" : null,
+            LayerId = serviceScoped ? null : 7,
+            MinZoom = 0,
+            MaxZoom = 0,
+            MaxTiles = 1
+        });
+
+        await sut.ProcessQueuedJobAsync(jobId);
+
+        (await sut.GetAsync(jobId))!.Status.Should().Be(OperationStatus.Completed);
+        stub.LastUploadBytes.Should().NotBeNull();
+        var header = PMTilesHeader.ReadFrom(stub.LastUploadBytes!);
+        using var metadataBytes = new MemoryStream(stub.LastUploadBytes!,
+            checked((int)header.JsonMetadataOffset), checked((int)header.JsonMetadataLength));
+        using var decompressed = new GZipStream(metadataBytes, CompressionMode.Decompress);
+        using var metadata = await JsonDocument.ParseAsync(decompressed);
+        metadata.RootElement.GetProperty("name").GetString().Should()
+            .Be(serviceScoped ? "Requested resource" : "Other resource");
+        var fields = metadata.RootElement.GetProperty("vector_layers")[0].GetProperty("fields");
+        fields.EnumerateObject().Should().ContainSingle();
+        fields.GetProperty(serviceScoped ? "requested_field" : "other_field").GetString()
+            .Should().Be(serviceScoped ? "string" : "integer");
+    }
+
     [Fact]
     public async Task Publish_WhenStorageMissing_FailsWithMessage()
     {
@@ -624,10 +677,11 @@ public sealed class TileOperationJobServicePublishTests
         bool includeCloudStorage,
         PMTilesPublishOptions? publishOptions = null,
         CloudStorageOptions? cloudOptions = null,
-        Action<ITileProvider>? configureTileProvider = null)
+        Action<ITileProvider>? configureTileProvider = null,
+        MetadataV2Graph? graph = null)
     {
         var services = new ServiceCollection();
-        var graph = new TestMetadataV2GraphBuilder()
+        graph ??= new TestMetadataV2GraphBuilder()
             .AddService("svc-publish-test", "publish-test")
             .AddResource("res-publish", "publish-layer")
             .AddPublication("pub-publish", "svc-publish-test", "res-publish", layerIndex: 7)
