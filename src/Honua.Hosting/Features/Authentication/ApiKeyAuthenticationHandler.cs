@@ -354,6 +354,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         // ordinary scoped keys retain only their own endpoint-level authority.
         var confersFullAdmin = LayerScopedWriteKey.ConfersFullAdmin(permissions);
         var isApprovedOperationKey = permissions?.Any(AdminApiKeyPermission.IsApprovedOperationGrant) == true;
+        var hasAdministrativeGrant = permissions?.Any(AdminApiKeyPermission.IsAdministrativeGrant) == true;
         List<Claim> claims;
         if (isScopedWriteKey)
         {
@@ -383,7 +384,7 @@ internal sealed class ApiKeyAuthenticationHandler(
                 new Claim("auth_type", authenticationType),
             ];
         }
-        else if (permissions?.Any(AdminApiKeyPermission.IsAdministrativeGrant) == true)
+        else if (hasAdministrativeGrant)
         {
             claims =
             [
