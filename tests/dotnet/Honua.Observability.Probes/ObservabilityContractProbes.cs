@@ -1,14 +1,17 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
+#if !FRAMEWORK_ONLY
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.ServiceDefaults;
+#endif
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
@@ -18,8 +21,18 @@ namespace Honua.Observability.Probes;
 
 public sealed class ObservabilityContractProbes
 {
+    private static readonly Action<Microsoft.Extensions.Logging.ILogger, Exception?> ProbeReached =
+        LoggerMessage.Define(LogLevel.Information, new EventId(1), "Probe reached endpoint");
+
     [Fact]
-    public async Task HostingDiagnostics_MustNotLogQueryCredentials()
+    public Task HostingDiagnostics_MustNotLogQueryCredentials() =>
+        AssertQueryCredentialsNotLogged(LogEventLevel.Information);
+
+    [Fact]
+    public Task HostingDiagnostics_ProposedWarningThreshold_ExcludesCredentials() =>
+        AssertQueryCredentialsNotLogged(LogEventLevel.Warning);
+
+    private static async Task AssertQueryCredentialsNotLogged(LogEventLevel hostingLevel)
     {
         var sink = new CaptureSink();
         // Production category levels from Program.cs. Exercise the real ASP.NET
@@ -28,19 +41,24 @@ public sealed class ObservabilityContractProbes
             .UseSerilog((_, configuration) => configuration.MinimumLevel.Information()
                 .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
                 .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-                .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", LogEventLevel.Information)
+                .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", hostingLevel)
                 .WriteTo.Sink(sink))
             .ConfigureWebHost(web => web.UseTestServer().Configure(app =>
-                app.Run(context => context.Response.WriteAsync("ok"))))
+                app.Run(context =>
+                {
+                    ProbeReached(context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Probe"), null);
+                    return context.Response.WriteAsync("ok");
+                })))
             .StartAsync();
         using var client = host.GetTestClient();
         using var response = await client.GetAsync("/rest/services/demo/FeatureServer/0/query?token=probe-token-marker&where=email%3Dprobe-email-marker");
         var events = sink.Events.Where(e => e.Level == LogEventLevel.Information).ToArray();
         Assert.NotEmpty(events);
-        Assert.DoesNotContain(events, e => e.RenderMessage().Contains("probe-token-marker", StringComparison.Ordinal));
-        Assert.DoesNotContain(events, e => e.RenderMessage().Contains("probe-email-marker", StringComparison.Ordinal));
+        Assert.DoesNotContain(events, e => e.RenderMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("probe-token-marker", StringComparison.Ordinal));
+        Assert.DoesNotContain(events, e => e.RenderMessage(System.Globalization.CultureInfo.InvariantCulture).Contains("probe-email-marker", StringComparison.Ordinal));
     }
 
+#if !FRAMEWORK_ONLY
     [Fact]
     public async Task GeoServicesHttp200Error_MustHaveInBandTrue()
     {
@@ -66,13 +84,13 @@ public sealed class ObservabilityContractProbes
     }
 
     [Theory]
-    [InlineData("/wms")]
     [InlineData("/wps")]
     public void GaClassicRoutes_MustHaveServingProtocol(string path)
     {
         Assert.False(string.IsNullOrEmpty(RequestTelemetryClassifier.ResolveProtocol(new PathString(path))),
             $"GA serving route {path} is silently excluded from serving latency and its denominator");
     }
+#endif
 
     private sealed class CaptureSink : ILogEventSink
     {

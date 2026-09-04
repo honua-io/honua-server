@@ -1,0 +1,23 @@
+# Run from this directory: promtool test rules prometheus-errors.test.yml
+# Both series use the actual HonuaTelemetry.cs labels and a 100% failure rate.
+rule_files:
+  - ../../../../docs/guides/deploy/examples/prometheus-alerts.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'honua_request_error_total{service_type="FeatureServer",operation="query",error_code="500",in_band="false"}'
+        values: '0+10x15'
+      - series: 'honua_serving_request_duration_ms_count{honua_protocol="FeatureServer",honua_operation="query",status_class="2xx"}'
+        values: '0+10x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HonuaErrorRateCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: reliability
+            exp_annotations:
+              summary: "Honua error rate is critical"
+              description: "Error rate is 100% - immediate investigation required"
+              runbook_url: "https://docs.honua.io/guides/deploy/troubleshooting#quick-triage"

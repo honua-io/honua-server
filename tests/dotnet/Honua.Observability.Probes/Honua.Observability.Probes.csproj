@@ -4,12 +4,14 @@
     <IsTestProject>true</IsTestProject>
     <IsPackable>false</IsPackable>
     <AssemblyName>Honua.Server.Tests</AssemblyName>
+    <DefineConstants Condition="'$(FrameworkOnly)' == 'true'">$(DefineConstants);FRAMEWORK_ONLY</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />
+    <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" Condition="'$(FrameworkOnly)' != 'true'" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" VersionOverride="10.0.6" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.6" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
