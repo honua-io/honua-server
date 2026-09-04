@@ -986,10 +986,11 @@ internal static class SearchEndpoints
             }
 
             // Items without a source temporal value all receive the same deterministic
-            // fallback instant. Object-id ordering is therefore the only meaningful and
+            // fallback instant. Primary-key ordering is therefore the only meaningful and
             // stable order for this otherwise valid canonical sort field.
-            fieldName = "objectid";
-            fieldType = MetadataV2FieldType.Integer;
+            var primaryId = resource.FindPrimaryIdField();
+            fieldName = primaryId?.Name ?? "objectid";
+            fieldType = primaryId?.Type ?? MetadataV2FieldType.Integer;
             return true;
         }
 
@@ -1154,8 +1155,7 @@ internal static class SearchEndpoints
         var temporalFields = resource.ReadTemporalFields();
         var timeField = temporalFields.StartTimeField;
         var endTimeField = temporalFields.EndTimeField;
-        var requiresUnprojectedAttributes = selected.Any(IsReservedAttributeProjectionName) ||
-            includedTopLevelFields.Contains("id");
+        var requiresUnprojectedAttributes = selected.Any(IsReservedAttributeProjectionName);
         var queryFields = requiresUnprojectedAttributes
             ? default
             : selected.Length == 0

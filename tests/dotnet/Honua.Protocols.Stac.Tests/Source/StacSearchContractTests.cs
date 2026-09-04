@@ -54,4 +54,53 @@ public sealed class StacSearchContractTests
                 out var sortError).Should().BeTrue(sortError);
         }
     }
+
+    [Fact]
+    public void IncludeMode_RequiredId_DoesNotDisablePhysicalFieldProjection()
+    {
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "wide_payload", Type = MetadataV2FieldType.String }
+            ]
+        };
+
+        SearchEndpoints.TryBuildFieldSelection(
+            resource,
+            new StacFieldsExtension { Includes = ImmutableArray.Create("properties.name") },
+            out var outFields,
+            out _,
+            out var error).Should().BeTrue(error);
+
+        outFields.IsDefault.Should().BeFalse();
+        outFields.Should().ContainSingle().Which.Should().Be("name");
+    }
+
+    [Fact]
+    public void DatetimeSort_WithoutTemporalField_UsesResourcePrimaryId()
+    {
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields =
+            [
+                new MetadataV2Field
+                {
+                    Name = "record_key",
+                    Type = MetadataV2FieldType.String,
+                    SemanticRoles = ["id.primary"]
+                }
+            ]
+        };
+
+        SearchEndpoints.TryBuildSortOrder(
+            resource,
+            ImmutableArray.Create(new StacSortDefinition { Field = "datetime" }),
+            out var orderBy,
+            out var error).Should().BeTrue(error);
+
+        orderBy.Should().ContainSingle().Which.Field.Should().Be("record_key");
+    }
 }
