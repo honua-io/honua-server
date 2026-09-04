@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="BouncyCastle.Cryptography" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Compile Include="../../../src/Honua.Server/Features/Infrastructure/MultiTenancy/TenantSchemaResolver.cs" Link="Source/TenantSchemaResolver.cs" />
+    <Compile Include="../../../src/Honua.Server/Features/Infrastructure/MultiTenancy/TenantSchemaOptions.cs" Link="Source/TenantSchemaOptions.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/MultiTenancy/Abstractions/ITenantSchemaResolver.cs" Link="Source/ITenantSchemaResolver.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Licensing/FileBackedLicenseService.cs" Link="Source/FileBackedLicenseService.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Licensing/LicenseOptions.cs" Link="Source/LicenseOptions.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Licensing/LicenseFileModels.cs" Link="Source/LicenseFileModels.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Licensing/LicenseRuntimeLog.cs" Link="Source/LicenseRuntimeLog.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Licensing/LicenseUploadRejectedException.cs" Link="Source/LicenseUploadRejectedException.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Licensing/IEd25519Verifier.cs" Link="Source/IEd25519Verifier.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Licensing/BouncyCastleEd25519Verifier.cs" Link="Source/BouncyCastleEd25519Verifier.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Licensing/ILicenseContentSecretResolver.cs" Link="Source/ILicenseContentSecretResolver.cs" />
+    <Compile Include="../../../src/Honua.Hosting/Features/Licensing/DevLicenseSnapshotFactory.cs" Link="Source/DevLicenseSnapshotFactory.cs" />
+    <Compile Include="../../../tests/dotnet/Honua.TestKit/Helpers/LicenseTestSupport.cs" Link="Source/LicenseTestSupport.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs" Link="Source/CapabilityKeyCatalog.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Domain/LicenseInfo.cs" Link="Source/LicenseInfo.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Domain/FeatureCatalog.cs" Link="Source/FeatureCatalog.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Domain/LicenseCapacityModels.cs" Link="Source/LicenseCapacityModels.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Domain/LicenseCapacityCalculator.cs" Link="Source/LicenseCapacityCalculator.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Domain/LicenseModels.cs" Link="Source/LicenseModels.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Abstractions/ILicenseCapacityMeter.cs" Link="Source/ILicenseCapacityMeter.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Abstractions/ILicenseManager.cs" Link="Source/ILicenseManager.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Abstractions/ILicenseEntitlementService.cs" Link="Source/ILicenseEntitlementService.cs" />
+    <Compile Include="../../../src/Honua.Core/Features/Licensing/Abstractions/ILicenseStatusProvider.cs" Link="Source/ILicenseStatusProvider.cs" />
+  </ItemGroup>
+</Project>
