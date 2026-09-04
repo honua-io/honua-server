@@ -542,6 +542,65 @@ public sealed class RedisCacheServiceTests : IDisposable
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.Cache)]
+    public async Task Dispose_CanceledPendingProbe_DrainsIndexCleanup(bool asynchronous)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        var transaction = Substitute.For<ITransaction>();
+        database.CreateTransaction(Arg.Any<object>()).Returns(transaction);
+        transaction.ExecuteAsync().Returns(true);
+        transaction.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>()).Returns(true);
+        transaction.SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>()).Returns(true);
+        transaction.KeyDeleteAsync(Arg.Any<RedisKey>()).Returns(true);
+        var cleaned = false;
+        transaction.SetRemoveAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>()).Returns(_ =>
+        {
+            cleaned = true;
+            return Task.FromResult(true);
+        });
+        var read = new TaskCompletionSource<RedisValue>(TaskCreationOptions.RunContinuationsAsynchronously);
+        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(read.Task);
+        var cache = new RedisCacheService(Substitute.For<IDistributedCache>(),
+            Options.Create(_options), NullLogger<RedisCacheService>.Instance, _performanceMonitor, redis);
+        var probe = cache.IsCacheHealthyAsync(cancellation.Token);
+        Assert.False(probe.IsCompleted);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe);
+
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposal = Task.Run(async () =>
+        {
+            started.SetResult();
+            if (asynchronous && (object)cache is IAsyncDisposable asyncDisposable)
+            {
+                await asyncDisposable.DisposeAsync();
+            }
+            else
+            {
+                cache.Dispose();
+            }
+        });
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        try
+        {
+            Assert.NotSame(disposal, await Task.WhenAny(disposal, Task.Delay(TimeSpan.FromSeconds(1))));
+            Assert.False(cleaned);
+        }
+        finally
+        {
+            read.TrySetResult((RedisValue)"1");
+            await disposal.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        Assert.True(cleaned);
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Cache)]
     public async Task IsCacheHealthyAsync_ConcurrentProbes_DoNotDeleteEachOthersEntries(bool sameInstance)
     {
         var entries = new ConcurrentDictionary<string, byte[]>();

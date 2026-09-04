@@ -478,6 +478,60 @@ public sealed class RateLimitingMiddlewareTests
     }
 
     [UnitTest]
+    public async Task InvokeAsync_RedisCounterTimeout_DoesNotRetryRedisForEndpointCounter()
+    {
+        var redis = Substitute.For<StackExchange.Redis.IConnectionMultiplexer>();
+        var database = Substitute.For<StackExchange.Redis.IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        var firstExecution = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondExecution = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondAttempt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = Substitute.For<StackExchange.Redis.ITransaction>();
+        var second = Substitute.For<StackExchange.Redis.ITransaction>();
+        first.ExecuteAsync().Returns(firstExecution.Task);
+        second.ExecuteAsync().Returns(secondExecution.Task);
+        var attempts = 0;
+        database.CreateTransaction(Arg.Any<object>()).Returns(_ =>
+        {
+            if (Interlocked.Increment(ref attempts) == 1)
+            {
+                return first;
+            }
+            secondAttempt.TrySetResult();
+            return second;
+        });
+        var middleware = CreateMiddleware(limit: 100, redis: redis);
+        var context = CreateContext("198.51.100.98", subject: Guid.NewGuid().ToString("N"),
+            endpointName: "timeout-endpoint", endpointLimit: 2);
+        var request = middleware.InvokeAsync(context);
+        Assert.False(request.IsCompleted);
+        firstExecution.SetException(new StackExchange.Redis.RedisTimeoutException(
+            "Redis command timed out", StackExchange.Redis.CommandStatus.Sent));
+        try
+        {
+            var completed = await Task.WhenAny(request, secondAttempt.Task).WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Same(request, completed);
+            await request;
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            Assert.Equal("1", context.Response.Headers["X-RateLimit-Remaining"].ToString());
+            Assert.Equal(1, attempts);
+        }
+        finally
+        {
+            if (secondAttempt.Task.IsCompleted)
+            {
+                secondExecution.TrySetException(new StackExchange.Redis.RedisTimeoutException(
+                    "Second Redis command timed out", StackExchange.Redis.CommandStatus.Sent));
+            }
+            else
+            {
+                secondExecution.TrySetResult(true);
+            }
+            await request;
+        }
+    }
+
+    [UnitTest]
     public async Task InvokeAsync_RedisOutage_HardBoundsLocalCountersWithoutResettingExistingBudgets()
     {
         // This collection runs alone because the process-local store is shared.

@@ -65,6 +65,33 @@ public sealed class RedisReadinessOutageTests
         Assert.True(await cache.IsCacheHealthyAsync());
     }
 
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task IsCacheHealthyAsync_DistributedCacheOnly_IndexDenied_ReportsUnhealthyUntilRecovery()
+    {
+        await using var container = new RedisBuilder("redis:7.2-alpine").Build();
+        await container.StartAsync();
+        using var distributedCache = new Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache(
+            Options.Create(new Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions
+            {
+                Configuration = container.GetConnectionString()
+            }));
+        using var cache = new RedisCacheService(distributedCache,
+            Options.Create(new CacheOptions { EnableFallback = true }),
+            NullLogger<RedisCacheService>.Instance, Substitute.For<IPerformanceMonitor>());
+        Assert.True(await cache.IsCacheHealthyAsync());
+
+        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "resetkeys", "~*__health_check__*"]);
+        Assert.Equal("OK", denied.Stdout.Trim());
+        var ping = await container.ExecAsync(["redis-cli", "PING"]);
+        Assert.Equal("PONG", ping.Stdout.Trim());
+        Assert.False(await cache.IsCacheHealthyAsync());
+
+        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "resetkeys", "~*"]);
+        Assert.Equal("OK", restored.Stdout.Trim());
+        Assert.True(await cache.IsCacheHealthyAsync());
+    }
+
     [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]
