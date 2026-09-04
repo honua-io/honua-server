@@ -119,8 +119,8 @@ internal sealed partial class GeoservicesLayerPublicationService
                     ? null
                     : GeoservicesImportService.MapEsriGeometryType(
                         layerInfo.GeometryType,
-                        layerInfo.HasZ,
-                        layerInfo.HasM),
+                        hasZ: false,
+                        hasM: false),
                 Srid = request.TargetSrid,
                 PrimaryKey = FieldNames.ObjectId,
                 Fields = [],

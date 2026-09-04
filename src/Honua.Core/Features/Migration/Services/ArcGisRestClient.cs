@@ -185,7 +185,8 @@ internal sealed partial class ArcGisRestClient
             GeometryType = layerResponse.GeometryType,
             HasZ = layerResponse.HasZ,
             HasM = layerResponse.HasM,
-            SupportsPagination = layerResponse.SupportsPagination,
+            SupportsPagination = layerResponse.SupportsPagination
+                ?? layerResponse.AdvancedQueryCapabilities?.SupportsPagination,
             SpatialReferenceWkid = layerResponse.Extent?.SpatialReference?.Wkid,
             MaxRecordCount = layerResponse.MaxRecordCount,
             Fields = ParseFields(layerResponse.Fields),
@@ -361,8 +362,7 @@ internal sealed partial class ArcGisRestClient
 
         if (response.Error != null)
         {
-            throw new InvalidOperationException(
-                $"ArcGIS query error {response.Error.Code}: {response.Error.Message}");
+            throw CreateArcGisResponseException(response.Error, queryUrl, credentials);
         }
 
         return new ArcGisQueryResult
@@ -388,10 +388,14 @@ internal sealed partial class ArcGisRestClient
             "f=json",
             $"where={Uri.EscapeDataString(whereClause ?? "1=1")}",
             $"outFields={Uri.EscapeDataString(outFields != null ? string.Join(",", outFields) : "*")}",
-            "returnGeometry=true",
-            $"resultOffset={offset}",
-            $"resultRecordCount={batchSize}"
+            "returnGeometry=true"
         };
+
+        if (objectIds is null)
+        {
+            query.Add($"resultOffset={offset}");
+            query.Add($"resultRecordCount={batchSize}");
+        }
 
         if (objectIds is not null)
         {
@@ -434,7 +438,7 @@ internal sealed partial class ArcGisRestClient
 
         if (result is IArcGisErrorResponse { Error: { } error })
         {
-            throw CreateArcGisResponseException(error, url);
+            throw CreateArcGisResponseException(error, url, credentials);
         }
 
         return result ?? throw new InvalidOperationException("Failed to deserialize response");
@@ -499,51 +503,21 @@ internal sealed partial class ArcGisRestClient
             return;
         }
 
-        // Pattern-match to a non-null local rather than repeating `credentials?.` on Username
-        // and Password: once AccessToken is absent/blank, credentials being null makes the
-        // whole `credentialsSupplied` expression false anyway, so the null-conditional on the
-        // second branch was provably redundant (flagged by static analysis) — the `is { } c`
-        // guard makes that non-nullness explicit instead of relying on flow inference.
-        var credentialsSupplied = !string.IsNullOrWhiteSpace(credentials?.AccessToken)
-            || (credentials is { } c
-                && !string.IsNullOrWhiteSpace(c.Username)
-                && !string.IsNullOrWhiteSpace(c.Password));
-
-        var kind = statusCode switch
-        {
-            498 => ArcGisAuthenticationFailureKind.CredentialExpired,
-            499 => ArcGisAuthenticationFailureKind.CredentialRequired,
-            403 => ArcGisAuthenticationFailureKind.CredentialDenied,
-            401 => credentialsSupplied
-                ? ArcGisAuthenticationFailureKind.CredentialDenied
-                : ArcGisAuthenticationFailureKind.CredentialRequired,
-            _ => ArcGisAuthenticationFailureKind.CredentialDenied
-        };
-
-        var redactedUrl = RedactArcGisTokenParameters(url);
-        var message = kind switch
-        {
-            ArcGisAuthenticationFailureKind.CredentialExpired =>
-                $"ArcGIS credential expired (HTTP {statusCode}) for '{redactedUrl}'.",
-            ArcGisAuthenticationFailureKind.CredentialRequired =>
-                $"ArcGIS service requires authentication (HTTP {statusCode}) for '{redactedUrl}'.",
-            _ =>
-                $"ArcGIS credential denied (HTTP {statusCode}) for '{redactedUrl}'."
-        };
-
-        throw new ArcGisAuthenticationException(kind, statusCode, message);
+        throw CreateAuthenticationException(statusCode, url, credentials);
     }
 
     private static void ApplyAuthorizationHeader(
         HttpRequestMessage request,
         GeoservicesCredentialDescriptor? credentials)
     {
-        if (credentials?.GetNormalizedMode() == GeoservicesAuthenticationModes.Token &&
-            !string.IsNullOrWhiteSpace(credentials.AccessToken))
+        var mode = credentials?.GetNormalizedMode();
+        if (credentials is { } credential &&
+            (mode == GeoservicesAuthenticationModes.Token || mode == GeoservicesAuthenticationModes.OAuth) &&
+            !string.IsNullOrWhiteSpace(credential.AccessToken))
         {
             request.Headers.TryAddWithoutValidation(
                 "X-Esri-Authorization",
-                $"Bearer {credentials.AccessToken}");
+                $"Bearer {credential.AccessToken}");
             return;
         }
 
@@ -604,13 +578,56 @@ internal sealed partial class ArcGisRestClient
         return delay < TimeSpan.Zero ? TimeSpan.Zero : delay;
     }
 
-    private static InvalidOperationException CreateArcGisResponseException(ArcGisError error, string url)
+    private static Exception CreateArcGisResponseException(
+        ArcGisError error,
+        string url,
+        GeoservicesCredentialDescriptor? credentials = null)
     {
+        if (error.Code is 401 or 403 or 498 or 499)
+        {
+            return CreateAuthenticationException(error.Code, url, credentials);
+        }
+
         var details = error.Details is { Length: > 0 }
             ? $" Details: {string.Join("; ", error.Details)}"
             : string.Empty;
         return new InvalidOperationException(
             $"ArcGIS response error {error.Code} for '{RedactArcGisTokenParameters(url)}': {error.Message ?? "Unknown error"}.{details}");
+    }
+
+    private static ArcGisAuthenticationException CreateAuthenticationException(
+        int statusCode,
+        string url,
+        GeoservicesCredentialDescriptor? credentials)
+    {
+        var credentialsSupplied = !string.IsNullOrWhiteSpace(credentials?.AccessToken)
+            || (credentials is { } c
+                && !string.IsNullOrWhiteSpace(c.Username)
+                && !string.IsNullOrWhiteSpace(c.Password));
+
+        var kind = statusCode switch
+        {
+            498 => ArcGisAuthenticationFailureKind.CredentialExpired,
+            499 => ArcGisAuthenticationFailureKind.CredentialRequired,
+            403 => ArcGisAuthenticationFailureKind.CredentialDenied,
+            401 => credentialsSupplied
+                ? ArcGisAuthenticationFailureKind.CredentialDenied
+                : ArcGisAuthenticationFailureKind.CredentialRequired,
+            _ => ArcGisAuthenticationFailureKind.CredentialDenied
+        };
+
+        var redactedUrl = RedactArcGisTokenParameters(url);
+        var message = kind switch
+        {
+            ArcGisAuthenticationFailureKind.CredentialExpired =>
+                $"ArcGIS credential expired (HTTP {statusCode}) for '{redactedUrl}'.",
+            ArcGisAuthenticationFailureKind.CredentialRequired =>
+                $"ArcGIS service requires authentication (HTTP {statusCode}) for '{redactedUrl}'.",
+            _ =>
+                $"ArcGIS credential denied (HTTP {statusCode}) for '{redactedUrl}'."
+        };
+
+        return new ArcGisAuthenticationException(kind, statusCode, message);
     }
 
     private static string GetFailureMessage(DelegateResult<HttpResponseMessage> result)
@@ -1019,6 +1036,9 @@ internal sealed record ArcGisLayerResponse : IArcGisErrorResponse
     [JsonPropertyName("supportsPagination")]
     public bool? SupportsPagination { get; init; }
 
+    [JsonPropertyName("advancedQueryCapabilities")]
+    public ArcGisAdvancedQueryCapabilities? AdvancedQueryCapabilities { get; init; }
+
     [JsonPropertyName("maxRecordCount")]
     public int? MaxRecordCount { get; init; }
 
@@ -1054,6 +1074,12 @@ internal sealed record ArcGisLayerResponse : IArcGisErrorResponse
 
     [JsonPropertyName("error")]
     public ArcGisError? Error { get; init; }
+}
+
+internal sealed record ArcGisAdvancedQueryCapabilities
+{
+    [JsonPropertyName("supportsPagination")]
+    public bool? SupportsPagination { get; init; }
 }
 
 internal sealed record ArcGisSpatialReference

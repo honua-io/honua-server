@@ -89,9 +89,12 @@ internal sealed partial class GeoservicesImportService
                     cancellationToken,
                     request.Credentials)
                 : null;
+            var objectIdWindowSize = sourceObjectIds is null
+                ? batchSize
+                : Math.Min(Math.Max(1, batchSize), layerInfo.MaxRecordCount ?? int.MaxValue);
             var objectIdWindows = sourceObjectIds is null
                 ? null
-                : sourceObjectIds.Chunk(Math.Max(1, batchSize)).ToArray();
+                : sourceObjectIds.Chunk(Math.Max(1, objectIdWindowSize)).ToArray();
             const int maxImportPages = 100_000;
 
             while (hasMore && !cancellationToken.IsCancellationRequested &&
@@ -131,6 +134,31 @@ internal sealed partial class GeoservicesImportService
                     $"Inserting batch {batchNumber} ({queryResult.Features.Length} features)",
                     featuresProcessed, totalFeatures, layerInfo.Name);
 
+                if (objectIdWindows is not null)
+                {
+                    if (queryResult.ExceededTransferLimit)
+                    {
+                        throw new InvalidOperationException(
+                            $"ArcGIS object-id window {batchNumber} exceeded the source transfer limit; the import was not completed.");
+                    }
+
+                    var objectIdField = layerInfo.Fields.FirstOrDefault(static field => field.IsObjectId)?.Name;
+                    var returnedObjectIds = new HashSet<long>();
+                    if (objectIdField is null || queryResult.Features.Any(feature =>
+                            !TryReadSourceObjectId(feature, objectIdField, out var returnedObjectId)
+                            || !returnedObjectIds.Add(returnedObjectId)))
+                    {
+                        throw new InvalidOperationException(
+                            $"ArcGIS object-id window {batchNumber} did not return identifiable source object IDs.");
+                    }
+
+                    if (objectIdWindows[batchNumber - 1].Any(objectId => !returnedObjectIds.Contains(objectId)))
+                    {
+                        throw new InvalidOperationException(
+                            $"ArcGIS object-id window {batchNumber} did not return every requested source object ID.");
+                    }
+                }
+
                 var newFeatures = FilterUnseenFeatures(
                     queryResult.Features,
                     layerInfo,
@@ -138,9 +166,14 @@ internal sealed partial class GeoservicesImportService
                     objectIdWindows is null ? null : objectIdWindows[batchNumber - 1]);
                 if (newFeatures.Length == 0)
                 {
-                    // A non-conforming upstream may ignore resultOffset and repeat the same
-                    // page forever. Stop before inserting duplicates.
-                    break;
+                    if (objectIdWindows is null)
+                    {
+                        throw new InvalidOperationException(
+                            "ArcGIS import stopped because the source returned no pagination progress.");
+                    }
+
+                    throw new InvalidOperationException(
+                        $"ArcGIS object-id window {batchNumber} returned no requested features.");
                 }
 
                 var batchInsert = await InsertFeaturesAsync(

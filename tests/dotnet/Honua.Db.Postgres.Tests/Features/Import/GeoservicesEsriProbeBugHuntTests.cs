@@ -72,6 +72,18 @@ public sealed class GeoservicesEsriProbeBugHuntTests
     }
 
     [Fact]
+    public void LayerDimensions_AreUsedWhenGeometryOmitsDimensionFlags()
+    {
+        var wkt = ConvertWkt("""
+            { "paths": [[[10, 20, 30, 40], [11, 21, 31, 41]]] }
+            """, hasZ: true, hasM: true);
+
+        Assert.StartsWith("MULTILINESTRING ZM ", wkt, StringComparison.Ordinal);
+        Assert.Contains("30 40", wkt, StringComparison.Ordinal);
+        Assert.Contains("31 41", wkt, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BlobAttribute_IsDecodedToByteaValueInsteadOfString()
     {
         using var document = JsonDocument.Parse("\"AQID\"");
