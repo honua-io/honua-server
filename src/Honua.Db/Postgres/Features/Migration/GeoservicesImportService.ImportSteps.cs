@@ -78,10 +78,31 @@ internal sealed partial class GeoservicesImportService
             var batchNumber = 0;
             var hasMore = true;
             var objectIdMap = new Dictionary<long, long>();
+            var seenSourceObjectIds = new HashSet<long>();
+            var sourceObjectIds = layerInfo.SupportsPagination == false
+                ? await _restClient.QueryObjectIdsAsync(
+                    request.ServiceUrl,
+                    request.LayerId,
+                    request.WhereClause,
+                    request.RequestTimeoutSeconds,
+                    request.MaxRetries,
+                    cancellationToken,
+                    request.Credentials)
+                : null;
+            var objectIdWindows = sourceObjectIds is null
+                ? null
+                : sourceObjectIds.Chunk(Math.Max(1, batchSize)).ToArray();
+            const int maxImportPages = 100_000;
 
-            while (hasMore && !cancellationToken.IsCancellationRequested)
+            while (hasMore && !cancellationToken.IsCancellationRequested &&
+                   (objectIdWindows is null || batchNumber < objectIdWindows.Length))
             {
                 batchNumber++;
+                if (batchNumber > maxImportPages)
+                {
+                    throw new InvalidOperationException(
+                        $"ArcGIS import stopped after {maxImportPages} pages because the source did not make pagination progress.");
+                }
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.RetrievingFeatures, request,
                     $"Retrieving batch {batchNumber}", featuresProcessed, totalFeatures, layerInfo.Name);
 
@@ -97,7 +118,8 @@ internal sealed partial class GeoservicesImportService
                     request.RequestTimeoutSeconds,
                     request.MaxRetries,
                     cancellationToken,
-                    request.Credentials);
+                    request.Credentials,
+                    objectIdWindows is null ? null : objectIdWindows[batchNumber - 1]);
 
                 if (queryResult.Features.Length == 0)
                 {
@@ -109,13 +131,25 @@ internal sealed partial class GeoservicesImportService
                     $"Inserting batch {batchNumber} ({queryResult.Features.Length} features)",
                     featuresProcessed, totalFeatures, layerInfo.Name);
 
+                var newFeatures = FilterUnseenFeatures(
+                    queryResult.Features,
+                    layerInfo,
+                    seenSourceObjectIds,
+                    objectIdWindows is null ? null : objectIdWindows[batchNumber - 1]);
+                if (newFeatures.Length == 0)
+                {
+                    // A non-conforming upstream may ignore resultOffset and repeat the same
+                    // page forever. Stop before inserting duplicates.
+                    break;
+                }
+
                 var batchInsert = await InsertFeaturesAsync(
                     connection,
                     transaction,
                     targetSchema,
                     request.TableName,
                     layerInfo,
-                    queryResult.Features,
+                    newFeatures,
                     request.TargetSrid,
                     cancellationToken);
 
@@ -135,7 +169,14 @@ internal sealed partial class GeoservicesImportService
                 Log.BatchCompleted(_logger, batchNumber, batchInsert.Inserted, batchInsert.Failed, featuresProcessed);
 
                 offset += queryResult.Features.Length;
-                hasMore = queryResult.ExceededTransferLimit || queryResult.Features.Length == batchSize;
+                hasMore = objectIdWindows is not null
+                    ? batchNumber < objectIdWindows.Length
+                    : queryResult.ExceededTransferLimit || queryResult.Features.Length == batchSize;
+            }
+
+            if (objectIdWindows is { } && batchNumber < objectIdWindows.Length)
+            {
+                throw new InvalidOperationException("ArcGIS object-id window import did not process all source object IDs.");
             }
 
             // Phase 4: Create spatial index
@@ -356,7 +397,7 @@ internal sealed partial class GeoservicesImportService
         if (!string.IsNullOrEmpty(layerInfo.GeometryType))
         {
             var pgGeomType = MapEsriGeometryType(layerInfo.GeometryType);
-            columns.Add($"geom geometry({pgGeomType}, {targetSrid})");
+            columns.Add($"geom geometry({pgGeomType}{GetGeometryDimensionSuffix(layerInfo.HasZ, layerInfo.HasM)}, {targetSrid})");
         }
 
         var sb = new StringBuilder();
@@ -382,9 +423,9 @@ internal sealed partial class GeoservicesImportService
     /// Maps an Esri geometry-type token to the PostGIS geometry-column type. Shared with
     /// <see cref="GeoservicesLayerPublicationService"/> so AutoPublish and table creation agree.
     /// </summary>
-    internal static string MapEsriGeometryType(string esriGeometryType)
+    internal static string MapEsriGeometryType(string esriGeometryType, bool hasZ = false, bool hasM = false)
     {
-        return esriGeometryType.ToUpperInvariant() switch
+        var geometryType = esriGeometryType.ToUpperInvariant() switch
         {
             "ESRIGEOMETRYPOINT" => "POINT",
             "ESRIGEOMETRYMULTIPOINT" => "MULTIPOINT",
@@ -393,6 +434,42 @@ internal sealed partial class GeoservicesImportService
             "ESRIGEOMETRYENVELOPE" => "POLYGON",
             _ => "GEOMETRY"
         };
+
+        return geometryType + GetGeometryDimensionSuffix(hasZ, hasM);
+    }
+
+    private static string GetGeometryDimensionSuffix(bool hasZ, bool hasM)
+        => hasZ && hasM ? "ZM" : hasZ ? "Z" : hasM ? "M" : string.Empty;
+
+    private static ArcGisFeature[] FilterUnseenFeatures(
+        ArcGisFeature[] features,
+        GeoservicesLayerInfo layerInfo,
+        HashSet<long> seenObjectIds,
+        IReadOnlyCollection<long>? allowedObjectIds)
+    {
+        var objectIdField = layerInfo.Fields.FirstOrDefault(static field => field.IsObjectId)?.Name;
+        if (objectIdField is null)
+        {
+            return features;
+        }
+
+        var newFeatures = new List<ArcGisFeature>(features.Length);
+        var allowed = allowedObjectIds is null ? null : allowedObjectIds.ToHashSet();
+        foreach (var feature in features)
+        {
+            if (!TryReadSourceObjectId(feature, objectIdField, out var objectId))
+            {
+                newFeatures.Add(feature);
+                continue;
+            }
+
+            if ((allowed is null || allowed.Contains(objectId)) && seenObjectIds.Add(objectId))
+            {
+                newFeatures.Add(feature);
+            }
+        }
+
+        return newFeatures.ToArray();
     }
 
     /// <summary>

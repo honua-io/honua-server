@@ -96,6 +96,15 @@ public sealed record GeoservicesLayerInfo
     /// </summary>
     public bool HasZ { get; init; }
 
+    /// <summary>Whether the source layer advertises M (measure) ordinates.</summary>
+    public bool HasM { get; init; }
+
+    /// <summary>
+    /// Whether the source supports resultOffset/resultRecordCount pagination.
+    /// A null value means the source did not advertise the capability.
+    /// </summary>
+    public bool? SupportsPagination { get; init; }
+
     /// <summary>
     /// The spatial reference WKID of the layer.
     /// </summary>
