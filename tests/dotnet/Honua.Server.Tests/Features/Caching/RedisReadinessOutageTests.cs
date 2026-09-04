@@ -25,6 +25,28 @@ namespace Honua.Server.Tests.Features.Caching;
 [Protocol(TestProtocols.Health)]
 public sealed class RedisReadinessOutageTests
 {
+    [IntegrationTest]
+    [Operation(Operations.HealthCheck)]
+    public async Task IsCacheHealthyAsync_RedisAllowsPingButDeniesReads_ReportsUnhealthyUntilRecovery()
+    {
+        await using var container = new RedisBuilder("redis:7.2-alpine").Build();
+        await container.StartAsync();
+        using var redis = await ConnectionMultiplexer.ConnectAsync(container.GetConnectionString());
+        using var cache = new RedisCacheService(Substitute.For<IDistributedCache>(),
+            Options.Create(new CacheOptions { EnableFallback = true }),
+            NullLogger<RedisCacheService>.Instance, Substitute.For<IPerformanceMonitor>(), redis);
+        Assert.True(await cache.IsCacheHealthyAsync());
+
+        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "-get"]);
+        Assert.Equal("OK", denied.Stdout.Trim());
+        _ = await redis.GetDatabase().PingAsync();
+        Assert.False(await cache.IsCacheHealthyAsync());
+
+        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "+get"]);
+        Assert.Equal("OK", restored.Stdout.Trim());
+        Assert.True(await cache.IsCacheHealthyAsync());
+    }
+
     [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]

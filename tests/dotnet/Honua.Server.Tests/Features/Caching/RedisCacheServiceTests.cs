@@ -424,6 +424,30 @@ public sealed class RedisCacheServiceTests : IDisposable
         (await cache.IsCacheHealthyAsync()).Should().BeTrue();
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task IsCacheHealthyAsync_CacheReadDenied_ReportsUnhealthyUntilPermissionsRecover()
+    {
+        var denied = true;
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        database.PingAsync(Arg.Any<CommandFlags>()).Returns(TimeSpan.Zero);
+        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(_ => denied
+                ? Task.FromException<RedisValue>(new RedisServerException("NOPERM cache read denied"))
+                : Task.FromResult(RedisValue.Null));
+        using var cache = new RedisCacheService(Substitute.For<IDistributedCache>(),
+            Options.Create(_options), NullLogger<RedisCacheService>.Instance,
+            _performanceMonitor, redis, "deployment:");
+
+        (await database.PingAsync()).Should().Be(TimeSpan.Zero);
+        (await cache.IsCacheHealthyAsync()).Should().BeFalse();
+        denied = false;
+        (await cache.IsCacheHealthyAsync()).Should().BeTrue();
+        await database.Received(2).StringGetAsync($"deployment:{ScopedKeyPrefix}__health_check__");
+    }
+
     [Theory]
     [Trait("Tier", "Fast")]
     [InlineData(false)]
