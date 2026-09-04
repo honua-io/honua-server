@@ -361,6 +361,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Category = category,
                 Kind = kind,
                 Maturity = maturity,
+                RequiresOptIn = id is not ("serve.geoservices-imageserver" or "serve.wmts"),
                 EntitlementKey = entitlementKey,
                 MinimumEdition = ResolveMinimumEdition(entitlementKey),
                 PackageSchemaVersion = packageSchemaVersion,

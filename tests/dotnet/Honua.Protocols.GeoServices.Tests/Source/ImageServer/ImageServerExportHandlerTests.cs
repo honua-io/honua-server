@@ -1250,6 +1250,37 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_TransientRasterSelectionFailure_ReturnsServiceUnavailable()
+    {
+        _rasterStore.QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TestDbException("Private selection error"));
+        var context = CreateImageServerContext();
+
+        var result = await _handler.ExportImageAsync(context, 1, CreateRequest(responseFormat: "image"));
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_TransientExtentLookupFailure_ReturnsServiceUnavailable()
+    {
+        _rasterStore.QueryRastersAsync(1, Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>())
+            .Returns([CreateTestRasterInfo() with { Extent = null }]);
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestRasterResult());
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TestDbException("Private extent error"));
+        SetupTemporaryStorage();
+        var context = CreateImageServerContext();
+
+        var result = await _handler.ExportImageAsync(context, 1, CreateRequest(responseFormat: "json"));
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status503ServiceUnavailable);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_NonTransientDatabaseError_RemainsServerError()
     {
         SetupLayerAndRasters();

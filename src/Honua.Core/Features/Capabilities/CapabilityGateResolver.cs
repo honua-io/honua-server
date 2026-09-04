@@ -54,7 +54,7 @@ public static class CapabilityGateResolver
 
         if (descriptor.Maturity is CapabilityMaturity.Experimental or CapabilityMaturity.Preview)
         {
-            if (!context.ExperimentalFlags.IsExperimentalEnabled(descriptor.Id))
+            if (descriptor.RequiresOptIn && !context.ExperimentalFlags.IsExperimentalEnabled(descriptor.Id))
             {
                 return new CapabilityResolution(false, CapabilityReasonCodes.ExperimentalDisabled);
             }

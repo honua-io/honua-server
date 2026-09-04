@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Data.Common;
-using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -22,7 +20,7 @@ internal sealed class ImageServerExportBackend(
         CancellationToken cancellationToken)
         => rasterStore.QueryRastersAsync(layerId, query, cancellationToken);
 
-    public async Task<RasterResult> ExportAsync(
+    public Task<RasterResult> ExportAsync(
         int layerId,
         RasterInfo[] rasters,
         RasterMergeStrategy mergeStrategy,
@@ -30,26 +28,16 @@ internal sealed class ImageServerExportBackend(
         RasterMosaicOrdering ordering,
         RasterMosaicAttributeSort? attributeSort,
         CancellationToken cancellationToken)
-    {
-        try
-        {
-            return rasters.Length == 1
-                ? await rasterStore.ExportImageAsync(layerId, rasters[0].Id, query, cancellationToken).ConfigureAwait(false)
-                : await rasterStore.ExportMosaicAsync(
-                        layerId,
-                        rasters.Select(static raster => raster.Id).ToArray(),
-                        mergeStrategy,
-                        query,
-                        ordering,
-                        attributeSort,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-        }
-        catch (DbException ex) when (ex.IsTransient)
-        {
-            throw new ServiceUnavailableException("Raster export provider is unavailable.", ex);
-        }
-    }
+        => rasters.Length == 1
+            ? rasterStore.ExportImageAsync(layerId, rasters[0].Id, query, cancellationToken)
+            : rasterStore.ExportMosaicAsync(
+                layerId,
+                rasters.Select(static raster => raster.Id).ToArray(),
+                mergeStrategy,
+                query,
+                ordering,
+                attributeSort,
+                cancellationToken);
 
     public Task<RasterExtent?> GetExtentAsync(
         int layerId,

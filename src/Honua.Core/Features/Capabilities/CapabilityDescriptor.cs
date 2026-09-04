@@ -52,6 +52,13 @@ public sealed record CapabilityDescriptor
     public required CapabilityMaturity Maturity { get; init; }
 
     /// <summary>
+    /// Whether Preview or Experimental maturity requires an explicit feature flag.
+    /// False for lifecycle-only declarations whose routes are already served.
+    /// Other capability maturities do not require this flag.
+    /// </summary>
+    public bool RequiresOptIn { get; init; } = true;
+
+    /// <summary>
     /// The existing <see cref="FeatureCatalog"/> entitlement key that gates this
     /// capability, or <c>null</c> when the capability is ungated. When set, this is
     /// the same string used by license entitlement checks.

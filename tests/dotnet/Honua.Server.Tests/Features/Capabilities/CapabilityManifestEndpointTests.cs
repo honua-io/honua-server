@@ -108,11 +108,39 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings", "serve.geoservices-imageserver", "serve.wmts" })
+            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings" })
             {
                 var capability = GetCapability(document.RootElement, id);
                 capability.GetProperty("available").GetBoolean().Should().BeFalse();
                 capability.GetProperty("reasonCode").GetString().Should().Be("disabled-by-configuration");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn(bool fromRegistry)
+    {
+        var fixture = CreateManifestFixture(manifestFromRegistry: fromRegistry, experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = await ReadDocumentAsync(response);
+            foreach (var id in new[] { "serve.geoservices-imageserver", "serve.wmts" })
+            {
+                var capability = GetCapability(document.RootElement, id);
+                capability.GetProperty("lifecycle").GetString().Should().Be("preview");
+                capability.GetProperty("available").GetBoolean().Should().BeTrue();
+                capability.GetProperty("optInRequired").GetBoolean().Should().BeFalse();
             }
         }
         finally

@@ -76,6 +76,17 @@ public sealed class CapabilityManifestRegistryProjectionTests
             && !descriptor.Id.StartsWith(CapabilityRegistry.McpResourceIdPrefix, StringComparison.Ordinal)
             && !descriptor.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal);
 
+    [Theory]
+    [InlineData("serve.geoservices-imageserver")]
+    [InlineData("serve.wmts")]
+    public void Registry_LifecycleOnlyPreviews_RemainEnabledWithoutOptIn(string id)
+    {
+        var descriptor = Registry.Find(id)!;
+        descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
+        descriptor.RequiresOptIn.Should().BeFalse();
+        Registry.Resolve(id, CapabilityGateContext.Default).Enabled.Should().BeTrue();
+    }
+
     [Fact]
     public void Registry_ManifestDescriptors_MatchFrozenRosterInOrder()
     {

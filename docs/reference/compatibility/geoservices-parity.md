@@ -183,7 +183,8 @@ Esri spec: [Map Service](https://developers.arcgis.com/rest/services-reference/e
 **2026.1 lifecycle: Preview**, including ImageServer WMTS. The operator ruling
 of 2026-09-03 keeps security, isolation and lifecycle-truth fixes in scope;
 other parity work is deferred to release/2026.2. Implementation and conformance
-evidence below do not change that lifecycle.
+evidence below do not change that lifecycle. These routes remain served; their
+manifest entries report Preview with no additional opt-in flag required.
 
 `exportImage` returns a GeoServices error envelope with code `501` when the
 configured raster provider cannot load the requested output driver. Transient

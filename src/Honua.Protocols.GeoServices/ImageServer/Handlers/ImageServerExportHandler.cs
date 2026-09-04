@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
@@ -294,14 +295,14 @@ internal sealed class ImageServerExportHandler
                 "Temporary export storage is currently at capacity. Please retry shortly.",
                 ex.RetryAfterSeconds);
         }
-        catch (ServiceUnavailableException ex)
+        catch (Exception ex) when (ex is ServiceUnavailableException or DbException { IsTransient: true })
         {
             ImageServerLog.ExportImageFailed(_logger, ex, layerId);
             scope.RecordException(ex);
             return StandardErrorHelpers.CreateServiceUnavailable(
                 context,
                 "Raster export provider is currently unavailable. Please retry shortly.",
-                ex.RetryAfterSeconds,
+                (ex as ServiceUnavailableException)?.RetryAfterSeconds,
                 retryable: true);
         }
         catch (NotSupportedException ex)
