@@ -37,6 +37,19 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
 
     private static TestMetadataV2GraphProvider BuildProtectedLayerGraphProvider()
         => new TestMetadataV2GraphBuilder()
+            // An unrelated public resource has a storage id matching the protected
+            // publication index. Its policy must never authorize the tile request.
+            .AddResource(
+                "res-public-collision",
+                "Unrelated Public Raster",
+                MetadataV2ResourceType.RasterDataset,
+                accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddStorageBinding(
+                "binding-public-collision",
+                "res-public-collision",
+                "public.zarr",
+                storageLayerId: WebAppFixture.TestLayerId,
+                storageType: MetadataV2StorageType.Zarr)
             .AddResource(
                 "res-zarr-layer-0",
                 "Protected Zarr Layer",
