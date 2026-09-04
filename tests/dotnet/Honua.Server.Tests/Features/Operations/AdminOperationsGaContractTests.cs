@@ -2,19 +2,78 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Operations;
 
 public sealed class AdminOperationsGaContractTests
 {
+    [UnitTest]
+    public void AdminApprovalPlan_ReviewerProjection_IdentifiesTargetAndChange()
+    {
+        var definition = AdminApiOperationCatalog.Definitions.Single(d => d.OperationId == "admin.layer.filter.set");
+        var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == definition.OperationId);
+        var mapper = new AdminApiOperationApprovalRequestMapper(definition);
+        var proposal = mapper.Map(descriptor, new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?>
+            {
+                ["layerId"] = "123",
+                ["permanentFilter"] = """{"expression":"status = 'open'","language":"arcgis-sql"}"""
+            }
+        }, new OperationPolicyContext { PrincipalId = "requester", TenantId = "tenant-a" },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+        // ProposalEndpoints.ToDetail exposes these fields, not ExecutionPayload.
+        var reviewerText = string.Join("\n", new[] { proposal.Plan!.Summary }
+            .Concat(proposal.Plan.Diff).Concat(proposal.Plan.DryRun));
+        reviewerText.Should().Contain("123", "the reviewer must be shown the target resource");
+        reviewerText.Should().Contain("status = 'open'", "the reviewer must be shown the proposed change");
+    }
+
+    [UnitTest]
+    public async Task ApprovedReplay_TenantHeader_PreservesApprovedTenant()
+    {
+        var tenant = new RequestTenantContext();
+        using var services = new ServiceCollection().AddSingleton<ITenantContext>(tenant).BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Path = "/api/v1/admin/metadata/layers/1/fields";
+        context.Request.Headers[TenantContextOptions.TenantHeaderName] = "approved-tenant";
+        // These are the claims issued by ApiKeyAuthenticationHandler for the
+        // exact-method/path credential minted by the approved replay executor.
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.Name, "approved-operation:proposal-test"),
+            new Claim(ClaimTypes.Role, "approved-operation"),
+            new Claim("auth_type", "api_key"),
+            new Claim("api_key_id", "11111111-1111-1111-1111-111111111111"),
+            new Claim("permission", AdminApiKeyPermission.CreateApprovedOperationGrant("PUT", context.Request.Path))
+        ], "ApiKey"));
+        var nextCalled = false;
+        var middleware = new TenantContextMiddleware(_ => { nextCalled = true; return Task.CompletedTask; },
+            Options.Create(new TenantContextOptions()), NullLogger<TenantContextMiddleware>.Instance);
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        tenant.TenantId.Should().Be("approved-tenant", "replay must use the tenant sealed into the approved payload");
+    }
+
     [UnitTest]
     public async Task ReleasePackageList_Pagination_RemainsInQuery()
     {
