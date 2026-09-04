@@ -379,15 +379,15 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
+            var parsedRenderRequest = renderRequest.Value;
             var rasterOptionsError = entries
-                .Select(entry => ValidateRasterBackgroundOptions(entry.Resource, renderRequest.Value))
+                .Select(entry => ValidateRasterBackgroundOptions(entry.Resource, parsedRenderRequest))
                 .FirstOrDefault(static error => error is not null);
             if (rasterOptionsError is not null)
             {
                 return CreateBadRequestResult(context, rasterOptionsError);
             }
 
-            var parsedRenderRequest = renderRequest.Value;
             (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
                 parsedRenderRequest,
                 context,
