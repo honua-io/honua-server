@@ -49,6 +49,40 @@ public sealed class GpxElevationRoundtripTests
     }
 
     [Fact]
+    public async Task ImportExport_DisconnectedElevatedSegments_PreserveTopologyAndSamples()
+    {
+        using var input = new MemoryStream(Encoding.UTF8.GetBytes("""
+            <gpx><trk><name>Profile</name>
+            <trkseg><trkpt lat="0" lon="0"><ele>30</ele></trkpt><trkpt lat="0" lon="1"><ele>40</ele></trkpt></trkseg>
+            <trkseg><trkpt lat="0" lon="10"><ele>50</ele></trkpt><trkpt lat="0" lon="11"><ele>60</ele></trkpt></trkseg>
+            <trkseg><trkpt lat="0" lon="20"><ele>70</ele></trkpt></trkseg>
+            </trk></gpx>
+            """));
+        var source = new FeatureCollection();
+        await foreach (var feature in GpxFormatReader.ReadStreamingAsync(input, CancellationToken.None))
+        {
+            source.Add(feature);
+        }
+
+        using var exported = new MemoryStream(Encoding.UTF8.GetBytes(new GeoJsonWriter { Dimension = 3 }.Write(source)));
+        var reimported = new List<IFeature>();
+        await foreach (var feature in new StreamingGeoJsonReader().ReadFeaturesAsync(exported))
+        {
+            reimported.Add(feature);
+        }
+
+        var roundtrip = Assert.Single(reimported);
+        Assert.Equal("GeometryCollection", roundtrip.Geometry.GeometryType);
+        Assert.Equal(3, roundtrip.Geometry.NumGeometries);
+        Assert.Equal(2, roundtrip.Geometry.Length);
+        Assert.Equal(new[] { 0d, 1d, 10d, 11d, 20d }, roundtrip.Geometry.Coordinates.Select(c => c.X));
+        Assert.All(roundtrip.Geometry.Coordinates, c => Assert.Equal(0, c.Y));
+        Assert.Equal(new[] { 30d, 40d, 50d, 60d, 70d }, roundtrip.Geometry.Coordinates.Select(c => c.Z));
+        Assert.All(roundtrip.Geometry.Coordinates, c => Assert.True(double.IsNaN(c.M)));
+        Assert.Equal("Profile", Assert.IsType<string>(roundtrip.Attributes["name"]));
+    }
+
+    [Fact]
     public async Task ReadStreamingAsync_MissingElevation_DoesNotInventOrShiftSamples()
     {
         using var input = new MemoryStream(Encoding.UTF8.GetBytes("""

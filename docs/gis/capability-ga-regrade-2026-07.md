@@ -22,6 +22,12 @@ reason, a mis-attributed route, or a shallow-evidence GA claim.
 > surface) and `security.mtls` (demoted back to experimental in #2958). Every other
 > disposition in this record stands.
 
+> **Amendment (2026-09-03, honua-release#266 / #264).** The operator ruling supersedes
+> the earlier `sync.offline` GA promotion for release 2026.1: offline sync is Preview in
+> 2026.1. The registry, feature catalog, parity artifacts, and ADR notes must say Preview;
+> only security/isolation and lifecycle-truth work is in scope here, with remaining parity
+> deferred to release/2026.2.
+
 > **Update (2026-08, honua-release#100).** The "Mechanism" section below explains why
 > `scene.catalog` had to be a *documentation-only* demotion: no lever reached a key
 > outside the `CapabilityRegistry` roster, so `capability-matrix.v1.json` kept reporting
