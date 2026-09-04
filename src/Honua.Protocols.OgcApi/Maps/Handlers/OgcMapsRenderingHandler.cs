@@ -119,6 +119,12 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
+            var rasterOptionsError = ValidateRasterBackgroundOptions(resource, renderRequest.Value);
+            if (rasterOptionsError is not null)
+            {
+                return CreateBadRequestResult(context, rasterOptionsError);
+            }
+
             var parsedRenderRequest = renderRequest.Value;
             (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
                 parsedRenderRequest,
@@ -373,6 +379,14 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
+            var rasterOptionsError = entries
+                .Select(entry => ValidateRasterBackgroundOptions(entry.Resource, renderRequest.Value))
+                .FirstOrDefault(static error => error is not null);
+            if (rasterOptionsError is not null)
+            {
+                return CreateBadRequestResult(context, rasterOptionsError);
+            }
+
             var parsedRenderRequest = renderRequest.Value;
             (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
                 parsedRenderRequest,
@@ -492,11 +506,7 @@ internal sealed class OgcMapsRenderingHandler
                 }
             }
 
-            var styleIsAssociated = string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal) ||
-                resource.StyleResourceIds.Any(styleResourceId =>
-                    snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) &&
-                    styleResource.Type == MetadataV2ResourceType.Style &&
-                    string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
+            var styleIsAssociated = IsStyleAssociatedWithResource(snapshot, resource, styleId);
             if (!styleIsAssociated)
             {
                 return CreateNotFoundResult(context, $"Style '{styleId}' is not associated with collection {layerId}");
@@ -718,6 +728,28 @@ internal sealed class OgcMapsRenderingHandler
         // the schema (Geometry/Geography field). Match the WMS/WMTS V2 ports — both treat
         // such a layer as renderable.
         return resource.FindPrimaryGeometryField() is not null;
+    }
+
+    internal static bool IsStyleAssociatedWithResource(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Resource resource,
+        string styleId)
+        => resource.StyleResourceIds.Any(styleResourceId =>
+            snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) &&
+            styleResource.Type == MetadataV2ResourceType.Style &&
+            string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
+
+    internal static string? ValidateRasterBackgroundOptions(
+        MetadataV2Resource resource,
+        MapRenderRequest request)
+    {
+        if (resource.Type != MetadataV2ResourceType.RasterDataset ||
+            (request.Transparent && string.IsNullOrWhiteSpace(request.BackgroundColor)))
+        {
+            return null;
+        }
+
+        return "The transparent=false and bgcolor parameters are not currently supported for raster-backed OGC API Maps rendering.";
     }
 
     /// <summary>
