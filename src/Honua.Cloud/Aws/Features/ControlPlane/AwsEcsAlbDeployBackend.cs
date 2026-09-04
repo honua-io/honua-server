@@ -704,7 +704,9 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                 // The weight check uses MatchesExpectedShare(0) so an unnormalized rule
                 // (e.g. canary=0/stable=50 with a stray third target group) doesn't
                 // satisfy rollback even though the canary slot reads zero.
-                if (albWeights.MatchesExpectedShare(0) && IsCanaryDeploymentSettled(serviceState))
+                if (albWeights.MatchesExpectedShare(0) &&
+                    IsCanaryDeploymentSettled(serviceState) &&
+                    string.Equals(serviceState.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal))
                 {
                     return new DeployObservation
                     {
@@ -806,6 +808,14 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
+            await ecsClient.UpdateServiceTaskDefinitionAsync(
+                    target.Cluster!,
+                    target.CanaryService!,
+                    spec.CurrentRevision!,
+                    target.Region,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
             await albClient.UpdateListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
                     BuildWeights(target.CanaryTargetGroupArn!, 100, target.StableTargetGroupArn!, 0),
@@ -840,6 +850,17 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
+
+        if (string.IsNullOrWhiteSpace(spec.CurrentRevision))
+        {
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                ProviderOperationId = operation.ProviderOperationId,
+                ObservedRevision = operation.ObservedState,
+                Message = "Rollback requires a previously observed task definition, but none was captured for this operation."
+            };
+        }
 
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendRollback, operation, target);
 

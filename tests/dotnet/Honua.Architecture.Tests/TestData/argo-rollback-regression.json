@@ -1,0 +1,33 @@
+{
+  "fixture": "argo-rollback-provider-transcript",
+  "contract": "honua-server#3891",
+  "provider": "Argo Rollouts",
+  "cases": [
+    {
+      "name": "healthy-equal-hashes-candidate-image",
+      "observations": [
+        {
+          "phase": "Healthy",
+          "isAborted": true,
+          "currentPodHash": "candidate-hash",
+          "stableRevisionHash": "candidate-hash",
+          "podTemplateImage": "revision-candidate"
+        }
+      ]
+    },
+    {
+      "name": "healthy-hashes-absent-candidate-image",
+      "observations": [
+        {
+          "phase": "Healthy",
+          "isAborted": true,
+          "currentPodHash": null,
+          "stableRevisionHash": null,
+          "podTemplateImage": "revision-candidate"
+        }
+      ]
+    }
+  ],
+  "expectedTerminalStatus": "RollbackRequested",
+  "expectedObservedRevision": "revision-candidate"
+}
