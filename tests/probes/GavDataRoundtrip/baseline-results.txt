@@ -1,0 +1,32 @@
+Baseline: f16b248dd7 (production source unchanged)
+Lane: dotnet from PATH, HONUA_MSBUILD_NODE_CAP=4, timeout 290
+Project: tests/probes/GavDataRoundtrip/GavDataRoundtrip.csproj
+Filter: FullyQualifiedName~GavDataRoundtrip
+
+Cold build: exit 124 at 290-second cap, before tests; MSB4166 after timeout.
+Next bounded run: build succeeded; test execution 3.3260 seconds.
+Total tests: 11; Passed: 1; Failed: 10.
+
+GeoPackage_Boolean_DeclaresBooleanType: expected BOOLEAN; actual INTEGER.
+Gpx_TrackElevations_PreserveZ: expected Z=30; actual NaN.
+Shapefile_NullGeometryRow_PreservesRowAndAttributes: expected 2; actual 1.
+Csv_WhitespaceAndEmptyString_PreservesAttributes: expected name present; actual absent.
+Gpx_DisconnectedSegments_PreserveSeparateLines: expected length 2; actual 11.
+Shapefile_FirstFeature2D_SecondFeatureZ_PreservesElevation: expected Z=50; actual NaN.
+GeoPackage_ReservedAttribute_PreservesAttribute(geom): SQLite Error 1: duplicate column name: geom.
+GeoPackage_ReservedAttribute_PreservesAttribute(fid): SQLite Error 1: duplicate column name: fid.
+Csv_ZmGeometry_PreservesBothOrdinates: expected Z=30; actual NaN.
+GeoJson_Int64BeyondDoublePrecision_PreservesValueAndType: expected Int64; actual Double.
+Csv_Control_UnicodeDecimalAndCoordinatePrecisionSurvive: PASS.
+
+Exact-value follow-up (same project; filter FullyQualifiedName~GeoJson_Int64BeyondDoublePrecision):
+Total tests: 1; Failed: 1; test execution 2.0582 seconds.
+Expected serialized JSON: 9007199254740993
+Actual serialized JSON:   9007199254740992
+
+Diagnostic corrections (production files restored immediately afterward):
+- StreamingGeoJsonReader: box successful longVal as object before numeric promotion.
+- CsvExportWriter: construct WKTWriter with output dimension 4.
+Filter: FullyQualifiedName~Csv_ZmGeometry|FullyQualifiedName~GeoJson_Int64|FullyQualifiedName~Csv_Control
+Total tests: 3; Passed: 3; test execution 2.7014 seconds.
+Patch retained as diagnostic.patch; no production fix committed.

@@ -1,0 +1,26 @@
+diff --git a/src/Honua.Geometry/Features/FileImport/Services/StreamingGeoJsonReader.cs b/src/Honua.Geometry/Features/FileImport/Services/StreamingGeoJsonReader.cs
+index 707e2ed05b..4b09a8db2f 100644
+--- a/src/Honua.Geometry/Features/FileImport/Services/StreamingGeoJsonReader.cs
++++ b/src/Honua.Geometry/Features/FileImport/Services/StreamingGeoJsonReader.cs
+@@ -846,7 +846,7 @@ internal sealed class StreamingGeoJsonReader
+         return element.ValueKind switch
+         {
+             JsonValueKind.String => element.GetString(),
+-            JsonValueKind.Number => element.TryGetInt64(out var longVal) ? longVal : element.GetDouble(),
++            JsonValueKind.Number => element.TryGetInt64(out var longVal) ? (object)longVal : element.GetDouble(),
+             JsonValueKind.True => true,
+             JsonValueKind.False => false,
+             JsonValueKind.Null => null,
+diff --git a/src/Honua.Io/Features/Export/Writers/CsvExportWriter.cs b/src/Honua.Io/Features/Export/Writers/CsvExportWriter.cs
+index 049768530d..d75af5db11 100644
+--- a/src/Honua.Io/Features/Export/Writers/CsvExportWriter.cs
++++ b/src/Honua.Io/Features/Export/Writers/CsvExportWriter.cs
+@@ -20,7 +20,7 @@ internal static class CsvExportWriter
+     [ThreadStatic]
+     private static WKTWriter? _wktWriter;
+ 
+-    private static WKTWriter WktWriter => _wktWriter ??= new WKTWriter();
++    private static WKTWriter WktWriter => _wktWriter ??= new WKTWriter(4);
+ 
+     public static async Task<int> WriteAsync(
+         Stream output,

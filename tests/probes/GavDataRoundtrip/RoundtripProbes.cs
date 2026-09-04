@@ -27,6 +27,7 @@ public sealed class RoundtripProbes
             """));
         await foreach (var feature in new StreamingGeoJsonReader().ReadFeaturesAsync(stream))
         {
+            Assert.Equal("9007199254740993", System.Text.Json.JsonSerializer.Serialize(feature.Attributes["key"]));
             Assert.Equal(9007199254740993L, Assert.IsType<long>(feature.Attributes["key"]));
         }
     }
@@ -155,6 +156,43 @@ public sealed class RoundtripProbes
             """));
         await foreach (var feature in GpxFormatReader.ReadStreamingAsync(stream, CancellationToken.None))
             Assert.Equal(30, feature.Geometry.Coordinate.Z);
+    }
+
+    [Fact]
+    public async Task Shapefile_NullGeometryRow_PreservesRowAndAttributes()
+    {
+        using var output = new MemoryStream();
+        var point = new GeometryFactory().CreatePoint(new Coordinate(1, 2));
+        var nullFeature = Feature.Create(2, null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", "unlocated"));
+        var result = await ShapefileExportWriter.WriteAsync(output,
+            Rows(MakeFeature(point), nullFeature),
+            [new ExportField("name", ExportFieldType.String, true)], ExportGeometryType.Point,
+            null, NullLogger.Instance, CancellationToken.None);
+        Assert.Equal(2, result.WrittenCount);
+    }
+
+    [Fact]
+    public async Task Csv_Control_UnicodeDecimalAndCoordinatePrecisionSurvive()
+    {
+        var point = new GeometryFactory().CreatePoint(new Coordinate(-157.1234567890123, 21.1234567890123));
+        var feature = MakeFeature(point) with { Attributes = ImmutableDictionary<string, object?>.Empty
+            .Add("name", "Hawaiʻi, 東京").Add("amount", 123456789.123456789m) };
+        using var output = new MemoryStream();
+        await CsvExportWriter.WriteAsync(output, Rows(feature),
+            [new ExportField("name", ExportFieldType.String, true), new ExportField("amount", ExportFieldType.Double, true)],
+            CancellationToken.None);
+        output.Position = 0;
+        var count = 0;
+        await foreach (var read in CsvFormatReader.ReadStreamingAsync(output, CancellationToken.None))
+        {
+            Assert.Equal("Hawaiʻi, 東京", read.Attributes["name"]);
+            Assert.Equal("123456789.123456789", read.Attributes["amount"]);
+            Assert.Equal(point.X, read.Geometry.Coordinate.X);
+            Assert.Equal(point.Y, read.Geometry.Coordinate.Y);
+            count++;
+        }
+        Assert.Equal(1, count);
     }
 
     private static Feature MakeFeature(Geometry geometry) => Feature.Create(1,

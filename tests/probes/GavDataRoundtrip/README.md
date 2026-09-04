@@ -18,3 +18,16 @@ The canonical findings, verification results, duplicate dispositions, and covera
 are recorded in honua-flow `docs/ops/bug-hunt-ga-vectors-2026-09-04/data-roundtrip.md`.
 These probes exercise production readers/writers directly; they are not a claim of a
 complete HTTP -> PostGIS -> HTTP format-pair matrix or external GIS certification.
+
+Baseline outcome: 11 tests, 10 failures across nine findings, one passing control.
+See `baseline-results.txt` for the exact observed outputs.
+
+`diagnostic.patch` contains only two one-line corrections used to confirm the numeric
+promotion and CSV dimensionality root causes. Applying it made the integer, CSV Z/M,
+and neighboring CSV control probes pass (3/3; test execution 2.7014 seconds). It was
+then reversed; production source in this branch remains identical to the baseline.
+This is diagnostic evidence, not a complete reviewed fix for all findings.
+
+To reproduce the failing-before/passing-after check, apply the patch and run the same
+project with filter `FullyQualifiedName~Csv_ZmGeometry|FullyQualifiedName~GeoJson_Int64|FullyQualifiedName~Csv_Control`,
+then reverse the patch. Other preservation probes remain expected failures.
