@@ -18768,7 +18768,7 @@
             }
           },
           "503": {
-            "description": "`Public:BaseUrl` is not configured outside development and test environments, so a post-logout redirect URI cannot be built.",
+            "description": "The shared session store could not revoke the session; the cookie is preserved and logout must be retried after recovery. Also returned after successful local termination when `Public:BaseUrl` is not configured outside development and test environments, so a post-logout redirect URI cannot be built.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18962,7 +18962,7 @@
             }
           },
           "503": {
-            "description": "`Public:BaseUrl` is not configured outside development and test environments, so a post-logout redirect URI cannot be built.",
+            "description": "The shared session store could not revoke the session; the cookie is preserved and logout must be retried after recovery. Also returned after successful local termination when `Public:BaseUrl` is not configured outside development and test environments, so a post-logout redirect URI cannot be built.",
             "content": {
               "application/problem+json": {
                 "schema": {
