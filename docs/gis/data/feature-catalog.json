@@ -14856,7 +14856,7 @@
         "Honua.Server.Tests.Import.FileGdbImportTests.Upload_WithSparseFileGdb_ReturnsNoFeaturesFound",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithGeoParquet_ImportsFeaturesToTable",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithInt16Column_ImportsSuccessfully",
-        "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_RejectsWithError",
+        "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_ImportsFeatures",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithMissingGeoMetadata_RejectsWithSpecificError",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithNestedColumn_ImportsSuccessfullyWithWarning",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithNonWkbEncoding_RejectsWithError",
