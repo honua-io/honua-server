@@ -153,7 +153,11 @@ internal sealed partial class Wfs20Handler
                 filter,
                 resourceId,
                 srsName,
-                enforceResourceIdTypeMatch: true,
+                // A qualified RESOURCEID is scoped by its own type name. When the request
+                // selects multiple types (including the implicit all-types selection), ignore
+                // that id while building the other type's plan instead of rejecting the entire
+                // request because the prefix does not match that plan (#4168).
+                enforceResourceIdTypeMatch: featureTypes.Count == 1,
                 requireResourceIdQualifier: featureTypes.Count > 1,
                 cancellationToken: cancellationToken,
                 wfsVersion: wfsVersion);
@@ -786,7 +790,8 @@ internal sealed partial class Wfs20Handler
         int offset,
         int pageSize,
         long totalMatched,
-        int returnedCount)
+        int returnedCount,
+        IReadOnlyList<string>? pagingTypeNames = null)
     {
         var pagingResultType = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase)
             ? null
@@ -808,7 +813,8 @@ internal sealed partial class Wfs20Handler
                 offset,
                 pageSize,
                 totalMatched,
-                returnedCount));
+                returnedCount,
+                pagingTypeNames));
     }
 
     private static string BuildFeatureCollectionSchemaLocation(
@@ -848,7 +854,8 @@ internal sealed partial class Wfs20Handler
         int offset,
         int pageSize,
         long totalMatched,
-        int returnedCount)
+        int returnedCount,
+        IReadOnlyList<string>? pagingTypeNames = null)
     {
         if (pageSize <= 0 || selectedTypes.Count == 0)
         {
@@ -872,7 +879,8 @@ internal sealed partial class Wfs20Handler
                 srsName,
                 resultType,
                 (int)nextOffset,
-                pageSize)
+                pageSize,
+                pagingTypeNames)
             : null;
         var previous = offset > 0
             ? BuildGetFeaturePagingLink(
@@ -887,7 +895,8 @@ internal sealed partial class Wfs20Handler
                 srsName,
                 resultType,
                 Math.Max(offset - pageSize, 0),
-                pageSize)
+                pageSize,
+                pagingTypeNames)
             : null;
 
         return new PagingLinks(next, previous);
@@ -905,14 +914,18 @@ internal sealed partial class Wfs20Handler
         string? srsName,
         string? resultType,
         int offset,
-        int count)
+        int count,
+        IReadOnlyList<string>? pagingTypeNames = null)
     {
+        var typeNames = pagingTypeNames is { Count: > 0 }
+            ? pagingTypeNames
+            : selectedTypes.Select(descriptor => descriptor.LocalName).ToArray();
         var queryParts = new List<string>
         {
             $"SERVICE={Uri.EscapeDataString(Wfs20Utilities.ServiceType)}",
             $"VERSION={Uri.EscapeDataString(Wfs20Utilities.Version)}",
             $"REQUEST={Uri.EscapeDataString(Wfs20Utilities.Operations.GetFeature)}",
-            $"TYPENAMES={Uri.EscapeDataString(string.Join(',', selectedTypes.Select(descriptor => descriptor.LocalName)))}",
+            $"TYPENAMES={Uri.EscapeDataString(string.Join(',', typeNames))}",
             $"COUNT={count.ToString(CultureInfo.InvariantCulture)}",
             $"STARTINDEX={offset.ToString(CultureInfo.InvariantCulture)}"
         };

@@ -543,6 +543,10 @@ internal static partial class WmsRequestHandlers
                 cancellationToken).ConfigureAwait(false) ?? rootExtent;
             await AppendWmsGeographicBoundsAsync(context, sb, layerExtent, "        ", isWms111).ConfigureAwait(false);
 
+            // Preserve the CITE fixture dimensions (elevation on cite:Lakes and
+            // time on cite:Autos) alongside the dynamic dimensions advertised by
+            // the canonical resource metadata.
+            AppendWmsCiteDimensions(sb, layer, "        ", isWms111);
             AppendWmsTemporalDimension(sb, layer, "        ", isWms111, temporalRanges);
 
             sb.AppendLine("        <MetadataURL type=\"TC211\">");

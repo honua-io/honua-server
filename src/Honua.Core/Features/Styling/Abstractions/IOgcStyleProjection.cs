@@ -38,6 +38,22 @@ public interface IOgcStyleProjection
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets a stylesheet only when it belongs to the addressed collection. This
+    /// collection-aware lookup keeps a standalone catalog style whose identifier
+    /// collides with a collection name from shadowing that collection's stored style.
+    /// </summary>
+    /// <param name="resourceId">Canonical Metadata v2 identifier of the collection resource.</param>
+    /// <param name="styleId">Style identifier requested through the collection route.</param>
+    /// <param name="encoding">Requested stylesheet encoding.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The associated stylesheet, or <c>null</c> when the style is absent or unassociated.</returns>
+    Task<OgcStylesheet?> GetAssociatedStylesheetAsync(
+        string resourceId,
+        string styleId,
+        OgcStyleEncoding encoding,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets descriptive metadata for the requested style.
     /// </summary>
     /// <param name="styleId">Stable style identifier (the collection's resource name).</param>
