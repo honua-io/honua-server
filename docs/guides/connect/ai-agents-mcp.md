@@ -99,7 +99,7 @@ named "operator surface" ships in this repo.
 
    - `honua_ops_health` and `honua://ops/health` - current operational posture.
    - `honua_ops_findings` and `honua://ops/findings` - deterministic findings and recommended actions where real executors exist.
-   - `honua_alert_events` - GIS alert events and ops notifications.
+   - `honua_alert_events` - Preview customer GIS alert events and ops notifications. Customer alerting requires explicit opt-in for 2026.1; the shared ops notification feed does not imply a GA alert-delivery commitment.
    - `honua_operate_events` - fused Operate timeline events.
 
    Mutating control-plane requests use schema-closed tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. Approval resolves through the Console inbox; MCP does not approve its own proposals or accept opaque execution payloads.
