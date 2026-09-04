@@ -31,11 +31,10 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             await SeedV1CatalogAsync(fixture.DataSource, schema, serviceName: "cite_features", layerId: 700, layerName: "CITE Features");
 
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
 
             // No metadata_v2_current row exists for this schema, so before the fix this threw
             // InvalidOperationException ("No Metadata v2 snapshot has been activated ...").
@@ -86,16 +85,15 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             // Seed a V1 catalog that WOULD compile to a compat snapshot, so the test proves the
             // activated v2 snapshot takes precedence rather than merely that one path works.
             await SeedV1CatalogAsync(fixture.DataSource, schema, serviceName: "legacy_v1", layerId: 800, layerName: "Legacy V1 Layer");
 
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
 
-            // Activate a real v2 snapshot in the explicitly migrated fixture. Its single
-            // resource id is intentionally NOT one the compat compiler
+            // Activate a real v2 snapshot (SaveAsync self-heals the v2 schema + activates the
+            // revision). Its single resource id is intentionally NOT one the compat compiler
             // would emit (res-layer-800), so we can tell the two paths apart.
             var graph = new MetadataV2Graph
             {
@@ -114,7 +112,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
             await store.SaveAsync(graph, expectedEtag: null);
 
             // A fresh store instance avoids any in-process cache so the read goes back to Postgres.
-            var readStore = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var readStore = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
             var snapshot = await readStore.GetCurrentAsync();
 
             snapshot.Graph.Resources.Should().ContainSingle()
@@ -135,11 +133,10 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             await SeedV1CatalogAsync(
                 fixture.DataSource, schema, serviceName: "legacy_upgrade", layerId: 801, layerName: "Legacy Upgrade");
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
             var compatibility = await store.GetCurrentAsync();
             var firstMutation = compatibility.Graph with
             {
@@ -183,9 +180,8 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
             var empty = await store.GetCurrentAsync();
             empty.Etag.Should().NotBeNullOrEmpty();
             var firstMutation = empty.Graph with
@@ -231,7 +227,6 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             await CreateV1CatalogTablesAsync(fixture.DataSource, schema);
             await ExecuteAsync(fixture.DataSource, schema, $"""
                 INSERT INTO "{schema}".layers (
@@ -246,7 +241,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
                 """);
 
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
 
             var snapshot = await store.GetCurrentAsync();
 
@@ -275,12 +270,11 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             // V1 catalog tables exist but contain no published service layers.
             await CreateV1CatalogTablesAsync(fixture.DataSource, schema);
 
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
 
             var snapshot = await store.GetCurrentAsync();
 
@@ -304,10 +298,9 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             // Do NOT create V1 catalog tables — simulate a v2-only fresh database.
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
 
             var snapshot = await store.GetCurrentAsync();
 
@@ -331,12 +324,11 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
         try
         {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var store = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
 
-            // Activate a real snapshot in the explicitly migrated fixture, then corrupt the
-            // stored document so materialization fails on the next read.
+            // Activate a real snapshot (SaveAsync self-heals the v2 schema), then corrupt
+            // the stored document so materialization fails on the next read.
             var graph = new MetadataV2Graph
             {
                 Environment = "Test",
@@ -350,7 +342,7 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
                 """);
 
             // A fresh store instance avoids the in-process cache so the read hits Postgres.
-            var readStore = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            var readStore = new PostgresMetadataV2GraphStore(provider, environment: "Test", schemaName: schema);
             var act = () => readStore.GetCurrentAsync().AsTask();
 
             await act.Should().ThrowAsync<InvalidDataException>(

@@ -21,8 +21,6 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed partial class DeployWorkflowService
 {
-    private const string RollbackSubmissionPendingPhase = "Rollback request accepted; submitting to deploy backend.";
-    private const string RollbackSubmissionRetryablePhase = "Rollback provider submission was not confirmed; retry is allowed.";
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IDeployTargetRegistry _targetRegistry;
     private readonly IWorkflowOperationStore? _workflowStore;
@@ -618,15 +616,7 @@ internal sealed partial class DeployWorkflowService
             throw new InvalidOperationException("Rollback is only supported for deploy workflow operations.");
         }
 
-        if (operation.Status == WorkflowOperationStatus.RollbackRequested &&
-            !string.Equals(operation.CurrentPhase, RollbackSubmissionRetryablePhase, StringComparison.Ordinal))
-        {
-            return operation;
-        }
-
-        if (operation.Status is WorkflowOperationStatus.RolledBack
-            or WorkflowOperationStatus.ManualInterventionRequired
-            or WorkflowOperationStatus.Failed)
+        if (operation.Status is WorkflowOperationStatus.RolledBack or WorkflowOperationStatus.Failed)
         {
             return operation;
         }
@@ -669,42 +659,8 @@ internal sealed partial class DeployWorkflowService
             }
             else
             {
-                // Claim rollback intent before mutating the provider. The CAS is the serialization
-                // point shared with reconciliation: once accepted, a stale forward observation can
-                // no longer erase the rollback, and duplicate callers cannot invoke the provider.
-                var rollbackClaim = operation with
-                {
-                    Status = WorkflowOperationStatus.RollbackRequested,
-                    UpdatedAt = DateTimeOffset.UtcNow,
-                    CompletedAt = null,
-                    CurrentPhase = RollbackSubmissionPendingPhase,
-                    ErrorMessage = null,
-                    Audit = operation.Audit with
-                    {
-                        RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
-                        Reason = reason ?? operation.Audit.Reason
-                    }
-                };
-
-                if (!await _workflowStore.TrySetAsync(rollbackClaim, cancellationToken: cancellationToken).ConfigureAwait(false))
-                {
-                    return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                }
-
-                // TrySetAsync increments the durable version. Carry that token into the provider-result
-                // CAS without an extra read; another writer, if any, will make this CAS lose safely.
-                rollbackClaim = rollbackClaim with { Version = operation.Version + 1 };
-                DeployObservation observation;
-                try
-                {
-                    observation = await backend.RollbackAsync(rollbackClaim, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    await MarkRollbackSubmissionRetryableAsync(rollbackClaim, ex).ConfigureAwait(false);
-                    throw;
-                }
-                updated = rollbackClaim with
+                var observation = await backend.RollbackAsync(operation, cancellationToken).ConfigureAwait(false);
+                updated = operation with
                 {
                     Status = observation.Status,
                     UpdatedAt = DateTimeOffset.UtcNow,
@@ -715,60 +671,18 @@ internal sealed partial class DeployWorkflowService
                         : null,
                     ProviderOperationId = observation.ProviderOperationId ?? operation.ProviderOperationId,
                     CurrentPhase = observation.Message ?? "Rollback requested",
-                    ErrorMessage = observation.Status == WorkflowOperationStatus.Failed ? observation.Message : null
+                    ErrorMessage = observation.Status == WorkflowOperationStatus.Failed ? observation.Message : null,
+                    Audit = operation.Audit with
+                    {
+                        RequestedBy = requestedBy ?? operation.Audit.RequestedBy,
+                        Reason = reason ?? operation.Audit.Reason
+                    }
                 };
-
-                if (!await _workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
-                {
-                    return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-                }
-
-                return updated;
             }
         }
 
-        if (await _workflowStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
-        {
-            return updated;
-        }
-
-        return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task MarkRollbackSubmissionRetryableAsync(
-        WorkflowOperationRecord rollbackClaim,
-        Exception submissionException)
-    {
-        var workflowStore = _workflowStore;
-        if (workflowStore == null)
-        {
-            return;
-        }
-
-        var current = rollbackClaim;
-        while (current.Status == WorkflowOperationStatus.RollbackRequested &&
-               !string.Equals(current.CurrentPhase, RollbackSubmissionRetryablePhase, StringComparison.Ordinal))
-        {
-            var retryable = current with
-            {
-                UpdatedAt = DateTimeOffset.UtcNow,
-                CurrentPhase = RollbackSubmissionRetryablePhase,
-                ErrorMessage = $"Rollback provider submission was not confirmed ({submissionException.GetType().Name})."
-            };
-
-            if (await workflowStore.TrySetAsync(retryable, cancellationToken: CancellationToken.None).ConfigureAwait(false))
-            {
-                return;
-            }
-
-            var persisted = await workflowStore.GetAsync(current.OperationId, CancellationToken.None).ConfigureAwait(false);
-            if (persisted == null)
-            {
-                return;
-            }
-
-            current = persisted;
-        }
+        await _workflowStore.SetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return updated;
     }
 
     private async Task<WorkflowOperationRecord> RequestMetadataReleaseRollbackAsync(

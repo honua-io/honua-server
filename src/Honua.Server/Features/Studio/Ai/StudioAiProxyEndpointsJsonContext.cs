@@ -13,7 +13,6 @@ namespace Honua.Server.Features.Studio.Ai;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(ApiResponse<StudioAiCapabilitiesResponse>))]
-[JsonSerializable(typeof(StudioAiChatHttpRequest))]
 internal sealed partial class StudioAiProxyEndpointsJsonContext : JsonSerializerContext
 {
 }

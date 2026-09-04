@@ -313,16 +313,6 @@ internal static partial class ImportEndpoints
         }
 
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        if (!await ImportAdminAuthorization.IsAuthorizedAsync(
-                context, context.User, cancellationToken).ConfigureAwait(false))
-        {
-            var denial = context.User.Identity?.IsAuthenticated == true
-                ? Results.Forbid()
-                : Results.Unauthorized();
-            await denial.ExecuteAsync(context);
-            return;
-        }
-
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);

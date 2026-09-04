@@ -52,11 +52,4 @@
     <ProjectReference Include="..\Postgres.Shared\Honua.Postgres.Shared.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- Provider-owned core schema is discovered by the same DbUp runner and journal as
-         Honua.Server migrations. Keeping this numbered root embedded prevents Docker/test
-         provisioning from becoming an unjournaled second schema authority. -->
-    <EmbeddedResource Include="Migrations\*.sql" />
-  </ItemGroup>
-
 </Project>

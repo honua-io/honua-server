@@ -84,12 +84,6 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                     (status IN (0, 3) AND next_attempt_at <= @now)
                     OR (status = 1 AND updated_at < @now - INTERVAL '5 minutes')
                   )
-                  AND EXISTS (
-                    SELECT 1
-                    FROM honua.alert_events e
-                    WHERE e.event_id = alert_dispatch.event_id
-                      AND (e.source = 'ops' OR e.rule_id IS NOT NULL)
-                  )
                   AND (
                     @channel_type IS NULL
                     OR (@exclude_channel = true AND channel_type <> @channel_type)
@@ -358,12 +352,6 @@ internal sealed class PostgresAlertDispatchStore : IAlertDispatchStore
                 SELECT dispatch_id
                 FROM honua.alert_dispatch
                 WHERE status = 4
-                  AND EXISTS (
-                    SELECT 1
-                    FROM honua.alert_events e
-                    WHERE e.event_id = alert_dispatch.event_id
-                      AND (e.source = 'ops' OR e.rule_id IS NOT NULL)
-                  )
                 ORDER BY dispatch_id
                 LIMIT @limit
             )

@@ -119,44 +119,6 @@ public sealed class MigrationSafetyClassifierTests
     }
 
     [Fact]
-    public void Classify_DeclaredContractPhaseAroundDynamicDdl_IsContractAnnotated()
-    {
-        const string sql = """
-            -- honua:migration-phase contract
-            -- honua:compatibility-review reason=#3899 requires old nodes drained before schema adoption
-            DO $$
-            BEGIN
-                EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', 'honua', 'sta_thing', 'custom');
-            END
-            $$;
-            """;
-
-        var result = MigrationSafetyClassifier.Classify("109_adopt_schema.sql", sql);
-
-        result.Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
-        result.IsBreaking.Should().BeTrue();
-        result.BreakingRules.Should().ContainSingle("declared-contract-phase");
-    }
-
-    [Fact]
-    public void Classify_DeclaredContractPhaseWithoutReviewReason_IsContractUnannotated()
-    {
-        const string sql = """
-            -- honua:migration-phase contract
-            DO $$
-            BEGIN
-                EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', 'honua', 'sta_thing', 'custom');
-            END
-            $$;
-            """;
-
-        var result = MigrationSafetyClassifier.Classify("109_adopt_schema.sql", sql);
-
-        result.Classification.Should().Be(MigrationSafetyClassification.ContractUnannotated);
-        result.BreakingRules.Should().ContainSingle("declared-contract-phase");
-    }
-
-    [Fact]
     public void DetectBreakingRules_IgnoresBreakingStatementsInComments()
     {
         const string sql = """

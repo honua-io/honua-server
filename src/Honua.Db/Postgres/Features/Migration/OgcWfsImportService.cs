@@ -268,8 +268,11 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         await EnsureSchemaAsync(connection, targetSchema, cancellationToken).ConfigureAwait(false);
 
-        var targetExists = await TableExistsAsync(connection, targetSchema, tableName, cancellationToken).ConfigureAwait(false);
-        if (!request.OverwriteExisting && targetExists)
+        if (request.OverwriteExisting)
+        {
+            await DropTableAsync(connection, targetSchema, tableName, cancellationToken).ConfigureAwait(false);
+        }
+        else if (await TableExistsAsync(connection, targetSchema, tableName, cancellationToken).ConfigureAwait(false))
         {
             perTypeWarnings.Add("Target table already exists; idempotent re-run skipped data copy. Use overwriteExisting=true to recreate.");
             Log.IdempotentSkip(_logger, targetSchema, tableName);
@@ -290,179 +293,124 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         var fields = resource.Fields
             .Where(field => !IsGeometryField(field))
             .ToArray();
-        var loadTableName = request.OverwriteExisting
-            ? BuildStagingTableName(tableName)
-            : tableName;
 
-        var stagingPromoted = false;
-        var overwriteLockAcquired = false;
-        try
+        await CreateTableAsync(connection, targetSchema, tableName, fields, resource.GeometryType, srid, cancellationToken).ConfigureAwait(false);
+
+        var inserted = 0;
+        var failed = 0;
+        var startIndex = 0;
+        var pageSize = request.PageSize;
+        var hasMore = true;
+        var pageNumber = 0;
+        var mixedGeometryDetected = false;
+
+        // Track the raw JSON of the first feature of the previous page. Non-conformant
+        // WFS servers that ignore startIndex return the same page on every request; when we
+        // detect two consecutive pages with the same first-feature text we abort the loop
+        // rather than inserting unbounded duplicates (the hard page cap provides backstop).
+        string? previousFirstFeatureRaw = null;
+
+        while (hasMore)
         {
-            if (request.OverwriteExisting)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (pageNumber >= MaxPagesPerFeatureType)
             {
-                await AcquireOverwriteLockAsync(connection, targetSchema, tableName, cancellationToken).ConfigureAwait(false);
-                overwriteLockAcquired = true;
-                await DropTableAsync(connection, targetSchema, loadTableName, cancellationToken).ConfigureAwait(false);
-            }
-
-            await CreateTableAsync(connection, targetSchema, loadTableName, fields, resource.GeometryType, srid, cancellationToken).ConfigureAwait(false);
-
-            var inserted = 0;
-            var failed = 0;
-            var startIndex = 0;
-            var pageSize = request.PageSize;
-            var hasMore = true;
-            var pageNumber = 0;
-            var mixedGeometryDetected = false;
-
-            // Track the raw JSON of the first feature of the previous page. Non-conformant
-            // WFS servers that ignore startIndex return the same page on every request; when we
-            // detect two consecutive pages with the same first-feature text we abort the loop
-            // rather than inserting unbounded duplicates (the hard page cap provides backstop).
-            string? previousFirstFeatureRaw = null;
-
-            while (hasMore)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (pageNumber >= MaxPagesPerFeatureType)
-                {
-                    perTypeWarnings.Add(
-                        $"WFS paging stopped after {MaxPagesPerFeatureType} pages for feature type '{resource.Name}'. " +
-                        "The server may have returned more features than expected or ignored startIndex; " +
-                        "classify as ManualReview and re-run with a smaller page range if needed.");
-                    classification = MigrationFidelityAutomationStatuses.ManualReview;
-                    break;
-                }
-
-                pageNumber++;
-                var url = BuildGetFeatureUrl(serviceUri, version, resource.Name, startIndex, pageSize);
-                FeaturePage page;
-                try
-                {
-                    page = await FetchFeaturePageAsync(url, request, cancellationToken).ConfigureAwait(false);
-                }
-                catch (FormatException ex)
-                {
-                    perTypeWarnings.Add(ex.Message);
-                    classification = MigrationFidelityAutomationStatuses.ManualReview;
-                    break;
-                }
-
-                if (page.Features.Count == 0)
-                {
-                    break;
-                }
-
-                // Detect a server that ignores startIndex by comparing the first feature of
-                // this page against the first feature of the previous page. If they are
-                // identical the server is returning the same response regardless of offset.
-                var currentFirstFeatureRaw = page.Features[0].GetRawText();
-                if (pageNumber > 1 && currentFirstFeatureRaw == previousFirstFeatureRaw)
-                {
-                    perTypeWarnings.Add(
-                        $"WFS server for feature type '{resource.Name}' appears to ignore the startIndex parameter " +
-                        "(consecutive pages returned the same first feature). Paging stopped to prevent duplicate inserts. " +
-                        "Use a WFS 2.0-compliant server or import with a where-clause filter to retrieve specific feature ranges.");
-                    classification = MigrationFidelityAutomationStatuses.ManualReview;
-                    break;
-                }
-                previousFirstFeatureRaw = currentFirstFeatureRaw;
-
-                var (pageInserted, pageFailed, pageMixed) = await InsertFeaturesAsync(
-                        connection,
-                        targetSchema,
-                        loadTableName,
-                        fields,
-                        page.Features,
-                        resource.GeometryType,
-                        srid,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-
-                inserted += pageInserted;
-                failed += pageFailed;
-                mixedGeometryDetected |= pageMixed;
-
-                startIndex += page.Features.Count;
-
-                // Do NOT infer "done" from a short page: many WFS servers cap the page size below
-                // the requested count (e.g. GeoServer maxFeatures), so a page smaller than pageSize
-                // is the norm, not the final page. Terminate only on a reliable signal: an empty
-                // page (handled above) or, when the server reports numberMatched, once we have
-                // advanced past the total. Otherwise keep paging until an empty page arrives (the
-                // repeated-first-feature guard and MaxPagesPerFeatureType cap above protect against
-                // non-advancing servers).
-                hasMore = page.NumberMatched == null || startIndex < page.NumberMatched;
-                Log.BatchInserted(_logger, resource.Name, pageNumber, pageInserted, pageFailed, inserted);
-            }
-
-            if (mixedGeometryDetected)
-            {
-                perTypeWarnings.Add("Source features contained mixed geometry types; coercion to declared geometry type may have occurred.");
-            }
-
-            if (failed > 0)
-            {
-                perTypeWarnings.Add($"{failed} feature(s) failed to insert.");
+                perTypeWarnings.Add(
+                    $"WFS paging stopped after {MaxPagesPerFeatureType} pages for feature type '{resource.Name}'. " +
+                    "The server may have returned more features than expected or ignored startIndex; " +
+                    "classify as ManualReview and re-run with a smaller page range if needed.");
                 classification = MigrationFidelityAutomationStatuses.ManualReview;
+                break;
             }
 
-            if (!request.OverwriteExisting ||
-                string.Equals(classification, MigrationFidelityAutomationStatuses.Automated, StringComparison.Ordinal))
-            {
-                await CreateSpatialIndexAsync(connection, targetSchema, loadTableName, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (request.OverwriteExisting)
-            {
-                if (!string.Equals(classification, MigrationFidelityAutomationStatuses.Automated, StringComparison.Ordinal))
-                {
-                    await DropTableAsync(connection, targetSchema, loadTableName, CancellationToken.None).ConfigureAwait(false);
-                    inserted = 0;
-                }
-                else
-                {
-                    await PromoteStagingTableAsync(
-                        connection,
-                        targetSchema,
-                        loadTableName,
-                        tableName,
-                        cancellationToken).ConfigureAwait(false);
-                    stagingPromoted = true;
-                }
-            }
-
-            return new OgcWfsImportedFeatureType
-            {
-                SourceName = resource.Name,
-                TargetSchema = targetSchema,
-                TargetTable = tableName,
-                GeometryType = resource.GeometryType,
-                Srid = srid,
-                FeaturesCopied = inserted,
-                FeaturesFailed = failed,
-                Classification = classification,
-                Warnings = [.. perTypeWarnings]
-            };
-        }
-        finally
-        {
+            pageNumber++;
+            var url = BuildGetFeatureUrl(serviceUri, version, resource.Name, startIndex, pageSize);
+            FeaturePage page;
             try
             {
-                if (request.OverwriteExisting && !stagingPromoted)
-                {
-                    await DropTableAsync(connection, targetSchema, loadTableName, CancellationToken.None).ConfigureAwait(false);
-                }
+                page = await FetchFeaturePageAsync(url, request, cancellationToken).ConfigureAwait(false);
             }
-            finally
+            catch (FormatException ex)
             {
-                if (overwriteLockAcquired)
-                {
-                    await ReleaseOverwriteLockAsync(connection, targetSchema, tableName).ConfigureAwait(false);
-                }
+                perTypeWarnings.Add(ex.Message);
+                classification = MigrationFidelityAutomationStatuses.ManualReview;
+                break;
             }
+
+            if (page.Features.Count == 0)
+            {
+                break;
+            }
+
+            // Detect a server that ignores startIndex by comparing the first feature of
+            // this page against the first feature of the previous page. If they are
+            // identical the server is returning the same response regardless of offset.
+            var currentFirstFeatureRaw = page.Features[0].GetRawText();
+            if (pageNumber > 1 && currentFirstFeatureRaw == previousFirstFeatureRaw)
+            {
+                perTypeWarnings.Add(
+                    $"WFS server for feature type '{resource.Name}' appears to ignore the startIndex parameter " +
+                    "(consecutive pages returned the same first feature). Paging stopped to prevent duplicate inserts. " +
+                    "Use a WFS 2.0-compliant server or import with a where-clause filter to retrieve specific feature ranges.");
+                classification = MigrationFidelityAutomationStatuses.ManualReview;
+                break;
+            }
+            previousFirstFeatureRaw = currentFirstFeatureRaw;
+
+            var (pageInserted, pageFailed, pageMixed) = await InsertFeaturesAsync(
+                    connection,
+                    targetSchema,
+                    tableName,
+                    fields,
+                    page.Features,
+                    resource.GeometryType,
+                    srid,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            inserted += pageInserted;
+            failed += pageFailed;
+            mixedGeometryDetected |= pageMixed;
+
+            startIndex += page.Features.Count;
+
+            // Do NOT infer "done" from a short page: many WFS servers cap the page size below
+            // the requested count (e.g. GeoServer maxFeatures), so a page smaller than pageSize
+            // is the norm, not the final page. Terminate only on a reliable signal: an empty
+            // page (handled above) or, when the server reports numberMatched, once we have
+            // advanced past the total. Otherwise keep paging until an empty page arrives (the
+            // repeated-first-feature guard and MaxPagesPerFeatureType cap above protect against
+            // non-advancing servers).
+            hasMore = page.NumberMatched == null || startIndex < page.NumberMatched;
+            Log.BatchInserted(_logger, resource.Name, pageNumber, pageInserted, pageFailed, inserted);
         }
+
+        await CreateSpatialIndexAsync(connection, targetSchema, tableName, cancellationToken).ConfigureAwait(false);
+
+        if (mixedGeometryDetected)
+        {
+            perTypeWarnings.Add("Source features contained mixed geometry types; coercion to declared geometry type may have occurred.");
+        }
+
+        if (failed > 0)
+        {
+            perTypeWarnings.Add($"{failed} feature(s) failed to insert.");
+            classification = MigrationFidelityAutomationStatuses.ManualReview;
+        }
+
+        return new OgcWfsImportedFeatureType
+        {
+            SourceName = resource.Name,
+            TargetSchema = targetSchema,
+            TargetTable = tableName,
+            GeometryType = resource.GeometryType,
+            Srid = srid,
+            FeaturesCopied = inserted,
+            FeaturesFailed = failed,
+            Classification = classification,
+            Warnings = [.. perTypeWarnings]
+        };
     }
 
     private async Task<FeaturePage> FetchFeaturePageAsync(
@@ -701,64 +649,6 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         await using var cmd = connection.CreateCommand();
         cmd.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} CASCADE";
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static string BuildStagingTableName(string tableName)
-    {
-        const string stagingPrefix = "__honua_wfs_stage_";
-        const int maxTableLengthWithIndexSuffix = 54;
-        var prefix = tableName.Length > maxTableLengthWithIndexSuffix - stagingPrefix.Length
-            ? tableName[..(maxTableLengthWithIndexSuffix - stagingPrefix.Length)]
-            : tableName;
-        return stagingPrefix + prefix;
-    }
-
-    private static async Task AcquireOverwriteLockAsync(
-        NpgsqlConnection connection,
-        string schemaName,
-        string tableName,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT pg_advisory_lock(hashtextextended(@target, 0))";
-        command.Parameters.AddWithValue("target", $"wfs-overwrite:{schemaName}.{tableName}");
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task ReleaseOverwriteLockAsync(
-        NpgsqlConnection connection,
-        string schemaName,
-        string tableName)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT pg_advisory_unlock(hashtextextended(@target, 0))";
-        command.Parameters.AddWithValue("target", $"wfs-overwrite:{schemaName}.{tableName}");
-        await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
-    }
-
-    private static async Task PromoteStagingTableAsync(
-        NpgsqlConnection connection,
-        string schemaName,
-        string stagingTableName,
-        string targetTableName,
-        CancellationToken cancellationToken)
-    {
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} CASCADE; " +
-                                  $"ALTER TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)} RENAME TO {QuoteIdentifier(targetTableName)}; " +
-                                  $"ALTER INDEX {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName + "_geom_idx")} RENAME TO {QuoteIdentifier(targetTableName + "_geom_idx")}";
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
     }
 
     private static async Task<bool> TableExistsAsync(NpgsqlConnection connection, string schemaName, string tableName, CancellationToken cancellationToken)

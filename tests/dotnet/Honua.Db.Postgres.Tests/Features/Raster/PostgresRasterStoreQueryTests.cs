@@ -45,7 +45,6 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
-                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
             var localSelection = new RasterSelectionQuery
             {
@@ -83,7 +82,6 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
-                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             var result = await store.ExportImageAsync(
@@ -117,7 +115,6 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
-                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             var result = await store.ExportImageAsync(
@@ -156,7 +153,6 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
-                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             // Raster pixels: x[0,1] holds 0 (top) and 20 (bottom); x[1,2] holds 10/30.
@@ -195,7 +191,6 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
-                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             var result = await store.ExportImageAsync(
@@ -571,7 +566,6 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
             NullLogger<PostgresRasterStore>.Instance,
-            FixtureBypassDatabaseSchemaGuard.Instance,
             schemaName);
 
     private async Task CreateFootprintsTableAsync(string schemaName)
@@ -758,7 +752,6 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             var store = new PostgresRasterStore(
                 new FixtureConnectionProvider(fixture.DataSource),
                 NullLogger<PostgresRasterStore>.Instance,
-                FixtureBypassDatabaseSchemaGuard.Instance,
                 schemaName);
 
             // Raster x[0,1] holds 0 (top) / 20 (bottom); x[1,2] holds 10 / 30.

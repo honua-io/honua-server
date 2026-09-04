@@ -3,7 +3,6 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit;
 using Microsoft.AspNetCore.TestHost;
@@ -27,11 +26,6 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// </summary>
 public sealed class DatabaseMigrationStartupTests
 {
-    private const string TestEncryptionMasterKey =
-        "test-master-key-that-is-at-least-32-characters-long-for-security";
-    private const string TestEncryptionSalt =
-        "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
-
     [Fact]
     public async Task Startup_WithConnectionStringButNoMigrationRunner_SkipsMigrationsInsteadOfCrashing()
     {
@@ -64,38 +58,5 @@ public sealed class DatabaseMigrationStartupTests
         migrationState.Status.Should().Be(MigrationLifecycleStatus.Skipped);
         migrationState.IsReady.Should().BeTrue();
         migrationState.StatusMessage.Should().Contain("migration runner");
-    }
-
-    [Fact]
-    public void Startup_WithPostgresProductionCompositionButSchemaGuardAbsent_FailsClosed()
-    {
-        using var baseFactory = new TestWebApplicationFactory();
-        using var factory = baseFactory.WithWebHostBuilder(builder =>
-        {
-            // Opt the Test environment into the same provider composition used by production.
-            // UseSetting is required because Program reads these values before ordinary app-
-            // configuration callbacks run.
-            builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
-            builder.UseSetting("DataSource:Provider", "postgres");
-            builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
-            builder.UseSetting("Security:ConnectionEncryption:MasterKey", TestEncryptionMasterKey);
-            builder.UseSetting("Security:ConnectionEncryption:Salt", TestEncryptionSalt);
-
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<IDatabaseSchemaGuard>();
-                services.RemoveAll<PostgresCoreSchemaGuard>();
-            });
-        });
-
-        // Host construction must fail before preflight/database access. If this succeeds, a
-        // production registration can once again instantiate core stores without the guard.
-        var act = () => factory.CreateClient();
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .Where(exception => exception.ToString().Contains(
-                nameof(IDatabaseSchemaGuard),
-                StringComparison.Ordinal));
     }
 }

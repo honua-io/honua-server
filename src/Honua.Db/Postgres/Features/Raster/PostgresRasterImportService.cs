@@ -37,7 +37,6 @@ internal sealed class PostgresRasterImportService : IRasterImportService
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly ICrsDetectionService _crsDetectionService;
     private readonly ILogger<PostgresRasterImportService> _logger;
-    private readonly IDatabaseSchemaGuard _schemaGuard;
     private readonly string _rasterDataTable;
     private readonly string _rasterStatisticsTable;
     private readonly string _rasterTilesTable;
@@ -48,13 +47,11 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsDetectionService crsDetectionService,
         ILogger<PostgresRasterImportService> logger,
-        IDatabaseSchemaGuard schemaGuard,
         string? schemaName = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _schemaGuard = schemaGuard ?? throw new ArgumentNullException(nameof(schemaGuard));
 
         _rasterDataTable = SchemaSearchPath.QualifyTable("raster_data", schemaName);
         _rasterStatisticsTable = SchemaSearchPath.QualifyTable("raster_statistics", schemaName);
@@ -95,10 +92,6 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             ReportProgress(progress, operationId, startedAt, RasterImportPhase.Ingesting, OperationStatus.Processing, "Loading raster into PostGIS");
 
             await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await _schemaGuard.VerifyRequirementAsync(
-                connection,
-                DatabaseSchemaRequirement.RasterExternalStorage,
-                cancellationToken).ConfigureAwait(false);
             await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
 
             long rasterId;
@@ -106,6 +99,15 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             {
                 await AcquireLayerImportLockAsync(
                     connection, transaction, request.LayerId, cancellationToken).ConfigureAwait(false);
+
+                // Guarantee the monolithic raster payload is stored EXTERNAL (out-of-line,
+                // uncompressed) before the row is written, so dynamic tile/terrain/statistics
+                // reads fetch only the chunks they touch instead of detoasting + decompressing
+                // the entire 25-115 MB raster on every request (#1625). SET STORAGE only affects
+                // rows written afterwards, so applying it here (immediately before INSERT) ensures
+                // every imported raster lands EXTERNAL even on databases that predate migration 055.
+                await EnsureExternalRasterStorageAsync(
+                    connection, transaction, cancellationToken).ConfigureAwait(false);
 
                 rasterId = await InsertRasterDataAsync(
                     connection, transaction, request, fileBytes, cancellationToken).ConfigureAwait(false);
@@ -522,6 +524,25 @@ internal sealed class PostgresRasterImportService : IRasterImportService
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Switches the <c>raster_data.raster</c> column to EXTERNAL TOAST storage so newly inserted
+    /// rasters are stored out-of-line and uncompressed. This keeps the logical-raster identity
+    /// intact (one row per <c>raster_data.id</c>, unchanged generated columns) while making
+    /// ST_Clip / ST_Value / ST_SummaryStats reads fetch only the chunks they touch instead of
+    /// inflating the whole monolithic raster (#1625). Idempotent: PostgreSQL no-ops when the
+    /// column is already EXTERNAL.
+    /// </summary>
+    private async Task EnsureExternalRasterStorageAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"ALTER TABLE {_rasterDataTable} ALTER COLUMN raster SET STORAGE EXTERNAL;";
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

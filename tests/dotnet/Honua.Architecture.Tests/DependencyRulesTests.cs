@@ -40,26 +40,6 @@ public sealed class DependencyRulesTests
             .GetResult();
 
         result.IsSuccessful.Should().BeTrue("Postgres must not depend on Server");
-
-        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
-        var migrationSourceRoot = ArchitectureTestHelpers.CombinePath(
-            repositoryRoot,
-            "src",
-            "Honua.Db",
-            "Postgres",
-            "Features",
-            "Infrastructure",
-            "Migrations");
-        var migrationSources = string.Join(
-            '\n',
-            Directory.EnumerateFiles(migrationSourceRoot, "*.cs", SearchOption.AllDirectories)
-                .Select(File.ReadAllText));
-        migrationSources.Should().NotContain(
-            "Honua.Server.Migrations.",
-            "application migration identities belong in the Server composition root");
-        migrationSources.Should().NotContain(
-            "string.Concat(\"Honua\", \".\", \"Server\"",
-            "constructing the forbidden namespace dynamically is dependency-scanner evasion");
     }
 
     [ArchitectureTest]

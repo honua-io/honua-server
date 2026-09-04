@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.Catalog;
 using Honua.Core.Features.Catalog.Domain;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
@@ -119,11 +118,8 @@ internal static class ServiceCollectionExtensions
         // can activate under DataSource:Provider=mysql. The slice is read/query-only, so the
         // write-shaped surfaces are no-op or NotSupportedException stubs.
         services.AddScoped<IFeatureWriter>(_ => new ReadOnlyFeatureWriter("MySQL/MariaDB"));
-        if (CapabilityFlagOptions.IsExperimentalEnabled(configuration, "sync.offline"))
-        {
-            services.AddScoped<IReplicaRepository>(_ => new NoOpReplicaRepository());
-            services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
-        }
+        services.AddScoped<IReplicaRepository>(_ => new NoOpReplicaRepository());
+        services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         services.AddScoped<IChangeTracker>(_ => new NoOpChangeTracker());
         services.AddScoped<IVersionManager>(_ => new NoOpVersionManager());
         // Honua.Infrastructure.Services.SpatialReferenceResolver (a mandatory scoped
