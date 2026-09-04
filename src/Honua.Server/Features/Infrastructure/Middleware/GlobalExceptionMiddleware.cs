@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.Infrastructure.Models;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
@@ -174,6 +175,7 @@ internal sealed class GlobalExceptionMiddleware(
                 IncludeDebugInfo = options.IncludeDebugInfo,
                 ContentType = options.ContentType,
                 AdditionalHeaders = headers,
+                MachineCode = BackpressureMetadata.ServiceUnavailableCode,
                 Retryable = true,
                 RetryAfterSeconds = serviceEx.RetryAfterSeconds
             };
