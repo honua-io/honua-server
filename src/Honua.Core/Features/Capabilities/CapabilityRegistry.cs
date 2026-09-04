@@ -292,6 +292,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // release/2026.2.
             ("serve.3d-tiles-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
             ("serve.i3s-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
+            // OGC API - EDR is Preview in release 2026.1; remaining functional
+            // query gaps are deferred to release/2026.2.
+            ("serve.ogc-api-edr", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             ("scene.catalog", "scene", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("scene.bim-ingest", "scene", FeatureCatalog.SceneBimIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
             ("scene.pointcloud-ingest", "scene", FeatureCatalog.ScenePointCloudIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),

@@ -83,6 +83,9 @@ Modern resource-oriented OGC standards, each with its own landing page, `/confor
   `GET /ogc/tiles/collections/parcels/tiles/WebMercatorQuad/12/654/1583`
 - **Coverages** (`/ogc/coverages`) — raster collection metadata and coverage export with bbox/CRS/band/scaling controls.
   `GET /ogc/coverages/collections/dem/coverage?bbox=…&f=png`
+- **Environmental Data Retrieval (EDR) — Preview** (`/edr`) — environmental data
+  queries by position or cube. Remaining CRS, temporal-selection, output-format,
+  and coordinate-query corrections target release 2026.2.
 - **Processes** (`/ogc/processes`) — async process execution and job lifecycle over the same runtime as GPServer and MCP.
   `POST /ogc/processes/processes/honua-geoprocessing/execution`
 

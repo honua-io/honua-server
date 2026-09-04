@@ -40,12 +40,16 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 | `limit`, `offset` | Paging, normalized by server limits. |
 | `ids`, `properties`, `sortby` | ID filter, property projection, `+`/`-`/`asc`/`desc` sorting. |
 | `bbox`, `bbox-crs` | 4 or 6 values; anti-meridian supported; any registry-resolvable EPSG CRS. |
-| `crs` | Output CRS; response includes `Content-Crs` (Part 2). |
+| `crs` | Output CRS; response includes `Content-Crs`. Part 2 conformance is not currently advertised. |
 | `datetime` | RFC 3339 instant or interval; requires temporal fields. |
-| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering (Part 3): `cql2-text` (default) and `cql2-json`. |
+| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering: `cql2-text` (default) and `cql2-json`. Filtering is implemented and blocking-tested, but its complete CQL2/Features Part 3 classes are not currently advertised. |
 | Queryable properties | Simple-valued queryables accepted directly as query parameters (combined with AND). |
 
-CQL2 support covers logical/comparison/arithmetic operators, `LIKE`, `IN`, `BETWEEN`, all `S_*` spatial predicates (including `S_DWITHIN`/`S_BEYOND`), the full `T_*` temporal predicate set, `A_*` array predicates, and a string/numeric/datetime/`CASEI`/`ACCENTI` function set. Unsupported operators and functions return 400. Full operator tables: [archived coverage matrix](../../archive/specifications/ogc-api-features-coverage.md).
+CQL2 parsing and translation support is broader than the currently advertised
+classes. Unsupported operators and functions return 400; the specialized
+comparison, temporal, array, and case/accent-insensitive classes remain
+unadvertised until the exact-candidate lane proves them. Full operator tables:
+[archived coverage matrix](../../archive/specifications/ogc-api-features-coverage.md).
 
 > Open `https://server.example.com/ogc/features/collections/roads/items?filter=S_INTERSECTS(geometry,POINT(-122.4%2037.8))&limit=10` in a browser.
 
@@ -143,6 +147,12 @@ Read-only catalog discovery over published services and layers (record ids `laye
 | GET | `/ogc/records/collections/{collectionId}/items`, `.../items/{recordId}` | GeoJSON records. |
 
 `/items` parameters: `limit` (cap 1000), `offset`, `ids`, `type` (`service`/`dataset`), `externalIds`, `q`, `bbox`, `datetime`. Record create/update/delete, harvesting, facets, and CQL filtering are not implemented.
+
+## OGC API - Environmental Data Retrieval (EDR) — Preview
+
+The `/edr` surface is Preview in release 2026.1. Functional CRS, temporal
+selection, output-format, and MULTIPOINT coordinate corrections are deferred to
+release 2026.2.
 
 ## OGC API Styles
 

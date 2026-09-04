@@ -15,9 +15,8 @@ namespace Honua.Protocols.Ogc.Api.Features.Services;
 internal static class OgcRequestCrsResolver
 {
     /// <summary>
-    /// Reads the storage SRID from the V2 resource via
-    /// <see cref="MetadataV2SpatialExtensions.ReadSrid"/>, defaulting to CRS84 when the
-    /// resource declares no SRID.
+    /// Resolves the request body CRS, defaulting to CRS84 when Content-Crs is absent
+    /// as required for GeoJSON request bodies, regardless of the storage CRS.
     /// </summary>
     internal static async Task<(bool IsValid, CrsDefinition Definition, string? Error)> TryResolveInputCrsAsync(
         HttpRequest request,
@@ -32,7 +31,6 @@ internal static class OgcRequestCrsResolver
         var contentCrs = request.Headers.TryGetValue("Content-Crs", out var values)
             ? values.ToString()
             : null;
-        var resourceSrid = resource.ReadSrid();
         CrsDefinition definition;
         var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsDefinitionsAsync(
                 resource,
@@ -42,13 +40,18 @@ internal static class OgcRequestCrsResolver
 
         if (string.IsNullOrWhiteSpace(contentCrs))
         {
-            var defaultCrs = !resourceSrid.HasValue || resourceSrid.Value == 4326
-                ? OgcFeaturesUtilities.Crs84Uri
-                : resourceSrid.Value.ToOgcCrs();
-
-            if (!OgcFeaturesUtilities.TryResolveCrs(defaultCrs, supportedCrs, out definition, out var defaultError))
+            // OGC API Features Part 4 uses the Part 1 default CRS for a body when
+            // Content-Crs is absent. GeoJSON's default is CRS84 regardless of the
+            // collection storage CRS; the geometry writer will transform from CRS84
+            // into storage below. Treating a projected storage CRS as the input CRS
+            // interprets lon/lat GeoJSON coordinates as metres and corrupts writes.
+            if (!OgcFeaturesUtilities.TryResolveCrs(
+                    OgcFeaturesUtilities.Crs84Uri,
+                    supportedCrs,
+                    out definition,
+                    out var defaultError))
             {
-                return (false, default, defaultError ?? $"Unsupported CRS '{defaultCrs}'.");
+                return (false, default, defaultError ?? $"Unsupported CRS '{OgcFeaturesUtilities.Crs84Uri}'.");
             }
         }
         else

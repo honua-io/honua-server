@@ -17,6 +17,7 @@ For WMS 1.1.1 / WFS 1.0.0 / WFS 1.1.0 (manual-only legacy suites), see [Legacy O
 | OGC API Tiles | service | `run-cite-tiles-tests.sh` | `cite-tiles-conformance.yml` |
 | OGC API Processes 1.0 | service release gate | `run-cite-ogcapi-processes-tests.sh` | `cite-ogcapi-processes-conformance.yml` |
 | OGC API Maps | service | `run-ogc-maps-conformance-tests.sh` (integration suite — not TeamEngine) | `ogc-maps-conformance.yml` |
+| OGC API building blocks | exact-candidate service | `run-building-block-conformance.sh` | `ogc-api-building-block-conformance.yml` |
 | WMS 1.3 | service | `run-cite-wms-tests.sh` | `cite-wms-conformance.yml` |
 | WMTS 1.0 | service | `run-cite-wmts-tests.sh` | `cite-wmts-conformance.yml` |
 | WFS 2.0 | service | `run-cite-wfs20-tests.sh` | `cite-wfs20-conformance.yml` |
@@ -129,6 +130,20 @@ This suite does **not** use TeamEngine — upstream `ets-ogcapi-maps10` images w
 - Production-audit integration: included in `scripts/conformance/run-production-audit.sh --phase 2 --agents protocol`.
 
 Conformance classes advertised: `core`, `collection-map`, `dataset-map`, `collections-selection`, `datetime` (temporal raster mosaic — gated by the `raster.temporal-mosaic` entitlement; returns 402 without it), `crs`, `png`, `jpeg`, `tiff`, `scaling`.
+
+### OGC API building blocks
+
+The exact-candidate building-block lane runs the existing vendored CQL2,
+MVT/TMS 2.0, Maps, and Schemathesis validators against the image built from
+one full source SHA. It records the candidate identity, declaration, validator
+logs, and exit codes as an artifact. A validator failure is blocking; the lane
+does not delete or skip a validator to make the declaration pass.
+
+```bash
+HONUA_CONFORMANCE_SOURCE_SHA="$(git rev-parse HEAD)" \
+HONUA_CONFORMANCE_SERVER_IMAGE=honua-server:ogcapi-local \
+./scripts/conformance/ogcapi/run-building-block-conformance.sh
+```
 
 ### WMS 1.3
 
