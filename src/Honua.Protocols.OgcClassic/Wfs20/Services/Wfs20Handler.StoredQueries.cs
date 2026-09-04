@@ -542,6 +542,12 @@ internal sealed partial class Wfs20Handler
         foreach (var parameter in definition.Parameters)
         {
             var value = context.Request.Query[parameter.Name].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(value) &&
+                context.Items.TryGetValue(Wfs20DispatcherEndpoint.RequestParameterValuesItemKey, out var rawValues) &&
+                rawValues is IReadOnlyDictionary<string, string> requestValues)
+            {
+                requestValues.TryGetValue(parameter.Name, out value);
+            }
             if (!string.IsNullOrWhiteSpace(value))
             {
                 filter = filter.Replace("${" + parameter.Name + "}", SecurityElement.Escape(value), StringComparison.Ordinal);

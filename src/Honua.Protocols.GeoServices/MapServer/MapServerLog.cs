@@ -208,4 +208,17 @@ internal static partial class MapServerLog
         Level = LogLevel.Error,
         Message = "MapServer exportTiles failed: {ServiceId}: {ErrorMessage}")]
     public static partial void ExportTilesFailed(ILogger logger, string serviceId, string errorMessage, Exception? exception = null);
+
+    /// <summary>
+    /// Logs when a layer's temporal extent cannot be projected into MapServer metadata.
+    /// </summary>
+    [LoggerMessage(
+        EventId = 5470,
+        Level = LogLevel.Warning,
+        Message = "MapServer temporal metadata skipped for layer {LayerId} ({LayerName})")]
+    public static partial void TemporalExtentSkipped(
+        ILogger logger,
+        int layerId,
+        string layerName,
+        Exception exception);
 }

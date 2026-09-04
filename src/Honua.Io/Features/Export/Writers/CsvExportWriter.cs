@@ -20,7 +20,9 @@ internal static class CsvExportWriter
     [ThreadStatic]
     private static WKTWriter? _wktWriter;
 
-    private static WKTWriter WktWriter => _wktWriter ??= new WKTWriter();
+    // WKT can carry both elevation and measure ordinates. The default writer is
+    // XY-only and silently drops them after the WKB reader has preserved them.
+    private static WKTWriter WktWriter => _wktWriter ??= new WKTWriter(4);
 
     public static async Task<int> WriteAsync(
         Stream output,
