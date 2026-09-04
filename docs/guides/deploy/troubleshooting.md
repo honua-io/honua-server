@@ -53,6 +53,7 @@ Rate limiting belongs at the edge (WAF, API gateway, ingress, or load balancer) 
 When the application limiter is enabled and a Redis counter fails, Honua enforces
 its in-process fixed-window counters for both the shared subject limit and any
 endpoint-specific limit. Excess requests still receive `429` and `Retry-After`.
+The process keeps at most 10,000 active subject/endpoint counters. At capacity, new counter keys receive `429` until an existing window expires; active counters retain their budgets.
 These fallback budgets are per server process, start independently of Redis's
 sliding-window counters, and are not synchronized between replicas. Redis metering
 resumes when counter operations succeed; keep edge enforcement for a fleet-wide

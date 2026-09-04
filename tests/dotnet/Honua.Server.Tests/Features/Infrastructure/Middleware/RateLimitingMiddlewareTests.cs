@@ -484,7 +484,8 @@ public sealed class RateLimitingMiddlewareTests
         var field = typeof(RateLimitingMiddleware).GetField("_memoryCounters",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
         var counters = (System.Collections.IDictionary)field.GetValue(null)!;
-        var previous = counters.Cast<System.Collections.DictionaryEntry>().ToArray();
+        var previous = counters.Keys.Cast<object>()
+            .Select(key => new System.Collections.DictionaryEntry(key, counters[key])).ToArray();
         counters.Clear();
         try
         {
