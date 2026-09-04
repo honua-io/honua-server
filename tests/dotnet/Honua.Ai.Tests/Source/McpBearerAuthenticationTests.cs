@@ -418,11 +418,17 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
         using var response = await _client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.WwwAuthenticate.Should().Contain(challenge => challenge.Scheme == "Bearer");
         using var document = await ReadJsonAsync(response);
-        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(499);
-        response.Headers.GetValues("X-Correlation-ID").Single().Should().NotBeNullOrWhiteSpace();
+        document.RootElement.TryGetProperty("features", out _).Should().BeFalse();
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(499);
+        var correlationId = response.Headers.GetValues("X-Correlation-ID").Single();
+        correlationId.Should().NotBeNullOrWhiteSpace();
+        var details = error.GetProperty("details").EnumerateArray().Select(detail => detail.GetString());
+        details.Should().Contain("Code: authentication_required");
+        details.Should().Contain($"CorrelationId: {correlationId}");
     }
 
     private static async Task AssertTenantAuthenticationRequiredAsync(HttpResponseMessage response)
