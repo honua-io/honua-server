@@ -35,7 +35,11 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
             });
     }
 
-    public async Task InitializeAsync() => await _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
