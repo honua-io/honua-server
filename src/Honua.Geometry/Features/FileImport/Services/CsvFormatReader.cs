@@ -125,7 +125,8 @@ internal static class CsvFormatReader
 
         Feature? ProcessRecord(string record)
         {
-            var fields = ParseCsvRecord(record, delimiter);
+            var quotedFields = new HashSet<int>();
+            var fields = ParseCsvRecord(record, delimiter, quotedFields);
             if (fields.Count == 0)
             {
                 return null;
@@ -139,7 +140,7 @@ internal static class CsvFormatReader
             }
 
             dataRowNumber++;
-            return BuildFeature(headers, fields, mapping, geometryFactory, wktReader, wkbReader, diagnostics);
+            return BuildFeature(headers, fields, quotedFields, mapping, geometryFactory, wktReader, wkbReader, diagnostics);
         }
 
         async Task ApplyAddressGeocodeAsync(Feature feature)
@@ -200,7 +201,7 @@ internal static class CsvFormatReader
                 break;
             }
 
-            if (string.IsNullOrWhiteSpace(record))
+            if (string.IsNullOrEmpty(record))
             {
                 continue;
             }
@@ -217,6 +218,7 @@ internal static class CsvFormatReader
     private static Feature? BuildFeature(
         string[] headers,
         IReadOnlyList<string> fields,
+        IReadOnlySet<int> quotedFields,
         CsvColumnMapping mapping,
         GeometryFactory geometryFactory,
         WKTReader wktReader,
@@ -233,7 +235,7 @@ internal static class CsvFormatReader
             }
 
             var value = GetField(fields, i);
-            if (string.IsNullOrWhiteSpace(value))
+            if (value.Length == 0 && !quotedFields.Contains(i))
             {
                 continue;
             }
@@ -490,7 +492,7 @@ internal static class CsvFormatReader
                 break;
             }
 
-            if (string.IsNullOrWhiteSpace(record))
+            if (string.IsNullOrEmpty(record))
             {
                 continue;
             }
@@ -548,7 +550,7 @@ internal static class CsvFormatReader
 
     private static int CountOccurrences(string value, char candidate) => value.Count(ch => ch == candidate);
 
-    private static List<string> ParseCsvRecord(string record, char delimiter)
+    private static List<string> ParseCsvRecord(string record, char delimiter, ISet<int>? quotedFields = null)
     {
         var fields = new List<string>();
         var current = new StringBuilder(record.Length);
@@ -589,6 +591,7 @@ internal static class CsvFormatReader
 
             if (ch == '"')
             {
+                quotedFields?.Add(fields.Count);
                 inQuotes = true;
                 continue;
             }

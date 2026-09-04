@@ -98,7 +98,7 @@ internal static class CsvExportWriter
     private static string EscapeCsvField(string value)
     {
         if (value.Length == 0)
-            return value;
+            return "\"\"";
 
         if (value.AsSpan().IndexOfAny(',', '"', '\n') >= 0 || value.Contains('\r'))
             return string.Concat("\"", value.Replace("\"", "\"\""), "\"");
