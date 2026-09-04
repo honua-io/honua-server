@@ -59,7 +59,7 @@ public static class CapabilityGateResolver
                 return new CapabilityResolution(false, CapabilityReasonCodes.ExperimentalDisabled);
             }
 
-            // Flag-on experimental capability: entitlement/edition still applies on top,
+            // Preview or Experimental capability: entitlement/edition still applies on top,
             // so an unlicensed edition fails on edition rather than being masked by the flag.
             if (descriptor.MinimumEdition is { } minimumEdition && context.Edition < minimumEdition)
             {
@@ -67,7 +67,7 @@ public static class CapabilityGateResolver
             }
         }
 
-        // Non-experimental (or flag-on experimental with a satisfied edition): enabled.
+        // Any required opt-in and edition checks are satisfied: enabled.
         return new CapabilityResolution(true, null);
     }
 }
