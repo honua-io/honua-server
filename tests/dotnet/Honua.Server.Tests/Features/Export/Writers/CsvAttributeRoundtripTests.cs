@@ -112,6 +112,8 @@ public sealed class CsvAttributeRoundtripTests
             }], ["note", "missing"]);
         }
 
+        // An absent geometry/null trailing field must remain an unquoted blank cell.
+        Assert.EndsWith("," + Environment.NewLine, csv, StringComparison.Ordinal);
         var roundtrip = Assert.Single(await ReadAsync(csv));
         Assert.Equal(expected, Assert.IsType<string>(roundtrip.Attributes["note"]));
         Assert.False(roundtrip.Attributes.Exists("missing"));

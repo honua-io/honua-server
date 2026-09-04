@@ -961,11 +961,11 @@ internal static class OgcResponseFormatter
         return builder.ToString();
     }
 
-    private static string BuildCsvGeometryValue(SimpleGeoJsonGeometry? geometry)
+    private static string? BuildCsvGeometryValue(SimpleGeoJsonGeometry? geometry)
     {
         if (geometry == null || string.IsNullOrWhiteSpace(geometry.Type))
         {
-            return string.Empty;
+            return null;
         }
 
         if (string.IsNullOrWhiteSpace(geometry.CoordinatesJson))

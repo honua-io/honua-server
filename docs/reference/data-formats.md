@@ -21,6 +21,8 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 
 Format detection uses the extension plus content magic numbers (ZIP, SQLite, FlatGeobuf, Parquet signatures), so mislabeled files are caught early.
 
+CSV preserves quoted empty strings (`""`) and whitespace-only attribute values. Unquoted empty and missing fields represent null. Leading blank padding before a header is ignored; whitespace-only data rows after it remain present.
+
 ### Import size limits
 
 | Limit | Default | Variable |
@@ -81,7 +83,8 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 | GML 3.2 | Default (`application/gml+xml; version=3.2`); the only format for the `GetFeatureById` stored query. |
 | GeoJSON | `application/geo+json`. |
 | JSON | `application/json`. |
-| CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. Bulk, OGC API Features and WFS CSV output share null/empty string escaping. |
+| CSV | `text/csv` (or `csv`). Uses shared CSV escaping: null is an unquoted blank; an empty string is `""`. |
+
 
 ### OData v4 (`/odata`)
 
