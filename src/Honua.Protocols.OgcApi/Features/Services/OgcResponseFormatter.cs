@@ -3,18 +3,18 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using Honua.Core.Features.Shared.Services;
 using System.IO;
 using System.Net;
 using System.Security;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Text.Json;
+using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Shared.Services;
 using Honua.Infrastructure.Helpers;
-using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features.Models;
+using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Features.Services;
 

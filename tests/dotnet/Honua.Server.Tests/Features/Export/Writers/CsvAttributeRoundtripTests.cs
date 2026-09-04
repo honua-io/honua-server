@@ -2,14 +2,15 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
-using System.Text;
 using System.Reflection;
-using Honua.Protocols.Ogc.Common;
+using System.Text;
+using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Io.Export.Writers;
+using Honua.Io.Export;
 using Honua.Protocols.Ogc.Api.Features.Services;
 using Honua.Protocols.Ogc.Classic.Wfs20.Services;
-using Honua.Core.Features.FileImport.Services;
-using Honua.Io.Export;
-using Honua.Io.Export.Writers;
+using Honua.Protocols.Ogc.Common;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
 using StoredFeature = Honua.Core.Features.FeatureStore.Domain.Feature;
@@ -92,8 +93,10 @@ public sealed class CsvAttributeRoundtripTests
         {
             // Exercise the actual field formatter used by both WFS CSV response paths.
             var escape = typeof(Wfs20Handler).GetMethod("EscapeCsv", BindingFlags.NonPublic | BindingFlags.Static)!;
-            var note = (string)escape.Invoke(null, [source.Attributes["note"]])!;
-            var missing = (string)escape.Invoke(null, [null])!;
+            var convert = typeof(Wfs20Handler).GetMethod("ConvertFieldValueToInvariantString", BindingFlags.NonPublic | BindingFlags.Static)!;
+            var field = new MetadataV2Field { Name = "note", Type = MetadataV2FieldType.String, Nullable = true };
+            var note = (string)escape.Invoke(null, [convert.Invoke(null, [source.Attributes["note"], field])])!;
+            var missing = (string)escape.Invoke(null, [convert.Invoke(null, [null, field])])!;
             csv = $"note,missing\n{note},{missing}\n";
         }
         else

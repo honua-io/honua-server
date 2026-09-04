@@ -2,9 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Core.Features.Shared.Services;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Services;
 using Honua.Infrastructure.Services;
 using NetTopologySuite.IO;
 
