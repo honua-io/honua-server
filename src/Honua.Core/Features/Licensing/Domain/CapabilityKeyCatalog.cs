@@ -19,7 +19,7 @@ namespace Honua.Core.Features.Licensing.Domain;
 /// <param name="Category">Capability category for grouping.</param>
 /// <param name="Edition">Minimum edition required to use this capability.</param>
 /// <param name="Description">Brief description of the capability.</param>
-/// <param name="Status">Optional release posture for keys whose live/experimental state is part of the public contract.</param>
+/// <param name="Status">Optional release posture for keys whose live/preview/experimental state is part of the public contract.</param>
 public sealed record CapabilityKeyDefinition(
     string Key,
     string DisplayName,
@@ -47,6 +47,12 @@ public static class CapabilityKeyCatalog
     public const string ExperimentalStatus = "experimental";
 
     /// <summary>Release-posture value marking a capability as Preview.</summary>
+    public const string PreviewStatus = "preview";
+
+    /// <summary>
+    /// Release-posture value marking a capability as Preview. Preview capabilities are
+    /// implemented and qualified, but are not an advertised GA commitment.
+    /// </summary>
     public const string PreviewStatus = "preview";
 
     /// <summary>
@@ -266,8 +272,12 @@ public static class CapabilityKeyCatalog
             feature.Category,
             feature.MinimumEdition,
             feature.Description,
-            Status: null)),
+            Status: IsCustomerAlerting(feature) ? PreviewStatus : null)),
     ];
+
+    private static bool IsCustomerAlerting(FeatureDefinition feature)
+        => string.Equals(feature.Category, FeatureCatalog.Categories.Alerts, StringComparison.Ordinal)
+            || string.Equals(feature.Category, FeatureCatalog.Categories.Channels, StringComparison.Ordinal);
 
     /// <summary>
     /// The deployable subset of <see cref="All"/> — every key a deployment profile may enable.
