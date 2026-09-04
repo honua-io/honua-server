@@ -25,9 +25,11 @@ internal sealed record ExportProgress : IOperationProgress, ICancellableOperatio
     public IReadOnlyList<string> Warnings { get; init; } = [];
     public string? CurrentPhase { get; init; }
 
-    public double? PercentComplete => TotalFeatures > 0
-        ? Math.Clamp((double)ProcessedFeatures / TotalFeatures * 100.0, 0.0, 100.0)
-        : null;
+    public double? PercentComplete => Status == OperationStatus.Completed
+        ? 100.0
+        : TotalFeatures > 0
+            ? Math.Clamp((double)ProcessedFeatures / TotalFeatures * 100.0, 0.0, 100.0)
+            : null;
 
     public TimeSpan Duration => (CompletedAt ?? DateTimeOffset.UtcNow) - StartedAt;
 
