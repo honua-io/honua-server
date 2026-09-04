@@ -17,6 +17,7 @@ using Honua.Protocols.Ogc.Api.Styles.Handlers;
 using Honua.Protocols.Ogc.Api.Styles.Models;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -143,7 +144,7 @@ public static class OgcStylesEndpoints
         HttpContext context,
         string? f,
         IOgcStyleProjection projection,
-        IMetadataV2GraphProvider graphProvider,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
@@ -249,7 +250,7 @@ public static class OgcStylesEndpoints
         string styleId,
         HttpContext context,
         IOgcStyleProjection projection,
-        IMetadataV2GraphProvider graphProvider,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken = default)
     {
@@ -285,7 +286,7 @@ public static class OgcStylesEndpoints
         HttpContext context,
         string? f,
         IOgcStyleProjection projection,
-        IMetadataV2GraphProvider graphProvider,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
         CancellationToken cancellationToken = default)
     {
         if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
