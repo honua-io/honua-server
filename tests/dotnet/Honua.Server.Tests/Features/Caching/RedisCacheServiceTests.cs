@@ -424,6 +424,39 @@ public sealed class RedisCacheServiceTests : IDisposable
         (await cache.IsCacheHealthyAsync()).Should().BeTrue();
     }
 
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Cache)]
+    public async Task IsCacheHealthyAsync_CallerCancelsPendingProbe_PropagatesCancellation(bool useMultiplexer)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var distributedCache = Substitute.For<IDistributedCache>();
+        distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.Infinite, call.Arg<CancellationToken>());
+                return (byte[]?)null;
+            });
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        var database = Substitute.For<IDatabase>();
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
+        var ping = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        database.PingAsync(Arg.Any<CommandFlags>()).Returns(ping.Task);
+        using var cache = new RedisCacheService(distributedCache,
+            Options.Create(new CacheOptions { EnableFallback = true }),
+            NullLogger<RedisCacheService>.Instance, _performanceMonitor,
+            useMultiplexer ? redis : null);
+
+        var probe = cache.IsCacheHealthyAsync(cancellation.Token);
+        probe.IsCompleted.Should().BeFalse();
+        cancellation.Cancel();
+
+        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probe);
+        exception.CancellationToken.Should().Be(cancellation.Token);
+    }
+
     [UnitTest]
     [Operation(Operations.Cache)]
     public async Task TryRestoreRedisAsync_WhenRedisRecovers_ClearsFallbackState()
