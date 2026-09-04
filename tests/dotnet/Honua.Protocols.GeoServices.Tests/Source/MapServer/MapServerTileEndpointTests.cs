@@ -3,6 +3,7 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -76,6 +77,50 @@ public sealed class MapServerTileEndpointTests : IClassFixture<WebAppFixture>
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"Response body: {System.Text.Encoding.UTF8.GetString(content)}");
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
         content.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Tile)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}")]
+    public async Task Tile_LayerOutsideAdvertisedScaleRange_DoesNotQueryLayer()
+    {
+        var featureReader = Substitute.For<IFeatureReader>();
+        var fixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IFeatureReader>();
+                services.AddSingleton(featureReader);
+            });
+
+        try
+        {
+            await fixture.InitializeAsync();
+            var provider = fixture.GetService<TestMetadataV2GraphProvider>();
+            var snapshot = await provider.GetCurrentAsync();
+            provider.SetGraph(snapshot.Graph with
+            {
+                Revision = snapshot.Graph.Revision + 1,
+                Resources = snapshot.Graph.Resources.Select(resource =>
+                    resource.Metadata.Id == "res-layer-0"
+                        ? resource with
+                        {
+                            Display = (resource.Display ?? new MetadataV2ResourceDisplay()) with { MinScale = 1 },
+                        }
+                        : resource).ToArray(),
+            });
+
+            var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/tile/0/0/0");
+            var content = await response.Content.ReadAsByteArrayAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, System.Text.Encoding.UTF8.GetString(content));
+            response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+            await featureReader.DidNotReceiveWithAnyArgs().QueryAsync(default, default, default);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]

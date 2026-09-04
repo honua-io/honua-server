@@ -177,6 +177,33 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}")]
+    public async Task MapServer_Metadata_TimeAwareLayer_AdvertisesTimeAndAdvancedQueryCapabilities()
+    {
+        var layerResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{WebAppFixture.TestLayerId}?f=json");
+        var layerContent = await layerResponse.Content.ReadAsStringAsync();
+        layerResponse.StatusCode.Should().Be(HttpStatusCode.OK, layerContent);
+
+        using var layerDocument = JsonDocument.Parse(layerContent);
+        var layer = layerDocument.RootElement;
+        layer.GetProperty("advancedQueryCapabilities").GetProperty("supportsPagination").GetBoolean().Should().BeTrue();
+        layer.GetProperty("advancedQueryCapabilities").GetProperty("supportsStatistics").GetBoolean().Should().BeTrue();
+        layer.GetProperty("timeInfo").GetProperty("startTimeField").GetString().Should().Be("timestamp");
+        layer.GetProperty("timeInfo").GetProperty("timeExtent").GetArrayLength().Should().Be(2);
+
+        var serviceResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer?f=json");
+        var serviceContent = await serviceResponse.Content.ReadAsStringAsync();
+        serviceResponse.StatusCode.Should().Be(HttpStatusCode.OK, serviceContent);
+
+        using var serviceDocument = JsonDocument.Parse(serviceContent);
+        serviceDocument.RootElement.GetProperty("timeInfo").GetProperty("timeExtent").GetArrayLength().Should().Be(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/dynamicLayer")]
     public async Task MapServer_DynamicLayer_WithMapLayerSource_ReturnsLayerMetadata()
     {
@@ -1059,6 +1086,17 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_SizeBeyondAdvertisedMaximum_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=4097,256&f=json");
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithMalformedBackgroundColor_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(
@@ -1143,6 +1181,26 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
 
         export.Should().NotBeNull();
         export!.Extent.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_ShowMinusOne_ReturnsBlankImage(bool useDynamicLayer)
+    {
+        var dynamicLayers = useDynamicLayer
+            ? $"&dynamicLayers={Uri.EscapeDataString(BuildSimpleRendererDynamicLayersJson(7))}"
+            : string.Empty;
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export" +
+            "?bbox=-180,-90,180,90&size=64,64&layers=show:-1&f=image" + dynamicLayers);
+        var content = await response.Content.ReadAsByteArrayAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(content));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Should().NotBeEmpty();
     }
 
     [IntegrationTest]
@@ -1443,6 +1501,54 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
+    public async Task MapServer_Legend_WithClassifiedRenderers_ReturnsOneNamedSwatchPerClass()
+    {
+        var renderers = new[]
+        {
+            """
+            {"type":"uniqueValue","field1":"category","uniqueValueInfos":[
+              {"value":"R","label":"Residential","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[255,0,0,255],"size":10}},
+              {"value":"C","label":"Commercial","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[0,0,255,255],"size":10}}
+            ]}
+            """,
+            """
+            {"type":"classBreaks","field":"population","classBreakInfos":[
+              {"classMaxValue":1000,"label":"Low","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[255,255,0,255],"size":10}},
+              {"classMaxValue":1000000,"label":"High","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[255,0,255,255],"size":10}}
+            ]}
+            """,
+        };
+        var expectedLabels = new[] { new[] { "Residential", "Commercial" }, new[] { "Low", "High" } };
+
+        for (var index = 0; index < renderers.Length; index++)
+        {
+            var dynamicLayers = Uri.EscapeDataString(
+                "[{\"id\":7,\"source\":{\"type\":\"mapLayer\",\"mapLayerId\":0},\"drawingInfo\":{\"renderer\":" +
+                renderers[index] + "}}]");
+            var response = await _fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&dynamicLayers={dynamicLayers}");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+            using var document = JsonDocument.Parse(content);
+            var entries = document.RootElement.GetProperty("layers")[0].GetProperty("legend");
+            entries.GetArrayLength().Should().Be(2);
+            entries.EnumerateArray().Select(entry => entry.GetProperty("label").GetString())
+                .Should().Equal(expectedLabels[index]);
+            entries.EnumerateArray().Select(entry => entry.GetProperty("imageData").GetString())
+                .Should().OnlyHaveUniqueItems();
+
+            if (index == 0)
+            {
+                entries[0].GetProperty("values")[0].GetString().Should().Be("R");
+                entries[1].GetProperty("values")[0].GetString().Should().Be("C");
+            }
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task MapServer_Legend_WithUnsupportedDynamicLayerRenderer_ReturnsBadRequest()
     {
         var dynamicLayers = Uri.EscapeDataString(
@@ -1480,6 +1586,35 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         legend.Should().NotBeNull();
         legend!.Layers.Should().NotBeNullOrEmpty();
         legend.Layers!.First().Legend.Should().NotBeNullOrEmpty();
+    }
+
+    [Theory]
+    [InlineData("legend")]
+    [InlineData("queryLegends")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/legend")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/queryLegends")]
+    public async Task MapServer_Legend_Post_UsesFormDynamicLayersSizeAndFormat(string operation)
+    {
+        const int dynamicLayerId = 501;
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("size", "31,17"),
+            new KeyValuePair<string, string>("dynamicLayers", BuildSimpleRendererDynamicLayersJson(dynamicLayerId)),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{operation}",
+            payload);
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var legend = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.LegendResponse);
+        var layer = legend!.Layers.Should().ContainSingle().Subject;
+        layer.LayerId.Should().Be(dynamicLayerId);
+        layer.Legend.Should().NotBeNullOrEmpty();
+        layer.Legend!.Should().OnlyContain(entry => entry.Width == 31 && entry.Height == 17);
     }
 
     [IntegrationTest]
@@ -2512,6 +2647,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         hit.FoundFieldName.Should().NotBeNullOrWhiteSpace();
         hit.Value.Should().NotBeNullOrWhiteSpace();
         hit.Attributes.Should().NotBeNullOrEmpty();
+        hit.Attributes.Should().ContainKey("population");
         hit.Geometry.Should().NotBeNull();
     }
 
