@@ -2016,7 +2016,7 @@
           "esriPaths": [
             "/GeometryServer/fromGeoCoordinateString"
           ],
-          "notes": "Parses MGRS and USNG coordinate strings using the requested conversion mode and returns point geometries in the requested spatial reference."
+          "notes": "Parses MGRS and USNG coordinate strings using the requested conversion mode, including independent addSpaces/rounding controls and the Esri MGRS new/old-style plus longitude-180 zone-01 conversion modes, and returns point geometries in the requested spatial reference."
         }
       ],
       "parameterCoverage": {
