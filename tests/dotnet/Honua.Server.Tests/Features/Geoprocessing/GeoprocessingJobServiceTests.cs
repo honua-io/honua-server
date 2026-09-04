@@ -2362,6 +2362,42 @@ public sealed class GeoprocessingJobServiceTests
     // -----------------------------------------------------------------------
 
     [UnitTest]
+    public async Task GetJob_RealtimeJobsHunt_SameSubjectDifferentTenant_IsNotFound()
+    {
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns("tenant-b");
+        await using var requestServices = new ServiceCollection()
+            .AddSingleton(tenantContext)
+            .BuildServiceProvider();
+        var principal = CreatePrincipal();
+        var accessor = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext { RequestServices = requestServices, User = principal }
+        };
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions, _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore,
+            httpContextAccessor: accessor);
+        var record = CreateJobRecord("tenant-a-job", ExecutionJobStatus.Running);
+        record = record with
+        {
+            Audit = record.Audit with
+            {
+                SubmitterSecurityContext = CreateSubmitterSecurityContext() with { TenantId = "tenant-a" }
+            }
+        };
+        _jobStore.GetAsync(record.OperationId, Arg.Any<CancellationToken>()).Returns(record);
+
+        var act = () => sut.GetJobAsync(record.OperationId, principal);
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task GetJob_ExistingJob_ReturnsRecord()
