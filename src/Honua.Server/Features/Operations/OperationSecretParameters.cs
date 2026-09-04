@@ -9,6 +9,8 @@ namespace Honua.Server.Features.Operations;
 /// <summary>Captures and resolves secret-bearing approval parameters without serializing values.</summary>
 internal static class OperationSecretParameters
 {
+    private static readonly TimeSpan ApprovalSecretTtl = TimeSpan.FromDays(30);
+
     internal static (Dictionary<string, string?> Parameters,
         Dictionary<string, OperationSecretReference> SecretParameters) Capture(
         OperationRequest request,
@@ -38,7 +40,8 @@ internal static class OperationSecretParameters
                 context.PrincipalId,
                 context.TenantId,
                 pair.Key,
-                pair.Value);
+                pair.Value,
+                ApprovalSecretTtl);
         }
 
         return (parameters, references);
