@@ -142,6 +142,43 @@ internal sealed partial class StreamingFileImportService
         return stagingName ?? tableName + "__staging";
     }
 
+    private static async Task<ImportAdvisoryLock> AcquireImportLockAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var lockKey = $"honua.file-import.replace:{schemaName}.{tableName}";
+        await using var command = new NpgsqlCommand(
+            "SELECT pg_advisory_lock(hashtextextended(@lock_key, 0))",
+            connection);
+        // The request cancellation token remains the upper bound. A command timeout must not
+        // turn a long-running import into a false concurrency failure while waiting its turn.
+        command.CommandTimeout = 0;
+        command.Parameters.AddWithValue("lock_key", lockKey);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return new ImportAdvisoryLock(connection, lockKey);
+    }
+
+    private sealed class ImportAdvisoryLock(NpgsqlConnection connection, string lockKey) : IAsyncDisposable
+    {
+        private int _released;
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _released, 1) != 0)
+            {
+                return;
+            }
+
+            await using var command = new NpgsqlCommand(
+                "SELECT pg_advisory_unlock(hashtextextended(@lock_key, 0))",
+                connection);
+            command.Parameters.AddWithValue("lock_key", lockKey);
+            await command.ExecuteNonQueryAsync(CancellationToken.None);
+        }
+    }
+
     /// <summary>
     /// Atomically replaces the live target with the freshly-loaded staging sibling inside a
     /// single transaction, so the drop+rename is all-or-nothing.

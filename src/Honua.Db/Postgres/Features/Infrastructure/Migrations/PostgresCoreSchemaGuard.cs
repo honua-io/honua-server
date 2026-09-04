@@ -199,6 +199,32 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         ("sta_observation_default", "feature_of_interest_id"),
     ];
 
+    private static readonly string[] _initialSchemaTables =
+    [
+        "services",
+        "layers",
+        "service_layers",
+        "layer_fields",
+    ];
+
+    private static readonly (string Table, string Column)[] _initialSchemaColumns =
+    [
+        ("services", "service_name"),
+        ("layers", "layer_id"),
+        ("layers", "layer_name"),
+        ("layers", "table_schema"),
+        ("layers", "table_name"),
+        ("layers", "geometry_type"),
+        ("layers", "srid"),
+        ("service_layers", "service_name"),
+        ("service_layers", "layer_id"),
+        ("service_layers", "layer_order"),
+        ("layer_fields", "layer_id"),
+        ("layer_fields", "field_name"),
+        ("layer_fields", "field_type"),
+        ("layer_fields", "field_order"),
+    ];
+
     private static readonly (string Table, string Column)[] _metadataV2ReleasePackageColumns =
     [
         ("metadata_v2_release_packages", "package_id"),
@@ -293,6 +319,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         .. _metadataV2ReleasePackageTables,
         .. _sensorThingsTables,
         .. _governedLineageTables,
+        .. _initialSchemaTables,
         "raster_layer_statistics",
         .. _rasterBaselineTables,
         .. _rasterOverviewsTables,
@@ -382,6 +409,15 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _sensorThingsTables,
             _sensorThingsColumns,
             _sensorThingsIndexes);
+        if (_migrations.InitialSchemaMigration is { } initialSchemaMigration)
+        {
+            VerifyRequiredMigration(
+                state,
+                initialSchemaMigration,
+                _initialSchemaTables,
+                _initialSchemaColumns,
+                []);
+        }
         VerifyRequiredMigration(
             state,
             _migrations.GovernedLineageMigration,
@@ -445,6 +481,16 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             _sensorThingsColumns,
             _sensorThingsIndexes,
             state.CanAwaitConfiguredSchemaAdoption);
+        if (_migrations.InitialSchemaMigration is { } initialSchemaMigration)
+        {
+            VerifyExclusiveMigrationConsistency(
+                state,
+                initialSchemaMigration,
+                _initialSchemaTables,
+                _initialSchemaColumns,
+                [],
+                state.CanAwaitConfiguredSchemaAdoption);
+        }
 
         // Migration 055 was deliberately a no-op when raster support had not been provisioned.
         // Once any provider-baseline table exists, however, a journal row claiming 055 must
@@ -814,7 +860,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
                         (c.relname <> ALL(@lineage_tables) AND c.relname <> ALL(@lineage_indexes))))
                     OR
                     (n.nspname = @canonical_schema AND
-                        (c.relname = ANY(@lineage_tables) OR c.relname = ANY(@lineage_indexes)))
+                        (c.relname = ANY(@lineage_tables) OR c.relname = ANY(@lineage_indexes) OR
+                         c.relname = ANY(@initial_schema_tables)))
                 )
                   AND (c.relname = ANY(@tables) OR c.relname = ANY(@indexes))
                   AND c.relkind IN ('r', 'p', 'i', 'I')
@@ -828,6 +875,15 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             canonicalSchemaParameter.ParameterName = "canonical_schema";
             canonicalSchemaParameter.Value = PostgresSchemaConfiguration.DefaultMetadataSchema;
             schemaCommand.Parameters.Add(canonicalSchemaParameter);
+
+            var initialSchemaTablesParameter = schemaCommand.CreateParameter();
+            initialSchemaTablesParameter.ParameterName = "initial_schema_tables";
+            initialSchemaTablesParameter.Value = _initialSchemaTables;
+            if (initialSchemaTablesParameter is NpgsqlParameter npgsqlInitialSchemaTablesParameter)
+            {
+                npgsqlInitialSchemaTablesParameter.NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text;
+            }
+            schemaCommand.Parameters.Add(initialSchemaTablesParameter);
 
             var tablesParameter = schemaCommand.CreateParameter();
             tablesParameter.ParameterName = "tables";
