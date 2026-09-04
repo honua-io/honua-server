@@ -45,7 +45,10 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
                 "binding-zarr-layer-0",
                 "res-zarr-layer-0",
                 "protected.zarr",
-                storageLayerId: WebAppFixture.TestLayerId,
+                // Deliberately differ from the service-local publication index. The
+                // route must authorize the resolved publication/resource, not treat
+                // its index as a storage-layer id.
+                storageLayerId: WebAppFixture.TestLayerId + 1000,
                 storageType: MetadataV2StorageType.Zarr)
             .AddService(
                 "svc-zarr",

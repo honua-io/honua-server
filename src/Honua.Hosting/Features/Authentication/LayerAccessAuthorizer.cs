@@ -115,6 +115,67 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<AccessDecision> AuthorizePublicationAsync(
+        ClaimsPrincipal principal,
+        MetadataV2Publication publication,
+        MetadataV2Resource resource,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(publication);
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext is not null)
+        {
+            var tenantId = ResolveAuthorizationTenantId(
+                principal,
+                TenantScopeHelpers.ResolveRequestTenantId(httpContext));
+            if (!MetadataV2TenantVisibility.IsVisibleToTenant(publication, resource, service, tenantId))
+            {
+                return AccessDecision.Forbidden(DenialReason);
+            }
+
+            return await AccessPolicyHelpers.EvaluateResourceAccessCoreAsync(
+                httpContext.RequestServices,
+                principal,
+                tenantId,
+                applyTenantScope: true,
+                resource,
+                service,
+                operation,
+                cancellationToken,
+                httpContext.Items).ConfigureAwait(false);
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var backgroundTenantId = ResolveAuthorizationTenantId(
+            principal,
+            scope.ServiceProvider.GetService<ITenantContext>()?.TenantId);
+        var applyTenantScope = !string.IsNullOrWhiteSpace(backgroundTenantId);
+        if (!MetadataV2TenantVisibility.IsVisibleToTenant(
+                publication,
+                resource,
+                service,
+                backgroundTenantId))
+        {
+            return AccessDecision.Forbidden(DenialReason);
+        }
+
+        return await AccessPolicyHelpers.EvaluateResourceAccessCoreAsync(
+            scope.ServiceProvider,
+            principal,
+            backgroundTenantId,
+            applyTenantScope,
+            resource,
+            service,
+            operation,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>
     /// Resolves the tenant for the principal being authorized. The ambient tenant is only a
     /// fallback for a tenant-less principal; it may belong to an approver or orchestrator.

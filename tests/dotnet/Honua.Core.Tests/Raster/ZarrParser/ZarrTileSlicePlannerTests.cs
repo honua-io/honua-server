@@ -57,7 +57,10 @@ public class ZarrTileSlicePlannerTests
                 root: "tiles/ascending", rows: 8, cols: 8, chunkRows: 4, chunkCols: 4,
                 sample: (r, c) => r + c, srid: 4326,
                 xMin: 0, yMin: 0, xMax: 8, yMax: 8),
-            "tiles/ascending")) with { YAxisAscending = true };
+            "tiles/ascending")) with
+        {
+            YAxisAscending = true
+        };
 
         var ok = ZarrTileSlicePlanner.TryPlan(
             metadata, variable: null, new ZarrTileBounds(0, 0, 4, 4),
