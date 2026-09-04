@@ -59,6 +59,61 @@ public sealed class LifecycleRegressionTests
         }
     }
 
+    [Theory]
+    [InlineData("serve.geoservices-imageserver")]
+    [InlineData("serve.wmts")]
+    [InlineData("serve.ogc-api-edr")]
+    [InlineData("serve.ogc-api-coverages")]
+    public void PreviewRuling_MustNotPublishImplementedGaEvidence(string key)
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Join(root.FullName, "Honua.sln")))
+        {
+            root = root.Parent;
+        }
+        Assert.NotNull(root);
+        using var manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(
+            Path.Join(root.FullName, "docs/gis/data/capability-matrix.v1.json")));
+        var capability = manifest.RootElement.GetProperty("capabilities")
+            .EnumerateArray().Single(row => row.GetProperty("key").GetString() == key);
+        var maturity = capability.GetProperty("maturity");
+        var implemented = maturity.TryGetProperty("implemented", out var count) ? count.GetInt32() : 0;
+        Assert.Equal(0, implemented);
+    }
+
+    [Theory]
+    [InlineData(false, false, LicenseValidationState.Valid)]
+    [InlineData(true, false, LicenseValidationState.Expired)]
+    [InlineData(false, true, LicenseValidationState.InvalidSignature)]
+    public async Task Control_SignedLicenseValidationEnforcesExpiryAndSignature(
+        bool expired, bool tampered, LicenseValidationState expected)
+    {
+        var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro,
+            expiresAt: expired ? DateTimeOffset.UtcNow.AddDays(-1) : DateTimeOffset.UtcNow.AddDays(1),
+            tamperSignature: tampered);
+        var service = CreateService(new LicenseOptions
+        {
+            LicenseContent = Encoding.UTF8.GetString(license.LicenseData),
+            TrustedKeys = new Dictionary<string, string>
+            {
+                [LicenseTestSupport.KeyId] = license.PublicKeySetting
+            }
+        });
+        await service.StartAsync(CancellationToken.None);
+        Assert.Equal(expected, service.GetSnapshot().ValidationState);
+        Assert.Equal(expected == LicenseValidationState.Valid,
+            service.CheckEntitlement("analytics.clustering").IsActive);
+    }
+
+    [Fact]
+    public void Control_DistinctSimpleTenantIdsRemainSeparate()
+    {
+        var resolver = new TenantSchemaResolver(Options.Create(new TenantSchemaOptions()));
+        Assert.True(resolver.TryResolveSchema("alpha", out var first));
+        Assert.True(resolver.TryResolveSchema("beta", out var second));
+        Assert.NotEqual(first, second);
+    }
+
     private static FileBackedLicenseService CreateService(LicenseOptions options) =>
         new(Options.Create(options), new BouncyCastleEd25519Verifier(),
             NullLogger<FileBackedLicenseService>.Instance);
