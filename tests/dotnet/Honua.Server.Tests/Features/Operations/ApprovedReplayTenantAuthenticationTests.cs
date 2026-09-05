@@ -80,16 +80,17 @@ public sealed class ApprovedReplayTenantAuthenticationTests
     }
 
     [Theory]
-    [InlineData("tenant-a", true)]
-    [InlineData("tenant-b", true)]
-    [InlineData(null, true)]
-    [InlineData("tenant-b", false)]
-    public async Task ApprovedCredential_AuthenticationAndTenantResolution_UsePersistedTenant(string? header, bool tenantResolutionEnabled)
+    [InlineData("tenant-a", true, "tenant-a")]
+    [InlineData("tenant-b", true, "tenant-a")]
+    [InlineData(null, true, "tenant-a")]
+    [InlineData("tenant-b", false, "tenant-a")]
+    [InlineData(null, false, "")]
+    public async Task ApprovedCredential_AuthenticationAndTenantResolution_UsePersistedTenant(string? header, bool tenantResolutionEnabled, string sealedTenant)
     {
         var store = new InMemoryAdminApiKeyStore();
         var key = await store.CreateAsync("approved-operation:proposal-a",
             [AdminApiKeyPermission.CreateApprovedOperationGrant("PUT", "/api/v1/admin/metadata/layers/1/filter"),
-                "admin:operation:tenant:tenant-a"], DateTimeOffset.UtcNow.AddMinutes(5), "requester", CancellationToken.None);
+                "admin:operation:tenant:" + sealedTenant], DateTimeOffset.UtcNow.AddMinutes(5), "requester", CancellationToken.None);
         var tenant = new RequestTenantContext();
         using var services = new ServiceCollection().AddSingleton<ITenantContext>(tenant).BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
@@ -123,7 +124,7 @@ public sealed class ApprovedReplayTenantAuthenticationTests
         await middleware.InvokeAsync(context);
 
         invoked.Should().BeTrue();
-        tenant.TenantId.Should().Be("tenant-a");
+        tenant.TenantId.Should().Be(string.IsNullOrEmpty(sealedTenant) ? null : sealedTenant);
         context.User.IsInRole("platform_admin").Should().BeFalse();
         context.User.IsInRole("multi_tenant_admin").Should().BeFalse();
         AdminApiKeyPermission.IsAuthorized(context.User, "PUT", "/api/v1/admin/metadata/layers/1/filter").Should().BeTrue();
