@@ -169,9 +169,12 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         if (!schema.TryGetProperty("format", out var format)) return;
         if (format.GetString() == "uuid" && !Guid.TryParse(value, out _))
             messages.Add($"Parameter '{path}' must be a UUID.");
-        if (format.GetString() == "date-time" && !DateTimeOffset.TryParse(value,
-            System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _))
-            messages.Add($"Parameter '{path}' must be a date-time.");
+        if (format.GetString() == "date-time")
+        {
+            using var encoded = JsonDocument.Parse("\"" + JsonEncodedText.Encode(value).ToString() + "\"");
+            if (!encoded.RootElement.TryGetDateTimeOffset(out _))
+                messages.Add($"Parameter '{path}' must be an ISO 8601 date-time.");
+        }
     }
 
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,
