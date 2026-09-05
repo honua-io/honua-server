@@ -605,7 +605,8 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface."
+      "description": "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface.",
+      "status": "preview"
     },
     {
       "key": "serve.geoservices-mapserver",
@@ -648,7 +649,8 @@
       "displayName": "OGC API Coverages",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve coverage data through OGC API - Coverages."
+      "description": "Serve coverage data through OGC API - Coverages.",
+      "status": "preview"
     },
     {
       "key": "serve.ogc-api-edr",
@@ -733,7 +735,8 @@
       "displayName": "WMTS 1.0",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve pre-rendered tile pyramids through WMTS 1.0."
+      "description": "Serve pre-rendered tile pyramids through WMTS 1.0.",
+      "status": "preview"
     },
     {
       "key": "staticmap.high-dpi",
