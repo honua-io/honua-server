@@ -37,7 +37,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 /// <summary>
 /// Integration tests for OIDC authentication with JWT Bearer support.
 /// </summary>
-[Collection("Database")]
+[Collection("Database.OidcAuthentication")]
 [Protocol(TestProtocols.Admin, TestProtocols.Health, TestProtocols.FeatureServer)]
 [Operation(Operations.Security)]
 public class OidcAuthenticationTests
