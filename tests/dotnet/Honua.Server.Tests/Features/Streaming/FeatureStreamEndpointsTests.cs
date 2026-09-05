@@ -138,7 +138,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
         fields.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new FieldMaskPolicy[]
             {
-                new() { Role = "*", Service = "*", Layer = "*", Attribute = "secret" }
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "description" }
             });
         var fixture = new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
@@ -153,7 +153,7 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
             {
                 await writer.CreateAsync(0, Feature.Create(0,
                     new NetTopologySuite.Geometries.Point(1, 1).AsBinary(),
-                    new Dictionary<string, object?> { ["name"] = name, ["secret"] = "private-rest-value" }.ToImmutableDictionary()), cts.Token);
+                    new Dictionary<string, object?> { ["name"] = name, ["description"] = "private-rest-value" }.ToImmutableDictionary()), cts.Token);
             }
 
             using (var restClient = fixture.CreateAdminClient())
@@ -196,9 +196,9 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
                         Protocol = "rest",
                         RequestId = "policy-change",
                         PropertiesJson = id == 102
-                            ? """{"name":"admin","secret":"private-value","SECRET":"private-uppercase"}"""
-                            : """{"name":"forbidden","secret":"private-row"}""",
-                        ChangedAttributes = new Dictionary<string, object?> { ["name"] = "changed", ["secret"] = "private-delta", ["SECRET"] = "private-uppercase-delta" }
+                            ? """{"name":"admin","description":"private-value","DESCRIPTION":"private-uppercase"}"""
+                            : """{"name":"forbidden","description":"private-row"}""",
+                        ChangedAttributes = new Dictionary<string, object?> { ["name"] = "changed", ["description"] = "private-delta", ["DESCRIPTION"] = "private-uppercase-delta" }
                     }, cts.Token);
                 }
             }
