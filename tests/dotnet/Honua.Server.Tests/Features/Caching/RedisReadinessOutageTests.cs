@@ -32,6 +32,7 @@ public sealed class RedisReadinessOutageTests
     [InlineData("srem")]
     [InlineData("del")]
     [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /healthz/ready")]
     public async Task IsCacheHealthyAsync_RedisAllowsPingButDeniesCacheCommands_ReportsUnhealthyUntilRecovery(string deniedCommand)
     {
         await using var container = new RedisBuilder("redis:7.2-alpine").Build();
@@ -67,6 +68,7 @@ public sealed class RedisReadinessOutageTests
 
     [IntegrationTest]
     [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /healthz/ready")]
     public async Task IsCacheHealthyAsync_DistributedCacheOnly_IndexDenied_ReportsUnhealthyUntilRecovery()
     {
         await using var container = new RedisBuilder("redis:7.2-alpine").Build();
@@ -96,6 +98,7 @@ public sealed class RedisReadinessOutageTests
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.HealthCheck)]
+    [Endpoint("GET /healthz/ready")]
     public async Task CheckReadinessAsync_RedisStopsAndRestarts_RequiresLiveProbeEvenDuringFallback(bool enterFallback)
     {
         // Docker can remap ephemeral host ports on restart. Keep the dependency's
