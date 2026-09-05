@@ -366,10 +366,9 @@ jobs:
           set -euo pipefail
 
           # The published image runs a Production cold start that performs the
-          # PostGIS preflight compatibility check before migrations, so a
-          # reachable PostGIS database is required even when migrations are
-          # skipped. Provision one on a dedicated network and point the
-          # hardened app container at it by service name.
+          # PostGIS preflight and migration/schema checks. Provision an empty
+          # database on a dedicated network and let the hardened app perform
+          # its normal migrations before testing the running container.
           docker network create honua-runtime-net
 
           docker run -d \
@@ -405,14 +404,28 @@ jobs:
             --tmpfs /tmp \
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
-            -e HONUA_SKIP_MIGRATIONS=true \
             -e HONUA_ADMIN_PASSWORD="Security-Nightly-Admin-Pass1!" \
             -e Security__ConnectionEncryption__MasterKey="security-nightly-master-key-at-least-32-chars" \
             -e ConnectionStrings__DefaultConnection="Host=honua-runtime-db;Port=5432;Database=honua;Username=honua;Password=honua_password" \
             -p 8080:8080 \
             ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
 
-          sleep 10
+          ready=false
+          for _ in $(seq 1 120); do
+            if curl --fail --silent --max-time 2 http://localhost:8080/healthz/live >/dev/null; then
+              ready=true
+              break
+            fi
+            if [ "$(docker inspect --format '{{.State.Running}}' honua-runtime-test)" != true ]; then
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != true ]; then
+            echo "::error::Container did not become live after database migrations."
+            docker logs honua-runtime-test || true
+            exit 1
+          fi
 
       - name: Test runtime security constraints
         id: runtime-security
