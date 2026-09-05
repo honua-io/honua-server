@@ -117,7 +117,10 @@ internal sealed partial class GeoservicesLayerPublicationService
                 GeometryColumn = "geom",
                 GeometryType = string.IsNullOrWhiteSpace(layerInfo.GeometryType)
                     ? null
-                    : GeoservicesImportService.MapEsriGeometryType(layerInfo.GeometryType),
+                    : GeoservicesImportService.MapEsriGeometryType(
+                        layerInfo.GeometryType,
+                        hasZ: false,
+                        hasM: false),
                 Srid = request.TargetSrid,
                 PrimaryKey = FieldNames.ObjectId,
                 Fields = [],
