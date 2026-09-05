@@ -32,6 +32,8 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 | POST | `/ogc/features/collections/{collectionId}/clusters`, `/spatial-join`, `/buffer-aggregate`, `/density` | Spatial analytics extensions (Pro tier; 402 when entitlement inactive). |
 | GET | `/ogc/features/schemas/honua-ogcapi-features.xsd` | GML application schema. |
 
+On managed PostgreSQL layers, a PATCH that races another edit returns `409 Conflict` when no `If-Match` was supplied, preserving the competing edit. Read the current feature and retry the partial update. Requests with `If-Match` continue to return `412 Precondition Failed` when their precondition fails.
+
 ### Items query parameters
 
 | Parameter | Notes |

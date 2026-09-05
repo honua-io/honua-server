@@ -299,13 +299,12 @@ internal sealed partial class ODataCrudService
                     "Resource has not changed.");
             }
 
-            // The If-Match pre-check above ran against a read snapshot; carry the
-            // snapshot's canonical state token to the writer so the precondition is
-            // re-validated inside the write transaction (closes the read-merge-write
-            // lost-update window).
-            var expectedStateToken = string.IsNullOrWhiteSpace(ifMatch)
-                ? null
-                : FeatureStateToken.Compute(existingFeatureValue);
+            // PATCH merges a read snapshot, so protect that snapshot inside the write
+            // transaction even without If-Match. Otherwise an omitted property or
+            // geometry could overwrite a concurrent edit. Unconditional PUT is a replacement.
+            var expectedStateToken = !replace || !string.IsNullOrWhiteSpace(ifMatch)
+                ? FeatureStateToken.Compute(existingFeatureValue)
+                : null;
 
             // PATCH preserves omitted geometry; PUT replaces it with null unless supplied.
             byte[]? geometryBytes = replace ? null : existingFeatureValue.Geometry;
@@ -372,8 +371,11 @@ internal sealed partial class ODataCrudService
             if (editResult.Result is { } updateEditResult &&
                 updateEditResult.UpdateResults.Any(static result => result.IsPreconditionFailure))
             {
-                return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
-                    "ETag does not match the current resource.");
+                return string.IsNullOrWhiteSpace(ifMatch)
+                    ? ODataCrudResult<Dictionary<string, object?>>.Conflict(
+                        "The feature changed during the update. Retry the PATCH against the current resource.")
+                    : ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
+                        "ETag does not match the current resource.");
             }
 
             var result = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
