@@ -1,13 +1,19 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
+using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Attachments.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Db.Postgres.Features.Attachments;
 using Honua.FileStorage;
 using Honua.Server.Tests.Infrastructure;
+using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -216,6 +222,47 @@ public class PostgresAttachmentStoreTests : IAsyncLifetime
         Assert.Equal(original.Size, result.Size);
         Assert.Equal(original.StoragePath, result.StoragePath);
         Assert.Equal(original.CreatedAt, result.CreatedAt);
+    }
+
+    [Theory]
+    [InlineData("new keywords")]
+    [InlineData(null)]
+    public async Task UpdateAttachmentAsync_KeywordsReadBeforeReplacement_PreservesReplacementContent(string? keywords)
+    {
+        var original = await CreateTestAttachment();
+        const string replacementText = "replacement content survives the keywords update";
+        Attachment replacement = default;
+        var interleavedStore = Substitute.For<IAttachmentStore>();
+        interleavedStore.GetAsync(TestLayerId, TestFeatureId, original.Id, Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                var snapshot = await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id);
+                using var content = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(replacementText));
+                replacement = await _attachmentStore.ReplaceAsync(
+                    TestLayerId, TestFeatureId, original.Id, "replacement.txt", "text/plain", content, "replacement keywords");
+                return snapshot;
+            });
+        interleavedStore.UpdateAsync(TestLayerId, TestFeatureId, Arg.Any<Attachment>(), Arg.Any<CancellationToken>())
+            .Returns(call => _attachmentStore.UpdateAsync(TestLayerId, TestFeatureId, call.Arg<Attachment>()));
+
+        var response = await AttachmentHandler.UpdateAttachmentAsync(
+            new DefaultHttpContext(), TestLayerId, TestFeatureId, original.Id, null, keywords,
+            interleavedStore, new AttachmentLimits(), new FileUploadSecurityOptions(),
+            NullLogger<AttachmentOperations>.Instance, CancellationToken.None);
+
+        Assert.True(Assert.IsType<Ok<UpdateAttachmentResponse>>(response).Value!.UpdateAttachmentResult.Success);
+        var current = await _attachmentStore.GetAsync(TestLayerId, TestFeatureId, original.Id);
+        Assert.True(current.HasValue);
+        Assert.Equal(replacement.StoragePath, current.Value.StoragePath);
+        Assert.Equal(replacement.Filename, current.Value.Filename);
+        Assert.Equal(replacement.ContentType, current.Value.ContentType);
+        Assert.Equal(replacement.Size, current.Value.Size);
+        Assert.Equal(keywords, current.Value.Keywords);
+        Assert.False(await _fileStorage.ExistsAsync(original.StoragePath));
+        var download = await _attachmentStore.DownloadAsync(TestLayerId, TestFeatureId, original.Id);
+        Assert.True(download.HasValue);
+        using var reader = new StreamReader(download.Value.Content);
+        Assert.Equal(replacementText, await reader.ReadToEndAsync());
     }
 
     [Fact]
