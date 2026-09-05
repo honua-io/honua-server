@@ -276,7 +276,7 @@ public static class VersionManagementServerEndpoints
             contentType: "application/json");
     }
 
-    // ---- Lifecycle (Enterprise-gated, write-authorized) ----------------------------------------
+    // ---- Lifecycle (Pro-gated, write-authorized) ----------------------------------------
 
     private static async Task<IResult> HandleCreate(
         string serviceId,
@@ -797,7 +797,7 @@ public static class VersionManagementServerEndpoints
     }
 
     /// <summary>
-    /// Enterprise-gates the version-management surface, enforces service write authorization, and
+    /// Pro-gates the version-management surface, enforces service write authorization, and
     /// reads the request body. Returns a non-null gate result to short-circuit on any failure.
     /// </summary>
     private static async Task<(IResult? Gate, IReadOnlyDictionary<string, StringValues>? Values)> AuthorizeAndReadAsync(

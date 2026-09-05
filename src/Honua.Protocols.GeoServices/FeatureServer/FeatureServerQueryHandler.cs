@@ -1627,7 +1627,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
         // Resolve gdbVersion to a branch VersionContext (#1272, ADR-0051). Absent / SDE.DEFAULT
         // resolves to DEFAULT, where the canonical read overlay is a no-op so the query SQL stays
-        // byte-identical (CITE-protected). A named version is Enterprise-gated and Postgres-only.
+        // byte-identical (CITE-protected). A named version is Pro-gated and Postgres-only.
         var (versionContext, versionError) = await FeatureServerVersioning.ResolveQueryVersionAsync(
             context, validatedParams.GdbVersion, cancellationToken).ConfigureAwait(false);
         if (versionError != null)
