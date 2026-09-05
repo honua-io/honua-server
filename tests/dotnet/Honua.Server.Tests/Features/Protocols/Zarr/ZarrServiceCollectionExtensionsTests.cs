@@ -68,6 +68,25 @@ public sealed class ZarrServiceCollectionExtensionsTests
             .Which.Should().BeEquivalentTo(registration);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void AddZarrServices_WithScopedMetadataAndAuthorization_ResolvesWithinEachRequestScope()
+    {
+        var services = CreateServices();
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+        using var firstScope = provider.CreateScope();
+        using var secondScope = provider.CreateScope();
+
+        var firstService = firstScope.ServiceProvider.GetRequiredService<IZarrTileService>();
+        firstService.Should().BeSameAs(firstScope.ServiceProvider.GetRequiredService<IZarrTileService>());
+        firstService.Should().NotBeSameAs(secondScope.ServiceProvider.GetRequiredService<IZarrTileService>());
+    }
+
     private static ServiceCollection CreateServices()
     {
         var services = new ServiceCollection();
