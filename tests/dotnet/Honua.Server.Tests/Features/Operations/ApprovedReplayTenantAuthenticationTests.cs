@@ -19,6 +19,47 @@ namespace Honua.Server.Tests.Features.Operations;
 [Trait("Tier", "Fast")]
 public sealed class ApprovedReplayTenantAuthenticationTests
 {
+    [Fact]
+    public async Task ApprovedCredential_RotationCannotReissueSealedAuthority()
+    {
+        var store = new InMemoryAdminApiKeyStore();
+        var key = await store.CreateAsync("approved-operation:proposal-a",
+            [AdminApiKeyPermission.CreateApprovedOperationGrant("PUT", "/api/v1/admin/metadata/layers/1/filter"),
+                "admin:operation:tenant:tenant-a"], DateTimeOffset.UtcNow.AddMinutes(5), "requester", CancellationToken.None);
+
+        (await store.RotateAsync(key.Record.Id, CancellationToken.None)).Should().BeNull();
+        (await store.ValidateAsync(key.Key, CancellationToken.None)).Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ApprovedCredential_MissingOrConflictingTenantBinding_FailsAuthentication(bool conflicting)
+    {
+        var store = new InMemoryAdminApiKeyStore();
+        var grants = new List<string>
+        {
+            AdminApiKeyPermission.CreateApprovedOperationGrant("PUT", "/api/v1/admin/metadata/layers/1/filter"),
+        };
+        if (conflicting)
+        {
+            grants.Add("admin:operation:tenant:tenant-a");
+            grants.Add("admin:operation:tenant:tenant-b");
+        }
+
+        var key = await store.CreateAsync("approved-operation:proposal-a", grants,
+            DateTimeOffset.UtcNow.AddMinutes(5), "requester", CancellationToken.None);
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-API-Key"] = key.Key;
+        var options = Substitute.For<IOptionsMonitor<AuthenticationSchemeOptions>>();
+        options.Get(Arg.Any<string>()).Returns(new AuthenticationSchemeOptions());
+        var handler = new ApiKeyAuthenticationHandler(options, NullLoggerFactory.Instance, UrlEncoder.Default,
+            new ApiKeyAuthenticationDependencies(Options.Create(new ApiKeyAuthenticationOptions()), adminApiKeyStore: store));
+        await handler.InitializeAsync(new AuthenticationScheme("ApiKey", null, typeof(ApiKeyAuthenticationHandler)), context);
+
+        (await handler.AuthenticateAsync()).Succeeded.Should().BeFalse();
+    }
+
     [Theory]
     [InlineData("tenant-a", true)]
     [InlineData("tenant-b", true)]
