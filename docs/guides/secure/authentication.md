@@ -58,10 +58,16 @@ token are authorized by operator RBAC instead of this API-key recipe.
 Approval and execution remain separate authorities. The Console sends the
 read/approve key only to the proposal decision endpoint. After approval, Honua
 mints a short-lived, single-use credential bound to the exact approved Admin API
-method and path, uses it for the replay, and revokes it immediately. The
+method, path, and sealed tenant, uses it for the replay, and revokes it immediately.
+The tenant binding is restored from the persisted credential during authentication;
+a caller-supplied tenant header cannot change it. Credentials without an explicit
+tenant binding are rejected. An explicit empty binding preserves an invocation
+accepted with tenant resolution disabled. The
 approver's key and identity headers are never forwarded as execution authority;
 `admin:operation:*` grants are server-reserved and cannot be requested through
-the API-key creation endpoint.
+the API-key creation endpoint. Internal replay credentials are excluded from
+public key listings and permission inspection, and cannot be rotated into a
+new plaintext credential.
 
 Proposal lists, proposal reads and decisions, and operation-handle reads are
 restricted to the tenant recorded when the operation was accepted. A record

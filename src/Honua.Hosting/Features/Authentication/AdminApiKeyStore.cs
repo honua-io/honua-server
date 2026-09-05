@@ -110,7 +110,8 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!_keys.TryGetValue(id, out var existing) || existing.RevokedAt is not null)
+        if (!_keys.TryGetValue(id, out var existing) || existing.RevokedAt is not null ||
+            existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
         {
             return Task.FromResult<AdminApiKeyCreateResult?>(null);
         }
@@ -256,7 +257,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     public async Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken)
     {
         var existing = await ReadAsync(id, cancellationToken).ConfigureAwait(false);
-        if (existing is null || existing.RevokedAt is not null) return null;
+        if (existing is null || existing.RevokedAt is not null || existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant)) return null;
         var now = _timeProvider.GetUtcNow();
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
         var updated = existing with { KeyPrefix = key[..Math.Min(12, key.Length)], KeyHash = SHA256.HashData(Encoding.UTF8.GetBytes(key)), UpdatedAt = now, RotatedAt = now, LastUsedAt = null };
