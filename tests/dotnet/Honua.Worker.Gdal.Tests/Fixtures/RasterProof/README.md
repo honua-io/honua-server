@@ -15,9 +15,9 @@ the pinned GDAL image with this directory mounted at `/proof` and entrypoint
 
 | Issue / operation | Independent oracle |
 | --- | --- |
-| #3923 clip | L polygon selects source column 1 and row 2; explicit inside, boundary-adjacent, outside, and source-nodata cells in both bands. |
+| #3923 clip | L polygon selects source column 1 and row 2; explicit inside, boundary-adjacent, outside, and source-nodata cells in both bands. A source without nodata separately proves the internal TIFF mask excludes exterior zero fill while preserving an interior valid zero. |
 | #3924 zonal statistics | Disjoint sets {10,20,50}, {30,40,70,80}, overlapping set {20,30,70}, and an all-nodata zone; count/min/max/sum/mean and original band 2. A 513-column fixture separately verifies merging counts, sums, and population variance across read windows. |
-| #3925 spectral index | Red/NIR/blue inputs from the committed multiband reflectance TIFF; NDVI and EVI equations, Float32 tolerance, undefined denominator and source nodata. |
+| #3925 spectral index | Red/NIR/blue inputs from the committed multiband reflectance TIFF; NDVI and EVI equations, Float32 tolerance, undefined denominator and source nodata. Explicit output nodata and a source without nodata verify sentinel override and NaN fallback. |
 | #3926 reproject | Spherical Mercator forward bounds with R=6378137, transformed diagonal cell size, inverse-mapped output cell centers, nearest/bilinear weights and nodata in both bands. |
 | #3927 mosaic | Two 3x2 two-band tiles overlap one column; explicit arrays for first/last source precedence, nodata fallback and a remaining hole. |
 | #3928 resample | Half-sized cells use independently calculated separable linear weights or nearest selection; nodata central samples stay masked and other weights renormalize. |
@@ -25,7 +25,10 @@ the pinned GDAL image with this directory mounted at `/proof` and entrypoint
 | #3930 histogram | Counts 3,2,5,1 for values 0,1,2,3; all other buckets zero, including excluded nodata 255; valid count 11. |
 
 Every raster output checks CRS, all six affine ordinates, dimensions, band count,
-pixel type, nodata metadata, and decoded pixel values. Fixtures and assertions
+pixel type, nodata metadata, GDAL mask-band values, and decoded pixel values. The
+no-nodata zonal fixture counts the five selected cells (including valid zero),
+excludes the cutline exterior, and independently sums their values to 39.
+Fixtures and assertions
 distinguish well-formed but wrong results such as copied inputs, swapped bands,
 wrong resamplers, reversed mosaic precedence, nodata counted as data, and global
 statistics substituted for zone selection.

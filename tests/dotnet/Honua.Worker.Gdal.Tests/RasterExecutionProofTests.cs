@@ -44,7 +44,7 @@ public sealed class RasterExecutionProofTests : IDisposable
     }
 
     [Fact]
-    public async Task Clip_SourceWithoutNoData_UsesAlphaMaskAndPreservesValidZero()
+    public async Task Clip_SourceWithoutNoData_UsesInternalMaskAndPreservesValidZero()
     {
         using var cutline = JsonDocument.Parse(await File.ReadAllTextAsync(Fixture("cutline.geojson")));
         var geometry = new GeoJsonReader().Read<NetTopologySuite.Geometries.Geometry>(
@@ -107,13 +107,20 @@ public sealed class RasterExecutionProofTests : IDisposable
     }
 
     [Theory]
-    [InlineData("ndvi")]
-    [InlineData("evi")]
-    public async Task SpectralIndex_ReflectanceBands_MatchFormulaIncludingUndefinedAndNoData(string index)
+    [InlineData("ndvi", true, false)]
+    [InlineData("evi", true, false)]
+    [InlineData("ndvi", true, true)]
+    [InlineData("ndvi", false, false)]
+    public async Task SpectralIndex_ReflectanceBands_MatchFormulaIncludingUndefinedAndNoData(string index, bool sourceHasNoData, bool overrideNoData)
     {
         Directory.CreateDirectory(_scratch);
-        File.Copy(Fixture("reflectance.tif"), Path.Join(_scratch, "reflectance.tif"));
+        File.Copy(Fixture(sourceHasNoData ? "reflectance.tif" : "reflectance-unmasked.tif"), Path.Join(_scratch, "reflectance.tif"));
         var inputs = new List<(string, string)> { ("index", index) };
+        var outputNoData = overrideNoData ? -1234 : sourceHasNoData ? NoData : double.NaN;
+        if (overrideNoData)
+        {
+            inputs.Add(("noData", "-1234"));
+        }
         foreach (var (role, band) in new[] { ("red", "1"), ("nir", "2"), ("blue", "3") })
         {
             await Run("gdal_translate", ["-b", band, "reflectance.tif", role + ".tif"]);
@@ -124,10 +131,10 @@ public sealed class RasterExecutionProofTests : IDisposable
         double[] red = [0.2, 0.1, 0, NoData, 0.3, 0.2, 0.4, 0.1];
         double[] nir = [0.6, 0.5, 0, 0.8, 0.3, 0.8, 0.2, NoData];
         double[] blue = [0.1, 0.05, 2.0 / 15, 0.1, 0.2, 0.1, 0.1, 0.1];
-        var expected = Enumerable.Range(0, 8).Select(i => red[i] == NoData || nir[i] == NoData ? NoData
+        var expected = Enumerable.Range(0, 8).Select(i => sourceHasNoData && (red[i] == NoData || nir[i] == NoData) ? outputNoData
             : index == "ndvi" ? (nir[i] - red[i]) / (nir[i] + red[i])
             : 2.5 * (nir[i] - red[i]) / (nir[i] + 6 * red[i] - 7.5 * blue[i] + 1)).ToArray();
-        AssertBand(output, 0, expected.Select(v => double.IsFinite(v) ? v : NoData).ToArray(), tolerance: 1e-6);
+        AssertBand(output, 0, expected.Select(v => double.IsFinite(v) ? v : outputNoData).ToArray(), nodata: outputNoData, tolerance: 1e-6);
     }
 
     [Theory]

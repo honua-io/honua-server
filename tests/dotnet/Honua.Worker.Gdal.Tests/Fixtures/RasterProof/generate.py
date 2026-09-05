@@ -29,6 +29,12 @@ raster("grid-unmasked.tif", [[[1, 0, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 
 raster("reflectance.tif", [[[0.2, 0.1, 0, -9999], [0.3, 0.2, 0.4, 0.1]],
                             [[0.6, 0.5, 0, 0.8], [0.3, 0.8, 0.2, -9999]],
                             [[0.1, 0.05, 2 / 15, 0.1], [0.2, 0.1, 0.1, 0.1]]])
+reflectance = gdal.Open(str(root / "reflectance.tif"))
+unmasked = gdal.GetDriverByName("GTiff").CreateCopy(str(root / "reflectance-unmasked.tif"), reflectance)
+for i in range(1, 4):
+    unmasked.GetRasterBand(i).DeleteNoDataValue()
+unmasked.Close()
+reflectance.Close()
 raster("mosaic-a.tif", [[[1, 2, 3], [4, 5, -9999]], [[11, 12, 13], [14, 15, -9999]]], (0, 1, 0, 2, 0, -1))
 raster("mosaic-b.tif", [[[30, 40, 50], [60, -9999, 80]], [[130, 140, 150], [160, -9999, 180]]], (2, 1, 0, 2, 0, -1))
 raster("histogram.tif", [[[0, 0, 0, 1], [1, 2, 2, 2], [2, 2, 3, 255]]], dtype=gdal.GDT_Byte, nodata=255)
