@@ -11,6 +11,7 @@ public sealed class OperationScopeMappingTests
 {
     [Theory]
     [InlineData("admin.layer.publish", OperatorOperation.Publish)]
+    [InlineData("style.apply-preset", OperatorOperation.Publish)]
     [InlineData("admin.connections.create", OperatorOperation.Create)]
     [InlineData("admin.import.upload", OperatorOperation.Create)]
     [InlineData("admin.layer.set-enabled", OperatorOperation.Update)]

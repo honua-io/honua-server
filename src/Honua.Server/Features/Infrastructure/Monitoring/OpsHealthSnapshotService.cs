@@ -239,6 +239,10 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
                 Status = entry.Value.Status.ToString(),
                 Description = entry.Value.Description,
                 DurationMs = entry.Value.Duration.TotalMilliseconds,
+                OutputStoreAttestation = entry.Key == "gp-output-store"
+                    ? entry.Value.Data.Where(item => item.Value is string)
+                        .ToDictionary(item => item.Key, item => (string)item.Value, StringComparer.Ordinal)
+                    : null,
             })
             .OrderBy(entry => entry.Name, StringComparer.Ordinal)
             .ToList();

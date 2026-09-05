@@ -15,6 +15,7 @@ using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Geoprocessing;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -585,16 +586,18 @@ public sealed class PublishedOperationToolTests
     public async Task Source_Enabled_PublishesDescriptorsAndExcludesHandAuthoredOps()
     {
         var source = new PublishedOperationToolSource(
-            Catalog(DeterministicReadOnlyDescriptor(), MutatingDescriptor(), ServicePublishDescriptor()),
+            Catalog(DeterministicReadOnlyDescriptor(), MutatingDescriptor(), ServicePublishDescriptor(), StylePresetOperation.BuildDescriptor()),
             Options.Create(new McpPublishedOperationOptions { Enabled = true }),
             NullLogger<PublishedOperationToolSource>.Instance,
-            requestMappers: [new TestApprovalMapper(MutatingOpId)]);
+            requestMappers: [new TestApprovalMapper(MutatingOpId), new StylePresetApprovalMapper()]);
 
         var names = (await source.GetToolsAsync(CancellationToken.None)).Select(t => t.Name).ToArray();
 
         names.Should().Contain(["honua_op_geo_summary", "honua_op_geo_export"]);
         names.Should().NotContain("honua_op_service_publish",
             "service.publish is already exposed by honua_publish_service");
+        names.Should().NotContain("honua_op_style_apply_preset",
+            "style.apply-preset is already exposed by honua_apply_style_preset");
     }
 
     [UnitTest]

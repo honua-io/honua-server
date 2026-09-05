@@ -55,6 +55,18 @@ public sealed class GeoprocessingOutputStagingOptions
     /// </summary>
     public string? LocalRootPath { get; set; }
 
+    /// <summary>Declared persistence contract. Enabled staging requires shared-persistent storage.</summary>
+    public string? PersistenceClass { get; set; }
+
+    /// <summary>Opaque identity of the topology's backup and restore policy.</summary>
+    public string? BackupIdentity { get; set; }
+
+    /// <summary>Store references included in that backup policy, supplied by deployment inventory.</summary>
+    public string[] BackupStoreReferences { get; set; } = [];
+
+    /// <summary>Expected SHA-256 configuration digest, identical on every producer and consumer.</summary>
+    public string? ConfigurationDigest { get; set; }
+
     /// <summary>Key prefix staged outputs are written under.</summary>
     [Required(AllowEmptyStrings = false)]
     [RegularExpression("^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._/-]{0,158}$",

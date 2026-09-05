@@ -5,6 +5,8 @@ using Honua.Alerts;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
+using Honua.FileStorage;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Monitoring;
 using Honua.Infrastructure.Logging;
@@ -26,6 +28,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
     private readonly IAlertDispatchHealth? _alertDispatchHealth;
     private readonly IAlertEvaluationHealth? _alertEvaluationHealth;
     private readonly AlertOptions _alertOptions;
+    private readonly GeoprocessingOutputStoreHealthCheck? _outputStoreHealth;
     private readonly MigrationState _migrationState;
     private readonly ILogger<ReadinessCheckService> _logger;
 
@@ -37,7 +40,8 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         IFeatureChangeEventStoreHealth? featureChangeEventStoreHealth = null,
         IAlertDispatchHealth? alertDispatchHealth = null,
         IAlertEvaluationHealth? alertEvaluationHealth = null,
-        IOptions<AlertOptions>? alertOptions = null)
+        IOptions<AlertOptions>? alertOptions = null,
+        GeoprocessingOutputStoreHealthCheck? outputStoreHealth = null)
     {
         _databaseHealthChecker = databaseHealthChecker;
         _cacheHealthChecker = cacheHealthChecker;
@@ -45,6 +49,7 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
         _alertDispatchHealth = alertDispatchHealth;
         _alertEvaluationHealth = alertEvaluationHealth;
         _alertOptions = alertOptions?.Value ?? new AlertOptions();
+        _outputStoreHealth = outputStoreHealth;
         _migrationState = migrationState ?? throw new ArgumentNullException(nameof(migrationState));
         _logger = logger;
     }
@@ -152,6 +157,16 @@ internal sealed class ReadinessCheckService : IReadinessCheckService
             {
                 Log.HealthCheckExecuted(_logger, "AlertEvaluation", "Unhealthy", 0);
                 return ReadinessResult.NotReady(evaluationReason);
+            }
+
+            if (_outputStoreHealth is not null)
+            {
+                currentCheckName = "Referenced output store";
+                var outputHealth = await _outputStoreHealth.CheckHealthAsync(new HealthCheckContext(), cancellationToken);
+                if (outputHealth.Status != HealthStatus.Healthy)
+                {
+                    return ReadinessResult.NotReady("Referenced output store attestation unavailable");
+                }
             }
 
             return ReadinessResult.Ready();
