@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Server.Features.Admin.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +15,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Startup;
 
 [Collection("Database")]
+[Protocol(TestProtocols.Health)]
+[Operation(Operations.ReadinessCheck)]
 public sealed class OfflineSyncDisabledStartupTests
 {
     [IntegrationTest]
