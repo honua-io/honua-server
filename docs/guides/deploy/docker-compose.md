@@ -125,9 +125,7 @@ EOF
 3. Put a TLS-terminating reverse proxy in front — Honua does not terminate TLS. Any proxy works; Caddy on the host is the shortest path (port 8080 carries HTTP/1 REST, port 8081 carries h2c gRPC for native SDK clients).
 
 ```bash
-set -a
-. ./.env
-set +a
+HONUA_HOST="$(sed -n 's/^HONUA_HOST=//p' .env)"
 printf '%s {\n  reverse_proxy 127.0.0.1:8080\n}\n' "$HONUA_HOST" | sudo tee /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
 
@@ -194,7 +192,7 @@ If Console is enabled behind the configured edge authenticator, confirm the ops 
 
 > Open `http://127.0.0.1:5174/operate`, `http://127.0.0.1:5174/operate/health`, `http://127.0.0.1:5174/operate/copilot` in a browser.
 
-The inline PostGIS config initializes the selected database before the final postmaster becomes healthy; an existing incompatible volume still fails the server preflight. Backing stores have no host port publication. Verify a candidate on fresh volumes with `python3 scripts/docker/smoke-production.py --image "$HONUA_IMAGE"` from a checkout. This check requires the corrected published Production image; the current image reported in the release notes aborts startup for missing rollback approval mappers.
+The inline PostGIS config initializes the selected database before the final postmaster becomes healthy; an existing incompatible volume still fails the server preflight. Backing stores have no host port publication. Verify a candidate on fresh volumes with `python3 scripts/docker/smoke-production.py --image "$HONUA_IMAGE"` from a checkout. The smoke also sends an authenticated Admin config request through Caddy using the configured public hostname and verifies rejection of an untrusted hostname. Its local proxy checks routing and authentication; public DNS and TLS certificates still need verification on the deployment host. This check requires the corrected published Production image; the current image reported in the release notes aborts startup for missing rollback approval mappers.
 
 CI can run the separate local quickstart smoke through `scripts/ci/smoke-quickstart-console.sh`.
 Set the repository variable `HONUA_CONSOLE_IMAGE` or pass the `console_image`
