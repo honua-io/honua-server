@@ -97,3 +97,7 @@ Supply declared text directly: a title of `2026`, `true`, or `null` stays a JSON
 string when sent to the Admin API. Supply numbers, booleans, arrays, and objects
 as JSON in the operation parameter value. Pagination and service filters are
 forwarded as query parameters, including values containing reserved characters.
+
+Operate validation also enforces declared scalar types, enum and format constraints,
+and explicit nullability of supplied objects, collections, and collection entries.
+Optional nullable values remain valid when their target scope does not require them.

@@ -51,20 +51,20 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
                 continue;
             }
 
-            if (parameter.Schema.Type is WorkflowSchemaValueType.Structured or WorkflowSchemaValueType.List)
+            var schema = AdminOperateOperationCatalog.GetInputContract(OperationId, parameter.Name);
+            if (parameter.Schema.Type == WorkflowSchemaValueType.Text)
             {
-                try
-                {
-                    using var document = JsonDocument.Parse(value);
-                    if (parameter.Required && document.RootElement.ValueKind == JsonValueKind.Null)
-                        messages.Add($"Required parameter '{parameter.Name}' is missing.");
-                    else
-                        ValidateRequiredMembers(document.RootElement, parameter.Schema, parameter.Name, messages);
-                }
-                catch (JsonException)
-                {
-                    messages.Add($"Parameter '{parameter.Name}' must contain valid JSON.");
-                }
+                ValidateText(value, schema, parameter.Name, messages);
+                continue;
+            }
+            try
+            {
+                using var document = JsonDocument.Parse(value);
+                ValidateValue(document.RootElement, schema, parameter.Name, messages);
+            }
+            catch (JsonException)
+            {
+                messages.Add($"Parameter '{parameter.Name}' must contain valid JSON.");
             }
         }
 
@@ -90,7 +90,8 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
                 "collection" => ["collectionId"],
                 _ => [],
             };
-            foreach (var name in required.Where(name => string.IsNullOrWhiteSpace(request.Parameters.GetValueOrDefault(name))))
+            foreach (var name in required.Where(name => string.IsNullOrWhiteSpace(request.Parameters.GetValueOrDefault(name)) ||
+                (name == "layerId" && request.Parameters.GetValueOrDefault(name)?.Trim() == "null")))
                 messages.Add($"Required parameter '{name}' is missing for '{scope}' scope.");
         }
 
@@ -102,37 +103,75 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         });
     }
 
-    private static void ValidateRequiredMembers(JsonElement value, WorkflowSchemaDefinition schema,
-        string path, List<string> messages)
+    private static void ValidateValue(JsonElement value, JsonElement schema, string path, List<string> messages)
     {
-        if (value.ValueKind != JsonValueKind.Null &&
-            ((schema.Type == WorkflowSchemaValueType.Structured && value.ValueKind != JsonValueKind.Object) ||
-             (schema.Type == WorkflowSchemaValueType.List && value.ValueKind != JsonValueKind.Array)))
+        schema = AdminOperateOperationCatalog.ResolveInputContract(schema);
+        if (value.ValueKind == JsonValueKind.Null)
+        {
+            if (!schema.TryGetProperty("nullable", out var nullable) || !nullable.GetBoolean())
+                messages.Add($"Parameter '{path}' cannot be null.");
+            return;
+        }
+        var type = schema.TryGetProperty("type", out var declaredType) ? declaredType.GetString() : "object";
+        var valid = type switch
+        {
+            "object" => value.ValueKind == JsonValueKind.Object,
+            "array" => value.ValueKind == JsonValueKind.Array,
+            "string" => value.ValueKind == JsonValueKind.String,
+            "integer" => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
+            "number" => value.ValueKind == JsonValueKind.Number,
+            "boolean" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
+            _ => false
+        };
+        if (!valid)
         {
             messages.Add($"Parameter '{path}' has an invalid JSON type.");
             return;
         }
+        if (value.ValueKind == JsonValueKind.String)
+            ValidateText(value.GetString()!, schema, path, messages);
+        if (value.ValueKind == JsonValueKind.Number && schema.TryGetProperty("format", out var format) &&
+            format.GetString() == "int32" && !value.TryGetInt32(out _))
+            messages.Add($"Parameter '{path}' must be a 32-bit integer.");
         if (value.ValueKind == JsonValueKind.Object)
         {
-            foreach (var name in schema.RequiredProperties)
+            if (schema.TryGetProperty("required", out var required))
             {
-                if (!value.TryGetProperty(name, out var member) || member.ValueKind == JsonValueKind.Null ||
-                    (member.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(member.GetString())))
-                    messages.Add($"Required parameter '{path}.{name}' is missing.");
+                foreach (var name in required.EnumerateArray().Select(static item => item.GetString()!))
+                {
+                    if (!value.TryGetProperty(name, out var member) || member.ValueKind == JsonValueKind.Null ||
+                        (member.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(member.GetString())))
+                        messages.Add($"Required parameter '{path}.{name}' is missing.");
+                }
             }
-            foreach (var property in value.EnumerateObject())
+            if (schema.TryGetProperty("properties", out var properties))
             {
-                if (schema.Properties.TryGetValue(property.Name, out var memberSchema))
-                    ValidateRequiredMembers(property.Value, memberSchema, $"{path}.{property.Name}", messages);
+                foreach (var property in value.EnumerateObject())
+                {
+                    if (properties.TryGetProperty(property.Name, out var child))
+                        ValidateValue(property.Value, child, $"{path}.{property.Name}", messages);
+                }
             }
         }
-        else if (value.ValueKind == JsonValueKind.Array && schema.Items is { } itemSchema)
+        else if (value.ValueKind == JsonValueKind.Array && schema.TryGetProperty("items", out var items))
         {
             var index = 0;
             foreach (var item in value.EnumerateArray())
-                ValidateRequiredMembers(item, itemSchema, $"{path}[{index++}]", messages);
+                ValidateValue(item, items, $"{path}[{index++}]", messages);
         }
+    }
 
+    private static void ValidateText(string value, JsonElement schema, string path, List<string> messages)
+    {
+        if (schema.TryGetProperty("enum", out var values) &&
+            !values.EnumerateArray().Any(item => item.GetString() == value))
+            messages.Add($"Parameter '{path}' is not an allowed value.");
+        if (!schema.TryGetProperty("format", out var format)) return;
+        if (format.GetString() == "uuid" && !Guid.TryParse(value, out _))
+            messages.Add($"Parameter '{path}' must be a UUID.");
+        if (format.GetString() == "date-time" && !DateTimeOffset.TryParse(value,
+            System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _))
+            messages.Add($"Parameter '{path}' must be a date-time.");
     }
 
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,

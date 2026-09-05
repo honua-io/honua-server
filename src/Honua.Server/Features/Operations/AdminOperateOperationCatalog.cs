@@ -50,6 +50,8 @@ internal static class AdminOperateOperationCatalog
         Read("admin.server.features", "Get server features", "/features", "getFeatureOverview")
     ];
 
+    private static readonly JsonElement RequestContract = LoadContract();
+
     public static IReadOnlyList<OperationDescriptor> Descriptors { get; } = BuildDescriptors();
 
     private static Definition Read(string id, string title, string path, string openApiId) =>
@@ -60,13 +62,41 @@ internal static class AdminOperateOperationCatalog
         OperationClass operationClass = OperationClass.AdminConfigChange) =>
         new(id, title, method, path, openApiId, sideEffect, blastRadius, OperationClass: operationClass);
 
-    private static OperationDescriptor[] BuildDescriptors()
+    private static JsonElement LoadContract()
     {
         using var stream = typeof(AdminOperateOperationCatalog).Assembly.GetManifestResourceStream("Honua.Server.admin-api.json")
             ?? throw new InvalidOperationException("Embedded admin-api.json contract was not found.");
         using var document = JsonDocument.Parse(stream);
-        return Definitions.Select(definition => BuildDescriptor(document.RootElement, definition)).ToArray();
+        return document.RootElement.Clone();
     }
+
+    private static OperationDescriptor[] BuildDescriptors() =>
+        Definitions.Select(definition => BuildDescriptor(RequestContract, definition)).ToArray();
+
+    internal static JsonElement GetInputContract(string operationId, string name)
+    {
+        var definition = Definitions.Single(item => item.OperationId == operationId);
+        var operation = FindOperation(RequestContract, definition.OpenApiOperationId);
+        if (operation.TryGetProperty("parameters", out var parameters))
+        {
+            foreach (var candidate in parameters.EnumerateArray())
+            {
+                var parameter = Resolve(RequestContract, candidate);
+                if (parameter.GetProperty("name").GetString() == name)
+                    return ResolveInputContract(parameter.GetProperty("schema"));
+            }
+        }
+        if (TryGetContentSchema(operation, "requestBody", out var body))
+        {
+            body = ResolveInputContract(body);
+            if (body.TryGetProperty("properties", out var properties) && properties.TryGetProperty(name, out var property))
+                return ResolveInputContract(property);
+            if (name == "body") return body;
+        }
+        throw new InvalidOperationException($"Input contract '{operationId}.{name}' was not found.");
+    }
+
+    internal static JsonElement ResolveInputContract(JsonElement schema) => Resolve(RequestContract, schema);
 
     private static OperationDescriptor BuildDescriptor(JsonElement root, Definition definition)
     {

@@ -255,6 +255,7 @@ public sealed class AdminOperationRequestContractTests
     [InlineData("scope", "typo")]
     [InlineData("layerId", "1.5")]
     [InlineData("layerId", "2147483648")]
+    [InlineData("layerId", "null")]
     public async Task Validate_InvalidScalarOrEnum_IsRejected(string parameter, string value)
     {
         using var client = new HttpClient(new CaptureHandler());
