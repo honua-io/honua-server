@@ -576,7 +576,7 @@
             }
           },
           "413": {
-            "description": "The requested result exceeds the configured artifact response limit",
+            "description": "The selected results exceed the configured aggregate artifact response limit",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -809,7 +809,7 @@
         "properties": {
           "inputs": {
             "type": "object",
-            "description": "Inputs for the selected process. The canonical analysis process uses plan; direct processes use their advertised input identifiers and accept bare values, qualified values, or href links.",
+            "description": "Inputs for the selected process. The canonical analysis process uses plan; direct processes use their advertised input identifiers and accept bare values, qualified values, or href links. Authorization selectors require inline values or data URIs before external input downloads.",
             "properties": {
               "plan": { "$ref": "#/components/schemas/AnalysisPlan" }
             },

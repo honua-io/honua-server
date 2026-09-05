@@ -467,6 +467,7 @@ internal static class JobEndpoints
         AnalysisResultPackage resultPackage)
     {
         var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        var remainingBytes = GetMaxResponseBytes(context) - 2; // JSON object delimiters.
         var selectedOutputNames = GetSelectedOutputNames(job);
         for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
@@ -477,7 +478,7 @@ internal static class JobEndpoints
                 continue;
             }
 
-            var materialized = await MaterializeArtifactAsync(context, artifact).ConfigureAwait(false);
+            var materialized = await MaterializeArtifactAsync(context, artifact, remainingBytes).ConfigureAwait(false);
             if (materialized.Payload == null)
             {
                 return OgcProcessesResults.Error(
@@ -503,7 +504,17 @@ internal static class JobEndpoints
                     error ?? "The process output is not valid for its declared media type.");
             }
 
-            outputs[ResolveUniqueOutputName(resolvedOutputName, outputs)] = value;
+            var outputName = ResolveUniqueOutputName(resolvedOutputName, outputs);
+            var encodedName = JsonSerializer.Serialize(outputName, OgcProcessesJsonContext.Default.String);
+            var outputBytes = (long)Encoding.UTF8.GetByteCount(encodedName)
+                + Encoding.UTF8.GetByteCount(value.GetRawText()) + 1 + (outputs.Count > 0 ? 1 : 0);
+            if (outputBytes > remainingBytes)
+            {
+                return ResultResponseTooLarge();
+            }
+
+            remainingBytes -= outputBytes;
+            outputs[outputName] = value;
         }
 
         return Results.Json(
@@ -519,6 +530,8 @@ internal static class JobEndpoints
         AnalysisResultPackage resultPackage)
     {
         var values = new List<(string Name, byte[] Payload, string MediaType)>();
+        var maxResponseBytes = GetMaxResponseBytes(context);
+        var remainingBytes = maxResponseBytes;
         var selectedOutputNames = GetSelectedOutputNames(job);
         for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
@@ -529,7 +542,7 @@ internal static class JobEndpoints
                 continue;
             }
 
-            var materialized = await MaterializeArtifactAsync(context, artifact).ConfigureAwait(false);
+            var materialized = await MaterializeArtifactAsync(context, artifact, remainingBytes).ConfigureAwait(false);
             if (materialized.Payload == null)
             {
                 return OgcProcessesResults.Error(
@@ -546,6 +559,7 @@ internal static class JobEndpoints
                     "The process output declares an invalid media type.");
             }
 
+            remainingBytes -= materialized.Payload.LongLength;
             values.Add((
                 outputName,
                 materialized.Payload,
@@ -566,17 +580,38 @@ internal static class JobEndpoints
         }
 
         var boundary = $"honua-{Guid.NewGuid():N}";
-        using var body = new MemoryStream();
-        foreach (var value in values)
+        var headers = values.Select(value => Encoding.UTF8.GetBytes(
+            $"--{boundary}\r\nContent-Type: {value.MediaType}\r\nContent-ID: <{value.Name}>\r\n\r\n")).ToArray();
+        var separator = "\r\n"u8.ToArray();
+        var footer = Encoding.UTF8.GetBytes($"--{boundary}--\r\n");
+        var framingBytes = headers.Sum(header => (long)header.Length) + values.Count * 2L + footer.Length;
+        if (framingBytes > remainingBytes)
         {
-            WriteUtf8(body, $"--{boundary}\r\nContent-Type: {value.MediaType}\r\nContent-ID: <{value.Name}>\r\n\r\n");
-            body.Write(value.Payload);
-            WriteUtf8(body, "\r\n");
+            return ResultResponseTooLarge();
         }
 
-        WriteUtf8(body, $"--{boundary}--\r\n");
-        return Results.Bytes(body.ToArray(), $"multipart/related; boundary=\"{boundary}\"");
+        // Payloads share one response budget. Stream the framing and bounded parts
+        // directly to avoid a second full multipart buffer and a ToArray copy.
+        return Results.Stream(async stream =>
+        {
+            for (var index = 0; index < values.Count; index++)
+            {
+                await stream.WriteAsync(headers[index], context.RequestAborted).ConfigureAwait(false);
+                await stream.WriteAsync(values[index].Payload, context.RequestAborted).ConfigureAwait(false);
+                await stream.WriteAsync(separator, context.RequestAborted).ConfigureAwait(false);
+            }
+
+            await stream.WriteAsync(footer, context.RequestAborted).ConfigureAwait(false);
+        }, $"multipart/related; boundary=\"{boundary}\"");
     }
+
+    private static long GetMaxResponseBytes(HttpContext context)
+        => context.RequestServices.GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
+            ?? 50L * 1024L * 1024L;
+
+    private static IResult ResultResponseTooLarge()
+        => OgcProcessesResults.Error(StatusCodes.Status413PayloadTooLarge,
+            "Process result too large", "The selected outputs exceed the configured artifact response limit.");
 
     private static async Task<IResult> DismissJob(
         string jobId,
@@ -766,11 +801,9 @@ internal static class JobEndpoints
 
     private static async Task<MaterializedArtifact> MaterializeArtifactAsync(
         HttpContext context,
-        ArtifactRef artifact)
+        ArtifactRef artifact,
+        long maxArtifactBytes)
     {
-        var maxArtifactBytes = context.RequestServices
-            .GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
-            ?? 50L * 1024L * 1024L;
         if (FeatureStreamArtifact.IsStreamReference(artifact.Uri))
         {
             return await MaterializeFeatureStreamAsync(context, artifact.Uri!, maxArtifactBytes).ConfigureAwait(false);
@@ -971,12 +1004,6 @@ internal static class JobEndpoints
 
         using var document = JsonDocument.Parse(stream.ToArray());
         return document.RootElement.Clone();
-    }
-
-    private static void WriteUtf8(Stream stream, string value)
-    {
-        var bytes = Encoding.UTF8.GetBytes(value);
-        stream.Write(bytes);
     }
 
     private readonly record struct MaterializedArtifact(

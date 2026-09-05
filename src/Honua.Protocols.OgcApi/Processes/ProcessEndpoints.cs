@@ -425,6 +425,16 @@ internal static class ProcessEndpoints
                     httpClientFactory,
                     context.RequestServices.GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
                         ?? 50L * 1024L * 1024L,
+                    async authorizationPlan =>
+                    {
+                        var boundPlan = await GeoprocessingRasterSourceResolution.BindLayerIdsAsync(
+                            authorizationPlan,
+                            processCatalog,
+                            context.RequestServices.GetService<IGeoprocessingRasterSourceResolver>(),
+                            cancellationToken).ConfigureAwait(false);
+                        await jobService.EnsurePlanExecutionTierAuthorizedAsync(
+                            boundPlan, context.User, cancellationToken).ConfigureAwait(false);
+                    },
                     cancellationToken).ConfigureAwait(false);
                 if (normalized.Request == null)
                 {
@@ -944,6 +954,7 @@ internal static class ProcessEndpoints
         ProcessDefinition definition,
         IHttpClientFactory httpClientFactory,
         long maxArtifactBytes,
+        Func<AnalysisPlan, Task> authorizeReferencesAsync,
         CancellationToken cancellationToken)
     {
         if (request.Inputs == null)
@@ -951,12 +962,32 @@ internal static class ProcessEndpoints
             return new InputNormalizationResult(request, null);
         }
 
-        var parameterNames = definition.Parameters.Select(parameter => parameter.Name).ToHashSet(StringComparer.Ordinal);
+        var parameters = definition.Parameters.ToDictionary(parameter => parameter.Name, StringComparer.Ordinal);
         foreach (var inputName in request.Inputs.Keys)
         {
-            if (!parameterNames.Contains(inputName))
+            if (!parameters.ContainsKey(inputName))
             {
                 return new InputNormalizationResult(null, $"Unknown input '{inputName}' for process '{definition.ProcessId}'.");
+            }
+        }
+
+        foreach (var input in request.Inputs)
+        {
+            if (input.Value.ValueKind == JsonValueKind.Object
+                && input.Value.TryGetProperty("href", out var reference)
+                && (reference.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(reference.GetString())))
+            {
+                return new InputNormalizationResult(null, $"Input '{input.Key}' href must be a non-empty string.");
+            }
+
+            if ((parameters[input.Key].IsAuthorizationSelector
+                    || (parameters[input.Key].ValueType == ProcessParameterValueType.LayerId
+                        && parameters[input.Key].LayerAccess != ProcessLayerAccess.None))
+                && TryGetReferenceHref(input.Value, out var selectorHref)
+                && !selectorHref.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                return new InputNormalizationResult(null,
+                    $"Input '{input.Key}' is an authorization selector and must be supplied inline or as a data URI.");
             }
         }
 
@@ -964,7 +995,12 @@ internal static class ProcessEndpoints
         // their aggregate payload before any resolved values are retained together.
         var remainingBytes = maxArtifactBytes;
         var inputs = request.Inputs.ToBuilder();
-        foreach (var input in request.Inputs)
+        var authorized = false;
+        // Decode local references first so layer/dataset selectors are known before
+        // the shared authorization gates run and before any outbound HTTP request.
+        foreach (var input in request.Inputs.OrderBy(input =>
+            TryGetReferenceHref(input.Value, out var href)
+                && href.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ? 0 : 1))
         {
             if (input.Value.ValueKind != JsonValueKind.Object
                 || !input.Value.TryGetProperty("href", out var hrefElement))
@@ -978,13 +1014,47 @@ internal static class ProcessEndpoints
                 return new InputNormalizationResult(null, $"Input '{input.Key}' href must be a non-empty string.");
             }
 
+            var href = hrefElement.GetString()!;
+            if (!href.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && !authorized)
+            {
+                var authorizationInputs = parameters.Values
+                    .Where(parameter => parameter.DefaultValue != null)
+                    .ToDictionary(parameter => parameter.Name, parameter => parameter.DefaultValue!, StringComparer.Ordinal);
+                foreach (var candidate in inputs)
+                {
+                    authorizationInputs[candidate.Key] = TryGetReferenceHref(candidate.Value, out _)
+                        ? "ogc-unmaterialized-reference"
+                        : JsonElementToCanonicalInput(GetInlineInputValue(candidate.Value, out _));
+                }
+
+                await authorizeReferencesAsync(new AnalysisPlan
+                {
+                    PlanId = "ogc-reference-authorization",
+                    IntentId = "ogc-reference-authorization",
+                    Steps = [new AnalysisPlanStep
+                    {
+                        StepId = "ogc-reference-inputs",
+                        Kind = AnalysisPlanStepKind.Geoprocess,
+                        ProcessId = definition.ProcessId,
+                        Inputs = authorizationInputs
+                    }]
+                }).ConfigureAwait(false);
+                authorized = true;
+            }
+
+            var parameter = parameters[input.Key];
+            var fallbackMediaType = parameter.AcceptsGeoJsonDataUri ? "application/geo+json"
+                : parameter.ValueType == ProcessParameterValueType.Wkb ? "application/wkb"
+                : parameter.ValueType == ProcessParameterValueType.WkbArray ? "application/json"
+                : "text/plain";
             var mediaTypeHint = input.Value.TryGetProperty("type", out var typeElement)
                 && typeElement.ValueKind == JsonValueKind.String
                     ? typeElement.GetString()
                     : null;
             var resolved = await ResolveInputReferenceAsync(
-                hrefElement.GetString()!,
+                href,
                 mediaTypeHint,
+                fallbackMediaType,
                 httpClientFactory,
                 remainingBytes,
                 cancellationToken).ConfigureAwait(false);
@@ -1004,9 +1074,24 @@ internal static class ProcessEndpoints
             null);
     }
 
+    private static bool TryGetReferenceHref(JsonElement input, out string href)
+    {
+        href = string.Empty;
+        if (input.ValueKind != JsonValueKind.Object
+            || !input.TryGetProperty("href", out var value)
+            || value.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        href = value.GetString() ?? string.Empty;
+        return true;
+    }
+
     private static async Task<ResolvedInputReference> ResolveInputReferenceAsync(
         string href,
         string? mediaTypeHint,
+        string fallbackMediaType,
         IHttpClientFactory httpClientFactory,
         long maxArtifactBytes,
         CancellationToken cancellationToken)
@@ -1072,6 +1157,7 @@ internal static class ProcessEndpoints
             }
         }
 
+        mediaType ??= fallbackMediaType;
         try
         {
             if (IsJsonMediaType(mediaType))

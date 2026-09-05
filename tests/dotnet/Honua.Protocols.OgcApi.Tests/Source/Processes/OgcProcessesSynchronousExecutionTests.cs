@@ -244,6 +244,76 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
         }
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [InlineData("analytics.cluster")]
+    [InlineData("data-management.delete-features")]
+    public async Task Execute_ReferenceAuthorizationDenied_DoesNotFetch(string processId)
+    {
+        var fetches = _fixture.ReferenceRequestCount;
+        var submissions = _fixture.SubmissionCount;
+        _fixture.DenyReferenceAuthorization = true;
+        try
+        {
+            using var content = new StringContent(
+                """{"inputs":{"layerId":{"href":"data:text/plain,7"},"where":{"href":"https://93.184.216.34/number.txt"}}}""",
+                Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                $"/ogc/processes/processes/{processId}/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            _fixture.ReferenceRequestCount.Should().Be(fetches);
+            _fixture.SubmissionCount.Should().Be(submissions);
+            _fixture.ReferenceAuthorizationPlan!.Steps.Single().ProcessId.Should().Be(processId);
+            _fixture.ReferenceAuthorizationPlan.Steps.Single().Inputs["layerId"].Should().Be("7");
+        }
+        finally
+        {
+            _fixture.DenyReferenceAuthorization = false;
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ExternalAuthorizationSelector_IsRejectedBeforeAnyFetch()
+    {
+        var fetches = _fixture.ReferenceRequestCount;
+        using var content = new StringContent(
+            """{"inputs":{"layerId":{"href":"https://93.184.216.34/number.txt"},"where":{"href":"https://93.184.216.34/number.txt"}}}""",
+            Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.PostAsync(
+            "/ogc/processes/processes/analytics.cluster/execution", content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("authorization selector");
+        _fixture.ReferenceRequestCount.Should().Be(fetches);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ReferencesWithoutMediaType_PreserveNumericAndTextValues()
+    {
+        var requests = new[]
+        {
+            ("geometry.buffer", "distance", "25.5",
+                $$$$"""{"inputs":{"wkb":"{{{{PointWkbBase64}}}}","srid":4326,"distance":{"href":"https://93.184.216.34/number.txt"}}}"""),
+            ("transform.attribute-rename", "to", "renamed",
+                """{"inputs":{"input":{"value":{"type":"FeatureCollection","features":[]},"mediaType":"application/geo+json"},"from":"oldName","to":{"href":"https://93.184.216.34/name.txt"}}}""")
+        };
+        foreach (var (processId, parameter, expected, body) in requests)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                $"/ogc/processes/processes/{processId}/execution");
+            request.Headers.Add("Prefer", "respond-async");
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            _fixture.SubmittedPlan!.Steps.Single().Inputs[parameter].Should().Be(expected);
+            AssertSubmittedPlanIsValid();
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
@@ -494,6 +564,10 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
     public int ReferenceRequestCount { get; private set; }
 
+    public bool DenyReferenceAuthorization { get; set; }
+
+    public AnalysisPlan? ReferenceAuthorizationPlan { get; private set; }
+
     public OgcProcessesSynchronousExecutionFixture()
     {
         var job = CreateJob();
@@ -505,6 +579,19 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 OperatorOperation.Execute,
                 Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
+        jobService.EnsurePlanExecutionTierAuthorizedAsync(
+                Arg.Any<AnalysisPlan>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                ReferenceAuthorizationPlan = callInfo.ArgAt<AnalysisPlan>(0);
+                if (DenyReferenceAuthorization)
+                {
+                    throw new GeoprocessingAuthorizationException(false, "Reference input authorization denied.",
+                        OperatorResourceType.Process, OperatorOperation.ExecuteMutatingProcess);
+                }
+
+                return ReferenceAuthorizationPlan;
+            });
         jobService.SubmitJobAsync(
                 Arg.Any<AnalysisPlan>(),
                 Arg.Any<string?>(),
@@ -567,7 +654,17 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             onRequest();
-            request.RequestUri!.AbsoluteUri.Should().Be("https://93.184.216.34/point.geojson");
+            var uri = request.RequestUri!.AbsoluteUri;
+            if (uri is "https://93.184.216.34/number.txt" or "https://93.184.216.34/name.txt")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes(
+                        uri.EndsWith("number.txt", StringComparison.Ordinal) ? "25.5" : "renamed"))
+                });
+            }
+
+            uri.Should().Be("https://93.184.216.34/point.geojson");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("""{"type":"Point","coordinates":[1,2]}""", Encoding.UTF8, "application/geo+json")

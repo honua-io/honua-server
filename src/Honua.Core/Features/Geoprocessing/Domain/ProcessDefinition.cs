@@ -207,6 +207,12 @@ public sealed record ProcessParameterSpec
     public bool AcceptsGeoJsonDataUri { get; init; }
 
     /// <summary>
+    /// Whether this parameter identifies resources used by submission authorization.
+    /// Adapters must know its value before downloading other caller-supplied inputs.
+    /// </summary>
+    public bool IsAuthorizationSelector { get; init; }
+
+    /// <summary>
     /// For a <see cref="ProcessParameterValueType.LayerId"/> parameter, what the process does to
     /// the layer — which is what decides the authorization operation the submit-time gate
     /// requires for it. Ignored for every other value type.

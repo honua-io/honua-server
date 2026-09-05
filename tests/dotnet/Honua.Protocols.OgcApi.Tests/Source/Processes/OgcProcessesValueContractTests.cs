@@ -79,6 +79,24 @@ public sealed class OgcProcessesValueContractTests
         }
     }
 
+    [Theory]
+    [InlineData(false, 50, 200)]
+    [InlineData(true, 50, 200)]
+    [InlineData(false, 600, 413)]
+    [InlineData(true, 600, 413)]
+    [InlineData(true, 400, 413)]
+    public async Task Results_MultipleOutputs_EnforcesAggregateResponseBudget(bool raw, int valueLength, int expectedStatus)
+    {
+        var payload = Encoding.UTF8.GetBytes("\"" + new string('x', valueLength) + "\"");
+        var reference = "data:application/json;base64," + Convert.ToBase64String(payload);
+        var response = await RenderResultAsync(reference, AppContext.BaseDirectory, 1024, raw, artifactCount: 2);
+        response.Status.Should().Be(expectedStatus);
+        if (expectedStatus == 200)
+        {
+            Encoding.UTF8.GetByteCount(response.Body).Should().BeLessThanOrEqualTo(1024);
+        }
+    }
+
     [Fact]
     public async Task OpenApi_RawResults_DeclareNativeFormatsAndSizeLimit()
     {
@@ -97,7 +115,7 @@ public sealed class OgcProcessesValueContractTests
             .GetProperty("schema").GetProperty("$ref").GetString().Should().Be("#/components/schemas/Exception");
     }
 
-    private static async Task<(int Status, string Body)> RenderResultAsync(string reference, string root, long maxBytes, bool raw)
+    private static async Task<(int Status, string Body)> RenderResultAsync(string reference, string root, long maxBytes, bool raw, int artifactCount = 1)
     {
         await using var services = new ServiceCollection().AddLogging()
             .Configure<GeoprocessingExecutorOptions>(options =>
@@ -117,7 +135,11 @@ public sealed class OgcProcessesValueContractTests
             Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob, Backend = "local", WorkloadName = "transform.attribute-rename" }
         };
         var package = AnalysisResultPackage.CreateCompleted("stream-result:v1", new ResultSummary { Title = "stream output" },
-            [new ArtifactRef { ArtifactId = "stream-artifact", Kind = ArtifactKind.FeatureLayer, Label = "outputFeatureLayer", Uri = reference }],
+            Enumerable.Range(0, artifactCount).Select(index => new ArtifactRef
+            {
+                ArtifactId = $"stream-artifact-{index}", Kind = ArtifactKind.FeatureLayer,
+                Label = index == 0 ? "outputFeatureLayer" : $"outputFeatureLayer{index}", Uri = reference
+            }).ToArray(),
             [], new ProvenanceRecord { Sources = [], ProcessDefinitions = ["transform.attribute-rename"], ExecutedAt = DateTimeOffset.UtcNow });
         var result = raw
             ? await JobEndpoints.BuildRawResultsResponseAsync(job, context, package)
