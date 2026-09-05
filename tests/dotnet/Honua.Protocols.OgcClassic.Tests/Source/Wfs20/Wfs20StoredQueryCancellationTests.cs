@@ -38,6 +38,8 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 
+[Trait("Tier", "Fast")]
+[Trait("Category", "Unit")]
 public sealed class Wfs20StoredQueryCancellationTests
 {
     [Theory]
