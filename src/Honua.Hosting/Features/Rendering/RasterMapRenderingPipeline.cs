@@ -641,7 +641,8 @@ internal static class RasterMapRenderingPipeline
         int LayerId,
         MetadataV2GeometryType GeometryType,
         int StorageSrid,
-        string? ExplicitMapLibreStyleJson);
+        string? ExplicitMapLibreStyleJson,
+        TemporalFilter? TemporalFilter = null);
 
     /// <summary>
     /// Composites one or more vector layers onto a single raster image, applying each
@@ -701,7 +702,8 @@ internal static class RasterMapRenderingPipeline
                 spatialFilter,
                 layer.StorageSrid,
                 requestSrid,
-                maxFeatures);
+                maxFeatures,
+                temporalFilter: layer.TemporalFilter);
 
             var renderedPointCount = await TryRenderRasterPointFastPathAsync(
                 canvas,
@@ -1728,6 +1730,26 @@ internal static class RasterMapRenderingPipeline
 
     internal static SpatialFilter CreateBboxSpatialFilter(SkiaMapRenderer.RenderExtent extent, int srid)
         => SpatialFilterHelpers.CreateBboxSpatialFilter(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY, srid);
+
+    internal static SKColor? ResolveBackgroundColor(string? backgroundColor)
+    {
+        if (string.IsNullOrWhiteSpace(backgroundColor) ||
+            backgroundColor.Length != 8 ||
+            !backgroundColor.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ||
+            !uint.TryParse(
+                backgroundColor.AsSpan(2),
+                System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var rgb))
+        {
+            return null;
+        }
+
+        return new SKColor(
+            (byte)((rgb >> 16) & 0xff),
+            (byte)((rgb >> 8) & 0xff),
+            (byte)(rgb & 0xff));
+    }
 
     private static bool EvaluateFilter(MapLibreExpression filter, System.Collections.Immutable.ImmutableDictionary<string, object?> properties, RenderZoom zoom)
     {

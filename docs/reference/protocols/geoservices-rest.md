@@ -27,7 +27,7 @@ Base: `/rest/services/{serviceId}/FeatureServer` (service and `/{layerId}` metad
 | Edits | `applyEdits` (service and layer), `/{layerId}/addFeatures`, `updateFeatures`, `deleteFeatures` | POST only. |
 | Attachments | `/{layerId}/queryAttachments`, `/{layerId}/{featureId}/attachments`, `addAttachment`, `updateAttachment`, `deleteAttachments`, `attachments/{attachmentId}` | |
 | Related records | `/{layerId}/queryRelatedRecords` (GET, POST), `/relationships` | |
-| Offline sync | `createReplica`, `extractChanges`, `synchronizeReplica`, `unRegisterReplica`, `replicas`, `replicas/{replicaId}` | Preview/opt-in surface. `synchronizeReplica` accepts `conflictHandling`: `lastWriteWins` or `manualReview`; other values return 400. |
+| Offline sync | `createReplica`, `extractChanges`, `synchronizeReplica`, `unRegisterReplica`, `replicas`, `replicas/{replicaId}` | Preview/opt-in in 2026.1, with service-local `Sync` capability required. Security/isolation and lifecycle truth are in scope; broader parity is deferred to release/2026.2. |
 | Branch versioning | `/rest/services/{serviceId}/VersionManagementServer` — `versions`, `create`, per-version operations and jobs | Experimental and off by default; routes return 404 until `versioning.branch` is enabled. |
 | Bulk and SQL | `append` (service and layer), `/{layerId}/calculate`, `validateSQL`, `queryDomains`, `getEstimates` | |
 | Temporal and binning | `/{layerId}/queryTopFeatures`, `queryDateBins`, `temporalExtent`, `queryBins` | |
@@ -62,6 +62,11 @@ Base: `/rest/services/{serviceId}/MapServer` (service and `/{layerId}` metadata 
 See [GeoServices parity — MapServer](../compatibility/geoservices-parity.md#mapserver--wms--wmts) for parameter-level coverage.
 
 ## ImageServer
+
+ImageServer and its WMTS routes are **Preview in 2026.1**. Security, isolation
+and lifecycle-truth fixes remain in scope; other parity work is deferred to
+release/2026.2. See the [Preview contract](../compatibility/geoservices-parity.md#imageserver),
+including the explicit unavailable-export error behavior.
 
 Base: `/rest/services/{serviceId}/ImageServer` (raster-backed services).
 

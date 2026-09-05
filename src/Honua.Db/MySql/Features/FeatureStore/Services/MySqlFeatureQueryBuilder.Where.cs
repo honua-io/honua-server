@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Db.MySql.Features.Infrastructure;
 
 namespace Honua.Db.MySql.Features.FeatureStore.Services;
@@ -31,6 +32,19 @@ internal sealed partial class MySqlFeatureQueryBuilder
         ref int paramIndex,
         List<object> parameters)
     {
+        if (query.TextSearch is { } search)
+        {
+            var searchIndex = paramIndex;
+            var predicate = FeatureTextSearchSql.Build(search, MySqlIdentifier.Quote, text =>
+            {
+                var marker = "@p" + (searchIndex++).ToString(CultureInfo.InvariantCulture);
+                parameters.Add(text);
+                return marker;
+            }, (column, value) => $"LOCATE({value}, {column})");
+            paramIndex = searchIndex;
+            sb.Append(" AND ").Append(predicate);
+        }
+
         if (query.EnforcedSqlFilter is { } enforcedFilter)
         {
             // Enforced row-visibility predicate — applied first, cannot be overridden by callers.

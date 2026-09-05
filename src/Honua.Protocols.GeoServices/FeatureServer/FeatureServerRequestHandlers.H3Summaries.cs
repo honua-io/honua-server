@@ -47,6 +47,7 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         MetadataV2Resource resource,
         int storageLayerId,
+        IFeatureReader featureReader,
         FeatureQuery featureQuery,
         int resolution,
         int? kRingDistance,
@@ -59,7 +60,6 @@ internal static partial class FeatureServerEndpoints
         }
 
         var degraded = new List<SpatialAggregationDegradedReasonResponse>();
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var summaryDefinitions = plan.Summaries;
 
         var totals = plan.IncludeTotals

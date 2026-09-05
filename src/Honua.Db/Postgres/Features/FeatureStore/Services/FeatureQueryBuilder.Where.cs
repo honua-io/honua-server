@@ -37,6 +37,19 @@ internal sealed partial class FeatureQueryBuilder
 
     private static void AppendWhereClause(StringBuilder sql, FeatureQuery query, ref int paramIndex, List<object> parameters)
     {
+        if (query.TextSearch is { } search)
+        {
+            var searchIndex = paramIndex;
+            var predicate = FeatureTextSearchSql.Build(search, field => "attributes->>" + "\u0027" + field.Replace("\u0027", "\u0027\u0027", StringComparison.Ordinal) + "\u0027", text =>
+            {
+                var marker = "$" + (searchIndex++).ToString(CultureInfo.InvariantCulture);
+                parameters.Add(text);
+                return marker;
+            }, (column, value) => $"STRPOS({column}, {value})");
+            paramIndex = searchIndex;
+            sql.Append(" AND ").Append(predicate);
+        }
+
         if (query.EnforcedSqlFilter != null)
         {
             AppendSqlFragment(sql, query.EnforcedSqlFilter, ref paramIndex, parameters);

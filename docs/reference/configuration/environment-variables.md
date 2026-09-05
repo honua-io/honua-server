@@ -67,10 +67,14 @@ OIDC provider configuration (`Oidc__*` — Azure AD, Google, Okta, Auth0, generi
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `Licensing__LicensePath` | — (Community mode) | Path to a signed JSON license envelope; unset runs Community mode. |
+| `Licensing__LicensePath` | unset | Ordinary signed license file and path prefix for the persisted `.uploaded` override. Community mode applies when no source is configured. |
+| `Licensing__LicenseContent` | unset | Inline signed envelope, used after any uploaded override and resolved secret. |
+| `Licensing__LicenseContentSecretRef` | unset | Secret-store reference to a signed envelope, used after any uploaded override. |
 | `Licensing__TrustedKeys__{keyId}` | — | Trusted raw Ed25519 public key (base64url) per license key id. |
-| `Licensing__AllowAdminUpload` | `false` | Allow license upload through the admin API. |
+| `Licensing__AllowAdminUpload` | `false` | Allow future admin uploads; turning it off does not undo a persisted upload. |
 | `Licensing__ExpiryWarningDays` | `30` | Days before expiry at which warnings are emitted. |
+
+After a successful upload, `<LicensePath>.uploaded` takes precedence at startup. Replacing only `LicensePath` and restarting keeps that override. Renew through the admin upload endpoint, or stop the server, remove the override, and align the configured sources before restart. See [Renew or replace a license](../../concepts/editions-and-licensing.md#renew-or-replace-a-license). Persist and back up the containing license directory.
 
 ## Caching (Redis)
 

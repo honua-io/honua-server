@@ -21,7 +21,7 @@ canonical seed service is open). Clients hydrate service metadata with `GET` or 
 | Sprite resource | GET | `/rest/services/{serviceId}/VectorTileServer/resources/sprites/{spriteResource}` | `application/json` / `image/png` | Scoped-minimal: `sprite.json` / `sprite@2x.json` → empty sprite index (`{}`); `sprite.png` / `sprite@2x.png` → 1×1 transparent PNG. Unknown sprite resource → 404. |
 | Glyph range | GET | `/rest/services/{serviceId}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf` | `application/x-protobuf` | Scoped-minimal: a single minimal Mapbox glyph stack for the default `0-255` range. Out-of-range range → 404. The fontstack is informational — any fontstack resolves to the same minimal stack. |
 | TileMap | GET | `/rest/services/{serviceId}/VectorTileServer/tilemap` | `application/json` | Top-of-pyramid availability descriptor (single `1`). |
-| TileMap (block) | GET | `/rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}` | `application/json` | Row-major availability flags for the requested `dimension × dimension2` block. Tiles overrunning the gridset edge are `0`. Levels outside the LOD scheme or absurd dimensions → 400. |
+| TileMap (block) | GET | `/rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{width}/{height}` | `application/json` | Row-major availability flags for the requested `width × height` block. Tiles overrunning the gridset edge are `0`. Levels outside the LOD scheme → 422; invalid dimensions → 400. |
 
 All routes resolve the service by name and return **404** for an unknown service.
 
@@ -31,7 +31,7 @@ These decisions were ratified under epic **#1776** (VectorTileServer) and its ch
 
 - **512px WebMercatorQuad gridset.** `tileInfo` advertises a 512×512 pixel tiling scheme on the
   WebMercatorQuad tile matrix set (`wkid 102100` / `latestWkid 3857`), top-left origin, `pbf`
-  format, with the standard LOD scale ladder (`559082264.0287178` at level 0, halved per level).
+  format, with Esri's 96 DPI scale ladder for 512px tiles (`295828763.7958` at level 0, halved per level).
 - **Single primary source per service.** The composed style emits exactly one vector source
   (id `esri`) whose `tiles[]` is this service's absolute tile template; the legacy TileJSON `url`
   pointer is stripped so clients fetch tiles directly. The tile and style handlers resolve the

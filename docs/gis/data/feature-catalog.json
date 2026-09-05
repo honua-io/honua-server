@@ -1239,7 +1239,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetSession_AfterTokenExchange_ReturnsProjectedClaimsWithoutTokens",
-        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetSession_WithOpaqueAccessTokenAndJwtIdToken_ReturnsProjectedClaims"
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.GetSession_WithOpaqueAccessTokenAndJwtIdToken_ReturnsProjectedClaims",
+        "Honua.Server.Tests.Features.Identity.AdminLogoutDependencyLossTests.Logout_DistributedCacheOutage_Returns503UntilRevocationCanBeRetried"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3885,7 +3886,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.ListReplicas_WithoutAdminAuthorization_IsRejected"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -3904,7 +3905,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaManagementEndpointTests.GetReplica_WithoutAdminAuthorization_IsRejected"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -3921,7 +3922,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ListConflicts_WhenProviderDoesNotSupportReview_ReturnsNotImplemented"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -3937,7 +3938,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.GetConflict_ReportsWhetherClientEditWasApplied"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -4457,6 +4458,7 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AsAnonymous_ReturnsPublicTenantManifestAndNoStoreHeaders",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_AutonomyTracksPolicyStoreInsteadOfWorkflowStore",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LegacyProjection_MarksDisabledPreviewsUnavailable",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_LifecycleOnlyPreviews_RemainAvailableWithoutOptIn",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RegistryDerived_MatchesHandCuratedComposition",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RollbackIgnoresTargetsFromOtherEnvironments",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_RollbackRequiresDurableOperationStore",
@@ -4472,9 +4474,9 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithoutDurableJobStore_ReportsJobsRunnerDependencyUnavailable",
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_OmittingManifestCapability_ReturnsNotFound",
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
+        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenCustomerAlertingAndRealtimePreviewsOptedIn_DeclaresPreviewLifecycle",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenExperimentalEnabledPerCapability_IncludesExactlyThatCapability",
         "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenLifecycleFlagsAreEmpty_ReportsEveryAdoptedCapabilityUnavailable",
-        "Honua.Server.Tests.Features.Capabilities.ExperimentalCapabilityGatingIntegrationTests.Manifest_WhenRealtimePreviewsOptedIn_DeclaresPreviewLifecycle",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamConformanceEndpointsTests.Manifest_PublishesTheImmutableRevisionUnderBothNames",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_ExposesImmutableDeploymentRevisionSeparatelyFromServerVersion",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamSnapshotEndpointsTests.Manifest_RejectsMalformedDeploymentRevisionRatherThanEchoingIt"
@@ -4943,7 +4945,8 @@
       "protocol": "http-route",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_LayerWithoutServableCoverage_Returns404"
+        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_LayerWithoutServableCoverage_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Zarr.DatacubeTileEndpointTests.DatacubeTile_WithoutAuthentication_Returns401BeforeStoreLookup"
       ],
       "proof_ledger_surface": "datacube-tiles",
       "maturity": "implemented",
@@ -4984,7 +4987,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -5001,7 +5004,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -5017,7 +5020,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -5727,7 +5730,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5741,7 +5744,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5757,7 +5760,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_UnknownCollection_Returns404"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5781,7 +5784,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Cube_ValidParameterNameSubset_ReturnsOnlyRequestedParameters"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5805,7 +5808,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ValidParameterNameSubset_ReturnsOnlyRequestedParameter"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5820,7 +5823,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
       ],
       "proof_ledger_surface": "ogc-api-edr",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-edr"
     },
     {
@@ -5952,6 +5955,9 @@
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.Health_GetReadiness_ShouldReturnReady",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
+        "Honua.Server.Tests.Features.Caching.RedisReadinessOutageTests.CheckReadinessAsync_RedisStopsAndRestarts_RequiresLiveProbeEvenDuringFallback",
+        "Honua.Server.Tests.Features.Caching.RedisReadinessOutageTests.IsCacheHealthyAsync_DistributedCacheOnly_IndexDenied_ReportsUnhealthyUntilRecovery",
+        "Honua.Server.Tests.Features.Caching.RedisReadinessOutageTests.IsCacheHealthyAsync_RedisAllowsPingButDeniesCacheCommands_ReportsUnhealthyUntilRecovery",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.HTTPS_Redirection_ShouldBeEnforced",
         "Honua.Server.Tests.Features.Security.SecurityComplianceTests.SecurityHeaders_ShouldBePresent",
         "Honua.Server.Tests.HealthEndpointTests.ReadinessEndpoint_ReturnsReady",
@@ -6203,6 +6209,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Read_ConnectionBoundPublication_UsesBoundReader",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.GetFeature_ReturnsETagInResponse",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.GetFeature_WithIfMatchWildcard_Returns200",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.GetFeature_WithMatchingIfMatch_Returns200",
@@ -6223,6 +6230,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Reference_ConnectionBoundPublication_UsesBoundReader",
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.FeatureReferenceEndpoint_ReturnsCanonicalReference"
       ],
       "proof_ledger_surface": "odata-v4",
@@ -6425,6 +6433,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBboxShorthandTests.Apply_ConfiguredInputBudget_RejectsOverflowAndAcceptsExactLimit",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBboxShorthandTests.Bbox_NextLink_StaysInsideWindow",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBboxShorthandTests.PowerQuery_DocumentedFeed_LoadsFeatureRows",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Apply_ConnectionBoundPublication_CountsBoundRows",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Search_ConnectionBoundCount_UsesTotalInsteadOfPageSize",
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.LayerFeatures_ReturnsCollection",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataQuery_NoGrant_FallsBackToCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataQuery_QueryGrant_OverridesCoarseDeny"
@@ -6487,7 +6500,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6503,7 +6516,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6519,7 +6532,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6535,7 +6548,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6567,7 +6580,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesOversizeDepthTests.Coverage_NativeSizeExceedsCap_WithoutSubsetting_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6583,7 +6596,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6597,7 +6610,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6613,7 +6626,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6722,6 +6735,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3EntitlementTests.OgcH3_CommunityEdition_ReturnsPaymentRequired",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.OgcH3_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.OgcH3_UnsupportedBoundReader_ReturnsCapabilityError",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesH3Tests.H3_InvalidCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesH3Tests.H3_MissingResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesH3Tests.H3_UnknownQueryParameter_ReturnsBadRequestWithStandardFormat",
@@ -6729,7 +6745,7 @@
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",
-      "capability": "serve.ogc-api-features"
+      "capability": "analytics.h3"
     },
     {
       "id": "get-ogc-features-collections-collectionid-items",
@@ -6909,6 +6925,7 @@
         "Honua.Server.Tests.Comprehensive.ApiSurfaceComplianceTests.OgcApiFeatures_LandingPageAndConformance_ReturnValidResponses",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetConformance_ShouldReturnConformanceClasses",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetConformance_AdvertisesOnlyEvidenceBackedFeaturesClasses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetConformance_DoesNotAdvertiseGmlSf0",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetConformance_ReturnsCacheHeaders",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetConformance_ReturnsValidConformanceDeclarationWithRequiredClasses"
@@ -6954,6 +6971,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.GetCollectionMap_Datetime_FiltersVectorFeatures",
+        "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.GetCollectionMap_OutputCrs_TransformsBboxAndReportsRenderedCrs",
+        "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.GetCollectionMap_TransparentAndBgcolor_AreRendered",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_InvalidCollectionId_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_NonExistentCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollectionMap_UnknownFormat_ReturnsBadRequest",
@@ -6969,8 +6989,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_NegativeCollectionId_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_NonExistentCollection_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_NonIntegerCollectionId_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_TransparentParameter_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests.GetCollectionMap_BackgroundParameters_ReturnBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsErrorHandlingTests.GetCollectionMap_TransparentParameter_ReturnsSuccess",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests.GetCollectionMap_BackgroundParameters_ReturnSuccess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests.GetCollectionMap_CustomDimensions_ReturnsSuccess",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests.GetCollectionMap_DefaultDimensions_Uses256",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests.GetCollectionMap_DefaultFormat_ReturnsPng",
@@ -7041,6 +7061,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.GetStyledMap_OutputCrs_TransformsBboxAndReportsRenderedCrs",
+        "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.GetStyledMap_UnassociatedStyleCollidingWithCollectionName_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.GetStyledMap_UnassociatedStyle_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.GetStyledMap_UnknownStyle_ReturnsNotFound",
         "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.RenderStyledMap_VectorLayer_NoLongerThrowsNotSupported_Issue2498Regression",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetStyledMap_VectorCollectionTiff_ReturnsCleanErrorNeverPngLabeledTiff",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetStyledMap_VectorCollection_RendersPngInsteadOf501",
@@ -7465,7 +7489,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_OgcRoute_GetTile_WithWmtsEnabledAndMapServerDisabled_RendersStyledFeature"
       ],
       "proof_ledger_surface": "wmts-1.0",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.wmts"
     },
     {
@@ -8390,7 +8414,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetServiceInfo_WithoutFormatParameter_DoesNotReturnBadRequest"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8449,7 +8473,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrTrimEndpointsTests.Wcs_GetCoverage_OverExtentZarrTrim_ClampsToCoverageAndReturnsPng"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8477,7 +8501,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerWmtsMatrixSetTests.Wmts_GetTile_WorldCrs84QuadRowOutOfBounds_ReturnsInvalidParameterValue"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8491,7 +8515,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_KvpAndRestful_ReturnPngTiles"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8509,7 +8533,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_WithoutDem_ReturnsNotImplemented"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8525,7 +8549,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Colormap_WithoutRenderer_ReturnsNotAvailable"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8539,7 +8563,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeCacheInfo_GetAndPost_ReturnsDynamicCacheInfo"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8555,7 +8579,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeClassStatistics_WithRenderingRule_ReturnsNotImplemented"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8570,7 +8594,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeHistograms_Get_WithoutGeometry_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8584,7 +8608,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputePixelLocation_GetAndPost_UsesRasterGeoTransform"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8600,7 +8624,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_WithGeometry_ClipsAnalysisToAoi"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8615,7 +8639,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8629,7 +8653,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ConfJson_ReturnsServiceDescriptor_InArcGisRuntimeCompatibleShape"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8643,7 +8667,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.EstimateExportTilesSize_GetAndPost_ReturnsStorageBackedEstimate"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8685,7 +8709,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_WithSafeCurieSpatialReferences_ReturnsSuccessOrNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8704,7 +8728,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitsDurableJobAndProjectsStatus"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8720,7 +8744,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Find_WithOrientationMetadata_RanksByOffNadirAngle"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8735,7 +8759,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetSamples_Get_WithoutGeometry_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8749,7 +8773,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Histograms_GetAndPost_ReturnPerBandHistograms"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8780,7 +8804,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_WithSrid_ReturnsSuccessOrNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8796,7 +8820,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.JobStatus_UnknownJob_ReturnsSanitizedNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8811,7 +8835,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CancelAndResult_NumericLayer"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8827,7 +8851,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.KeyProperties_NonExistentLayer_ReturnsNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8842,7 +8866,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerKmlTests.GetKml_UnknownLayer_ReturnsNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8859,7 +8883,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetLegend_WithColormapRenderingRule_ReflectsColormapStops"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8884,7 +8908,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_ShadowHeight_WithoutSunGeometry_ReturnsNotImplemented"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8899,7 +8923,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.MultidimensionalInfo_NonExistentLayer_ReturnsNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8919,7 +8943,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithUnsupportedDatumTransformationWkid_Returns400"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8939,7 +8963,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.QueryCatalog_ListsAllRastersWithAcquisitionDates"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8953,7 +8977,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryBoundary_GetAndPost_ReturnsShapeAndArea"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8967,7 +8991,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.RasterAttributeTable_GetAndPost_ReturnSchemaWithNoRows"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8981,7 +9005,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.RasterFunctionInfos_GetAndPost_ListSupportedFunctions"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -8996,7 +9020,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Slices_NonExistentLayer_ReturnsNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9011,7 +9035,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Statistics_GetAndPost_ReturnPerBandStatistics"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9031,7 +9055,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetImageTile_VariousZoomLevels_ReturnsExpectedStatus"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9046,7 +9070,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterCatalogItem_UnknownRaster_ReturnsNotFoundError"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9060,7 +9084,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImage_ExistingRaster_ReturnsSelectedRasterPixels"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9075,7 +9099,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImageSupportData_WithoutSensorMetadata_ReturnsNotAvailableError"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9090,7 +9114,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemInfo_UnknownRaster_ReturnsNotFoundError"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9104,7 +9128,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9118,7 +9142,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9132,7 +9156,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemRasterFile_ExistingRaster_ReturnsNotAvailableError"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9146,7 +9170,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemThumbnail_ExistingRaster_RendersLockedRasterImage"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -9991,6 +10015,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3EntitlementTests.QueryH3Get_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_ExcessiveKRingDistance_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_InvalidResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_InvalidService_ReturnsNotFound",
@@ -9998,11 +10023,13 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_MissingResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_NegativeResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_ValidResolution_ReturnsOkOrCapabilityError",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_WithKRingDistance_ReturnsOkOrCapabilityError"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3_WithKRingDistance_ReturnsOkOrCapabilityError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3_UnsupportedBoundReader_ReturnsCapabilityError"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
-      "capability": "serve.geoservices-featureserver"
+      "capability": "analytics.h3"
     },
     {
       "id": "get-rest-services-serviceid-featureserver-layerid-queryrelatedrecords",
@@ -10323,7 +10350,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10337,7 +10364,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetTile_KvpAndRestful_ReturnPngTiles"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10351,7 +10378,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Wmts_GetCapabilities_ReturnsImageServerCapabilities"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10365,7 +10392,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_WithDem_GetPostAndByService_ReturnsCutFillOverAoi"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10379,7 +10406,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Colormap_WithColormapRenderingRule_ReturnsResolvedStops"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10394,7 +10421,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeCacheInfo_GetAndPost_ReturnsDynamicCacheInfo"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10408,7 +10435,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10422,7 +10449,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10437,7 +10464,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputePixelLocation_GetAndPost_UsesRasterGeoTransform"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10451,7 +10478,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10465,7 +10492,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10479,7 +10506,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10493,7 +10520,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.EstimateExportTilesSize_GetAndPost_ReturnsStorageBackedEstimate"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10508,7 +10535,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImageByService_ResolvesBothRoutesWithExportAuthorization"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10524,7 +10551,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10538,7 +10565,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Find_GetAndPost_ReturnsImagesContainingTargetGeometry"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10552,7 +10579,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10566,7 +10593,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Histograms_GetAndPost_ReturnPerBandHistograms"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10580,7 +10607,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10596,7 +10623,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10612,7 +10639,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10626,7 +10653,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10642,7 +10669,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerKmlTests.GetKml_UnknownLayer_ReturnsNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10656,7 +10683,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10671,7 +10698,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_ShadowHeight_WithSunGeometry_GetPostAndByService_ReturnsDerivedHeight"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10685,7 +10712,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10699,7 +10726,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_GetAndPost_ReprojectsGeometries"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10713,7 +10740,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10728,7 +10755,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryBoundary_GetAndPost_ReturnsShapeAndArea"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10742,7 +10769,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.RasterAttributeTable_GetAndPost_ReturnSchemaWithNoRows"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10756,7 +10783,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.RasterFunctionInfos_GetAndPost_ListSupportedFunctions"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10770,7 +10797,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10784,7 +10811,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Statistics_GetAndPost_ReturnPerBandStatistics"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10798,7 +10825,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10812,7 +10839,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterCatalogItem_ByServiceName_ReturnsFeature"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10826,7 +10853,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImage_ExistingRaster_ReturnsSelectedRasterPixels"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10840,7 +10867,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemImageSupportData_WithSensorMetadata_ReturnsSupportData"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10854,7 +10881,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemInfo_ExistingRaster_ReturnsCanonicalMetadata"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10868,7 +10895,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemHistograms_ExistingRaster_ReturnsBandHistograms"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10882,7 +10909,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemKeyProperties_ByServiceName_ReturnsSelectedRasterProperties"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10896,7 +10923,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemRasterFile_ExistingRaster_ReturnsNotAvailableError"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -10910,7 +10937,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetRasterItemThumbnail_ExistingRaster_RendersLockedRasterImage"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -11106,7 +11133,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_InvalidService_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "map-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-mapserver"
     },
     {
@@ -11130,7 +11157,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.OgcClassicWmtsTests.Wmts_Restful_GetTile_WithMalformedPercentEncoding_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "map-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-mapserver"
     },
     {
@@ -11320,6 +11347,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithInnerJoinAndNoMatch_DropsUnmatchedLeftFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithJoinKeyContainingInjection_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithLeftOuterJoin_ReturnsQualifiedJoinedAttributes",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_NonPointGeometryWithinTolerance_ReturnsResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_ReturnsResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_WithDatelineCrossingMapExtent_ReturnsOk",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_Identify_WithGdbVersion_IgnoresParameter",
@@ -11673,6 +11701,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.VectorTileServer_RootStyleAndTile_UseSameRoutedPrimaryPublication",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_BadCoordinates_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_EmptyTile_ReturnsNoContent",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_Tile_InRange_ReturnsMvtBytesWithCacheHeader",
@@ -11708,7 +11737,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_AbsurdDimension_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_EdgeBlock_MarksOutOfRangeTilesZero",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_FullyInRange_ReturnsAllAvailable",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_LevelOutsideScheme_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_LevelOutsideScheme_ReturnsUnprocessableEntity",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_NonSquareBlock_UsesWidthThenHeight",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer.VectorTileServerEndpointTests.VectorTileServer_TileMap_UnknownService_ReturnsNotFound"
       ],
       "proof_ledger_surface": "vector-tile-server",
@@ -12571,7 +12601,9 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_SelfLinkMatchesRequestedUrl",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithDatelineCrossingBbox_ReturnsMatchingItem",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithInvalidThreeDimensionalBbox_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithLimit_RespectsLimit"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithLimit_RespectsLimit",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.OptionalCounts_PageAcrossCollectionsWithoutCounting",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
@@ -12667,6 +12699,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_CreatesDiscoverableStacCollection",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.ExactCounts_CrossCollectionOffset_DoesNotCountThePageCollectionTwice",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.OptionalCounts_PageAcrossCollectionsWithoutCounting",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WhenGraphActivatesAfterAuthorization_RoutesAuthorizedSnapshotBinding",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WhenRoutedCandidateQueryExceedsSafetyCap_ReturnsInternalServerError",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_With512DistinctIds_UsesBoundedOverflowSentinelQuery",
@@ -12685,6 +12719,7 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_PreservesAndOrNotNullTruthTable",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_WithIds_NotUnknownDoesNotMatch",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_AcrossCollections_WithIds_TypedUnknownPreservesKleeneLogic",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_CanonicalStacFields_AreAcceptedByFieldsAndSort",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_IncludeMode_PropertyOnlyInclude_RequiredFieldsAlwaysPresent",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_NoFilters_ReturnsItems",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_RecordsSharedTelemetryForSearchWork",
@@ -12706,7 +12741,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithThreeDimensionalBbox_ReturnsItems",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithUndeclaredQueryable_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithUnsupportedExplicitGeometryCrsInFilter_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithValidatorFieldsSyntax_ProjectsTopLevelFields"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithValidatorFieldsSyntax_ProjectsTopLevelFields",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
@@ -12852,15 +12888,18 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3EntitlementTests.H3Tile_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_InvalidCoords_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_InvalidResolution_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_NonExistentLayer_ReturnsRealNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_ValidCoords_ReturnsOkOrCapabilityError",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_WithExplicitResolution_ReturnsOkOrCapabilityError"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3TileTests.H3Tile_WithExplicitResolution_ReturnsOkOrCapabilityError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.H3Tile_EmptyRoutedTile_PreservesCacheHeaders",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.H3Tile_SourceBackedLayer_UsesBindingScopedTileProvider"
       ],
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",
-      "capability": "serve.ogc-api-features"
+      "capability": "analytics.h3"
     },
     {
       "id": "get-tiles-layerid-tile-json",
@@ -12893,6 +12932,7 @@
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.MVT_GetTile_ShouldReturnProtobuf",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateProtocols_DisableFeatureServer_BlocksLayerTiles",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileCacheTtlOverrideTests.GetTile_WithPerTilesetOverride_UsesOverrideTtl",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileCacheTtlTests.GetTile_AuthenticatedRequest_UsesPrivateCacheWithGlobalTtl",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileCacheTtlTests.GetTile_NoPerTilesetOverride_UsesGlobalCacheMaxAge",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileEndpointTests.GetTile_HighZoomLevel_ReturnsDetailedTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileEndpointTests.GetTile_InvalidTileCoordinates_ReturnsBadRequest",
@@ -12911,6 +12951,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileTemporalEndpointTests.GetTile_WithTimeOpenStart_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileTemporalEndpointTests.GetTile_WithTimeRangeIso8601_ReturnsTile",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.MvtTileTemporalEndpointTests.GetTile_WithTimeRangeUnixMs_ReturnsTile",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.FeatureServerMvt_SourceBackedLayer_UsesBindingScopedTileProvider",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.MapLibre_CanLoadFromTileJson"
       ],
       "proof_ledger_surface": "vector-tiles-mvt",
@@ -12970,6 +13011,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_InvalidCount_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_InvalidResultType_ReturnsExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_InvalidStartIndex_ReturnsExceptionReport",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_KvpMultiQuery_ProtectedTypeChallengesAnonymous",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_LayerWithGeometryTypeButNoGeometryField_ReturnsGmlGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_LegacyTypeNameAndMaxFeaturesAliases_ReturnFeatureCollection",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_MixedValidAndMalformedResourceIds_ReturnsExceptionReport",
@@ -13394,6 +13436,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.OData.ODataAuthorizationTests.UpdateFeature_WithMalformedJsonWithoutApiKey_ReturnsUnauthorizedBeforeBodyValidation",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAuthorizationTests.UpdateFeature_WithoutApiKey_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Write_ConnectionBoundPublication_RejectsBeforeManagedReadOrWrite",
         "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.UpdateFeature_WithNamedKeys_ReturnsUpdatedFeature",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.UpdateFeature_ETagChangesAfterUpdate",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.UpdateFeature_WithPreferMinimal_Returns204"
@@ -13539,7 +13582,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "mobile-runtime-auth-diagnostics",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -13717,7 +13760,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.Logout_InProductionWithoutConfiguredPublicBaseUrl_ReturnsServiceUnavailableAndClearsSession",
-        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.Logout_IsAnonymous_Returns200"
+        "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.Logout_IsAnonymous_Returns200",
+        "Honua.Server.Tests.Features.Identity.AdminLogoutDependencyLossTests.Logout_DistributedCacheOutage_Returns503UntilRevocationCanBeRetried"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -14856,7 +14900,7 @@
         "Honua.Server.Tests.Import.FileGdbImportTests.Upload_WithSparseFileGdb_ReturnsNoFeaturesFound",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithGeoParquet_ImportsFeaturesToTable",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithInt16Column_ImportsSuccessfully",
-        "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_RejectsWithError",
+        "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithLargeSingleRowGroup_ImportsFeatures",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithMissingGeoMetadata_RejectsWithSpecificError",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithNestedColumn_ImportsSuccessfullyWithWarning",
         "Honua.Server.Tests.Import.GeoParquetImportTests.Upload_WithNonWkbEncoding_RejectsWithError",
@@ -15148,7 +15192,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.Rollback_AfterApprovingGates_RequestsCoordinatedRollback",
-        "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.Rollback_FaultInMetadataStep_UnwindsBothReversibleSteps"
+        "Honua.Server.Tests.Features.Admin.CoordinatedReleaseControlEndpointsTests.Rollback_FaultInMetadataStep_StopsWhenMetadataRollbackCannotSettle"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -15980,7 +16024,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaConflictReviewEndpointTests.ResolveConflict_WithUnknownAction_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -16647,7 +16691,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -16668,7 +16712,7 @@
         "Honua.Server.Tests.Features.Mobile.FieldCollection.FieldCollectionSyncLicenseGateTests.FieldCollectionSync_WithCommunityLicense_ReturnsPaymentRequired"
       ],
       "proof_ledger_surface": "fieldcollection-mobile-sync",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -17404,7 +17448,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "mobile-runtime-auth-diagnostics",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "fieldops.offline-sync"
     },
     {
@@ -17435,6 +17479,7 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataAdvancedFeaturesTests.Batch_WithPutRequest_ReplacesFeature",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAdvancedFeaturesTests.Batch_WithSingleGetRequest_ReturnsFeature",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAdvancedOperationsTests.Batch_WithEmptyRequests_ReturnsClientErrorOrUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Batch_ConnectionBoundWrite_RejectsBeforeShadowMutation",
         "Honua.Server.Tests.Features.Protocols.OData.ODataChangesetEditionGateTests.MultipartBatch_ChangesetWrite_UnderCommunity_CreatesFeature",
         "Honua.Server.Tests.Features.Protocols.OData.ODataMultipartBatchTests.MultipartBatch_ResponseContainsODataVersionHeader",
         "Honua.Server.Tests.Features.Protocols.OData.ODataMultipartBatchTests.MultipartBatch_WithAbsoluteSubrequestUrl_ReturnsBadRequestWithoutEchoingHost",
@@ -17566,6 +17611,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.CreateFeature_WithAdvertisedAlternateContentCrs_TransformsIntoLayerSrid",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.CreateFeature_WithNon4326Layer_MatchingContentCrs_CreatesFeature",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.ProjectedCollection_AbsentContentCrs_DefaultsToCrs84ForGetPutRoundTrip",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.CreateItem_WithConflictingTopLevelAndPropertyIds_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.CreateItem_WithTopLevelStringFeatureId_StoresPublicIdentifier",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesTransactionTests.CreateFeature_WhenEventPublishFails_ReturnsCreated",
@@ -17897,6 +17943,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Densify_UnknownLengthUnit_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_EllipticArc_AcceptsEsriTrueCurve",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_FiveElementArc_AcceptsIssueReproduction",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_PostPolyline_AddsVertices",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_ReasonableMaxSegmentLengthOverLargeExtent_StillSucceeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_TinyMaxSegmentLengthOverLargeExtent_Returns400WithoutOom"
@@ -17947,6 +17995,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceEditOperationsTests.FindTransformations_KnownDatumPair_ReturnsCatalogCandidate",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceEditOperationsTests.FindTransformations_PostValidSpatialReferences_ReturnsTransformationsArray"
       ],
       "proof_ledger_surface": "geometry-service",
@@ -18060,14 +18109,21 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_BatchGeometries_ReturnsAll",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_CircularCurve_PreservesZAndM",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_InvalidSrid_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_JsonSpatialReference_WithLatestWkid_ParsesCorrectly",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_JsonSpatialReference_WithName_ParsesCorrectly",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_NonIdentityTransformationPipeline_UsesSridProjection",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_ProjectedSourceTransformation_ResolvesAgainstGeodeticBase",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_ReverseTransformationDirection_MatchesPyprojIdentity",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_SameSrid_ReturnsUnchanged",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_Wgs84ToWebMercator_ReturnsCorrectCoordinates",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithDatumTransformationWkid_AppliesSelectedPipeline",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithEsriTransformationParameter_AppliesSelectedPipeline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithMalformedDatumTransformation_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithSingleWkidTransformationObject_AppliesSelectedPipeline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithUnsupportedDatumTransformationWkid_Returns400",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceProjectTests.Project_WithUnsupportedEsriTransformation_Returns400",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked"
       ],
       "proof_ledger_surface": "geometry-service",
@@ -18224,7 +18280,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataPostTests.ImageServer_ServiceInfo_Post_MatchesGet"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18238,7 +18294,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_WithDem_GetPostAndByService_ReturnsCutFillOverAoi"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18252,7 +18308,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Colormap_WithColormapRenderingRule_ReturnsResolvedStops"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18266,7 +18322,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeCacheInfo_GetAndPost_ReturnsDynamicCacheInfo"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18280,7 +18336,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeClassStatistics_Post_FormBody_ReturnsClassSignature"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18294,7 +18350,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeHistograms_Post_WithGeometry_ReturnsHistograms"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18308,7 +18364,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputePixelLocation_GetAndPost_UsesRasterGeoTransform"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18322,7 +18378,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Post_WithGeometry_ReturnsStatisticsAndHistograms"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18336,7 +18392,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18350,7 +18406,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.EstimateExportTilesSize_GetAndPost_ReturnsStorageBackedEstimate"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18368,7 +18424,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_PostJsonBody_WithEsriJsonSpatialReferences_DoesNotReturnBadRequest"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18383,7 +18439,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18397,7 +18453,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Find_GetAndPost_ReturnsImagesContainingTargetGeometry"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18411,7 +18467,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetSamples_Post_WithPoint_ReturnsSample"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18425,7 +18481,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Histograms_GetAndPost_ReturnPerBandHistograms"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18439,7 +18495,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.Identify_PostFormBody_ReturnsIdentifyResultOrNotFound"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18454,7 +18510,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_CancelAndResult_NumericLayer"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18468,7 +18524,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.KeyProperties_Post_ReturnsNonEmptyBandProperties"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18483,7 +18539,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetLegend_Post_ReturnsSwatches"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18498,7 +18554,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_ShadowHeight_WithSunGeometry_GetPostAndByService_ReturnsDerivedHeight"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18512,7 +18568,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.MultidimensionalInfo_Post_NonMultidimensionalLayer_ReturnsEmptyVariables"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18527,7 +18583,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_WithDatumTransformationWkid_AppliesSelectedPipeline"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18541,7 +18597,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryCatalog_Post_FormBody_ReturnsFeatureCollection"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18555,7 +18611,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryBoundary_GetAndPost_ReturnsShapeAndArea"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18569,7 +18625,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.RasterAttributeTable_GetAndPost_ReturnSchemaWithNoRows"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18583,7 +18639,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.RasterFunctionInfos_GetAndPost_ListSupportedFunctions"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18597,7 +18653,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Slices_GetAndPost_NonMultidimensionalLayer_ReturnEmptySlices"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18611,7 +18667,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Statistics_GetAndPost_ReturnPerBandStatistics"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -18759,6 +18815,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAccessFilteringTests.CreateReplica_WhenServiceDoesNotAdvertiseSync_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_InvalidService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_LayersAsJsonArray_ReturnsReplicaId",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_MissingReplicaName_ReturnsBadRequest",
@@ -19313,15 +19370,18 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerH3EntitlementTests.QueryH3Post_CommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_ValidRequest_ReturnsOkOrCapabilityError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithHistogramSummariesAndNoTotals_ResolvesCellBounds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithLargeCountSummary_PreservesIntegerPrecision",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithOutStatisticsArray_ReturnsOkOrCapabilityError",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithSpatialAggregationSummaries_ReturnsSdkSummaryResponse"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryH3Tests.QueryH3Post_WithSpatialAggregationSummaries_ReturnsSdkSummaryResponse",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3Post_SourceBackedLayer_UsesBindingScopedFeatureReader",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ProviderRoutedTileAndH3EndpointTests.QueryH3Summaries_SourceBackedLayer_UsesBindingScopedFeatureReader"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
-      "capability": "serve.geoservices-featureserver"
+      "capability": "analytics.h3"
     },
     {
       "id": "post-rest-services-serviceid-featureserver-layerid-queryrelatedrecords",
@@ -19512,6 +19572,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_ProtocolOnlyTask_Returns400WithCapabilityMessage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_SyncEligibleTask_ReturnsInlineResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_WithEnvOutSR_HonorsControl",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_WithEsriResultOptions_TreatsOptionsAsProtocolControls",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.Execute_ByEsriAlias_RunsCanonicalProcessInline",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.Execute_UnknownAlias_ReturnsNotFound"
       ],
@@ -19578,7 +19639,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MetadataPostTests.ImageServer_ServiceInfoByService_Post_MatchesGet"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19592,7 +19653,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.CalculateVolume_WithDem_GetPostAndByService_ReturnsCutFillOverAoi"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19606,7 +19667,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Colormap_WithColormapRenderingRule_ReturnsResolvedStops"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19621,7 +19682,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeCacheInfo_GetAndPost_ReturnsDynamicCacheInfo"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19635,7 +19696,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19649,7 +19710,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19664,7 +19725,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputePixelLocation_GetAndPost_UsesRasterGeoTransform"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19678,7 +19739,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19692,7 +19753,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeTiePoints_WithControlPoints_GetAndPost_ReturnsPreRegisteredTiePoints"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19706,7 +19767,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.EstimateExportTilesSize_GetAndPost_ReturnsStorageBackedEstimate"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19721,7 +19782,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportImageByService_ResolvesBothRoutesWithExportAuthorization"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19736,7 +19797,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ExportTiles_WritesZipArchiveToCloudStorage"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19750,7 +19811,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Find_GetAndPost_ReturnsImagesContainingTargetGeometry"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19764,7 +19825,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19778,7 +19839,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Histograms_GetAndPost_ReturnPerBandHistograms"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19792,7 +19853,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19808,7 +19869,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerExportTilesJobEndpointTests.ExportTiles_SubmitStatusCancelResult_ByService"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19823,7 +19884,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.KeyProperties_Post_ReturnsNonEmptyBandProperties"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19837,7 +19898,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19851,7 +19912,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19865,7 +19926,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19879,7 +19940,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Project_GetAndPost_ReprojectsGeometries"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19893,7 +19954,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19908,7 +19969,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryBoundary_GetAndPost_ReturnsShapeAndArea"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19922,7 +19983,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.RasterAttributeTable_GetAndPost_ReturnSchemaWithNoRows"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19936,7 +19997,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.RasterFunctionInfos_GetAndPost_ListSupportedFunctions"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19950,7 +20011,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -19964,7 +20025,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerRasterMetadataTests.Statistics_GetAndPost_ReturnPerBandStatistics"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -20511,6 +20572,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Identity.AdminLogoutDependencyLossTests.Logout_DistributedCacheOutage_Returns503UntilRevocationCanBeRetried",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_MissingSamlRequest_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_UnsignedLogoutRequest_IsRejected",
         "Honua.Server.Tests.Features.Identity.SamlBridgeEndpointsTests.Slo_ValidSignedLogoutRequest_TerminatesSessionAndRelaysResponse"
@@ -20597,7 +20659,9 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapCatalog_DtdPayload_ReturnsClientFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.SoapCatalog_PublicBaseUrlProjectsWsdlSoapAndRestUrls"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.SoapCatalog_PublicBaseUrlProjectsWsdlSoapAndRestUrls",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_DtdWithExternalEntity_RejectsWithoutResolving",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_InvalidEnvelopeWithSchemaLocation_RejectsWithoutLoadingClientSchema"
       ],
       "proof_ledger_surface": "geoservices-catalog",
       "maturity": "implemented",
@@ -20632,10 +20696,12 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_UnknownService_ReturnsNotFoundFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_UsesOperationAwareAuthorizationAndMapsTimeouts",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoap_UnsupportedOperations_DoNotCreateAttackerControlledTelemetry",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_DtdPayload_ReturnsClientFault"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.SoapImageServer_DtdPayload_ReturnsClientFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_DtdWithExternalEntity_RejectsWithoutResolving",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.SoapXmlSecurityTests.PostSoap_InvalidEnvelopeWithSchemaLocation_RejectsWithoutLoadingClientSchema"
       ],
       "proof_ledger_surface": "image-server",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.geoservices-imageserver"
     },
     {
@@ -20649,7 +20715,7 @@
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_Anonymous_Returns401",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_Authenticated_CreatesGroupOwnedByCaller",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_FormToken_AuthenticatesAndPreservesFormForEndpoint",
-        "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_InvalidFormToken_Returns401",
+        "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_InvalidFormToken_Returns498",
         "Honua.Server.Tests.Features.Sharing.SharingCommunityTests.CreateGroup_MultipartToken_DoesNotAuthenticate"
       ],
       "proof_ledger_surface": "arcgis-portal-sharing",
@@ -20889,6 +20955,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.OptionalCounts_PageAcrossCollectionsWithoutCounting",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_AllItemsHaveStacFields",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WhenMorePagesExist_EmitsConformantPostNextLink",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithBbox_ReturnsFilteredResults",
@@ -20899,7 +20966,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithNonNumericCollectionId_IsAcceptedAndReturnsEmpty",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithOutOfRangeBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithStringIds_FiltersByStacItemId",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithThreeDimensionalBbox_ReturnsItems"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithThreeDimensionalBbox_ReturnsItems",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
@@ -21042,7 +21110,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_CreateStoredQuery_WithDuplicateId_ReturnsDuplicateIdLocator",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_CreateStoredQuery_WithSupportedQueryLanguage_ReturnsOk",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetCapabilities_ReturnsXmlWithTransactionOperation",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_MultiQueryPagingNextLinkCanBeFollowed",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_XmlQueryWithFilter_PagingNextLinkPreservesFilter",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_GetFeature_XmlStoredQueryParameterIsApplied",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_GetCapabilities_ReturnsXml",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_GetCapabilities_XmlBody_ReturnsXml",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.Wfs20EndpointsTests.Wfs_Post_GetFeature_AfterTimePeriodWithUtcZ_ReturnsLaterFeatures",
@@ -22007,6 +22077,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAuthorizationTests.UpdateFeature_WithoutApiKey_ReturnsUnauthorized",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.InvalidMutations_AreRejectedWithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesMutationScenarioTests.MutationLifecycle_CreateReplacePatchDelete_RoundTripsEachState",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.ProjectedCollection_AbsentContentCrs_DefaultsToCrs84ForGetPutRoundTrip",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.PutItem_WithInternalObjectIdPayloadId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.PutItem_WithMismatchedPublicIdProperty_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesStringIdentifierEndpointTests.PutItem_WithStringFeatureId_UsesPublicIdentifier",

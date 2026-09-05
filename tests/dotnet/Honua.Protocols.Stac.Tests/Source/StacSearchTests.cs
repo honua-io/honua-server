@@ -958,6 +958,47 @@ public sealed class StacSearchTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Regression test for #4147: the advertised STAC canonical fields must be
+    /// accepted by both the Fields and Sort extensions, including the canonical
+    /// properties.datetime spelling.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.StacSearch)]
+    [Endpoint("GET /stac/search")]
+    public async Task SearchGet_CanonicalStacFields_AreAcceptedByFieldsAndSort()
+    {
+        var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
+
+        var datetimeFieldsResponse = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&limit=1&fields=%2Bproperties.datetime");
+        var datetimeFieldsContent = await datetimeFieldsResponse.Content.ReadAsStringAsync();
+        datetimeFieldsResponse.StatusCode.Should().Be(HttpStatusCode.OK, datetimeFieldsContent);
+        using (var datetimeFieldsJson = JsonDocument.Parse(datetimeFieldsContent))
+        {
+            var item = datetimeFieldsJson.RootElement.GetProperty("features").EnumerateArray().First();
+            item.GetProperty("properties").TryGetProperty("datetime", out _).Should().BeTrue();
+        }
+
+        var idFieldsResponse = await _fixture.Client.GetAsync(
+            $"/stac/search?collections={collectionId}&limit=1&fields=%2Bid");
+        var idFieldsContent = await idFieldsResponse.Content.ReadAsStringAsync();
+        idFieldsResponse.StatusCode.Should().Be(HttpStatusCode.OK, idFieldsContent);
+        using (var idFieldsJson = JsonDocument.Parse(idFieldsContent))
+        {
+            idFieldsJson.RootElement.GetProperty("features").EnumerateArray().First()
+                .GetProperty("id").GetString().Should().NotBeNullOrWhiteSpace();
+        }
+
+        foreach (var sortField in new[] { "datetime", "properties.datetime", "id" })
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"/stac/search?collections={collectionId}&limit=1&sortby={sortField}");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        }
+    }
+
+    /// <summary>
     /// Regression test for BH2-010: the GET search next-link for paginated requests must
     /// use literal commas as collection-ID separators rather than encoding the separator
     /// comma, so that following the link correctly returns page 2.

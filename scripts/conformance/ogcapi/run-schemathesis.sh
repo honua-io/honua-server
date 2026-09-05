@@ -17,10 +17,11 @@
 # response documentation gaps are closed).
 set -euo pipefail
 
-BASE_URL="${HONUA_BASE_URL:-http://localhost:8080}"
+BASE_URL="${HONUA_BASE_URL:-http://127.0.0.1:8080}"
 SCHEMA_URL=""
 MAX_EXAMPLES="${SCHEMATHESIS_MAX_EXAMPLES:-15}"
 WORKERS="${SCHEMATHESIS_WORKERS:-4}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 STRICT=false
 REPORT_DIR="${SCHEMATHESIS_REPORT_DIR:-ogcapi-schemathesis-results}"
 
@@ -47,10 +48,10 @@ export PYTHONUTF8=1
 # schemathesis 4.x has no generated console entrypoint on some installs; invoke
 # the package callable directly so the gate works regardless of PATH shims.
 st() {
-  python -c "from schemathesis.cli import schemathesis; schemathesis()" "$@"
+  "$PYTHON_BIN" -c "from schemathesis.cli import schemathesis; schemathesis()" "$@"
 }
 
-if ! python -c "import schemathesis" 2>/dev/null; then
+if ! "$PYTHON_BIN" -c "import schemathesis" 2>/dev/null; then
   echo "ERROR: schemathesis not installed. Run: pip install schemathesis" >&2
   exit 2
 fi

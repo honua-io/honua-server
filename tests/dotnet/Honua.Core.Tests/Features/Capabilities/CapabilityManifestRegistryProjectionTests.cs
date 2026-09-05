@@ -42,12 +42,16 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "temporal.animation-api",
         "serve.3d-tiles-scene",
         "serve.i3s-scene",
+        "serve.ogc-api-edr",
         "scene.catalog",
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
         "sync.offline",
         "realtime.feature-streams",
         "serve.sensorthings",
+        "serve.geoservices-imageserver",
+        "serve.wmts",
+        "serve.ogc-api-coverages",
         "alerts.geofence",
         "jobs.runner",
         "ai.spec-apply",
@@ -74,6 +78,18 @@ public sealed class CapabilityManifestRegistryProjectionTests
             && !descriptor.Id.StartsWith(CapabilityRegistry.McpResourceIdPrefix, StringComparison.Ordinal)
             && !descriptor.Id.StartsWith(CapabilityRegistry.DataFormatIdPrefix, StringComparison.Ordinal);
 
+    [Theory]
+    [InlineData("serve.geoservices-imageserver")]
+    [InlineData("serve.wmts")]
+    [InlineData("serve.ogc-api-coverages")]
+    public void Registry_LifecycleOnlyPreviews_RemainEnabledWithoutOptIn(string id)
+    {
+        var descriptor = Registry.Find(id)!;
+        descriptor.Maturity.Should().Be(CapabilityMaturity.Preview);
+        descriptor.RequiresOptIn.Should().BeFalse();
+        Registry.Resolve(id, CapabilityGateContext.Default).Enabled.Should().BeTrue();
+    }
+
     [Fact]
     public void Registry_ManifestDescriptors_MatchFrozenRosterInOrder()
     {
@@ -99,9 +115,10 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "scene.bim-ingest",
         "scene.pointcloud-ingest",
         // temporal.* promoted to Implemented (GA) in #2429 — no longer omitted.
-        // sync.offline promoted to Implemented (GA) in #2430 — no longer omitted.
+        // sync.offline is Preview in 2026.1 and remains in the manifest projection when the
+        // deployment-wide Preview gate is enabled.
         // realtime.feature-streams promoted to Implemented (GA) in #2428 — no longer omitted.
-        // alerts.geofence promoted in #2427 — not omitted.
+        // alerts.geofence is Preview in 2026.1 and is projected through PreviewCapabilityIds.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
         // security.mtls was promoted to Implemented (GA) in #2431, then DEMOTED back to
@@ -112,10 +129,14 @@ public sealed class CapabilityManifestRegistryProjectionTests
 
     private static readonly string[] PreviewManifestCapabilityIds =
     [
+        "serve.ogc-api-edr",
         "sync.offline",
         "alerts.geofence",
         "realtime.feature-streams",
         "serve.sensorthings",
+        "serve.geoservices-imageserver",
+        "serve.wmts",
+        "serve.ogc-api-coverages",
     ];
 
     [Fact]

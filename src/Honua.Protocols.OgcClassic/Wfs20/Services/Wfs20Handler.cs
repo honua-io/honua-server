@@ -1,16 +1,16 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections;
 using System.Collections.Immutable;
+using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
-using System.Security;
 using System.Security.Claims;
-using System.Text;
+using System.Security;
 using System.Text.Json;
-using System.Xml;
+using System.Text;
 using System.Xml.Linq;
+using System.Xml;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -21,8 +21,9 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
-using Honua.Core.Queries.Filters;
+using Honua.Core.Features.Shared.Services;
 using Honua.Core.Queries.Filters.Fes20;
+using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.GeoJson;
@@ -30,12 +31,12 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
-using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
+using Honua.Protocols.Ogc.Common;
 using Honua.ServiceDefaults;
-using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using NetTopologySuite;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
@@ -153,7 +154,11 @@ internal sealed partial class Wfs20Handler
                 filter,
                 resourceId,
                 srsName,
-                enforceResourceIdTypeMatch: true,
+                // A qualified RESOURCEID is scoped by its own type name. When the request
+                // selects multiple types (including the implicit all-types selection), ignore
+                // that id while building the other type's plan instead of rejecting the entire
+                // request because the prefix does not match that plan (#4168).
+                enforceResourceIdTypeMatch: featureTypes.Count == 1,
                 requireResourceIdQualifier: featureTypes.Count > 1,
                 cancellationToken: cancellationToken,
                 wfsVersion: wfsVersion);
@@ -786,7 +791,8 @@ internal sealed partial class Wfs20Handler
         int offset,
         int pageSize,
         long totalMatched,
-        int returnedCount)
+        int returnedCount,
+        IReadOnlyList<string>? pagingTypeNames = null)
     {
         var pagingResultType = string.Equals(resultType, "hits", StringComparison.OrdinalIgnoreCase)
             ? null
@@ -808,7 +814,8 @@ internal sealed partial class Wfs20Handler
                 offset,
                 pageSize,
                 totalMatched,
-                returnedCount));
+                returnedCount,
+                pagingTypeNames));
     }
 
     private static string BuildFeatureCollectionSchemaLocation(
@@ -848,7 +855,8 @@ internal sealed partial class Wfs20Handler
         int offset,
         int pageSize,
         long totalMatched,
-        int returnedCount)
+        int returnedCount,
+        IReadOnlyList<string>? pagingTypeNames = null)
     {
         if (pageSize <= 0 || selectedTypes.Count == 0)
         {
@@ -872,7 +880,8 @@ internal sealed partial class Wfs20Handler
                 srsName,
                 resultType,
                 (int)nextOffset,
-                pageSize)
+                pageSize,
+                pagingTypeNames)
             : null;
         var previous = offset > 0
             ? BuildGetFeaturePagingLink(
@@ -887,7 +896,8 @@ internal sealed partial class Wfs20Handler
                 srsName,
                 resultType,
                 Math.Max(offset - pageSize, 0),
-                pageSize)
+                pageSize,
+                pagingTypeNames)
             : null;
 
         return new PagingLinks(next, previous);
@@ -905,14 +915,18 @@ internal sealed partial class Wfs20Handler
         string? srsName,
         string? resultType,
         int offset,
-        int count)
+        int count,
+        IReadOnlyList<string>? pagingTypeNames = null)
     {
+        var typeNames = pagingTypeNames is { Count: > 0 }
+            ? pagingTypeNames
+            : selectedTypes.Select(descriptor => descriptor.LocalName).ToArray();
         var queryParts = new List<string>
         {
             $"SERVICE={Uri.EscapeDataString(Wfs20Utilities.ServiceType)}",
             $"VERSION={Uri.EscapeDataString(Wfs20Utilities.Version)}",
             $"REQUEST={Uri.EscapeDataString(Wfs20Utilities.Operations.GetFeature)}",
-            $"TYPENAMES={Uri.EscapeDataString(string.Join(',', selectedTypes.Select(descriptor => descriptor.LocalName)))}",
+            $"TYPENAMES={Uri.EscapeDataString(string.Join(',', typeNames))}",
             $"COUNT={count.ToString(CultureInfo.InvariantCulture)}",
             $"STARTINDEX={offset.ToString(CultureInfo.InvariantCulture)}"
         };
@@ -1800,8 +1814,10 @@ internal sealed partial class Wfs20Handler
         };
     }
 
-    private static string ConvertFieldValueToInvariantString(object? value, MetadataV2Field field)
+    private static string? ConvertFieldValueToInvariantString(object? value, MetadataV2Field field)
     {
+        if (IsNullValue(value))
+            return null;
         if (value is string text)
         {
             return field.Type switch
@@ -1955,19 +1971,7 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static string EscapeCsv(string? value)
-    {
-        var safeValue = value ?? string.Empty;
-        if (!safeValue.Contains(',') &&
-            !safeValue.Contains('"') &&
-            !safeValue.Contains('\n') &&
-            !safeValue.Contains('\r'))
-        {
-            return safeValue;
-        }
-
-        return $"\"{safeValue.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
-    }
+    private static string EscapeCsv(string? value) => CsvFieldFormatter.Escape(value);
 
     private static string XmlEscape(string value) => SecurityElement.Escape(value) ?? string.Empty;
 

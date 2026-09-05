@@ -124,10 +124,9 @@ internal static partial class WmsRequestHandlers
     internal static async Task<IResult> HandleWms(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
-        if (serviceError is not null)
+        if (!RouteValidationHelpers.TryValidateServiceId(context, out var serviceId))
         {
-            return serviceError;
+            return CreateWmsServiceException(context, "InvalidParameterValue", "Service ID is required.");
         }
 
         var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();

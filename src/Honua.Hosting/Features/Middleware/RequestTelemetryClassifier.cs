@@ -68,6 +68,11 @@ internal static class RequestTelemetryClassifier
             return HonuaTelemetry.Protocols.OgcRecords;
         }
 
+        if (StartsWithPathSegment(value, "/wps"))
+        {
+            return HonuaTelemetry.Protocols.Wps20;
+        }
+
         if (StartsWithPathSegment(value, "/wfs"))
         {
             return HonuaTelemetry.Protocols.Wfs20;
@@ -247,6 +252,11 @@ internal static class RequestTelemetryClassifier
         if (path.Contains("/GPServer", StringComparison.OrdinalIgnoreCase))
         {
             return ResolveGpServerOperation(path);
+        }
+
+        if (StartsWithPathSegment(path, "/wps"))
+        {
+            return ResolveWpsOperation(GetQueryOption(context, "request"));
         }
 
         if (StartsWithPathSegment(path, "/wfs"))
@@ -912,6 +922,17 @@ internal static class RequestTelemetryClassifier
 
         return "stac";
     }
+
+    internal static string ResolveWpsOperation(string? operation) => operation?.Trim().ToUpperInvariant() switch
+    {
+        null or "" => "wps",
+        "GETCAPABILITIES" => "wps.getcapabilities",
+        "DESCRIBEPROCESS" => "wps.describeprocess",
+        "EXECUTE" => "wps.execute",
+        "GETSTATUS" => "wps.getstatus",
+        "GETRESULT" => "wps.getresult",
+        _ => "wps.unsupported"
+    };
 
     private static string ResolveQueryRequestOperation(HttpContext context, string prefix)
     {

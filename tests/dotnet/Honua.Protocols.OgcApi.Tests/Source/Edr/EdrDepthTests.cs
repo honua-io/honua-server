@@ -307,7 +307,10 @@ public sealed class EdrDepthTestsFixture : IAsyncLifetime
     {
         var rasterStore = Substitute.For<IRasterStore>();
         ConfigureRasterStore(rasterStore);
-        App = new WebAppFixture().ReplaceService(rasterStore);
+        App = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting(
+                "Capabilities:Experimental:serve.ogc-api-edr:Enabled", "true"))
+            .ReplaceService(rasterStore);
     }
 
     public WebAppFixture App { get; }

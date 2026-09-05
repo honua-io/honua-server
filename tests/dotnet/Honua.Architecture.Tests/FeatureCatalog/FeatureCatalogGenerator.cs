@@ -259,6 +259,23 @@ internal static class FeatureCatalogGenerator
     /// </summary>
     internal static string? ResolveDescriptorIdForRoute(string route)
     {
+        // Lifecycle-only Preview declarations also cover the MapServer WMTS aliases,
+        // whose capability key belongs to the otherwise GA MapServer family.
+        if (route.Contains("/WMTS", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.wmts";
+        }
+
+        if (route.Contains("/ImageServer", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.geoservices-imageserver";
+        }
+
+        if (route.StartsWith("/ogc/coverages", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.ogc-api-coverages";
+        }
+
         // Temporal analytics — /api/v1/temporal/* was promoted to GA (Implemented) in
         // #2429 (temporal.filtering/extent-discovery/histogram/time-series-tiles), so it is
         // no longer a flipped experimental group: its routes fall through to the in-release
@@ -330,6 +347,13 @@ internal static class FeatureCatalogGenerator
         if (route.StartsWith("/sta/v1.1", StringComparison.OrdinalIgnoreCase))
         {
             return "serve.sensorthings";
+        }
+
+        // OGC API - EDR is Preview in release 2026.1; remaining functional
+        // query corrections are deferred to release/2026.2.
+        if (route.StartsWith("/edr", StringComparison.OrdinalIgnoreCase))
+        {
+            return "serve.ogc-api-edr";
         }
 
         // Branch versioning (VMS REST surface) — /rest/services/{serviceId}/VersionManagementServer/*

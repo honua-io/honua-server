@@ -79,7 +79,7 @@ A synchronous import returns the result inline; a completed background job retur
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. |
 | FlatGeobuf | `.fgb` | Upload directly, no archive. CRS read from the header; if absent, `sourceSrid` is required or the import is rejected. |
 | FileGDB | `.gdb.zip` | Zip exactly one `.gdb` directory with its internal files intact (do not flatten). SRID detected from geodatabase metadata when present. One target table per request — per-layer selection is not exposed. Domains, relationship classes, subtypes, topology rules, and network datasets are detected but not imported; they surface in `warnings`. |
-| GeoParquet | `.parquet`, `.geoparquet` | CRS read from the GeoParquet `geo` metadata. Requires WKB geometry encoding; nested columns are skipped with warnings; rows with null geometry are skipped and reported; row groups over 100,000 rows are rejected — re-export with smaller row groups. |
+| GeoParquet | `.parquet`, `.geoparquet` | CRS read from the GeoParquet `geo` metadata. Requires WKB geometry encoding; nested columns are skipped with warnings; rows with null geometry are skipped and reported; Parquet row groups are streamed one group at a time. |
 
 When the server cannot detect a source CRS and no `sourceSrid` was supplied, the import fails with the stable error code `import.source_srid_required`.
 

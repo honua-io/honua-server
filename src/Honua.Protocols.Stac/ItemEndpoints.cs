@@ -14,6 +14,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using Honua.Protocols.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Stac;
 
@@ -135,6 +136,7 @@ internal static class ItemEndpoints
                 query = query with { SpatialFilter = spatialFilter };
             }
 
+            var hasResolvableDatetime = true;
             if (!string.IsNullOrWhiteSpace(datetime))
             {
                 if (!StacFilterHelpers.IsValidDatetimeSyntax(datetime))
@@ -143,9 +145,8 @@ internal static class ItemEndpoints
                     return StandardErrorHelpers.CreateBadRequest(context, "Invalid datetime parameter.");
                 }
 
-                // ParseDatetime returns null when this resource has no temporal field;
-                // skip the temporal filter rather than rejecting the request.
                 var temporalFilter = StacFilterHelpers.ParseDatetime(datetime, resource);
+                hasResolvableDatetime = temporalFilter is not null;
                 if (temporalFilter is not null)
                 {
                     query = query with { TemporalFilter = temporalFilter };
@@ -153,12 +154,16 @@ internal static class ItemEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var result = await readerResolution.Reader.QueryAsync(
+            var omitCount = context.RequestServices.GetRequiredService<IOptions<StacOptions>>().Value.NumberMatchedPolicy
+                == StacNumberMatchedPolicy.OmitWhenExpensive;
+            var result = hasResolvableDatetime ? await StacPageReader.ReadAsync(
+                readerResolution.Reader,
                 readerResolution.StorageLayerId,
                 query,
-                cancellationToken);
+                omitCount,
+                cancellationToken) : PagedQueryResult<Feature>.Create([], totalCount: omitCount ? null : 0);
 
-            var items = result.Features
+            var items = result.Items
                 .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid))
                 .ToImmutableArray();
 
@@ -184,7 +189,7 @@ internal static class ItemEndpoints
                 title: "STAC Catalog"));
 
             var nextOffset = effectiveOffset + items.Length;
-            if (result.TotalCount > nextOffset)
+            if (result.HasMoreResults)
             {
                 linksBuilder.Add(Link.Create(
                     href: $"{itemsPath}?{BuildItemsFilterQuery(effectiveLimit, nextOffset, bbox, datetime)}",

@@ -35,6 +35,7 @@ using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Console.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
+using Honua.Infrastructure.Logging;
 using Honua.Io.Export;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Provisioner;
@@ -112,6 +113,8 @@ StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Finalize JSON precedence before any secret becomes a process-lifetime snapshot.
+StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
@@ -183,8 +186,6 @@ if (loadHostedBlazorStaticWebAssets)
     StartupConfigurationHelpers.LoadHostedBlazorStaticWebAssets(builder);
 }
 
-// Load optional security configuration without overriding environment-specific settings.
-StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 // The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
 // admin credential while preserving its refreshable reference, and snapshot the encryption master
 // key before its direct consumer can mistake the reference text for key material.
@@ -325,7 +326,6 @@ builder.Host.UseSerilog((context, services, config) =>
         .MinimumLevel.Information()
         .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Information)
         .MinimumLevel.Override("Microsoft.AspNetCore.Routing", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
         .Enrich.FromLogContext()
@@ -334,7 +334,8 @@ builder.Host.UseSerilog((context, services, config) =>
         .Enrich.WithThreadId()
         .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
         .Enrich.WithProperty("Application", "Honua")
-        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown");
+        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown")
+        .ConfigureHonuaRequestDiagnostics();
 
     if (benchmarkQuietLogs)
     {
@@ -1394,6 +1395,12 @@ app.UseWhen(
 // before any downstream feature handler reads ITenantContext (#1144).
 app.UseHonuaTenantContext();
 
+// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
+// so schema-routing failures also consume the tenant + authenticated user/API-key bucket
+// (falling back to source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
+// posture is still edge enforcement (ADR-0004).
+app.UseRateLimiting();
+
 // Route the resolved tenant to its PostgreSQL schema and record a usage signal (#346).
 // No-op unless MultiTenancy:SchemaRouting:Enabled=true. Must run after tenant context
 // resolution and before any feature handler that reads the database.
@@ -1403,12 +1410,6 @@ app.UseHonuaTenantSchemaRouting();
 // resolution. A no-op for tenants not present in the catalog, so the default pipeline is
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
-
-// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
-// so buckets partition by tenant + authenticated user/API-key identity (falling back to
-// source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
-// posture is still edge enforcement (ADR-0004).
-app.UseRateLimiting();
 
 // Reject invalid Esri portal tokens only after the shared rate limiter has metered the
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.

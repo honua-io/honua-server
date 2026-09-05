@@ -1888,6 +1888,11 @@ internal static class GPServerEndpoints
         return string.Equals(key, "f", StringComparison.OrdinalIgnoreCase)
             || string.Equals(key, "token", StringComparison.OrdinalIgnoreCase)
             || string.Equals(key, "context", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "returnZ", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "returnM", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "returnFeatureCollection", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "returnColumnName", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "returnTrueCurves", StringComparison.OrdinalIgnoreCase)
             || key.StartsWith("env:", StringComparison.OrdinalIgnoreCase);
     }
 

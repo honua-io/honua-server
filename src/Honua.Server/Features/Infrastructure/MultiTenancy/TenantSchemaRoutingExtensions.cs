@@ -3,6 +3,8 @@
 
 using System;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,6 +41,14 @@ public static class TenantSchemaRoutingExtensions
 
         services.AddOptions<TenantSchemaOptions>()
             .Bind(configuration.GetSection(TenantSchemaOptions.SectionName));
+
+        if (configuration.IsTenantSchemaRoutingEnabled())
+        {
+            // Production routing needs the same request-scoped context as the database
+            // search-path applier, independently of optional test schema headers.
+            services.TryAddScoped<SchemaContext>();
+            services.TryAddScoped<ISchemaContext>(provider => provider.GetRequiredService<SchemaContext>());
+        }
 
         services.TryAddSingleton<ITenantUsageMeter, InMemoryTenantUsageMeter>();
         services.TryAddSingleton<ITenantSchemaResolver, TenantSchemaResolver>();

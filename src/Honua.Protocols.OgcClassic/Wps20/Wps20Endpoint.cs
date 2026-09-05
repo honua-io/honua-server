@@ -34,6 +34,7 @@ internal static partial class Wps20Endpoint
     internal static IEndpointRouteBuilder MapWps20Endpoint(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapMethods("/wps", Methods, DispatchAsync)
+            .AddEndpointFilter(RecordErrorTelemetryAsync)
             .WithMetadata(new HeadRequestRejectedEndpointMetadata(Methods, ShouldRejectHead))
             .WithDisplayName("WPS 2.0.2 Service")
             .WithName("Wps20Service")
@@ -49,12 +50,29 @@ internal static partial class Wps20Endpoint
             .AllowAnonymous();
 
         endpoints.MapGet("/wps/conformance/results/{token}", GetConformanceResultReference)
+            .AddEndpointFilter(RecordErrorTelemetryAsync)
             .WithDisplayName("WPS conformance result reference")
             .WithName("Wps20ConformanceResult")
             .ExcludeFromDescription()
             .AllowAnonymous();
 
         return endpoints;
+    }
+
+    private static async ValueTask<object?> RecordErrorTelemetryAsync(
+        EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var result = await next(context).ConfigureAwait(false);
+        if (result is IStatusCodeHttpResult { StatusCode: >= 400 } error)
+        {
+            // WPS writes XML exceptions directly instead of using the standard
+            // error formatter. Count each failure alongside its serving request.
+            HonuaTelemetry.RecordErrorEnvelope(HonuaTelemetry.Protocols.Wps20,
+                RequestTelemetryClassifier.ResolveOperation(context.HttpContext) ?? "wps",
+                error.StatusCode.Value, isGeoServices: false, httpStatusCode: error.StatusCode.Value);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -97,13 +115,13 @@ internal static partial class Wps20Endpoint
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.wps." + request.Operation.ToLowerInvariant());
-        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "WPS-2.0.2");
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wps20);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, request.Operation);
         if (request.JobId is not null)
         {
             activity?.SetTag(HonuaTelemetry.Tags.JobId, request.JobId);
         }
-        context.Items["__honua_request_operation"] = "wps." + request.Operation.ToLowerInvariant();
+        context.Items[RequestTelemetryClassifier.OperationItemKey] = RequestTelemetryClassifier.ResolveWpsOperation(request.Operation);
         Log.OperationRequested(logger, request.Operation);
 
         try
@@ -218,9 +236,45 @@ internal static partial class Wps20Endpoint
     private static string DescribeCanonicalProcess(ProcessDefinition process)
     {
         var inputs = string.Join(string.Empty, process.Parameters.Select(parameter =>
-            $"<wps:Input minOccurs=\"{(parameter.Required ? "1" : "0")}\" maxOccurs=\"1\"><ows:Title>{X(parameter.DisplayName)}</ows:Title><ows:Abstract>{X(parameter.Description)}</ows:Abstract><ows:Identifier>{X(parameter.Name)}</ows:Identifier><wps:LiteralData><wps:Format mimeType=\"text/plain\" default=\"true\"/></wps:LiteralData></wps:Input>"));
-        const string outputs = "<wps:Output><ows:Title>Result summary</ows:Title><ows:Identifier>result</ows:Identifier><wps:LiteralData><wps:Format mimeType=\"text/plain\" default=\"true\"/></wps:LiteralData></wps:Output>";
-        return $"<wps:ProcessOffering processVersion=\"1.0.0\" jobControlOptions=\"async-execute\" outputTransmission=\"value\"><wps:Process><ows:Title>{X(process.Title)}</ows:Title><ows:Abstract>{X(process.Description)}</ows:Abstract><ows:Identifier>{X(process.ProcessId)}</ows:Identifier>{inputs}{outputs}</wps:Process></wps:ProcessOffering>";
+            $"<wps:Input minOccurs=\"{(parameter.Required ? "1" : "0")}\" maxOccurs=\"1\"><ows:Title>{X(parameter.DisplayName)}</ows:Title><ows:Abstract>{X(parameter.Description)}</ows:Abstract><ows:Identifier>{X(parameter.Name)}</ows:Identifier><wps:LiteralData><wps:Format mimeType=\"text/plain\" default=\"true\"/>{LiteralDataDomain(parameter.ValueType)}</wps:LiteralData></wps:Input>"));
+        var outputs = DescribeCanonicalOutputs(process.OutputArtifactKinds);
+        var transmission = process.OutputArtifactKinds.Count == 0 ? "value" : "value reference";
+        return $"<wps:ProcessOffering processVersion=\"1.0.0\" jobControlOptions=\"async-execute\" outputTransmission=\"{transmission}\"><wps:Process><ows:Title>{X(process.Title)}</ows:Title><ows:Abstract>{X(process.Description)}</ows:Abstract><ows:Identifier>{X(process.ProcessId)}</ows:Identifier>{inputs}{outputs}</wps:Process></wps:ProcessOffering>";
+    }
+
+    private static string DescribeCanonicalOutputs(IReadOnlyList<ArtifactKind> outputKinds)
+    {
+        if (outputKinds.Count == 0)
+        {
+            return $"<wps:Output><ows:Title>Result summary</ows:Title><ows:Identifier>result</ows:Identifier><wps:LiteralData><wps:Format mimeType=\"text/plain\" default=\"true\"/>{LiteralDataDomain(ProcessParameterValueType.Text)}</wps:LiteralData></wps:Output>";
+        }
+
+        var ordinals = new Dictionary<ArtifactKind, int>();
+        return string.Join(string.Empty, outputKinds.Select(kind =>
+        {
+            var ordinal = ordinals.TryGetValue(kind, out var previous) ? previous + 1 : 1;
+            ordinals[kind] = ordinal;
+            var identifier = ResolveOutputIdentifier(kind, ordinal);
+            var title = $"{kind} output";
+            return kind == ArtifactKind.Scalar
+                ? $"<wps:Output><ows:Title>{X(title)}</ows:Title><ows:Identifier>{identifier}</ows:Identifier><wps:LiteralData><wps:Format mimeType=\"text/plain\" default=\"true\"/>{LiteralDataDomain(ProcessParameterValueType.Text)}</wps:LiteralData></wps:Output>"
+                : $"<wps:Output><ows:Title>{X(title)}</ows:Title><ows:Identifier>{identifier}</ows:Identifier><wps:ComplexData><wps:Format mimeType=\"{DefaultArtifactContentType(kind)}\" default=\"true\"/></wps:ComplexData></wps:Output>";
+        }));
+    }
+
+    private static string LiteralDataDomain(ProcessParameterValueType valueType)
+    {
+        var (reference, name) = valueType switch
+        {
+            ProcessParameterValueType.WholeNumber or ProcessParameterValueType.Srid =>
+                ("http://www.w3.org/2001/XMLSchema#integer", "integer"),
+            ProcessParameterValueType.FloatingPoint =>
+                ("http://www.w3.org/2001/XMLSchema#double", "double"),
+            ProcessParameterValueType.Flag =>
+                ("http://www.w3.org/2001/XMLSchema#boolean", "boolean"),
+            _ => ("http://www.w3.org/2001/XMLSchema#string", "string")
+        };
+        return $"<LiteralDataDomain default=\"true\"><ows:AnyValue/><ows:DataType ows:reference=\"{reference}\">{name}</ows:DataType></LiteralDataDomain>";
     }
 
     private static string DescribeEchoProcess(string processId) => $"""
@@ -255,7 +309,7 @@ internal static partial class Wps20Endpoint
             return Exception("NoSuchProcess", $"Process '{request.Identifier}' does not exist.", "identifier", StatusCodes.Status404NotFound);
         }
 
-        var canonicalContractError = ValidateCanonicalExecuteContract(request);
+        var canonicalContractError = ValidateCanonicalExecuteContract(request, process);
         if (canonicalContractError is not null)
         {
             return canonicalContractError;
@@ -341,7 +395,7 @@ internal static partial class Wps20Endpoint
         return EchoResult(context, echo, value, outputId, transmission, null);
     }
 
-    private static IResult? ValidateCanonicalExecuteContract(WpsRequest request)
+    private static IResult? ValidateCanonicalExecuteContract(WpsRequest request, ProcessDefinition process)
     {
         var mode = request.Mode ?? "async";
         var responseForm = request.ResponseForm ?? "document";
@@ -354,13 +408,29 @@ internal static partial class Wps20Endpoint
             return Exception("InvalidParameterValue", "Canonical WPS processes support only response='document'.", "response");
         }
         var output = request.Outputs.SingleOrDefault();
-        if (output is not null
-            && (!string.Equals(output.Id, "result", StringComparison.Ordinal)
-                || !string.Equals(output.Transmission, "value", StringComparison.Ordinal)))
+        if (output is not null)
         {
-            return Exception("InvalidParameterValue", "Canonical WPS processes support only output 'result' transmitted by value.", "output");
+            var allowedIdentifiers = process.OutputArtifactKinds.Count == 0
+                ? new[] { "result" }
+                : DescribeOutputIdentifiers(process.OutputArtifactKinds);
+            if (!allowedIdentifiers.Contains(output.Id, StringComparer.Ordinal) ||
+                (process.OutputArtifactKinds.Count == 0 && !string.Equals(output.Transmission, "value", StringComparison.OrdinalIgnoreCase)))
+            {
+                return Exception("InvalidParameterValue", "The requested canonical WPS output is not advertised by this process.", "output");
+            }
         }
         return null;
+    }
+
+    private static string[] DescribeOutputIdentifiers(IReadOnlyList<ArtifactKind> outputKinds)
+    {
+        var ordinals = new Dictionary<ArtifactKind, int>();
+        return outputKinds.Select(kind =>
+        {
+            var ordinal = ordinals.TryGetValue(kind, out var previous) ? previous + 1 : 1;
+            ordinals[kind] = ordinal;
+            return ResolveOutputIdentifier(kind, ordinal);
+        }).ToArray();
     }
 
     private static async Task<IResult> GetStatusAsync(HttpContext context, IGeoprocessingJobService jobs, Wps20ConformanceEcho echo, string? jobId)
@@ -388,8 +458,71 @@ internal static partial class Wps20Endpoint
             return EchoResult(context, echo, stored.Value, stored.OutputId, stored.Transmission, jobId);
         }
         var package = await jobs.GetJobResultsAsync(jobId, context.User, context.RequestAborted).ConfigureAwait(false);
-        return Xml($"<?xml version=\"1.0\" encoding=\"UTF-8\"?><wps:Result xmlns:wps=\"{WpsNamespace}\" xmlns:ows=\"{OwsNamespace}\" jobID=\"{X(jobId)}\"><wps:Output><ows:Identifier>result</ows:Identifier><wps:Data mimeType=\"text/plain\"><wps:LiteralValue>{X(package.Summary.Title)}</wps:LiteralValue></wps:Data></wps:Output></wps:Result>");
+        return Xml(BuildJobResultXml(jobId, package));
     }
+
+    private static string BuildJobResultXml(string jobId, AnalysisResultPackage package)
+    {
+        var outputs = new StringBuilder();
+        if (package.Artifacts.Count == 0)
+        {
+            outputs.Append($"<wps:Output><ows:Identifier>result</ows:Identifier><wps:Data mimeType=\"text/plain\"><wps:LiteralValue>{X(package.Summary.Title)}</wps:LiteralValue></wps:Data></wps:Output>");
+        }
+        else
+        {
+            var ordinals = new Dictionary<ArtifactKind, int>();
+            for (var index = 0; index < package.Artifacts.Count; index++)
+            {
+                var artifact = package.Artifacts[index];
+                var ordinal = ordinals.TryGetValue(artifact.Kind, out var previous) ? previous + 1 : 1;
+                ordinals[artifact.Kind] = ordinal;
+                var identifier = ResolveOutputIdentifier(artifact.Kind, ordinal);
+                var contentType = artifact.ContentType ?? DefaultArtifactContentType(artifact.Kind);
+                var artifactUri = artifact.Uri;
+                if (!string.IsNullOrWhiteSpace(artifactUri))
+                {
+                    outputs.Append($"<wps:Output><ows:Identifier>{X(identifier)}</ows:Identifier><wps:Reference xmlns:xlink=\"http://www.w3.org/1999/xlink\" mimeType=\"{X(contentType)}\" xlink:href=\"{X(artifactUri)}\"/></wps:Output>");
+                }
+                else
+                {
+                    outputs.Append($"<wps:Output><ows:Identifier>{X(identifier)}</ows:Identifier><wps:Data mimeType=\"text/plain\"><wps:LiteralValue>{X(artifact.Label)}</wps:LiteralValue></wps:Data></wps:Output>");
+                }
+            }
+        }
+
+        return $"<?xml version=\"1.0\" encoding=\"UTF-8\"?><wps:Result xmlns:wps=\"{WpsNamespace}\" xmlns:ows=\"{OwsNamespace}\" jobID=\"{X(jobId)}\">{outputs}</wps:Result>";
+    }
+
+    private static string ResolveOutputIdentifier(ArtifactKind kind, int ordinal)
+    {
+        var baseIdentifier = kind switch
+        {
+            ArtifactKind.FeatureLayer => "featureLayer",
+            ArtifactKind.Table => "table",
+            ArtifactKind.Raster => "raster",
+            ArtifactKind.File => "file",
+            ArtifactKind.Report => "report",
+            ArtifactKind.Map => "map",
+            ArtifactKind.Scalar => "scalar",
+            ArtifactKind.AppBundle => "bundle",
+            _ => "artifact"
+        };
+        return $"{baseIdentifier}{ordinal.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static string DefaultArtifactContentType(ArtifactKind kind)
+        => kind switch
+        {
+            ArtifactKind.FeatureLayer => "application/geo+json",
+            ArtifactKind.Table => "text/csv",
+            ArtifactKind.Raster => "image/tiff",
+            ArtifactKind.Report => "application/pdf",
+            ArtifactKind.Map => "image/png",
+            ArtifactKind.File => "application/octet-stream",
+            ArtifactKind.AppBundle => "application/zip",
+            ArtifactKind.Scalar => "text/plain",
+            _ => "application/octet-stream"
+        };
 
     private static IResult EchoStatusInfo(string jobId) =>
         Xml($"<?xml version=\"1.0\" encoding=\"UTF-8\"?><wps:StatusInfo xmlns:wps=\"{WpsNamespace}\"><wps:JobID>{X(jobId)}</wps:JobID><wps:Status>Succeeded</wps:Status><wps:PercentCompleted>100</wps:PercentCompleted></wps:StatusInfo>");
@@ -515,10 +648,28 @@ internal static partial class Wps20Endpoint
         values.TryGetValue("service", out var service);
         values.TryGetValue("version", out var version);
         ValidateBindingValue(service, "WPS", "service");
-        ValidateBindingValue(version, Version, "version");
         if (!values.TryGetValue("request", out var operation) || string.IsNullOrWhiteSpace(operation))
         {
             throw new WpsRequestException("MissingParameterValue", "The request parameter is required.", "request");
+        }
+        if (string.Equals(operation.Trim(), "GetCapabilities", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.IsNullOrWhiteSpace(version))
+            {
+                ValidateBindingValue(version, Version, "version");
+            }
+
+            if (values.TryGetValue("acceptVersions", out var acceptVersions) &&
+                !string.IsNullOrWhiteSpace(acceptVersions) &&
+                !acceptVersions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Any(candidate => string.Equals(candidate, Version, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new WpsRequestException("VersionNegotiationFailed", $"The AcceptVersions value does not include supported WPS version '{Version}'.", "acceptVersions");
+            }
+        }
+        else
+        {
+            ValidateBindingValue(version, Version, "version");
         }
         values.TryGetValue("identifier", out var identifier);
         values.TryGetValue("jobId", out var jobId);

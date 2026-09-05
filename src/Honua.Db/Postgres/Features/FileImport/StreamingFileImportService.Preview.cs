@@ -114,14 +114,6 @@ internal sealed partial class StreamingFileImportService
                 warnings = parquetMeta.Warnings;
                 geoParquetTotalRows = parquetMeta.TotalRowCount;
 
-                // Reject files with any oversized row group — consistent with import path
-                if (parquetMeta.MaxRowGroupRowCount > GeoParquetReader.MaxRowsPerRowGroup)
-                {
-                    throw new InvalidDataException(
-                        GeoParquetReader.BuildLargeRowGroupMessage(
-                            parquetMeta.MaxRowGroupRowCount, parquetMeta.RowGroupCount));
-                }
-
                 // Hard-reject non-WKB encoding — consistent with the import path
                 // (ImportFileAsync returns CreateFailure) and the documented contract
                 // ("Non-WKB encodings are rejected" in CONTROL_PLANE_API.md).
@@ -197,7 +189,7 @@ internal sealed partial class StreamingFileImportService
                 SupportedFileFormat.FileGdb => previewFileGdbLayer.HasValue
                     ? FileGdb.FileGdbReader.ReadLayerStreamingAsync(fileGdbScratch!.GdbPath, previewFileGdbLayer.Value, cancellationToken)
                     : EmptyFeatureStream(cancellationToken),
-                SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, cancellationToken),
+                SupportedFileFormat.GeoParquet => GeoParquetReader.ReadStreamingAsync(fileStream, _limits, cancellationToken),
                 _ => throw new NotSupportedException($"Preview not supported for format: {format}")
             };
 

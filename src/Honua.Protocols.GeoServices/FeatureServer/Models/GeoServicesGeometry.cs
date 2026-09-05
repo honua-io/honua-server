@@ -87,9 +87,9 @@ public sealed class GeoServicesGeometry
     /// <summary>
     /// Esri true-curve polyline paths. Each path is an array whose elements are
     /// either a plain <c>[x, y(, z)(, m)]</c> vertex (a JSON array) or a curve-segment
-    /// object: <c>{"c": [[endX, endY], [centerX, centerY]]}</c> (circular arc),
+    /// object: <c>{"c": [[endX, endY], [interiorX, interiorY]]}</c> (circular arc),
     /// <c>{"b": [[endX, endY], [ctrl1X, ctrl1Y], [ctrl2X, ctrl2Y]]}</c> (cubic Bézier),
-    /// or <c>{"a": [...]}</c> (elliptic arc — parsed but not densified). Stored as raw
+    /// or <c>{"a": [...]}</c> (center-form circular or elliptic arc). Stored as raw
     /// <see cref="JsonElement"/> so the heterogeneous vertex/segment shape round-trips
     /// losslessly and is AOT-safe under the source-generated JSON context (#1877 Part A/B).
     /// </summary>

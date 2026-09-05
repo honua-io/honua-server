@@ -73,4 +73,31 @@ SELECT layer.layer_id,
        jsonb_build_object('name', 'South Polar Outpost', 'category', 'reference', 'active', true)
 FROM layer;
 
+-- Register the JSON attributes as public fields. Honua uses layer_fields for
+-- queryables and feature projection; without these rows the feature payload
+-- intentionally exposes an empty properties object, which cannot exercise the
+-- CQL2 text/JSON equality and numeric filter paths.
+INSERT INTO honua.layer_fields (
+    layer_id, field_name, field_type, field_order,
+    max_length, nullable, default_value, description
+)
+SELECT layers.layer_id,
+       fields.field_name,
+       fields.field_type,
+       fields.field_order,
+       fields.max_length,
+       fields.nullable,
+       NULL,
+       fields.description
+FROM honua.layers AS layers
+CROSS JOIN (VALUES
+    ('objectid', 'Integer', 0, NULL::integer, FALSE, 'Object ID'),
+    ('name', 'String', 1, 255, TRUE, 'Display name'),
+    ('category', 'String', 2, 50, TRUE, 'Filter category'),
+    ('population', 'Integer', 3, NULL::integer, TRUE, 'Population count'),
+    ('active', 'Boolean', 4, NULL::integer, TRUE, 'Active flag'),
+    ('shape', 'Geometry', 5, NULL::integer, TRUE, 'Point geometry')
+) AS fields(field_name, field_type, field_order, max_length, nullable, description)
+WHERE layers.layer_name = 'CITE Features';
+
 COMMIT;

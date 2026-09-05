@@ -19,8 +19,8 @@ namespace Honua.Server.Tests.Features.Capabilities;
 /// Track-B integration coverage for honua-server#2347 (T11): the built-experimental
 /// capabilities the T10 flip (#2346) gated OFF the first-release surface
 /// (<c>versioning.branch</c> and — since #2958 — <c>security.mtls</c> again;
-/// <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, <c>temporal.*</c>, and
-/// <c>sync.offline</c> were promoted to GA, so they are no longer experimental) must be
+/// <c>alerts.geofence</c>, <c>realtime.feature-streams</c>, and <c>sync.offline</c>
+/// are Preview and are checked in the same opt-in path) must be
 /// genuinely <b>absent</b> from every served surface end-to-end when experimental is
 /// disabled (the production default), and become present/served the moment a customer
 /// opts one in via <c>Capabilities:Experimental</c>. This closes the loop B2 (#2334) and
@@ -36,9 +36,8 @@ namespace Honua.Server.Tests.Features.Capabilities;
 ///     the gated VMS and client-certificate route groups
 ///     (<c>/rest/services/{id}/VersionManagementServer</c>,
 ///     <c>/api/v1/admin/security/client-certificates/*</c>) short-circuit with
-///     <c>404 honua:capability-experimental-disabled</c> while disabled. The now-GA
-///     temporal, alerts, streaming, and disconnected-sync replica groups are asserted to
-///     NOT short-circuit even with experimental off.
+///     <c>404 honua:capability-experimental-disabled</c> while disabled. Preview
+///     alerts are likewise asserted absent until explicitly opted in.
 ///   </description></item>
 /// </list>
 /// The Test environment turns experimental ON globally (appsettings.Test.json), which is
@@ -63,7 +62,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
         "scene.pointcloud-ingest",
         // temporal.* promoted to GA (Implemented) in #2429 — no longer experimental-gated.
         // sync.offline promoted to GA (Implemented) in #2430 — no longer experimental-gated.
-        // alerts.geofence promoted in #2427 — not gated.
+        // alerts.geofence is Preview in 2026.1 and is asserted separately below.
         // versioning.branch (VMS REST surface) gated Preview in the BH6-001/BH6-002 fix batch.
         "versioning.branch",
         // security.mtls was promoted to GA in #2431, then DEMOTED back to experimental in
@@ -101,13 +100,23 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
                 experimental.GetProperty("reasonCode").GetString().Should().Be("experimental-disabled");
             }
 
-            foreach (var previewId in new[] { "alerts.geofence", "sync.offline", "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var previewId in new[] { "alerts.geofence", "sync.offline", "realtime.feature-streams", "serve.sensorthings",
+                "serve.ogc-api-edr" })
             {
                 var preview = GetCapability(root, previewId);
                 preview.GetProperty("lifecycle").GetString().Should().Be("preview");
                 preview.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
                 preview.GetProperty("available").GetBoolean().Should().BeFalse();
                 preview.GetProperty("reasonCode").GetString().Should().Be("experimental-disabled");
+            }
+
+            foreach (var previewId in new[] { "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages" })
+            {
+                var preview = GetCapability(root, previewId);
+                preview.GetProperty("lifecycle").GetString().Should().Be("preview");
+                preview.GetProperty("optInRequired").GetBoolean().Should().BeFalse();
+                preview.GetProperty("available").GetBoolean().Should().BeTrue();
+                AssertNotLifecycleDisabled(preview);
             }
 
             // In-release capabilities are unaffected by the flip — still served.
@@ -162,7 +171,7 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task Manifest_WhenRealtimePreviewsOptedIn_DeclaresPreviewLifecycle()
+    public async Task Manifest_WhenCustomerAlertingAndRealtimePreviewsOptedIn_DeclaresPreviewLifecycle()
     {
         var fixture = CreateFixture(experimentalGlobalEnabled: true);
         await fixture.InitializeAsync();
@@ -174,13 +183,15 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "realtime.feature-streams", "serve.sensorthings" })
+            foreach (var id in new[] { "alerts.geofence", "realtime.feature-streams", "serve.sensorthings",
+                "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages", "serve.ogc-api-edr" })
             {
                 var capability = document.RootElement.GetProperty("capabilities")
                     .EnumerateArray()
                     .Single(item => item.GetProperty("id").GetString() == id);
                 capability.GetProperty("lifecycle").GetString().Should().Be("preview");
-                capability.GetProperty("optInRequired").GetBoolean().Should().BeTrue();
+                capability.GetProperty("optInRequired").GetBoolean().Should().Be(
+                    id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"));
             }
         }
         finally
@@ -197,6 +208,10 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [InlineData("scene.pointcloud-ingest")]
     [InlineData("alerts.geofence")]
     [InlineData("sync.offline")]
+    [InlineData("serve.geoservices-imageserver")]
+    [InlineData("serve.wmts")]
+    [InlineData("serve.ogc-api-coverages")]
+    [InlineData("serve.ogc-api-edr")]
     public async Task Manifest_WhenAdoptedCapabilityIsIndividuallyOptedIn_IsRuntimeEligible(string capabilityId)
     {
         var fixture = CreateFixture(experimentalGlobalEnabled: false, perCapabilityEnabled: capabilityId);
@@ -273,10 +288,8 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
     [Endpoint("GET /api/v1/admin/alerts/zones")]
     public async Task AlertsEndpoint_WhenPreviewDisabled_IsNotMapped()
     {
-        // #2427 promoted alerts.geofence Experimental -> Implemented (GA). The alerts
-        // admin group must no longer short-circuit as experimental-disabled even with the
-        // global experimental switch OFF — the request reaches the handler (subject to
-        // admin auth) instead of the 404 the T10 flip previously produced.
+        // Operator ruling 2026-09-04 keeps alerts.geofence Preview for 2026.1. The
+        // admin group must remain hidden behind the canonical explicit opt-in.
         var fixture = CreateFixture(experimentalGlobalEnabled: false);
         await fixture.InitializeAsync();
 
@@ -433,6 +446,43 @@ public sealed class ExperimentalCapabilityGatingIntegrationTests
             using var response = await client.GetAsync("/api/v1/admin/services/svc-experimental/replicas");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [Theory]
+    [Trait("Tier", "Integration")]
+    [InlineData("GET", "/rest/services/0/ImageServer")]
+    [InlineData("GET", "/rest/services/preview/ImageServer")]
+    [InlineData("POST", "/services/preview/ImageServer")]
+    [InlineData("GET", "/rest/services/0/ImageServer/WCS")]
+    [InlineData("GET", "/rest/services/0/ImageServer/WMTS")]
+    [InlineData("GET", "/rest/services/preview/ImageServer/WMTS/1.0.0/WMTSCapabilities.xml")]
+    [InlineData("GET", "/rest/services/preview/MapServer/WMTS")]
+    [InlineData("GET", "/rest/services/preview/MapServer/WMTS/1.0.0/WMTSCapabilities.xml")]
+    [InlineData("GET", "/ogc/services/preview/wmts")]
+    [InlineData("GET", "/ogc/coverages")]
+    [InlineData("GET", "/edr")]
+    public async Task PreviewRasterRoutes_RetainTheirExistingAvailability(string method, string path)
+    {
+        var fixture = CreateFixture(experimentalGlobalEnabled: false);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            using var request = new HttpRequestMessage(new HttpMethod(method), path);
+            using var response = await client.SendAsync(request);
+            if (path == "/edr")
+            {
+                await AssertExperimentalDisabledAsync(response);
+            }
+            else
+            {
+                await AssertNotExperimentalDisabledAsync(response);
+            }
         }
         finally
         {

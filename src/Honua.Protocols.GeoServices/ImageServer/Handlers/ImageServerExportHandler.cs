@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Data.Common;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -293,9 +295,27 @@ internal sealed class ImageServerExportHandler
                 "Temporary export storage is currently at capacity. Please retry shortly.",
                 ex.RetryAfterSeconds);
         }
+        catch (Exception ex) when (ex is ServiceUnavailableException or DbException { IsTransient: true })
+        {
+            ImageServerLog.ExportImageFailed(_logger, ex, layerId);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                "Raster export provider is currently unavailable. Please retry shortly.",
+                (ex as ServiceUnavailableException)?.RetryAfterSeconds,
+                retryable: true);
+        }
+        catch (NotSupportedException ex)
+        {
+            ImageServerLog.ExportImageFailed(_logger, ex, layerId);
+            scope.RecordException(ex);
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "The requested raster export is not supported by the configured provider.");
+        }
         // Intentionally generic: this is a top-level protocol request handler; any
-        // unexpected failure (parsing bugs, provider errors, etc.) must map to a
-        // generic 500 rather than crash the host or leak internals to the client.
+        // unexpected failure (for example, a programming error) must map
+        // to a generic 500 rather than crash the host or leak internals to the client.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             ImageServerLog.ExportImageFailed(_logger, ex, layerId);

@@ -162,7 +162,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Registers offline replica state in distributed cache when available, otherwise in memory."
+            "notes": "Preview/opt-in in 2026.1. Registers offline replica state in distributed cache when available, otherwise in memory; full parity is deferred to release/2026.2."
           },
           {
             "name": "Extract Changes",
@@ -176,7 +176,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "First sync returns full adds; later syncs do not provide database-grade incremental change tracking."
+            "notes": "Preview/opt-in in 2026.1. Full Esri offline-sync parity is deferred to release/2026.2."
           },
           {
             "name": "Get Estimates (service)",
@@ -278,7 +278,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Supports download, upload, and bidirectional sync directions."
+            "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions; broader parity is deferred to release/2026.2."
           },
           {
             "name": "Unregister Replica",
@@ -292,7 +292,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": ""
+            "notes": "Preview/opt-in in 2026.1; full lifecycle parity is deferred to release/2026.2."
           },
           {
             "name": "validateSQL (service)",
@@ -1436,9 +1436,9 @@
               "GET /rest/services/{serviceId}/MapServer/WMTS/{**restPath}"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
-            "notes": "Supports GetCapabilities and GetTile for the WebMercatorQuad and WorldCRS84Quad (CRS84/EPSG:4326) gridsets; GetFeatureInfo is WebMercatorQuad-only."
+            "notes": "Preview in 2026.1. Supports GetCapabilities and GetTile for the WebMercatorQuad and WorldCRS84Quad (CRS84/EPSG:4326) gridsets; GetFeatureInfo is WebMercatorQuad-only."
           },
           {
             "name": "Dynamic Layer or Table resource",
@@ -1669,9 +1669,9 @@
               "POST /rest/services/{serviceId}/ImageServer"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
-            "notes": "Layer-scoped route. Responses are cached with the ImageServerMetadata output-cache policy."
+            "notes": "ImageServer and its WMTS surface are Preview in 2026.1 under the 2026-09-03 operator ruling. Layer-scoped route. Responses are cached with the ImageServerMetadata output-cache policy."
           },
           {
             "name": "Colormap",
@@ -1686,7 +1686,7 @@
               "POST /rest/services/{serviceId}/ImageServer/colormap"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Renderer-driven. Honua rasters are continuous with no intrinsic source colormap, so this read-only resource reflects the active renderer: a renderingRule whose Colormap function resolves a colormap (explicit stops, named ColorrampName, or an inline algorithmic/multipart Colorramp) returns the Esri { \u0022colormap\u0022: [[value, r, g, b], ...] } document, consistent with what exportImage/legend render. Any other request returns the not-available response."
           },
@@ -1703,7 +1703,7 @@
               "POST /rest/services/{serviceId}/ImageServer/histograms"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns per-band raster histogram documents when available."
           },
@@ -1724,7 +1724,7 @@
               "POST /rest/services/{serviceId}/ImageServer/jobs/{jobId}/cancel"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Durable asynchronous exportTiles job lifecycle (#2688): status, cancel, and the out_service_url result resource, on both the numeric-layer and service-name routes."
           },
@@ -1741,7 +1741,7 @@
               "POST /rest/services/{serviceId}/ImageServer/keyProperties"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns the Esri key-properties document for the primary raster, including BandProperties and cell-size metadata, from the shared raster store; non-applicable cases return spec-shaped empty documents."
           },
@@ -1756,7 +1756,7 @@
               "GET /rest/services/{serviceId}/ImageServer/kml/image.kmz"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns an OGC KML 2.2 KMZ (doc.kml) carrying a single GroundOverlay whose Icon href references the service exportImage operation over the WGS84 service extent and whose LatLonBox is that extent, mirroring the ArcGIS ImageServer KML resource. The resource reads only the aggregate catalog extent (reprojected to WGS84 via the shared transform service when the native SR is not geographic) and renders no pixels itself; the overlay image is produced on demand by the shared export pipeline when a KML client resolves the icon href. The self-referential exportImage href preserves whichever service addressing form (numeric-layer id or service name) the request used."
           },
@@ -1778,7 +1778,7 @@
               "POST /rest/services/{serviceId}/ImageServer/slices"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns spec-shaped multidimensional metadata and slices; non-multidimensional layers return {\u0022variables\u0022: []} and an empty slice set, populated variables/slices when multidimensional coverage metadata is available."
           },
@@ -1795,7 +1795,7 @@
               "POST /rest/services/{serviceId}/ImageServer/rasterAttributeTable"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns a spec-shaped raster attribute table document; continuous and non-applicable rasters return an empty feature set with the field schema."
           },
@@ -1812,7 +1812,7 @@
               "POST /rest/services/{serviceId}/ImageServer/rasterFunctionInfos"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns the raster function info document for the resolved layer, advertising the functions accepted by renderingRule planning."
           },
@@ -1829,7 +1829,7 @@
               "POST /rest/services/{serviceId}/ImageServer/statistics"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns per-band raster statistics documents when available."
           },
@@ -1844,7 +1844,7 @@
               "GET /rest/services/{serviceId}/ImageServer/tile/{level}/{row}/{col}"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Supports png, jpeg, and tiff tile output. When multiple rasters overlap the requested tile, Honua renders a mosaic using the resolved merge strategy. Tile GETs use configured cloud file storage (local, S3, Azure Blob) as a deterministic loose-object read-through/write-through cache."
           },
@@ -1859,7 +1859,7 @@
               "GET /rest/services/{serviceId}/ImageServer/{rasterId}"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns one raster catalog item as an Esri feature with catalog attributes and footprint geometry. Uses the shared catalog reader and applies the same access policy and field masking as ImageServer query."
           },
@@ -1883,7 +1883,7 @@
               "GET /rest/services/{serviceId}/ImageServer/{rasterId}/info/keyProperties"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Renders the selected raster through the canonical export pipeline and returns its storage info, key properties, and histograms from the canonical raster store. Both route families apply the ImageServer access policy; unknown raster IDs return an Esri 404 error document."
           },
@@ -1898,7 +1898,7 @@
               "GET /rest/services/{serviceId}/ImageServer/{rasterId}/thumbnail"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Renders a small thumbnail of the raster item through the shared export pipeline; honours f=json for an href envelope. Note the served path is {rasterId}/thumbnail, not {rasterId}/info/thumbnail."
           }
@@ -1914,7 +1914,7 @@
               "GET /rest/services/{id}/ImageServer/WCS"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "WCS 2.0.1 KVP adapter for WCS-enabled raster layers. Supports GetCapabilities, DescribeCoverage, and GetCoverage over the primary raster with image/tiff, image/png, image/jpeg, SUBSET/BBOX spatial trim, SUBSETTINGCRS/BBOXCRS, optional OUTPUTCRS, RANGESUBSET band selection (band1..bandN, comma list and band1:bandN intervals), the full Scaling extension (SCALESIZE explicit per-axis sizing x(w),y(h); SCALEFACTOR uniform factor; SCALEAXES per-axis factors x(f),y(f); SCALEEXTENT per-axis grid intervals x(low,high),y(low,high) - at most one scaling operator per request, resolved against the subset-trimmed base grid), and phenomenonTime temporal subsetting (SUBSET=phenomenonTime(\u0022instant\u0022) or (\u0022start\u0022,\u0022end\u0022); the request must intersect the coverage acquisition time, else InvalidSubsetting). Capabilities advertise native CRSs for visible coverages; one-axis SUBSET is native-CRS only. The range-subsetting and scaling extension conformance classes are not advertised pending CITE validation. Multidimensional slicing beyond phenomenonTime, NetCDF, XML POST, and WCS-specific mosaic selection are deferred."
           },
@@ -1932,7 +1932,7 @@
               "GET /rest/services/{serviceId}/ImageServer/WMTS/{**restPath}"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "OGC WMTS 1.0 GetCapabilities/GetTile facade over the ImageServer tile/cloud-cache pipeline. Supports KVP and RESTful resources, WebMercatorQuad matrices, STYLE=default, image/png \u002B image/jpeg \u002B image/tiff tiles, GetFeatureInfo (application/json/text/xml) returning the pixel band values at the requested tile pixel, and a TIME dimension for temporal layers (GetTile/GetFeatureInfo honour a TIME parameter). Non-WebMercator tile matrix sets are deferred."
           },
@@ -1949,7 +1949,7 @@
               "POST /rest/services/{serviceId}/ImageServer/calculateVolume"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Computes cut/fill volumes and 2D surface area per area-of-interest polygon against the layer associated DEM (raster_sensor_metadata.dem_source), integrating (elevation - basePlane) * pixelArea over DEM pixels in the AOI through the shared clip primitive. Partial: only a constant base plane is supported, the AOI is bounded by a per-operation pixel budget (over-budget returns 400), and a raster with no modeled DEM returns 501 rather than a fabricated value (ADR-0065)."
           },
@@ -1966,7 +1966,7 @@
               "POST /rest/services/{serviceId}/ImageServer/computeCacheInfo"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Dynamic ImageServer layers return a spec-shaped cacheInfo object with the service extent and intentionally omit tileInfo/cacheType until a formal Esri-style raster tile cache is configured. The loose-object tile GET cache is operational storage, not advertised cache metadata."
           },
@@ -1983,7 +1983,7 @@
               "POST /rest/services/{serviceId}/ImageServer/computeClassStatistics"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Computes per-class signatures over the classDescriptions training AOIs: pixel count, per-band mean vector, per-band min/max/stddev, and the band-by-band sample covariance matrix (n-1), over a single raster or a layer mosaic (rasterIds \u002B mosaicRule) with an optional bandIds subset. Partial: bounded by a configurable per-class pixel budget (GeoServices:ImageServer:ClassStatistics:MaxPixelsPerClass) and renderingRule/multidimensionalDefinition are rejected with 501 because signatures are computed on source pixels."
           },
@@ -2000,7 +2000,7 @@
               "POST /rest/services/{serviceId}/ImageServer/computeHistograms"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns per-band histograms without the parallel statistics array. Supports the same rasterIds, bandIds, mosaicRule, time, and histogramParameters.size selection path as computeStatisticsHistograms; An AOI geometry clips the analysis to that area (envelope-scoped); renderingRule execution remains deferred."
           },
@@ -2017,7 +2017,7 @@
               "POST /rest/services/{serviceId}/ImageServer/computePixelLocation"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Converts point geometries to raster pixel column/row coordinates using the raster geotransform, falling back to the raster extent when no affine transform is present. Supports rasterId and input spatial references when the shared CRS transform service is available."
           },
@@ -2034,7 +2034,7 @@
               "POST /rest/services/{serviceId}/ImageServer/computeStatisticsHistograms"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (envelope-scoped) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand, BandArithmetic, and pixelSize remain deferred."
           },
@@ -2051,7 +2051,7 @@
               "POST /rest/services/{serviceId}/ImageServer/computeTiePoints"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns the raster pre-registered control points / GCPs from its sensor metadata, passed through verbatim and bounded to 10000 points per response. Partial by design: automatic feature detection / descriptor matching (how ArcGIS derives tie points) needs a computer-vision dependency this repository bars, so a raster with no modeled control points returns 501 rather than a fabricated result (ADR-0065)."
           },
@@ -2066,7 +2066,7 @@
               "GET /rest/services/{serviceId}/ImageServer/conf.json"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Interop route, not Esri\u0027s tile-cache configuration document: it returns the ImageServer service descriptor. Honua\u0027s ImageServer is dynamic, so no fused cache is advertised by default (singleFusedMapCache/tileInfo are emitted only when the opt-in ImageServerTileMetadataOptions flag is set). It exists because the ArcGIS Maps SDK for .NET native runtime probes conf.json while loading an ImageServiceRaster and treats a 404 as fatal (#1456, #1648)."
           },
@@ -2083,7 +2083,7 @@
               "POST /rest/services/{serviceId}/ImageServer/estimateExportTilesSize"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Estimates bounded WebMercatorQuad tile archive size; reports tilePackage/storageFormat for both ZIP and Esri exploded-cache TPK (storageFormat=tpk)."
           },
@@ -2100,9 +2100,9 @@
               "POST /rest/services/{serviceId}/ImageServer/exportImage"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
-            "notes": "Default response is a JSON envelope with a temporary href; f=image streams the rendered bytes inline with the format-specific media type."
+            "notes": "Preview in 2026.1. Default response is a JSON envelope with a temporary href; f=image streams the rendered bytes inline with the format-specific media type. An unavailable PostGIS output GDAL driver produces a sanitized GeoServices 501 envelope; transient database export outages produce 503."
           },
           {
             "name": "Export Tiles",
@@ -2117,7 +2117,7 @@
               "POST /rest/services/{serviceId}/ImageServer/exportTiles"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Exports bounded WebMercatorQuad image tiles to configured cloud file storage (local, S3, Azure Blob). storageFormat=zip (default) writes a flat {z}/{x}/{y}.ext ZIP and storageFormat=tpk (or tilePackage=true) writes an Esri exploded-cache TPK (v101/\u003Ccache\u003E/_alllayers \u002B conf.xml/conf.cdi); both are synchronous. Compact Cache V2 / TPKX (storageFormatType=esriMapCacheStorageModeCompactV2, or storageFormat=tpkx/compact/compactv2) submits a durable asynchronous job and returns the ArcGIS { jobId, jobStatus } envelope; the package is a real Esri TPKX 1.0 archive of Compact Cache V2 .bundle files. It requires the durable tile-export job runtime (an execution job store); when that is unavailable the request is rejected rather than silently downgraded."
           },
@@ -2134,7 +2134,7 @@
               "POST /rest/services/{serviceId}/ImageServer/find"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Finds raster catalog images whose footprints contain toGeometry. Supports objectIds, where, inSR, fromGeometry validation, and maxCount. Results return catalog id/name, acquisition date, center, pixel size, rows, and cols; Esri camera/orientation-ranked image selection is deferred until sensor metadata is modeled."
           },
@@ -2151,7 +2151,7 @@
               "POST /rest/services/{serviceId}/ImageServer/getSamples"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Samples pixel values at point, multipoint, distance-spaced polyline/polygon, or envelope-center locations using the shared raster identify pipeline. sampleDistance is honored in geometry SR units and sampleCount is capped at 1000. Nearest-neighbor interpolation is supported; other interpolation modes return 501."
           },
@@ -2168,7 +2168,7 @@
               "POST /rest/services/{serviceId}/ImageServer/identify"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Point/envelope/polygon identify with JSON responses. A renderingRule renders the sampled pixel (post clip/stretch/colormap); raw source values are returned otherwise."
           },
@@ -2185,7 +2185,7 @@
               "POST /rest/services/{serviceId}/ImageServer/legend"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns Esri-shaped layers[].legend[] swatches as base64 PNGs (image/png). Renders a 5-class equal-interval ramp keyed off the resolved layer mosaic\u0027s band-1 statistics by default; a renderingRule with an explicit Colormap is honoured (one swatch per colour stop). Per-layer renderer persistence and non-colormap renderer overrides are not yet honoured. Only f=json/f=pjson is accepted."
           },
@@ -2202,7 +2202,7 @@
               "POST /rest/services/{serviceId}/ImageServer/measure"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Implements Basic map-space point, distance/azimuth, area/perimeter, and centroid mensuration over point, envelope, and polygon Esri JSON. Sensor/DEM-backed height and 3D operations return 501 until sensor/orientation metadata is modeled."
           },
@@ -2219,7 +2219,7 @@
               "POST /rest/services/{serviceId}/ImageServer/project"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Reprojects Esri JSON geometry arrays between supported spatial references via the shared CRS projection pipeline and returns the Image Service geometries[] response shape. Envelope geometries remain envelope-shaped. datumTransformation is honored: a client-supplied geotransformation WKID (or composite geoTransforms) is resolved through the shared Esri WKID -\u003E PROJ pipeline catalog and applied via 3-argument ST_Transform, matching the Geometry Service; an unknown/inapplicable WKID returns 400. The image-coordinate-system transformation parameter is still rejected with 400 until neutral support is added."
           },
@@ -2236,7 +2236,7 @@
               "POST /rest/services/{serviceId}/ImageServer/query"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns Esri-compatible raster catalog features (OBJECTID, footprint polygon, MinPS/MaxPS/LowPS/HighPS/CenterX/CenterY/ZOrder/Shape_Length/Shape_Area/BandCount/PixelType/AcquisitionDate/CreatedAt). Supports where (parsed via the GeoServices SQL filter parser, applied in-memory; max 2000 chars), objectIds, outFields projection, orderByFields, an envelope-intersects spatial filter, outSR (footprint rings and the aggregate extent are reprojected when a transform is available), single-instant time filtering to the newest layer-wide effective acquisition batch, resultOffset, resultRecordCount (default 100, capped at 1000), and the returnGeometry/returnIdsOnly/returnCountOnly/returnExtentOnly shaping flags. Spatial WHERE pushdown to the database, pixelSize, and non-envelope geometry/spatialRel predicates are not yet honoured."
           },
@@ -2253,7 +2253,7 @@
               "POST /rest/services/{serviceId}/ImageServer/queryBoundary"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns the aggregate raster footprint boundary as Esri shape plus approximate area. The boundary is extent/footprint based; NoData-trimmed single-raster boundaries are deferred."
           },
@@ -2268,7 +2268,7 @@
               "GET /rest/services/{serviceId}/ImageServer/{rasterId}/imageSupportData"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Returns the Esri-shaped imageSupportData (sensor name, camera model, and interior/exterior/RPC orientation presence flags plus DEM source) projected from the raster sensor-metadata companion. Partial: only rasters with a modeled sensor-metadata row carry support data; a plain COG reports not-available rather than a fabricated empty support-data document."
           }
@@ -2285,7 +2285,7 @@
               "GET /rest/services/{serviceId}/ImageServer/{rasterId}/rasterFile"
             ],
             "capabilityMaturity": [
-              "implemented"
+              "preview"
             ],
             "notes": "Route exists and resolves the raster item, then returns a precise capability-honest not-available response: Honua stores raster pixels in the provider (PostGIS raster / analytic stores) rather than referencing a downloadable source file, so there is no file to stream. Never a fabricated payload."
           }

@@ -638,7 +638,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             AddParameter(command, name, value);
         }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteRasterExportReaderAsync(command, cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             PostgresRasterLog.RasterNotFound(_logger, layerId, rasterId);
@@ -1898,7 +1898,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             AddParameter(command, name, value);
         }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await ExecuteRasterExportReaderAsync(command, cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return new RasterResult
@@ -4596,6 +4596,25 @@ internal sealed class PostgresRasterStore : IRasterStore
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
         RasterMosaicAttributeSort? attributeSort = null)
         => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort);
+
+    private static async Task<DbDataReader> ExecuteRasterExportReaderAsync(
+        DbCommand command,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (
+            ex.SqlState == "XX000" &&
+            ex.MessageText.Contains("Could not load the output GDAL driver", StringComparison.OrdinalIgnoreCase))
+        {
+            // GDAL export drivers can be absent or disabled by server configuration.
+            // That is an unavailable output format, not a retryable database outage.
+            throw new NotSupportedException(
+                "The requested raster export format is not available on this server.", ex);
+        }
+    }
 
     // GDAL driver availability is static for the PostGIS process lifetime.
     // Cache per driver name to avoid querying ST_GDALDrivers() on every export.

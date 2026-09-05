@@ -13,9 +13,8 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 /// <summary>
 /// Unit tests for <see cref="CurveGeometryConverter"/> true-curve densification and JSON
-/// round-trip (#1877 Parts A and B). Circular-arc and cubic-Bézier segments densify to linear
-/// vertices within tolerance; the curve definition survives a parse+serialize cycle; unsupported
-/// segment types are rejected with a clear message.
+/// round-trip (#1877 Parts A and B). Circular-arc, elliptic-arc, and cubic-Bézier segments densify
+/// to linear vertices within tolerance, preserve Z/M ordinates, and retain their JSON definition.
 /// </summary>
 public sealed class CurveGeometryConverterTests
 {
@@ -26,9 +25,10 @@ public sealed class CurveGeometryConverterTests
     #region Circular-arc densification
 
     [UnitTest]
-    public void Densify_QuarterCircleArc_ProducesVerticesOnCircle()
+    public void Densify_ThreePointArc_ProducesVerticesOnCircumcircle()
     {
-        // Arc on the unit circle centered at origin, from (1,0) sweeping CCW to (0,1).
+        // Esri's c[1] is an interior point, not the center. These three points define a circle
+        // centered at (0.5, 0.5) with radius sqrt(0.5), sweeping through (0,0).
         var json = """
         {
             "curvePaths": [
@@ -44,14 +44,21 @@ public sealed class CurveGeometryConverterTests
 
         densified.Paths.Should().NotBeNull();
         var path = densified.Paths![0];
-        path.Length.Should().BeGreaterThan(2, "a quarter arc must be densified into multiple chords");
+        path.Length.Should().BeGreaterThan(2, "the arc must be densified into multiple chords");
 
-        // Every densified vertex must lie on the unit circle (radius 1) within tolerance.
+        // Independent Shapely 2.1.2 reference: a LineString sampled on the circumcircle has
+        // distance 0 from the declared interior Point(0,0), center (0.5,0.5), radius sqrt(0.5).
+        var expectedRadius = Math.Sqrt(0.5);
         foreach (var vertex in path)
         {
-            var radius = Math.Sqrt((vertex[0] * vertex[0]) + (vertex[1] * vertex[1]));
-            radius.Should().BeApproximately(1.0, 1e-6);
+            var radius = Math.Sqrt(
+                ((vertex[0] - 0.5) * (vertex[0] - 0.5)) +
+                ((vertex[1] - 0.5) * (vertex[1] - 0.5)));
+            radius.Should().BeApproximately(expectedRadius, 1e-6);
         }
+
+        path.Should().Contain(v => Math.Abs(v[0]) < 1e-9 && Math.Abs(v[1]) < 1e-9,
+            "the circular arc must pass through Esri's declared interior point");
 
         // Endpoints are exact.
         path[0][0].Should().BeApproximately(1.0, 1e-9);
@@ -63,7 +70,7 @@ public sealed class CurveGeometryConverterTests
     [UnitTest]
     public void Densify_CircularArc_MidpointLiesOnArc()
     {
-        // Quarter arc from (1,0) to (0,1): the angular midpoint is at 45 degrees => (cos45, sin45).
+        // The halfway point of this semicircle is Esri's declared interior point (0,0).
         var json = """
         {
             "curvePaths": [
@@ -77,10 +84,9 @@ public sealed class CurveGeometryConverterTests
 
         var path = CurveGeometryConverter.Densify(ParseCurve(json)).Paths![0];
 
-        var halfRoot2 = Math.Sqrt(2.0) / 2.0;
         path.Should().Contain(
-            v => Math.Abs(v[0] - halfRoot2) < 0.02 && Math.Abs(v[1] - halfRoot2) < 0.02,
-            "the 45-degree point of the arc should be approximated within chord tolerance");
+            v => Math.Abs(v[0]) < 1e-9 && Math.Abs(v[1]) < 1e-9,
+            "the declared interior point must select the correct semicircle");
     }
 
     [UnitTest]
@@ -92,8 +98,8 @@ public sealed class CurveGeometryConverterTests
             "curveRings": [
                 [
                     [1.0, 0.0],
-                    { "c": [[-1.0, 0.0], [0.0, 0.0]] },
-                    { "c": [[1.0, 0.0], [0.0, 0.0]] }
+                    { "c": [[-1.0, 0.0], [0.0, 1.0]] },
+                    { "c": [[1.0, 0.0], [0.0, -1.0]] }
                 ]
             ]
         }
@@ -106,6 +112,68 @@ public sealed class CurveGeometryConverterTests
         geometry.Should().BeOfType<Polygon>();
         // Densified full circle radius 1 ~ area pi.
         geometry.Area.Should().BeApproximately(Math.PI, 0.05);
+    }
+
+    #endregion
+
+    #region Elliptic-arc densification
+
+    [UnitTest]
+    public void Densify_EllipticArc_ProducesVerticesOnDeclaredEllipse()
+    {
+        // Axis-aligned quarter ellipse: center (0,0), semi-major 10, ratio .5 => semi-minor 5.
+        // Independent Shapely 2.1.2 reference samples the same parametric ellipse; its midpoint
+        // at theta=pi/4 is (7.071067811865476, 3.5355339059327373).
+        var json = """
+        {
+            "curvePaths": [
+                [
+                    [10.0, 0.0],
+                    { "a": [[0.0, 5.0], [0.0, 0.0], 1, 0, 0.0, 10.0, 0.5] }
+                ]
+            ]
+        }
+        """;
+
+        var path = CurveGeometryConverter.Densify(ParseCurve(json)).Paths![0];
+
+        path.Length.Should().BeGreaterThan(2);
+        path.Should().Contain(v =>
+            Math.Abs(v[0] - 7.071067811865476) < 1e-9 &&
+            Math.Abs(v[1] - 3.5355339059327373) < 1e-9);
+        foreach (var vertex in path)
+        {
+            var ellipseEquation = (vertex[0] * vertex[0] / 100.0) + (vertex[1] * vertex[1] / 25.0);
+            ellipseEquation.Should().BeApproximately(1.0, 1e-9);
+        }
+    }
+
+    [UnitTest]
+    public void Densify_FullCircleAForm_ProducesClosedCircle()
+    {
+        var json = """
+        {
+            "curvePaths": [
+                [
+                    [3.5, 1.0],
+                    { "a": [[3.5, 1.0], [3.0, 2.0], 0, 1] }
+                ]
+            ]
+        }
+        """;
+
+        var path = CurveGeometryConverter.Densify(ParseCurve(json)).Paths![0];
+
+        path.Length.Should().BeGreaterThan(100);
+        path[0].Should().Equal(path[^1]);
+        var expectedRadius = Math.Sqrt(1.25);
+        foreach (var vertex in path)
+        {
+            var radius = Math.Sqrt(
+                ((vertex[0] - 3.0) * (vertex[0] - 3.0)) +
+                ((vertex[1] - 2.0) * (vertex[1] - 2.0)));
+            radius.Should().BeApproximately(expectedRadius, 1e-6);
+        }
     }
 
     #endregion
@@ -210,22 +278,45 @@ public sealed class CurveGeometryConverterTests
 
     #endregion
 
-    #region Unsupported / malformed segments
+    #region Dimension preservation / malformed segments
 
     [UnitTest]
-    public void Densify_EllipticArcSegment_ThrowsNotSupportedMessage()
+    public void Densify_CircularArcWithZAndM_InterpolatesEveryOrdinate()
     {
         var json = """
         {
+            "hasZ": true,
+            "hasM": true,
             "curvePaths": [
-                [ [0.0, 0.0], { "a": [[10.0, 0.0], [5.0, 0.0], 0, 0, 1.0] } ]
+                [ [1.0, 0.0, 3.0, 4.0], { "c": [[0.0, 1.0, 5.0, 6.0], [0.0, 0.0]] } ]
             ]
         }
         """;
 
-        var action = () => CurveGeometryConverter.Densify(ParseCurve(json));
-        action.Should().Throw<ArgumentException>()
-            .WithMessage("*Elliptic-arc*not supported*");
+        var path = CurveGeometryConverter.Densify(ParseCurve(json)).Paths![0];
+
+        path.Should().OnlyContain(vertex => vertex.Length == 4);
+        var interior = path.Single(vertex => Math.Abs(vertex[0]) < 1e-9 && Math.Abs(vertex[1]) < 1e-9);
+        interior[2].Should().BeApproximately(4.0, 1e-9);
+        interior[3].Should().BeApproximately(5.0, 1e-9);
+    }
+
+    [UnitTest]
+    public void Densify_CollinearCircularArc_EmitsFiniteLinearVertices()
+    {
+        var json = """
+        {
+            "curvePaths": [
+                [ [0.0, 0.0], { "c": [[2.0, 0.0], [1.0, 0.0]] } ]
+            ]
+        }
+        """;
+
+        var path = CurveGeometryConverter.Densify(ParseCurve(json)).Paths![0];
+
+        path.Should().HaveCount(3);
+        path.Should().OnlyContain(vertex => vertex.All(double.IsFinite));
+        path[1].Should().Equal(1.0, 0.0);
     }
 
     [UnitTest]
