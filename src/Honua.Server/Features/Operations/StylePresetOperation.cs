@@ -2,7 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
-using Honua.Ai.Protocols.Mcp.MapTools;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -51,7 +51,7 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
 
     public async Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
     {
-        _ = await ResolveLayerAsync(request, cancellationToken).ConfigureAwait(false);
+        _ = await ResolveStorageLayerAsync(request, cancellationToken).ConfigureAwait(false);
         var catalog = services.GetRequiredService<IStyleCatalog>();
         var style = await catalog.GetStyleAsync(Required(request, "styleId"), cancellationToken).ConfigureAwait(false);
         _ = services.GetRequiredService<IMetadataV2StyleGraphSync>();
@@ -66,12 +66,12 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,
         CancellationToken cancellationToken = default)
     {
-        var layer = await ResolveLayerAsync(request, cancellationToken).ConfigureAwait(false);
+        var storageLayerId = await ResolveStorageLayerAsync(request, cancellationToken).ConfigureAwait(false);
         var catalog = services.GetRequiredService<IStyleCatalog>();
         var graphSync = services.GetRequiredService<IMetadataV2StyleGraphSync>();
-        await catalog.AssociateLayerAsync(layer.StorageLayerId, Required(request, "styleId"), 0, cancellationToken)
+        await catalog.AssociateLayerAsync(storageLayerId, Required(request, "styleId"), 0, cancellationToken)
             .ConfigureAwait(false);
-        await graphSync.SyncLayerStylesAsync(layer.StorageLayerId, cancellationToken).ConfigureAwait(false);
+        await graphSync.SyncLayerStylesAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         var now = services.GetRequiredService<TimeProvider>().GetUtcNow();
         return new OperationHandle
         {
@@ -98,12 +98,26 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
             Reason = handle.Reason,
         });
 
-    private async Task<MapToolLayerContext> ResolveLayerAsync(OperationRequest request, CancellationToken cancellationToken)
+    private async Task<int> ResolveStorageLayerAsync(OperationRequest request, CancellationToken cancellationToken)
     {
         var snapshot = await services.GetRequiredService<IMetadataV2GraphProvider>()
             .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return MapToolLayerResolver.Resolve(snapshot, Required(request, "serviceId"),
+        var serviceId = Required(request, "serviceId");
+        if (!snapshot.Index.ServicesById.ContainsKey(serviceId))
+        {
+            throw new ArgumentException("The published service does not exist.", nameof(request));
+        }
+
+        var publication = snapshot.FindPublicationByLayerIndex(serviceId,
             int.Parse(Required(request, "layerId"), CultureInfo.InvariantCulture));
+        if (publication is null || !snapshot.IsRoutable(publication))
+        {
+            throw new ArgumentException("The published layer is not routable.", nameof(request));
+        }
+
+        return snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(snapshot.ResolveResource(publication)!)
+            ?? throw new ArgumentException("The published layer has no storage binding.", nameof(request));
     }
 
     private static string Required(OperationRequest request, string name)
