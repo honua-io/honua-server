@@ -367,13 +367,16 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.Project)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
-    public async Task Project_NonIdentityTransformationPipeline_UsesSridProjection()
+    public async Task Project_NonIdentityTransformationPipeline_UsesSelectedNadconGrid()
     {
-        // WKID 1241 identifies the NAD27 -> NAD83 NADCON operation. Its catalog value is
-        // a coordinate-operation pipeline rather than a target CRS, so GeometryServer must
-        // retain the ordinary SRID projection instead of passing the pipeline to the PostGIS
-        // target-CRS overload. pyproj 3.7.2 maps this CONUS point to
-        // (-100.00040583667015, 40.00000589472259).
+        // Keep the independent pyproj NADCON reference and supply its required grid
+        // in a dedicated real PostGIS fixture. The base fixture remains grid-free.
+        await using var datumDatabase = new DatumGridPostgresFixture();
+        await datumDatabase.InitializeAsync();
+        var fixture = datumDatabase.ConfigureGeometryService(new WebAppFixture());
+        await fixture.InitializeAsync();
+        try
+        {
         var body = """
         {
             "geometries": {
@@ -388,14 +391,19 @@ public sealed class GeometryServiceProjectTests : IClassFixture<WebAppFixture>
         """;
 
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        var response = await _fixture.Client.PostAsync(
+        var response = await fixture.Client.PostAsync(
             "/rest/services/Utilities/Geometry/GeometryServer/project", content);
 
         response.Be200Ok();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var point = document.RootElement.GetProperty("geometries")[0];
-        point.GetProperty("x").GetDouble().Should().BeApproximately(-100.00040583667015, 1e-5);
-        point.GetProperty("y").GetDouble().Should().BeApproximately(40.00000589472259, 1e-5);
+        point.GetProperty("x").GetDouble().Should().BeApproximately(-100.00040583667015, 2e-9);
+        point.GetProperty("y").GetDouble().Should().BeApproximately(40.00000589472259, 2e-9);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
