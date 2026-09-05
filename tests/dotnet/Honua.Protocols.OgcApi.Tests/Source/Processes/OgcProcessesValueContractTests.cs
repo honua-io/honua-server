@@ -137,8 +137,10 @@ public sealed class OgcProcessesValueContractTests
         var package = AnalysisResultPackage.CreateCompleted("stream-result:v1", new ResultSummary { Title = "stream output" },
             Enumerable.Range(0, artifactCount).Select(index => new ArtifactRef
             {
-                ArtifactId = $"stream-artifact-{index}", Kind = ArtifactKind.FeatureLayer,
-                Label = index == 0 ? "outputFeatureLayer" : $"outputFeatureLayer{index}", Uri = reference
+                ArtifactId = $"stream-artifact-{index}",
+                Kind = ArtifactKind.FeatureLayer,
+                Label = index == 0 ? "outputFeatureLayer" : $"outputFeatureLayer{index}",
+                Uri = reference
             }).ToArray(),
             [], new ProvenanceRecord { Sources = [], ProcessDefinitions = ["transform.attribute-rename"], ExecutedAt = DateTimeOffset.UtcNow });
         var result = raw
