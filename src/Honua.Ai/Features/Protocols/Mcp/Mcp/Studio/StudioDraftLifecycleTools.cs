@@ -389,7 +389,7 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             var validation = RequireValidator(httpContext).Validate(envelope);
             if (validation.Status == StudioPackageValidationStatus.Invalid)
             {
-                var diagnostic = validation.Diagnostics.FirstOrDefault();
+                var diagnostic = validation.Diagnostics.Count > 0 ? validation.Diagnostics[0] : null;
                 throw new GeoprocessingValidationException(diagnostic is null
                     ? "The composition body is invalid."
                     : $"{diagnostic.Code} at {diagnostic.Path}: {diagnostic.Message}");

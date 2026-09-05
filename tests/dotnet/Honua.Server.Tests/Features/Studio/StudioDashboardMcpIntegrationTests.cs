@@ -2,14 +2,20 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Studio.Abstractions;
+using Honua.Core.Features.Studio.Domain;
+using Honua.Core.Features.Studio.Services;
+using Honua.Db.Postgres.Features.Studio;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -23,8 +29,12 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _fixture.ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configuration) =>
-            configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = _studioSchema })));
+        _fixture.ConfigureServices(services =>
+        {
+            services.RemoveAll<IStudioPackageStore>();
+            services.AddScoped<IStudioPackageStore>(provider => new PostgresStudioPackageStore(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), _studioSchema));
+        });
         await _fixture.InitializeAsync();
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Join(root.FullName, "Honua.sln")))
@@ -93,7 +103,9 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 
         // A second writer's stale generation cannot remove a layer that may have changed.
         var stale = await RpcAsync("remove_layer", $$"""{"draftId":"{{draftId}}","generation":1,"layerId":"parcels"}""");
-        stale.TryGetProperty("error", out _).Should().BeTrue();
+        stale.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeTrue();
+        stale.GetProperty("result").GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("failed_precondition");
+        stale.GetProperty("result").GetProperty("structuredContent").GetProperty("currentGeneration").GetInt64().Should().Be(generation);
         var reread = await CallAsync("get_draft", $$"""{"draftId":"{{draftId}}"}""");
         reread.GetProperty("generation").GetInt64().Should().Be(generation);
         reread.GetProperty("envelope").GetProperty("body").GetProperty("layers").GetArrayLength().Should().Be(1);
@@ -113,11 +125,52 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 
         await Mutate("update_draft", $"\"packageKey\":\"{packageKey}\",\"schemaVersion\":\"1.0\"," + "\"body\":{\"layers\":[{\"id\":\"roads\"}],\"view\":{\"center\":[-158,22],\"zoom\":7}}");
         var malformed = await RpcAsync("update_draft", $$$"""{"draftId":"{{{draftId}}}","generation":{{{generation}}},"packageKey":"{{{packageKey}}}","schemaVersion":"1.0","body":{"interactions":{"id":"invalid"} } }""");
-        malformed.TryGetProperty("error", out _).Should().BeTrue();
+        malformed.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeTrue();
+        malformed.GetProperty("result").GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("invalid_argument");
         var afterRejected = await CallAsync("get_draft", $$"""{"draftId":"{{draftId}}"}""");
         afterRejected.GetProperty("generation").GetInt64().Should().Be(generation);
         afterRejected.GetProperty("envelope").GetProperty("body").GetProperty("layers")[0]
             .GetProperty("id").GetString().Should().Be("roads");
+
+        await CallAsync("validate_draft", $$"""{"draftId":"{{draftId}}"}""");
+        StudioContentVersion version;
+        await using (var writer = _fixture.Services.CreateAsyncScope())
+        {
+            writer.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
+                .Should().Be(StudioPackagePersistenceMode.Durable);
+            var lifecycle = writer.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+            version = (await lifecycle.SaveDraftAsVersionAsync(
+                draftId, "dashboard fixture", WebAppFixture.SharedAdminActorId, generation))!;
+            version.Should().NotBeNull();
+            version.Validation.Status.Should().Be(StudioPackageValidationStatus.Valid);
+        }
+
+        // Independent fixture expectation: PostgreSQL jsonb orders these body keys by length.
+        // Hash the declared expected document, never a copy of the server's returned envelope.
+        using var expectedBody = JsonDocument.Parse("""{"view":{"zoom":7,"center":[-158,22]},"layers":[{"id":"roads"}]}""");
+        var expectedEnvelope = new StudioPackageEnvelope
+        {
+            Family = StudioPackageFamily.Dashboard,
+            SchemaVersion = "1.0",
+            Format = "studio_dashboard_package.v1",
+            Body = expectedBody.RootElement.Clone(),
+            Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Valid },
+        };
+        var expectedHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
+            expectedEnvelope, StudioJsonContext.Default.StudioPackageEnvelope))).ToLowerInvariant();
+        version.ContentHash.Should().Be(expectedHash);
+
+        // A fresh scope constructs another production store and lifecycle service. No draft or
+        // version is passed into it; all reopened state must come back from Postgres.
+        await using var reader = _fixture.Services.CreateAsyncScope();
+        var reopenedLifecycle = reader.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+        var reloaded = await reopenedLifecycle.GetVersionAsync(version.ItemId, version.VersionId);
+        reloaded!.VersionId.Should().Be(version.VersionId);
+        reloaded.ContentHash.Should().Be(expectedHash);
+        var reopened = await reopenedLifecycle.ReopenVersionAsync(version.ItemId, version.VersionId, WebAppFixture.SharedAdminActorId);
+        reopened!.BaseVersionId.Should().Be(version.VersionId);
+        StudioPackageHash.Compute(reopened.Envelope).Should().Be(expectedHash);
+        (await reopenedLifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
     }
 
     private async Task<JsonElement> CallAsync(string verb, string arguments)

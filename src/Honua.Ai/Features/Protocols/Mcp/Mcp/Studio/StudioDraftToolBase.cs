@@ -301,7 +301,7 @@ internal abstract class StudioDraftToolBase
         ArgumentNullException.ThrowIfNull(draft);
         if (draft.Generation != expectedGeneration)
         {
-            throw new GeoprocessingPreconditionFailedException("Stale draft generation; refresh and retry.");
+            throw new StudioDraftGenerationConflictException(draft.Generation);
         }
     }
 
