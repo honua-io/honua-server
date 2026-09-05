@@ -120,11 +120,15 @@ internal sealed partial class Wfs20Handler
         cancellationToken.ThrowIfCancellationRequested();
         var scope = ResolveStoredQueryScope(context);
         var database = redis.GetDatabase();
-        await database.StringSetAsync(BuildStoredQueryKey(scope, definition.Id), JsonSerializer.Serialize(definition))
-            .WaitAsync(cancellationToken).ConfigureAwait(false);
+        var serialized = JsonSerializer.Serialize(definition);
         cancellationToken.ThrowIfCancellationRequested();
-        await database.SetAddAsync(BuildStoredQueryScopeKey(scope), definition.Id)
-            .WaitAsync(cancellationToken).ConfigureAwait(false);
+        // Dispatch the bounded mutation pair before awaiting either command. Redis
+        // commands cannot be retracted: cancellation must not strand a definition
+        // whose index update was never dispatched. Both complete under Redis's own
+        // timeout even when the request stops waiting; outage atomicity is unchanged.
+        var persist = database.StringSetAsync(BuildStoredQueryKey(scope, definition.Id), serialized);
+        var index = database.SetAddAsync(BuildStoredQueryScopeKey(scope), definition.Id);
+        await Task.WhenAll(persist, index).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> RemovePersistedStoredQueryAsync(
@@ -134,12 +138,12 @@ internal sealed partial class Wfs20Handler
         cancellationToken.ThrowIfCancellationRequested();
         var scope = ResolveStoredQueryScope(context);
         var database = redis.GetDatabase();
-        var removed = await database.KeyDeleteAsync(BuildStoredQueryKey(scope, id))
-            .WaitAsync(cancellationToken).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        await database.SetRemoveAsync(BuildStoredQueryScopeKey(scope), id)
-            .WaitAsync(cancellationToken).ConfigureAwait(false);
-        return removed;
+        // As with persistence, dispatch deletion and index cleanup together before
+        // exposing a cancellable wait. Cancellation cannot leave a stale scope id.
+        var remove = database.KeyDeleteAsync(BuildStoredQueryKey(scope, id));
+        var unindex = database.SetRemoveAsync(BuildStoredQueryScopeKey(scope), id);
+        var results = await Task.WhenAll(remove, unindex).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return results[0];
     }
 
     public async Task<IResult> HandleListStoredQueriesAsync(

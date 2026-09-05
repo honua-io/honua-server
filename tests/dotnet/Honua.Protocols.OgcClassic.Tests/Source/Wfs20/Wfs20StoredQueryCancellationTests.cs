@@ -137,6 +137,19 @@ public sealed class Wfs20StoredQueryCancellationTests
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             var request = await returned.Task.WaitAsync(TimeSpan.FromSeconds(1));
             request.IsCompleted.Should().BeFalse("Redis has not completed");
+            if (waitingOperation is "StringSet" or "SetAdd")
+            {
+                database.ReceivedCalls().Select(call => call.GetMethodInfo().Name)
+                    .Should().Contain(["StringSetAsync", "SetAddAsync"],
+                        "both mutations must be dispatched before exposing cancellation");
+            }
+            else if (waitingOperation is "KeyDelete" or "SetRemove")
+            {
+                database.ReceivedCalls().Select(call => call.GetMethodInfo().Name)
+                    .Should().Contain(["KeyDeleteAsync", "SetRemoveAsync"],
+                        "index cleanup must already be dispatched when deletion is pending");
+            }
+
             cancellation.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 async () => await request.WaitAsync(TimeSpan.FromSeconds(1)));
