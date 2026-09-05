@@ -1168,6 +1168,7 @@
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.CreateAndListApiKeys_ReturnsPlaintextOnlyAtCreation",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.FullAdminApiKey_PassesAdminEndpoint",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.GenuinelyScopedApiKey_IsDeniedAdminEndpoint",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.InternalReplayCredential_CannotBeDiscoveredOrReissuedThroughKeyManagement",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ReadOnlyScopedKey_CanReadAdminSurface",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
         "Honua.Server.Tests.Features.Admin.ScopedAdminKeyOidcEnforcementTests.ApprovedOperationKey_WithOidcEnabled_AllowsOnlyExactOperation",
@@ -1187,6 +1188,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.ExpiredApiKey_CannotAuthenticateAndReportsExpiredPermissions",
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.InternalReplayCredential_CannotBeDiscoveredOrReissuedThroughKeyManagement",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -13728,6 +13730,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.InternalReplayCredential_CannotBeDiscoveredOrReissuedThroughKeyManagement",
         "Honua.Server.Tests.Features.Admin.AdminApiKeyEndpointsTests.RotateApiKey_ReturnsNewPlaintextAndInvalidatesOldKey"
       ],
       "proof_ledger_surface": "control-plane-admin",
