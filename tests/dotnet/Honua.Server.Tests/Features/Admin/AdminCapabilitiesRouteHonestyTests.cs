@@ -40,10 +40,9 @@ public sealed class AdminCapabilitiesRouteHonestyTests : IAsyncLifetime
     private static readonly IReadOnlyDictionary<string, Func<HashSet<string>, bool>> _manifestFlagRouteMatchers =
         new Dictionary<string, Func<HashSet<string>, bool>>(StringComparer.Ordinal)
         {
-            // Read-only GitOps manifest export (GET .../gitops-manifest) survived #1035.
-            ["manifestExport"] = routes => routes.Any(r =>
-                r.StartsWith("GET ", StringComparison.OrdinalIgnoreCase) &&
-                r.Contains("gitops-manifest", StringComparison.OrdinalIgnoreCase)),
+            // SDK manifestExport selects this exact legacy operation. Package GitOps export
+            // is a different contract and cannot make the removed operation available (#4009).
+            ["manifestExport"] = routes => routes.Contains("GET /api/v1/admin/manifest"),
             // Mutating manifest endpoints removed in #1035 — no registered route.
             ["manifestApply"] = routes => routes.Any(r =>
                 r.Contains("manifest", StringComparison.OrdinalIgnoreCase) &&
