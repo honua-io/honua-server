@@ -1,5 +1,10 @@
 # Go from zero to a map in your browser
 
+For the packaged release journey, start with
+[Honua from one terminal](one-terminal-setup.md). That guide records the
+remaining candidate replay and publication-bridge requirements. This page is
+the source-development quickstart and optional browser map inspection path.
+
 You'll have Honua running in Docker with a published dataset rendered in a browser map in about 10 minutes.
 
 **Prerequisites:** Docker with Compose v2, `git`, GitHub CLI authenticated with package-read access, and Python 3.11 or later.

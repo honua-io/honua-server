@@ -2,8 +2,8 @@
 
 ## Get started
 
-- [Quickstart: zero to a map](get-started/quickstart.md)
-- [One-terminal setup journey](get-started/one-terminal-setup.md)
+- [Honua from one terminal (pre-cut guide)](get-started/one-terminal-setup.md)
+- [Source quickstart: zero to a map](get-started/quickstart.md)
 - [Your first dataset](get-started/first-dataset.md)
 - [Your first map](get-started/first-map.md)
 
