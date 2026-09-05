@@ -118,7 +118,10 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
             Content = new StringContent($$"""
                 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
                   "name":"{{toolName}}","arguments":{"serviceId":"{{WebAppFixture.TestServiceId}}",
-                  "layerId":{{WebAppFixture.TestLayerId}}{{styleArgument}}}}}
+                  "layerId":{{WebAppFixture.TestLayerId}}{{styleArgument}}
+                }
+                }
+                }
                 """, Encoding.UTF8, "application/json")
         };
         request.Headers.Add("Mcp-Session-Id", session);
