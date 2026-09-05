@@ -29,7 +29,9 @@ actual `tests/python/stac_client` suite successfully.
 
 ## Local scan evidence
 
-Trivy 0.70.0 matches the scanner version in the live alerts. The application
+Trivy 0.70.0 matches the nightly scanner in the live alerts. Platform JIT
+images also pass the exact Trivy 0.68.1 actionable SARIF configuration pinned
+by the release workflow (High/Critical, fixed vulnerabilities only). The application
 image check uses the nightly workflow's existing High/Critical severity filter
 and existing `.trivyignore`; neither the filters nor ignore files are changed.
 
@@ -39,6 +41,8 @@ and existing `.trivyignore`; neither the filters nor ignore files are changed.
 | Fully rebuilt JIT application image, nightly High/Critical JSON and SARIF configuration | 0 findings |
 | Rebuilt Alpine arm64 runtime package layer, all severities | 0 findings |
 | Exact JIT runtime package layer, all severities without ignores | 29 Medium, 5 Low; no vendor fixed versions |
+| Fully rebuilt Lambda JIT, release actionable SARIF | 0 findings |
+| Fully rebuilt Azure Functions JIT, release actionable SARIF | 0 findings |
 | Rebuilt pystac image, pytest collection | 64 tests collected |
 
 The remaining unpatched OS inventory includes glibc, libexpat, ICU, systemd,
