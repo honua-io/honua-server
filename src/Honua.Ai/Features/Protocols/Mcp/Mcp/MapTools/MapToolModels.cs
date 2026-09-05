@@ -618,6 +618,9 @@ internal sealed class McpStyleSummary
 /// </summary>
 internal sealed class McpApplyStylePresetArgument
 {
+    [JsonPropertyName("dryRun")]
+    public bool DryRun { get; set; }
+
     [JsonPropertyName("serviceId")]
     public string? ServiceId { get; set; }
 
@@ -634,6 +637,9 @@ internal sealed class McpApplyStylePresetArgument
 /// </summary>
 internal sealed class McpApplyStylePresetOutput
 {
+    [JsonPropertyName("dryRun")]
+    public bool DryRun { get; set; }
+
     [JsonPropertyName("serviceId")]
     public string ServiceId { get; set; } = string.Empty;
 

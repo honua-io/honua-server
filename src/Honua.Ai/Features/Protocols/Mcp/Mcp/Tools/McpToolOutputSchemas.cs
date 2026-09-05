@@ -941,10 +941,11 @@ internal static class McpToolOutputSchemas
           "properties": {
             "serviceId": { "type": "string" },
             "layerId": { "type": "integer" },
-            "styleId": { "type": "string", "description": "The preset now bound as the layer's primary/default style." },
+            "styleId": { "type": "string", "description": "The selected preset; bound as primary only when applied=true." },
             "title": { "type": ["string", "null"] },
             "styleVersion": { "type": "integer" },
-            "applied": { "type": "boolean" }
+            "applied": { "type": "boolean" },
+            "dryRun": { "type": "boolean", "description": "True when validation completed without changing metadata." }
           }
         }
         """);

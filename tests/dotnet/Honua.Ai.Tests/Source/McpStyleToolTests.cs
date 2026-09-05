@@ -31,6 +31,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -298,11 +299,15 @@ public sealed class McpStyleToolTests
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
-    [UnitTest]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Update)]
     [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_ApplyStylePreset_ApprovalProposal_PreservesTargetWithoutActuation()
+    public async Task ToolsCall_ApplyStylePreset_ApprovalProposal_PreservesTargetWithoutActuation(bool dryRun)
     {
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
@@ -315,7 +320,10 @@ public sealed class McpStyleToolTests
                 var mapper = new StylePresetApprovalMapper();
                 var gateway = mapper.Map(call.Arg<IOperationDescriptor>(), call.Arg<OperationRequest>(),
                     call.Arg<OperationPolicyContext>(), call.Arg<PolicyDecision>());
+                gateway.Plan!.Summary.Should().Contain(ServiceId).And.Contain("layer '0'").And.Contain(PresetStyleId);
+                gateway.Plan.Summary.Should().StartWith(dryRun ? "Preview" : "Apply");
                 var replay = mapper.MapReplay(gateway);
+                replay.Request.DryRun.Should().Be(dryRun);
                 replay.Request.OperationId.Should().Be(StylePresetOperation.OperationId);
                 replay.Request.Parameters["serviceId"].Should().Be(ServiceId);
                 replay.Request.Parameters["layerId"].Should().Be("0");
@@ -330,7 +338,7 @@ public sealed class McpStyleToolTests
             });
 
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
-            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
+            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}", "dryRun": {{(dryRun ? "true" : "false")}} }""",
             catalog: catalog, graphSync: graphSync,
             policyDecision: PolicyDecisionKind.RequireApproval, approvalBridge: bridge);
 
@@ -342,6 +350,56 @@ public sealed class McpStyleToolTests
         structured.GetProperty("proposalId").GetString().Should().Be("style-proposal");
         await bridge.Received(1).CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
             Arg.Any<OperationPolicyContext>(), Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>());
+        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ApplyStylePreset_DryRunFirstPolicy_AllowsPreviewWithoutActuation()
+    {
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}","dryRun":true}""",
+            catalog: catalog, graphSync: graphSync, policyDecision: PolicyDecisionKind.DryRunFirst);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeFalse();
+        var output = result.GetProperty("structuredContent");
+        output.GetProperty("dryRun").GetBoolean().Should().BeTrue();
+        output.GetProperty("applied").GetBoolean().Should().BeFalse();
+        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ApplyStylePreset_MissingRuntime_ReturnsStructuredUnavailable(
+        bool includeApprovalRuntime, bool includeOperationRuntime)
+    {
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            catalog: catalog, graphSync: graphSync,
+            includeApprovalRuntime: includeApprovalRuntime, includeOperationRuntime: includeOperationRuntime);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("unavailable");
         await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
@@ -397,7 +455,9 @@ public sealed class McpStyleToolTests
         bool adminAuthorized = true,
         bool approvalRequired = false,
         PolicyDecisionKind policyDecision = PolicyDecisionKind.Allow,
-        IOperationApprovalBridge? approvalBridge = null)
+        IOperationApprovalBridge? approvalBridge = null,
+        bool includeApprovalRuntime = true,
+        bool includeOperationRuntime = true)
     {
         var surface = new McpDataAccessSurface(
             [
@@ -446,6 +506,15 @@ public sealed class McpStyleToolTests
                 DefaultDecision = policyDecision,
             })),
             TimeProvider.System, approvalBridge: approvalBridge));
+
+        if (!includeApprovalRuntime)
+        {
+            services.RemoveAll<OperatorApprovalGate>();
+        }
+        if (!includeOperationRuntime)
+        {
+            services.RemoveAll<IOperationInvoker>();
+        }
 
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services.BuildServiceProvider();

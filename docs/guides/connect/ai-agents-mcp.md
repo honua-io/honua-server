@@ -17,7 +17,10 @@ access in addition to the published-service publish grant. It uses the
 `Operations:Policy` rules before changing the layer. An approval-required result
 has `approvalRequired: true`; when a durable proposal is created, use its returned
 `proposalId` and resource URI to track approval. Only a completed application
-returns `applied: true`.
+returns `applied: true`. Set `dryRun: true` to validate without changing the
+layer; a completed preview returns `dryRun: true` and `applied: false`.
+Approval plans identify the service, layer, and preset and preserve preview
+intent when replayed after approval.
 
 ## Two MCP surfaces: data-access (open) vs. operator (proprietary)
 

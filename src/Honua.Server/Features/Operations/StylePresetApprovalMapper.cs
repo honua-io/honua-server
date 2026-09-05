@@ -25,6 +25,7 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
         var payload = JsonSerializer.Serialize(new StylePresetApprovalPayload
         {
             Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
+            DryRun = request.DryRun,
             TenantId = context.TenantId,
             SchemaName = context.SchemaName,
         }, StylePresetApprovalJsonContext.Default.StylePresetApprovalPayload);
@@ -39,7 +40,8 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
             ExecutionPayload = payload,
             Plan = new OperationProposalPlan
             {
-                Summary = "Apply catalog style preset to published layer.",
+                Summary = $"{(request.DryRun ? "Preview" : "Apply")} style '{request.Parameters["styleId"]}' "
+                    + $"on service '{request.Parameters["serviceId"]}', layer '{request.Parameters["layerId"]}'.",
                 RiskLevel = ProposalRiskLevel.Medium,
                 ExecutionPayload = payload,
             },
@@ -54,7 +56,7 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
             ?? throw new InvalidOperationException("The style preset replay payload is invalid.");
         return new OperationApprovalReplayMapping
         {
-            Request = new OperationRequest { OperationId = OperationId, Parameters = payload.Parameters },
+            Request = new OperationRequest { OperationId = OperationId, Parameters = payload.Parameters, DryRun = payload.DryRun },
             TenantId = payload.TenantId,
             SchemaName = payload.SchemaName,
         };
@@ -64,6 +66,7 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
 internal sealed record StylePresetApprovalPayload
 {
     public Dictionary<string, string?> Parameters { get; init; } = new(StringComparer.Ordinal);
+    public bool DryRun { get; init; }
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
 }

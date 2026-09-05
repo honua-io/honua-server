@@ -33,6 +33,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         + "The preset must already exist in the style catalog — discover the valid presets with honua_get_style (omit styleId to list them); an unknown preset is rejected and the valid presets are named. "
         + "The applied style persists through the canonical OGC API - Styles pipeline (styleId-keyed catalog + Metadata v2 graph), so a subsequent honua_render_map for the layer resolves the new style. "
         + "Requires admin write authorization and passes through operator approval and operation policy; approval-required calls do not change the layer. "
+        + "Set dryRun=true to validate a preset application without changing metadata; a successful preview returns applied=false. "
         + "It authors presentation metadata only and never edits feature records. Re-applying the same preset is a no-op (idempotent). "
         + "Styled-map arc: query/analyze -> honua_publish_result (analysis result -> serviceId/layerId) -> honua_apply_style_preset -> honua_render_map.";
 
@@ -85,7 +86,8 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         }
 
-        var gate = httpContext.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var gate = httpContext.RequestServices.GetService<OperatorApprovalGate>()
+            ?? throw new GeoprocessingStoreUnavailableException("The operator approval runtime is not available on this server.");
         var approval = gate.CheckApproval(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Catalog,
@@ -125,10 +127,12 @@ internal sealed class ApplyStylePresetTool : IMcpTool
                 + "List presets with honua_get_style (omit styleId).");
         }
 
-        var invoker = httpContext.RequestServices.GetRequiredService<IOperationInvoker>();
+        var invoker = httpContext.RequestServices.GetService<IOperationInvoker>()
+            ?? throw new GeoprocessingStoreUnavailableException("The style operation runtime is not available on this server.");
         var operation = await invoker.SubmitAsync(new OperationRequest
         {
             OperationId = "style.apply-preset",
+            DryRun = argument.DryRun,
             Parameters = new Dictionary<string, string?>
             {
                 ["serviceId"] = layer.Service.Metadata.Id,
@@ -168,7 +172,8 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             StyleId = preset.StyleId,
             Title = preset.Title,
             StyleVersion = preset.StyleVersion,
-            Applied = true
+            Applied = !argument.DryRun,
+            DryRun = argument.DryRun,
         };
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpApplyStylePresetOutput);
     }
