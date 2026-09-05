@@ -106,6 +106,33 @@ public sealed class OperationTenantOwnershipTests
         first.OperationInstanceId.Should().NotBe(second.OperationInstanceId);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScopedAcceptance_ResolvesTenantBeforeDerivingPrecreatedHandleId(bool cacheHit)
+    {
+        var store = Substitute.For<InstanceStore>();
+        store.TryCreateAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>()).Returns(true);
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-a");
+        using var requestServices = new ServiceCollection().AddSingleton(tenant).BuildServiceProvider();
+        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext { RequestServices = requestServices } };
+        using var services = new ServiceCollection().AddSingleton<IHttpContextAccessor>(accessor)
+            .AddSingleton(store).AddSingleton(TimeProvider.System).BuildServiceProvider();
+        var factory = new ScopedOperationEnvelopeFactory(services.GetRequiredService<IServiceScopeFactory>(), useVolatileAudit: true);
+        var context = new OperationPolicyContext { IdempotencyKey = "same-key" };
+        var first = cacheHit
+            ? await factory.CompleteCacheHitAsync("admin.test", context, "source-a", "audit-a")
+            : await factory.CreateAcceptedAsync("admin.test", context);
+        tenant.TenantId.Returns("tenant-b");
+        var second = cacheHit
+            ? await factory.CompleteCacheHitAsync("admin.test", context, "source-b", "audit-b")
+            : await factory.CreateAcceptedAsync("admin.test", context);
+        first.TenantId.Should().Be("tenant-a");
+        second.TenantId.Should().Be("tenant-b");
+        first.OperationInstanceId.Should().NotBe(second.OperationInstanceId);
+    }
+
     private static OperationProposal Proposal(string tenant) => JsonSerializer.Deserialize<OperationProposal>(
         $$"""{"ProposalId":"proposal-a","TenantId":"{{tenant}}","Kind":2,"Status":1,"RequestedBy":"other-actor","CreatedAt":"2026-09-04T00:00:00Z","UpdatedAt":"2026-09-04T00:00:00Z"}""")!;
 
