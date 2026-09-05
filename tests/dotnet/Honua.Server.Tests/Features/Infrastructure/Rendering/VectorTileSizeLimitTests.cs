@@ -49,8 +49,13 @@ public sealed class VectorTileSizeLimitTests
     [InlineData(4, 200)]
     public async Task ExecuteAsync_WithinBudget_PreservesTileResponse(int bytes, int status)
     {
-        var result = await ExecuteAsync(new DefaultHttpContext(), bytes, 4);
-        ((IStatusCodeHttpResult)result).StatusCode.Should().Be(status);
+        using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Response.Body = new MemoryStream();
+        var result = await ExecuteAsync(context, bytes, 4);
+        await result.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(status);
+        context.Response.Body.Length.Should().Be(bytes);
     }
 
     private static Task<IResult> ExecuteAsync(HttpContext context, int bytes, long budget)
