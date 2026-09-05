@@ -84,6 +84,19 @@ class ProductionComposeTests(unittest.TestCase):
             self.assertTrue(hmac.compare_digest(environment[key], value), key)
         self.assertEqual(environment["Database__MigrationSafety__ContractApplyPolicy"], "Gate")
 
+    def test_verification_loads_the_production_admin_password(self):
+        verify = self.document.split("## Verify", 1)[1]
+        commands = re.search(r"```bash\n(.*?)python3 -m pip", verify, re.S).group(1)
+        expected = secrets.token_hex(32)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env.production").write_text("HONUA_ADMIN_PASSWORD=" + expected + "\n")
+            (root / ".env").write_text("HONUA_ADMIN_PASSWORD=" + secrets.token_hex(32) + "\n")
+            result = subprocess.run(
+                ["bash", "-c", commands + '\npython3 -c \'import hmac, os; raise SystemExit(not hmac.compare_digest(os.environ.get("HONUA_ADMIN_PASSWORD", ""), os.environ["EXPECTED_PASSWORD"]))\''],
+                cwd=root, env=dict(os.environ, EXPECTED_PASSWORD=expected), capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, "Verification must load the production credential")
+
     def test_documented_env_file_command_uses_private_runtime_values(self):
         values = self.values | {
             "ConnectionStrings__DefaultConnection": "Host=private-db;Password=" + secrets.token_hex(32),

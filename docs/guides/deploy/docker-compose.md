@@ -189,9 +189,7 @@ From an operator workstation with Python 3, install the pinned admin SDK and rea
 the effective configuration through its authenticated client:
 
 ```bash
-set -a
-. ./.env
-set +a
+export HONUA_ADMIN_PASSWORD="$(sed -n 's/^HONUA_ADMIN_PASSWORD=//p' .env.production)"
 python3 -m pip install \
   "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
 python3 - <<'PY'
@@ -331,7 +329,8 @@ docker compose --env-file .env.production exec -T postgres pg_dump -U honua -d h
 3. Pull the new tag and recreate the server. Migrations run automatically when the new container starts.
 
 ```bash
-sed -i 's/^HONUA_TAG=.*/HONUA_TAG=vX.Y.Z/' .env   # pin the new version
+HONUA_IMAGE=${HONUA_IMAGE:?Set the next immutable image digest from the release manifest}
+sed -i "s|^HONUA_IMAGE=.*|HONUA_IMAGE=$HONUA_IMAGE|" .env.production
 docker compose --env-file .env.production pull honua
 docker compose --env-file .env.production up -d honua
 ```
@@ -340,7 +339,7 @@ docker compose --env-file .env.production up -d honua
 
 > Open `http://127.0.0.1:8080/healthz/ready` in a browser.
 
-**Roll back:** re-pin `HONUA_TAG` to the previous version and `docker compose --env-file .env.production up -d honua`. Additive (expand) migrations leave the schema backward-compatible, so the previous image runs against it unchanged. Restore the database (`pg_restore` from your dump) **only** when a contract-phase (schema-narrowing) migration ran and made the old version unusable — stop the container first, restore, then start the previous tag.
+**Roll back:** re-pin `HONUA_IMAGE` in `.env.production` to the previous immutable digest and `docker compose --env-file .env.production up -d honua`. Additive (expand) migrations are intended to leave the schema backward-compatible. N-1 upgrade and rollback qualification remains unverified until a released baseline exists. Restore the database (`pg_restore` from your dump) **only** when a contract-phase (schema-narrowing) migration ran and made the old version unusable — stop the container first, restore, then start the previous digest.
 
 ### Gating contract-phase migrations (optional)
 
