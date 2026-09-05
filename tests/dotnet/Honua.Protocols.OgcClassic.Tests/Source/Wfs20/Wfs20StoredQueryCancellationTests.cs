@@ -41,23 +41,49 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 public sealed class Wfs20StoredQueryCancellationTests
 {
     [Theory]
-    [InlineData("ListStoredQueries")]
-    [InlineData("DescribeStoredQueries")]
-    [InlineData("GetFeature")]
-    [InlineData("CreateStoredQuery")]
-    [InlineData("DropStoredQuery")]
-    public async Task ManagedOperation_PendingRedis_ReturnsTaskAndObservesCancellation(string operation)
+    [InlineData("ListStoredQueries", "SetMembers")]
+    [InlineData("DescribeStoredQueries", "SetMembers")]
+    [InlineData("GetFeature", "SetMembers")]
+    [InlineData("CreateStoredQuery", "SetMembers")]
+    [InlineData("DropStoredQuery", "SetMembers")]
+    [InlineData("DescribeStoredQueries", "StringGet")]
+    [InlineData("CreateStoredQuery", "StringSet")]
+    [InlineData("CreateStoredQuery", "SetAdd")]
+    [InlineData("DropStoredQuery", "KeyDelete")]
+    [InlineData("DropStoredQuery", "SetRemove")]
+    public async Task ManagedOperation_PendingRedis_ReturnsTaskAndObservesCancellation(string operation, string waitingOperation)
     {
         var redis = Substitute.For<IConnectionMultiplexer>();
         var database = Substitute.For<IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var pending = new TaskCompletionSource<RedisValue[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pendingBoolean = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        RedisValue[] ids = operation == "CreateStoredQuery" ? [] : ["urn:test:budget"];
         database.SetMembersAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(_ =>
         {
+            if (waitingOperation != "SetMembers") return Task.FromResult(ids);
             entered.TrySetResult();
             return pending.Task;
         });
+        database.StringGetAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(_ =>
+        {
+            if (waitingOperation != "StringGet")
+                return Task.FromResult<RedisValue[]>(["{\"Id\":\"urn:test:budget\",\"Parameters\":[]}"]);
+            entered.TrySetResult();
+            return pending.Task;
+        });
+        database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>()).Returns(_ => BooleanResult("StringSet"));
+        database.SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>()).Returns(_ => BooleanResult("SetAdd"));
+        database.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(_ => BooleanResult("KeyDelete"));
+        database.SetRemoveAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>()).Returns(_ => BooleanResult("SetRemove"));
+
+        Task<bool> BooleanResult(string name)
+        {
+            if (waitingOperation != name) return Task.FromResult(true);
+            entered.TrySetResult();
+            return pendingBoolean.Task;
+        }
         var graph = new TestMetadataV2GraphBuilder().BuildProvider();
         var handler = CreateHandler(graph);
         using var services = new ServiceCollection().AddLogging()
@@ -105,15 +131,21 @@ public sealed class Wfs20StoredQueryCancellationTests
             cancellation.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(
                 async () => await request.WaitAsync(TimeSpan.FromSeconds(1)));
-            await database.DidNotReceive().StringGetAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
+            var issuedCalls = database.ReceivedCalls().Count();
+            pending.TrySetResult([]);
+            pendingBoolean.TrySetResult(true);
+            await Task.Yield();
+            database.ReceivedCalls().Count().Should().Be(issuedCalls,
+                "cancellation must prevent subsequent Redis operations");
         }
         finally
         {
             pending.TrySetResult([]);
+            pendingBoolean.TrySetResult(true);
             thread.Join(TimeSpan.FromSeconds(2)).Should().BeTrue();
             if (returned.Task.IsCompletedSuccessfully)
             {
-                try { await returned.Task.Result; }
+                try { await (await returned.Task); }
                 catch (OperationCanceledException) { }
             }
         }
