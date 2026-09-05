@@ -4,9 +4,11 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
@@ -61,6 +63,8 @@ public sealed class WorkflowRollbackApprovalTests
         parameters[WorkflowRollbackOperations.ApprovedDataAffecting] = "False";
         var replay = mapper.MapReplay(mapped);
         replay.Request.OperationId.Should().Be(operationId);
+        OperationScopeMapping.TryResolve(replay.Request, out var replayOperation).Should().BeTrue();
+        replayOperation.Should().Be(OperatorOperation.Rollback);
         replay.Request.Parameters[WorkflowRollbackOperations.TargetOperationId].Should().Be("accepted-workflow");
         replay.Request.Parameters[WorkflowRollbackOperations.ApprovedDataAffecting].Should().Be("True");
         replay.Request.Parameters[WorkflowRollbackOperations.ApprovedRequiresApproval].Should().Be("True");
