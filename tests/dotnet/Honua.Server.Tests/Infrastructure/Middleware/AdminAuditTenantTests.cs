@@ -45,7 +45,7 @@ public sealed class AdminAuditTenantTests
         context.Request.Headers["X-Honua-Tenant"] = "untrusted-header-tenant";
         context.Request.Headers["X-Correlation-ID"] = "correlation-a";
         context.SetEndpoint(new RouteEndpoint(_ => Task.CompletedTask,
-            RoutePatternFactory.Parse("/api/v1/admin/metadata/layers/{layerId}/filter"), 0, EndpointMetadataCollection.Empty, "filter"));
+            RoutePatternFactory.Parse("/api/v{version:apiVersion}/admin/metadata/layers/{layerId}/filter"), 0, EndpointMetadataCollection.Empty, "filter"));
         var middleware = new AuditLogMiddleware(_ =>
         {
             context.Response.StatusCode = status;
