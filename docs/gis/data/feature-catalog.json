@@ -5986,7 +5986,8 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
         "Honua.Server.Tests.Infrastructure.Middleware.CorrelationIdMiddlewareTests.CorrelationIdMiddleware_HealthEndpoints_AlwaysIncludeCorrelationId",
         "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_ReadinessProbe_MatchesGetStatusWithEmptyBodyAndContentLength",
-        "Honua.Server.Tests.Infrastructure.Middleware.SecurityHeadersMiddlewareTests.SecurityHeaders_MultipleRequests_ConsistentlyAppliesHeaders"
+        "Honua.Server.Tests.Infrastructure.Middleware.SecurityHeadersMiddlewareTests.SecurityHeaders_MultipleRequests_ConsistentlyAppliesHeaders",
+        "Honua.Server.Tests.Startup.OfflineSyncDisabledStartupTests.Startup_OfflineSyncDisabled_ValidatesDependenciesAndReachesReadiness"
       ],
       "proof_ledger_surface": "platform-http",
       "maturity": "implemented",

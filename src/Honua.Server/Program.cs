@@ -679,6 +679,10 @@ builder.Services.AddSingleton<Honua.Core.Features.Guardrails.Abstractions.IGuard
     Honua.Core.Features.Guardrails.DefaultGuardrailLadder>();
 
 // Register configuration documentation service for self-documenting admin endpoint
+// Admin startup connectivity diagnostics require the shared secret provider even when
+// offline sync and other experimental surfaces are disabled (#4008).
+Honua.Infrastructure.Configuration.ConfigurationServiceExtensions.AddSecretManagement(
+    builder.Services, builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddScoped<Honua.Server.Features.Admin.Services.ConfigurationDocumentationService>();
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.TryAddScoped<IConsoleJobService, ConsoleJobService>();
