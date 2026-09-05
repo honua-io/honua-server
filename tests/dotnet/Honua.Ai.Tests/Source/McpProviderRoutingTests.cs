@@ -13,6 +13,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Queries.Filters;
@@ -31,21 +32,34 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class McpProviderRoutingTests
 {
     [Theory]
-    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote", true)]
-    [InlineData(QueryFeaturesTool.ToolName, false, null, true)]
-    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote", true)]
-    [InlineData(QueryFeaturesTool.ToolName, true, null, true)]
-    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote", true)]
-    [InlineData(DescribeLayerTool.ToolName, false, null, true)]
-    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote", false)]
-    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote", false)]
-    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote", false)]
+    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote", true, null, null)]
+    [InlineData(QueryFeaturesTool.ToolName, false, null, true, null, null)]
+    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote", true, null, null)]
+    [InlineData(QueryFeaturesTool.ToolName, true, null, true, null, null)]
+    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote", true, null, null)]
+    [InlineData(DescribeLayerTool.ToolName, false, null, true, null, null)]
+    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote", false, null, null)]
+    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote", false, null, null)]
+    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote", false, null, null)]
+    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote", true, "tenant-a", "tenant-b")]
+    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote", true, "tenant-a", null)]
+    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote", true, "tenant-a", "tenant-a")]
+    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote", true, "tenant-a", "tenant-b")]
+    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote", true, "tenant-a", null)]
+    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote", true, "tenant-a", "tenant-a")]
+    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote", true, "tenant-a", "tenant-b")]
+    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote", true, "tenant-a", null)]
+    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote", true, "tenant-a", "tenant-a")]
+    [InlineData(ListLayersTool.ToolName, false, "bind-remote", true, "tenant-a", "tenant-b")]
+    [InlineData(ListLayersTool.ToolName, false, "bind-remote", true, "tenant-a", null)]
+    [InlineData(ListLayersTool.ToolName, false, "bind-remote", true, "tenant-a", "tenant-a")]
+    [InlineData(ListLayersTool.ToolName, false, "bind-remote", true, null, null)]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task BoundPublication_ReadsFromConnectionProvider(string toolName, bool countOnly, string? publicationBindingId, bool includeRouter)
+    public async Task BoundPublication_RespectsRoutingAndTenantVisibility(string toolName, bool countOnly, string? publicationBindingId, bool includeRouter, string? publicationTenant, string? requestTenant)
     {
         var defaultReader = CreateReader(3);
         var unboundReader = CreateReader(5);
@@ -59,13 +73,18 @@ public sealed class McpProviderRoutingTests
         provider.Reader.Returns(unboundReader);
         ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(Arg.Any<FeatureProviderBinding>())
             .Returns(boundReader);
-        var graph = new TestMetadataV2GraphBuilder()
+        var metadata = new TestMetadataV2GraphBuilder()
             .AddConnection(connection.Id, "Remote data", provider: "duckdb")
             .AddResource("res-remote", "Remote rows")
             .AddStorageBinding("bind-remote", "res-remote", "remote.rows", connectionId: connection.Id, storageLayerId: 42)
             .AddService("svc-remote", "Remote")
             .AddPublication("pub-remote", "svc-remote", "res-remote", layerIndex: 0, storageBindingId: publicationBindingId)
-            .BuildProvider();
+            .Build();
+        var publication = metadata.Publications[0];
+        var graph = new TestMetadataV2GraphProvider(metadata with
+        {
+            Publications = [publication with { Metadata = publication.Metadata with { Tenant = publicationTenant } }]
+        });
         var geometry = Substitute.For<IGeometryService>();
         geometry.ConvertWkbToGeoJson(Arg.Any<byte[]?>()).Returns((string?)null);
         var registrations = new ServiceCollection()
@@ -79,11 +98,18 @@ public sealed class McpProviderRoutingTests
         {
             registrations.AddSingleton(new FeatureProviderQueryRouter(connections, new FeatureDataProviderRegistry([provider])));
         }
+        if (requestTenant is not null)
+        {
+            var tenant = Substitute.For<ITenantContext>();
+            tenant.TenantId.Returns(requestTenant);
+            registrations.AddSingleton(tenant);
+        }
         using var services = registrations.BuildServiceProvider();
         var jobService = Substitute.For<IGeoprocessingJobService>();
         var surface = new McpDataAccessSurface(
             [new QueryFeaturesTool(jobService, NullLogger<QueryFeaturesTool>.Instance),
-             new DescribeLayerTool(jobService, NullLogger<DescribeLayerTool>.Instance)],
+             new DescribeLayerTool(jobService, NullLogger<DescribeLayerTool>.Instance),
+             new ListLayersTool(jobService, NullLogger<ListLayersTool>.Instance)],
             [], NullLogger<McpDataAccessSurface>.Instance);
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services;
@@ -102,6 +128,28 @@ public sealed class McpProviderRoutingTests
         }, CancellationToken.None);
 
         response!.Error.Should().BeNull();
+        var tenantVisible = publicationTenant is null || publicationTenant == requestTenant;
+        if (toolName == ListLayersTool.ToolName || !tenantVisible)
+        {
+            var result = response.Result!.Value;
+            if (toolName == ListLayersTool.ToolName)
+            {
+                result.GetProperty("isError").GetBoolean().Should().BeFalse();
+                var listed = result.GetProperty("structuredContent");
+                listed.GetProperty("totalCount").GetInt32().Should().Be(tenantVisible ? 1 : 0);
+                listed.GetProperty("layers").GetArrayLength().Should().Be(tenantVisible ? 1 : 0);
+            }
+            else
+            {
+                result.GetProperty("isError").GetBoolean().Should().BeTrue("foreign or unresolved tenants cannot read a scoped publication");
+                result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("not_found");
+            }
+            connections.ReceivedCalls().Should().BeEmpty("tenant visibility is checked before resolving a connection");
+            defaultReader.ReceivedCalls().Should().BeEmpty();
+            unboundReader.ReceivedCalls().Should().BeEmpty();
+            boundReader.ReceivedCalls().Should().BeEmpty();
+            return;
+        }
         if (!includeRouter)
         {
             var result = response.Result!.Value;
