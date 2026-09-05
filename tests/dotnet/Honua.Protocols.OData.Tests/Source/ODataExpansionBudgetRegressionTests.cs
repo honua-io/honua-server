@@ -8,6 +8,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Protocols.OData;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -19,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 [Protocol(TestProtocols.ODataV4)]
 public sealed class ODataExpansionBudgetRegressionTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
     private readonly ConcurrentQueue<RelatedQuery> _relatedQueries = new();
 
     public async Task InitializeAsync()
@@ -43,10 +45,9 @@ public sealed class ODataExpansionBudgetRegressionTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData("", "InvalidQuery")]
     [InlineData("&$search=San", "InvalidQueryOption")]
-    [Trait("Category", "Integration")]
     [Operation(Operations.ODataExpand)]
     [Endpoint("GET /odata/Layers({layerId})/Features")]
     public async Task Expand_OneRowPage_RejectsOverBudgetChildren(string search, string errorCode)
