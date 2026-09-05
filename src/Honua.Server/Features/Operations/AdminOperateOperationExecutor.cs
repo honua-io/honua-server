@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Operations;
@@ -38,15 +39,100 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
     public Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var missing = RouteNames(_definition.Path)
-            .Where(name => string.IsNullOrWhiteSpace(request.Parameters.GetValueOrDefault(name)))
-            .Select(name => $"Required route parameter '{name}' is missing.").ToArray();
+        var descriptor = AdminOperateOperationCatalog.Descriptors.Single(item => item.OperationId == OperationId);
+        var messages = new List<string>();
+        foreach (var parameter in descriptor.InputSchema)
+        {
+            var value = request.Parameters.GetValueOrDefault(parameter.Name);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                if (parameter.Required)
+                    messages.Add($"Required parameter '{parameter.Name}' is missing.");
+                continue;
+            }
+
+            if (parameter.Schema.Type is WorkflowSchemaValueType.Structured or WorkflowSchemaValueType.List)
+            {
+                try
+                {
+                    using var document = JsonDocument.Parse(value);
+                    if (parameter.Required && document.RootElement.ValueKind == JsonValueKind.Null)
+                        messages.Add($"Required parameter '{parameter.Name}' is missing.");
+                    else
+                        ValidateRequiredMembers(document.RootElement, parameter.Schema, parameter.Name, messages);
+                }
+                catch (JsonException)
+                {
+                    messages.Add($"Parameter '{parameter.Name}' must contain valid JSON.");
+                }
+            }
+        }
+
+        if (OperationId == "admin.metadata.prevalidate")
+        {
+            var packageId = request.Parameters.GetValueOrDefault("releasePackageId");
+            var inlinePackage = request.Parameters.GetValueOrDefault("releasePackage");
+            var hasId = !string.IsNullOrWhiteSpace(packageId);
+            var hasInline = !string.IsNullOrWhiteSpace(inlinePackage) && inlinePackage.Trim() != "null";
+            if (hasId == hasInline)
+                messages.Add("Exactly one of 'releasePackageId' or 'releasePackage' is required.");
+            if (hasId && (!Guid.TryParse(packageId, out var id) || id == Guid.Empty))
+                messages.Add("Parameter 'releasePackageId' must be a non-empty UUID.");
+        }
+
+        if (OperationId == "admin.cache.invalidate")
+        {
+            var scope = request.Parameters.GetValueOrDefault("scope")?.ToLowerInvariant();
+            string[] required = scope switch
+            {
+                "layer" => ["serviceId", "layerId"],
+                "service" => ["serviceId"],
+                "collection" => ["collectionId"],
+                _ => [],
+            };
+            foreach (var name in required.Where(name => string.IsNullOrWhiteSpace(request.Parameters.GetValueOrDefault(name))))
+                messages.Add($"Required parameter '{name}' is missing for '{scope}' scope.");
+        }
+
         return Task.FromResult(new OperationValidation
         {
-            IsValid = missing.Length == 0,
-            Status = missing.Length == 0 ? "valid" : "invalid",
-            Messages = missing
+            IsValid = messages.Count == 0,
+            Status = messages.Count == 0 ? "valid" : "invalid",
+            Messages = messages.ToArray()
         });
+    }
+
+    private static void ValidateRequiredMembers(JsonElement value, WorkflowSchemaDefinition schema,
+        string path, List<string> messages)
+    {
+        if (value.ValueKind != JsonValueKind.Null &&
+            ((schema.Type == WorkflowSchemaValueType.Structured && value.ValueKind != JsonValueKind.Object) ||
+             (schema.Type == WorkflowSchemaValueType.List && value.ValueKind != JsonValueKind.Array)))
+        {
+            messages.Add($"Parameter '{path}' has an invalid JSON type.");
+            return;
+        }
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var name in schema.RequiredProperties)
+            {
+                if (!value.TryGetProperty(name, out var member) || member.ValueKind == JsonValueKind.Null ||
+                    (member.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(member.GetString())))
+                    messages.Add($"Required parameter '{path}.{name}' is missing.");
+            }
+            foreach (var property in value.EnumerateObject())
+            {
+                if (schema.Properties.TryGetValue(property.Name, out var memberSchema))
+                    ValidateRequiredMembers(property.Value, memberSchema, $"{path}.{property.Name}", messages);
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.Array && schema.Items is { } itemSchema)
+        {
+            var index = 0;
+            foreach (var item in value.EnumerateArray())
+                ValidateRequiredMembers(item, itemSchema, $"{path}[{index++}]", messages);
+        }
+
     }
 
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,
@@ -59,7 +145,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         var dryRun = request.DryRun && _definition.SupportsDryRun;
         var path = BindPath(request, dryRun ? _definition.DryRunPath! : _definition.Path);
         var method = dryRun ? _definition.DryRunMethod ?? _definition.Method : _definition.Method;
-        var uri = BuildLocalUri(current, $"/api/v1/admin{AppendQuery(path, request)}");
+        var uri = BuildLocalUri(current, $"/api/v1/admin{path}", BuildQuery(request));
         using var message = new HttpRequestMessage(method, uri);
         OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
         message.Headers.Host = current.Request.Host.Value;
@@ -159,7 +245,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         }
     }
 
-    private static Uri BuildLocalUri(HttpContext current, string pathAndQuery)
+    private static Uri BuildLocalUri(HttpContext current, string path, string query)
     {
         var localPort = current.Connection.LocalPort;
         if (localPort <= 0)
@@ -168,7 +254,10 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         var scheme = current.Features.Get<Microsoft.AspNetCore.Http.Features.ITlsConnectionFeature>() is null
             ? Uri.UriSchemeHttp
             : Uri.UriSchemeHttps;
-        return new UriBuilder(scheme, System.Net.IPAddress.Loopback.ToString(), localPort, pathAndQuery).Uri;
+        return new UriBuilder(scheme, System.Net.IPAddress.Loopback.ToString(), localPort, path)
+        {
+            Query = query
+        }.Uri;
     }
 
     public Task<OperationStatus> GetStatusAsync(OperationHandle handle, CancellationToken cancellationToken = default)
@@ -204,13 +293,13 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         return path;
     }
 
-    private string AppendQuery(string path, OperationRequest request)
+    private string BuildQuery(OperationRequest request)
     {
-        if (_definition.Method != HttpMethod.Get) return path;
+        if (_definition.Method != HttpMethod.Get) return string.Empty;
         var routeNames = RouteNames(_definition.Path);
         var query = request.Parameters.Where(pair => !routeNames.Contains(pair.Key) && pair.Value is not null)
             .Select(pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value!)}").ToArray();
-        return query.Length == 0 ? path : $"{path}?{string.Join('&', query)}";
+        return string.Join('&', query);
     }
 
     private static HashSet<string> RouteNames(string path) => path.Split('/')
@@ -225,8 +314,9 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         }
     }
 
-    private static string SerializeBody(IEnumerable<KeyValuePair<string, string?>> parameters)
+    private string SerializeBody(IEnumerable<KeyValuePair<string, string?>> parameters)
     {
+        var schema = AdminOperateOperationCatalog.Descriptors.Single(item => item.OperationId == OperationId).InputSchema;
         var buffer = new System.Buffers.ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
         {
@@ -234,6 +324,12 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
             foreach (var pair in parameters)
             {
                 writer.WritePropertyName(pair.Key);
+                var parameter = schema.FirstOrDefault(input => input.Name == pair.Key);
+                if (parameter?.Schema.Type == WorkflowSchemaValueType.Text)
+                {
+                    writer.WriteStringValue(pair.Value);
+                    continue;
+                }
                 try
                 {
                     using var value = JsonDocument.Parse(pair.Value!);
