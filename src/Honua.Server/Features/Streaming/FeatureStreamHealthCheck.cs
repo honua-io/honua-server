@@ -41,6 +41,7 @@ internal sealed class FeatureStreamHealthCheck : IHealthCheck
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         var activeSessions = _sessionManager.SessionCount;
+        var maximumPartitionSessions = _sessionManager.MaximumPartitionSessionCount;
         var maxSessions = _sessionManager.MaxConcurrentSessions;
         var slowConsumerDrops = _sessionManager.SlowConsumerDrops;
         var backlog = _sessionManager.GetClusterBroadcastBacklogSnapshot();
@@ -48,6 +49,7 @@ internal sealed class FeatureStreamHealthCheck : IHealthCheck
         var data = new Dictionary<string, object>(StringComparer.Ordinal)
         {
             ["active_sessions"] = activeSessions,
+            ["maximum_partition_sessions"] = maximumPartitionSessions,
             ["max_concurrent_sessions"] = maxSessions,
             ["slow_consumer_drops"] = slowConsumerDrops,
             ["cluster_broadcast_configured"] = backlog.Configured,
@@ -70,11 +72,11 @@ internal sealed class FeatureStreamHealthCheck : IHealthCheck
 
         // Session saturation: at the cap, new stream connections are rejected with 503.
         var saturationThreshold = Math.Max(1, (int)Math.Ceiling(maxSessions * SaturationRatio));
-        if (maxSessions > 0 && activeSessions >= saturationThreshold)
+        if (maxSessions > 0 && maximumPartitionSessions >= saturationThreshold)
         {
             return Task.FromResult(HealthCheckResult.Degraded(
-                $"Feature-stream sessions are near capacity ({activeSessions.ToString(CultureInfo.InvariantCulture)} "
-                + $"of {maxSessions.ToString(CultureInfo.InvariantCulture)}); new connections will be rejected once the cap is reached.",
+                $"A feature-stream tenant or principal is near capacity ({maximumPartitionSessions.ToString(CultureInfo.InvariantCulture)} "
+                + $"of {maxSessions.ToString(CultureInfo.InvariantCulture)}); new connections for that partition will be rejected once the cap is reached.",
                 data: data));
         }
 

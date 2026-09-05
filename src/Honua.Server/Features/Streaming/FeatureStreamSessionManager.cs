@@ -48,6 +48,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     private readonly string _instanceId = Guid.NewGuid().ToString("N");
     private bool _clusterBroadcastEnabled;
     private int _activeSessionCount;
+    private readonly object _admissionLock = new();
+    private readonly Dictionary<string, int> _partitionSessionCounts = new(StringComparer.Ordinal);
     private long _slowConsumerDrops;
     private long _heartbeatsSent;
     private int _clusterBroadcastUnavailableLogged;
@@ -116,9 +118,21 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     public int SessionCount => Volatile.Read(ref _activeSessionCount);
 
     /// <summary>
-    /// Configured concurrent-session cap. Exposed for the health check's saturation signal.
+    /// Configured concurrent-session cap per tenant or principal. Exposed for the health check's saturation signal.
     /// </summary>
     public int MaxConcurrentSessions => _options.Value.MaxConcurrentSessions;
+
+    /// <summary>Largest active partition occupancy, without exposing tenant or principal identifiers.</summary>
+    public int MaximumPartitionSessionCount
+    {
+        get
+        {
+            lock (_admissionLock)
+            {
+                return _partitionSessionCounts.Count == 0 ? 0 : _partitionSessionCounts.Values.Max();
+            }
+        }
+    }
 
     /// <summary>
     /// Refreshes the routing state referenced by all open scoped subscriptions. Failure clears
@@ -246,17 +260,19 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 $"Feature stream session limit of {_options.Value.MaxConcurrentSessions} concurrent sessions reached.");
 
     /// <summary>
-    /// Attempts to create a new session. Returns null when the global concurrent-session
+    /// Attempts to create a new session. Returns null when the tenant or principal concurrent-session
     /// cap has been reached.
     /// </summary>
     public FeatureStreamSession? TryCreateSession(
         string transport,
         string? clientLabel,
         IStreamSubscriptionFilter? filter = null,
-        bool addDefaultSubscription = true)
+        bool addDefaultSubscription = true,
+        string? admissionPartition = null)
     {
+        admissionPartition ??= "anonymous";
         var opts = _options.Value;
-        if (!TryReserveSessionSlot(opts.MaxConcurrentSessions))
+        if (!TryReserveSessionSlot(admissionPartition, opts.MaxConcurrentSessions))
         {
             _metrics.RecordSessionRejected();
             return null;
@@ -270,10 +286,10 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             SingleReader = true
         });
         var cts = new CancellationTokenSource();
-        var entry = new SessionEntry(id, channel, cts, DateTimeOffset.UtcNow, clientLabel, transport, filter, addDefaultSubscription);
+        var entry = new SessionEntry(id, channel, cts, DateTimeOffset.UtcNow, clientLabel, transport, filter, addDefaultSubscription, admissionPartition);
         if (!_sessions.TryAdd(id, entry))
         {
-            ReleaseSessionSlot();
+            ReleaseSessionSlot(admissionPartition);
             cts.Dispose();
             throw new InvalidOperationException("Failed to register feature stream session.");
         }
@@ -284,26 +300,42 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         return new FeatureStreamSession(id, channel.Reader, this, cts.Token);
     }
 
-    private bool TryReserveSessionSlot(int maxConcurrentSessions)
+    private bool TryReserveSessionSlot(string partition, int maxConcurrentSessions)
     {
-        while (true)
+        lock (_admissionLock)
         {
-            var currentCount = Volatile.Read(ref _activeSessionCount);
-            if (currentCount >= maxConcurrentSessions)
+            var count = _partitionSessionCounts.GetValueOrDefault(partition);
+            if (count >= maxConcurrentSessions)
             {
                 return false;
             }
 
-            if (Interlocked.CompareExchange(ref _activeSessionCount, currentCount + 1, currentCount) == currentCount)
-            {
-                return true;
-            }
+            _partitionSessionCounts[partition] = count + 1;
+            Interlocked.Increment(ref _activeSessionCount);
+            return true;
         }
     }
 
-    private void ReleaseSessionSlot()
+    private void ReleaseSessionSlot(string partition)
     {
-        Interlocked.Decrement(ref _activeSessionCount);
+        lock (_admissionLock)
+        {
+            if (!_partitionSessionCounts.TryGetValue(partition, out var count))
+            {
+                return;
+            }
+
+            if (count == 1)
+            {
+                _partitionSessionCounts.Remove(partition);
+            }
+            else
+            {
+                _partitionSessionCounts[partition] = count - 1;
+            }
+
+            Interlocked.Decrement(ref _activeSessionCount);
+        }
     }
 
     /// <summary>
@@ -349,7 +381,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             return false;
         }
 
-        ReleaseSessionSlot();
+        ReleaseSessionSlot(entry.AdmissionPartition);
         FeatureStreamLog.SessionRemoved(_logger, sessionId, reason);
         _metrics.RecordSessionClosed(entry.Transport, reason);
         if (reason == FeatureStreamDisconnectReason.SlowConsumer)
@@ -965,7 +997,11 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         }
 
         _sessions.Clear();
-        Interlocked.Exchange(ref _activeSessionCount, 0);
+        lock (_admissionLock)
+        {
+            _partitionSessionCounts.Clear();
+            Interlocked.Exchange(ref _activeSessionCount, 0);
+        }
     }
 
     private void LogClusterBroadcastUnavailableOnce(Exception exception)
@@ -1003,7 +1039,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             string? clientLabel,
             string transport,
             IStreamSubscriptionFilter? subscriptionFilter = null,
-            bool addDefaultSubscription = true)
+            bool addDefaultSubscription = true,
+            string admissionPartition = "anonymous")
         {
             Id = id;
             Channel = channel;
@@ -1011,6 +1048,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
             ConnectedAt = connectedAt;
             ClientLabel = clientLabel;
             Transport = transport;
+            AdmissionPartition = admissionPartition;
             if (addDefaultSubscription)
             {
                 var generation = ++_subscriptionGenerationCounter;
@@ -1040,6 +1078,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
         public DateTimeOffset ConnectedAt { get; }
         public string? ClientLabel { get; }
         public string Transport { get; }
+        public string AdmissionPartition { get; }
         public bool HasSubscriptions
         {
             get
