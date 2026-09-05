@@ -7,7 +7,7 @@
     "planned": "Planned but not yet built; declared for roadmap visibility only.",
     "deferred": "Deferred out of the current release scope by an owner decision; present and serving on trunk but not advertised as part of this release's GA surface.",
     "experimental": "Implemented but off by default and gated behind an explicitly-named configuration flag, so it is not part of the default advertised surface.",
-    "preview": "Implemented and available through explicit operator opt-in, but outside the GA operational, SLA, and scale commitments.",
+    "preview": "Available for evaluation outside GA operational, SLA, and scale commitments; capability-specific configuration determines whether explicit operator opt-in is required.",
     "partial": "Partially implemented — a subset of the capability is served."
   },
   "reasonCodes": {
