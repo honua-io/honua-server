@@ -21,6 +21,20 @@ namespace Honua.Server.Tests.Features.Licensing;
 [Operation(Operations.LicenseManagement)]
 public sealed class LicenseGateTests
 {
+    [UnitTest]
+    public void CommunityStatus_WithoutPaidLicense_PreservesFreeEntitlements()
+    {
+        var status = Substitute.For<ILicenseStatusProvider>();
+        status.GetCurrentStatus().Returns(new LicenseStatus(HonuaEdition.Community, false, null, null,
+            LicenseValidationState.NoLicenseConfigured,
+            Entitlements: [new Entitlement { Key = "temporal.filtering", Name = "Temporal filtering", IsActive = true }]));
+        var services = new ServiceCollection();
+        services.AddSingleton(status);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.True(LicenseGate.CheckEntitlement(provider, "temporal.filtering").IsActive);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

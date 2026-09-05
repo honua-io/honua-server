@@ -110,7 +110,7 @@ internal static class LicenseGate
 
         var status = statusProvider.GetCurrentStatus();
         var requiredEdition = capability?.Edition;
-        var active = status.IsValid && (status.Entitlements?.Any(
+        var active = (status.Edition == HonuaEdition.Community || status.IsValid) && (status.Entitlements?.Any(
                 entitlement => entitlement.IsActive &&
                     string.Equals(entitlement.Key, entitlementKey, StringComparison.OrdinalIgnoreCase)) == true ||
             (requiredEdition.HasValue && status.Edition >= requiredEdition.Value));
