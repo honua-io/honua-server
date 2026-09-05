@@ -30,6 +30,49 @@ public sealed class GeoservicesEsriProbeBugHuntTests
     }
 
     [Fact]
+    public void CurvePolyline_CircularArc_PreservesCurvatureAndEndpoints()
+    {
+        var geoJson = ConvertEsriGeometry("""
+            {"curvePaths": [[[1,0], {"c": [[0,1], [0,0]]}]]}
+            """);
+
+        Assert.NotNull(geoJson);
+        using var document = JsonDocument.Parse(geoJson);
+        var path = document.RootElement.GetProperty("coordinates")[0];
+        Assert.True(path.GetArrayLength() > 2);
+        Assert.Equal(1, path[0][0].GetDouble());
+        Assert.Equal(0, path[0][1].GetDouble());
+        Assert.Equal(0, path[path.GetArrayLength() - 1][0].GetDouble());
+        Assert.Equal(1, path[path.GetArrayLength() - 1][1].GetDouble());
+        foreach (var vertex in path.EnumerateArray())
+        {
+            var x = vertex[0].GetDouble();
+            var y = vertex[1].GetDouble();
+            Assert.Equal(1, (x * x) + (y * y), precision: 6);
+        }
+    }
+
+    [Fact]
+    public void CurvePolyline_CubicBezier_SamplesCurveAndPreservesEndpointOrdinates()
+    {
+        var geoJson = ConvertEsriGeometry("""
+            {"hasZ": true, "hasM": true,
+             "curvePaths": [[[0,0,30,40], {"b": [[10,0,31,41], [3,5], [7,5]]}]]}
+            """);
+
+        Assert.NotNull(geoJson);
+        using var document = JsonDocument.Parse(geoJson);
+        var path = document.RootElement.GetProperty("coordinates")[0];
+        Assert.Equal(33, path.GetArrayLength());
+        Assert.Equal(5, path[16][0].GetDouble(), precision: 6);
+        Assert.Equal(3.75, path[16][1].GetDouble(), precision: 6);
+        Assert.Equal(30, path[0][2].GetDouble());
+        Assert.Equal(40, path[0][3].GetDouble());
+        Assert.Equal(31, path[32][2].GetDouble());
+        Assert.Equal(41, path[32][3].GetDouble());
+    }
+
+    [Fact]
     public void EmptyPolyline_IsRetainedAsAnEmptyGeometry()
     {
         var geoJson = ConvertEsriGeometry("{\"paths\":[]}");

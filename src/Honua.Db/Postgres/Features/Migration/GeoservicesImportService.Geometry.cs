@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Geometries;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
@@ -14,8 +15,6 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
-using Honua.Protocols.GeoServices;
-using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
@@ -107,7 +106,7 @@ internal sealed partial class GeoservicesImportService
             if (geometry.TryGetProperty("curvePaths", out var curvePaths))
             {
                 var coordinates = curvePaths.EnumerateArray()
-                    .Select(path => ReadCurvePath(path, coordsCarryZ, coordsCarryM))
+                    .Select(ReadCurvePath)
                     .Where(path => path.Length >= 2)
                     .ToArray();
 
@@ -305,17 +304,8 @@ internal sealed partial class GeoservicesImportService
         return values.ToArray();
     }
 
-    private static double[][] ReadCurvePath(JsonElement path, bool carryZ, bool carryM)
-    {
-        var curveGeometry = new GeoServicesGeometry
-        {
-            HasZ = carryZ,
-            HasM = carryM,
-            CurvePaths = [path.EnumerateArray().ToArray()]
-        };
-
-        return CurveGeometryConverter.Densify(curveGeometry).Paths?[0] ?? [];
-    }
+    private static double[][] ReadCurvePath(JsonElement path)
+        => CurveGeometryConverter.Densify(path.EnumerateArray().ToArray());
 
     /// <summary>
     /// Writes a single GeoJSON coordinate, emitting the Z ordinate when the
