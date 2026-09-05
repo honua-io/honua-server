@@ -1394,6 +1394,13 @@ app.UseWhen(
 // before any downstream feature handler reads ITenantContext (#1144).
 app.UseHonuaTenantContext();
 
+// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
+// so schema-routing failures also consume the tenant + authenticated user/API-key bucket
+// (falling back to
+// source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
+// posture is still edge enforcement (ADR-0004).
+app.UseRateLimiting();
+
 // Route the resolved tenant to its PostgreSQL schema and record a usage signal (#346).
 // No-op unless MultiTenancy:SchemaRouting:Enabled=true. Must run after tenant context
 // resolution and before any feature handler that reads the database.
@@ -1404,11 +1411,7 @@ app.UseHonuaTenantSchemaRouting();
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
 
-// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
-// so buckets partition by tenant + authenticated user/API-key identity (falling back to
-// source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
-// posture is still edge enforcement (ADR-0004).
-app.UseRateLimiting();
+
 
 // Reject invalid Esri portal tokens only after the shared rate limiter has metered the
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.

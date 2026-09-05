@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.RateLimiting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
@@ -268,6 +269,29 @@ public class TenantSchemaRoutingMiddlewareTests
         Assert.Equal("legacy_acme", await response.Content.ReadAsStringAsync());
     }
 
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task FailedSchemaRouting_ConsumesRateLimitAndReturnsRetryAfter()
+    {
+        var tenantId = $"rate-{Guid.NewGuid():N}";
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", tenantId)),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true,
+            rateLimitingEnabled: true);
+
+        var first = await client.GetAsync("/schema");
+        var second = await client.GetAsync("/schema");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, first.StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+        Assert.True(second.Headers.Contains("Retry-After"));
+    }
+
     private static ClaimsPrincipal AuthenticatedPrincipal((string Type, string Value) claim)
     {
         var claims = new List<Claim>
@@ -284,7 +308,8 @@ public class TenantSchemaRoutingMiddlewareTests
         bool routingEnabled,
         string? defaultPrincipalKey = null,
         string? pinnedSchema = null,
-        Dictionary<string, string?>? routingSettings = null)
+        Dictionary<string, string?>? routingSettings = null,
+        bool rateLimitingEnabled = false)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -292,6 +317,8 @@ public class TenantSchemaRoutingMiddlewareTests
         var settings = new Dictionary<string, string?>
         {
             ["MultiTenancy:SchemaRouting:Enabled"] = routingEnabled ? "true" : "false",
+            ["RateLimiting:Enabled"] = rateLimitingEnabled ? "true" : "false",
+            ["RateLimiting:GlobalRequestsPerMinute"] = "1",
         };
         if (routingSettings is not null)
         {
@@ -305,6 +332,7 @@ public class TenantSchemaRoutingMiddlewareTests
 
         builder.Services.AddHonuaTenantContext(config, _ => { });
         builder.Services.AddHonuaTenantSchemaRouting(config);
+        builder.Services.AddRateLimiting(config);
 
         // Mirror the production registration of the request-scoped schema context.
         builder.Services.AddScoped<SchemaContext>();
@@ -335,6 +363,7 @@ public class TenantSchemaRoutingMiddlewareTests
         });
 
         app.UseHonuaTenantContext();
+        app.UseRateLimiting();
         app.UseHonuaTenantSchemaRouting();
 
         // Report the schema the request was routed to (or <null> when none was set). Reads the
