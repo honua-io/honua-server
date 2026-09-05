@@ -17521,7 +17521,8 @@
         "Honua.Server.Tests.Features.Security.ODataServiceAccessPolicyTests.Batch_WithAnonymousClient_AndAnonymousWriteServicePolicy_AllowsMatchingService",
         "Honua.Server.Tests.Features.Security.ODataServiceBoundaryTests.BatchCreateFeature_PublishesCanonicalServiceId",
         "Honua.Server.Tests.Features.Security.ODataServiceRbacTests.Batch_WithAnonymousClient_AllowsPublicLayerReads",
-        "Honua.Server.Tests.Features.Security.ODataServiceRbacTests.Batch_WithScopedDataEditor_DeniesOtherService"
+        "Honua.Server.Tests.Features.Security.ODataServiceRbacTests.Batch_WithScopedDataEditor_DeniesOtherService",
+        "Honua.Server.Tests.PatchConcurrencyTests.ODataBatchPatch_ConcurrentDisjointPatch_PreservesCommittedPropertiesAndGeometry"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
