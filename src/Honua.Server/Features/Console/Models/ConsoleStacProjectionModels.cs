@@ -187,6 +187,7 @@ public sealed class StacProjectionItem
 
     /// <summary>Item geometry (GeoJSON). Null when no spatial extent is known.</summary>
     [JsonPropertyName("geometry")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public StacProjectionGeometry? Geometry { get; init; }
 
     /// <summary>Common metadata properties (datetime, title, etc.).</summary>
@@ -199,7 +200,7 @@ public sealed class StacProjectionItem
 
     /// <summary>Distribution assets keyed by asset key.</summary>
     [JsonPropertyName("assets")]
-    public IReadOnlyDictionary<string, StacProjectionAsset>? Assets { get; init; }
+    public IReadOnlyDictionary<string, StacProjectionAsset> Assets { get; init; } = new Dictionary<string, StacProjectionAsset>();
 }
 
 /// <summary>

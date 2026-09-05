@@ -273,6 +273,7 @@ internal sealed class StacMappingService
             !string.Equals(kvp.Key, "datetime", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(kvp.Key, "start_datetime", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(kvp.Key, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(kvp.Key, "honua:datetime_source", StringComparison.OrdinalIgnoreCase) &&
             !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key) &&
             (selectedPropertiesLookup is null || selectedPropertiesLookup.Contains(kvp.Key)) &&
             !(kvp.Value is null && selectedPropertiesLookup is null));
@@ -378,30 +379,18 @@ internal sealed class StacMappingService
         MetadataV2Resource resource,
         Dictionary<string, object?> properties)
     {
-        var fields = resource.ReadTemporalFields();
+        var startField = StacFilterHelpers.ResolveTemporalField(resource, out var endField);
         DateTimeOffset? start = null;
         DateTimeOffset? end = null;
 
-        if (!string.IsNullOrWhiteSpace(fields.StartTimeField))
+        if (!string.IsNullOrWhiteSpace(startField))
         {
-            start = TryReadTemporalValue(attributes, fields.StartTimeField);
+            start = TryReadTemporalValue(attributes, startField);
         }
-        if (!string.IsNullOrWhiteSpace(fields.EndTimeField))
+        if (!string.IsNullOrWhiteSpace(endField))
         {
-            end = TryReadTemporalValue(attributes, fields.EndTimeField);
+            end = TryReadTemporalValue(attributes, endField);
         }
-
-        if (start is null && end is null)
-        {
-            var intervalStart = TryReadTemporalValue(attributes, "start_datetime");
-            if (intervalStart is not null)
-            {
-                start = intervalStart;
-                end = TryReadTemporalValue(attributes, "end_datetime");
-            }
-        }
-
-        start ??= TryReadFallbackTemporalValue(attributes);
 
         if (start is not null && (end is null || end == start))
         {
@@ -422,18 +411,13 @@ internal sealed class StacMappingService
             return;
         }
 
-        // No per-feature temporal information is available.  STAC 1.0.0 still REQUIRES the
-        // "datetime" property on every Item: it must be a non-null RFC 3339 string, OR null with
-        // both start_datetime and end_datetime present as non-null strings.  Emitting
-        // "datetime":null with no bounds — or omitting the key entirely — fails stac-api-validator
-        // (core/features/item-search) and breaks pystac/pystac-client
-        // ("If datetime is None, a start_datetime and end_datetime must be supplied").
-        //
-        // Fall back to a sensible non-null instant rather than violating the invariant: prefer the
-        // collection/resource's declared temporal-extent start (mirroring how the collection extent
-        // is computed), then its end, and as an absolute last resort the Unix epoch — a
-        // deterministic, valid RFC 3339 value that keeps the item parseable by every STAC client.
+        // Preserve the legacy readable-item contract and STAC 1.0's required datetime.
+        // Explicitly identify this display fallback: it is not an acquisition timestamp,
+        // and cannot make an undated collection match a datetime search.
         properties["datetime"] = FormatTemporalValue(ResolveFallbackInstant(resource));
+        properties["honua:datetime_source"] = resource.Temporal?.Extent is { Start: not null } or { End: not null }
+            ? "collection_extent"
+            : "unknown";
     }
 
     /// <summary>
@@ -530,8 +514,17 @@ internal sealed class StacMappingService
         }
 
         var temporalInterval = ImmutableArray.Create(ImmutableArray.Create<string?>(null, null));
+        var temporalStartField = StacFilterHelpers.ResolveTemporalField(resource, out var temporalEndField);
+        var temporalResource = temporalStartField is null ? resource : resource with
+        {
+            Temporal = (resource.Temporal ?? new MetadataV2ResourceTemporal()) with
+            {
+                StartTimeField = temporalStartField,
+                EndTimeField = temporalEndField
+            }
+        };
         var temporalExtent = await OgcQueryablesUtilities.BuildTemporalExtentAsync(
-            resource, layerIndex, featureReader, cancellationToken).ConfigureAwait(false);
+            temporalResource, layerIndex, featureReader, cancellationToken).ConfigureAwait(false);
         if (temporalExtent is not null)
         {
             temporalInterval = temporalExtent.Interval;
@@ -571,7 +564,7 @@ internal sealed class StacMappingService
     {
         if (!attributes.TryGetValue(fieldName, out var value))
         {
-            return null;
+            value = attributes.FirstOrDefault(pair => string.Equals(pair.Key, fieldName, StringComparison.OrdinalIgnoreCase)).Value;
         }
 
         return value switch
@@ -612,32 +605,6 @@ internal sealed class StacMappingService
 
     private static string FormatTemporalValue(DateTimeOffset value)
         => value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
-
-    private static DateTimeOffset? TryReadFallbackTemporalValue(
-        IReadOnlyDictionary<string, object?> attributes)
-    {
-        ReadOnlySpan<string> candidates =
-        [
-            "datetime",
-            "created_at",
-            "updated_at",
-            "start_datetime",
-            "timestamp",
-            "event_date",
-            "date"
-        ];
-
-        foreach (var candidate in candidates)
-        {
-            var value = TryReadTemporalValue(attributes, candidate);
-            if (value is not null)
-            {
-                return value;
-            }
-        }
-
-        return null;
-    }
 
     private static ImmutableArray<double>? TryBuildBboxFromGeometry(NetTopologySuite.Geometries.Geometry geom, int srid)
     {

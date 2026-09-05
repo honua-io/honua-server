@@ -58,6 +58,7 @@
       "displayName": "Dwell Trigger",
       "category": "Alerts",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Trigger alerts when features remain inside a zone for a configured duration."
     },
     {
@@ -65,6 +66,7 @@
       "displayName": "Enter/Exit Geofence Triggers",
       "category": "Alerts",
       "edition": "Pro",
+      "status": "preview",
       "description": "Trigger alerts when features enter or exit geofence zones."
     },
     {
@@ -72,6 +74,7 @@
       "displayName": "Alert Evaluation Engine",
       "category": "Alerts",
       "edition": "Pro",
+      "status": "preview",
       "description": "Background worker for evaluating geofence rules against feature changes."
     },
     {
@@ -79,6 +82,7 @@
       "displayName": "Threshold Trigger",
       "category": "Alerts",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Trigger alerts based on attribute threshold conditions."
     },
     {
@@ -177,6 +181,7 @@
       "displayName": "AWS SNS Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications via AWS Simple Notification Service."
     },
     {
@@ -184,6 +189,7 @@
       "displayName": "Azure Event Grid Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications via Azure Event Grid."
     },
     {
@@ -191,6 +197,7 @@
       "displayName": "Digest Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Aggregate and deliver batched alert summaries."
     },
     {
@@ -198,6 +205,7 @@
       "displayName": "Email Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications via email."
     },
     {
@@ -205,6 +213,7 @@
       "displayName": "Slack Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications to Slack channels."
     },
     {
@@ -212,6 +221,7 @@
       "displayName": "Microsoft Teams Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications to Microsoft Teams."
     },
     {
@@ -219,6 +229,7 @@
       "displayName": "Webhook Delivery",
       "category": "Channels",
       "edition": "Pro",
+      "status": "preview",
       "description": "Deliver alert notifications via webhook HTTP callbacks."
     },
     {

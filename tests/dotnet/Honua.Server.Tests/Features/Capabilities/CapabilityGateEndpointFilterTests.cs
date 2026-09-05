@@ -25,6 +25,7 @@ namespace Honua.Server.Tests.Features.Capabilities;
 public sealed class CapabilityGateEndpointFilterTests
 {
     private const string GatedDescriptorId = "test.experimental.capability";
+    private const string PreviewDescriptorId = "test.preview.capability";
 
     private static readonly CapabilityDescriptor ExperimentalDescriptor = new()
     {
@@ -34,10 +35,18 @@ public sealed class CapabilityGateEndpointFilterTests
         Maturity = CapabilityMaturity.Experimental,
     };
 
+    private static readonly CapabilityDescriptor PreviewDescriptor = new()
+    {
+        Id = PreviewDescriptorId,
+        Category = "test",
+        Kind = CapabilityKind.Feature,
+        Maturity = CapabilityMaturity.Preview,
+    };
+
     [Fact]
     public async Task GatedEndpoint_WhenExperimentalDisabled_Returns404ProblemJson()
     {
-        using var server = BuildServer(experimentalEnabled: false);
+        using var server = BuildServer(ExperimentalDescriptor, experimentalEnabled: false);
         using var client = server.CreateClient();
 
         var response = await client.GetAsync(new Uri("/gated/ping", UriKind.Relative));
@@ -52,13 +61,37 @@ public sealed class CapabilityGateEndpointFilterTests
             .Should().Be(CapabilityGateEndpointFilter.ExperimentalDisabledProblemType);
         problem.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status404NotFound);
         problem.GetProperty("detail").GetString()
+            .Should().Contain($"'{GatedDescriptorId}' capability is experimental and disabled");
+        problem.GetProperty("detail").GetString()
             .Should().Contain($"Capabilities:Experimental:{GatedDescriptorId}");
+    }
+
+    [Fact]
+    public async Task GatedEndpoint_WhenPreviewDisabled_UsesPreviewLifecycleInExistingProblemShape()
+    {
+        using var server = BuildServer(PreviewDescriptor, experimentalEnabled: false);
+        using var client = server.CreateClient();
+
+        var response = await client.GetAsync(new Uri("/gated/ping", UriKind.Relative));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        var problem = JsonSerializer.Deserialize<JsonElement>(content);
+
+        problem.GetProperty("type").GetString()
+            .Should().Be(CapabilityGateEndpointFilter.ExperimentalDisabledProblemType);
+        problem.GetProperty("detail").GetString()
+            .Should().Contain($"'{PreviewDescriptorId}' capability is preview and disabled");
+        problem.GetProperty("detail").GetString()
+            .Should().Contain($"Capabilities:Experimental:{PreviewDescriptorId}");
     }
 
     [Fact]
     public async Task GatedEndpoint_WhenExperimentalEnabled_Returns200()
     {
-        using var server = BuildServer(experimentalEnabled: true);
+        using var server = BuildServer(ExperimentalDescriptor, experimentalEnabled: true);
         using var client = server.CreateClient();
 
         var response = await client.GetAsync(new Uri("/gated/ping", UriKind.Relative));
@@ -68,7 +101,7 @@ public sealed class CapabilityGateEndpointFilterTests
         content.Should().Contain("pong");
     }
 
-    private static TestServer BuildServer(bool experimentalEnabled)
+    private static TestServer BuildServer(CapabilityDescriptor descriptor, bool experimentalEnabled)
     {
         var builder = new HostBuilder()
             .ConfigureWebHost(webHost =>
@@ -79,7 +112,7 @@ public sealed class CapabilityGateEndpointFilterTests
                         services.AddLogging();
                         services.AddRouting();
                         services.AddSingleton<ICapabilityRegistry>(
-                            new StubCapabilityRegistry(ExperimentalDescriptor));
+                            new StubCapabilityRegistry(descriptor));
                         services.AddOptions<CapabilityFlagOptions>()
                             .Configure(options => options.Enabled = experimentalEnabled);
                     })
@@ -89,7 +122,7 @@ public sealed class CapabilityGateEndpointFilterTests
                         app.UseEndpoints(endpoints =>
                         {
                             var group = endpoints.MapGroup("/gated")
-                                .WithCapabilityGate(GatedDescriptorId);
+                                .WithCapabilityGate(descriptor.Id);
                             group.MapGet("/ping", () => Results.Ok("pong"));
                         });
                     });
@@ -101,7 +134,7 @@ public sealed class CapabilityGateEndpointFilterTests
     }
 
     /// <summary>
-    /// Minimal <see cref="ICapabilityRegistry"/> that exposes a single experimental
+    /// Minimal <see cref="ICapabilityRegistry"/> that exposes a single opt-in
     /// descriptor and defers resolution to the shared
     /// <see cref="CapabilityGateResolver"/>, mirroring the production registry.
     /// </summary>
