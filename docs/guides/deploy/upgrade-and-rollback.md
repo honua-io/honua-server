@@ -28,6 +28,8 @@ the nested evaluation, dispatch, delivery-channel, and operations settings.
 
 ### Tenant schema isolation correction
 
+This section applies only to explicitly labelled **Preview/trial** environments in 2026.1. GA is single-tenant; no production multi-tenant deployment or customer production data is permitted. The isolation correction retains full security severity. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+
 Schema routing remains opt-in (`MultiTenancy:SchemaRouting:Enabled`, default
 `false`). When enabled, tenant IDs are now matched exactly. Default derivation
 preserves existing lowercase ASCII letters, digits and underscores, such as

@@ -378,6 +378,8 @@ Esri spec: [Version Management Service](https://developers.arcgis.com/rest/servi
 > surface. The `"maturity": "experimental"` on each operation in the JSON is derived from
 > that capability descriptor, not asserted by hand.
 
+Core branch versioning is **Pro**; organisational approval/policy controls are **Enterprise**. The 2026.1 release posture is **Preview**, with the existing experimental opt-in described above retained. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+
 Branch versioning is backed by Postgres only; other providers register a no-op version
 manager whose mutations return **501** rather than fabricating success.
 

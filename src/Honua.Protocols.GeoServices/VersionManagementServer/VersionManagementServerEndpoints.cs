@@ -24,7 +24,7 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer;
 /// <summary>
 /// Esri GeoServices VersionManagementServer protocol slice (#1272, ADR-0051). A thin protocol
 /// adapter over the canonical <see cref="IVersionManager"/>: it parses Esri-shaped requests,
-/// enforces the Enterprise branch-versioning entitlement and service write authorization, and maps
+/// enforces the Pro branch-versioning entitlement and service write authorization, and maps
 /// version-manager results to the Esri wire shape. It owns no storage, read, write, reconcile, or
 /// post behavior — that all lives in the provider's <see cref="IVersionManager"/> implementation.
 /// </summary>
@@ -72,7 +72,7 @@ public static class VersionManagementServerEndpoints
             .WithCapabilityGate("versioning.branch");
 
         // HANDLER-AUTHORIZED (#1144): every route below enforces authorization in its handler —
-        // service read (Query) access for the read surface, plus the Enterprise branch-versioning
+        // service read (Query) access for the read surface, plus the Pro branch-versioning
         // entitlement and service write authorization (Update + data-editor RBAC) for lifecycle
         // operations. Marked AllowAnonymous so the audit architecture guard records the
         // intentional decision, matching the sibling GeoServices endpoint files.
