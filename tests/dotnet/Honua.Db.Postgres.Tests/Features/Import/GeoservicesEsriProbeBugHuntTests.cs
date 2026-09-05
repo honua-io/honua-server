@@ -48,7 +48,8 @@ public sealed class GeoservicesEsriProbeBugHuntTests
         {
             var x = vertex[0].GetDouble();
             var y = vertex[1].GetDouble();
-            Assert.Equal(1, (x * x) + (y * y), precision: 6);
+            // Esri c[1] is an interior point: this circle has center (0.5, 0.5).
+            Assert.Equal(0.5, ((x - 0.5) * (x - 0.5)) + ((y - 0.5) * (y - 0.5)), precision: 6);
         }
     }
 
@@ -68,6 +69,8 @@ public sealed class GeoservicesEsriProbeBugHuntTests
         Assert.Equal(3.75, path[16][1].GetDouble(), precision: 6);
         Assert.Equal(30, path[0][2].GetDouble());
         Assert.Equal(40, path[0][3].GetDouble());
+        Assert.Equal(30.5, path[16][2].GetDouble());
+        Assert.Equal(40.5, path[16][3].GetDouble());
         Assert.Equal(31, path[32][2].GetDouble());
         Assert.Equal(41, path[32][3].GetDouble());
     }
