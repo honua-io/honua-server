@@ -172,3 +172,21 @@ The canonical native-AOT build and startup smoke passed in serving-image
 verification run 33946025461 after the Zarr scope prerequisite. Full local
 canonical publishing remains in progress; the two other local native builds
 were stopped to relieve host memory pressure and are not claimed complete.
+
+
+## Blocked handoff
+
+The zero-alert condition cannot be met by the tested patched vendor images:
+the complete rebuilt JIT image retains 34 action-equivalent SARIF findings
+with no fixed version, including nine original findings. PR #4328 remains
+non-draft and held. The exact package receipt is committed in
+`code-scanning-2026-09-trivy-unfixed.json` beside this report.
+
+The local canonical native publish was stopped after approximately 158
+minutes without completing; its pending scan watcher was also stopped.
+Lambda and Functions native local builds had already been stopped for memory
+pressure. No complete local native-image or native scan result is claimed.
+The full JIT/platform-JIT and Alpine arm64 package-layer results above are
+complete. Required current-head image gates are still pending/held, and
+nightly prerequisite PR #4339 has passed its real local runtime probe but
+awaits its PR gates and a new full nightly run. This packet is BLOCKED, not DONE.
