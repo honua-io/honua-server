@@ -27,7 +27,7 @@ public sealed class McpStyleGovernanceEndpointTests
     [InlineData(false)]
     [InlineData(true)]
     [Trait("Category", "Integration")]
-    [Trait("Tier", "Medium")]
+    [Trait("Tier", "Integration")]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/operations/style.apply-preset/submit")]
     public async Task RestStyleOperation_EnforcesPublishGrantAndSuppliesTrustedTier(bool publishAllowed)
