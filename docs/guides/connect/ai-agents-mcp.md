@@ -11,6 +11,14 @@ The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches
 Authentication supports both legacy `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`).
 When both are present, bearer tokens are evaluated first for this route.
 
+Applying a catalog style with `honua_apply_style_preset` requires admin write
+access in addition to the published-service publish grant. It uses the
+`style.apply-preset` operation and honors operator approval and
+`Operations:Policy` rules before changing the layer. An approval-required result
+has `approvalRequired: true`; when a durable proposal is created, use its returned
+`proposalId` and resource URI to track approval. Only a completed application
+returns `applied: true`.
+
 ## Two MCP surfaces: data-access (open) vs. operator (proprietary)
 
 There are two distinct MCP surfaces in the Honua platform, and it is easy to

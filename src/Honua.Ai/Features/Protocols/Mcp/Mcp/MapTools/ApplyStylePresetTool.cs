@@ -32,6 +32,7 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         "Apply a named style preset (a reusable catalog styleId) as a published layer's primary/default style, addressed by serviceId/layerId. "
         + "The preset must already exist in the style catalog — discover the valid presets with honua_get_style (omit styleId to list them); an unknown preset is rejected and the valid presets are named. "
         + "The applied style persists through the canonical OGC API - Styles pipeline (styleId-keyed catalog + Metadata v2 graph), so a subsequent honua_render_map for the layer resolves the new style. "
+        + "Requires admin write authorization and passes through operator approval and operation policy; approval-required calls do not change the layer. "
         + "It authors presentation metadata only and never edits feature records. Re-applying the same preset is a no-op (idempotent). "
         + "Styled-map arc: query/analyze -> honua_publish_result (analysis result -> serviceId/layerId) -> honua_apply_style_preset -> honua_render_map.";
 
