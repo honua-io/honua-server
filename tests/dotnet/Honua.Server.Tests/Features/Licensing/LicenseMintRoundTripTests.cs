@@ -225,7 +225,7 @@ public sealed class LicenseMintRoundTripTests
         // Flip one byte of the envelope's base64url payload to simulate tampering.
         var tampered = TamperPayloadByte(result.EnvelopeJson);
 
-        var snapshot = await ValidateAsync(tampered, keyPair.PublicKeyTrustedKeySetting());
+        var snapshot = await ValidateAsync(tampered, keyPair.PublicKeyTrustedKeySetting(), rejected: true);
 
         snapshot.IsValid.Should().BeFalse();
         snapshot.ValidationState.Should().Be(LicenseValidationState.InvalidSignature);
@@ -248,7 +248,7 @@ public sealed class LicenseMintRoundTripTests
             signingKeyPair);
 
         // Trust a different public key under the same keyId — signature must fail.
-        var snapshot = await ValidateAsync(result.EnvelopeJson, otherKeyPair.PublicKeyTrustedKeySetting());
+        var snapshot = await ValidateAsync(result.EnvelopeJson, otherKeyPair.PublicKeyTrustedKeySetting(), rejected: true);
 
         snapshot.IsValid.Should().BeFalse();
         snapshot.ValidationState.Should().Be(LicenseValidationState.InvalidSignature);
@@ -294,7 +294,7 @@ public sealed class LicenseMintRoundTripTests
         // Wait past expiry so the runtime sees a valid signature but a past expiresAt.
         await Task.Delay(TimeSpan.FromMilliseconds(1500));
 
-        var snapshot = await ValidateAsync(result.EnvelopeJson, keyPair.PublicKeyTrustedKeySetting());
+        var snapshot = await ValidateAsync(result.EnvelopeJson, keyPair.PublicKeyTrustedKeySetting(), rejected: true);
 
         snapshot.IsValid.Should().BeFalse();
         snapshot.ValidationState.Should().Be(LicenseValidationState.Expired);
@@ -311,7 +311,7 @@ public sealed class LicenseMintRoundTripTests
         reconstructed.PublicKeyTrustedKeySetting().Should().Be(keyPair.PublicKeyTrustedKeySetting());
     }
 
-    private static async Task<LicenseSnapshot> ValidateAsync(byte[] envelopeJson, string trustedKeySetting)
+    private static async Task<LicenseSnapshot> ValidateAsync(byte[] envelopeJson, string trustedKeySetting, bool rejected = false)
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
@@ -331,8 +331,18 @@ public sealed class LicenseMintRoundTripTests
             Options.Create(options),
             new BouncyCastleEd25519Verifier(),
             NullLogger<FileBackedLicenseService>.Instance);
-        await service.StartAsync(CancellationToken.None);
-        return service.GetSnapshot();
+        if (rejected)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
+        }
+        else
+        {
+            await service.StartAsync(CancellationToken.None);
+        }
+        var snapshot = service.GetSnapshot();
+        await service.StopAsync(CancellationToken.None);
+        service.Dispose();
+        return snapshot;
     }
 
     private static byte[] TamperPayloadByte(byte[] envelopeJson)

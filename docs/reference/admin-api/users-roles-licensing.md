@@ -55,7 +55,7 @@ Run `GET /api/v1/admin/oidc/providers`.
 
 ## License
 
-Runtime licensing validates an offline Ed25519-signed JSON envelope. Without an uploaded override, configured sources retain their precedence: a resolved `Licensing:LicenseContentSecretRef`, then `Licensing:LicenseContent`, then `Licensing:LicensePath`. With no source the server runs in Community mode; malformed, unknown-key, invalid-signature, and expired licenses leave the server in a safe Community state. License files are bounded to 64 KiB.
+Runtime licensing validates an offline Ed25519-signed JSON envelope. Without an uploaded override, configured sources retain their precedence: a resolved `Licensing:LicenseContentSecretRef`, then `Licensing:LicenseContent`, then `Licensing:LicensePath`. With no declared paid edition and no source the server runs in Community mode. Declare `Licensing:Edition=Pro` or `Enterprise` for paid deployments: missing, malformed, unknown-key, invalid-signature and expired licenses refuse startup with a non-zero exit, without Community fallback. Runtime expiry stops reads and exports as well as other data operations; in-flight jobs fail with reason `license expired`. License files are bounded to 64 KiB.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -74,9 +74,14 @@ Run `POST /api/v1/admin/license/upload` and attach `company.honua-license.json` 
 
 A successful upload requires a writable `Licensing:LicensePath` directory and persists the signed envelope atomically at `<LicensePath>.uploaded`. This upload override takes precedence over secret, inline, and ordinary file sources at both bootstrap and runtime startup, including after `Licensing:AllowAdminUpload` is turned off. The configured `LicensePath` is also updated as a compatibility mirror. If only the mirror update fails, the response still reports success and identifies the mirror failure; the committed override remains authoritative. Uploads within one server process are serialized so the active snapshot and persisted license agree.
 
-Mount the containing directory on persistent storage and back up both files with the licensing configuration and trusted keys. An invalid or unreadable override produces a safe Community state; it does not reactivate an older inline or secret license. To deliberately return to configured-source precedence, stop the server, remove the `.uploaded` override, verify the desired source (including the `LicensePath` mirror if no inline/secret source exists), then restart. Coordinate changes across replicas; this mechanism does not distribute uploads to separate filesystems.
+Mount the containing directory on persistent storage and back up both files with the licensing configuration and trusted keys. An invalid, unreadable or expired override refuses paid startup and blocks paid runtime operations; it does not reactivate an older inline or secret license. To deliberately return to configured-source precedence, stop the server, remove the `.uploaded` override, verify the desired source (including the `LicensePath` mirror if no inline/secret source exists), then restart. Coordinate changes across replicas; this mechanism does not distribute uploads to separate filesystems.
 
 Existing ordinary license files retain their previous precedence until a successful upload creates an override. Uploads made by older versions have no persisted provenance; re-upload the desired signed license after upgrading to establish the override. A rollback to an older server requires removing or updating stale inline/secret configuration to match the uploaded license, because older versions do not read `.uploaded`.
+
+The authoritative file or secret is re-validated every minute and on restart; admin
+upload applies immediately. Cancelled jobs remain failed after renewal. Admin
+warnings and logs use the 30/14/7/1-day schedule: renew, or complete backup/export,
+before expiry. See [the exact startup errors and remedies](../../guides/deploy/troubleshooting.md#license-failure-mode).
 
 ### Trusted-key rotation
 
@@ -85,7 +90,7 @@ License signing keys rotate additively: a new key takes over signing while the o
 1. Add the new public key as `Licensing:TrustedKeys:<new-key-id>` on every server and restart. Confirm both key IDs appear in the effective configuration (`GET /api/v1/admin/config`).
 2. Switch issuance to the new key on the signing side; newly issued files carry the new `keyId`.
 3. Re-issue in-flight license files signed by the old key.
-4. After the last old-key file expires (plus a margin), remove the old `Licensing:TrustedKeys:<old-key-id>` entry and restart. A file signed by a removed key reports `validationState=UnknownKey` and the server runs in Community mode for that file.
+4. After the last old-key file expires (plus a margin), remove the old `Licensing:TrustedKeys:<old-key-id>` entry and restart. A file signed by a removed key reports `validationState=UnknownKey` and a paid server refuses startup for that file.
 
 Verify each step with `GET /api/v1/admin/license/status` (expect `isValid=true`, `validationState="Valid"`) and, on a staging instance with `Licensing:AllowAdminUpload=true`, by uploading test files via `POST /api/v1/admin/license/upload`. If status reports `UnknownKey` or `InvalidSignature` after rollout, halt the rotation and keep the old key trusted until the cause is found.
 

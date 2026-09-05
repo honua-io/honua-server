@@ -20,7 +20,7 @@ namespace Honua.Server.Tests.Features.Licensing;
 /// To run against a Pro license stored in Key Vault:
 ///   HONUA_LIVE_LICENSE_KEYVAULT_REF=azure:keyvault:https://&lt;vault&gt;.vault.azure.net/&lt;secret&gt;
 ///   HONUA_LIVE_LICENSE_KEY_ID=honuademo2026q2
-///   HONUA_LIVE_LICENSE_PUBLIC_KEY=base64url:Y2XgDBncW5w6n7L3YG-T6HxX51DGybWazt0_gubk30k
+///   HONUA_LIVE_LICENSE_PUBLIC_KEY=&lt;trusted-public-key-from-secure-configuration&gt;
 ///   plus an Azure credential (managed identity / AZURE_* env / az login) with
 ///   "Key Vault Secrets User" on the secret.
 /// </summary>

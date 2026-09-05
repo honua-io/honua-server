@@ -72,5 +72,5 @@ internal static class LicenseStatusResponseMapper
             : null;
 
     private static bool IsExpiryWarning(int? daysUntilExpiry, int expiryWarningDays)
-        => daysUntilExpiry.HasValue && daysUntilExpiry.Value <= expiryWarningDays;
+        => daysUntilExpiry.HasValue && daysUntilExpiry.Value <= Math.Max(30, expiryWarningDays);
 }
