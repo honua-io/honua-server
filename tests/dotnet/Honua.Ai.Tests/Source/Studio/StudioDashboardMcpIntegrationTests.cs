@@ -8,6 +8,8 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -16,17 +18,37 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
+    private readonly string _studioSchema = $"dashboard_{Guid.NewGuid():N}";
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
+        _fixture.ConfigureWebHost(builder => builder.ConfigureAppConfiguration((_, configuration) =>
+            configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["Database:Schema"] = _studioSchema })));
         await _fixture.InitializeAsync();
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Join(root.FullName, "Honua.sln")))
+        {
+            root = root.Parent;
+        }
+        root.Should().NotBeNull();
+        foreach (var migration in new[]
+                 {
+                     "035_CreateStudioPackageLifecycle.sql", "036_CreateContentPublications.sql",
+                     "089_AddStudioContentEnumerationIndexes.sql", "090_AddStudioContentItemOwner.sql",
+                 })
+        {
+            var sql = await File.ReadAllTextAsync(Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", migration));
+            await _fixture.Postgres.ExecuteAsync(
+                sql.Replace("$HonuaSchema$", $"\"{_studioSchema}\"", StringComparison.Ordinal));
+        }
         _client = _fixture.CreateAdminClient();
     }
 
     public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _fixture.Postgres.DropSchemaAsync(_studioSchema);
         await _fixture.DisposeAsync();
     }
 
@@ -38,7 +60,8 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         var packageKey = $"dashboard-{Guid.NewGuid():N}";
         var created = await CallAsync("create_draft",
             $$"""{"packageKey":"{{packageKey}}","family":"dashboard","schemaVersion":"1.0"}""");
-        var draftId = created.GetProperty("draftId").GetGuid();
+        created.TryGetProperty("draftId", out var createdDraftId).Should().BeTrue(created.GetRawText());
+        var draftId = createdDraftId.GetGuid();
         long generation = 1;
 
         async Task Mutate(string verb, string fields)
@@ -89,7 +112,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         }
 
         await Mutate("update_draft", $"\"packageKey\":\"{packageKey}\",\"schemaVersion\":\"1.0\"," + "\"body\":{\"layers\":[{\"id\":\"roads\"}],\"view\":{\"center\":[-158,22],\"zoom\":7}}");
-        var malformed = await RpcAsync("update_draft", $$"""{"draftId":"{{draftId}}","generation":{{generation}},"packageKey":"{{packageKey}}","schemaVersion":"1.0","body":{"interactions":{"id":"invalid"}}}""");
+        var malformed = await RpcAsync("update_draft", $$$"""{"draftId":"{{{draftId}}}","generation":{{{generation}}},"packageKey":"{{{packageKey}}}","schemaVersion":"1.0","body":{"interactions":{"id":"invalid"} } }""");
         malformed.TryGetProperty("error", out _).Should().BeTrue();
         var afterRejected = await CallAsync("get_draft", $$"""{"draftId":"{{draftId}}"}""");
         afterRejected.GetProperty("generation").GetInt64().Should().Be(generation);
@@ -112,7 +135,7 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
     private async Task<JsonElement> RpcAsync(string verb, string arguments)
     {
         using var content = new StringContent(
-            $$"""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_studio_{{verb}}","arguments":{{arguments}}}}""",
+            $$$"""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"honua_studio_{{{verb}}}","arguments":{{{arguments}}}}}""",
             Encoding.UTF8, "application/json");
         using var response = await _client.PostAsync("/mcp", content);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
