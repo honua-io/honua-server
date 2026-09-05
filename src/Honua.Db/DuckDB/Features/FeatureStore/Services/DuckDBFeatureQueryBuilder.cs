@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.SpatialAnalytics.Domain;
@@ -783,6 +784,19 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         ref int paramIndex,
         List<object> parameters)
     {
+        if (query.TextSearch is { } search)
+        {
+            var searchIndex = paramIndex;
+            var predicate = FeatureTextSearchSql.Build(search, field => { EnsureFieldIsConfigured(field, mapping); ValidateFieldName(field); return "\u0022" + field + "\u0022"; }, text =>
+            {
+                var marker = "$" + (searchIndex++).ToString(CultureInfo.InvariantCulture);
+                parameters.Add(text);
+                return marker;
+            }, (column, value) => $"STRPOS({column}, {value})");
+            paramIndex = searchIndex;
+            sb.Append(" AND ").Append(predicate);
+        }
+
         // Enforced row-visibility predicate (permanent filter + RLS) — applied first so it
         // cannot be overridden by caller-supplied filters.
         if (query.EnforcedSqlFilter != null)

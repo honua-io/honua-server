@@ -3,47 +3,69 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Tiles;
 using Honua.Server.Features.Protocols.Zarr;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Zarr;
 
+[Protocol(TestProtocols.TestQuality)]
 public sealed class ZarrServiceCollectionExtensionsTests
 {
     [UnitTest]
-    public void AddZarrServices_WithScopedMetadataProvider_ContainerValidates()
+    [Operation(Operations.Metadata)]
+    public void AddZarrServices_WithScopedMetadata_ValidatesAndIsolatesTileServices()
     {
         var services = CreateServices();
 
-        // Match the Development Docker host and the Postgres metadata lifetime.
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
-        {
-            ValidateOnBuild = true,
-            ValidateScopes = true
-        });
-    }
-
-    [UnitTest]
-    public void AddZarrServices_AcrossRequestScopes_IsolatesTileServicesAndSharesCatalog()
-    {
-        using var provider = CreateServices().BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
             ValidateScopes = true
         });
         using var first = provider.CreateScope();
         using var second = provider.CreateScope();
+        var firstService = first.ServiceProvider.GetRequiredService<IZarrTileService>();
 
-        var tileService = first.ServiceProvider.GetRequiredService<IZarrTileService>();
-        tileService.Should().BeSameAs(first.ServiceProvider.GetRequiredService<IZarrTileService>());
-        tileService.Should().NotBeSameAs(second.ServiceProvider.GetRequiredService<IZarrTileService>());
-        first.ServiceProvider.GetRequiredService<IZarrStore>().Should()
-            .BeSameAs(second.ServiceProvider.GetRequiredService<IZarrStore>());
+        first.ServiceProvider.GetRequiredService<IZarrTileService>().Should().BeSameAs(firstService);
+        second.ServiceProvider.GetRequiredService<IZarrTileService>().Should().NotBeSameAs(firstService);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task AddZarrServices_AfterRequestScopeEnds_PreservesCatalogRegistrations()
+    {
+        using var provider = CreateServices().BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+        ZarrRegistration registration;
+        using (var first = provider.CreateScope())
+        {
+            registration = await first.ServiceProvider.GetRequiredService<IZarrStore>()
+                .RegisterAsync(new ZarrRegistrationRequest
+                {
+                    LayerId = 1,
+                    Name = "Request scope regression",
+                    Provider = CloudStorageProvider.Local,
+                    Bucket = "test",
+                    RootPath = "coverage.zarr"
+                });
+        }
+
+        using var second = provider.CreateScope();
+        var store = second.ServiceProvider.GetRequiredService<IZarrStore>();
+        (await store.GetAsync(registration.Id)).Should().BeEquivalentTo(registration);
+        (await store.ListByLayerAsync(registration.LayerId)).Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(registration);
     }
 
     private static ServiceCollection CreateServices()
@@ -51,9 +73,9 @@ public sealed class ZarrServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddScoped(_ => Substitute.For<IMetadataV2GraphProvider>());
-        services.AddSingleton(Substitute.For<ILayerAccessAuthorizer>());
+        services.AddScoped(_ => Substitute.For<ILayerAccessAuthorizer>());
         services.AddSingleton(Substitute.For<ITileMatrixSetRegistry>());
-        services.AddZarrServices();
+        ZarrServiceCollectionExtensions.AddZarrServices(services);
         return services;
     }
 }
