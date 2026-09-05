@@ -482,11 +482,9 @@ describe('ApplyEdits - Combined Operations', () => {
       ],
     });
 
-    if (setupResponse.status !== 200 || !setupResponse.data.addResults?.[0]?.success) {
-      return;
-    }
-
-    const validId = setupResponse.data.addResults[0].objectId!;
+    expect(setupResponse.status).toBe(200);
+    expect(setupResponse.data.addResults?.[0]?.success).toBe(true);
+    const validId = setupResponse.data.addResults![0].objectId!;
     createdObjectIds.push(validId);
 
     // Combined with invalid update
@@ -495,16 +493,16 @@ describe('ApplyEdits - Combined Operations', () => {
         { attributes: { OBJECTID: validId, name: 'Valid Update' } },
         { attributes: { OBJECTID: 999999999, name: 'Invalid Update' } },
       ],
+      rollbackOnFailure: false,
     });
 
     expect(response.status).toBe(200);
 
     // First should succeed, second should fail
     const results = response.data.updateResults || [];
-    if (results.length >= 2) {
-      expect(results[0].success).toBe(true);
-      expect(results[1].success).toBe(false);
-    }
+    expect(results).toHaveLength(2);
+    expect(results[0].success).toBe(true);
+    expect(results[1].success).toBe(false);
   });
 });
 

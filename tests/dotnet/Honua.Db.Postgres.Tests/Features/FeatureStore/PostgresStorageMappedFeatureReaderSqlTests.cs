@@ -266,7 +266,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "BuildAttributesExpressionText",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
-            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>)],
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
             modifiers: null);
 
         method.Should().NotBeNull();
@@ -278,7 +278,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             return $"${parameters.Count}";
         }
 
-        var expression = (string)method!.Invoke(null, [fields, null, (Func<object?, string>)AddParameter])!;
+        var expression = (string)method!.Invoke(null, [fields, null, (Func<object?, string>)AddParameter, null])!;
 
         expression.Split("jsonb_build_object", StringSplitOptions.None).Length.Should().Be(3);
         expression.Should().StartWith("(");
@@ -305,7 +305,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "BuildAttributesExpressionText",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
-            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>)],
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
             modifiers: null);
 
         method.Should().NotBeNull();
@@ -317,7 +317,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             return $"${parameters.Count}";
         }
 
-        var expression = (string)method!.Invoke(null, [fields, "attributes", (Func<object?, string>)AddParameter])!;
+        var expression = (string)method!.Invoke(null, [fields, "attributes", (Func<object?, string>)AddParameter, null])!;
 
         // Numeric/boolean fields use the jsonb-preserving accessor (->) so they
         // round-trip as JSON numbers/booleans, not strings.
@@ -351,7 +351,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "BuildAttributesExpressionText",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
-            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>)],
+            types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
             modifiers: null);
         var parameters = new List<object?>();
         string AddParameter(object? value)
@@ -363,7 +363,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         buildMethod.Should().NotBeNull();
         var expression = (string)buildMethod!.Invoke(
             null,
-            [new[] { field }, "attributes", (Func<object?, string>)AddParameter])!;
+            [new[] { field }, "attributes", (Func<object?, string>)AddParameter, null])!;
 
         expression.Should().Be("(jsonb_build_object($1::text, \"attributes\" ->> $1::text))::text");
         expression.Should().NotContain(fieldName);
