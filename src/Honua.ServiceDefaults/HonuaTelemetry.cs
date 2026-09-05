@@ -201,8 +201,16 @@ public static class HonuaTelemetry
     /// <param name="operation">The logical operation (e.g. query, addfeatures) or "unknown".</param>
     /// <param name="errorCode">The error code carried in the envelope (HTTP status or GeoServices code).</param>
     /// <param name="isGeoServices">When true, also increments the GeoServices-specific counter.</param>
-    /// <param name="httpStatusCode">Actual HTTP response status, when different from the logical error code.</param>
-    public static void RecordErrorEnvelope(string serviceType, string operation, int errorCode, bool isGeoServices, int? httpStatusCode = null)
+    public static void RecordErrorEnvelope(string serviceType, string operation, int errorCode, bool isGeoServices) =>
+        RecordErrorEnvelope(serviceType, operation, errorCode, isGeoServices, errorCode);
+
+    /// <inheritdoc cref="RecordErrorEnvelope(string, string, int, bool)"/>
+    /// <param name="serviceType">The protocol/service surface.</param>
+    /// <param name="operation">The logical operation, or "unknown".</param>
+    /// <param name="errorCode">The logical error code carried by the error response.</param>
+    /// <param name="isGeoServices">When true, also increments the GeoServices-specific counter.</param>
+    /// <param name="httpStatusCode">Actual HTTP response status, independently of the logical error code.</param>
+    public static void RecordErrorEnvelope(string serviceType, string operation, int errorCode, bool isGeoServices, int httpStatusCode)
     {
         serviceType = string.IsNullOrWhiteSpace(serviceType) ? "unknown" : serviceType;
         operation = string.IsNullOrWhiteSpace(operation) ? "unknown" : operation;
@@ -211,7 +219,7 @@ public static class HonuaTelemetry
         // the body carries an {error} envelope but the transport status reads
         // success, so load-balancer/SLO 5xx metrics never see it. This is the
         // keystone signal the audit is blind to today.
-        var inBand = (httpStatusCode ?? errorCode) < 400;
+        var inBand = httpStatusCode < 400;
 
         var requestTags = new TagList
         {

@@ -538,7 +538,7 @@ internal static class StandardErrorResponseFormatter
     /// <c>ValidationErrorHelpers</c> that bypass this formatter — so the platform
     /// can aggregate and alert on its own compat error rate. Classifies the
     /// surface from the request path and delegates to
-    /// <see cref="HonuaTelemetry.RecordErrorEnvelope"/>.
+    /// <see cref="HonuaTelemetry.RecordErrorEnvelope(string, string, int, bool, int)"/>.
     /// </summary>
     /// <param name="context">The HTTP context for protocol/operation classification.</param>
     /// <param name="statusCode">The HTTP status carried by the error envelope.</param>
@@ -547,7 +547,7 @@ internal static class StandardErrorResponseFormatter
     {
         var path = context.Request.Path;
         var (serviceType, isGeoServices) = ClassifyServiceType(path);
-        HonuaTelemetry.RecordErrorEnvelope(serviceType, ResolveOperation(path), statusCode, isGeoServices, httpStatusCode);
+        HonuaTelemetry.RecordErrorEnvelope(serviceType, ResolveOperation(path), statusCode, isGeoServices, httpStatusCode ?? statusCode);
     }
 
     private static readonly string[] GeoServicesServiceTypes =
