@@ -31,7 +31,7 @@ internal sealed partial class ODataBatchHandler
         var createRequests = new Dictionary<int, List<(string requestId, Feature feature, bool geometryChanged)>>();
         var updateRequests = new Dictionary<int, List<(string requestId, long objectId, Feature feature, bool geometryChanged)>>();
         var deleteRequests = new Dictionary<int, List<(string requestId, long objectId, Feature existingFeature)>>();
-        // If-Match preconditions re-validated by the writer inside the deferred
+        // PATCH snapshot and If-Match preconditions re-validated inside the deferred
         // ApplyEditsAsync transaction: the parse-time ValidatePreconditionsAsync check
         // above runs against a read snapshot, so a concurrent commit between that check
         // and the batch write would otherwise be silently overwritten (TOCTOU).
@@ -334,7 +334,7 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             updateList.Add((request.Id, objectId.Value, feature, requestGeometryChanged));
-                            RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, existing.Value);
+                            RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, existing.Value, requireSnapshot: isPatch);
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
                         }
@@ -672,11 +672,15 @@ internal sealed partial class ODataBatchHandler
                         }
                         else if (updateResult.IsPreconditionFailure)
                         {
+                            var hasIfMatch = requests.Any(request => request.Id == requestId
+                                && !string.IsNullOrWhiteSpace(GetHeaderValue(request.Headers, "If-Match")));
                             responses.Add(CreateErrorResponse(
                                 requestId,
-                                412,
-                                "PreconditionFailed",
-                                "ETag does not match the current resource."));
+                                hasIfMatch ? StatusCodes.Status412PreconditionFailed : StatusCodes.Status409Conflict,
+                                hasIfMatch ? "PreconditionFailed" : "Conflict",
+                                hasIfMatch
+                                    ? "ETag does not match the current resource."
+                                    : "The feature changed during the update. Retry the PATCH against the current resource."));
                         }
                         else
                         {

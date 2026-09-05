@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
@@ -36,7 +37,16 @@ public sealed class PatchConcurrencyTests
     public Task OgcPatch_ConcurrentDisjointPatch_PreservesCommittedPropertiesAndGeometry(bool otherIsOData)
         => VerifyConcurrentPatchAsync(false, otherIsOData);
 
-    private static async Task VerifyConcurrentPatchAsync(bool firstIsOData, bool otherIsOData)
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Protocol(TestProtocols.ODataV4)]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /odata/$batch")]
+    public Task ODataBatchPatch_ConcurrentDisjointPatch_PreservesCommittedPropertiesAndGeometry(bool otherIsOData)
+        => VerifyConcurrentPatchAsync(true, otherIsOData, firstIsBatch: true);
+
+    private static async Task VerifyConcurrentPatchAsync(bool firstIsOData, bool otherIsOData, bool firstIsBatch = false)
     {
         var barrier = new WriteBarrier();
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
@@ -58,7 +68,7 @@ public sealed class PatchConcurrencyTests
         {
             var objectId = await fixture.InsertFeatureAsync(0, "original name");
             var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, objectId))!.Value;
-            using var firstRequest = CreatePatch(firstIsOData, objectId, changeName: true);
+            using var firstRequest = CreatePatch(firstIsOData, objectId, changeName: true, batch: firstIsBatch);
             var firstTask = fixture.Client.SendAsync(firstRequest);
             Feature committed;
             try
@@ -81,13 +91,14 @@ public sealed class PatchConcurrencyTests
             Assert.True(current.Attributes.TryGetValue("population", out var population));
             Assert.Equal(committed.Attributes["population"], population);
             Assert.Equal(committed.Geometry, current.Geometry);
-            Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, await ReadStatusAsync(firstResponse, firstIsBatch));
             Assert.Equal("original name", current.Attributes["name"]);
 
             // A client can retry the rejected partial edit against the current state.
-            using var retry = CreatePatch(firstIsOData, objectId, changeName: true);
+            using var retry = CreatePatch(firstIsOData, objectId, changeName: true, batch: firstIsBatch);
             using var retryResponse = await fixture.Client.SendAsync(retry);
-            Assert.True(retryResponse.IsSuccessStatusCode, await retryResponse.Content.ReadAsStringAsync());
+            var retryStatus = await ReadStatusAsync(retryResponse, firstIsBatch);
+            Assert.InRange((int)retryStatus, 200, 299);
             var retried = (await fixture.GetService<IFeatureReader>().GetAsync(0, objectId))!.Value;
             Assert.Equal("changed name", retried.Attributes["name"]);
             Assert.Equal(committed.Attributes["population"], retried.Attributes["population"]);
@@ -100,7 +111,7 @@ public sealed class PatchConcurrencyTests
         }
     }
 
-    private static HttpRequestMessage CreatePatch(bool odata, long objectId, bool changeName)
+    private static HttpRequestMessage CreatePatch(bool odata, long objectId, bool changeName, bool batch = false)
     {
         var payload = (odata, changeName) switch
         {
@@ -109,12 +120,35 @@ public sealed class PatchConcurrencyTests
             (false, true) => """{"properties":{"name":"changed name"}}""",
             _ => """{"properties":{"population":12345},"geometry":{"type":"Point","coordinates":[-120,35]}}"""
         };
+        if (batch)
+        {
+            var body = $$"""{"requests":[{"id":"patch","atomicityGroup":"changes","method":"PATCH","url":"Features(LayerId=0,ObjectId={{objectId}})","headers":{"Content-Type":"application/json"},"body":{{payload}}}]}""";
+            return new HttpRequestMessage(HttpMethod.Post, "/odata/$batch")
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
+        }
+
         return new HttpRequestMessage(HttpMethod.Patch, odata
             ? $"/odata/Features(LayerId=0,ObjectId={objectId})"
             : $"/ogc/features/collections/0/items/{objectId}")
         {
             Content = new StringContent(payload, Encoding.UTF8, odata ? "application/json" : "application/merge-patch+json")
         };
+    }
+
+    private static async Task<HttpStatusCode> ReadStatusAsync(HttpResponseMessage response, bool batch)
+    {
+        if (!batch)
+        {
+            return response.StatusCode;
+        }
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var responses = document.RootElement.GetProperty("responses");
+        Assert.Equal(1, responses.GetArrayLength());
+        return (HttpStatusCode)responses[0].GetProperty("status").GetInt32();
     }
 
     private sealed class WriteBarrier

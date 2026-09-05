@@ -231,21 +231,22 @@ internal sealed partial class ODataBatchHandler
 
     /// <summary>
     /// Registers a transactional optimistic-concurrency precondition for a change-set
-    /// update/delete when the sub-request carried an If-Match header. The canonical
-    /// state token is computed from the same read snapshot
+    /// update/delete with If-Match, or for any PATCH that merges a read snapshot.
+    /// The canonical state token is computed from the same read snapshot
     /// <see cref="ValidatePreconditionsAsync"/> validated the ETag against, and the
     /// feature writer re-validates it inside the deferred ApplyEditsAsync transaction.
-    /// Sub-requests without If-Match keep last-write-wins semantics.
+    /// Unconditional replacements and deletes keep last-write-wins semantics.
     /// </summary>
     private static void RegisterPrecondition(
         Dictionary<int, List<FeatureEditPrecondition>> preconditionsByLayer,
         int layerId,
         long objectId,
         Dictionary<string, string>? headers,
-        Feature existing)
+        Feature existing,
+        bool requireSnapshot = false)
     {
         var ifMatch = GetHeaderValue(headers, "If-Match");
-        if (string.IsNullOrWhiteSpace(ifMatch))
+        if (!requireSnapshot && string.IsNullOrWhiteSpace(ifMatch))
         {
             return;
         }
