@@ -52,6 +52,9 @@ Honua Enterprise startup refused: license expired. Install a valid Enterprise li
 Admin expiry warnings and logs use the **30, 14, 7 and 1 day** schedule. Complete
 renewal, or the [backup/export procedure](backup-and-restore.md), **before expiry**.
 Existing-data reads and exports through a paid instance stop at expiry too.
+New data requests receive HTTP `402` (native gRPC: `FAILED_PRECONDITION`). An
+in-flight response that has entered transmission may instead be aborted; clients
+must treat the interrupted read/export as failed, never as a complete output.
 The authenticated license status/upload recovery routes and health probes remain
 reachable during runtime expiry.
 

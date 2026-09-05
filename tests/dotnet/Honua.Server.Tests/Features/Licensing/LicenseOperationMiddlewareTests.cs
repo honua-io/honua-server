@@ -25,7 +25,7 @@ public sealed class LicenseOperationMiddlewareTests
     [InlineData(false)]
     [InlineData(true)]
     [Trait("Tier", "Fast")]
-    public async Task ExpiryDuringRead_WritesDenialAfterCancellingOperation(bool honorCancellation)
+    public async Task ExpiryDuringRead_NeverCompletesDataResponse(bool honorCancellation)
     {
         using var expiry = new CancellationTokenSource();
         var policy = Substitute.For<ILicenseOperationPolicy>();
@@ -46,6 +46,14 @@ public sealed class LicenseOperationMiddlewareTests
         });
         await app.StartAsync();
         using var client = app.GetTestClient();
+
+        if (!honorCancellation)
+        {
+            // The transport has entered header transmission before invoking OnStarting.
+            // Its cancellation must abort the response rather than expose the late data.
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetAsync("/existing"));
+            return;
+        }
 
         using var response = await client.GetAsync("/existing");
 
