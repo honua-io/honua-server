@@ -68,7 +68,8 @@ Expanded children share an additional total row budget of `OData:MaxPageSize`
 across all parents and requested relationships in the response. The provider reads
 at most the remaining budget plus one overflow probe. An over-budget expansion
 returns HTTP 400 in the OData error envelope: `error.code` is `InvalidQuery` for a
-normal feature query or `InvalidQueryOption` for `$search`. No partial child array
+feature collection query (including the `$search` query option), or
+`InvalidQueryOption` for the legacy `/odata/Features({layerId})/$search` route. No partial child array
 is returned. Narrow the parent query or query the related layer separately with
 paging. Child grouping observes request cancellation.
 

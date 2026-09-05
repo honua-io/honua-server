@@ -46,15 +46,17 @@ public sealed class ODataExpansionBudgetRegressionTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
-    [InlineData("", "InvalidQuery")]
-    [InlineData("&$search=San", "InvalidQueryOption")]
+    [InlineData("/odata/Layers(0)/Features", "", "InvalidQuery")]
+    [InlineData("/odata/Layers(0)/Features", "&$search=San", "InvalidQuery")]
+    [InlineData("/odata/Features(0)/$search", "&$search=San", "InvalidQueryOption")]
     [Operation(Operations.ODataExpand)]
     [Endpoint("GET /odata/Layers({layerId})/Features")]
-    public async Task Expand_OneRowPage_RejectsOverBudgetChildren(string search, string errorCode)
+    [Endpoint("GET /odata/Features({layerId})/$search")]
+    public async Task Expand_OneRowPage_RejectsOverBudgetChildren(string path, string search, string errorCode)
     {
         // The seed has two landmarks for city 1: one more than the configured budget.
         using var response = await _fixture.Client.GetAsync(
-            "/odata/Layers(0)/Features?$filter=ObjectId eq 1&$top=1&$expand=Landmarks" + search);
+            path + "?$filter=ObjectId eq 1&$top=1&$expand=Landmarks" + search);
 
         _relatedQueries.Should().NotBeEmpty();
         _relatedQueries.Should().OnlyContain(query => query.Limit.HasValue && query.Limit <= 2,
