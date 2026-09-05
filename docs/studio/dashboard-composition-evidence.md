@@ -17,6 +17,9 @@ was used. This is source-built implementation evidence, not candidate qualificat
 The shared error field also changes the published Admin MCP output projection.
 The canonical exporter regenerated its committed manifest to include
 `currentGeneration`; the existing projection drift assertions pass unchanged.
+The MCP registry/taxonomy governance suite also passed natively: 68 passed,
+0 failed, 0 skipped. The canonical feature-catalog emitter added the new
+dashboard integration test to the `/mcp` proving-test list.
 
 The [dashboard integration fixture](../../tests/dotnet/Honua.Server.Tests/Features/Studio/StudioDashboardMcpIntegrationTests.cs)
 creates a dashboard through MCP and exercises all eleven composition verbs.
