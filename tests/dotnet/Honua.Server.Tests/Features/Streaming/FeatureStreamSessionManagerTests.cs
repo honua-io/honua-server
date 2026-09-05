@@ -40,6 +40,51 @@ public sealed class FeatureStreamSessionManagerTests : IDisposable
     public void Dispose() => _manager.Dispose();
 
     [UnitTest]
+    public async Task Admission_PartitionsEnforceCapsAndReleaseOnlyTheirOwnSlots()
+    {
+        using var manager = new FeatureStreamSessionManager(
+            Options.Create(new FeatureStreamOptions { MaxConcurrentSessions = 2 }),
+            NullLogger<FeatureStreamSessionManager>.Instance,
+            TestTelemetry.CreateFeatureStreamMetrics());
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var admitted = new ConcurrentBag<(string Partition, FeatureStreamSession Session)>();
+        var attempts = Enumerable.Range(0, 32).Select(async index =>
+        {
+            await start.Task;
+            var partition = index % 2 == 0 ? "tenant:a" : "tenant:b";
+            var session = manager.TryCreateSession("SSE", null, admissionPartition: partition);
+            if (session is not null)
+            {
+                admitted.Add((partition, session));
+            }
+        }).ToArray();
+        start.SetResult();
+        await Task.WhenAll(attempts);
+        Assert.Equal(4, manager.SessionCount);
+        Assert.Equal(2, manager.MaximumPartitionSessionCount);
+        Assert.Equal(2, admitted.Count(item => item.Partition == "tenant:a"));
+        Assert.Equal(2, admitted.Count(item => item.Partition == "tenant:b"));
+
+        admitted.First(item => item.Partition == "tenant:a").Session.Dispose();
+        Assert.Null(manager.TryCreateSession("SSE", null, admissionPartition: "tenant:b"));
+        using (var replacement = manager.TryCreateSession("SSE", null, admissionPartition: "tenant:a"))
+        {
+            Assert.NotNull(replacement);
+            Assert.Equal(4, manager.SessionCount);
+        }
+
+        foreach (var (_, session) in admitted)
+        {
+            session.Dispose();
+        }
+
+        Assert.Equal(0, manager.SessionCount);
+        Assert.Equal(0, manager.MaximumPartitionSessionCount);
+        using var reopened = manager.TryCreateSession("SSE", null, admissionPartition: "tenant:a");
+        Assert.NotNull(reopened);
+    }
+
+    [UnitTest]
     public void CreateSession_ReturnsSessionWithReader()
     {
         using var session = _manager.CreateSession("WebSocket", "test-client");

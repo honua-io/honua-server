@@ -16,17 +16,17 @@ Honua Server is open core under the [Elastic License 2.0](LICENSE). The GA-tier 
 
 ## Quick start
 
-**Docker Compose** (requires Docker with Compose v2):
+**Docker Compose** (requires Docker with Compose v2 and Python 3):
 
 ```bash
 git clone https://github.com/honua-io/honua-server.git && cd honua-server
-docker compose up -d
+python3 scripts/docker/quickstart.py
 docker compose ps
 ```
 
 Open <http://localhost:8080/healthz/ready> in a browser and wait for `Ready`.
 
-The default `docker-compose.yml` builds the server image from source on first run, so expect the first `up` to take a few minutes; for an instant start use the pre-built image below. PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Continue with the [quickstart](docs/get-started/quickstart.md) to import a dataset and see it on a map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a [honua-console](https://github.com/honua-io/honua-console) image you have built or mirrored — no public Console image is published yet; Operate serves at `http://localhost:5174/operate`).
+The bootstrap generates per-install datastore passwords in a private `.env` file; retain it with your volumes. All published ports default to loopback. The default `docker-compose.yml` builds the server image from source on first run, so expect the first `up` to take a few minutes; for an instant start use the pre-built image below. PostGIS, Redis, and Honua Server start automatically; migrations run on first boot. HTTP/1 REST and gRPC-Web are at `http://localhost:8080`, native h2c gRPC at `http://localhost:8081`. Continue with the [quickstart](docs/get-started/quickstart.md) to import a dataset and see it on a map, or add the web Console with `docker compose --profile console up -d` (set `HONUA_CONSOLE_IMAGE` to a [honua-console](https://github.com/honua-io/honua-console) image you have built or mirrored — no public Console image is published yet; Operate serves at `http://localhost:5174/operate`).
 
 **Pre-built image** (bring your own PostGIS):
 

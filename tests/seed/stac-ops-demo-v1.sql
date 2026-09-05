@@ -234,4 +234,8 @@ VALUES
         )
     );
 
+-- This isolated demo writes the complete legacy fixture after startup bootstrap.
+-- Invalidate that pre-seed snapshot so restart rebuilds the adopted Metadata v2 graph.
+DELETE FROM honua.metadata_v2_current;
+
 COMMIT;

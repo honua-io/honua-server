@@ -60,6 +60,13 @@ public sealed class CustomTileMatrixSet
     public int Srid { get; set; }
 
     /// <summary>
+    /// Number of metres represented by one CRS coordinate unit. Defaults to one for projected
+    /// metre-based CRSes and to the canonical WGS 84 metres-per-degree value for known geographic
+    /// SRIDs. Set this for projected foot-based or other non-metre CRSes.
+    /// </summary>
+    public double? MetersPerUnit { get; set; }
+
+    /// <summary>
     /// The grid origin (top-left corner) as <c>[x, y]</c> in the gridset CRS. For geographic
     /// CRSes the values are longitude/latitude in CRS storage order; adapters apply the
     /// protocol-specific axis order when emitting metadata.

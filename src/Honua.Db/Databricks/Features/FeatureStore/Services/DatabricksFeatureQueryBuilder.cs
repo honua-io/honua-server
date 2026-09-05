@@ -179,6 +179,15 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
         List<DatabricksSqlParameter> parameters)
     {
         var predicates = new List<string>();
+        if (query.TextSearch is { } search)
+        {
+            predicates.Add(FeatureTextSearchSql.Build(search, Dialect.QuoteIdentifier, text =>
+            {
+                var name = "search" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+                parameters.Add(new DatabricksSqlParameter(name, text, "STRING"));
+                return ":" + name;
+            }, (column, value) => $"INSTR({column}, {value})"));
+        }
 
         var attributePredicate = TranslateWhere(mapping, query, parameters);
         if (attributePredicate is not null)

@@ -82,6 +82,12 @@ public sealed record OperationPolicyContext
     /// </summary>
     public string? CorrelationId { get; init; }
 
+    /// <summary>The durable acceptance-audit identity for this exact invocation.</summary>
+    public string? AuditId { get; init; }
+
+    /// <summary>The durable proposal identity explicitly joined to this invocation.</summary>
+    public string? ProposalId { get; init; }
+
     /// <summary>Trusted tenant identity captured at invocation time.</summary>
     public string? TenantId { get; init; }
 
@@ -167,6 +173,9 @@ public sealed record OperationValidation
 /// </summary>
 public sealed record OperationHandle
 {
+    /// <summary>Trusted tenant owner captured when the operation was accepted.</summary>
+    public string? TenantId { get; init; }
+
     /// <summary>Optimistic-concurrency version incremented by the durable store.</summary>
     public long Version { get; init; }
 

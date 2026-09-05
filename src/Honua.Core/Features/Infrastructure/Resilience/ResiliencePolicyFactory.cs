@@ -41,14 +41,19 @@ public static class ResiliencePolicyFactory
         ResiliencePolicyOptions? options = null,
         Action<DelegateResult<TResult>, TimeSpan, int>? onRetry = null,
         Action<DelegateResult<TResult>, TimeSpan>? onBreak = null,
-        Action? onReset = null)
+        Action? onReset = null,
+        Func<int, DelegateResult<TResult>, Context, TimeSpan>? retryDelayProvider = null)
     {
         var effective = options ?? ResiliencePolicyOptions.Default;
 
         var retryPolicy = builder.WaitAndRetryAsync(
             effective.MaxRetryAttempts,
-            attempt => effective.GetDelay(attempt),
-            (result, delay, attempt, _) => onRetry?.Invoke(result, delay, attempt));
+            (attempt, result, context) => retryDelayProvider?.Invoke(attempt, result, context) ?? effective.GetDelay(attempt),
+            (result, delay, attempt, _) =>
+            {
+                onRetry?.Invoke(result, delay, attempt);
+                return Task.CompletedTask;
+            });
 
         var resetHandler = onReset ?? (() => { });
         var circuitPolicy = builder.CircuitBreakerAsync(

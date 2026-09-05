@@ -92,17 +92,17 @@ public static partial class GeoParquetFeatureWriter
 
         if (features.Length == 0)
         {
-            return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, returnZ);
+            return CreateEmptyGeoParquet(resource, objectIdFieldName, returnGeometry, outFields, outputSrid);
         }
 
         var runtimeFields = DetectRuntimeFields(features, resource);
 
         BinaryArray? geometryArray = null;
         StructArray? bboxArray = null;
-        bool anyGeometryHasZ = false;
+        string[]? geometryTypes = null;
         if (returnGeometry && HasGeometry(resource))
         {
-            (geometryArray, bboxArray, anyGeometryHasZ) = BuildGeometryArray(
+            (geometryArray, bboxArray, geometryTypes) = BuildGeometryArray(
                 features,
                 srid,
                 returnZ,
@@ -113,8 +113,8 @@ public static partial class GeoParquetFeatureWriter
 
         var (schema, fieldsToInclude, resolvedObjectIdFieldName) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid,
-            advertiseZ: anyGeometryHasZ,
-            runtimeFields);
+            runtimeFields,
+            geometryTypes);
 
         var arrays = BuildArrays(
             features,
@@ -212,10 +212,10 @@ public static partial class GeoParquetFeatureWriter
         string objectIdFieldName,
         bool returnGeometry,
         string[]? outFields,
-        int? outputSrid,
-        bool returnZ)
+        int? outputSrid)
     {
-        var (schema, _, _) = BuildSchema(resource, objectIdFieldName, returnGeometry, outFields, outputSrid, returnZ, isEmpty: true);
+        var (schema, _, _) = BuildSchema(
+            resource, objectIdFieldName, returnGeometry, outFields, outputSrid, isEmpty: true);
 
         return (WriteArrowParquet(schema, recordBatch: null), ContentType);
     }
@@ -230,8 +230,8 @@ public static partial class GeoParquetFeatureWriter
         bool returnGeometry,
         string[]? outFields,
         int? outputSrid,
-        bool advertiseZ,
         IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null,
+        IReadOnlyCollection<string>? geometryTypes = null,
         bool isEmpty = false)
     {
         var resolvedFields = ResolveSelectedFields(resource, objectIdFieldName, outFields);
@@ -275,7 +275,8 @@ public static partial class GeoParquetFeatureWriter
             schemaFields.Add(new Field(BboxColumnName, CreateBboxStructType(), nullable: true));
         }
 
-        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(resource, returnGeometry, outputSrid, advertiseZ, isEmpty));
+        var schema = new Schema(schemaFields, BuildGeoParquetMetadata(
+            resource, returnGeometry, outputSrid, geometryTypes, isEmpty));
         return (schema, fieldsToInclude, objectIdFieldName);
     }
 
@@ -286,7 +287,7 @@ public static partial class GeoParquetFeatureWriter
         MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
-        bool advertiseZ,
+        IReadOnlyCollection<string>? geometryTypes,
         bool isEmpty = false)
     {
         var metadata = new Dictionary<string, string>();
@@ -299,9 +300,14 @@ public static partial class GeoParquetFeatureWriter
         var srid = outputSrid ?? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
         var crsProjJson = ResolveGeoParquetCrsProjJson(includeGeometry: true, srid);
 
-        var geometryTypesPart = isEmpty
+        // Mixed is the metadata representation for an untyped PostGIS geometry column.
+        // GeoParquet has no catch-all "Geometry" token: unknown geometry types must be []
+        // even when the current page happens to contain only one concrete type.
+        var geometryTypesPart = isEmpty || resource.ReadGeometryType() == MetadataV2GeometryType.Mixed
             ? "[]"
-            : $"[\"{MapGeometryTypeToGeoParquet(resource.ReadGeometryType(), advertiseZ)}\"]";
+            : geometryTypes is { Count: > 0 }
+                ? JsonSerializer.Serialize(geometryTypes.OrderBy(static type => type, StringComparer.Ordinal))
+                : "[]";
 
         // GeoParquet stores the column CRS as PROJJSON. EPSG:4326 output keeps the default
         // OGC:CRS84 (longitude, latitude) by omitting the `crs` field; a resolvable non-4326
@@ -449,7 +455,7 @@ public static partial class GeoParquetFeatureWriter
     /// <summary>
     /// Maps metadata v2 geometry type to GeoParquet geometry type string.
     /// </summary>
-    public static string MapGeometryTypeToGeoParquet(MetadataV2GeometryType geometryType, bool returnZ)
+    public static string? MapGeometryTypeToGeoParquet(MetadataV2GeometryType geometryType, bool returnZ)
     {
         var baseType = geometryType switch
         {
@@ -460,10 +466,10 @@ public static partial class GeoParquetFeatureWriter
             MetadataV2GeometryType.MultiLineString => "MultiLineString",
             MetadataV2GeometryType.MultiPolygon => "MultiPolygon",
             MetadataV2GeometryType.GeometryCollection => "GeometryCollection",
-            _ => "Geometry"
+            _ => null
         };
 
-        return returnZ ? $"{baseType} Z" : baseType;
+        return baseType is null ? null : returnZ ? $"{baseType} Z" : baseType;
     }
 
     /// <summary>
@@ -634,11 +640,11 @@ public static partial class GeoParquetFeatureWriter
 
     /// <summary>
     /// Builds the WKB geometry array and the parallel GeoParquet 1.1 covering bbox column,
-    /// and tracks whether any geometry retains Z coordinates. The per-row bbox is the envelope
+    /// and tracks which concrete GeoParquet geometry types were emitted. The per-row bbox is the envelope
     /// of the emitted (output-SRID, limit-applied) geometry so it stays consistent with the WKB;
     /// null / empty geometries yield a null bbox row.
     /// </summary>
-    private static (BinaryArray array, StructArray bbox, bool anyHasZ) BuildGeometryArray(
+    private static (BinaryArray array, StructArray bbox, string[] geometryTypes) BuildGeometryArray(
         ImmutableArray<Feature> features,
         int outputSrid,
         bool returnZ,
@@ -653,15 +659,19 @@ public static partial class GeoParquetFeatureWriter
         var yMaxBuilder = new DoubleArray.Builder();
         var bboxValidity = new ArrowBuffer.BitmapBuilder();
         var bboxNullCount = 0;
-        var anyHasZ = false;
+        var geometryTypes = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var feature in features)
         {
-            var (wkb, envelope, hasZ) = ProcessGeometryCore(feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id, logger);
-            anyHasZ |= hasZ;
+            var (wkb, envelope, hasZ, geometryType) = ProcessGeometryCore(
+                feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id, logger);
             if (wkb != null && wkb.Length > 0)
             {
                 builder.Append(wkb);
+                if (geometryType != null)
+                {
+                    geometryTypes.Add(geometryType);
+                }
             }
             else
             {
@@ -696,7 +706,8 @@ public static partial class GeoParquetFeatureWriter
             bboxValidity.Build(),
             bboxNullCount);
 
-        return (builder.Build(), bboxArray, anyHasZ);
+        return (builder.Build(), bboxArray,
+            geometryTypes.OrderBy(static type => type, StringComparer.Ordinal).ToArray());
     }
 
     /// <summary>
@@ -738,6 +749,44 @@ public static partial class GeoParquetFeatureWriter
     }
 
     /// <summary>
+    /// Builds a GeoArrow WKB array and returns the concrete GeoParquet-compatible geometry type
+    /// tokens emitted by that same pass. Keeping type discovery beside encoding prevents protocol
+    /// adapters from decoding and filtering every geometry twice.
+    /// </summary>
+    public static (BinaryArray array, string[] geometryTypes) BuildGeoArrowGeometryArray(
+        IReadOnlyList<Feature> features,
+        int outputSrid,
+        bool returnZ,
+        bool returnM,
+        GeometryLimits geometryLimits)
+    {
+        ArgumentNullException.ThrowIfNull(features);
+
+        var builder = new BinaryArray.Builder();
+        var geometryTypes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var feature in features)
+        {
+            var (wkb, _, _, geometryType) = ProcessGeometryCore(
+                feature.Geometry, outputSrid, geometryLimits, returnZ, returnM, feature.Id);
+            if (wkb != null && wkb.Length > 0)
+            {
+                builder.Append(wkb);
+                if (geometryType != null)
+                {
+                    geometryTypes.Add(geometryType);
+                }
+            }
+            else
+            {
+                builder.AppendNull();
+            }
+        }
+
+        return (builder.Build(),
+            geometryTypes.OrderBy(static type => type, StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
     /// Processes a WKB geometry payload into the spec-compliant output WKB, applying limits and dimension filtering.
     /// </summary>
     public static byte[]? ProcessGeometry(
@@ -749,11 +798,12 @@ public static partial class GeoParquetFeatureWriter
         long featureId = 0,
         ILogger? logger = null)
     {
-        var (wkb, _, _) = ProcessGeometryCore(geometryBytes, outputSrid, geometryLimits, returnZ, returnM, featureId, logger);
+        var (wkb, _, _, _) = ProcessGeometryCore(
+            geometryBytes, outputSrid, geometryLimits, returnZ, returnM, featureId, logger);
         return wkb;
     }
 
-    private static (byte[]? wkb, Envelope? envelope, bool hasZ) ProcessGeometryCore(
+    private static (byte[]? wkb, Envelope? envelope, bool hasZ, string? geometryType) ProcessGeometryCore(
         byte[]? geometryBytes,
         int outputSrid,
         GeometryLimits geometryLimits,
@@ -764,7 +814,7 @@ public static partial class GeoParquetFeatureWriter
     {
         if (geometryBytes == null || geometryBytes.Length == 0)
         {
-            return (null, null, false);
+            return (null, null, false, null);
         }
 
         Geometry? geometry;
@@ -779,19 +829,19 @@ public static partial class GeoParquetFeatureWriter
                 Log.GeoParquetCorruptGeometry(logger, featureId, geometryBytes.Length, ex);
             }
 
-            return (null, null, false);
+            return (null, null, false, null);
         }
 
         if (geometry == null)
         {
-            return (null, null, false);
+            return (null, null, false, null);
         }
 
         geometry.SRID = outputSrid;
         geometry = GeometryOutputProcessor.ApplyLimits(geometry, geometryLimits);
         if (geometry == null)
         {
-            return (null, null, false);
+            return (null, null, false, null);
         }
 
         // GeoParquet 1.1.0 only supports XY and XYZ — always strip M values.
@@ -804,7 +854,24 @@ public static partial class GeoParquetFeatureWriter
         // column so the stored bbox exactly matches the WKB. Empty geometries have a null envelope
         // and therefore a null bbox row.
         var envelope = geometry.EnvelopeInternal;
-        return (writer.Write(geometry), envelope, hasZ);
+        return (writer.Write(geometry), envelope, hasZ, MapGeometryInstanceTypeToGeoParquet(geometry, hasZ));
+    }
+
+    private static string? MapGeometryInstanceTypeToGeoParquet(Geometry geometry, bool hasZ)
+    {
+        var baseType = geometry switch
+        {
+            Point => "Point",
+            LineString => "LineString",
+            Polygon => "Polygon",
+            MultiPoint => "MultiPoint",
+            MultiLineString => "MultiLineString",
+            MultiPolygon => "MultiPolygon",
+            GeometryCollection => "GeometryCollection",
+            _ => null
+        };
+
+        return baseType is null ? null : hasZ ? $"{baseType} Z" : baseType;
     }
 
     /// <summary>

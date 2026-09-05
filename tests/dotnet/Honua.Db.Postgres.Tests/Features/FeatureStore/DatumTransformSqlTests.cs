@@ -112,7 +112,7 @@ public sealed class DatumTransformSqlTests
 
         var sql = DatumTransformSql.BuildTransformExpression("geom", 4269, selection);
 
-        sql.Should().Be("ST_Transform(geom, '+proj=noop', 4269)");
+        sql.Should().Be("ST_SetSRID(geom, 4269)");
     }
 
     [UnitTest]

@@ -72,6 +72,28 @@ internal sealed record OAuth2TokenResponse
     /// <summary>Token type; always <c>Bearer</c>.</summary>
     [JsonPropertyName("token_type")]
     public string TokenType { get; init; } = "Bearer";
+
+    /// <summary>Username associated with the OAuth user token.</summary>
+    [JsonPropertyName("username")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Username { get; init; }
+
+    /// <summary>Whether the access token must be used over TLS.</summary>
+    [JsonPropertyName("ssl")]
+    public bool Ssl { get; init; } = true;
+}
+
+/// <summary>OIDC-style user information returned by the OAuth2 userinfo endpoint.</summary>
+internal sealed record OAuth2UserInfoResponse
+{
+    [JsonPropertyName("sub")]
+    public required string Subject { get; init; }
+
+    [JsonPropertyName("username")]
+    public required string Username { get; init; }
+
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
 }
 
 /// <summary>

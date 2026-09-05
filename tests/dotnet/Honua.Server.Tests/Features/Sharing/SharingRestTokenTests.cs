@@ -48,6 +48,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
                 // Allow the in-process test transport to issue tokens; production
                 // defaults remain RequireHttps=true.
                 builder.UseSetting("Authentication:PortalToken:RequireHttps", "false");
+                builder.UseSetting("Cors:AllowedOrigins:0", "http://localhost:3000");
                 builder.ConfigureServices(services =>
                     services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter(ClientIp)));
             });
@@ -119,14 +120,15 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/generateToken")]
-    public async Task GenerateToken_WithInvalidCredentials_Returns401()
+    public async Task GenerateToken_WithInvalidCredentials_Returns400UnableToGenerateToken()
     {
         using var client = _fixture.CreateClient();
         using var response = await PostFormAsync(client,
             ("username", "admin"), ("password", "WRONG"),
             ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
-        await response.AssertGeoServicesErrorAsync(401, 499);
+        await response.AssertGeoServicesErrorAsync(400);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Unable to generate token.");
     }
 
     [IntegrationTest]
@@ -206,6 +208,35 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
 
         // Authenticated (not 401); status is 200/404 depending on the seeded layer.
         response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task InvalidQueryToken_ReturnsEsri498InsteadOfAnonymousDowngrade()
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await client.GetAsync(
+            "/rest/services/test/FeatureServer?f=json&token=esri-probe-invalid-token");
+
+        await response.AssertGeoServicesErrorAsync(498);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("OPTIONS /rest/services")]
+    public async Task CorsPreflight_AllowsEsriAuthorizationHeader()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/rest/services");
+        request.Headers.TryAddWithoutValidation("Origin", "http://localhost:3000");
+        request.Headers.TryAddWithoutValidation("Access-Control-Request-Method", "GET");
+        request.Headers.TryAddWithoutValidation("Access-Control-Request-Headers", "x-esri-authorization");
+
+        using var response = await _fixture.CreateClient().SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        response.Headers.TryGetValues("Access-Control-Allow-Headers", out var allowedHeaders).Should().BeTrue();
+        string.Join(",", allowedHeaders!).Should().ContainEquivalentOf("X-Esri-Authorization");
     }
 
     [IntegrationTest]

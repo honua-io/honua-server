@@ -9,7 +9,7 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Protocols.Ogc.Api.Tiles.Services;
+using Honua.Core.Features.Tiles.Services;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Tiles;

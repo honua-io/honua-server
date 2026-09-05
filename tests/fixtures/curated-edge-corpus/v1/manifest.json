@@ -1,0 +1,131 @@
+{
+  "schemaVersion": "honua.curated-test-corpus/v1",
+  "identity": {
+    "id": "curated-edge-corpus",
+    "revision": "v1",
+    "title": "Release 2026.1 frozen honest-gaps tranche"
+  },
+  "provenance": {
+    "kind": "deterministic-synthetic",
+    "source": "honua-server#3759",
+    "containsProductionData": false
+  },
+  "license": {
+    "expression": "Elastic-2.0",
+    "scope": "repository"
+  },
+  "assets": [
+    {
+      "id": "multibyte-rtl-attributes",
+      "path": "multibyte-rtl-attributes.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 934,
+      "sha256": "975829312cade2734d255a90132d3c5b87cc5301ff95552f3eed51fd592693b5",
+      "facets": ["attributes/utf-8", "attributes/rtl-arabic", "attributes/rtl-hebrew", "attributes/rtl-persian", "attributes/combining-mark", "attributes/bidi-isolate", "attributes/emoji"]
+    },
+    {
+      "id": "malformed-parseable",
+      "path": "malformed-parseable.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 790,
+      "sha256": "2fcf89981d19dd080c3c5041c99db34d19728ee9d0a4120af83fee12b1ffa680",
+      "facets": ["malformed/duplicate-member", "malformed/wrong-coordinate-shape", "malformed/unknown-geometry", "malformed/type-mismatch", "malformed/missing-member", "parseable/json"]
+    },
+    {
+      "id": "large-attributes",
+      "path": "large-attributes.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 16652,
+      "sha256": "04caeae271c9e354e6a2e5c8c327428cebe2e8bb6ef85dde4e89c976d7c6ac06",
+      "facets": ["attributes/large-payload", "attributes/utf-8", "attributes/boundary-marker"]
+    },
+    {
+      "id": "extreme-coordinate-ranges",
+      "path": "extreme-coordinate-ranges.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 729,
+      "sha256": "d1c4b23d856042f01e24b7dd39909b05caf153e76ed1f37c4463ab77d0a615f5",
+      "facets": ["coordinates/antimeridian-epsilon", "coordinates/out-of-domain", "coordinates/large-finite", "coordinates/subnormal"]
+    },
+    {
+      "id": "mixed-crs-features",
+      "path": "mixed-crs-features.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 740,
+      "sha256": "86c36f8ad647decbb85a33abaac5470176f25b88f8b6bf89bcda01eaeebd7c19",
+      "facets": ["crs/mixed-collection", "crs/epsg-4326", "crs/epsg-3857", "crs/epsg-26904", "crs/ogc-crs84", "crs/axis-order"]
+    },
+    {
+      "id": "degenerate-geometries",
+      "path": "degenerate-geometries.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 843,
+      "sha256": "1d1ea2b751c65521026d4d81dd0bf8410f0e2c42906eb11a3abd6e7551d20458",
+      "facets": ["geometry/zero-length-segment", "geometry/zero-area-ring", "geometry/collapsed-hole", "geometry/empty-collection", "geometry/null"]
+    },
+    {
+      "id": "edge-geometries",
+      "path": "edge-geometries.geojson",
+      "mediaType": "application/geo+json",
+      "byteLength": 1368,
+      "sha256": "9db18b32fb484fbd31508c3d68115bb4ef0f95a3c8ef654341cdaa7872cf0060",
+      "facets": ["geometry/multipoint", "geometry/multilinestring", "geometry/multipolygon", "geometry/polygon-hole", "attributes/unicode", "attributes/null"]
+    },
+    {
+      "id": "crs-cases",
+      "path": "crs-cases.csv",
+      "mediaType": "text/csv",
+      "byteLength": 491,
+      "sha256": "02e80517dce99bd6e0a55f9ec23e6124fc37f1dc8e5d4f2c79389aed27e5cb06",
+      "facets": ["crs/epsg-4326", "crs/ogc-crs84", "crs/epsg-3857", "crs/epsg-26904", "crs/axis-order"]
+    },
+    {
+      "id": "warehouse-fact-table",
+      "path": "warehouse-fact-table.csv",
+      "mediaType": "text/csv",
+      "byteLength": 496,
+      "sha256": "c054bac9a3ae7ed239827f78baab73ccedda5036c96d556e09b12594a069edcc",
+      "facets": ["table/warehouse-fact", "attributes/unicode", "attributes/int64", "attributes/decimal", "attributes/timestamp-microseconds", "attributes/null"]
+    },
+    {
+      "id": "sst-zarr-group",
+      "path": "sea-surface-temperature.zarr/.zgroup",
+      "mediaType": "application/json",
+      "byteLength": 23,
+      "sha256": "e1e1914ae531ecb50e1ead685ef01895a5452faf5f25f35cd78f1f5de1367470",
+      "facets": ["raster/zarr-v2", "raster/multidimensional"]
+    },
+    {
+      "id": "sst-zarr-group-attributes",
+      "path": "sea-surface-temperature.zarr/.zattrs",
+      "mediaType": "application/json",
+      "byteLength": 115,
+      "sha256": "ee47b737fc704f8c38c036935fbbf1d600208554c57b266081ef93096d082361",
+      "facets": ["raster/zarr-v2", "raster/cf-1.8", "crs/epsg-4326"]
+    },
+    {
+      "id": "sst-temperature-array",
+      "path": "sea-surface-temperature.zarr/temperature/.zarray",
+      "mediaType": "application/json",
+      "byteLength": 168,
+      "sha256": "6713a41d2554c1b070e8ac7381cd6d576f431294c14096ee71eac4e0ec5dc6d3",
+      "facets": ["raster/zarr-v2", "raster/multidimensional", "raster/float32"]
+    },
+    {
+      "id": "sst-temperature-attributes",
+      "path": "sea-surface-temperature.zarr/temperature/.zattrs",
+      "mediaType": "application/json",
+      "byteLength": 170,
+      "sha256": "312814d974ba18823b046aee9adcf2653b050ea7d0220685a34ef9e4999d73e5",
+      "facets": ["raster/zarr-v2", "raster/dimensions-time-latitude-longitude"]
+    },
+    {
+      "id": "sst-temperature-chunk-0",
+      "path": "sea-surface-temperature.zarr/temperature/0.0.0",
+      "mediaType": "application/octet-stream",
+      "byteLength": 96,
+      "sha256": "205fcce783b6b704cd7dbfa31c2b3147ce6353faf3ec04947dcc16f5d9591ba6",
+      "facets": ["raster/zarr-v2", "raster/multidimensional", "raster/two-time-slices", "raster/float32-little-endian"]
+    }
+  ]
+}

@@ -47,10 +47,12 @@ internal sealed partial class DeployWorkflowReconciler(
 
         using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var renewalTask = RenewLeaseUntilCancelledAsync(operationId, reconciliationCancellation);
+        WorkflowOperationRecord? reconciledVersion = null;
 
         try
         {
             var operation = await workflowStore.GetAsync(operationId, reconciliationCancellation.Token).ConfigureAwait(false);
+            reconciledVersion = operation;
             if (operation == null ||
                 operation.Kind != WorkflowOperationKind.Deploy ||
                 operation.Deploy == null ||
@@ -106,12 +108,16 @@ internal sealed partial class DeployWorkflowReconciler(
                         telemetrySignalEvaluator,
                         reconciliationCancellation.Token)
                     .ConfigureAwait(false);
+
+                updated = ApplyRollbackObservationTimeout(operation, updated, observation);
             }
 
             if (!Equals(updated, operation))
             {
-                await workflowStore.SetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
-                Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
+                if (await workflowStore.TrySetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false))
+                {
+                    Log.WorkflowOperationReconciled(logger, operationId, updated.Status.ToString());
+                }
             }
         }
         catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -121,7 +127,9 @@ internal sealed partial class DeployWorkflowReconciler(
         }
         catch (Exception ex)
         {
-            var operation = await workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            // Use the version this reconciliation actually observed. Re-reading here would consume a
+            // newer concurrent RollbackRequested claim and let this stale failure overwrite it.
+            var operation = reconciledVersion;
             if (operation is
                 {
                     Kind: WorkflowOperationKind.Deploy,
@@ -139,7 +147,7 @@ internal sealed partial class DeployWorkflowReconciler(
                     ErrorMessage = $"Deploy reconciliation failed due to {ex.GetType().Name}."
                 };
 
-                await workflowStore.SetAsync(failedOperation, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await workflowStore.TrySetAsync(failedOperation, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
             throw;
@@ -427,6 +435,18 @@ internal sealed partial class DeployWorkflowReconciler(
     internal const string RollbackTransientAttemptsParameterKey = "deployment.rollback.transient_attempts";
 
     /// <summary>
+    /// Reserved deploy-spec parameter key carrying the timestamp at which provider observations
+    /// first entered the rollback-settling state.
+    /// </summary>
+    internal const string RollbackObservationStartedAtParameterKey = "deployment.rollback.observation_started_at";
+
+    /// <summary>
+    /// Optional deploy-spec parameter controlling the maximum rollback-settling duration. The value
+    /// is clamped so provider polling can never become unbounded.
+    /// </summary>
+    internal const string RollbackObservationTimeoutSecondsParameterKey = "deployment.rollback.observation_timeout_seconds";
+
+    /// <summary>
     /// Reserved deploy-spec parameter key bounding how many consecutive transient rollback failures
     /// are retried before the reconciler escalates to manual intervention. Defaults to
     /// <see cref="DefaultRollbackRetryBudget"/>; clamped to <see cref="MaximumRollbackRetryBudget"/>.
@@ -435,6 +455,54 @@ internal sealed partial class DeployWorkflowReconciler(
 
     private const int DefaultRollbackRetryBudget = 3;
     private const int MaximumRollbackRetryBudget = 10;
+    private static readonly TimeSpan DefaultRollbackObservationTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan MaximumRollbackObservationTimeout = TimeSpan.FromMinutes(30);
+
+    private static WorkflowOperationRecord ApplyRollbackObservationTimeout(
+        WorkflowOperationRecord previous,
+        WorkflowOperationRecord current,
+        DeployObservation observation)
+    {
+        if (previous.Status != WorkflowOperationStatus.RollbackRequested || current.Deploy == null)
+        {
+            return current;
+        }
+
+        if (observation.Status == WorkflowOperationStatus.RolledBack)
+        {
+            return current with { Deploy = WithoutRollbackAttempts(current.Deploy) };
+        }
+
+        if (observation.Status != WorkflowOperationStatus.RollbackRequested)
+        {
+            return current;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var startedAt = ReadRollbackObservationStartedAt(current.Deploy) ?? now;
+        var deploy = WithRollbackObservationStartedAt(current.Deploy, startedAt);
+        var detail = observation.Message ?? "Provider evidence remains incomplete.";
+        var timeout = ResolveRollbackObservationTimeout(current.Deploy);
+        if (now - startedAt < timeout)
+        {
+            return current with
+            {
+                Deploy = deploy,
+                CurrentPhase = $"Rollback evidence remains incomplete and will be retried until the {timeout.TotalSeconds:0}-second observation timeout. {detail}",
+                ErrorMessage = null
+            };
+        }
+
+        return current with
+        {
+            Status = WorkflowOperationStatus.ManualInterventionRequired,
+            UpdatedAt = now,
+            CompletedAt = now,
+            Deploy = deploy,
+            CurrentPhase = $"Automatic rollback could not prove the requested prior revision within the {timeout.TotalSeconds:0}-second observation timeout and requires manual intervention. {detail}",
+            ErrorMessage = $"Automatic rollback evidence remained incomplete after the {timeout.TotalSeconds:0}-second observation timeout: {detail}"
+        };
+    }
 
     private static int ReadRollbackAttempts(DeployOperationSpec spec)
         => spec.Parameters.TryGetValue(RollbackTransientAttemptsParameterKey, out var raw) &&
@@ -442,6 +510,12 @@ internal sealed partial class DeployWorkflowReconciler(
            attempts > 0
             ? attempts
             : 0;
+
+    private static DateTimeOffset? ReadRollbackObservationStartedAt(DeployOperationSpec spec)
+        => spec.Parameters.TryGetValue(RollbackObservationStartedAtParameterKey, out var raw) &&
+           DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var startedAt)
+            ? startedAt
+            : null;
 
     private static int ResolveRollbackRetryBudget(DeployOperationSpec spec)
     {
@@ -466,15 +540,38 @@ internal sealed partial class DeployWorkflowReconciler(
             }
         };
 
+    private static TimeSpan ResolveRollbackObservationTimeout(DeployOperationSpec spec)
+    {
+        if (spec.Parameters.TryGetValue(RollbackObservationTimeoutSecondsParameterKey, out var raw) &&
+            double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) &&
+            seconds > 0)
+        {
+            return TimeSpan.FromSeconds(Math.Min(seconds, MaximumRollbackObservationTimeout.TotalSeconds));
+        }
+
+        return DefaultRollbackObservationTimeout;
+    }
+
+    private static DeployOperationSpec WithRollbackObservationStartedAt(DeployOperationSpec spec, DateTimeOffset startedAt)
+        => spec with
+        {
+            Parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal)
+            {
+                [RollbackObservationStartedAtParameterKey] = startedAt.ToString("O", CultureInfo.InvariantCulture)
+            }
+        };
+
     private static DeployOperationSpec WithoutRollbackAttempts(DeployOperationSpec spec)
     {
-        if (!spec.Parameters.ContainsKey(RollbackTransientAttemptsParameterKey))
+        if (!spec.Parameters.ContainsKey(RollbackTransientAttemptsParameterKey) &&
+            !spec.Parameters.ContainsKey(RollbackObservationStartedAtParameterKey))
         {
             return spec;
         }
 
         var parameters = new Dictionary<string, string>(spec.Parameters, StringComparer.Ordinal);
         parameters.Remove(RollbackTransientAttemptsParameterKey);
+        parameters.Remove(RollbackObservationStartedAtParameterKey);
         return spec with { Parameters = parameters };
     }
 

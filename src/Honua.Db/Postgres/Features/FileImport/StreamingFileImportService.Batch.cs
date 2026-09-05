@@ -580,8 +580,10 @@ internal sealed partial class StreamingFileImportService
     /// Picks the WKB writer dimensionality from the actual source geometry so XYZ,
     /// XYM, and XYZM features round-trip their Z/M ordinates instead of being
     /// silently flattened (#1981). 2-D geometries reuse the shared plain writer:
-    /// forcing emitZ/emitM on plain XY coordinates serializes NaN Z/M ordinates
-    /// that PostGIS rejects, dropping otherwise-valid rows. Each higher-dimension
+    /// forcing emitZ/emitM on plain XY coordinates changes their dimensionality
+    /// and can violate a destination typmod. Missing samples within an actual
+    /// Z/M geometry use NaN, which PostGIS retains through WKB round trips.
+    /// Each higher-dimension
     /// writer is allocated per call because <see cref="WKBWriter"/> is not
     /// thread-safe and is shared across concurrent batch workers.
     /// </summary>

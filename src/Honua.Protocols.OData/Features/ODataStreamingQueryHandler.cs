@@ -598,7 +598,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         {
             throw;
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or Honua.Core.Exceptions.ValidationException)
         {
             Log.InvalidFeaturesQuery(_logger, layerId ?? 0, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;
@@ -1096,7 +1096,7 @@ internal sealed partial class ODataStreamingQueryHandler(
         {
             throw;
         }
-        catch (ArgumentException ex)
+        catch (Exception ex) when (ex is ArgumentException or Honua.Core.Exceptions.ValidationException)
         {
             Log.InvalidFeaturesQuery(_logger, layerId ?? 0, ex);
             var safeDetail = ExceptionMapper.Map(ex).Detail;

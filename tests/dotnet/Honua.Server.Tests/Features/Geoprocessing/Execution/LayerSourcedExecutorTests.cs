@@ -60,7 +60,14 @@ public sealed class LayerSourcedExecutorTests
         features.Should().ContainSingle("dissolve=true unions all buffers into one feature");
         Convert.ToInt64(features[0].Attributes.GetOptionalValue(LayerBufferAggregateExecutor.CountAttribute), CultureInfo.InvariantCulture)
             .Should().Be(2);
-        features[0].Geometry!.IsEmpty.Should().BeFalse();
+        var geometry = features[0].Geometry!;
+        geometry.GeometryType.Should().Be("Polygon");
+        geometry.EnvelopeInternal.MinX.Should().BeApproximately(-1000, 0.001);
+        geometry.EnvelopeInternal.MinY.Should().BeApproximately(-1000, 0.001);
+        geometry.EnvelopeInternal.MaxX.Should().BeApproximately(1001, 0.001);
+        geometry.EnvelopeInternal.MaxY.Should().BeApproximately(1001, 0.001);
+        geometry.Area.Should().BeInRange(3_120_000, 3_130_000,
+            "the dissolved output must be the union of two overlapping 1000-unit point buffers");
     }
 
     [UnitTest]

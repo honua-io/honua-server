@@ -212,10 +212,12 @@ public interface IAlertDispatchStore
     /// Marks a dispatch job as delivered.
     /// </summary>
     /// <param name="dispatchId">Dispatch identifier</param>
+    /// <param name="claimToken">Ownership token returned by the successful claim</param>
     /// <param name="deliveredAt">Delivery timestamp</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    Task MarkDeliveredAsync(
+    Task<bool> MarkDeliveredAsync(
         long dispatchId,
+        Guid claimToken,
         DateTimeOffset deliveredAt,
         CancellationToken cancellationToken = default);
 
@@ -223,13 +225,15 @@ public interface IAlertDispatchStore
     /// Marks a dispatch job as failed or dead-letter and schedules the next attempt.
     /// </summary>
     /// <param name="dispatchId">Dispatch identifier</param>
+    /// <param name="claimToken">Ownership token returned by the successful claim</param>
     /// <param name="attemptedAt">Attempt timestamp</param>
     /// <param name="nextAttemptAt">Next retry timestamp</param>
     /// <param name="deadLetter">True when retries are exhausted</param>
     /// <param name="errorMessage">Optional failure message</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    Task MarkFailedAsync(
+    Task<bool> MarkFailedAsync(
         long dispatchId,
+        Guid claimToken,
         DateTimeOffset attemptedAt,
         DateTimeOffset nextAttemptAt,
         bool deadLetter,
@@ -244,10 +248,12 @@ public interface IAlertDispatchStore
     /// dead-lettered by the deferral.
     /// </summary>
     /// <param name="dispatchId">Dispatch identifier</param>
+    /// <param name="claimToken">Ownership token returned by the successful claim</param>
     /// <param name="nextAttemptAt">Time at which the row becomes eligible again</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    Task RescheduleAsync(
+    Task<bool> RescheduleAsync(
         long dispatchId,
+        Guid claimToken,
         DateTimeOffset nextAttemptAt,
         CancellationToken cancellationToken = default);
 
@@ -328,6 +334,18 @@ public interface IAlertDispatchStore
 public interface IAlertOutboxWriter
 {
     /// <summary>
+    /// Atomically persists evaluator state, alert events, and their dispatch rows for one
+    /// source change. A replay may observe all of this commit or none of it.
+    /// </summary>
+    /// <param name="states">Evaluator state produced by the source change.</param>
+    /// <param name="dispatches">Events and deliverable channels produced by the same change.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<ImmutableArray<bool>> CommitEvaluationAsync(
+        IReadOnlyCollection<AlertStateSnapshot> states,
+        IReadOnlyList<AlertOutboxEntry> dispatches,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Appends the event (deduplicating on its dedupe key) and, when a new event row was written,
     /// enqueues one dispatch row per deliverable channel — both in the same transaction.
     /// </summary>
@@ -340,6 +358,15 @@ public interface IAlertOutboxWriter
         ImmutableArray<AlertChannelType> channels,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Describes one immutable alert event and the channels to enqueue with it.
+/// </summary>
+/// <param name="AlertEvent">Event to append.</param>
+/// <param name="Channels">Deliverable channels to enqueue.</param>
+public readonly record struct AlertOutboxEntry(
+    AlertEventEnvelope AlertEvent,
+    ImmutableArray<AlertChannelType> Channels);
 
 /// <summary>
 /// Stores and retrieves durable worker checkpoints.

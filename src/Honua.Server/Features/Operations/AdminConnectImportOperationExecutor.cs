@@ -16,7 +16,8 @@ internal sealed class AdminConnectImportOperationExecutor(
     IHttpClientFactory httpClientFactory,
     IHttpContextAccessor httpContextAccessor,
     IAdminApiKeyStore adminApiKeyStore,
-    TimeProvider clock) : IOperationExecutor
+    TimeProvider clock,
+    OperationLineageAttestationStore lineageAttestationStore) : IOperationExecutor
 {
     public const string HttpClientName = "admin-connect-import-operation-loopback";
     public string OperationId => definition.OperationId;
@@ -53,14 +54,24 @@ internal sealed class AdminConnectImportOperationExecutor(
         var query = definition.Method == HttpMethod.Get
             ? request.Parameters.Where(pair => !routeNames.Contains(pair.Key) && pair.Value is not null).Select(pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value!)}").ToArray()
             : [];
-        var uri = new Uri($"{current.Request.Scheme}://{current.Request.Host}/api/v1/admin{path}{(query.Length == 0 ? string.Empty : "?" + string.Join('&', query))}");
+        var localPort = current.Connection.LocalPort;
+        if (localPort <= 0)
+            throw new InvalidOperationException("Admin operation replay requires a local server port.");
+        var scheme = current.Features.Get<Microsoft.AspNetCore.Http.Features.ITlsConnectionFeature>() is null
+            ? Uri.UriSchemeHttp : Uri.UriSchemeHttps;
+        var uri = new UriBuilder(scheme, IPAddress.Loopback.ToString(), localPort, $"/api/v1/admin{path}")
+        {
+            Query = string.Join('&', query)
+        }.Uri;
         using var message = new HttpRequestMessage(definition.Method, uri);
+        message.Headers.Host = current.Request.Host.Value;
+        OperationLineageHeaders.Apply(message, context, lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
             var issued = await adminApiKeyStore.CreateAsync(
                 $"approved-operation:{context.ApprovedProposalId}",
-                [AdminApiKeyPermission.CreateApprovedOperationGrant(definition.Method.Method, uri.AbsolutePath)],
+                AdminApiKeyPermission.CreateApprovedOperationGrants(definition.Method.Method, uri.AbsolutePath, context.TenantId),
                 clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
                 cancellationToken).ConfigureAwait(false);

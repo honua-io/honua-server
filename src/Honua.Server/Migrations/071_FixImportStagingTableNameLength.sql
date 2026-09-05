@@ -1,6 +1,8 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+-- honua:compatibility-review reason=The revised transactional swap retains the reviewed drop-and-rename promotion contract.
+
 -- Fix: the transactional-replace staging path (migration 070) hard-fails for
 -- valid-but-long target table names. honua.create_import_staging_table derived
 -- the staging name as `<table>__staging` and RAISEd when it exceeded the 63-char

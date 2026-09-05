@@ -108,7 +108,10 @@ services:
         - github_actor
         - github_token
     environment:
-      ASPNETCORE_ENVIRONMENT: ${HONUA_CLIENT_COMPAT_ENVIRONMENT:-Production}
+      # The compatibility fixture uses the signed-test/dev entitlement path. Keep the
+      # default environment aligned with Licensing:DevGrantEdition; callers that supply
+      # a real signed license may override this to Production.
+      ASPNETCORE_ENVIRONMENT: ${HONUA_CLIENT_COMPAT_ENVIRONMENT:-Development}
       ASPNETCORE_URLS: http://+:5000
       Kestrel__Endpoints__Http__Url: http://+:5000
       Kestrel__Endpoints__Http__Protocols: Http1

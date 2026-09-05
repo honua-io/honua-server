@@ -30,6 +30,7 @@ internal static class OperationsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(environment);
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<OperationLineageAttestationStore>();
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
         // The real verifier's constructor requires the durable proposal store, and the
         // dispatcher requires a verifier, so hosts composed without the store failed
@@ -46,6 +47,14 @@ internal static class OperationsServiceCollectionExtensions
                 : new UnavailableOperationApprovalReplayVerifier());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(WorkflowRollbackApprovalRegistrationMarker)))
+        {
+            services.AddSingleton<WorkflowRollbackApprovalRegistrationMarker>();
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new WorkflowRollbackApprovalRequestMapper(WorkflowRollbackOperations.Deploy));
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new WorkflowRollbackApprovalRequestMapper(WorkflowRollbackOperations.CoordinatedRelease));
+        }
         foreach (var operationId in new[]
                  {
                      StudioDraftOperations.Create,
@@ -54,6 +63,9 @@ internal static class OperationsServiceCollectionExtensions
                      StudioDraftOperations.Validate,
                      StudioDraftOperations.PreviewPlan,
                      StudioDraftOperations.SaveVersion,
+                     StudioDraftOperations.CreatePublicationRequest,
+                     StudioDraftOperations.ReopenVersion,
+                     StudioDraftOperations.Rollback,
                  })
         {
             services.AddSingleton<IOperationApprovalRequestMapper>(
@@ -66,7 +78,9 @@ internal static class OperationsServiceCollectionExtensions
         else
         {
             services.TryAddSingleton<IOperationInstanceStore>(sp =>
-                new RedisOperationInstanceStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+                sp.GetService<IConnectionMultiplexer>() is { } redis
+                    ? new RedisOperationInstanceStore(redis)
+                    : new UnavailableOperationInstanceStore());
             if (services.Any(descriptor => descriptor.ServiceType ==
                     typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore)))
             {
@@ -99,6 +113,9 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftValidateExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftPreviewPlanExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioSaveVersionExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioCreatePublicationRequestExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioReopenVersionExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioRollbackExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, DeployRollbackOperationExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, CoordinatedReleaseRollbackOperationExecutor>());
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
@@ -123,7 +140,8 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
                     sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
-                    sp.GetRequiredService<TimeProvider>()));
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<OperationLineageAttestationStore>()));
             }
             services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
@@ -147,9 +165,13 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
                     sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
-                    sp.GetRequiredService<TimeProvider>()));
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<OperationLineageAttestationStore>()));
             }
-            services.AddHttpClient(AdminApiOperationExecutor.HttpClientName);
+            services.AddHttpClient(AdminApiOperationExecutor.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 
@@ -184,7 +206,8 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<IHttpContextAccessor>(),
                 sp.GetService<IAdminApiKeyStore>(),
-                sp.GetRequiredService<TimeProvider>()));
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<OperationLineageAttestationStore>()));
         }
 
         services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
@@ -232,4 +255,5 @@ internal static class OperationsServiceCollectionExtensions
 
     internal sealed class AdminConnectImportRegistrationMarker;
     internal sealed class AdminApiOperationRegistrationMarker;
+    internal sealed class WorkflowRollbackApprovalRegistrationMarker;
 }

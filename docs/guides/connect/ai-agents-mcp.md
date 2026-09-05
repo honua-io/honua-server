@@ -2,6 +2,12 @@
 
 Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol.
 
+Layer discovery, layer descriptions, feature pages, and counts use the shared
+REST resource-access gate, including service/layer policies and per-operation
+grants. Discovery and schema descriptions require metadata access; feature queries
+and descriptions that include a row count additionally require query access.
+Discovery filters inaccessible layers before calculating pagination totals.
+
 For operations work, MCP is the agent seat in the same control loop that Console `/operate` uses. See [Operating Honua](../operate/README.md) for the observe -> diagnose -> propose -> approve model, the autonomy ladder, and the current line between shipped MCP observability tools and in-progress platform-ops tools.
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)). Tool calls require an authenticated identity — see [authentication](../secure/authentication.md).
@@ -99,7 +105,7 @@ named "operator surface" ships in this repo.
 
    - `honua_ops_health` and `honua://ops/health` - current operational posture.
    - `honua_ops_findings` and `honua://ops/findings` - deterministic findings and recommended actions where real executors exist.
-   - `honua_alert_events` - GIS alert events and ops notifications.
+   - `honua_alert_events` - Preview customer GIS alert events and ops notifications. Customer alerting requires explicit opt-in for 2026.1; the shared ops notification feed does not imply a GA alert-delivery commitment.
    - `honua_operate_events` - fused Operate timeline events.
 
    Mutating control-plane requests use schema-closed tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. Approval resolves through the Console inbox; MCP does not approve its own proposals or accept opaque execution payloads.

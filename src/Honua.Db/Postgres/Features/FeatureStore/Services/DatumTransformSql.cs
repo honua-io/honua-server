@@ -31,6 +31,14 @@ internal static class DatumTransformSql
     {
         if (selection?.ProjPipeline is { Length: > 0 } pipeline)
         {
+            // ST_Transform's text argument is a source CRS, not an operation.
+            // A catalog null transformation preserves every ordinate in either
+            // direction; only the destination SRID changes.
+            if (pipeline.Trim().Equals("+proj=noop", StringComparison.Ordinal))
+            {
+                return $"ST_SetSRID({operand}, {toSrid})";
+            }
+
             // A PROJ pipeline is direction-sensitive (a +proj=hgridshift NADCON/NTv2 step
             // shifts the opposite way from its inverse). The catalog stores the forward
             // pipeline verbatim for reverse selections and only flips TransformForward, so the

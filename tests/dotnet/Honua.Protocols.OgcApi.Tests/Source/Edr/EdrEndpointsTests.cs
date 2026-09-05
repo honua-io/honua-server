@@ -31,7 +31,10 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     public EdrEndpointsTests()
     {
         ConfigureRasterStore(_rasterStore);
-        _fixture = new WebAppFixture().ReplaceService(_rasterStore);
+        _fixture = new WebAppFixture()
+            .ConfigureWebHost(builder => builder.UseSetting(
+                "Capabilities:Experimental:serve.ogc-api-edr:Enabled", "true"))
+            .ReplaceService(_rasterStore);
     }
 
     public Task InitializeAsync() => _fixture.InitializeAsync();

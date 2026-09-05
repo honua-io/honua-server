@@ -114,7 +114,8 @@ internal static class ServiceDataEditorAuthorization
     /// that surfaces denials through its own error contract. (The MCP surface
     /// exposes no feature-mutation tool per ADR-0028 — AI operational data editing
     /// is not supported — so this core currently backs only the human-facing HTTP
-    /// edit adapters.) Semantics are identical to the HTTP path:
+    /// edit adapters and gRPC <c>FeatureService.ApplyEdits</c>.) Semantics are
+    /// identical to the HTTP path:
     /// layer-scoped write keys (#1637) are authoritative for scoped principals; an
     /// explicit <see cref="AccessPolicy"/> write restriction stays authoritative;
     /// otherwise a per-operation RBAC write grant (#1376) on the
@@ -136,6 +137,11 @@ internal static class ServiceDataEditorAuthorization
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
+
+        if (!TenantScopeHelpers.IsTenantVisible(context, resource, service))
+        {
+            return AccessDecision.Forbidden(AccessPolicyHelpers.TenantScopeDeniedReason);
+        }
 
         // Layer-scoped write keys (#1637) are enforced here in the shared pipeline.
         // The key must carry a grant for the target (service, layer); a service-wide
@@ -394,7 +400,9 @@ internal static class ServiceDataEditorAuthorization
         ClaimsPrincipal principal,
         RbacOptions options,
         IServiceProvider serviceProvider)
-        => RbacRoleClaims.IsAdmin(principal, options, serviceProvider);
+        => AdminApiKeyPermission.IsFullAdminPrincipal(principal)
+           || (!principal.FindAll(AdminApiKeyPermission.PermissionClaimType).Any()
+               && RbacRoleClaims.IsAdmin(principal, options, serviceProvider));
 
     private static bool HasGlobalDataEditorRole(
         ClaimsPrincipal principal,

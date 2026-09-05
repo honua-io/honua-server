@@ -36,7 +36,12 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete", "Sync"]);
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Create", "Update", "Delete", "Sync"]);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
@@ -226,10 +231,10 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         document.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
     }
 
-    private async Task MarkObjectIdFieldNonEditableAsync()
+    private Task MarkObjectIdFieldNonEditableAsync()
     {
         var provider = _fixture.GetService<TestMetadataV2GraphProvider>();
-        var snapshot = await provider.GetCurrentAsync();
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resources = snapshot.Graph.Resources
             .Select(resource => resource.Metadata.Id == $"res-layer-{WebAppFixture.TestLayerId}"
                 ? resource with
@@ -250,6 +255,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
                 Resources = resources,
             },
             schema: _fixture.CurrentSchema);
+        return Task.CompletedTask;
     }
 
     private async Task<JsonValueKind> ReadFeatureGeometryKindAsync(long objectId)
@@ -836,6 +842,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         });
         await fixture.InitializeAsync();
+        fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
 
         try
         {

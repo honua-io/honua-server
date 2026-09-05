@@ -11,6 +11,9 @@ HONUA_CONSOLE_PORT="${HONUA_QUICKSTART_SMOKE_CONSOLE_PORT:-15174}"
 POSTGRES_PORT="${HONUA_QUICKSTART_SMOKE_POSTGRES_PORT:-15432}"
 REDIS_PORT="${HONUA_QUICKSTART_SMOKE_REDIS_PORT:-16379}"
 ADMIN_PASSWORD="${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+# Disposable credentials for this isolated smoke project; never print them.
+export POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export MINIO_ROOT_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 
 compose() {
   local compose_files=(-f "${COMPOSE_FILE}")

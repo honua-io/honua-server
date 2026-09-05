@@ -61,6 +61,22 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Operation(Operations.Buffer)]
+    [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/buffer")]
+    public async Task Buffer_DocumentedCommaSeparatedPointShorthand_ReturnsPolygon()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/buffer" +
+            "?geometries=-117,34&inSR=4326&outSR=4326&distances=1000&unit=esriMeters&geodesic=true&f=json");
+
+        response.Be200Ok();
+        var result = JsonSerializer.Deserialize<GeometryServiceResponse>(
+            await response.Content.ReadAsStringAsync(), GeometryServiceJsonContext.Default.GeometryServiceResponse);
+        result!.GeometryType.Should().Be("esriGeometryPolygon");
+        result.Geometries.Should().ContainSingle();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Buffer)]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/buffer")]
     public async Task Buffer_GeodesicProjectedInSR_ReturnsPolygon()
     {

@@ -28,6 +28,7 @@ jobs:
       HONUA_SERVER_IMAGE: ${{ inputs.server_image }}
       HONUA_WORKER_IMAGE: ${{ inputs.worker_image }}
       HONUA_GP_SOURCE_SHA: ${{ inputs.source_sha }}
+      HONUA_GP_LANE: lifecycle
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-lifecycle
     steps:
       - uses: actions/checkout@v7.0.1
@@ -45,4 +46,18 @@ jobs:
           name: gp-lifecycle-receipts-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/gp-lifecycle/*.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
+      - name: Build immutable lifecycle evidence pack
+        if: always()
+        run: |
+          set -euo pipefail
+          find artifacts/gp-lifecycle -maxdepth 1 -type f -name '*.json' ! -name '.*' -print0 | sort -z | tar --null -T - -czf "artifacts/gp-lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz"
+          sha256sum "artifacts/gp-lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz" > "artifacts/gp-lifecycle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz.sha256"
+      - name: Retain immutable lifecycle evidence pack
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: gp-lifecycle-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gp-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz*
+          if-no-files-found: error
+          retention-days: 90

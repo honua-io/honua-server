@@ -283,7 +283,7 @@ public sealed record OgcExecuteRequest
     public ImmutableDictionary<string, JsonElement>? Outputs { get; init; }
 
     /// <summary>
-    /// Desired response mode (document or raw). Raw is limited to synchronous single-value results.
+    /// Desired response mode (document or raw).
     /// </summary>
     [JsonPropertyName("response")]
     public string? Response { get; init; }

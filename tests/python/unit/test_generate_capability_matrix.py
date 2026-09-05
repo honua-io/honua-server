@@ -164,5 +164,49 @@ class InteropEvidenceFreshnessTests(unittest.TestCase):
         self.assertNotIn("reason", not_green)
 
 
+class CustomerAlertingLifecycleTests(unittest.TestCase):
+    def test_committed_keys_and_matrix_keep_every_alerting_claim_preview(self):
+        # Operator ruling 2026-09-04 (release#268): qualification evidence is
+        # retained, but section 7.3 conditional GA is not pursued in 2026.1.
+        for name in ("capability-keys.v1.json", "capability-matrix.v1.json"):
+            with self.subTest(artifact=name):
+                artifact = MODULE.load_json(ROOT / "docs/gis/data" / name)
+                alerting = [
+                    row for row in artifact["capabilities"]
+                    if row["category"] in ("Alerts", "Channels")
+                ]
+                self.assertTrue(alerting, "customer alerting must remain represented")
+                self.assertEqual(
+                    [row["key"] for row in alerting if row.get("status") != "preview"],
+                    [],
+                    "a GA claim requires reviewed promotion receipts, not more proving tests",
+                )
+
+
+class PreviewLifecycleEvidenceTests(unittest.TestCase):
+    def assert_preview_evidence(self, key):
+        matrix = json.loads((ROOT / "docs/gis/data/capability-matrix.v1.json").read_text())
+        capability = next(row for row in matrix["capabilities"] if row["key"] == key)
+        self.assertGreater(capability["entryCount"], 0)
+        self.assertEqual({"preview": capability["entryCount"]}, capability["maturity"])
+        self.assertEqual("preview", capability["status"])
+        catalog = json.loads((ROOT / "docs/gis/data/feature-catalog.json").read_text())
+        entries = [row for row in catalog["entries"] if row.get("capability") == key]
+        self.assertTrue(entries)
+        self.assertTrue(all(row["maturity"] == "preview" for row in entries))
+
+    def test_imageserver_is_preview(self):
+        self.assert_preview_evidence("serve.geoservices-imageserver")
+
+    def test_wmts_is_preview(self):
+        self.assert_preview_evidence("serve.wmts")
+
+    def test_edr_remains_preview(self):
+        self.assert_preview_evidence("serve.ogc-api-edr")
+
+    def test_coverages_is_preview(self):
+        self.assert_preview_evidence("serve.ogc-api-coverages")
+
+
 if __name__ == "__main__":
     unittest.main()

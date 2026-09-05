@@ -12,6 +12,7 @@ using Honua.Server.Features.Console;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.MultiTenancy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using CanonicalOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
@@ -131,6 +132,11 @@ internal static class ProposalEndpoints
         var proposals = await proposalStore.ListActiveAsync(kindFilter, context.RequestAborted).ConfigureAwait(false);
         var filtered = proposals.Where(proposal =>
         {
+            if (!OperationTenantAuthorization.CanAccess(context, proposal.TenantId))
+            {
+                return false;
+            }
+
             if (!string.IsNullOrWhiteSpace(status) &&
                 !string.Equals(proposal.Status.ToString(), status, StringComparison.OrdinalIgnoreCase))
             {
@@ -165,7 +171,7 @@ internal static class ProposalEndpoints
         }
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
-        return proposal == null
+        return proposal == null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
             ? Results.NotFound()
             : Results.Json(ToDetail(proposal), ProposalJsonContext.Default.ProposalDetailResponse);
     }
@@ -229,9 +235,10 @@ internal static class ProposalEndpoints
         [FromBody] RejectProposalRequest? request,
         [FromServices] IPermissionResolver permissionResolver,
         HttpContext context,
-        [FromServices] IOperationGateway? gateway = null)
+        [FromServices] IOperationGateway? gateway = null,
+        [FromServices] IOperationProposalStore? proposalStore = null)
     {
-        if (gateway is null)
+        if (gateway is null || proposalStore is null)
         {
             return ControlPlaneUnavailable(context);
         }
@@ -246,6 +253,12 @@ internal static class ProposalEndpoints
         if (denied != null)
         {
             return denied;
+        }
+
+        var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+        if (proposal is null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId))
+        {
+            return Results.NotFound();
         }
 
         try
@@ -275,8 +288,13 @@ internal static class ProposalEndpoints
             return denied;
         }
 
-        // Separation of duties: the proposer cannot approve their own proposal.
         var proposal = await proposalStore.GetAsync(proposalId, context.RequestAborted).ConfigureAwait(false);
+        if (proposal is null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId))
+        {
+            return Results.NotFound();
+        }
+
+        // Separation of duties: the proposer cannot approve their own proposal.
         if (proposal != null &&
             !string.IsNullOrWhiteSpace(actor) &&
             string.Equals(proposal.RequestedBy, actor, StringComparison.OrdinalIgnoreCase))

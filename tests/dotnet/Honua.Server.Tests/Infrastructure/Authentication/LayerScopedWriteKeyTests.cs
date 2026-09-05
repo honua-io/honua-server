@@ -33,7 +33,8 @@ public sealed class LayerScopedWriteKeyTests
     [InlineData("admin")]
     [InlineData("*")]
     [InlineData("admin:*")]
-    [InlineData("admin:read")]
+    [InlineData("admin:write")]
+    [InlineData("admin:manage")]
     [InlineData("ADMIN")]
     public void ConfersFullAdmin_AdminGrants_ReturnsTrue(string grant)
     {
@@ -44,6 +45,15 @@ public sealed class LayerScopedWriteKeyTests
     public void ConfersFullAdmin_AdminGrantAmongScopedGrants_ReturnsTrue()
     {
         LayerScopedWriteKey.ConfersFullAdmin(["read:layers", "admin"]).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("admin:read")]
+    [InlineData("admin:approve")]
+    [InlineData("admin:operation:POST:/api/v1/admin/services")]
+    public void ConfersFullAdmin_ScopedReadOrApprovalGrant_ReturnsFalse(string grant)
+    {
+        LayerScopedWriteKey.ConfersFullAdmin([grant]).Should().BeFalse();
     }
 
     [Theory]

@@ -44,7 +44,7 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         {
             algorithm = "dbscan",
             eps = 50000,
-            minPoints = 1,
+            minPoints = 2,
             f = "json"
         });
 
@@ -62,15 +62,20 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         root.GetProperty("type").GetString().Should().Be("FeatureCollection");
         var features = root.GetProperty("features");
         features.ValueKind.Should().Be(JsonValueKind.Array);
-        features.GetArrayLength().Should().BeGreaterThan(0);
+        features.GetArrayLength().Should().Be(4);
 
-        // Per-feature mode: each row has a properties.clusterId.
-        foreach (var feature in features.EnumerateArray())
-        {
-            feature.GetProperty("type").GetString().Should().Be("Feature");
-            var properties = feature.GetProperty("properties");
-            properties.TryGetProperty("clusterId", out _).Should().BeTrue();
-        }
+        // Seeded objectIds 1, 2, and 5 are mutually density-reachable within
+        // 50 km in Web Mercator. ObjectId 4 is more than 50 km from every other
+        // point, so minPoints=2 must classify it as DBSCAN noise (null cluster).
+        var assignments = features.EnumerateArray().ToDictionary(
+            feature => feature.GetProperty("properties").GetProperty("objectId").GetInt64(),
+            feature => feature.GetProperty("properties").GetProperty("clusterId"));
+
+        assignments.Keys.Should().BeEquivalentTo([1L, 2L, 4L, 5L]);
+        assignments[1].GetInt64().Should().Be(0);
+        assignments[2].GetInt64().Should().Be(0);
+        assignments[5].GetInt64().Should().Be(0);
+        assignments[4].ValueKind.Should().Be(JsonValueKind.Null);
 
         root.GetProperty("metadata").GetProperty("operation").GetString().Should().Be("cluster");
     }

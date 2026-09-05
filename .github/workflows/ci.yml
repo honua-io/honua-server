@@ -1702,27 +1702,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: tests/js/package-lock.json
 
-      # The setup-honua-server action redirects the server's stdout/stderr to
-      # ${RUNNER_TEMP}/honua-server-setup.log but only dumps it when the readiness
-      # wait *fails*. When readiness succeeds and a later JS request 500s (e.g. a
-      # WFS GetFeature), the server-side exception is otherwise lost — leaving the
-      # failure undiagnosable. Surface the log (and DB seed status) on ANY later
-      # failure in this job so the actual exception/stack trace is visible.
-      - name: Dump Honua Server log on failure
-        if: failure()
-        run: |
-          SERVER_LOG="${RUNNER_TEMP:-/tmp}/honua-server-setup.log"
-          if [ -f "$SERVER_LOG" ]; then
-            echo "----- Honua Server log (${SERVER_LOG}) -----"
-            cat "$SERVER_LOG"
-          else
-            echo "No Honua Server log found at ${SERVER_LOG}."
-          fi
-          echo "----- DB seed status (features per layer) -----"
-          PGPASSWORD=honua psql -h localhost -U honua -d honua_test \
-            -c "SELECT layer_id, COUNT(*) AS feature_count FROM features GROUP BY layer_id ORDER BY layer_id;" 2>&1 || \
-            echo "(could not query feature counts — DB unreachable?)"
-
       - name: Install JavaScript test dependencies
         run: npm ci
         working-directory: tests/js
@@ -1756,7 +1735,7 @@ jobs:
         working-directory: tests/js
 
       - name: Run JavaScript Integration Tests
-        run: npm test
+        run: npm test -- --reporter=verbose --reporter=junit --outputFile="${RUNNER_TEMP}/javascript-integration-tests.xml"
         working-directory: tests/js
         env:
           HONUA_BASE_URL: http://localhost:5000
@@ -1774,6 +1753,38 @@ jobs:
           HONUA_SERVICE_ID: test_service
           HONUA_LAYER_ID: '0'
           HONUA_API_KEY: "ci-admin-password"
+
+      # The setup-honua-server action redirects the server's stdout/stderr to
+      # ${RUNNER_TEMP}/honua-server-setup.log but only dumps it when the readiness
+      # wait *fails*. When readiness succeeds and a later JS request 500s (e.g. a
+      # WFS GetFeature), the server-side exception is otherwise lost — leaving the
+      # failure undiagnosable. Surface the log (and DB seed status) on ANY later
+      # failure in this job so the actual exception/stack trace is visible.
+      # Keep this after both test steps: failure() only sees earlier failures.
+      - name: Dump Honua Server log on failure
+        if: failure()
+        run: |
+          SERVER_LOG="${RUNNER_TEMP:-/tmp}/honua-server-setup.log"
+          if [ -f "$SERVER_LOG" ]; then
+            echo "----- Honua Server log (${SERVER_LOG}) -----"
+            cat "$SERVER_LOG"
+          else
+            echo "No Honua Server log found at ${SERVER_LOG}."
+          fi
+          echo "----- DB seed status (features per layer) -----"
+          PGPASSWORD=honua psql -h localhost -U honua -d honua_test \
+            -c "SELECT layer_id, COUNT(*) AS feature_count FROM features GROUP BY layer_id ORDER BY layer_id;" 2>&1 || \
+            echo "(could not query feature counts — DB unreachable?)"
+
+      - name: Upload JavaScript test diagnostics
+        uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: javascript-integration-results
+          path: |
+            ${{ runner.temp }}/javascript-integration-tests.xml
+            ${{ runner.temp }}/honua-server-setup.log
+          retention-days: 7
 
       - name: Upload OpenLayers Evidence
         uses: actions/upload-artifact@v7.0.1
@@ -1809,10 +1820,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pyyaml
+        shell: bash
+        run: python -m pip install 'pyyaml>=6,<7'
+
       - name: Setup Honua Server
         uses: ./.github/actions/setup-honua-server
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Seed Esri Leaflet sample service
+        run: bash tests/seed/apply-yaml-seed.sh tests/seed/admin-sample-feature-server.yaml
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -2000,6 +2023,15 @@ jobs:
           path: |
             tests/js-browser/test-results/
             tests/js-browser/playwright-report/
+          retention-days: 14
+
+      # Startup failures happen before Playwright can produce test results.
+      - name: Upload MapLibre server startup log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: maplibre-server-startup-log
+          path: ${{ runner.temp }}/honua-server-setup.log
           retention-days: 14
 
   mcp-certification:

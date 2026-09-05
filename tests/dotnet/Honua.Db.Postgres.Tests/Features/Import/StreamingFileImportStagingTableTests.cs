@@ -189,6 +189,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 SourceSrid = 4326,
                 TargetSrid = 4326,
                 LoadMode = loadMode,
+                OverwriteExisting = loadMode == ImportLoadMode.Replace,
             });
 
             result.Success.Should().BeTrue(result.ErrorMessage);
@@ -249,6 +250,114 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         finally
         {
             await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_ConcurrentReplaceImportsToSameTarget_IsolatedUntilPromotion()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("concurrent_replace");
+        GateStream? firstStream = null;
+        Task<ImportResult>? firstTask = null;
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            var firstProvider = new TestConnectionProvider(fixture.DataSource, schema);
+            var secondProvider = new TestConnectionProvider(fixture.DataSource, schema);
+            var firstService = new StreamingFileImportService(
+                firstProvider,
+                new CrsDetectionService(firstProvider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+            var secondService = new StreamingFileImportService(
+                secondProvider,
+                new CrsDetectionService(secondProvider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(),
+                new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance);
+
+            firstStream = new GateStream(Encoding.UTF8.GetBytes("POINT(10 10)"));
+            firstTask = firstService.ImportFileAsync(new ImportRequest
+            {
+                FileStream = firstStream,
+                FileName = "first.wkt",
+                TableName = "concurrent_replace_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true,
+            });
+            await firstStream.WaitForReadStartedAsync();
+
+            await using var secondStream = new MemoryStream(Encoding.UTF8.GetBytes("POINT(20 20)"));
+            var secondTask = secondService.ImportFileAsync(new ImportRequest
+            {
+                FileStream = secondStream,
+                FileName = "second.wkt",
+                TableName = "concurrent_replace_guard",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true,
+            });
+
+            // Give the second request a chance to contend while the first owns the target's
+            // staging state. Release the first only after the overlap is established.
+            await Task.Delay(100);
+            firstStream.Release();
+            var firstResult = await firstTask;
+            var secondResult = await secondTask;
+
+            firstResult.Success.Should().BeTrue(firstResult.ErrorMessage);
+            secondResult.Success.Should().BeTrue(secondResult.ErrorMessage);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*)::int FROM \"{schema}\".imported_concurrent_replace_guard";
+            (await command.ExecuteScalarAsync()).Should().Be(1);
+        }
+        finally
+        {
+            firstStream?.Release();
+            if (firstTask is not null)
+            {
+                // Observe completion without allowing cleanup to replace the primary assertion.
+                await ((Task)firstTask).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private sealed class GateStream(byte[] bytes) : MemoryStream(bytes, writable: false)
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _readStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _release.TrySetResult();
+
+        public Task WaitForReadStartedAsync() => _readStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            _readStarted.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return await base.ReadAsync(buffer, cancellationToken);
+        }
+
+        public override async Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            _readStarted.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return await base.ReadAsync(buffer.AsMemory(offset, count), cancellationToken);
         }
     }
 
@@ -624,6 +733,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 TargetSchema = schema,
                 SourceSrid = 4326,
                 TargetSrid = 4326,
+                OverwriteExisting = true,
             });
 
             result.Success.Should().BeFalse();

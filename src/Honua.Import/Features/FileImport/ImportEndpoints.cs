@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Admin.Abstractions;
@@ -72,6 +73,8 @@ internal static partial class ImportEndpoints
             .RequireAdminAuthorization();
 
         MapImportRoutes(v1Group, isV1: true);
+
+        MapCompatibilityImportRoutes(app);
     }
 
     /// <summary>
@@ -313,6 +316,16 @@ internal static partial class ImportEndpoints
         }
 
         CancellationToken cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        if (!await ImportAdminAuthorization.IsAuthorizedAsync(
+                context, context.User, cancellationToken).ConfigureAwait(false))
+        {
+            var denial = context.User.Identity?.IsAuthenticated == true
+                ? Results.Forbid()
+                : Results.Unauthorized();
+            await denial.ExecuteAsync(context);
+            return;
+        }
+
         IFileImportService importService = context.RequestServices.GetRequiredService<IFileImportService>();
         var securityOptions = context.RequestServices.GetRequiredService<IOptions<FileUploadSecurityOptions>>();
         var maxFileSizeBytes = Math.Max(importService.Limits.BackgroundJobThresholdBytes, importService.Limits.MaxMemoryBytes);
@@ -598,6 +611,10 @@ internal static partial class ImportEndpoints
 
             var importRequest = new ImportRequest
             {
+                OperationInstanceId = ReadLineageHeader(context, "X-Honua-Operation-Instance-Id"),
+                CorrelationId = context.TraceIdentifier,
+                AuditId = ReadLineageHeader(context, "X-Honua-Audit-Id"),
+                ProposalId = ReadLineageHeader(context, "X-Honua-Proposal-Id"),
                 CloudFileId = cloudFileId,
                 LocalFilePath = cloudFileId == null ? request.File.LocalFilePath : null,
                 FileName = request.File.FileName,
@@ -650,7 +667,11 @@ internal static partial class ImportEndpoints
                     Message = "File queued for background processing",
                     StatusUrl = $"/api/v1/admin/import/jobs/{jobId}",
                     CancelUrl = $"/api/v1/admin/import/jobs/{jobId}/cancel",
-                    UploadId = uploadId
+                    UploadId = uploadId,
+                    OperationInstanceId = importRequest.OperationInstanceId,
+                    CorrelationId = importRequest.CorrelationId,
+                    AuditId = importRequest.AuditId,
+                    ProposalId = importRequest.ProposalId
                 };
 
                 IResult result = Results.Json(
@@ -680,7 +701,7 @@ internal static partial class ImportEndpoints
                 await TryRefreshPublishedSnapshotAsync(
                     context,
                     importRequest.TargetSchema,
-                    importRequest.TableName,
+                    ResolvePhysicalImportedTableName(importRequest.TableName),
                     cancellationToken);
             }
 
@@ -844,6 +865,15 @@ internal static partial class ImportEndpoints
             CloudFileId = uploadResult.File.FileId,
             UploadId = uploadId
         };
+    }
+
+    private static string ResolvePhysicalImportedTableName(string tableName)
+    {
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, "[^a-zA-Z0-9_]", "_");
+        var physical = "imported_" + sanitized.ToLowerInvariant();
+        if (physical.Length <= 40) return physical;
+        var hash = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(physical)))[..12];
+        return $"{physical[..(40 - hash.Length - 1)]}_{hash}";
     }
 
     private static Progress<UploadProgress>? CreateUploadProgressReporter(HttpContext context, string uploadId)
@@ -1595,6 +1625,11 @@ internal static partial class ImportEndpoints
         public static partial void SnapshotRefreshed(ILogger logger, string tableName, int layerCount);
     }
 
+    private static string? ReadLineageHeader(HttpContext context, string name)
+        => context.Request.Headers.TryGetValue(name, out var values) && values.Count > 0
+            ? values[0]
+            : null;
+
 }
 
 /// <summary>
@@ -1635,6 +1670,11 @@ internal sealed record BackgroundImportResponse
     /// Upload ID for tracking file upload progress (optional)
     /// </summary>
     public string? UploadId { get; init; }
+
+    public string? OperationInstanceId { get; init; }
+    public string? CorrelationId { get; init; }
+    public string? AuditId { get; init; }
+    public string? ProposalId { get; init; }
 }
 
 internal sealed record PreviewUrlImportRequest

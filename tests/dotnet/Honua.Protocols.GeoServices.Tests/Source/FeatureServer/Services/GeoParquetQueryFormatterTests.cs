@@ -111,6 +111,61 @@ public sealed class GeoParquetQueryFormatterTests
     }
 
     [Fact]
+    public void FormatAsGeoParquet_WithUntypedGeometry_EmitsEmptyGeometryTypes()
+    {
+        var resource = CreateResourceWithGeometryType(
+            MetadataV2GeometryType.Mixed,
+            Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
+        var feature = Feature.Create(
+            1,
+            CreatePointWkb(1, 2),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: false,
+            returnM: false,
+            new GeometryLimits());
+
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
+            .GetProperty("geometry_types").EnumerateArray().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FormatAsGeoParquet_WithMixed2DAnd3DPage_AdvertisesBothGeometryTypes()
+    {
+        var resource = CreateResource(
+            Field("objectid", MetadataV2FieldType.BigInteger, nullable: false));
+        var features = new[]
+        {
+            Feature.Create(1, CreatePointWkb(1, 2),
+                new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary()),
+            Feature.Create(2, CreatePointWkbWithZm(3, 4, 5, double.NaN),
+                new Dictionary<string, object?> { ["objectid"] = 2L }.ToImmutableDictionary())
+        };
+
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(2, [.. features]),
+            resource,
+            returnGeometry: true,
+            outputSrid: 4326,
+            returnZ: true,
+            returnM: false,
+            new GeometryLimits());
+
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
+            .GetProperty("geometry_types").EnumerateArray()
+            .Select(element => element.GetString()).Should().Equal("Point", "Point Z");
+    }
+
+    [Fact]
     public void FormatAsGeoParquet_EmptyResult_ReturnsValidParquetWithEmptyGeometryTypes()
     {
         var layer = CreateLayer(
@@ -1097,6 +1152,11 @@ public sealed class GeoParquetQueryFormatterTests
         };
 
     private static MetadataV2Resource CreateResource(params MetadataV2Field[] fields)
+        => CreateResourceWithGeometryType(MetadataV2GeometryType.Point, fields);
+
+    private static MetadataV2Resource CreateResourceWithGeometryType(
+        MetadataV2GeometryType geometryType,
+        params MetadataV2Field[] fields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -1119,7 +1179,7 @@ public sealed class GeoParquetQueryFormatterTests
             Spatial = new MetadataV2ResourceSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
-                GeometryType = MetadataV2GeometryType.Point,
+                GeometryType = geometryType,
                 PrimaryGeometryField = "shape"
             }
         };

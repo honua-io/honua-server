@@ -7,7 +7,7 @@ The catalog currently registers **98 processes** across 15 families. This page i
 Execution notes that apply across families:
 
 - **Execution classification.** Every entry is classified exactly once: **79 Job**, **6 ProtocolOnly**, **12 WorkflowOnly**, and **1 Unavailable**. Job entries declare asynchronous execution and may additionally declare synchronous execution. ProtocolOnly entries remain callable only through their owning protocol endpoint; WorkflowOnly sources and sinks compose inside DAGs but cannot be submitted directly; Unavailable entries are discoverable with an explicit reason but cannot execute.
-- **OGC execution negotiation.** OGC requests run synchronously by default when the selected process advertises `sync-execute`. Send `Prefer: respond-async` to request durable asynchronous admission (`201`, `Location`, and `Preference-Applied: respond-async`). `respond-sync` is not a defined preference. WKB parameters accept the existing base64 WKB string or a GeoJSON Geometry, Feature, or FeatureCollection; GeoJSON is normalized through the shared geometry codec. Synchronous single-output value requests may use `"response": "raw"`; document mode remains the default and is required for referenced or multi-output results.
+- **OGC execution negotiation.** OGC requests run synchronously by default when the selected process advertises `sync-execute`. Send `Prefer: respond-async` to request durable asynchronous admission (`201`, `Location`, and `Preference-Applied: respond-async`). `respond-sync` is not a defined preference. WKB parameters accept the existing base64 WKB string or a GeoJSON Geometry, Feature, or FeatureCollection; GeoJSON is normalized through the shared geometry codec. Catalog requests may use `"response": "raw"` with synchronous or asynchronous execution: one selected output returns its native representation, and multiple outputs return `multipart/related`. Document mode is the default and returns inline qualified values. Qualified inputs and bounded public HTTPS or data-URI `href` references are normalized to the catalog parameter format. The canonical `honua-geoprocessing` plan process requires document mode and retains its artifact document.
 - **Runtime profile.** Processes marked *native* below declare `RuntimeProfile = native` and execute out-of-process in the heavyweight GDAL/PDAL worker image; the lean GDAL-free serving image validates their plans (parameter shape + per-process semantic rules) but never executes them. **A deployment without the GDAL worker cannot run any native process** — all `surface.*`, all `raster.*`, the native `conversion.*` (raster/OGR/point-cloud) idioms, `proximity.euclidean-*`, `source.ogr`, `gdal.*`, and `pcloud.translate`. 30 of the 98 processes are native.
 - **Unavailable.** One native process remains discoverable in the catalog but is not callable: `raster.interpolate-kriging` (no kriging backend in the worker image — use `raster.interpolate-idw`). Direct submission is rejected with the catalog reason rather than silently substituting another algorithm.
 - **Delegated cloud inference.** `imagery.classify` delegates ML inference to a configured cloud endpoint (`Geoprocessing:ImageryInference`) — Honua bundles no model runtime. When no backend is configured the process stays advertised but every execution fails with a clear "no cloud inference backend is configured" message (no silent stub, no fake result).
@@ -16,6 +16,18 @@ Execution notes that apply across families:
 - **Approval gate.** `data-management.delete-features` and `data-management.calculate-field` are destructive and require operator approval.
 - **Deferred role revalidation.** Approval resumes re-resolve current roles for identities managed by the configured membership source and fail closed when the submitter is inactive or lost required membership. For identity-provider modes that cannot answer membership queries, the durable submitter snapshot remains authoritative with an operator warning; resubmit pending approvals after revoking roles in that mode.
 - **Admission.** Submissions pass through admission control (`ExecutionAdmission__*` — see [environment variables](configuration/environment-variables.md#admission-and-pooling)).
+
+## Job ownership and tenant scope
+
+Job lookup, listing, result retrieval, and cancellation require the effective request
+tenant to match the tenant recorded at submission. A matching subject or display name
+in another tenant does not grant access. The `admin` role can manage other owners'
+jobs within the effective tenant; it does not bypass this tenant boundary. Requests
+for another tenant's job return not found, and listings omit those jobs.
+
+Jobs without a recorded tenant remain accessible only from an unscoped request,
+subject to the existing owner and operator permissions. Tenant-scoped callers must
+resubmit legacy jobs whose submission did not record a tenant.
 
 ## Geometry (14)
 

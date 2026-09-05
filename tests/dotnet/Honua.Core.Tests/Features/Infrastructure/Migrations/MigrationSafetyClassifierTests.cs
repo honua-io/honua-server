@@ -7,6 +7,15 @@ namespace Honua.Core.Tests.Features.Infrastructure.Migrations;
 
 public sealed class MigrationSafetyClassifierTests
 {
+    [Fact]
+    public void DetectBreakingRules_DoesNotTreatDbUpVariableAsDollarQuotedBody()
+    {
+        const string sql = "SELECT $HonuaSchema$; ALTER TABLE honua.alert_dispatch DROP COLUMN legacy_value;";
+
+        MigrationSafetyClassifier.DetectBreakingRules(sql)
+            .Should()
+            .Contain("drop-column");
+    }
     [Theory]
     [InlineData("ALTER TABLE honua.layers DROP COLUMN legacy_name;", "drop-column")]
     [InlineData("ALTER TABLE honua.layers RENAME COLUMN legacy_name TO display_name;", "rename-column")]
@@ -101,7 +110,7 @@ public sealed class MigrationSafetyClassifierTests
     }
 
     [Fact]
-    public void DetectBreakingRules_IgnoresStatementsInsideDollarQuotedFunctionBodies()
+    public void DetectBreakingRules_FlagsStatementsInsideDollarQuotedFunctionBodies()
     {
         const string sql = """
             CREATE OR REPLACE FUNCTION honua.create_import_table(table_name text)
@@ -115,7 +124,72 @@ public sealed class MigrationSafetyClassifierTests
             $$;
             """;
 
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().BeEquivalentTo(
+            ["rename-column", "drop-table"],
+            options => options.WithStrictOrdering());
+    }
+
+    [Theory]
+    [InlineData("DO $$ BEGIN DROP TABLE honua.layers; END $$;", "drop-table")]
+    [InlineData("CREATE PROCEDURE honua.cleanup() LANGUAGE plpgsql AS $body$ BEGIN ALTER TABLE honua.layers RENAME TO archived_layers; END $body$;", "rename-table")]
+    [InlineData("CREATE FUNCTION honua.cleanup() RETURNS void LANGUAGE plpgsql AS 'BEGIN EXECUTE ''DROP TABLE honua.layers''; END';", "drop-table")]
+    [InlineData("DO $body$ BEGIN EXECUTE $sql$ALTER TABLE honua.layers DROP COLUMN legacy_name$sql$; END $body$;", "drop-column")]
+    [InlineData("DO $$ BEGIN EXECUTE 'ALTER ' || 'TABLE honua.layers RENAME TO archived_layers'; END $$;", "rename-table")]
+    public void DetectBreakingRules_FlagsExecutableRoutineAndDynamicSqlBodies(string sql, string expectedRule)
+    {
+        MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain(expectedRule);
+    }
+
+    [Theory]
+    [InlineData("SELECT 'DROP TABLE honua.layers';")]
+    [InlineData("SELECT $$ALTER TABLE honua.layers DROP COLUMN legacy_name$$;")]
+    [InlineData("DO $$ BEGIN message := 'DROP TABLE honua.layers'; END $$;")]
+    [InlineData("DO $$ BEGIN PERFORM format('DROP TABLE honua.layers'); END $$;")]
+    [InlineData("DO $$ BEGIN EXECUTE format('SELECT %L', 'DROP TABLE honua.layers'); END $$;")]
+    [InlineData("DO $$ BEGIN -- DROP TABLE honua.layers;\n NULL; END $$;")]
+    [InlineData("DO $$ BEGIN /* ALTER TABLE honua.layers DROP COLUMN legacy_name; */ NULL; END $$;")]
+    [InlineData("DO $$ BEGIN /* outer /* DROP TABLE honua.layers; */ still outer */ NULL; END $$;")]
+    public void DetectBreakingRules_IgnoresCommentsAndInertLiterals(string sql)
+    {
         MigrationSafetyClassifier.DetectBreakingRules(sql).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Classify_DeclaredContractPhaseAroundDynamicDdl_IsContractAnnotated()
+    {
+        const string sql = """
+            -- honua:migration-phase contract
+            -- honua:compatibility-review reason=#3899 requires old nodes drained before schema adoption
+            DO $$
+            BEGIN
+                EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', 'honua', 'sta_thing', 'custom');
+            END
+            $$;
+            """;
+
+        var result = MigrationSafetyClassifier.Classify("109_adopt_schema.sql", sql);
+
+        result.Classification.Should().Be(MigrationSafetyClassification.ContractAnnotated);
+        result.IsBreaking.Should().BeTrue();
+        result.BreakingRules.Should().ContainSingle("declared-contract-phase");
+    }
+
+    [Fact]
+    public void Classify_DeclaredContractPhaseWithoutReviewReason_IsContractUnannotated()
+    {
+        const string sql = """
+            -- honua:migration-phase contract
+            DO $$
+            BEGIN
+                EXECUTE format('ALTER TABLE %I.%I SET SCHEMA %I', 'honua', 'sta_thing', 'custom');
+            END
+            $$;
+            """;
+
+        var result = MigrationSafetyClassifier.Classify("109_adopt_schema.sql", sql);
+
+        result.Classification.Should().Be(MigrationSafetyClassification.ContractUnannotated);
+        result.BreakingRules.Should().ContainSingle("declared-contract-phase");
     }
 
     [Fact]

@@ -271,7 +271,11 @@ internal static class WebAppFixturePostgresWiringMixin
         RemoveBackgroundPollers(services);
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString);
-        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
+        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
+            services,
+            testConfiguration,
+            Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest);
+        UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
 
@@ -309,7 +313,11 @@ internal static class WebAppFixturePostgresWiringMixin
         RemoveBackgroundPollers(services);
 
         var testConfiguration = BuildPostgresTestConfiguration(connectionString, extraConfiguration);
-        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(services, testConfiguration);
+        Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
+            services,
+            testConfiguration,
+            Honua.Server.Startup.ServerCoreSchemaMigrations.Manifest);
+        UseFixtureSchemaGuardBypass(services);
 
         OverrideNonMultiplexingDataSource(services, connectionString);
 
@@ -330,5 +338,18 @@ internal static class WebAppFixturePostgresWiringMixin
         // reach this registry, so unsupported registration shapes fail closed.
         services.AddSingleton<ScopedServiceOverrideRegistry>();
         services.AddSingleton<IStartupFilter, ScopedServiceOverrideStartupFilter>();
+    }
+
+    /// <summary>
+    /// Test hosts deliberately skip DbUp and provision isolated schemas through SeedRunner.
+    /// Replace the production journal guard explicitly so those test-only fixture schemas are
+    /// not mistaken for a production journal divergence. The replacement lives only in the
+    /// Honua.TestKit assembly; production registrations remain required and fail closed.
+    /// </summary>
+    private static void UseFixtureSchemaGuardBypass(IServiceCollection services)
+    {
+        services.RemoveAll<IDatabaseSchemaGuard>();
+        services.RemoveAll<Honua.Db.Postgres.Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>();
+        services.AddSingleton<IDatabaseSchemaGuard>(Honua.TestKit.FixtureBypassDatabaseSchemaGuard.Instance);
     }
 }

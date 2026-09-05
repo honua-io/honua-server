@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// (<c>honua_geoservices_error_total</c>, <c>honua_request_error_total</c>) and the
 /// Core <c>honua_application_errors_total</c> counter.
 /// </summary>
-[Collection("Unit")]
+[Collection("HonuaTelemetry")]
 public sealed class GeoServicesErrorTelemetryTests
 {
     [Fact]
@@ -35,22 +35,24 @@ public sealed class GeoServicesErrorTelemetryTests
             "honua_application_errors_total");
 
         // Act
-        _ = StandardErrorResponseFormatter.FormatError(context, errorResponse);
+        var result = StandardErrorResponseFormatter.FormatError(context, errorResponse);
 
-        // Assert: filter on this test's distinctive tags so concurrent tests in
-        // other collections that share these counters cannot perturb the result.
+        // An input status outside the known error mappings produces logical 500,
+        // while the response transport remains HTTP 200. Observe that actual body code.
+        result.Should().BeAssignableTo<IValueHttpResult>().Which.Value
+            .Should().BeOfType<ApiErrorResponse>().Which.Error.Code.Should().Be(500);
         var geo = collector.Match(
             "honua_geoservices_error_total",
             ("service_type", "FeatureServer"),
             ("operation", "query"),
-            ("error_code", StatusCodes.Status200OK));
+            ("error_code", StatusCodes.Status500InternalServerError));
         geo.Should().ContainSingle("the in-band 200 {error} envelope must record a GeoServices error");
         geo[0].Value.Should().Be(1);
 
         collector.Match(
                 "honua_request_error_total",
                 ("service_type", "FeatureServer"),
-                ("error_code", StatusCodes.Status200OK),
+                ("error_code", StatusCodes.Status500InternalServerError),
                 ("in_band", true))
             .Should().ContainSingle("a 2xx error body is invisible to LB 5xx metrics (in_band=true)");
 
@@ -62,9 +64,9 @@ public sealed class GeoServicesErrorTelemetryTests
     }
 
     [Fact]
-    public void FormatError_GeoServicesSub500Error_IncrementsCountersWithInBandFalse()
+    public void FormatError_GeoServicesSub500Error_IncrementsCountersWithInBandTrue()
     {
-        // Arrange: a sub-500 error returned with its real HTTP status (400).
+        // Arrange: logical 400 is returned inside the GeoServices HTTP-200 envelope.
         var context = CreateContext("/rest/services/0/FeatureServer/0/query");
         var errorResponse = StandardErrorResponse.BadRequest("Invalid where clause");
 
@@ -86,8 +88,8 @@ public sealed class GeoServicesErrorTelemetryTests
                 "honua_request_error_total",
                 ("service_type", "FeatureServer"),
                 ("error_code", StatusCodes.Status400BadRequest),
-                ("in_band", false))
-            .Should().ContainSingle("a 4xx status is reflected by the HTTP transport (in_band=false)");
+                ("in_band", true))
+            .Should().ContainSingle("the logical 400 error is returned over HTTP 200 (in_band=true)");
     }
 
     [Fact]

@@ -300,7 +300,13 @@ public sealed class OpenApiDriftTests
             .Should().BeEquivalentTo(["document", "raw"],
                 "the execute schema must advertise every response mode accepted by the runtime");
         responseMode.GetProperty("description").GetString().Should().Contain("synchronous single-value",
-            "raw mode is limited to the synchronous single-output execution path");
+            "synchronous single-output raw execution returns the native representation");
+        responseMode.GetProperty("description").GetString().Should().Contain("results endpoint for asynchronous jobs",
+            "OGC Part 1 also applies raw response negotiation to asynchronous results (#4145)");
+        responseMode.GetProperty("description").GetString().Should().Contain("Multiple raw outputs use multipart/related",
+            "multiple raw values use a multipart response rather than a document results map");
+        responseMode.GetProperty("description").GetString().Should().Contain("canonical honua-geoprocessing plan process requires document mode",
+            "the canonical plan process has no declared value outputs");
 
         var responses = execute.GetProperty("responses");
         foreach (var status in new[] { "200", "201", "408", "409", "410", "413", "499", "500" })
@@ -337,6 +343,39 @@ public sealed class OpenApiDriftTests
             .Should().BeEquivalentTo(
                 ["application/json", "application/geo+json"],
                 "only JSON scalar and GeoJSON feature outputs are reachable from current sync-capable processes");
+    }
+
+    [ArchitectureTest]
+    public void OgcProcessesJobResults_DocumentsNegotiatedValueAndRawContract()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(ResolveOpenApiPath("ogc-processes-openapi.json")));
+        var responses = document.RootElement.GetProperty("paths")
+            .GetProperty("/ogc/processes/jobs/{jobId}/results")
+            .GetProperty("get").GetProperty("responses");
+        var success = responses.GetProperty("200");
+        success.GetProperty("description").GetString().Should().Contain("persisted from the execute request",
+            "asynchronous retrieval must honor the original response negotiation");
+        var content = success.GetProperty("content");
+        content.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
+            ["application/json", "application/geo+json", "image/tiff", "image/png", "image/jpeg",
+                "application/geopackage+sqlite3", "application/vnd.las", "text/csv",
+                "application/octet-stream", "multipart/related"],
+            "raw catalog results can carry native artifacts or multiple value outputs");
+        content.GetProperty("application/json").GetProperty("schema").GetProperty("anyOf")
+            .EnumerateArray().Select(alternative => alternative.GetProperty("$ref").GetString())
+            .Should().BeEquivalentTo(["#/components/schemas/Results", "#/components/schemas/RawJsonValue"],
+                "JSON results must describe both the document map and the native raw value");
+        foreach (var mediaType in new[] { "image/tiff", "image/png", "image/jpeg",
+            "application/geopackage+sqlite3", "application/vnd.las", "text/csv",
+            "application/octet-stream", "multipart/related" })
+        {
+            var schema = content.GetProperty(mediaType).GetProperty("schema");
+            schema.GetProperty("type").GetString().Should().Be("string");
+            schema.GetProperty("format").GetString().Should().Be("binary");
+        }
+
+        responses.TryGetProperty("413", out _).Should().BeTrue(
+            "materialized results are bounded by the configured aggregate response budget");
     }
 
     [ArchitectureTest]

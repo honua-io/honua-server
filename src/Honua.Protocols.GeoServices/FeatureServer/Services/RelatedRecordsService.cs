@@ -350,6 +350,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                     [
                         ..relatedFeatures!.Select(f => ConvertToGeoServicesFeature(
                             f,
+                            objectIdFieldName,
                             returnGeometry,
                             outputSrid,
                             returnZ,
@@ -474,6 +475,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
     /// </summary>
     private static GeoServicesFeature ConvertToGeoServicesFeature(
         Feature feature,
+        string objectIdFieldName,
         bool returnGeometry,
         int? outputSrid,
         bool returnZ,
@@ -489,6 +491,13 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                           !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key) &&
                           IsVisibleRelatedAttribute(kvp.Key, allDeclaredAttributeFields, visibleDeclaredAttributeFields))
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        // Esri's related-record contract always carries the destination layer's
+        // object id, even when outFields names a narrower attribute projection.
+        if (!attributes.ContainsKey(objectIdFieldName))
+        {
+            attributes[objectIdFieldName] = GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName);
+        }
 
         GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
 

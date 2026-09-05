@@ -48,19 +48,9 @@ internal sealed class TenantStatusEnforcementMiddleware(RequestDelegate next)
             return;
         }
 
-        await WriteBlockedAsync(context, tenant.Status).ConfigureAwait(false);
-    }
-
-    private static async Task WriteBlockedAsync(HttpContext context, TenantStatus status)
-    {
-        var (error, message) = status == TenantStatus.Deleted
-            ? ("tenant_deleted", "Tenant access is unavailable.")
-            : ("tenant_suspended", "Tenant access is currently suspended.");
-
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-        context.Response.ContentType = "application/json";
-        await context.Response.WriteAsync(
-            $"{{\"error\":\"{error}\",\"message\":\"{message}\"}}",
-            context.RequestAborted).ConfigureAwait(false);
+        var denial = tenant.Status == TenantStatus.Deleted
+            ? TenantDenialKind.TenantDeleted
+            : TenantDenialKind.TenantSuspended;
+        await TenantDenialResponseWriter.WriteAsync(context, denial).ConfigureAwait(false);
     }
 }

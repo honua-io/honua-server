@@ -70,6 +70,19 @@ public sealed class CapabilityFlagOptions
     }
 
     /// <summary>
+    /// Resolves a capability flag directly from application configuration using the
+    /// same global-or-per-capability semantics as the options-bound runtime gate.
+    /// </summary>
+    public static bool IsExperimentalEnabled(IConfiguration configuration, string capabilityId)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var options = new CapabilityFlagOptions();
+        Bind(options, configuration.GetSection(SectionName));
+        return options.IsExperimentalEnabled(capabilityId);
+    }
+
+    /// <summary>
     /// Binds the flag values from a <c>Capabilities:Experimental</c> configuration
     /// section. Handled explicitly (rather than via <c>Bind</c>) because the global
     /// <c>Enabled</c> scalar and the per-capability subsections are siblings under

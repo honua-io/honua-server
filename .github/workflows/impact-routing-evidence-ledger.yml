@@ -191,23 +191,40 @@ jobs:
             local destination="evidence/archives/${artifact_id}.zip"
             local partial="${destination}.part"
             local attempt
+            local invalid_archive=false
             for attempt in 1 2 3 4; do
               if gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
-                  > "${partial}" \
-                && python3 - "${partial}" <<'PY'
+                  > "${partial}"; then
+                if python3 - "${partial}" <<'PY'
           import sys
           import zipfile
 
           raise SystemExit(0 if zipfile.is_zipfile(sys.argv[1]) else 1)
           PY
-              then
-                mv "${partial}" "${destination}"
-                return 0
+                then
+                  mv "${partial}" "${destination}"
+                  return 0
+                fi
+                invalid_archive=true
               fi
               if (( attempt < 4 )); then
                 sleep $((attempt * 2))
               fi
             done
+            expired=false
+            if [[ "${invalid_archive}" == false ]]; then
+              expired="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}" \
+                --jq '.expired' 2>/dev/null || true)"
+            fi
+            if [[ "${invalid_archive}" == false && "${expired}" == true ]]; then
+              rm -f "${partial}"
+              python3 scripts/ci/audit-impact-routing-evidence.py expire-indexed-receipt \
+                --index evidence/index.json \
+                --artifact-id "${artifact_id}"
+              printf '::warning::receipt artifact %s expired after discovery; counted as owed receipt loss\n' \
+                "${artifact_id}" >&2
+              return 0
+            fi
             printf '::error::receipt artifact %s was unavailable or invalid after 4 attempts\n' \
               "${artifact_id}" >&2
             return 1

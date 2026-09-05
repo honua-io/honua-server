@@ -264,6 +264,12 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("package.map", "packages", null, CapabilityKind.Feature, MapPackageSchemaVersion, CapabilityMaturity.Implemented),
             ("package.app", "packages", null, CapabilityKind.Feature, AppPackageSchemaVersion, CapabilityMaturity.Implemented),
 
+            // Warehouse providers remain visible while disabled so discovery can
+            // distinguish truthful Experimental opt-in state from absent data.
+            ("provider.redshift", "provider", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("provider.snowflake", "provider", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("provider.databricks", "provider", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+
             // Temporal analytics — promoted to GA (Implemented) in #2429. Time filtering
             // (Community) + extent discovery (Community), date-bin histograms (Pro),
             // time-series tiles (Pro), and the SDK/admin animation-contract flag (Pro).
@@ -280,27 +286,34 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.animation-api", "temporal", "temporal.animation-api", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
-            // Disconnected-sync replica / conflict review — promoted to GA (Implemented) in
-            // #2430 after conflict-resolution hardening: an operator resolution now commits the
-            // resolved feature state through the shared edit pipeline instead of only recording
-            // an action, and a conflictHandling=manualReview sync mode withholds conflicting
-            // edits for review instead of forcing last-write-wins. The admin replica/
-            // conflict-review routes ship on the default first-release surface. Still
-            // Pro-edition gated (fieldops.offline-sync entitlement) — GA means no longer
-            // hidden/unadvertised, not free-tier.
-            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
-            // Realtime feature streaming — promoted to GA (Implemented) in #2428.
-            // Second Experimental->Implemented promotion (after alerts.geofence, #2427):
-            // WebSocket/SSE feature-change streams with subscription filters and durable
-            // replay cursors ship on the default first-release surface. Still Pro-edition
-            // gated (streaming.feature-subscriptions entitlement) — GA means no longer
-            // hidden/unadvertised, not free-tier.
-            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
-            // Geofence enter/exit alerting — promoted to GA (Implemented) in #2427.
-            // First Experimental->Implemented promotion; engine ships as shared,
-            // un-gated GA infrastructure. Workers still self-gate on
-            // AlertOptions.Enabled (default false); GA does not mean on-by-default.
-            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            // Disconnected-sync replica / conflict review — Preview in 2026.1 per the
+            // 2026-09-03 operator ruling (honua-release#266 / #264). It remains Pro-edition
+            // gated (fieldops.offline-sync entitlement); non-security parity is deferred to
+            // release/2026.2.
+            ("serve.3d-tiles-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
+            ("serve.i3s-scene", "scene", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Experimental),
+            // OGC API - EDR is Preview in release 2026.1; remaining functional
+            // query gaps are deferred to release/2026.2.
+            ("serve.ogc-api-edr", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
+            ("scene.catalog", "scene", null, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("scene.bim-ingest", "scene", FeatureCatalog.SceneBimIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("scene.pointcloud-ingest", "scene", FeatureCatalog.ScenePointCloudIngestKey, CapabilityKind.Feature, null, CapabilityMaturity.Experimental),
+            ("sync.offline", "sync", FeatureCatalog.FieldOpsOfflineSyncKey, CapabilityKind.Feature, null, CapabilityMaturity.Preview),
+            // Realtime remains opt-in Preview until the per-transport qualification
+            // denominator passes against the exact release candidate (#3810).
+            ("realtime.feature-streams", "realtime", "streaming.feature-subscriptions", CapabilityKind.Feature, null, CapabilityMaturity.Preview),
+            // SensorThings uses the same canonical opt-in gate as its route registration;
+            // it must never be present at runtime while absent from capability discovery.
+            ("serve.sensorthings", "realtime", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
+            // ImageServer and WMTS are Preview in 2026.1 under the 2026-09-03
+            // operator ruling (honua-release#266 / #264).
+            ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
+            ("serve.wmts", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
+            ("serve.ogc-api-coverages", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
+            // Customer alerting ships as Preview in 2026.1 by operator ruling
+            // (2026-09-04). The implementation and qualification coverage remain,
+            // but the surface stays off by default behind the canonical opt-in.
+            ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null, CapabilityMaturity.Preview),
             ("jobs.runner", "jobs", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("ai.spec-apply", "ai", FeatureCatalog.AiSpecApplyKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("ai.grounding", "ai", FeatureCatalog.AiGroundingKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
@@ -351,6 +364,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Category = category,
                 Kind = kind,
                 Maturity = maturity,
+                RequiresOptIn = id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"),
                 EntitlementKey = entitlementKey,
                 MinimumEdition = ResolveMinimumEdition(entitlementKey),
                 PackageSchemaVersion = packageSchemaVersion,

@@ -313,6 +313,16 @@ The MVP intentionally defers enterprise/operational features to reduce complexit
 
 ## Critical Rules
 
+### Documentation examples use product surfaces
+
+Documentation examples must use Honua's own supported surfaces: the Honua CLI,
+published SDKs, or MCP. Never use a raw HTTP shell command as a substitute for a product
+workflow. If a page's subject is the wire protocol itself and raw HTTP is
+unavoidable, justify the exception in the PR body, add the page to
+`scripts/ci/doc-wire-reference-allowlist.v1.json`, and mark each affected
+example with `<!-- wire-reference -->`. The exception documents the wire; it
+must not become the recommended operator or application path.
+
 ### Creating a PR — fill the template (or CI is skipped)
 
 When opening a PR, follow the **Pull Request Policy** section above. The **Validate PR Template Compliance** check is **advisory only — it does not block the merge** (it posts suggestions and warns, but always succeeds). Real validation (build, format, tests) gates the PR on its own. Still, prefer a well-formed description: don't hand-roll a freeform `gh pr create --body "..."`; copy the template, fill the sections — conventional-commit title (`type(scope): description`), issue link (`Closes #N` or `Refs #N (<what remains>)`), non-empty Summary, `-` bullet Changes Made, Breaking Changes (or `None`), Gate Impact/Testing boxes — and pass it with `--body-file`:

@@ -56,6 +56,39 @@ public sealed class MgrsConverterTests
         compact.Should().NotContain(" ");
     }
 
+    [UnitTest]
+    [Operation(Operations.ToGeoCoordinateString)]
+    public void ToMgrs_RoundingAndSpacingAreIndependent()
+    {
+        var pairs = Enumerable.Range(0, 100)
+            .Select(index => -77.0353 + (index * 0.000001))
+            .Select(longitude => new
+            {
+                Truncated = MgrsConverter.ToMgrs(longitude, 38.8895, precision: 5, addSpaces: true, rounding: false),
+                Rounded = MgrsConverter.ToMgrs(longitude, 38.8895, precision: 5, addSpaces: true, rounding: true),
+            })
+            .ToArray();
+
+        pairs.Should().OnlyContain(pair => pair.Rounded.Contains(' '));
+        pairs.Should().Contain(pair => pair.Rounded != pair.Truncated,
+            "rounding must affect coordinates whose next discarded digit is at least five");
+    }
+
+    [UnitTest]
+    [Operation(Operations.ToGeoCoordinateString)]
+    public void ToMgrs_OldStyleAndZoneOneModesChangeGridScheme()
+    {
+        var modern = MgrsConverter.ToMgrs(-77.0353, 38.8895, oldStyle: false);
+        var old = MgrsConverter.ToMgrs(-77.0353, 38.8895, oldStyle: true);
+        old.Should().NotBe(modern);
+
+        var zoneOne = MgrsConverter.ToMgrs(180, 0, zoneOneAt180: true);
+        zoneOne.Should().StartWith("1N");
+        var decoded = MgrsConverter.FromMgrs(old, oldStyle: true);
+        decoded.Longitude.Should().BeApproximately(-77.0353, 0.00003);
+        decoded.Latitude.Should().BeApproximately(38.8895, 0.00002);
+    }
+
     [Theory]
     [InlineData(-77.0739, 38.9587)]   // Washington, DC
     [InlineData(-122.4194, 37.7749)]  // San Francisco

@@ -137,7 +137,7 @@ public sealed class ScopedAdminKeyOidcEnforcementTests : IAsyncLifetime
         var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var issued = await store.CreateAsync(
             "approved-operation:oidc-test-proposal",
-            [AdminApiKeyPermission.CreateApprovedOperationGrant("GET", "/api/v1/admin/api-keys")],
+            AdminApiKeyPermission.CreateApprovedOperationGrants("GET", "/api/v1/admin/api-keys", "public"),
             DateTimeOffset.UtcNow.AddMinutes(5),
             "test-requester",
             CancellationToken.None);

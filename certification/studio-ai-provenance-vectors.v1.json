@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0",
+  "issue": 3884,
+  "producer": "honua-server",
+  "canonicalization": "honua-canonical-json-v1",
+  "totalFixtures": 7,
+  "executedFixtures": 7,
+  "skippedFixtures": 0,
+  "rawIngressVectors": [
+    {"id":"duplicate-root","expectedVerdict":"reject","reason":"duplicate_property","providerRequestCount":0,"signatureCount":0},
+    {"id":"duplicate-message","expectedVerdict":"reject","reason":"duplicate_property","providerRequestCount":0,"signatureCount":0},
+    {"id":"duplicate-tool-schema","expectedVerdict":"reject","reason":"duplicate_property","providerRequestCount":0,"signatureCount":0},
+    {"id":"duplicate-certification-binding","expectedVerdict":"reject","reason":"duplicate_property","providerRequestCount":0,"signatureCount":0},
+    {"id":"case-insensitive-root-collision","expectedVerdict":"reject","reason":"duplicate_property","providerRequestCount":0,"signatureCount":0}
+  ],
+  "canonicalVectors": [
+    {
+      "id":"utf8-escaped-numeric-equivalence",
+      "rawRequests":["{\"text\":\"caf\\u00e9\",\"number\":1.0}","{\"number\":1e0,\"text\":\"café\"}"],
+      "canonicalRequest":"{\"number\":1,\"text\":\"caf\\u00E9\"}",
+      "expectedDigest":"sha256:5340bc320f9e6e57117102837eb59b7a1f19335a9e151eaf9c66e45e5d0f1d62",
+      "expectedVerdict":"accept"
+    },
+    {
+      "id":"accepted-wire-request-binding",
+      "rawRequest":"{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
+      "canonicalRequest":"{\"messages\":[{\"content\":\"hi\",\"role\":\"user\"}]}",
+      "expectedDigest":"sha256:19e21ad5462e808b27165af1d6f50bd3a1eff3a04bb4a4cd080a9871cbfa0929",
+      "expectedVerdict":"accept",
+      "binding":"signed envelope request field equals canonical accepted wire bytes"
+    }
+  ],
+  "serverReferenceVerification": {
+    "signatureMutationRejected": true,
+    "requestMutationRejected": true,
+    "providerModelBindingChecked": true
+  }
+}

@@ -151,6 +151,8 @@ internal static class EntitlementProbeRegistry
                 "/rest/services/test/FeatureServer/0/queryBufferAggregate", "{}"),
             new("analytics.density", HttpMethod.Post,
                 "/rest/services/test/FeatureServer/0/queryDensity", "{}"),
+            new(FeatureCatalog.H3AnalyticsKey, HttpMethod.Get,
+                "/rest/services/test/FeatureServer/0/queryH3?resolution=5"),
 
             // Analytics — elevation surfaces gate before reading the POST body; dataset "0"
             // is the default seeded elevation surface used by VisibilityAnalysisEndpointTests

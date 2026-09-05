@@ -33,12 +33,18 @@ internal static class TileExportAdapterResults
         TileExportAdmissionException admission =>
             MapAdmission(context, admission),
         TileExportStoreUnavailableException storeUnavailable =>
-            StandardErrorHelpers.CreateServiceUnavailable(context, storeUnavailable.Message),
+            StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                storeUnavailable.Message,
+                retryable: true),
         _ => null
     };
 
     private static IResult MapAdmission(HttpContext context, TileExportAdmissionException admission)
         => admission.Outcome == ExecutionAdmissionOutcome.Throttled
             ? StandardErrorHelpers.CreateTooManyRequests(context, admission.Message, admission.RetryAfterSeconds)
-            : StandardErrorHelpers.CreateServiceUnavailable(context, admission.Message, admission.RetryAfterSeconds);
+            : StandardErrorHelpers.CreateServiceUnavailable(
+                context,
+                admission.Message,
+                admission.RetryAfterSeconds);
 }

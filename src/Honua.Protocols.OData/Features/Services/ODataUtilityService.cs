@@ -188,7 +188,8 @@ internal static class ODataUtilityService
                 nextSkip,
                 filter,
                 orderby,
-                ODataRequestValidation.ResolveSkipTokenDiscriminator(request.HttpContext));
+                ODataRequestValidation.ResolveSkipTokenDiscriminator(request.HttpContext),
+                request.Query["bbox"].ToString());
             queryParams.Add($"$skiptoken={Uri.EscapeDataString(opaqueToken)}");
         }
         else
@@ -197,6 +198,12 @@ internal static class ODataUtilityService
         }
 
         queryParams.Add($"$top={top}");
+
+        var bbox = request.Query["bbox"].ToString();
+        if (!string.IsNullOrWhiteSpace(bbox))
+        {
+            queryParams.Add($"bbox={Uri.EscapeDataString(bbox)}");
+        }
 
         if (!string.IsNullOrWhiteSpace(filter))
         {

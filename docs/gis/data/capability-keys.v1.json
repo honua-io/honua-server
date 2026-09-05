@@ -58,6 +58,7 @@
       "displayName": "Dwell Trigger",
       "category": "Alerts",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Trigger alerts when features remain inside a zone for a configured duration."
     },
     {
@@ -65,6 +66,7 @@
       "displayName": "Enter/Exit Geofence Triggers",
       "category": "Alerts",
       "edition": "Pro",
+      "status": "preview",
       "description": "Trigger alerts when features enter or exit geofence zones."
     },
     {
@@ -72,6 +74,7 @@
       "displayName": "Alert Evaluation Engine",
       "category": "Alerts",
       "edition": "Pro",
+      "status": "preview",
       "description": "Background worker for evaluating geofence rules against feature changes."
     },
     {
@@ -79,6 +82,7 @@
       "displayName": "Threshold Trigger",
       "category": "Alerts",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Trigger alerts based on attribute threshold conditions."
     },
     {
@@ -108,6 +112,13 @@
       "category": "Analytics",
       "edition": "Pro",
       "description": "Hex or square grid density (heatmap) binning over a filtered subset."
+    },
+    {
+      "key": "analytics.h3",
+      "displayName": "H3 Aggregation",
+      "category": "Analytics",
+      "edition": "Pro",
+      "description": "Aggregate features into H3 cells and publish H3 vector tiles."
     },
     {
       "key": "analytics.line-of-sight",
@@ -170,6 +181,7 @@
       "displayName": "AWS SNS Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications via AWS Simple Notification Service."
     },
     {
@@ -177,6 +189,7 @@
       "displayName": "Azure Event Grid Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications via Azure Event Grid."
     },
     {
@@ -184,6 +197,7 @@
       "displayName": "Digest Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Aggregate and deliver batched alert summaries."
     },
     {
@@ -191,6 +205,7 @@
       "displayName": "Email Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications via email."
     },
     {
@@ -198,6 +213,7 @@
       "displayName": "Slack Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications to Slack channels."
     },
     {
@@ -205,6 +221,7 @@
       "displayName": "Microsoft Teams Delivery",
       "category": "Channels",
       "edition": "Enterprise",
+      "status": "preview",
       "description": "Deliver alert notifications to Microsoft Teams."
     },
     {
@@ -212,6 +229,7 @@
       "displayName": "Webhook Delivery",
       "category": "Channels",
       "edition": "Pro",
+      "status": "preview",
       "description": "Deliver alert notifications via webhook HTTP callbacks."
     },
     {
@@ -587,7 +605,8 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface."
+      "description": "Serve raster imagery and coverage metadata through the Esri GeoServices ImageServer surface.",
+      "status": "preview"
     },
     {
       "key": "serve.geoservices-mapserver",
@@ -630,14 +649,16 @@
       "displayName": "OGC API Coverages",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve coverage data through OGC API - Coverages."
+      "description": "Serve coverage data through OGC API - Coverages.",
+      "status": "preview"
     },
     {
       "key": "serve.ogc-api-edr",
       "displayName": "OGC API - EDR",
       "category": "Serve",
       "edition": "Community",
-      "description": "Query environmental data resources through OGC API - Environmental Data Retrieval."
+      "description": "Query environmental data resources through OGC API - Environmental Data Retrieval.",
+      "status": "preview"
     },
     {
       "key": "serve.ogc-api-features",
@@ -714,7 +735,8 @@
       "displayName": "WMTS 1.0",
       "category": "Serve",
       "edition": "Community",
-      "description": "Serve pre-rendered tile pyramids through WMTS 1.0."
+      "description": "Serve pre-rendered tile pyramids through WMTS 1.0.",
+      "status": "preview"
     },
     {
       "key": "staticmap.high-dpi",
