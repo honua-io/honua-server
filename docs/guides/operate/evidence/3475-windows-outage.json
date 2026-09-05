@@ -1,11 +1,11 @@
 {
   "schemaVersion": "1.0",
-  "sourceSha": "85ecbd9786635eca4eecaab7a634cc72357412a4",
+  "sourceSha": "ee4f744a66491e7aa72e3efd22bf845e11b5869a",
   "execution": "windows-native-dotnet/docker-desktop-postgres-redis",
   "candidateQualification": false,
   "sourceId": "honua_ops_findings.alert_dispatch",
   "passed": true,
-  "serverAssemblySha256": "467f3317c42fb8690898b92019c1ec8da994633810e988a830e045dc5416f9b0",
+  "serverAssemblySha256": "ee774841a0bfbef89619b64bb86f1ffee5d0d4adb0031db060649983239deae5",
   "expectedBacklog": {
     "pending": 0,
     "deadLettered": 1,
@@ -15,12 +15,12 @@
     "dispatcherRunning": true,
     "dispatcherEnabled": true,
     "storagePollFailing": false,
-    "lastPollAt": "2026-09-05T17:27:56.0681337+00:00",
-    "backlogObservedAt": "2026-09-05T17:27:54.0535287+00:00",
+    "lastPollAt": "2026-09-05T18:29:15.0221933+00:00",
+    "backlogObservedAt": "2026-09-05T18:29:00.5048623+00:00",
     "pendingCount": 0,
     "deadLetteredCount": 1,
     "retryingCount": 0,
-    "oldestItemAgeSeconds": 13,
+    "oldestItemAgeSeconds": 3691,
     "channels": [
       {
         "channel": "webhook",
@@ -28,7 +28,7 @@
         "pendingCount": 0,
         "retryingCount": 0,
         "deadLetteredCount": 1,
-        "oldestItemAgeSeconds": 13
+        "oldestItemAgeSeconds": 3691
       }
     ]
   },
@@ -41,8 +41,8 @@
           "sourceId": "honua_ops_findings",
           "backendKind": "composite",
           "backendId": "ops-findings-engine",
-          "observedAt": "2026-09-05T17:27:54.0535287+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:54.0535287+00:00",
+          "observedAt": "2026-09-05T18:29:00.5048623+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:00.5048623+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "coverage": {
@@ -68,118 +68,118 @@
             ]
           },
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:32:54.0535287+00:00"
+          "validUntil": "2026-09-05T18:34:00.5048623+00:00"
         },
         {
           "sourceId": "honua_ops_findings.alert_dispatch",
           "backendKind": "durableStore",
           "backendId": "alert-dispatch-store",
-          "observedAt": "2026-09-05T17:27:54.0535287+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:54.0535287+00:00",
+          "observedAt": "2026-09-05T18:29:00.5048623+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:00.5048623+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:32:54.0535287+00:00"
+          "validUntil": "2026-09-05T18:34:00.5048623+00:00"
         },
         {
           "sourceId": "honua_ops_findings.control_plane",
           "backendKind": "configProjection",
           "backendId": "control-plane-options",
-          "observedAt": "2026-09-05T17:27:56.5101993+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:56.5101993+00:00",
+          "observedAt": "2026-09-05T18:29:14.9341153+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:14.9341153+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:32:56.5101993+00:00"
+          "validUntil": "2026-09-05T18:34:14.9341153+00:00"
         },
         {
           "sourceId": "honua_ops_findings.deploy_preflight",
           "backendKind": "inProcess",
           "backendId": "deploy-preflight-probe",
-          "observedAt": "2026-09-05T17:27:56.5101993+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:56.5101993+00:00",
+          "observedAt": "2026-09-05T18:29:14.9341153+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:14.9341153+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:32:56.5101993+00:00"
+          "validUntil": "2026-09-05T18:34:14.9341153+00:00"
         },
         {
           "sourceId": "honua_ops_findings.gp_queue",
           "backendKind": "durableStore",
           "backendId": "execution-job-store",
-          "observedAt": "2026-09-05T17:27:56.5101993+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:56.5101993+00:00",
+          "observedAt": "2026-09-05T18:29:14.9341153+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:14.9341153+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:32:56.5101993+00:00"
+          "validUntil": "2026-09-05T18:34:14.9341153+00:00"
         },
         {
           "sourceId": "honua_ops_findings.workflow_operations",
           "backendKind": "durableStore",
           "backendId": "workflow-operation-store",
-          "observedAt": "2026-09-05T17:27:56.5101993+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:56.5101993+00:00",
+          "observedAt": "2026-09-05T18:29:14.9341153+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:14.9341153+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:32:56.5101993+00:00"
+          "validUntil": "2026-09-05T18:34:14.9341153+00:00"
         },
         {
           "sourceId": "honua_ops_findings.serving_latency_rollup",
           "backendKind": "durableStore",
           "backendId": "ops-health-rollup-store",
-          "observedAt": "2026-09-05T17:27:56.5101993+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:56.5101993+00:00",
+          "observedAt": "2026-09-05T18:29:14.9341153+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:14.9341153+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "coverage": {
-            "requestedFrom": "2026-09-05T17:22:56.5101993+00:00",
-            "requestedTo": "2026-09-05T17:27:56.5101993+00:00"
+            "requestedFrom": "2026-09-05T18:24:14.9341153+00:00",
+            "requestedTo": "2026-09-05T18:29:14.9341153+00:00"
           },
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:32:56.5101993+00:00"
+          "validUntil": "2026-09-05T18:34:14.9341153+00:00"
         },
         {
           "sourceId": "honua_ops_findings.database_pressure",
           "backendKind": "durableStore",
           "backendId": "database-pressure-signal",
-          "observedAt": "2026-09-05T17:27:56.5101993+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:56.5101993+00:00",
+          "observedAt": "2026-09-05T18:29:14.9341153+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:14.9341153+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:32:56.5101993+00:00"
+          "validUntil": "2026-09-05T18:34:14.9341153+00:00"
         },
         {
           "sourceId": "honua_ops_findings.batch_backends",
           "backendKind": "inProcess",
           "backendId": "batch-compute-backends",
-          "observedAt": "2026-09-05T17:27:56.5101993+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:56.5101993+00:00",
+          "observedAt": "2026-09-05T18:29:14.9341153+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:14.9341153+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:32:56.5101993+00:00"
+          "validUntil": "2026-09-05T18:34:14.9341153+00:00"
         }
       ]
     },
-    "generatedAt": "2026-09-05T17:27:56.5101993+00:00",
+    "generatedAt": "2026-09-05T18:29:14.9341153+00:00",
     "findings": [
       {
         "requiredSourceIds": [
           "honua_ops_findings.alert_dispatch"
         ],
         "observationWindow": {
-          "returnedFrom": "2026-09-05T17:27:54.0535287+00:00",
-          "returnedTo": "2026-09-05T17:27:54.0535287+00:00"
+          "returnedFrom": "2026-09-05T18:29:00.5048623+00:00",
+          "returnedTo": "2026-09-05T18:29:00.5048623+00:00"
         },
         "id": "alert-dispatch-backlog-b7a8f376d98e89e80c9bbec00150e814",
         "rule": "alert-dispatch-backlog",
         "severity": "Critical",
         "title": "Alert dispatch dead-letters require triage",
         "explanation": "The alert dispatcher has 1 dead-lettered notification(s) that exhausted retries and require operator triage (pending backlog 0). Redriving re-enqueues them for redelivery; channel-attributed failures also produce a scoped isolation finding whose pause action remains approval-gated.",
-        "detectedAt": "2026-09-05T17:27:56.5101993+00:00",
+        "detectedAt": "2026-09-05T18:29:14.9341153+00:00",
         "subject": {
           "channel": "alert-dispatch"
         },
@@ -200,15 +200,15 @@
           "honua_ops_findings.alert_dispatch"
         ],
         "observationWindow": {
-          "returnedFrom": "2026-09-05T17:27:54.0535287+00:00",
-          "returnedTo": "2026-09-05T17:27:54.0535287+00:00"
+          "returnedFrom": "2026-09-05T18:29:00.5048623+00:00",
+          "returnedTo": "2026-09-05T18:29:00.5048623+00:00"
         },
         "id": "alert-dispatch-channel-failure-1188487171c3e354a927ed4f0970238a",
         "rule": "alert-dispatch-channel-failure",
         "severity": "Critical",
         "title": "Alert delivery is failing on webhook",
         "explanation": "The webhook channel has 1 dead-lettered, 0 retrying, and 0 pending notification(s). Pausing is approval-gated because it suppresses delivery; healthy channels remain active.",
-        "detectedAt": "2026-09-05T17:27:56.5101993+00:00",
+        "detectedAt": "2026-09-05T18:29:14.9341153+00:00",
         "subject": {
           "channel": "webhook"
         },
@@ -235,8 +235,8 @@
           "sourceId": "honua_ops_findings",
           "backendKind": "composite",
           "backendId": "ops-findings-engine",
-          "observedAt": "2026-09-05T17:28:02.1983635+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:02.1983635+00:00",
+          "observedAt": "2026-09-05T18:29:18.0596533+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:18.0596533+00:00",
           "completeness": "partial",
           "reasonCodes": [
             "incompleteCoverage"
@@ -263,14 +263,14 @@
             ]
           },
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:02.1983635+00:00"
+          "validUntil": "2026-09-05T18:34:18.0596533+00:00"
         },
         {
           "sourceId": "honua_ops_findings.alert_dispatch",
           "backendKind": "durableStore",
           "backendId": "alert-dispatch-store",
-          "observedAt": "2026-09-05T17:27:54.0535287+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:27:54.0535287+00:00",
+          "observedAt": "2026-09-05T18:29:00.5048623+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:00.5048623+00:00",
           "completeness": "unavailable",
           "reasonCodes": [
             "sourceUnavailable"
@@ -281,101 +281,101 @@
           "sourceId": "honua_ops_findings.control_plane",
           "backendKind": "configProjection",
           "backendId": "control-plane-options",
-          "observedAt": "2026-09-05T17:28:02.1983635+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:02.1983635+00:00",
+          "observedAt": "2026-09-05T18:29:18.0596533+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:18.0596533+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:02.1983635+00:00"
+          "validUntil": "2026-09-05T18:34:18.0596533+00:00"
         },
         {
           "sourceId": "honua_ops_findings.deploy_preflight",
           "backendKind": "inProcess",
           "backendId": "deploy-preflight-probe",
-          "observedAt": "2026-09-05T17:28:02.1983635+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:02.1983635+00:00",
+          "observedAt": "2026-09-05T18:29:18.0596533+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:18.0596533+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:02.1983635+00:00"
+          "validUntil": "2026-09-05T18:34:18.0596533+00:00"
         },
         {
           "sourceId": "honua_ops_findings.gp_queue",
           "backendKind": "durableStore",
           "backendId": "execution-job-store",
-          "observedAt": "2026-09-05T17:28:02.1983635+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:02.1983635+00:00",
+          "observedAt": "2026-09-05T18:29:18.0596533+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:18.0596533+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:02.1983635+00:00"
+          "validUntil": "2026-09-05T18:34:18.0596533+00:00"
         },
         {
           "sourceId": "honua_ops_findings.workflow_operations",
           "backendKind": "durableStore",
           "backendId": "workflow-operation-store",
-          "observedAt": "2026-09-05T17:28:02.1983635+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:02.1983635+00:00",
+          "observedAt": "2026-09-05T18:29:18.0596533+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:18.0596533+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:02.1983635+00:00"
+          "validUntil": "2026-09-05T18:34:18.0596533+00:00"
         },
         {
           "sourceId": "honua_ops_findings.serving_latency_rollup",
           "backendKind": "durableStore",
           "backendId": "ops-health-rollup-store",
-          "observedAt": "2026-09-05T17:28:02.1983635+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:02.1983635+00:00",
+          "observedAt": "2026-09-05T18:29:18.0596533+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:18.0596533+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "coverage": {
-            "requestedFrom": "2026-09-05T17:23:02.1983635+00:00",
-            "requestedTo": "2026-09-05T17:28:02.1983635+00:00"
+            "requestedFrom": "2026-09-05T18:24:18.0596533+00:00",
+            "requestedTo": "2026-09-05T18:29:18.0596533+00:00"
           },
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:02.1983635+00:00"
+          "validUntil": "2026-09-05T18:34:18.0596533+00:00"
         },
         {
           "sourceId": "honua_ops_findings.database_pressure",
           "backendKind": "durableStore",
           "backendId": "database-pressure-signal",
-          "observedAt": "2026-09-05T17:28:02.1983635+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:02.1983635+00:00",
+          "observedAt": "2026-09-05T18:29:18.0596533+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:18.0596533+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:02.1983635+00:00"
+          "validUntil": "2026-09-05T18:34:18.0596533+00:00"
         },
         {
           "sourceId": "honua_ops_findings.batch_backends",
           "backendKind": "inProcess",
           "backendId": "batch-compute-backends",
-          "observedAt": "2026-09-05T17:28:02.1983635+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:02.1983635+00:00",
+          "observedAt": "2026-09-05T18:29:18.0596533+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:18.0596533+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:02.1983635+00:00"
+          "validUntil": "2026-09-05T18:34:18.0596533+00:00"
         }
       ]
     },
-    "generatedAt": "2026-09-05T17:28:02.1983635+00:00",
+    "generatedAt": "2026-09-05T18:29:18.0596533+00:00",
     "findings": [
       {
         "requiredSourceIds": [
           "honua_ops_findings.alert_dispatch"
         ],
         "observationWindow": {
-          "returnedFrom": "2026-09-05T17:27:54.0535287+00:00",
-          "returnedTo": "2026-09-05T17:27:54.0535287+00:00"
+          "returnedFrom": "2026-09-05T18:29:00.5048623+00:00",
+          "returnedTo": "2026-09-05T18:29:00.5048623+00:00"
         },
         "id": "alert-dispatch-backlog-b7a8f376d98e89e80c9bbec00150e814",
         "rule": "alert-dispatch-backlog",
         "severity": "Critical",
         "title": "Alert dispatch dead-letters require triage",
         "explanation": "The alert dispatcher has 1 dead-lettered notification(s) that exhausted retries and require operator triage (pending backlog 0). Redriving re-enqueues them for redelivery; channel-attributed failures also produce a scoped isolation finding whose pause action remains approval-gated.",
-        "detectedAt": "2026-09-05T17:28:02.1983635+00:00",
+        "detectedAt": "2026-09-05T18:29:18.0596533+00:00",
         "subject": {
           "channel": "alert-dispatch"
         },
@@ -396,15 +396,15 @@
           "honua_ops_findings.alert_dispatch"
         ],
         "observationWindow": {
-          "returnedFrom": "2026-09-05T17:27:54.0535287+00:00",
-          "returnedTo": "2026-09-05T17:27:54.0535287+00:00"
+          "returnedFrom": "2026-09-05T18:29:00.5048623+00:00",
+          "returnedTo": "2026-09-05T18:29:00.5048623+00:00"
         },
         "id": "alert-dispatch-channel-failure-1188487171c3e354a927ed4f0970238a",
         "rule": "alert-dispatch-channel-failure",
         "severity": "Critical",
         "title": "Alert delivery is failing on webhook",
         "explanation": "The webhook channel has 1 dead-lettered, 0 retrying, and 0 pending notification(s). Pausing is approval-gated because it suppresses delivery; healthy channels remain active.",
-        "detectedAt": "2026-09-05T17:28:02.1983635+00:00",
+        "detectedAt": "2026-09-05T18:29:18.0596533+00:00",
         "subject": {
           "channel": "webhook"
         },
@@ -427,8 +427,8 @@
     "sourceId": "honua_ops_health.alert_dispatch",
     "backendKind": "durableStore",
     "backendId": "alert-dispatch-store",
-    "observedAt": "2026-09-05T17:27:54.0535287+00:00",
-    "lastSuccessfulAt": "2026-09-05T17:27:54.0535287+00:00",
+    "observedAt": "2026-09-05T18:29:00.5048623+00:00",
+    "lastSuccessfulAt": "2026-09-05T18:29:00.5048623+00:00",
     "completeness": "unavailable",
     "reasonCodes": [
       "sourceUnavailable"
@@ -451,8 +451,8 @@
           "sourceId": "honua_ops_findings",
           "backendKind": "composite",
           "backendId": "ops-findings-engine",
-          "observedAt": "2026-09-05T17:28:20.6590233+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:20.6590233+00:00",
+          "observedAt": "2026-09-05T18:29:19.0920345+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:19.0920345+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "coverage": {
@@ -478,118 +478,118 @@
             ]
           },
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:20.6590233+00:00"
+          "validUntil": "2026-09-05T18:34:19.0920345+00:00"
         },
         {
           "sourceId": "honua_ops_findings.alert_dispatch",
           "backendKind": "durableStore",
           "backendId": "alert-dispatch-store",
-          "observedAt": "2026-09-05T17:28:20.6590233+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:20.6590233+00:00",
+          "observedAt": "2026-09-05T18:29:19.0920345+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:19.0920345+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:20.6590233+00:00"
+          "validUntil": "2026-09-05T18:34:19.0920345+00:00"
         },
         {
           "sourceId": "honua_ops_findings.control_plane",
           "backendKind": "configProjection",
           "backendId": "control-plane-options",
-          "observedAt": "2026-09-05T17:28:21.9390892+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:21.9390892+00:00",
+          "observedAt": "2026-09-05T18:29:21.1251313+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:21.1251313+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:21.9390892+00:00"
+          "validUntil": "2026-09-05T18:34:21.1251313+00:00"
         },
         {
           "sourceId": "honua_ops_findings.deploy_preflight",
           "backendKind": "inProcess",
           "backendId": "deploy-preflight-probe",
-          "observedAt": "2026-09-05T17:28:21.9390892+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:21.9390892+00:00",
+          "observedAt": "2026-09-05T18:29:21.1251313+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:21.1251313+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:21.9390892+00:00"
+          "validUntil": "2026-09-05T18:34:21.1251313+00:00"
         },
         {
           "sourceId": "honua_ops_findings.gp_queue",
           "backendKind": "durableStore",
           "backendId": "execution-job-store",
-          "observedAt": "2026-09-05T17:28:21.9390892+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:21.9390892+00:00",
+          "observedAt": "2026-09-05T18:29:21.1251313+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:21.1251313+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:21.9390892+00:00"
+          "validUntil": "2026-09-05T18:34:21.1251313+00:00"
         },
         {
           "sourceId": "honua_ops_findings.workflow_operations",
           "backendKind": "durableStore",
           "backendId": "workflow-operation-store",
-          "observedAt": "2026-09-05T17:28:21.9390892+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:21.9390892+00:00",
+          "observedAt": "2026-09-05T18:29:21.1251313+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:21.1251313+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:21.9390892+00:00"
+          "validUntil": "2026-09-05T18:34:21.1251313+00:00"
         },
         {
           "sourceId": "honua_ops_findings.serving_latency_rollup",
           "backendKind": "durableStore",
           "backendId": "ops-health-rollup-store",
-          "observedAt": "2026-09-05T17:28:21.9390892+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:21.9390892+00:00",
+          "observedAt": "2026-09-05T18:29:21.1251313+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:21.1251313+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "coverage": {
-            "requestedFrom": "2026-09-05T17:23:21.9390892+00:00",
-            "requestedTo": "2026-09-05T17:28:21.9390892+00:00"
+            "requestedFrom": "2026-09-05T18:24:21.1251313+00:00",
+            "requestedTo": "2026-09-05T18:29:21.1251313+00:00"
           },
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:21.9390892+00:00"
+          "validUntil": "2026-09-05T18:34:21.1251313+00:00"
         },
         {
           "sourceId": "honua_ops_findings.database_pressure",
           "backendKind": "durableStore",
           "backendId": "database-pressure-signal",
-          "observedAt": "2026-09-05T17:28:21.9390892+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:21.9390892+00:00",
+          "observedAt": "2026-09-05T18:29:21.1251313+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:21.1251313+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:21.9390892+00:00"
+          "validUntil": "2026-09-05T18:34:21.1251313+00:00"
         },
         {
           "sourceId": "honua_ops_findings.batch_backends",
           "backendKind": "inProcess",
           "backendId": "batch-compute-backends",
-          "observedAt": "2026-09-05T17:28:21.9390892+00:00",
-          "lastSuccessfulAt": "2026-09-05T17:28:21.9390892+00:00",
+          "observedAt": "2026-09-05T18:29:21.1251313+00:00",
+          "lastSuccessfulAt": "2026-09-05T18:29:21.1251313+00:00",
           "completeness": "complete",
           "reasonCodes": [],
           "maximumAgeSeconds": 300,
-          "validUntil": "2026-09-05T17:33:21.9390892+00:00"
+          "validUntil": "2026-09-05T18:34:21.1251313+00:00"
         }
       ]
     },
-    "generatedAt": "2026-09-05T17:28:21.9390892+00:00",
+    "generatedAt": "2026-09-05T18:29:21.1251313+00:00",
     "findings": [
       {
         "requiredSourceIds": [
           "honua_ops_findings.alert_dispatch"
         ],
         "observationWindow": {
-          "returnedFrom": "2026-09-05T17:28:20.6590233+00:00",
-          "returnedTo": "2026-09-05T17:28:20.6590233+00:00"
+          "returnedFrom": "2026-09-05T18:29:19.0920345+00:00",
+          "returnedTo": "2026-09-05T18:29:19.0920345+00:00"
         },
         "id": "alert-dispatch-backlog-b7a8f376d98e89e80c9bbec00150e814",
         "rule": "alert-dispatch-backlog",
         "severity": "Critical",
         "title": "Alert dispatch dead-letters require triage",
         "explanation": "The alert dispatcher has 1 dead-lettered notification(s) that exhausted retries and require operator triage (pending backlog 0). Redriving re-enqueues them for redelivery; channel-attributed failures also produce a scoped isolation finding whose pause action remains approval-gated.",
-        "detectedAt": "2026-09-05T17:28:21.9390892+00:00",
+        "detectedAt": "2026-09-05T18:29:21.1251313+00:00",
         "subject": {
           "channel": "alert-dispatch"
         },
@@ -610,15 +610,15 @@
           "honua_ops_findings.alert_dispatch"
         ],
         "observationWindow": {
-          "returnedFrom": "2026-09-05T17:28:20.6590233+00:00",
-          "returnedTo": "2026-09-05T17:28:20.6590233+00:00"
+          "returnedFrom": "2026-09-05T18:29:19.0920345+00:00",
+          "returnedTo": "2026-09-05T18:29:19.0920345+00:00"
         },
         "id": "alert-dispatch-channel-failure-1188487171c3e354a927ed4f0970238a",
         "rule": "alert-dispatch-channel-failure",
         "severity": "Critical",
         "title": "Alert delivery is failing on webhook",
         "explanation": "The webhook channel has 1 dead-lettered, 0 retrying, and 0 pending notification(s). Pausing is approval-gated because it suppresses delivery; healthy channels remain active.",
-        "detectedAt": "2026-09-05T17:28:21.9390892+00:00",
+        "detectedAt": "2026-09-05T18:29:21.1251313+00:00",
         "subject": {
           "channel": "webhook"
         },
