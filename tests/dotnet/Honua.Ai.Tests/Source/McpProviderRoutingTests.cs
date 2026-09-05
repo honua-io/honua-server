@@ -120,7 +120,7 @@ public sealed class McpProviderRoutingTests
         reader.QueryAsync(42, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(new QueryResult<Feature>
         {
             TotalCount = marker,
-            Items = [new Feature { Id = marker, Attributes = ImmutableDictionary<string, object?>.Empty }]
+            Items = [new Feature { Id = marker, Geometry = null, Attributes = ImmutableDictionary<string, object?>.Empty }]
         });
         reader.ClearReceivedCalls();
         return reader;
