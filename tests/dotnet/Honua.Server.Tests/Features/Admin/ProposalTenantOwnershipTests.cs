@@ -15,8 +15,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
-namespace Honua.Ai.Tests;
+namespace Honua.Server.Tests.Features.Admin;
 
+[Trait("Tier", "Fast")]
 public sealed class ProposalTenantOwnershipTests
 {
     [Theory]
