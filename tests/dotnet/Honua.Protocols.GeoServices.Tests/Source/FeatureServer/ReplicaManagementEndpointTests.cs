@@ -27,7 +27,11 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 
-    public Task InitializeAsync() => _fixture.InitializeAsync();
+    public async Task InitializeAsync()
+    {
+        await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Sync"]);
+    }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
