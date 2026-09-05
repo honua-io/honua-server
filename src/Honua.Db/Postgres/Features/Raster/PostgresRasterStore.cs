@@ -3105,16 +3105,33 @@ internal sealed class PostgresRasterStore : IRasterStore
             """;
         AddParameter(command, "@layerId", layerId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
-            PostgresRasterLog.RasterListRetrieved(_logger, layerId, 0);
-            return null;
-        }
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                PostgresRasterLog.RasterListRetrieved(_logger, layerId, 0);
+                return null;
+            }
 
-        var info = ReadRasterInfo(reader);
-        PostgresRasterLog.RasterInfoRetrieved(_logger, layerId, info.Id, info.Width, info.Height);
-        return info;
+            var info = ReadRasterInfo(reader);
+            PostgresRasterLog.RasterInfoRetrieved(_logger, layerId, info.Id, info.Width, info.Height);
+            return info;
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            // Raster provisioning is optional. Feature-only deployments have no
+            // raster tables; catalog discovery must treat that as no raster data.
+            // Preserve failures when raster is installed but its schema is broken.
+            await using var extensionCommand = connection.CreateCommand();
+            extensionCommand.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'postgis_raster')";
+            if (await extensionCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is false)
+            {
+                return null;
+            }
+
+            throw;
+        }
     }
 
     /// <inheritdoc />

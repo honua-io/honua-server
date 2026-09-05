@@ -24,6 +24,43 @@ public sealed class PostgresRasterStoreCrudTests(PostgresFixture fixture)
     private const int LayerId = 9050;
 
     [IntegrationTest]
+    public async Task GetPrimaryRasterInfoAsync_WithRasterSchema_ReturnsOnlyExistingRaster()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("rasterprimary");
+        try
+        {
+            await CreateRasterSchemaAsync(schemaName);
+            var store = CreateStore(schemaName);
+            (await store.GetPrimaryRasterInfoAsync(LayerId)).Should().BeNull();
+
+            var rasterId = await InsertRasterAsync(schemaName, "primary");
+            var raster = await store.GetPrimaryRasterInfoAsync(LayerId);
+            raster.Should().NotBeNull();
+            raster!.Value.Id.Should().Be(rasterId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetPrimaryRasterInfoAsync_WithRasterExtensionButMissingTable_Throws()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("rasterdiscovery");
+        try
+        {
+            var act = () => CreateStore(schemaName).GetPrimaryRasterInfoAsync(LayerId);
+            await act.Should().ThrowAsync<PostgresException>()
+                .Where(exception => exception.SqlState == PostgresErrorCodes.UndefinedTable);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
     public async Task DeleteRasterAsync_RemovesRowAndReturnsTrue()
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreCrudTests));
