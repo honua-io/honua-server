@@ -6,3 +6,7 @@
 ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS origin_replica_id text;
 ALTER TABLE honua.feature_changes ALTER COLUMN origin_replica_id
     SET DEFAULT NULLIF(current_setting('honua.origin_replica_id', true), '');
+
+CREATE INDEX IF NOT EXISTS idx_feature_changes_replica_object
+    ON honua.feature_changes (origin_replica_id, layer_id, objectid, generation DESC)
+    WHERE origin_replica_id IS NOT NULL;

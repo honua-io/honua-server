@@ -35,6 +35,84 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.SynchronizeReplica, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task SynchronizeReplica_EsriFeatureEnvelopeAndDeleteIds_RoundTripAllOperations(bool nested)
+    {
+        var updateId = await AddFeatureWithGeometryAsync("shape-original", -100, 40);
+        var deleteId = await AddFeatureAsync("shape-deleted");
+        var replicaId = await CreateReplicaAsync("EsriShape", "0");
+        await SynchronizeDownloadAsync(replicaId);
+        var adds = new[] { new { attributes = new { name = "shape-added" }, geometry = new { x = -101.25, y = 41.5 } } };
+        var updates = new[] { new { attributes = new { objectid = updateId, name = "shape-updated" } } };
+        var deletes = new[] { deleteId };
+        var edits = nested
+            ? JsonSerializer.Serialize(new[] { new { id = 0, features = new { adds, updates, deleteIds = deletes }, attachments = new { adds = Array.Empty<object>(), updates = Array.Empty<object>(), deleteIds = Array.Empty<long>() } } })
+            : JsonSerializer.Serialize(new[] { new { id = 0, adds, updates, deleteIds = deletes } });
+        var result = await SynchronizeUploadAsync(replicaId, edits);
+        result.GetProperty("success").GetBoolean().Should().BeTrue();
+        result.GetProperty("appliedAdds").GetInt32().Should().Be(1);
+        result.GetProperty("appliedUpdates").GetInt32().Should().Be(1);
+        result.GetProperty("appliedDeletes").GetInt32().Should().Be(1);
+
+        using var query = await _fixture.Client.GetAsync(
+            "/rest/services/test/FeatureServer/0/query?f=json&where=name%20LIKE%20%27shape-%25%27&outFields=*&returnGeometry=true&outSR=4326");
+        query.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
+        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        features.Should().HaveCount(2, "the deleted row must be absent and exactly one row must be added");
+        var added = features.Single(feature => feature.GetProperty("attributes").GetProperty("name").GetString() == "shape-added");
+        var updated = features.Single(feature => feature.GetProperty("attributes").GetProperty("name").GetString() == "shape-updated");
+        added.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-101.25);
+        added.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(41.5);
+        updated.GetProperty("attributes").GetProperty("objectid").GetInt64().Should().Be(updateId);
+        updated.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-100);
+        updated.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(40);
+    }
+
+    [IntegrationTheory]
+    [InlineData("extractChanges", "layerChanges")]
+    [InlineData("synchronizeReplica", "edits")]
+    [Operation(Operations.SynchronizeReplica, Operations.ExtractChanges)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
+    public async Task UploadOnly_PreservesForeignChangesAcrossRepeatedUploads(string endpoint, string deltaProperty)
+    {
+        var replicaId = await CreateReplicaAsync("RetainForeignEdits", "0");
+        await SynchronizeDownloadAsync(replicaId);
+        var foreignId = await AddFeatureWithGeometryAsync("colleague-change", -100, 40);
+        for (var index = 0; index < 2; index++)
+        {
+            var edits = JsonSerializer.Serialize(new[]
+            {
+                new { id = 0, features = new { adds = new[] { new { attributes = new { name = "own-upload-" + index } } } } }
+            });
+            var upload = await SynchronizeUploadAsync(replicaId, edits);
+            upload.GetProperty("appliedAdds").GetInt32().Should().Be(1);
+        }
+        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["replicaID"] = replicaId, ["syncDirection"] = "download", ["f"] = "json"
+        });
+        using var response = await _fixture.Client.PostAsync($"/rest/services/test/FeatureServer/{endpoint}", content);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        var layer = document.RootElement.GetProperty(deltaProperty).EnumerateArray().Single(item => item.GetProperty("id").GetInt32() == 0);
+        layer.GetProperty("adds").GetInt32().Should().Be(1, "the colleague's change must survive both uploads and own additions must be excluded");
+        layer.GetProperty("updates").GetInt32().Should().Be(0);
+        layer.GetProperty("deletes").GetInt32().Should().Be(0);
+        var feature = layer.GetProperty("addFeatures").EnumerateArray().Single();
+        feature.GetProperty("attributes").GetProperty("objectid").GetInt64().Should().Be(foreignId);
+        feature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("colleague-change");
+        feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-100);
+        feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(40);
+    }
+
     [IntegrationTest]
     [Operation(Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
@@ -793,6 +871,7 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
 
     private async Task<JsonElement> SynchronizeUploadAsync(string replicaId, string editsJson)
     {
+        await _fixture.GetService<IChangeTracker>().GetChangesSinceAsync(0, [0]);
         var payload = JsonSerializer.Serialize(new
         {
             replicaID = replicaId,
@@ -807,7 +886,9 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var content = await response.Content.ReadAsStringAsync();
-        return JsonDocument.Parse(content).RootElement.Clone();
+        using var document = JsonDocument.Parse(content);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse("upload must succeed: {0}", content);
+        return document.RootElement.Clone();
     }
 
     private async Task<long> AddFeatureAsync(string name)
