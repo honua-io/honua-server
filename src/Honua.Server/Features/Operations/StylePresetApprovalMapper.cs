@@ -22,13 +22,14 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
         {
             throw new ArgumentException("The mapper only accepts style.apply-preset requests.", nameof(request));
         }
-        var payload = JsonSerializer.Serialize(new StylePresetApprovalPayload
+        var payload = new StylePresetApprovalPayload
         {
             Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
             DryRun = request.DryRun,
             TenantId = context.TenantId,
             SchemaName = context.SchemaName,
-        }, StylePresetApprovalJsonContext.Default.StylePresetApprovalPayload);
+        };
+        var serialized = JsonSerializer.Serialize(payload, StylePresetApprovalJsonContext.Default.StylePresetApprovalPayload);
         return new OperationGatewayRequest
         {
             OperationInstanceId = context.OperationInstanceId,
@@ -37,13 +38,13 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
             RequestedBy = context.PrincipalId,
             Reason = decision.Reason,
             CorrelationId = context.CorrelationId,
-            ExecutionPayload = payload,
+            ExecutionPayload = serialized,
             Plan = new OperationProposalPlan
             {
-                Summary = $"{(request.DryRun ? "Preview" : "Apply")} style '{request.Parameters["styleId"]}' "
-                    + $"on service '{request.Parameters["serviceId"]}', layer '{request.Parameters["layerId"]}'.",
+                Summary = $"{(payload.DryRun ? "Preview" : "Apply")} style '{payload.Parameters["styleId"]}' "
+                    + $"on service '{payload.Parameters["serviceId"]}', layer '{payload.Parameters["layerId"]}'.",
                 RiskLevel = ProposalRiskLevel.Medium,
-                ExecutionPayload = payload,
+                ExecutionPayload = serialized,
             },
         };
     }
