@@ -14,7 +14,7 @@ public sealed class VectorTileCachePrivacyTests
 {
     [Theory]
     [InlineData(null, null, false)]
-    [InlineData("dev-bypass", null, false)]
+    [InlineData("dev-bypass", null, true)]
     [InlineData("api-key", null, true)]
     [InlineData(null, "Authorization", true)]
     [InlineData(null, "X-API-Key", true)]
