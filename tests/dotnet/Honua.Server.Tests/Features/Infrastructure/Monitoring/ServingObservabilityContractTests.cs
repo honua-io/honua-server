@@ -51,10 +51,16 @@ public sealed class ServingObservabilityContractTests
     }
 
     [Theory]
-    [InlineData("/rest/services/demo/FeatureServer/0/query", 400, 200, true)]
-    [InlineData("/rest/services/demo/MapServer/query", 500, 200, true)]
-    [InlineData("/ogc/features/collections/demo/items", 400, 400, false)]
-    public async Task ErrorEnvelope_RecordsTheExecutedTransportStatus(string path, int errorCode, int transportStatus, bool inBand)
+    [InlineData("/rest/services/demo/FeatureServer/0/query", 400, 200, true, 400, null)]
+    [InlineData("/rest/services/demo/MapServer/query", 500, 200, true, 500, null)]
+    [InlineData("/rest/services/demo/FeatureServer/0/query", 200, 200, true, 500, null)]
+    [InlineData("/rest/services/demo/FeatureServer/0/query", 401, 200, true, 499, null)]
+    [InlineData("/rest/services/demo/FeatureServer/0/query", 401, 200, true, 498, 498)]
+    [InlineData("/rest/services/demo/FeatureServer/0/query", 401, 200, true, 499, 499)]
+    [InlineData("/ogc/features/collections/demo/items", 400, 400, false, 400, null)]
+    [InlineData("/ogc/features/collections/demo/items", 401, 401, false, 401, 498)]
+    public async Task ErrorEnvelope_RecordsTheExecutedTransportStatus(
+        string path, int errorCode, int transportStatus, bool inBand, int bodyCode, int? overrideCode)
     {
         using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
@@ -66,17 +72,18 @@ public sealed class ServingObservabilityContractTests
         using var metrics = new Metrics();
 
         await StandardErrorResponseFormatter.WriteErrorAsync(context,
-            new StandardErrorResponse(errorCode, "Test error", "Synthetic invalid input"));
+            new StandardErrorResponse(errorCode, "Test error", "Synthetic invalid input"),
+            new ErrorResponseFormatterOptions { GeoServicesBodyCode = overrideCode });
 
         Assert.Equal(transportStatus, context.Response.StatusCode);
         body.Position = 0;
         using var json = await JsonDocument.ParseAsync(body);
-        Assert.Equal(errorCode, inBand
+        Assert.Equal(bodyCode, inBand
             ? json.RootElement.GetProperty("error").GetProperty("code").GetInt32()
             : json.RootElement.GetProperty("status").GetInt32());
         var error = Assert.Single(metrics.Samples, sample => sample.Name == "honua_request_error_total");
         Assert.Equal(1, error.Value);
-        Assert.Equal(errorCode, error.Tags["error_code"]);
+        Assert.Equal(bodyCode, error.Tags["error_code"]);
         Assert.Equal(inBand, error.Tags["in_band"]);
     }
 
@@ -86,6 +93,8 @@ public sealed class ServingObservabilityContractTests
     [InlineData("GET", "DescribeProcess", 404, "wps.describeprocess")]
     [InlineData("POST", "DescribeProcess", 404, "wps.describeprocess")]
     [InlineData("GET", "Unsupported", 501, "wps.unsupported")]
+    [InlineData("GET", "UnrecognizedOne", 501, "wps.unsupported")]
+    [InlineData("GET", "UnrecognizedTwo", 501, "wps.unsupported")]
     // XML schema validation rejects unknown roots before a parsed operation is available.
     [InlineData("POST", "Unsupported", 400, "wps")]
     [InlineData("GET", "GetCapabilities", 503, "wps.getcapabilities")]
@@ -197,6 +206,24 @@ public sealed class ServingObservabilityContractTests
     [InlineData("/wps-other", null)]
     public void WpsClassifier_RespectsPathSegmentBoundaries(string path, string? expectedProtocol) =>
         Assert.Equal(expectedProtocol, RequestTelemetryClassifier.ResolveProtocol(new PathString(path)));
+
+    [Theory]
+    [InlineData("", "wps")]
+    [InlineData("GetCapabilities", "wps.getcapabilities")]
+    [InlineData("describeprocess", "wps.describeprocess")]
+    [InlineData("EXECUTE", "wps.execute")]
+    [InlineData("GetStatus", "wps.getstatus")]
+    [InlineData("GetResult", "wps.getresult")]
+    [InlineData("UnrecognizedOne", "wps.unsupported")]
+    [InlineData("UnrecognizedTwo", "wps.unsupported")]
+    public void WpsClassifier_BoundsOperationLabelsBeforeDispatch(string operation, string expected)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/wps";
+        context.Request.QueryString = QueryString.Create("request", operation);
+
+        Assert.Equal(expected, RequestTelemetryClassifier.ResolveOperation(context));
+    }
 
     private sealed record Sample(string Name, double Value, Dictionary<string, object?> Tags);
 

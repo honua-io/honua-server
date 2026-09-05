@@ -256,7 +256,7 @@ internal static class RequestTelemetryClassifier
 
         if (StartsWithPathSegment(path, "/wps"))
         {
-            return ResolveQueryRequestOperation(context, "wps");
+            return ResolveWpsOperation(GetQueryOption(context, "request"));
         }
 
         if (StartsWithPathSegment(path, "/wfs"))
@@ -922,6 +922,17 @@ internal static class RequestTelemetryClassifier
 
         return "stac";
     }
+
+    internal static string ResolveWpsOperation(string? operation) => operation?.Trim().ToUpperInvariant() switch
+    {
+        null or "" => "wps",
+        "GETCAPABILITIES" => "wps.getcapabilities",
+        "DESCRIBEPROCESS" => "wps.describeprocess",
+        "EXECUTE" => "wps.execute",
+        "GETSTATUS" => "wps.getstatus",
+        "GETRESULT" => "wps.getresult",
+        _ => "wps.unsupported"
+    };
 
     private static string ResolveQueryRequestOperation(HttpContext context, string prefix)
     {

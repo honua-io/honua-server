@@ -121,7 +121,7 @@ internal static partial class Wps20Endpoint
         {
             activity?.SetTag(HonuaTelemetry.Tags.JobId, request.JobId);
         }
-        context.Items[RequestTelemetryClassifier.OperationItemKey] = "wps." + request.Operation.ToLowerInvariant();
+        context.Items[RequestTelemetryClassifier.OperationItemKey] = RequestTelemetryClassifier.ResolveWpsOperation(request.Operation);
         Log.OperationRequested(logger, request.Operation);
 
         try
