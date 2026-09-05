@@ -407,7 +407,7 @@ def _validate_source_population(receipt, root, failures):
         failures.append(f'raw source population: {exc}')
 
 
-def evaluate(receipt: dict[str, Any], expected_revision: str, artifact_root: Path, expected_image_digest: str) -> list[str]:
+def evaluate(receipt: dict[str, Any], expected_revision: str, artifact_root: Path, expected_image_digest: str, expected_query_sha256: str) -> list[str]:
     """Return every comparison-contract failure; an empty list is the only pass."""
     failures: list[str] = []
     if receipt.get("schema") != SCHEMA:
@@ -426,6 +426,10 @@ def evaluate(receipt: dict[str, Any], expected_revision: str, artifact_root: Pat
         failures.append("candidate image differs from independently pinned image digest")
     replicas = _topology(receipt.get("topology"), candidate, failures)
     tolerance = _query(receipt.get("query"), failures)
+    if not HASH_PATTERN.fullmatch(expected_query_sha256) or _mapping(receipt.get("query")).get("sha256") != expected_query_sha256:
+        failures.append("query differs from the independently frozen query hash")
+    if tolerance != 0:
+        failures.append("comparison tolerance is frozen at 0: integer ledger counts require exact ratios")
     artifacts, artifact_index = _raw_artifacts(receipt, artifact_root, failures)
     cells = receipt.get("cells")
     if not isinstance(cells, list):
@@ -462,10 +466,11 @@ def main() -> int:
     parser.add_argument("--artifact-root", type=Path, required=True)
     parser.add_argument("--expected-revision", required=True)
     parser.add_argument("--expected-image-digest", required=True)
+    parser.add_argument("--expected-query-sha256", required=True)
     args = parser.parse_args()
     try:
         receipt = json.loads(args.receipt.read_text(encoding="utf-8"))
-        failures = evaluate(receipt, args.expected_revision, args.artifact_root, args.expected_image_digest)
+        failures = evaluate(receipt, args.expected_revision, args.artifact_root, args.expected_image_digest, args.expected_query_sha256)
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         failures = [str(exc)]
     if failures:

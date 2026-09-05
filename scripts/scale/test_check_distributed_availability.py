@@ -16,6 +16,7 @@ SPEC.loader.exec_module(gate)
 REVISION = "a" * 40
 DIGEST = "sha256:" + "b" * 64
 REPLICAS = ("replica-a", "replica-b")
+QUERY_SHA = hashlib.sha256(b"sum(failed_serving_outcomes) / sum(serving_requests)").hexdigest()
 
 
 def _sha(payload: bytes | str) -> str:
@@ -182,7 +183,7 @@ def comparison(root: Path) -> dict:
 
 
 def failures(value: dict, root: Path) -> list[str]:
-    return gate.evaluate(value, REVISION, root, DIGEST)
+    return gate.evaluate(value, REVISION, root, DIGEST, QUERY_SHA)
 
 
 def test_exact_two_replica_four_cell_comparison_passes(tmp_path):
@@ -298,4 +299,11 @@ def test_query_export_cannot_be_replaced_by_hashed_assertion(tmp_path):
 
 def test_independently_pinned_image_is_required(tmp_path):
     value = comparison(tmp_path)
-    assert any('independently pinned' in item for item in gate.evaluate(value, REVISION, tmp_path, 'sha256:'+'c'*64))
+    assert any('independently pinned' in item for item in gate.evaluate(value, REVISION, tmp_path, 'sha256:'+'c'*64, QUERY_SHA))
+
+
+def test_rehashed_query_cannot_revise_the_prefrozen_contract(tmp_path):
+    value = comparison(tmp_path)
+    value['query']['expression'] = 'return 1'
+    value['query']['sha256'] = _sha('return 1')
+    assert any('independently frozen' in item for item in failures(value, tmp_path))
