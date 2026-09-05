@@ -14,6 +14,7 @@ using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -39,10 +40,10 @@ public sealed class StudioAiCertificationEndpointTests
     private const string TestSeed = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
     private const string TestPublicKey = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
     private const string RequestJson = """
-        {"messages":[{"role":"user","content":"Read the fixture"}],"certification":{"runNonce":"fixture-run","releaseId":"fixture-release","endpointIdentity":"fixture-proxy","candidateId":"fixture-candidate","actionId":"fixture-action"}}
+        {"messages":[{"role":"user","content":"Read the fixture"}],"certification":{"runNonce":"fixture-run","releaseId":"fixture-release","endpointIdentity":"fixture-proxy","candidateId":"fixture-candidate","actionId":"fixture-action"},"tools":[{"name":"lookup","inputSchema":{"type":"object","properties":{"region":{"type":"string"}}}}]}
         """;
     private const string ExpectedCanonicalRequest = """
-        {"certification":{"actionId":"fixture-action","candidateId":"fixture-candidate","endpointIdentity":"fixture-proxy","releaseId":"fixture-release","runNonce":"fixture-run"},"messages":[{"content":"Read the fixture","role":"user"}]}
+        {"certification":{"actionId":"fixture-action","candidateId":"fixture-candidate","endpointIdentity":"fixture-proxy","releaseId":"fixture-release","runNonce":"fixture-run"},"messages":[{"content":"Read the fixture","role":"user"}],"tools":[{"inputSchema":{"properties":{"region":{"type":"string"}},"type":"object"},"name":"lookup"}]}
         """;
 
     [IntegrationTest]
@@ -146,9 +147,18 @@ public sealed class StudioAiCertificationEndpointTests
         signedEvents.Should().BeEquivalentTo(events.Where(evt => evt.Type != StudioAiChatEventType.TranscriptProvenance),
             options => options.WithStrictOrdering());
         signedEvents.Where(evt => evt.Type == StudioAiChatEventType.TextDelta).Select(evt => evt.Text).Should().Equal("Aloha");
+        var toolStart = signedEvents.Single(evt => evt.Type == StudioAiChatEventType.ToolCallStart);
+        toolStart.ToolCallId.Should().Be("call-1");
+        toolStart.ToolName.Should().Be("lookup");
+        var toolStop = signedEvents.Single(evt => evt.Type == StudioAiChatEventType.ToolCallStop);
+        toolStop.ToolCallId.Should().Be("call-1");
+        toolStop.ToolArguments!.Value.GetProperty("region").GetString().Should().Be("Maui");
+        signedEvents.Single(evt => evt.Type == StudioAiChatEventType.MessageStop).StopReason.Should().Be(StudioAiStopReason.ToolCall);
 
         // Challenge every signed field independently, retaining the original signature.
         // This catches missing binding coverage, including prompt/events/result substitution.
+        Verify(Encoding.UTF8.GetBytes(JsonNode.Parse(bytes)!.ToJsonString()), signature).Should().BeTrue(
+            "the mutation writer must preserve the valid encoding before a binding changes");
         foreach (var property in root.EnumerateObject())
         {
             var forged = JsonNode.Parse(bytes)!.AsObject();
@@ -175,14 +185,53 @@ public sealed class StudioAiCertificationEndpointTests
             Calls++;
             var requestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
             requestBody.Should().Contain("Read the fixture").And.Contain("fixture-model");
-            var frames = kind == "openai"
-                ? "data: {\"model\":\"fixture-model\",\"choices\":[{\"delta\":{\"content\":\"Aloha\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
-                : "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"fixture-model\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Aloha\"}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+            var frames = kind == "openai" ? OpenAiFrames : AnthropicFrames;
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(frames, Encoding.UTF8, "text/event-stream")
             };
         }
+
+        private const string OpenAiFrames = """
+            data: {"model":"fixture-model","choices":[{"delta":{"content":"Aloha"}}]}
+
+            data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{\"region\":\"Maui\"}"}}]}}]}
+
+            data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
+
+            data: [DONE]
+
+            """;
+
+        private const string AnthropicFrames = """
+            event: message_start
+            data: {"type":"message_start","message":{"model":"fixture-model"}}
+
+            event: content_block_start
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Aloha"}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":0}
+
+            event: content_block_start
+            data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call-1","name":"lookup"}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"region\":\"Maui\"}"}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":1}
+
+            event: message_delta
+            data: {"type":"message_delta","delta":{"stop_reason":"tool_use"}}
+
+            event: message_stop
+            data: {"type":"message_stop"}
+
+            """;
     }
 
     private sealed class FixtureBedrockClient : IChatClient
@@ -200,7 +249,9 @@ public sealed class StudioAiCertificationEndpointTests
             await Task.Yield();
             cancellationToken.ThrowIfCancellationRequested();
             yield return new ChatResponseUpdate(ChatRole.Assistant, "Aloha");
-            yield return new ChatResponseUpdate { FinishReason = ChatFinishReason.Stop };
+            yield return new ChatResponseUpdate(ChatRole.Assistant,
+                [new FunctionCallContent("call-1", "lookup", new Dictionary<string, object?> { ["region"] = "Maui" })]);
+            yield return new ChatResponseUpdate { FinishReason = ChatFinishReason.ToolCalls };
         }
 
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
