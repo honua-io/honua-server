@@ -158,6 +158,9 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("proposalId").GetString().Should().Be(proposal.ProposalId);
         document.RootElement.GetProperty("summary").GetString().Should().Be("Change setting X");
+        proposal.SealedPlanHash.Should().HaveLength(64);
+        document.RootElement.TryGetProperty("sealedPlanHash", out _).Should().BeFalse();
+        document.RootElement.TryGetProperty("executionPayload", out _).Should().BeFalse();
         document.RootElement.GetProperty("riskLevel").GetString().Should().Be("Medium");
     }
 
