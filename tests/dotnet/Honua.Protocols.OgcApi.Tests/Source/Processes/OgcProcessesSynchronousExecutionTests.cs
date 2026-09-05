@@ -247,25 +247,28 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     [IntegrationTheory]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    [InlineData("analytics.cluster")]
-    [InlineData("data-management.delete-features")]
-    public async Task Execute_ReferenceAuthorizationDenied_DoesNotFetch(string processId)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Execute_ReferenceAuthorizationDenied_DoesNotFetch(bool mutating)
     {
+        var processId = mutating ? "import.dataset" : "generalization.simplify-layer";
+        var layerParameter = mutating ? "rasterLayerId" : "layerId";
+        var body = mutating
+            ? """{"inputs":{"connection":"test","fileName":"layer.geojson","tableName":"layer","layerName":"Layer","rasterLayerId":{"href":"data:text/plain,7"},"sourcePath":{"href":"https://93.184.216.34/number.txt"}}}"""
+            : """{"inputs":{"layerId":{"href":"data:text/plain,7"},"tolerance":{"href":"https://93.184.216.34/number.txt"}}}""";
         var fetches = _fixture.ReferenceRequestCount;
         var submissions = _fixture.SubmissionCount;
         _fixture.DenyReferenceAuthorization = true;
         try
         {
-            using var content = new StringContent(
-                """{"inputs":{"layerId":{"href":"data:text/plain,7"},"where":{"href":"https://93.184.216.34/number.txt"}}}""",
-                Encoding.UTF8, "application/json");
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
             using var response = await _fixture.App.Client.PostAsync(
                 $"/ogc/processes/processes/{processId}/execution", content);
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
             _fixture.ReferenceRequestCount.Should().Be(fetches);
             _fixture.SubmissionCount.Should().Be(submissions);
             _fixture.ReferenceAuthorizationPlan!.Steps.Single().ProcessId.Should().Be(processId);
-            _fixture.ReferenceAuthorizationPlan.Steps.Single().Inputs["layerId"].Should().Be("7");
+            _fixture.ReferenceAuthorizationPlan.Steps.Single().Inputs[layerParameter].Should().Be("7");
         }
         finally
         {
@@ -280,10 +283,10 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     {
         var fetches = _fixture.ReferenceRequestCount;
         using var content = new StringContent(
-            """{"inputs":{"layerId":{"href":"https://93.184.216.34/number.txt"},"where":{"href":"https://93.184.216.34/number.txt"}}}""",
+            """{"inputs":{"layerId":{"href":"https://93.184.216.34/number.txt"},"tolerance":{"href":"https://93.184.216.34/number.txt"}}}""",
             Encoding.UTF8, "application/json");
         using var response = await _fixture.App.Client.PostAsync(
-            "/ogc/processes/processes/analytics.cluster/execution", content);
+            "/ogc/processes/processes/generalization.simplify-layer/execution", content);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.Content.ReadAsStringAsync()).Should().Contain("authorization selector");
         _fixture.ReferenceRequestCount.Should().Be(fetches);
