@@ -85,18 +85,28 @@ internal static class MapToolLayerResolver
         MetadataV2GraphSnapshot snapshot,
         string? serviceId,
         int? layerId,
+        AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
         var layer = Resolve(snapshot, serviceId, layerId);
+        await EnsureAccessAsync(httpContext, layer, operation, cancellationToken).ConfigureAwait(false);
+        return layer;
+    }
+
+    /// <summary>Checks the selected resource operation through the shared REST gate.</summary>
+    public static async Task EnsureAccessAsync(
+        HttpContext httpContext,
+        MapToolLayerContext layer,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken)
+    {
         var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
-            httpContext, layer.Resource, layer.Service, AuthorizationOperation.Query, cancellationToken)
+            httpContext, layer.Resource, layer.Service, operation, cancellationToken)
             .ConfigureAwait(false);
         if (!decision.IsAllowed)
         {
             throw new GeoprocessingAuthorizationException(decision.RequiresAuthentication);
         }
-
-        return layer;
     }
 
     private static MetadataV2Service? ResolveService(MetadataV2GraphSnapshot snapshot, string serviceId)

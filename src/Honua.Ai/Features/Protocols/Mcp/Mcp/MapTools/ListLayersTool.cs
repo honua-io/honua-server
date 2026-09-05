@@ -106,7 +106,7 @@ internal sealed class ListLayersTool : IMcpTool
                 }
 
                 var access = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
-                    httpContext, resource!, service, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+                    httpContext, resource!, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
                 if (!access.IsAllowed)
                 {
                     continue;

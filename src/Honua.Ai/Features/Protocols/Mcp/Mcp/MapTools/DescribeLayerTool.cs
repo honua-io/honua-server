@@ -138,11 +138,13 @@ internal sealed class DescribeLayerTool : IMcpTool
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var context = await MapToolLayerResolver.ResolveForReadAsync(
-            httpContext, snapshot, argument.ServiceId, argument.LayerId, cancellationToken).ConfigureAwait(false);
+            httpContext, snapshot, argument.ServiceId, argument.LayerId, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
 
         long? rowCount = null;
         if (argument.IncludeRowCount ?? true)
         {
+            await MapToolLayerResolver.EnsureAccessAsync(
+                httpContext, context, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
             rowCount = await TryCountRowsAsync(httpContext, context.StorageLayerId, cancellationToken).ConfigureAwait(false);
         }
 
