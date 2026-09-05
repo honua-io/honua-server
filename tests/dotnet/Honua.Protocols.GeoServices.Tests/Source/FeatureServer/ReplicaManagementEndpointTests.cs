@@ -30,7 +30,7 @@ public sealed class ReplicaManagementEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Sync"]);
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();

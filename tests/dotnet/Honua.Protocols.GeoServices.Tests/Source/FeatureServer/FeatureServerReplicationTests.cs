@@ -25,7 +25,7 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Sync"]);
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -37,7 +37,7 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ReplaceService<IReplicaStore>(new ThrowingReplicaStore());
         await fixture.InitializeAsync();
-        fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Sync"]);
+        fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
 
         try
         {
@@ -114,7 +114,7 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Community);
         await fixture.InitializeAsync();
-        fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Sync"]);
+        fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
 
         try
         {
