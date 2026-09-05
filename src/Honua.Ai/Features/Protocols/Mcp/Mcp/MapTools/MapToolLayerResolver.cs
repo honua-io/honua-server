@@ -35,14 +35,20 @@ internal static class MapToolLayerResolver
         CancellationToken cancellationToken)
     {
         // Match the REST adapter's provider selection for bound publications.
-        // Storeless compositions retain the default reader when no router exists.
+        var binding = snapshot.ResolveStorageBinding(layer.Publication);
         var router = httpContext.RequestServices.GetService<FeatureProviderQueryRouter>();
-        if (snapshot.ResolveStorageBinding(layer.Publication) is not null && router is not null)
+        if (binding is not null && router is not null)
         {
             return router.ResolveReaderAsync(snapshot, layer.Service, layer.Resource,
                 layer.Publication, layer.StorageLayerId, operation, cancellationToken);
         }
 
+        if (!string.IsNullOrWhiteSpace(binding?.ConnectionId))
+        {
+            throw new GeoprocessingStoreUnavailableException("The connection-bound feature query runtime is not available on this server.");
+        }
+
+        // Managed/storeless compositions may provide only the default reader.
         return Task.FromResult(httpContext.RequestServices.GetRequiredService<IFeatureReader>());
     }
 

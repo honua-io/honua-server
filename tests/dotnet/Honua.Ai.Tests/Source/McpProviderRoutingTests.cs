@@ -31,18 +31,21 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class McpProviderRoutingTests
 {
     [Theory]
-    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote")]
-    [InlineData(QueryFeaturesTool.ToolName, false, null)]
-    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote")]
-    [InlineData(QueryFeaturesTool.ToolName, true, null)]
-    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote")]
-    [InlineData(DescribeLayerTool.ToolName, false, null)]
+    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote", true)]
+    [InlineData(QueryFeaturesTool.ToolName, false, null, true)]
+    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote", true)]
+    [InlineData(QueryFeaturesTool.ToolName, true, null, true)]
+    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote", true)]
+    [InlineData(DescribeLayerTool.ToolName, false, null, true)]
+    [InlineData(QueryFeaturesTool.ToolName, false, "bind-remote", false)]
+    [InlineData(QueryFeaturesTool.ToolName, true, "bind-remote", false)]
+    [InlineData(DescribeLayerTool.ToolName, false, "bind-remote", false)]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task BoundPublication_ReadsFromConnectionProvider(string toolName, bool countOnly, string? publicationBindingId)
+    public async Task BoundPublication_ReadsFromConnectionProvider(string toolName, bool countOnly, string? publicationBindingId, bool includeRouter)
     {
         var defaultReader = CreateReader(3);
         var unboundReader = CreateReader(5);
@@ -65,15 +68,18 @@ public sealed class McpProviderRoutingTests
             .BuildProvider();
         var geometry = Substitute.For<IGeometryService>();
         geometry.ConvertWkbToGeoJson(Arg.Any<byte[]?>()).Returns((string?)null);
-        using var services = new ServiceCollection()
+        var registrations = new ServiceCollection()
             .AddSingleton<IMetadataV2GraphProvider>(graph)
             .AddSingleton(defaultReader)
-            .AddSingleton(new FeatureProviderQueryRouter(connections, new FeatureDataProviderRegistry([provider])))
             .AddSingleton(geometry)
             .AddSingleton(Substitute.For<IFilterExpressionService>())
             .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
-            .AddOptions<RbacOptions>().Services
-            .BuildServiceProvider();
+            .AddOptions<RbacOptions>().Services;
+        if (includeRouter)
+        {
+            registrations.AddSingleton(new FeatureProviderQueryRouter(connections, new FeatureDataProviderRegistry([provider])));
+        }
+        using var services = registrations.BuildServiceProvider();
         var jobService = Substitute.For<IGeoprocessingJobService>();
         var surface = new McpDataAccessSurface(
             [new QueryFeaturesTool(jobService, NullLogger<QueryFeaturesTool>.Instance),
@@ -96,6 +102,25 @@ public sealed class McpProviderRoutingTests
         }, CancellationToken.None);
 
         response!.Error.Should().BeNull();
+        if (!includeRouter)
+        {
+            var result = response.Result!.Value;
+            if (toolName == DescribeLayerTool.ToolName)
+            {
+                result.GetProperty("isError").GetBoolean().Should().BeFalse();
+                result.GetProperty("structuredContent").TryGetProperty("rowCount", out _)
+                    .Should().BeFalse("unavailable row counts are omitted, never read from managed storage");
+            }
+            else
+            {
+                result.GetProperty("isError").GetBoolean().Should().BeTrue();
+                result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("unavailable");
+            }
+            defaultReader.ReceivedCalls().Should().BeEmpty();
+            unboundReader.ReceivedCalls().Should().BeEmpty();
+            boundReader.ReceivedCalls().Should().BeEmpty();
+            return;
+        }
         response.Result!.Value.GetProperty("isError").GetBoolean().Should().BeFalse(response.Result.Value.ToString());
         var output = response.Result.Value.GetProperty("structuredContent");
         output.GetProperty(toolName == DescribeLayerTool.ToolName ? "rowCount" : "count").GetInt64().Should().Be(17);
