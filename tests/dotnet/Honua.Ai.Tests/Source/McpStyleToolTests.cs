@@ -622,7 +622,7 @@ public sealed class McpStyleToolTests
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [Operation(Operations.Update)]
-    [Endpoint("POST /operations/style.apply-preset")]
+    [Endpoint("POST /api/v1/operations/style.apply-preset/submit")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task StylePresetExecution_RecordsTargetAndOutcome(string outcome)
     {
