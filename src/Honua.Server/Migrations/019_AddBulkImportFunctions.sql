@@ -1,6 +1,8 @@
 -- Copyright (c) Honua. All rights reserved.
 -- Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+-- honua:compatibility-review reason=Attempt-scoped COPY temp tables are deliberately dropped during cleanup and finalization.
+
 -- Bulk import helper functions for memory-efficient feature insertion
 
 CREATE OR REPLACE FUNCTION honua.bulk_insert_import_features(

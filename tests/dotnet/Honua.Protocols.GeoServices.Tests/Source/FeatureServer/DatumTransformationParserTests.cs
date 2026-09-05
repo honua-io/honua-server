@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Crs;
+using Honua.Protocols.GeoServices;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
 
@@ -56,6 +58,43 @@ public sealed class DatumTransformationParserTests
 
         DatumTransformationParser.TryParse(json, out var request, out _).Should().BeTrue();
         request!.Value.TransformForward.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void TryParse_SingleWkidObject_ParsesStandardTransformationShape()
+    {
+        DatumTransformationParser.TryParse(
+            """{"wkid":108001}""",
+            out var request,
+            out var error).Should().BeTrue();
+
+        error.Should().BeNull();
+        request.Should().Be(new DatumTransformationRequest(
+            Wkid: 108001,
+            TransformForward: true,
+            TransformForwardSpecified: false));
+    }
+
+    [UnitTest]
+    public void TryResolve_ReverseComposite_KeepsCatalogInverseDirection()
+    {
+        const string composite = """{"geoTransforms":[{"wkid":108001,"transformForward":false}]}""";
+        var catalog = EsriDatumTransformationCatalog.Create();
+
+        var resolved = GeoServicesDatumTransformationResolver.TryResolve(
+            catalog,
+            composite,
+            fromSrid: 4326,
+            toSrid: 4269,
+            out var selection,
+            out var error);
+
+        resolved.Should().BeTrue(error);
+        selection.Should().NotBeNull();
+        selection!.FromSrid.Should().Be(4326);
+        selection.ToSrid.Should().Be(4269);
+        selection.TransformForward.Should().BeFalse(
+            "the catalog has already oriented the selected pipeline to the requested reverse pair");
     }
 
     [UnitTest]

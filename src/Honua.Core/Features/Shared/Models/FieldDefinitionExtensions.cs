@@ -30,6 +30,7 @@ public static class FieldDefinitionExtensions
             "ESRIFIELDTYPEDATE" => "TIMESTAMP WITH TIME ZONE",
             "ESRIFIELDTYPEGUID" or "ESRIFIELDTYPEGLOBALID" => "UUID",
             "ESRIFIELDTYPEBLOB" => "BYTEA",
+            "ESRIFIELDTYPERASTER" => "BYTEA",
             "ESRIFIELDTYPEXML" => "XML",
             "ESRIFIELDTYPEGEOMETRY" => "GEOMETRY",
             _ => "TEXT"

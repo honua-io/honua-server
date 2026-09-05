@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -73,6 +75,26 @@ internal static class SharingOAuth2Endpoints
             .Produces<OAuth2TokenResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces<OAuth2ErrorResponse>(StatusCodes.Status400BadRequest, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
+
+        oauthGroup.MapGet("/sharing/rest/oauth2/userinfo", HandleUserInfoAsync)
+            .WithDisplayName("ArcGIS Portal OAuth2 User Info")
+            .WithName("SharingRestOAuth2UserInfoGet")
+            .WithSummary("Return the authenticated OAuth user")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .Produces<OAuth2UserInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized);
+
+        oauthGroup.MapPost("/sharing/rest/oauth2/userinfo", HandleUserInfoAsync)
+            .WithDisplayName("ArcGIS Portal OAuth2 User Info (POST)")
+            .WithName("SharingRestOAuth2UserInfoPost")
+            .WithSummary("Return the authenticated OAuth user")
+            .WithTags("GeoServices Sharing")
+            .AllowAnonymous()
+            .Produces<OAuth2UserInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized);
 
         oauthGroup.MapPost(PortalOAuthRoutes.RevokePath, HandleRevokeAsync)
             .WithDisplayName("ArcGIS Portal OAuth2 Token Revocation")
@@ -352,9 +374,92 @@ internal static class SharingOAuth2Endpoints
             ExpiresIn = result.ExpiresInSeconds,
             RefreshToken = result.RefreshToken,
             Scope = result.Scope,
+            Username = result.Username,
+            Ssl = true,
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.OAuth2TokenResponse, contentType: JsonContentType);
+    }
+
+    private static async Task<IResult> HandleUserInfoAsync(
+        HttpContext context,
+        [FromServices] IPortalTokenIssuer tokenIssuer,
+        [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions)
+    {
+        if (!tokenOptions.Value.Enabled)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "Portal OAuth2 is disabled.");
+        }
+
+        var token = await ReadUserInfoTokenAsync(context).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return OAuth2UserInfoError(StatusCodes.Status400BadRequest, "invalid_request", "An access token is required.");
+        }
+
+        var validation = await tokenIssuer.ValidateAsync(
+            token,
+            new PortalTokenBinding(
+                context.Request.Headers.Referer.FirstOrDefault(),
+                context.Connection.RemoteIpAddress?.ToString()),
+            context.RequestAborted).ConfigureAwait(false);
+        if (validation is null)
+        {
+            return OAuth2UserInfoError(StatusCodes.Status401Unauthorized, "invalid_token", "The access token is invalid or expired.");
+        }
+
+        var principal = validation.Principal;
+
+        var username = ResolveUserInfoUsername(principal);
+        var response = new OAuth2UserInfoResponse
+        {
+            Subject = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? username,
+            Username = username,
+            Name = principal.FindFirstValue("display_name")
+                ?? principal.FindFirstValue("name")
+                ?? principal.Identity?.Name
+                ?? username,
+        };
+
+        return Results.Json(response, SharingRestJsonContext.Default.OAuth2UserInfoResponse, contentType: JsonContentType);
+    }
+
+    private static async Task<string?> ReadUserInfoTokenAsync(HttpContext context)
+    {
+        if (HttpMethods.IsPost(context.Request.Method) && context.Request.HasFormContentType)
+        {
+            var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
+            return ReadFirst(form["access_token"]) ?? ReadFirst(form["token"]);
+        }
+
+        return ReadBearerToken(context.Request.Headers["Authorization"])
+            ?? ReadBearerToken(context.Request.Headers["X-Esri-Authorization"])
+            ?? ReadFirst(context.Request.Query["access_token"])
+            ?? ReadFirst(context.Request.Query["token"]);
+    }
+
+    private static string? ReadBearerToken(StringValues value)
+    {
+        var header = ReadFirst(value);
+        return header is not null && header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? header["Bearer ".Length..].Trim()
+            : null;
+    }
+
+    private static string ResolveUserInfoUsername(ClaimsPrincipal principal)
+        => principal.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? principal.FindFirstValue("preferred_username")
+            ?? principal.FindFirstValue("sub")
+            ?? principal.Identity?.Name
+            ?? "user";
+
+    private static IResult OAuth2UserInfoError(int statusCode, string error, string description)
+    {
+        return Results.Json(
+            new OAuth2ErrorResponse { Error = error, ErrorDescription = description },
+            SharingRestJsonContext.Default.OAuth2ErrorResponse,
+            contentType: JsonContentType,
+            statusCode: statusCode);
     }
 
     private static async Task<PortalOAuthTokenRequest> ReadTokenRequestAsync(HttpContext context)

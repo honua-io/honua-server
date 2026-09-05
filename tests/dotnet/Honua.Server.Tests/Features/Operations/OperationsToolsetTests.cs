@@ -12,6 +12,7 @@ using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using IOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Health;
@@ -72,10 +73,23 @@ public sealed class OperationsToolsetTests
                 StudioDraftOperations.Update,
                 StudioDraftOperations.Delete,
                 StudioDraftOperations.Validate,
-                StudioDraftOperations.PreviewPlan);
+                StudioDraftOperations.PreviewPlan,
+                StudioDraftOperations.SaveVersion,
+                StudioDraftOperations.CreatePublicationRequest,
+                StudioDraftOperations.ReopenVersion,
+                StudioDraftOperations.Rollback);
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
             descriptor.ImplementationType == typeof(StudioDraftDeleteExecutor));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(StudioCreatePublicationRequestExecutor));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(StudioReopenVersionExecutor));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IOperationExecutor) &&
+            descriptor.ImplementationType == typeof(StudioRollbackExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationEnvelopeFactory) &&
             descriptor.Lifetime == ServiceLifetime.Singleton);
@@ -448,6 +462,10 @@ public sealed class OperationsToolsetTests
             var executionKey = request.Headers.GetValues("X-API-Key").Single();
             executionKey.Should().NotBe(approver.Key);
             request.Headers.GetValues("X-Honua-Tenant").Should().Equal("requester-tenant");
+            request.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().Equal("opinst-api-exact");
+            request.Headers.GetValues("X-Correlation-ID").Should().Equal("corr-api-exact");
+            request.Headers.GetValues("X-Honua-Audit-Id").Should().Equal("audit-api-exact");
+            request.Headers.GetValues("X-Honua-Proposal-Id").Should().Equal("proposal-1");
             executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -460,6 +478,7 @@ public sealed class OperationsToolsetTests
         var current = new DefaultHttpContext();
         current.Request.Scheme = "https";
         current.Request.Host = new HostString("localhost");
+        current.Connection.LocalPort = 443;
         current.Request.Headers["X-API-Key"] = approver.Key;
         current.Request.Headers["X-Honua-Tenant"] = "approver-tenant";
         var accessor = Substitute.For<IHttpContextAccessor>();
@@ -467,7 +486,8 @@ public sealed class OperationsToolsetTests
         var definition = AdminApiOperationCatalog.Definitions.Single(
             item => item.OperationId == "admin.layer.set-enabled");
         var executor = new AdminApiOperationExecutor(
-            definition, factory, accessor, credentialStore, TimeProvider.System);
+            definition, factory, accessor, credentialStore, TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
 
         var handle = await executor.SubmitAsync(new OperationRequest
         {
@@ -481,13 +501,22 @@ public sealed class OperationsToolsetTests
         }, new OperationPolicyContext
         {
             ApprovedProposalId = "proposal-1",
+            OperationInstanceId = "opinst-api-exact",
+            CorrelationId = "corr-api-exact",
+            AuditId = "audit-api-exact",
             TenantId = "requester-tenant",
             PrincipalId = "requester"
         }, CancellationToken.None);
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
-        executionAuthority!.Record.Permissions.Should().Equal("admin:write");
+        // Approved replays must carry an exact method/path grant; the old broad admin:write
+        // assertion described the authorization bug this test is intended to prevent.
+        executionAuthority!.Record.Permissions.Should().Equal(
+            AdminApiKeyPermission.CreateApprovedOperationGrant(
+                definition.Method.Method,
+                "/api/v1/admin/connections/connection-1/layers/7/enabled"),
+            "admin:operation:tenant:requester-tenant");
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
@@ -526,6 +555,60 @@ public sealed class OperationsToolsetTests
     }
 
     [UnitTest]
+    public void LaneD_ApprovalGatedOperations_HaveExactlyOneReplayMapper()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        using var provider = services.BuildServiceProvider();
+        var mapperCounts = services
+            .Where(static descriptor => descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
+                descriptor.ImplementationInstance is AdminOperateOperationApprovalRequestMapper)
+            .Select(static descriptor => (IOperationApprovalRequestMapper)descriptor.ImplementationInstance!)
+            .GroupBy(static mapper => mapper.OperationId, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
+
+        var approvalGated = AdminOperateOperationCatalog.Descriptors
+            .Where(static descriptor => descriptor.ApprovalModel != OperationApprovalModel.None)
+            .Select(static descriptor => descriptor.OperationId)
+            .ToArray();
+        mapperCounts.Keys.Should().BeEquivalentTo(approvalGated);
+        mapperCounts.Should().OnlyContain(static pair => pair.Value == 1);
+    }
+
+    [UnitTest]
+    public void LaneD_ApprovalMappers_PreserveOperationGuardrailClass()
+    {
+        var metadataReleaseOperations = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "admin.metadata.release-packages.create",
+            "admin.metadata.releases.activate",
+            "admin.metadata.coordinated-releases.rollback"
+        };
+
+        foreach (var definition in AdminOperateOperationCatalog.Definitions
+                     .Where(static definition => definition.ApprovalModel != OperationApprovalModel.None &&
+                         definition.SideEffect != OperationSideEffectClass.ReadOnly))
+        {
+            var descriptor = AdminOperateOperationCatalog.Descriptors.Single(
+                descriptor => descriptor.OperationId == definition.OperationId);
+            var request = new OperationRequest { OperationId = definition.OperationId };
+            var mapped = new AdminOperateOperationApprovalRequestMapper(definition).Map(
+                descriptor,
+                request,
+                new OperationPolicyContext(),
+                new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+            mapped.Kind.Should().Be(
+                metadataReleaseOperations.Contains(definition.OperationId)
+                    ? OperationClass.MetadataRelease
+                    : OperationClass.AdminConfigChange);
+        }
+    }
+
+    [UnitTest]
     public void LaneD_PublishedSchemas_PreserveNestedRequiredMembers_AndAdvertiseDryRun()
     {
         var descriptor = AdminOperateOperationCatalog.Descriptors.Should().ContainSingle(
@@ -561,12 +644,22 @@ public sealed class OperationsToolsetTests
             }
         };
 
-        var handle = await executor.SubmitAsync(request, new OperationPolicyContext(), CancellationToken.None);
+        var handle = await executor.SubmitAsync(request, new OperationPolicyContext
+        {
+            OperationInstanceId = "opinst-exact",
+            CorrelationId = "corr-exact",
+            AuditId = "audit-exact",
+            ProposalId = "proposal-exact",
+        }, CancellationToken.None);
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         handler.RequestUri!.AbsolutePath.Should().EndWith("/operations/operation-1/rollback");
         handler.Headers!.GetValues("X-API-Key").Should().Equal("secret");
         handler.Headers.GetValues("X-Honua-Tenant").Should().Equal("tenant-a");
+        handler.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().Equal("opinst-exact");
+        handler.Headers.GetValues("X-Correlation-ID").Should().Equal("corr-exact");
+        handler.Headers.GetValues("X-Honua-Audit-Id").Should().Equal("audit-exact");
+        handler.Headers.GetValues("X-Honua-Proposal-Id").Should().Equal("proposal-exact");
         using var body = JsonDocument.Parse(handler.Body!);
         body.RootElement.EnumerateObject().Select(static property => property.Name)
             .Should().BeEquivalentTo("force");
@@ -586,6 +679,10 @@ public sealed class OperationsToolsetTests
             replayHost = request.Headers.Host;
             var executionKey = request.Headers.GetValues("X-API-Key").Single();
             executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            request.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().Equal("opinst-replay");
+            request.Headers.GetValues("X-Correlation-ID").Should().Equal("corr-replay");
+            request.Headers.GetValues("X-Honua-Audit-Id").Should().Equal("audit-replay");
+            request.Headers.GetValues("X-Honua-Proposal-Id").Should().Equal("proposal-1");
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"ok\":true}")
@@ -603,6 +700,9 @@ public sealed class OperationsToolsetTests
             new OperationPolicyContext
             {
                 ApprovedProposalId = "proposal-1",
+                OperationInstanceId = "opinst-replay",
+                CorrelationId = "corr-replay",
+                AuditId = "audit-replay",
                 PrincipalId = "requester",
                 TenantId = "requester-tenant",
             },
@@ -613,9 +713,49 @@ public sealed class OperationsToolsetTests
         replayUri.Should().Be("http://127.0.0.1:8080/api/v1/admin/cache/invalidate");
         replayHost.Should().Be("public.example.test");
         executionAuthority!.Record.Permissions.Should().Equal(
-            "admin:operation:POST:/api/v1/admin/cache/invalidate");
+            "admin:operation:POST:/api/v1/admin/cache/invalidate",
+            "admin:operation:tenant:requester-tenant");
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("approved operation credentials are single-use");
+    }
+
+    [UnitTest]
+    public async Task LaneD_ApprovedReplay_SurfacesFailedCredentialRevocation()
+    {
+        using var client = new HttpClient(new CapturingHandler(HttpStatusCode.OK, "{\"ok\":true}"));
+        var credentialStore = Substitute.For<IAdminApiKeyStore>();
+        var issued = await new InMemoryAdminApiKeyStore(TimeProvider.System).CreateAsync(
+            "approved-operation:proposal-1",
+            ["admin:operation:POST:/api/v1/admin/cache/invalidate"],
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "requester",
+            CancellationToken.None);
+        credentialStore.CreateAsync(
+                Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(issued);
+        credentialStore.RevokeAsync(issued.Record.Id, CancellationToken.None)
+            .Returns((AdminApiKeyRecord?)null);
+        var executor = BuildAdminExecutor("admin.cache.invalidate", client, credentialStore);
+
+        var act = () => executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = executor.OperationId,
+                Parameters = new Dictionary<string, string?> { ["scope"] = "catalog" }
+            },
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal-1",
+                PrincipalId = "requester",
+            },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Failed to revoke approved-operation credential*");
     }
 
     [UnitTest]
@@ -757,6 +897,10 @@ public sealed class OperationsToolsetTests
             executionKey.Should().NotBe(approver.Key,
                 "the approve-only transport credential must never become execution authority");
             request.Headers.GetValues("X-Honua-Tenant").Should().Equal("requester-tenant");
+            request.Headers.GetValues("X-Honua-Operation-Instance-Id").Should().Equal("opinst-connect-exact");
+            request.Headers.GetValues("X-Correlation-ID").Should().Equal("corr-connect-exact");
+            request.Headers.GetValues("X-Honua-Audit-Id").Should().Equal("audit-connect-exact");
+            request.Headers.GetValues("X-Honua-Proposal-Id").Should().Equal("proposal-1");
             executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -770,6 +914,7 @@ public sealed class OperationsToolsetTests
         var current = new DefaultHttpContext();
         current.Request.Scheme = "https";
         current.Request.Host = new HostString("localhost");
+        current.Connection.LocalPort = 8080;
         current.Request.Headers["X-API-Key"] = approver.Key;
         current.Request.Headers["X-Honua-Tenant"] = "approver-tenant";
         var accessor = Substitute.For<IHttpContextAccessor>();
@@ -777,7 +922,8 @@ public sealed class OperationsToolsetTests
         var definition = AdminConnectImportOperationCatalog.Definitions.Single(
             item => item.OperationId == "admin.connections.create");
         var executor = new AdminConnectImportOperationExecutor(
-            definition, factory, accessor, credentialStore, TimeProvider.System);
+            definition, factory, accessor, credentialStore, TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
 
         var handle = await executor.SubmitAsync(
             new OperationRequest
@@ -793,6 +939,9 @@ public sealed class OperationsToolsetTests
             new OperationPolicyContext
             {
                 ApprovedProposalId = "proposal-1",
+                OperationInstanceId = "opinst-connect-exact",
+                CorrelationId = "corr-connect-exact",
+                AuditId = "audit-connect-exact",
                 TenantId = "requester-tenant",
                 PrincipalId = "requester",
             },
@@ -801,7 +950,8 @@ public sealed class OperationsToolsetTests
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         executionAuthority.Should().NotBeNull();
         executionAuthority!.Record.Permissions.Should().Equal(
-            "admin:operation:POST:/api/v1/admin/connections");
+            "admin:operation:POST:/api/v1/admin/connections",
+            "admin:operation:tenant:requester-tenant");
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
@@ -923,6 +1073,29 @@ public sealed class OperationsToolsetTests
         (await store.GetAsync(handle.OperationInstanceId)).Should().BeEquivalentTo(handle);
         audit.CanceledWriteCount.Should().Be(0,
             "terminal evidence must use a bounded token independent of the disconnected request");
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ApprovedReplayWithNarrowSealedCeiling_RefusesWiderOperation()
+    {
+        var publishing = Substitute.For<ILayerPublishingService>();
+        var dispatcher = BuildDispatcher(
+            BuildExecutor(publishing, Substitute.For<IMetadataV2GraphProvider>()),
+            new AllowAllPolicyDecisionPoint());
+
+        var handle = await dispatcher.SubmitAsync(
+            BuildRequest(),
+            new OperationPolicyContext
+            {
+                ApprovedProposalId = "proposal-1",
+                ScopeGoverned = true,
+                RecognizedScopes = [OperatorScopeCatalog.Read],
+            },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        handle.Reason.Should().Be("Approved replay operation exceeds the sealed OAuth scope authority.");
+        await publishing.DidNotReceiveWithAnyArgs().PublishLayerAsync(default!, default!, default);
     }
 
     [UnitTest]
@@ -1286,7 +1459,8 @@ public sealed class OperationsToolsetTests
             factory,
             accessor,
             credentialStore ?? new InMemoryAdminApiKeyStore(TimeProvider.System),
-            TimeProvider.System);
+            TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
     }
 
     private static OperationDispatcher BuildDispatcher(

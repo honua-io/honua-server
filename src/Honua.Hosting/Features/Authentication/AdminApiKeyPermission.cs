@@ -64,7 +64,16 @@ internal static class AdminApiKeyPermission
     private static readonly string[] WriteSubGrants = ["write", "manage", "*"];
 
     internal const string ApproveGrant = "admin:approve";
-    private const string ApprovedOperationGrantPrefix = "admin:operation:";
+    internal const string ApprovedOperationGrantPrefix = "admin:operation:";
+    internal const string ApprovedOperationRole = "approved-operation";
+    internal const string ApprovedOperationTenantGrantPrefix = "admin:operation:tenant:";
+    internal const string ApprovedOperationTenantClaim = "honua:approved-operation-tenant";
+
+    /// <summary>Admits scoped admin keys to permission-checked policies without full-admin role bypasses.</summary>
+    internal const string ScopedAdminRole = "scoped-admin-key";
+
+    /// <summary>The admin API path prefix approved-operation credentials are scoped to.</summary>
+    private const string AdminApiPathPrefix = "/api/v1/admin/";
 
     /// <summary>
     /// Describes how much admin authority a principal's grants confer.
@@ -117,6 +126,15 @@ internal static class AdminApiKeyPermission
     }
 
     /// <summary>
+    /// Whether this principal has unrestricted administrative write authority.
+    /// Approved-operation credentials intentionally return false: their admin role
+    /// is transport-scoped to one server-issued admin request and must not bypass
+    /// feature-level write authorization.
+    /// </summary>
+    internal static bool IsFullAdminPrincipal(ClaimsPrincipal principal)
+        => ResolveAccessLevel(principal) == AdminAccessLevel.Write;
+
+    /// <summary>
     /// Determines whether a principal is authorized for an admin request whose
     /// HTTP method is <paramref name="httpMethod"/>. Safe (read) methods require at
     /// least <see cref="AdminAccessLevel.Read"/>; mutating methods require
@@ -136,7 +154,12 @@ internal static class AdminApiKeyPermission
     {
         ArgumentNullException.ThrowIfNull(principal);
 
-        if (!string.IsNullOrWhiteSpace(httpMethod) && !string.IsNullOrWhiteSpace(requestPath))
+        // Approved-operation grants exist only for admin API paths; the factory THROWS
+        // for any other path, and this method runs for every authenticated request —
+        // computing the grant unconditionally turned all non-admin traffic (health,
+        // metrics, protocol endpoints) into 400s (trunk red at bf7ce4956).
+        if (!string.IsNullOrWhiteSpace(httpMethod)
+            && requestPath?.StartsWith(AdminApiPathPrefix, StringComparison.Ordinal) == true)
         {
             var expectedGrant = CreateApprovedOperationGrant(httpMethod, requestPath);
             if (principal.FindAll(PermissionClaimType).Any(claim =>
@@ -166,12 +189,19 @@ internal static class AdminApiKeyPermission
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(httpMethod);
         ArgumentException.ThrowIfNullOrWhiteSpace(requestPath);
-        if (!requestPath.StartsWith("/api/v1/admin/", StringComparison.Ordinal))
+        if (!requestPath.StartsWith(AdminApiPathPrefix, StringComparison.Ordinal))
         {
             throw new ArgumentException("Approved operation credentials must target an admin API path.", nameof(requestPath));
         }
 
         return $"{ApprovedOperationGrantPrefix}{httpMethod.ToUpperInvariant()}:{requestPath}";
+    }
+
+    /// <summary>Creates method/path authority and a persisted, server-only tenant binding.</summary>
+    internal static string[] CreateApprovedOperationGrants(string httpMethod, string requestPath, string? tenantId)
+    {
+        // An explicit empty binding preserves accepted single-tenant invocations.
+        return [CreateApprovedOperationGrant(httpMethod, requestPath), ApprovedOperationTenantGrantPrefix + tenantId];
     }
 
     /// <summary>Determines whether a grant belongs to the server-only approved-operation vocabulary.</summary>
@@ -267,6 +297,10 @@ internal static class AdminApiKeyPermission
         // Safe method: a read-only admin grant or a read-only ops grant is sufficient.
         return level == AdminAccessLevel.Read || HasOpsReadGrant(principal);
     }
+
+    /// <summary>Whether a persisted grant belongs to the shared administrative permission grammar.</summary>
+    internal static bool IsAdministrativeGrant(string? grant)
+        => ClassifyGrant(grant) != AdminAccessLevel.None;
 
     private static AdminAccessLevel ClassifyGrant(string? grant)
     {

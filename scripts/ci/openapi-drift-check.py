@@ -11,7 +11,8 @@ not detect:
 * Every endpoint in ``EndpointRegistry`` whose path belongs to an OGC API
   protocol (``/ogc/features``, ``/ogc/tiles``, ``/ogc/maps``,
   ``/ogc/processes``, ``/ogc/coverages``), to STAC (``/stac/...``), or to the
-  Server Management API (``/api/v1/admin/...``) must appear in the
+  Server Management API (``/api/v1/admin/...``), or Studio API
+  (``/api/v1/studio/...``) must appear in the
   corresponding spec.
 * Every ``$ref`` in each spec must resolve internally (no dangling refs).
 * Every schema referenced from ``responses``/``requestBody``/``parameters``
@@ -165,6 +166,12 @@ SPECS: tuple[SpecConfig, ...] = (
         undocumented_routes_path=Path(
             "docs/developer/api-specs/admin-api.undocumented.json"
         ),
+    ),
+    SpecConfig(
+        name="studio-api",
+        path=Path("docs/developer/api-specs/studio-api.json"),
+        prefix=None,  # inferred from servers[0].url -> /api/v1/studio
+        protocol_paths=("/api/v1/studio",),
     ),
 )
 

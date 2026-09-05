@@ -7,6 +7,9 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Grpc.Core;
+using Grpc.Net.Client;
+using Grpc.Net.Client.Web;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
@@ -25,6 +28,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Proto = Geospatial.V1;
 
 namespace Honua.Server.Tests.Features.Security;
 
@@ -87,6 +91,225 @@ public sealed class CrossProtocolPermissionMatrixTests
 
     private static PermissionGrant Grant(string operation, string layer = "*")
         => new() { Service = ServiceRbacTestFixture.AlphaService, Layer = layer, Operation = operation };
+
+    public static IEnumerable<object[]> ApplyEditsParityCases()
+    {
+        foreach (var surface in new[] { TestProtocols.FeatureServer, TestProtocols.Grpc })
+        {
+            for (var editKinds = 1; editKinds <= 7; editKinds++)
+            {
+                yield return [surface, editKinds, true];
+                yield return [surface, editKinds, false];
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(ApplyEditsParityCases))]
+    [Protocol(TestProtocols.FeatureServer, TestProtocols.Grpc)]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [InterfaceOperation(TestProtocols.Grpc, "geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_EveryPresentKind_RequiresItsMatchingGrant(
+        string surface,
+        int editKinds,
+        bool allRequiredGrantsPresent)
+    {
+        var operationNames = GetPresentEditOperationNames(editKinds);
+        if (!allRequiredGrantsPresent)
+        {
+            operationNames.Remove(GetGrantToOmit(editKinds));
+        }
+
+        using var factory = CreateWriteFactory(operationNames.Select(operation => Grant(operation)).ToArray());
+
+        if (string.Equals(surface, TestProtocols.FeatureServer, StringComparison.Ordinal))
+        {
+            using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
+            using var payload = CreateFeatureServerApplyEditsContent(editKinds);
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/applyEdits",
+                payload);
+
+            if (allRequiredGrantsPresent)
+            {
+                await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
+            }
+            else
+            {
+                await response.AssertGeoServicesErrorAsync(403);
+            }
+
+            return;
+        }
+
+        using var channel = CreateGrpcWebChannel(factory);
+        var grpcClient = new Proto.FeatureService.FeatureServiceClient(channel);
+        var headers = new Metadata
+        {
+            { "x-test-user", "rbac-user" },
+            { "x-test-roles", GrantedRole }
+        };
+        var request = CreateGrpcApplyEditsRequest(editKinds);
+
+        if (allRequiredGrantsPresent)
+        {
+            _ = await grpcClient.ApplyEditsAsync(request, headers);
+            return;
+        }
+
+        var act = async () => await grpcClient.ApplyEditsAsync(request, headers);
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.PermissionDenied);
+    }
+
+    [UnitTest]
+    public void ApplyEditsParityInventory_CoversEveryRegisteredSurfaceAndEditKind()
+    {
+        var registeredSurfaces = new HashSet<string>(StringComparer.Ordinal);
+        if (EndpointRegistry.All.Any(endpoint =>
+                endpoint.Path.EndsWith("/{layerId}/applyEdits", StringComparison.OrdinalIgnoreCase)))
+        {
+            registeredSurfaces.Add(TestProtocols.FeatureServer);
+        }
+
+        foreach (var operation in OperationRegistry.All.Where(operation =>
+                     operation.Operation.EndsWith("/ApplyEdits", StringComparison.Ordinal)))
+        {
+            registeredSurfaces.Add(operation.Protocol);
+        }
+
+        var actualCases = ApplyEditsParityCases()
+            .Select(row => $"{(string)row[0]}:{(int)row[1]}:{(bool)row[2]}")
+            .ToArray();
+        var expectedCases = registeredSurfaces
+            .SelectMany(surface => Enumerable.Range(1, 7)
+                .SelectMany(editKinds => new[]
+                {
+                    $"{surface}:{editKinds}:True",
+                    $"{surface}:{editKinds}:False"
+                }))
+            .ToArray();
+
+        actualCases.Should().BeEquivalentTo(expectedCases,
+            "every registered ApplyEdits surface must carry the complete 7-subset by 2-grant-set matrix");
+
+        var actualOperationCoverage = ApplyEditsParityCases()
+            .SelectMany(row => GetPresentEditOperationNames((int)row[1])
+                .Select(operation => $"{(string)row[0]}:{operation}"))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var expectedOperationCoverage = registeredSurfaces
+            .SelectMany(surface => new[] { "insert", "update", "delete" }
+                .Select(operation => $"{surface}:{operation}"))
+            .ToArray();
+
+        actualOperationCoverage.Should().BeEquivalentTo(expectedOperationCoverage,
+            "each supported edit surface must explicitly cover Insert, Update, and Delete");
+    }
+
+    private static StringContent CreateFeatureServerApplyEditsContent(int editKinds)
+    {
+        var properties = new List<string>(3);
+        if ((editKinds & 1) != 0)
+        {
+            properties.Add(@"""adds"":[{""attributes"":{""name"":""matrix-created""}}]");
+        }
+
+        if ((editKinds & 2) != 0)
+        {
+            properties.Add(@"""updates"":[{""attributes"":{""objectid"":1,""name"":""matrix-updated""}}]");
+        }
+
+        if ((editKinds & 4) != 0)
+        {
+            properties.Add(@"""deletes"":[2]");
+        }
+
+        return new StringContent(
+            $"{{{string.Join(',', properties)}}}",
+            Encoding.UTF8,
+            "application/json");
+    }
+
+    private static Proto.ApplyEditsRequest CreateGrpcApplyEditsRequest(int editKinds)
+    {
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = ServiceRbacTestFixture.AlphaService,
+            LayerId = ServiceRbacTestFixture.AlphaLayerId,
+            RollbackOnFailure = true
+        };
+
+        if ((editKinds & 1) != 0)
+        {
+            request.Adds.Add(new Proto.Feature
+            {
+                Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "matrix-created" } }
+            });
+        }
+
+        if ((editKinds & 2) != 0)
+        {
+            request.Updates.Add(new Proto.Feature
+            {
+                Id = 1,
+                Attributes = { ["name"] = new Proto.AttributeValue { StringValue = "matrix-updated" } }
+            });
+        }
+
+        if ((editKinds & 4) != 0)
+        {
+            request.Deletes.Add(2);
+        }
+
+        return request;
+    }
+
+    private static GrpcChannel CreateGrpcWebChannel(WebApplicationFactory<Program> factory)
+    {
+        var grpcWebHandler = new GrpcWebHandler(GrpcWebMode.GrpcWeb, factory.Server.CreateHandler());
+        return GrpcChannel.ForAddress("http://localhost", new GrpcChannelOptions
+        {
+            HttpHandler = grpcWebHandler
+        });
+    }
+
+    private static List<string> GetPresentEditOperationNames(int editKinds)
+    {
+        var operations = new List<string>(3);
+        if ((editKinds & 1) != 0)
+        {
+            operations.Add("insert");
+        }
+
+        if ((editKinds & 2) != 0)
+        {
+            operations.Add("update");
+        }
+
+        if ((editKinds & 4) != 0)
+        {
+            operations.Add("delete");
+        }
+
+        return operations;
+    }
+
+    private static string GetGrantToOmit(int editKinds)
+    {
+        if ((editKinds & 1) != 0)
+        {
+            return "insert";
+        }
+
+        if ((editKinds & 4) != 0)
+        {
+            return "delete";
+        }
+
+        return "update";
+    }
 
     // ---- FeatureServer query (already wired in #1385; kept for matrix completeness) ----
 

@@ -34,6 +34,36 @@ public sealed class ServiceLayerEdits
     /// </summary>
     [JsonPropertyName("deletes")]
     public object[]? Deletes { get; set; }
+
+    // ArcGIS clients may send applyEdits controls in the JSON body when using the
+    // service-level form. Keep them nullable so omission remains distinct from false.
+    [JsonPropertyName("rollbackOnFailure")]
+    public bool? RollbackOnFailure { get; set; }
+
+    [JsonPropertyName("useGlobalIds")]
+    public bool? UseGlobalIds { get; set; }
+
+    [JsonPropertyName("returnEditMoment")]
+    public bool? ReturnEditMoment { get; set; }
+
+    [JsonPropertyName("gdbVersion")]
+    public string? GdbVersion { get; set; }
+
+    [JsonPropertyName("f")]
+    public string? F { get; set; }
+
+    /// <summary>
+    /// Attachment edits are recognized so the service-level endpoint can reject them
+    /// explicitly instead of silently dropping them while fanning out layer edits.
+    /// </summary>
+    [JsonPropertyName("attachments")]
+    public JsonElement? Attachments { get; set; }
+
+    /// <summary>
+    /// Asset-map edits are recognized so they cannot be silently dropped either.
+    /// </summary>
+    [JsonPropertyName("assetMaps")]
+    public JsonElement? AssetMaps { get; set; }
 }
 
 /// <summary>

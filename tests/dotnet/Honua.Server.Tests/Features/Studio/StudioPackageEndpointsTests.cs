@@ -81,6 +81,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}")]
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/version-comparisons")]
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    [Endpoint("GET /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}")]
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen")]
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
     public async Task StudioPackageLifecycleEndpoints_CreateVersionPublishReopenAndRollback()
@@ -206,6 +207,18 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             publishResponse,
             StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
         publication.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+
+        var getPublicationResponse = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{secondVersion.VersionId:D}/publish-requests/{publication.RequestId:D}");
+        getPublicationResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var retrievedPublication = await ReadAsync<StudioPublicationRequest>(
+            getPublicationResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
+        retrievedPublication.Should().BeEquivalentTo(publication);
+
+        var mismatchedPublicationResponse = await _client.GetAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/publish-requests/{publication.RequestId:D}");
+        mismatchedPublicationResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var rollbackResponse = await PostAsync(
             $"/api/v1/studio/content-items/{version.ItemId:D}/rollback-requests",

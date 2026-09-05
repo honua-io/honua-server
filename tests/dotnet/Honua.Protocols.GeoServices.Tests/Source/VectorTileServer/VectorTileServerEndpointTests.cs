@@ -62,8 +62,8 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         metadata.TileInfo.SpatialReference.LatestWkid.Should().Be(3857);
         metadata.TileInfo.Lods.Should().NotBeNullOrEmpty();
         metadata.TileInfo.Lods![0].Level.Should().Be(0);
-        metadata.TileInfo.Lods[0].Scale.Should().BeApproximately(559082264.0287178, 1e-3);
-        metadata.TileInfo.Lods[1].Scale.Should().BeApproximately(559082264.0287178 / 2.0, 1e-3);
+        metadata.TileInfo.Lods[0].Scale.Should().BeApproximately(295828763.7957775, 1e-3);
+        metadata.TileInfo.Lods[1].Scale.Should().BeApproximately(295828763.7957775 / 2.0, 1e-3);
 
         metadata.MinLod.Should().Be(0);
         metadata.MaxLod.Should().Be(metadata.TileInfo.Lods[^1].Level);
@@ -328,6 +328,28 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}")]
+    public async Task VectorTileServer_TileMap_NonSquareBlock_UsesWidthThenHeight()
+    {
+        // Level 2 has a 4x4 grid. Starting at x=2,y=3, a width=3,height=2 block
+        // yields two rows of three flags in row-major order.
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/2/3/2/3/2");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        var tileMap = JsonSerializer.Deserialize(
+            content, VectorTileServerJsonContext.Default.VectorTileMapResponse);
+
+        tileMap.Should().NotBeNull();
+        tileMap!.Location.Width.Should().Be(3);
+        tileMap.Location.Height.Should().Be(2);
+        tileMap.Data.Should().Equal(1, 1, 0, 0, 0, 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap")]
     public async Task VectorTileServer_TileMapRoot_ReturnsTopOfPyramid()
     {
@@ -347,14 +369,13 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/VectorTileServer/tilemap/{z}/{y}/{x}/{dimension}/{dimension2}")]
-    public async Task VectorTileServer_TileMap_LevelOutsideScheme_ReturnsBadRequest()
+    public async Task VectorTileServer_TileMap_LevelOutsideScheme_ReturnsUnprocessableEntity()
     {
         // Level 99 is well beyond the served LOD range; the tileMap pyramid cannot describe it.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/VectorTileServer/tilemap/99/0/0/2/2");
 
-        // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(422);
     }
 
     [IntegrationTest]

@@ -20,6 +20,7 @@ internal static class StacServiceCollectionExtensions
 
         services.TryAddScoped<Cql2FilterProcessor>();
         services.AddScoped<StacSearchDependencies>();
+        services.AddOptions<StacOptions>().BindConfiguration(StacOptions.SectionName);
 
         return services;
     }

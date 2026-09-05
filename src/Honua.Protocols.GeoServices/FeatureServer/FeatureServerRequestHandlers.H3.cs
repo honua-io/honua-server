@@ -7,15 +7,20 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Tiles.Services;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Rendering;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -75,7 +80,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static async Task<IResult> HandleQueryH3Core(
-        string serviceId,
+        string serviceName,
         int layerId,
         IReadOnlyDictionary<string, StringValues> values,
         HttpContext context)
@@ -83,7 +88,7 @@ internal static partial class FeatureServerEndpoints
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("featureserver.queryH3");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.FeatureServer);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, "queryH3");
-        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceId);
+        activity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceName);
         activity?.SetTag(HonuaTelemetry.Tags.LayerId, layerId);
 
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -155,7 +160,7 @@ internal static partial class FeatureServerEndpoints
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var validationResult = await FeatureServerResourceValidationHelpers.ValidateServiceLayerV2Async(
             resourceValidator,
-            serviceId,
+            serviceName,
             layerId,
             context,
             logger: null,
@@ -176,9 +181,9 @@ internal static partial class FeatureServerEndpoints
 
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var storageLayerId = publication.LayerIndex
-            ?? snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource)
+            ?? publication.LayerIndex;
         if (storageLayerId is null)
         {
             return StandardErrorHelpers.CreateNotFound(
@@ -186,8 +191,19 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
+        var entitlementError = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.H3AnalyticsKey,
+            "H3 spatial aggregation");
+        if (entitlementError is not null)
+        {
+            return entitlementError;
+        }
+
         // Check h3-pg extension availability
-        var h3Error = await H3CapabilityHelpers.ValidateH3AvailabilityAsync(context, cancellationToken);
+        var h3Error = TileFeatureProviderResolver.RequiresRouting(snapshot, publication)
+            ? null
+            : await H3CapabilityHelpers.ValidateH3AvailabilityAsync(context, cancellationToken);
         if (h3Error is not null)
         {
             return h3Error;
@@ -227,22 +243,43 @@ internal static partial class FeatureServerEndpoints
             SpatialReferenceSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Srid
         };
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var fallbackReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var featureReader = await new TileFeatureProviderResolver(
+            context.RequestServices.GetService<FeatureProviderQueryRouter>()).ResolveFeatureReaderAsync(
+                snapshot,
+                service,
+                resource,
+                publication,
+                storageLayerId.Value,
+                fallbackReader,
+                cancellationToken).ConfigureAwait(false);
         var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
         if (HasSpatialAggregationSummaries(values))
         {
-            var (summaryResponse, summaryError) = await HandleSpatialAggregationSummaryQueryAsync(
-                context,
-                values,
-                serviceId,
-                layerId,
-                resource,
-                storageLayerId.Value,
-                featureQuery,
-                resolution,
-                kRingDistance,
-                queryLimits.MaxH3CellsPerQuery,
-                cancellationToken);
+            SpatialAggregationResultResponse? summaryResponse;
+            IResult? summaryError;
+            try
+            {
+                (summaryResponse, summaryError) = await HandleSpatialAggregationSummaryQueryAsync(
+                    context,
+                    values,
+                    serviceName,
+                    layerId,
+                    resource,
+                    storageLayerId.Value,
+                    featureReader,
+                    featureQuery,
+                    resolution,
+                    kRingDistance,
+                    queryLimits.MaxH3CellsPerQuery,
+                    cancellationToken);
+            }
+            catch (NotSupportedException)
+            {
+                return StandardErrorHelpers.CreateNotImplemented(
+                    context,
+                    "H3 aggregation is not supported by the configured feature provider for this layer.");
+            }
 
             if (summaryError is not null)
             {
@@ -263,7 +300,17 @@ internal static partial class FeatureServerEndpoints
             MaxCells = queryLimits.MaxH3CellsPerQuery
         };
 
-        var rows = await featureReader.QueryH3Async(storageLayerId.Value, featureQuery, h3Query, cancellationToken);
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows;
+        try
+        {
+            rows = await featureReader.QueryH3Async(storageLayerId.Value, featureQuery, h3Query, cancellationToken);
+        }
+        catch (NotSupportedException)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(
+                context,
+                "H3 aggregation is not supported by the configured feature provider for this layer.");
+        }
 
         var responseFeatures = rows.Select(row =>
         {
@@ -374,12 +421,14 @@ internal static partial class FeatureServerEndpoints
         }
         var publication = layerValidation.Publication!;
         var resource = layerValidation.Resource!;
+        var service = layerValidation.Service!;
+        var serviceName = service.Metadata.Name;
 
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var storageLayerId = publication.LayerIndex
-            ?? snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource)
+            ?? publication.LayerIndex;
         if (storageLayerId is null)
         {
             return ProblemDetailsHelpers.CreateProblem(
@@ -390,8 +439,19 @@ internal static partial class FeatureServerEndpoints
                 $"Layer '{resource.Metadata.Name ?? layerId.ToString(CultureInfo.InvariantCulture)}' is not bound to a storage layer.");
         }
 
+        var entitlementError = LicenseGate.RequireEntitlement(
+            context,
+            FeatureCatalog.H3AnalyticsKey,
+            "H3 spatial aggregation");
+        if (entitlementError is not null)
+        {
+            return entitlementError;
+        }
+
         // Check h3-pg extension availability (after auth, consistent with HandleQueryH3Core)
-        var h3Error = await H3CapabilityHelpers.ValidateH3AvailabilityAsync(context, cancellationToken);
+        var h3Error = TileFeatureProviderResolver.RequiresRouting(snapshot, publication)
+            ? null
+            : await H3CapabilityHelpers.ValidateH3AvailabilityAsync(context, cancellationToken);
         if (h3Error is not null)
         {
             return h3Error;
@@ -431,24 +491,76 @@ internal static partial class FeatureServerEndpoints
             SpatialReferenceSrid = resource.ReadSrid() ?? SpatialReference.WGS84.Srid
         };
 
-        var tileProvider = context.RequestServices.GetRequiredService<ITileProvider>();
-        var tileData = await tileProvider.GetH3MvtTileAsync(
-            storageLayerId.Value,
-            x,
-            y,
-            z,
-            resolution,
-            query,
+        var fallbackProvider = context.RequestServices.GetRequiredService<ITileProvider>();
+        var providerResolution = await new TileFeatureProviderResolver(
+            context.RequestServices.GetService<FeatureProviderQueryRouter>()).ResolveTileProviderAsync(
+                snapshot,
+                service,
+                resource,
+                publication,
+                storageLayerId.Value,
+                fallbackProvider,
+                cancellationToken).ConfigureAwait(false);
+        if (providerResolution.Provider is null)
+        {
+            return ProblemDetailsHelpers.CreateProblem(
+                context,
+                "about:blank",
+                StatusCodes.Status501NotImplemented,
+                "Not Implemented",
+                $"Layer '{resource.Metadata.Name}' is backed by data provider '{providerResolution.UnsupportedProviderName}', " +
+                "which does not support H3 vector tile generation.");
+        }
+
+        byte[]? tileData;
+        try
+        {
+            tileData = await providerResolution.Provider.GetH3MvtTileAsync(
+                storageLayerId.Value,
+                x,
+                y,
+                z,
+                resolution,
+                query,
+                tileOptions,
+                tileLimits,
+                cancellationToken);
+        }
+        catch (Honua.Core.Exceptions.TileSizeLimitExceededException)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(context,
+                new Honua.Core.Exceptions.TileSizeLimitExceededException().Message);
+        }
+        catch (NotSupportedException)
+        {
+            return ProblemDetailsHelpers.CreateProblem(
+                context,
+                "about:blank",
+                StatusCodes.Status501NotImplemented,
+                "Not Implemented",
+                "H3 vector tiles are not supported by the configured feature provider for this layer.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (tileData?.LongLength > tileLimits.MaxTileSize)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(context,
+                new Honua.Core.Exceptions.TileSizeLimitExceededException().Message);
+        }
+
+        VectorTileExecution.ApplyCacheHeaders(
+            context,
             tileOptions,
-            tileLimits,
-            cancellationToken);
+            FeatureServerProtocolName,
+            serviceName,
+            storageLayerId.Value,
+            "H3");
 
         if (tileData == null || tileData.Length == 0)
         {
             return Results.NoContent();
         }
 
-        context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptions.CacheMaxAge}";
         return Results.Bytes(tileData, "application/vnd.mapbox-vector-tile");
     }
 

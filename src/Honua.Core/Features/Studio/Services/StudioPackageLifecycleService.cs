@@ -499,6 +499,14 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     }
 
     /// <inheritdoc />
+    public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
+        Guid itemId,
+        Guid versionId,
+        Guid requestId,
+        CancellationToken cancellationToken = default)
+        => _store.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<StudioPackageDraft?> ReopenVersionAsync(
         Guid itemId,
         Guid versionId,

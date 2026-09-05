@@ -59,6 +59,12 @@ internal static class PluginMetrics
         "Plugin extension-point execution duration in milliseconds, partitioned by plugin_id and extension_point.");
 
     /// <summary>
+    /// The meter that owns the plugin instruments. Tests use the exact instance so unrelated
+    /// <c>Honua</c> meters cannot participate in the listener subscription.
+    /// </summary>
+    internal static Meter InstrumentMeter => Meter;
+
+    /// <summary>
     /// Begins timing a single plugin extension-point execution. Increments the invocation counter
     /// immediately and records duration (plus a failure when <see cref="Scope.MarkFailed"/> was
     /// called) when the returned scope is disposed.

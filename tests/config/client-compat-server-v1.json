@@ -9,5 +9,5 @@
   "serviceId": "test_service",
   "layerId": "0",
   "setupAction": ".github/actions/setup-honua-server/action.yml",
-  "setupActionRevision": "sha256:700c117b17fbd2e9f962abdc300b7b994351fc05180229d27b991c204806e5bf"
+  "setupActionRevision": "sha256:0917060723fa6a551fdd38cc38966fc6a0adf4633c334f5e9e61e759baa97c7e"
 }

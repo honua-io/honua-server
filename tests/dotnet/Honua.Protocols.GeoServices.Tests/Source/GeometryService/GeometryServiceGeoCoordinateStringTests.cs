@@ -76,6 +76,53 @@ public sealed class GeometryServiceGeoCoordinateStringTests : IClassFixture<WebA
         result.Strings![0].Should().Be("18S UJ 23478 06483");
     }
 
+    [IntegrationTheory]
+    [InlineData("MGRS", true, true)]
+    [InlineData("USNG", false, false)]
+    [Operation(Operations.ToGeoCoordinateString)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString")]
+    public async Task ToGeoCoordinateString_AddSpacesIsHonoredIndependentlyOfRounding(
+        string conversionType,
+        bool addSpaces,
+        bool expectsSpaces)
+    {
+        var body = $$"""
+        {
+            "sr": 4326,
+            "coordinates": [[-77.0353, 38.8895]],
+            "conversionType": "{{conversionType}}",
+            "addSpaces": {{addSpaces.ToString().ToLowerInvariant()}},
+            "rounding": true
+        }
+        """;
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString",
+            content);
+
+        response.Be200Ok();
+        var value = (await DeserializeToAsync(response))!.Strings!.Single();
+        value.Contains(' ').Should().Be(expectsSpaces);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ToGeoCoordinateString)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString")]
+    public async Task ToGeoCoordinateString_ConversionModeIsApplied()
+    {
+        const string body = """
+        {"sr":4326,"coordinates":[[180,0]],"conversionType":"MGRS",
+         "conversionMode":"mgrsNewWith180InZone01","addSpaces":false}
+        """;
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString",
+            content);
+
+        response.Be200Ok();
+        (await DeserializeToAsync(response))!.Strings!.Single().Should().StartWith("1N");
+    }
+
     [IntegrationTest]
     [Operation(Operations.ToGeoCoordinateString)]
     [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/toGeoCoordinateString")]

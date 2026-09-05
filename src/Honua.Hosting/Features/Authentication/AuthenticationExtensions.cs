@@ -159,9 +159,9 @@ public static class AuthenticationExtensions
 
     /// <summary>
     /// Configures an admin-family authorization policy: an authenticated principal
-    /// in the <c>admin</c> role whose scoped permission grants authorize the request
-    /// (#1985). The role check preserves the legacy gate; the permission requirement
-    /// adds scoped-key enforcement so a read-only admin key cannot mutate.
+    /// in the <c>admin</c> role, or carrying the server-only approved-operation role,
+    /// whose scoped permission grants authorize the request (#1985). The permission
+    /// requirement binds approved-operation credentials to their exact method and path.
     /// </summary>
     /// <param name="policy">The policy builder to configure.</param>
     /// <param name="mtlsCapabilityEnabled">
@@ -173,7 +173,7 @@ public static class AuthenticationExtensions
     private static void ConfigureAdminPolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
-        _ = policy.RequireRole("admin");
+        _ = policy.RequireRole("admin", AdminApiKeyPermission.ApprovedOperationRole, AdminApiKeyPermission.ScopedAdminRole);
         _ = policy.AddRequirements(new AdminPermissionRequirement());
         policy.AuthenticationSchemes.Add(ApiKeyScheme);
         if (mtlsCapabilityEnabled)
@@ -185,7 +185,7 @@ public static class AuthenticationExtensions
     private static void ConfigureAdminApprovePolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
-        _ = policy.RequireRole("admin");
+        _ = policy.RequireRole("admin", AdminApiKeyPermission.ScopedAdminRole);
         _ = policy.AddRequirements(new AdminApproveRequirement());
         policy.AuthenticationSchemes.Add(ApiKeyScheme);
         if (mtlsCapabilityEnabled)

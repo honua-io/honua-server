@@ -32,6 +32,7 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -293,11 +294,11 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.QueryRelatedRecords)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
-    public async Task QueryRelatedRecords_WithOutFields_ReturnsOnlySpecifiedFields()
+    public async Task QueryRelatedRecords_WithOutFields_AlwaysIncludesObjectId()
     {
         // Act
         var response = await GetWithRetryAsync(
-            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&outFields=objectid,name");
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&outFields=name");
 
         // Assert
         response.Be200Ok();
@@ -851,6 +852,20 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         // outSR is reflected in the top-level spatialReference per the Esri spec.
         queryResponse!.SpatialReference.Should().NotBeNull();
         queryResponse.SpatialReference!.Wkid.Should().Be(4326);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WithSqlFormat_IsAccepted()
+    {
+        foreach (var sqlFormat in new[] { "standard", "native" })
+        {
+            var response = await GetWithRetryAsync(
+                $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId={TestRelationshipId}&sqlFormat={sqlFormat}");
+
+            response.Be200Ok();
+        }
     }
 
     [IntegrationTest]

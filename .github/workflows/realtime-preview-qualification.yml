@@ -1,0 +1,187 @@
+name: Realtime Preview Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_revision:
+        description: Exact 40-character honua-server candidate commit
+        required: true
+        type: string
+      candidate_image:
+        description: Candidate digest emitted by the post-build candidate step (sha256:...; mutable tags are refused)
+        required: false
+        default: ''
+        type: string
+      candidate_environment:
+        description: Reviewed candidate environment identity
+        required: true
+        type: string
+      sdk_revision:
+        description: Exact 40-character honua-sdk-js commit
+        required: true
+        type: string
+      sdk_package:
+        description: Exact SDK package identity (for example @honua/sdk-js@0.2.0)
+        required: true
+        type: string
+      sdk_run_id:
+        description: Successful SDK workflow run that produced the live receipt
+        required: true
+        type: string
+      sdk_run_attempt:
+        description: Exact SDK workflow attempt
+        required: true
+        type: string
+      sdk_artifact_id:
+        description: Immutable Actions artifact id containing realtime-preview-evidence.json
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      candidate_revision:
+        required: true
+        type: string
+      candidate_image:
+        # TODO(honua-release#269): the release orchestrator must provide the post-candidate
+        # receipt after building/reusing the immutable candidate. Until then this remains
+        # optional only so the qualifier can retain independent admissibility diagnostics;
+        # an absent digest binding is still a hard rejection.
+        required: false
+        default: ''
+        type: string
+      candidate_environment:
+        required: true
+        type: string
+      sdk_revision:
+        required: true
+        type: string
+      sdk_package:
+        required: true
+        type: string
+      sdk_run_id:
+        required: true
+        type: string
+      sdk_run_attempt:
+        required: true
+        type: string
+      sdk_artifact_id:
+        required: true
+        type: string
+    secrets:
+      release_bundle_token:
+        description: Token with Actions read access to honua-sdk-js
+        required: false
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: realtime-preview-${{ inputs.candidate_image }}-${{ inputs.sdk_artifact_id }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: Required exact-candidate Preview evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Verify immutable dispatch identities
+        env:
+          CANDIDATE_REVISION: ${{ inputs.candidate_revision }}
+          CANDIDATE_IMAGE: ${{ inputs.candidate_image }}
+          SDK_REVISION: ${{ inputs.sdk_revision }}
+          SDK_RUN_ID: ${{ inputs.sdk_run_id }}
+          SDK_RUN_ATTEMPT: ${{ inputs.sdk_run_attempt }}
+          SDK_ARTIFACT_ID: ${{ inputs.sdk_artifact_id }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_REVISION" =~ ^[a-f0-9]{40}$ ]]
+          if [[ -n "$CANDIDATE_IMAGE" && ! "$CANDIDATE_IMAGE" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "candidate image must be an immutable sha256 digest when supplied" >&2
+            exit 1
+          fi
+          [[ "$SDK_REVISION" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$SDK_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$SDK_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          [[ "$SDK_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+
+      - name: Verify source run and artifact identity
+        uses: actions/github-script@v9
+        env:
+          SDK_RUN_ID: ${{ inputs.sdk_run_id }}
+          SDK_RUN_ATTEMPT: ${{ inputs.sdk_run_attempt }}
+          SDK_ARTIFACT_ID: ${{ inputs.sdk_artifact_id }}
+          SDK_REVISION: ${{ inputs.sdk_revision }}
+        with:
+          github-token: ${{ secrets.release_bundle_token || github.token }}
+          script: |
+            const owner = 'honua-io';
+            const repo = 'honua-sdk-js';
+            const expectedWorkflowPath = '.github/workflows/realtime-live-conformance.yml';
+            const expectedArtifactName = `realtime-cross-transport-conformance-${process.env.SDK_RUN_ID}`;
+            const run = (await github.rest.actions.getWorkflowRun({
+              owner, repo, run_id: Number(process.env.SDK_RUN_ID),
+            })).data;
+            if (run.conclusion !== 'success') core.setFailed(`source run conclusion is ${run.conclusion}`);
+            if (String(run.run_attempt) !== process.env.SDK_RUN_ATTEMPT) core.setFailed('source run attempt mismatch');
+            if (run.head_sha !== process.env.SDK_REVISION) core.setFailed('source run SDK revision mismatch');
+            if (run.path !== expectedWorkflowPath) core.setFailed(`source workflow path is ${run.path}`);
+            const artifact = (await github.rest.actions.getArtifact({
+              owner, repo, artifact_id: Number(process.env.SDK_ARTIFACT_ID),
+            })).data;
+            if (artifact.expired) core.setFailed('source artifact is expired');
+            if (artifact.workflow_run?.id !== Number(process.env.SDK_RUN_ID)) core.setFailed('artifact does not belong to source run');
+            if (artifact.name !== expectedArtifactName) core.setFailed(`source artifact name is ${artifact.name}`);
+
+      - name: Download immutable SDK artifact
+        uses: actions/download-artifact@v8
+        with:
+          repository: honua-io/honua-sdk-js
+          artifact-ids: ${{ inputs.sdk_artifact_id }}
+          path: artifacts/source
+          github-token: ${{ secrets.release_bundle_token || github.token }}
+
+      - name: Project required Preview ledger
+        env:
+          CANDIDATE_REVISION: ${{ inputs.candidate_revision }}
+          CANDIDATE_IMAGE: ${{ inputs.candidate_image }}
+          CANDIDATE_ENVIRONMENT: ${{ inputs.candidate_environment }}
+          SDK_PACKAGE: ${{ inputs.sdk_package }}
+          SDK_REVISION: ${{ inputs.sdk_revision }}
+          SDK_RUN_ID: ${{ inputs.sdk_run_id }}
+          SDK_RUN_ATTEMPT: ${{ inputs.sdk_run_attempt }}
+          SDK_ARTIFACT_ID: ${{ inputs.sdk_artifact_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/qualification
+          cp artifacts/source/realtime-preview-evidence.json artifacts/qualification/source-receipt.json
+          python3 scripts/conformance/realtime/qualify_candidate.py \
+            --evidence artifacts/qualification/source-receipt.json \
+            --output artifacts/qualification/realtime-preview-ledger.json \
+            --candidate-revision "$CANDIDATE_REVISION" \
+            --candidate-image "$CANDIDATE_IMAGE" \
+            --candidate-environment "$CANDIDATE_ENVIRONMENT" \
+            --sdk-package "$SDK_PACKAGE" \
+            --sdk-revision "$SDK_REVISION" \
+            --workflow-repository honua-io/honua-sdk-js \
+            --workflow-name 'Realtime Preview Qualification' \
+            --run-id "$SDK_RUN_ID" \
+            --run-attempt "$SDK_RUN_ATTEMPT" \
+            --artifact-id "$SDK_ARTIFACT_ID" \
+            --source-artifact-url "https://github.com/honua-io/honua-sdk-js/actions/runs/${SDK_RUN_ID}/artifacts/${SDK_ARTIFACT_ID}" \
+            --qualification-run-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --max-age-hours 24 \
+            --require-qualified \
+            2>&1 | tee artifacts/qualification/validation.log
+
+      - name: Retain source, diagnostics, ledger, identities, and verdict
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: realtime-preview-qualification-${{ inputs.candidate_revision }}-${{ github.run_id }}
+          path: artifacts/qualification/
+          retention-days: 180
+          if-no-files-found: error

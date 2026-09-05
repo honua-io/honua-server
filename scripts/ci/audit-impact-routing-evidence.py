@@ -186,11 +186,12 @@ def load_policy(value: object) -> dict[str, Any]:
     catalogs = positive_int(
         value.get("maximum_producer_run_catalogs"), "maximum producer run catalogs"
     )
-    # The download bound covers BOTH streams. It was sized when the PR Gate
-    # stream was (wrongly) contributing nothing, so restoring that stream's
-    # receipts to the index needs roughly double the budget or the collector
-    # fail-closes on its own cap.
-    if pages > 10 or downloads > 1000 or catalogs > 1600:
+    # The download bound covers BOTH streams. The fleet now produces roughly
+    # 1,800 receipts in the seven-day promotion window, so the former
+    # 1,000-download ceiling rejected the policy's required retention period.
+    # Keep finite ceilings above current throughput while still failing closed
+    # before an accidental policy edit can make the API work unbounded.
+    if pages > 10 or downloads > 2500 or catalogs > 3000:
         raise ValueError("GitHub query, catalog, or download bound is unsafe")
     if catalogs < downloads:
         raise ValueError("catalog bound must not be smaller than the download bound")
@@ -684,6 +685,64 @@ def receipt_emission(emissions: dict[str, dict[str, int]]) -> dict[str, Any]:
             "measured": owed > 0,
         }
     return per_stream
+
+
+def expire_indexed_receipt(index_value: object, artifact_id: int) -> dict[str, Any]:
+    """Reclassify an indexed receipt that expired after catalog discovery.
+
+    GitHub's artifact catalog is a point-in-time view. An artifact can report
+    ``expired: false`` during discovery and return HTTP 410 later in the same
+    ledger run. Once a fresh artifact lookup reports ``expired: true``, the
+    receipt is no longer downloadable evidence. It remains owed and therefore
+    becomes receipt loss; it is not corrupt receipt content.
+    """
+    if not isinstance(index_value, dict) or index_value.get("contract") != INDEX_CONTRACT:
+        raise ValueError("impact-routing evidence index contract is invalid")
+    positive_int(artifact_id, "expired artifact id")
+    entries = index_value.get("artifacts")
+    exclusions = index_value.get("exclusions")
+    emissions = index_value.get("receipt_emission")
+    if not isinstance(entries, list) or not isinstance(exclusions, list):
+        raise ValueError("impact-routing evidence index collections are invalid")
+    matches = [
+        entry for entry in entries
+        if isinstance(entry, dict) and entry.get("artifact_id") == artifact_id
+    ]
+    if len(matches) != 1:
+        raise ValueError("expired artifact is not uniquely indexed")
+    entry = matches[0]
+    stream = entry.get("stream")
+    if stream not in (PR_GATE_STREAM, NATIVE_STREAM) or not isinstance(emissions, dict):
+        raise ValueError("expired artifact stream is invalid")
+    counters: dict[str, dict[str, int]] = {}
+    keys = (
+        "observer_runs_successful", "receipts_indexed", "receipts_skipped",
+        "receipts_pending_index", "receipts_missing",
+    )
+    for name in (PR_GATE_STREAM, NATIVE_STREAM):
+        value = emissions.get(name)
+        if not isinstance(value, dict):
+            raise ValueError("receipt emission counters are invalid")
+        counters[name] = {}
+        for key in keys:
+            count = value.get(key)
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                raise ValueError("receipt emission counters are invalid")
+            counters[name][key] = count
+    if counters[stream]["receipts_indexed"] < 1:
+        raise ValueError("expired artifact is not counted as indexed")
+    counters[stream]["receipts_indexed"] -= 1
+    counters[stream]["receipts_missing"] += 1
+    result = dict(index_value)
+    result["artifacts"] = [item for item in entries if item is not entry]
+    result["exclusions"] = [*exclusions, {
+        "stream": stream,
+        "producer_run_id": entry.get("producer_run_id"),
+        "artifact_id": artifact_id,
+        "reason": "observation-receipt-expired-before-download",
+    }]
+    result["receipt_emission"] = receipt_emission(counters)
+    return result
 
 
 def _archive_json(entry: dict[str, Any], root: Path) -> object:
@@ -1778,6 +1837,10 @@ def main() -> int:
     discover_parser.add_argument("--receipt-cutoff", required=True)
     discover_parser.add_argument("--output", type=Path, required=True)
 
+    expire_parser = subparsers.add_parser("expire-indexed-receipt")
+    expire_parser.add_argument("--index", type=Path, required=True)
+    expire_parser.add_argument("--artifact-id", type=int, required=True)
+
     summary_parser = subparsers.add_parser("summarize")
     summary_parser.add_argument("--policy", type=Path, required=True)
     summary_parser.add_argument("--index", type=Path, required=True)
@@ -1797,6 +1860,10 @@ def main() -> int:
     trend_parser.add_argument("--markdown", type=Path, required=True)
     args = parser.parse_args()
 
+    if args.command == "expire-indexed-receipt":
+        result = expire_indexed_receipt(load_json(args.index), args.artifact_id)
+        write_json(args.index, result)
+        return 0
     policy = load_policy(load_json(args.policy))
     if args.command == "policy":
         cutoff_value = receipt_cutoff(policy)

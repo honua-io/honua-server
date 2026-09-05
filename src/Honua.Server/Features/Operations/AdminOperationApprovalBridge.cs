@@ -51,14 +51,22 @@ internal sealed partial class AdminOperationApprovalBridge(
             return Failure("Approval is required, but the canonical operation identity is incomplete.");
         }
 
+        if (context.ScopeGoverned && context.RecognizedScopes.Count == 0)
+        {
+            return Failure("Approval is required, but the OAuth proposer has no recognized scope authority.");
+        }
+
         try
         {
             var gatewayRequest = (mapper?.Map(descriptor, request, context, decision)
                 ?? request.GatewayRequest!) with
             {
                 OperationId = descriptor.OperationId,
+                TenantId = context.TenantId,
                 OperationInstanceId = context.OperationInstanceId,
                 CorrelationId = context.CorrelationId,
+                ScopeGoverned = context.ScopeGoverned,
+                RecognizedScopes = context.RecognizedScopes,
             };
             var guardrails = services.GetService<IGuardrailLadder>();
             if (guardrails is null || guardrails.Resolve(gatewayRequest.Kind).Tier == GuardrailTier.Blocked)

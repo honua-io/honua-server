@@ -69,12 +69,11 @@ internal sealed partial class SqlServerConnectionDriver : IConnectionDriver
             // own Encrypt/TrustServerCertificate mapping entirely. Re-parse and force TLS so a secret-store
             // value that omits or disables encryption can never open a plaintext TDS session; per the MVP
             // deferrals, secure connections are "encrypted or secret references only" (never unencrypted).
-            var builder = new SqlConnectionStringBuilder(connectionString)
-            {
-                Encrypt = true
-            };
-
-            await using var connection = new SqlConnection(builder.ConnectionString);
+            var encryptedConnectionString = SqlServerConnectionSecurity.RequireEncryption(connectionString);
+            // codeql[cs/insecure-sql-connection]: RequireEncryption re-parses every incoming
+            // connection string and overwrites Encrypt with true before SqlConnection sees it.
+            // CodeQL traces the original test-endpoint value here but does not model that rewrite.
+            await using var connection = new SqlConnection(encryptedConnectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             await using var command = connection.CreateCommand();

@@ -79,15 +79,9 @@ public sealed partial class CiteStatusComplianceDriftTests
             "suite row (| Suite | Profile | Passed / Total | Pass Rate | ... |) or this drift gate has nothing " +
             "to check the OpenAPI vendor extensions against.");
 
-        foreach (var (suite, row) in canonical)
-        {
-            row.Passed.Should().Be(row.Total,
-                $"{CiteStatusRelativePath}'s row for suite '{suite}' reports {row.Passed}/{row.Total} passed/total. " +
-                "The page's own 'Public Evidence Standard' only permits listing suites at 100% pass -- fix or " +
-                $"remove the row in {CiteStatusRelativePath} before this gate can trust it as canonical.");
-        }
-
         var canonicalTotalPassed = canonical.Values.Sum(row => row.Passed);
+        var canonicalTotalTests = canonical.Values.Sum(row => row.Total);
+        var canonicalTotalNonPassing = canonicalTotalTests - canonicalTotalPassed;
 
         foreach (var (displayPath, segments) in VendorExtensionArtifacts)
         {
@@ -102,7 +96,7 @@ public sealed partial class CiteStatusComplianceDriftTests
 
             if (hasTotals)
             {
-                AssertTotals(displayPath, totalsElement, canonicalTotalPassed);
+                AssertTotals(displayPath, totalsElement, canonicalTotalPassed, canonicalTotalNonPassing);
             }
 
             // Required only when the extension has neither a totals object nor a
@@ -111,14 +105,25 @@ public sealed partial class CiteStatusComplianceDriftTests
             // be gated. Where a totals object or suites array already exists,
             // any prose aggregate mention found is still validated, but its
             // absence is not itself a failure.
-            AssertProseAggregate(displayPath, extension, canonicalTotalPassed, canonical.Count, required: !hasTotals && !hasSuites);
+            AssertProseAggregate(
+                displayPath,
+                extension,
+                canonicalTotalPassed,
+                canonicalTotalTests,
+                canonical.Count,
+                required: !hasTotals && !hasSuites);
 
             if (hasSuites)
             {
                 AssertSuiteRows(displayPath, suitesElement, canonical);
             }
 
-            AssertEveryProseFractionIsKnown(displayPath, extension, canonicalTotalPassed, hasSuites ? suitesElement : null);
+            AssertEveryProseFractionIsKnown(
+                displayPath,
+                extension,
+                canonicalTotalPassed,
+                canonicalTotalTests,
+                hasSuites ? suitesElement : null);
         }
     }
 
@@ -172,7 +177,11 @@ public sealed partial class CiteStatusComplianceDriftTests
             $"update the extension in {displayPath} (not {CiteStatusRelativePath}) to fix this.");
     }
 
-    private static void AssertTotals(string displayPath, JsonElement totalsElement, int canonicalTotalPassed)
+    private static void AssertTotals(
+        string displayPath,
+        JsonElement totalsElement,
+        int canonicalTotalPassed,
+        int canonicalTotalNonPassing)
     {
         var passed = totalsElement.GetProperty("passed").GetInt32();
         var failed = totalsElement.GetProperty("failed").GetInt32();
@@ -184,21 +193,19 @@ public sealed partial class CiteStatusComplianceDriftTests
             $"row in {CiteStatusRelativePath} is {canonicalTotalPassed}. Regenerate {displayPath}'s totals from the " +
             $"latest CITE Evidence Report run, or correct {CiteStatusRelativePath} if the OpenAPI extension already " +
             "reflects a newer one.");
-        failed.Should().Be(0,
-            $"{displayPath}'s x-honua-cite-compliance.totals.failed is {failed}, but {CiteStatusRelativePath} only " +
-            $"ever documents suites at 100% pass -- a nonzero failed count means {displayPath} is stale.");
-        skipped.Should().Be(0,
-            $"{displayPath}'s x-honua-cite-compliance.totals.skipped is {skipped}, but {CiteStatusRelativePath} only " +
-            $"ever documents suites at 100% pass -- a nonzero skipped count means {displayPath} is stale.");
-        cantTell.Should().Be(0,
-            $"{displayPath}'s x-honua-cite-compliance.totals.cantTell is {cantTell}, but {CiteStatusRelativePath} only " +
-            $"ever documents suites at 100% pass -- a nonzero cantTell count means {displayPath} is stale.");
+        (failed + skipped + cantTell).Should().Be(canonicalTotalNonPassing,
+            $"{displayPath}'s x-honua-cite-compliance.totals contains {failed + skipped + cantTell} non-passing " +
+            $"assertion(s) (failed={failed}, skipped={skipped}, cantTell={cantTell}), but the passed/total rows in " +
+            $"{CiteStatusRelativePath} establish only {canonicalTotalNonPassing} non-passing assertion(s). " +
+            $"The canonical table does not distinguish outcome categories, so preserve their evidence-derived " +
+            $"breakdown while keeping their sum consistent with the table.");
     }
 
     private static void AssertProseAggregate(
         string displayPath,
         JsonElement extension,
         int canonicalTotalPassed,
+        int canonicalTotalTests,
         int canonicalSuiteCount,
         bool required)
     {
@@ -228,10 +235,9 @@ public sealed partial class CiteStatusComplianceDriftTests
             $"{displayPath}'s x-honua-cite-compliance.summary claims {passed}/{total} passed, but " +
             $"{CiteStatusRelativePath}'s per-suite table sums to {canonicalTotalPassed} passed -- update the summary " +
             $"prose in {displayPath} to match {CiteStatusRelativePath}.");
-        total.Should().Be(canonicalTotalPassed,
-            $"{displayPath}'s x-honua-cite-compliance.summary claims {passed}/{total}, which is not a 100%-pass claim " +
-            $"({canonicalTotalPassed}/{canonicalTotalPassed} expected); {CiteStatusRelativePath} only documents " +
-            "100%-pass suites, so this prose must read a matching total.");
+        total.Should().Be(canonicalTotalTests,
+            $"{displayPath}'s x-honua-cite-compliance.summary claims {passed}/{total}, but " +
+            $"{CiteStatusRelativePath}'s per-suite table contains {canonicalTotalTests} assertions.");
 
         if (match.Groups[3].Success)
         {
@@ -259,6 +265,7 @@ public sealed partial class CiteStatusComplianceDriftTests
         string displayPath,
         JsonElement extension,
         int canonicalTotalPassed,
+        int canonicalTotalTests,
         JsonElement? suitesElement)
     {
         var summary = extension.TryGetProperty("summary", out var summaryElement)
@@ -275,12 +282,12 @@ public sealed partial class CiteStatusComplianceDriftTests
             var passed = int.Parse(fraction.Groups[1].Value, CultureInfo.InvariantCulture);
             var total = int.Parse(fraction.Groups[2].Value, CultureInfo.InvariantCulture);
 
-            var isCanonicalAggregate = passed == canonicalTotalPassed && total == canonicalTotalPassed;
+            var isCanonicalAggregate = passed == canonicalTotalPassed && total == canonicalTotalTests;
             var isKnownSuiteTotal = knownSuiteTotals.Any(suite => suite.Passed == passed && suite.Total == total);
 
             (isCanonicalAggregate || isKnownSuiteTotal).Should().BeTrue(
                 $"{displayPath}'s x-honua-cite-compliance.summary mentions \"{passed}/{total}\", which matches " +
-                $"neither the canonical full-suite aggregate ({canonicalTotalPassed}/{canonicalTotalPassed}) nor " +
+                $"neither the canonical full-suite aggregate ({canonicalTotalPassed}/{canonicalTotalTests}) nor " +
                 $"any per-suite total in {displayPath}'s own suites[] array -- the summary prose has drifted from " +
                 $"{CiteStatusRelativePath} (or {displayPath}'s own suites[] entries). Update the summary in " +
                 $"{displayPath} to match.");

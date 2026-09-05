@@ -71,7 +71,7 @@ internal sealed partial class OpsNotificationService
         var channels = ResolveChannels(ops.Channels, notification.Source, DateTimeOffset.UtcNow);
         var envelope = BuildEnvelope(notification);
         await _dispatchWriter
-            .PersistAsync([new PendingAlertDispatch(envelope, channels)], cancellationToken)
+            .PersistAsync([], [new PendingAlertDispatch(envelope, channels)], cancellationToken)
             .ConfigureAwait(false);
 
         if (channels.IsDefaultOrEmpty)
@@ -128,6 +128,11 @@ internal sealed partial class OpsNotificationService
             Title = notification.Title,
             Body = notification.Body,
             Attributes = notification.Attributes,
+            JobId = notification.JobId,
+            OperationInstanceId = notification.OperationInstanceId,
+            CorrelationId = notification.CorrelationId,
+            AuditId = notification.AuditId,
+            ProposalId = notification.ProposalId,
         };
 
         return new AlertEventEnvelope
@@ -149,6 +154,11 @@ internal sealed partial class OpsNotificationService
             IncidentStatus = AlertIncidentStatus.Started,
             IncidentDurationMs = 0,
             Source = AlertEventSources.Ops,
+            JobId = notification.JobId,
+            OperationInstanceId = notification.OperationInstanceId,
+            CorrelationId = notification.CorrelationId,
+            AuditId = notification.AuditId,
+            ProposalId = notification.ProposalId,
         };
     }
 

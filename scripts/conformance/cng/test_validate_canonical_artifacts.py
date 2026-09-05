@@ -146,6 +146,14 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertIn("GitHub Packages authentication is required", harness)
         self.assertNotIn("using anonymous package restore", harness)
 
+    def test_workflow_retries_the_exact_3d_tiles_validator_install(self):
+        workflow = (SCRIPT.parents[3] / ".github" / "workflows" / "cng-conformance.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("for attempt in 1 2 3", workflow)
+        self.assertIn("retry npm install -g 3d-tiles-validator@0.6.1", workflow)
+        self.assertNotIn("retry npm install -g 3d-tiles-validator@latest", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

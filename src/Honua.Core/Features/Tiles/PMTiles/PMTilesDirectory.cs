@@ -19,6 +19,9 @@ internal readonly record struct PMTilesEntry(ulong TileId, ulong Offset, uint Le
 /// </summary>
 internal static class PMTilesDirectory
 {
+    // PMTiles v3 requires the header plus the compressed root directory to fit in the first
+    // 16 KiB. The header occupies 127 bytes, leaving this many bytes for the root itself.
+    private const int MaxRootDirectoryBytes = (16 * 1024) - PMTilesHeader.HeaderSize;
     private const int MaxRootDirectoryEntries = 16384;
 
     /// <summary>
@@ -33,12 +36,42 @@ internal static class PMTilesDirectory
         {
             var rootBytes = SerializeEntries(entries);
             var compressedRoot = Compress(rootBytes, internalCompression);
-            return (compressedRoot, []);
+            if (compressedRoot.Length <= MaxRootDirectoryBytes)
+            {
+                return (compressedRoot, []);
+            }
         }
 
-        // Split into leaf directories, root directory points to them
+        // Split into leaf directories, root directory points to them. The old entry-count limit
+        // is only an upper bound: root pointers have variable-length varints and must be sized by
+        // their compressed byte count. Doubling the leaf size keeps this bounded to O(log N)
+        // directory builds while retaining small leaves for ordinary archives.
         var leafEntriesPerGroup = Math.Max(1, (entries.Count + MaxRootDirectoryEntries - 1) / MaxRootDirectoryEntries);
-        var rootEntries = new List<PMTilesEntry>();
+        while (true)
+        {
+            var (rootBytes, leafBytes) = BuildLeafDirectories(entries, leafEntriesPerGroup, internalCompression);
+            if (rootBytes.Length <= MaxRootDirectoryBytes)
+            {
+                return (rootBytes, leafBytes);
+            }
+
+            if (leafEntriesPerGroup >= entries.Count)
+            {
+                throw new InvalidOperationException("Unable to fit the PMTiles root directory within the 16 KiB header window.");
+            }
+
+            leafEntriesPerGroup = Math.Min(
+                entries.Count,
+                Math.Max(leafEntriesPerGroup + 1, checked(leafEntriesPerGroup * 2)));
+        }
+    }
+
+    private static (byte[] RootBytes, byte[] LeafBytes) BuildLeafDirectories(
+        IReadOnlyList<PMTilesEntry> entries,
+        int leafEntriesPerGroup,
+        PMTilesCompression internalCompression)
+    {
+        var rootEntries = new List<PMTilesEntry>((entries.Count + leafEntriesPerGroup - 1) / leafEntriesPerGroup);
         using var leafStream = new MemoryStream();
 
         for (var i = 0; i < entries.Count; i += leafEntriesPerGroup)
@@ -56,16 +89,14 @@ internal static class PMTilesDirectory
             rootEntries.Add(new PMTilesEntry(
                 TileId: entries[i].TileId,
                 Offset: (ulong)leafStream.Position,
-                Length: (uint)compressedLeaf.Length,
-                RunLength: 0 // RunLength=0 means this is a leaf directory pointer
-            ));
+                Length: checked((uint)compressedLeaf.Length),
+                RunLength: 0));
 
             leafStream.Write(compressedLeaf);
         }
 
-        var rootBytes2 = SerializeEntries(rootEntries);
-        var compressedRoot2 = Compress(rootBytes2, internalCompression);
-        return (compressedRoot2, leafStream.ToArray());
+        var rootBytes = Compress(SerializeEntries(rootEntries), internalCompression);
+        return (rootBytes, leafStream.ToArray());
     }
 
     /// <summary>

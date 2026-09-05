@@ -263,6 +263,10 @@ internal static class MultidimCoverageScanJob
             var metadata = await zarrMetadataReader
                 .ReadMetadataAsync(rangeReader, registration.Bucket, zarrRootPath, cancellationToken)
                 .ConfigureAwait(false);
+            if (registration.Metadata is { } sourceMetadata)
+            {
+                metadata = EnrichDerivedZarrMetadata(metadata, sourceMetadata);
+            }
             await zarrStore.UpdateMetadataAsync(zarr.Id, metadata, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -272,6 +276,81 @@ internal static class MultidimCoverageScanJob
             MultidimensionalCoverageLog.DerivedZarrScanDeferred(logger, zarr.Id, ex.Message);
         }
     }
+
+    /// <summary>
+    /// Carries the authoritative CF/GDAL metadata discovered from the source into
+    /// the worker-created Zarr registration. The conversion preserves array data
+    /// and row order but does not guarantee that its root attributes contain the
+    /// server's private georeferencing manifest.
+    /// </summary>
+    internal static ZarrStoreMetadata EnrichDerivedZarrMetadata(
+        ZarrStoreMetadata zarrMetadata,
+        MultidimensionalCoverageMetadata sourceMetadata)
+    {
+        ArgumentNullException.ThrowIfNull(zarrMetadata);
+        ArgumentNullException.ThrowIfNull(sourceMetadata);
+
+        var primary = zarrMetadata.Arrays.FirstOrDefault(array =>
+            sourceMetadata.Variables.Any(variable =>
+                string.Equals(variable.Name, array.Name, StringComparison.OrdinalIgnoreCase)))
+            ?? zarrMetadata.Arrays.FirstOrDefault();
+
+        var xDim = zarrMetadata.SpatialXDimension ?? FindDimension(primary, IsXDimension);
+        var yDim = zarrMetadata.SpatialYDimension ?? FindDimension(primary, IsYDimension);
+        var tDim = zarrMetadata.TemporalDimension ?? FindDimension(primary, IsTimeDimension);
+
+        var axes = zarrMetadata.Axes;
+        if (sourceMetadata.Vertical is { } vertical && primary is not null)
+        {
+            var axisName = primary.DimensionNames.FirstOrDefault(name =>
+                !IsSame(name, xDim) && !IsSame(name, yDim) && !IsSame(name, tDim));
+            if (axisName is not null && axes.All(axis => !IsSame(axis.Name, axisName)))
+            {
+                axes =
+                [
+                    ..axes,
+                    new ZarrAxis(
+                        axisName,
+                        primary.Shape[Array.IndexOf(primary.DimensionNames, axisName)],
+                        Coordinates: null,
+                        vertical.Min,
+                        vertical.Max,
+                        vertical.Units,
+                        Positive: null),
+                ];
+            }
+        }
+
+        var hasSourceGrid = sourceMetadata.Extent is not null ||
+            sourceMetadata.Resolution is { X: not 0, Y: not 0 };
+
+        return zarrMetadata with
+        {
+            Srid = sourceMetadata.Srid > 0 ? sourceMetadata.Srid : zarrMetadata.Srid,
+            Extent = sourceMetadata.Extent ?? zarrMetadata.Extent,
+            SpatialXDimension = xDim,
+            SpatialYDimension = yDim,
+            TemporalDimension = tDim,
+            Temporal = sourceMetadata.Temporal ?? zarrMetadata.Temporal,
+            Axes = axes,
+            YAxisAscending = hasSourceGrid ? sourceMetadata.YAxisAscending : zarrMetadata.YAxisAscending,
+        };
+    }
+
+    private static string? FindDimension(ZarrArrayMetadata? array, Func<string, bool> predicate)
+        => array?.DimensionNames.FirstOrDefault(predicate);
+
+    private static bool IsXDimension(string name)
+        => name.ToLowerInvariant() is "x" or "lon" or "longitude";
+
+    private static bool IsYDimension(string name)
+        => name.ToLowerInvariant() is "y" or "lat" or "latitude";
+
+    private static bool IsTimeDimension(string name)
+        => name.ToLowerInvariant() is "t" or "time" or "datetime";
+
+    private static bool IsSame(string? left, string? right)
+        => left is not null && right is not null && string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
     private static string StepInput(string name)
         => $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.{name}";

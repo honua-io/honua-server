@@ -145,14 +145,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
         var response = await _client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = await ReadJsonAsync(response);
-        var result = document.RootElement.GetProperty("result");
-        result.GetProperty("isError").GetBoolean().Should().BeTrue();
-        result.GetProperty("structuredContent").GetProperty("code").GetString()
-            .Should().Be("permission_denied");
-        result.GetProperty("content")[0].GetProperty("text").GetString()
-            .Should().Contain("validated tenant");
+        await AssertTenantAuthenticationRequiredAsync(response);
     }
 
     [IntegrationTest]
@@ -172,12 +165,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
         var response = await _client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = await ReadJsonAsync(response);
-        var error = document.RootElement.GetProperty("error");
-        error.GetProperty("data").GetProperty("code").GetString()
-            .Should().Be("permission_denied");
-        error.GetProperty("message").GetString().Should().Contain("validated tenant");
+        await AssertTenantAuthenticationRequiredAsync(response);
     }
 
     [IntegrationTest]
@@ -198,14 +186,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
         var response = await _client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = await ReadJsonAsync(response);
-        var result = document.RootElement.GetProperty("result");
-        result.GetProperty("isError").GetBoolean().Should().BeTrue();
-        result.GetProperty("structuredContent").GetProperty("code").GetString()
-            .Should().Be("permission_denied");
-        result.GetProperty("content")[0].GetProperty("text").GetString()
-            .Should().Contain("validated tenant");
+        await AssertTenantAuthenticationRequiredAsync(response);
     }
 
     [IntegrationTest]
@@ -245,8 +226,18 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
         var response = await _client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+        root.GetProperty("jsonrpc").GetString().Should().Be("2.0");
+        root.GetProperty("id").GetInt32().Should().Be(1);
+        root.TryGetProperty("result", out _).Should().BeFalse();
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32000);
+        error.GetProperty("data").GetProperty("code").GetString().Should().Be("permission_denied");
+        error.GetProperty("data").GetProperty("correlationId").GetString().Should().Be(
+            response.Headers.GetValues("X-Correlation-ID").Single());
     }
 
     [IntegrationTest]
@@ -427,7 +418,41 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
         using var response = await _client.SendAsync(request);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.WwwAuthenticate.Should().Contain(challenge => challenge.Scheme == "Bearer");
+        using var document = await ReadJsonAsync(response);
+        document.RootElement.TryGetProperty("features", out _).Should().BeFalse();
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(499);
+        var correlationId = response.Headers.GetValues("X-Correlation-ID").Single();
+        correlationId.Should().NotBeNullOrWhiteSpace();
+        var details = error.GetProperty("details").EnumerateArray().Select(detail => detail.GetString());
+        details.Should().Contain("Code: authentication_required");
+        details.Should().Contain($"CorrelationId: {correlationId}");
+    }
+
+    private static async Task AssertTenantAuthenticationRequiredAsync(HttpResponseMessage response)
+    {
+        // Tenant middleware rejects before MCP dispatch. This is a JSON-RPC authorization
+        // error, not a tool result, and must retain the shared tenant-denial contract.
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Mcp-Session-Id", out _).Should().BeFalse();
+        response.Headers.WwwAuthenticate.Should().Contain(challenge =>
+            challenge.Scheme == "Bearer" &&
+            challenge.Parameter == "resource_metadata=\"" + PublicBaseUrl + "/.well-known/oauth-protected-resource/mcp\"");
+        using var document = await ReadJsonAsync(response);
+        var root = document.RootElement;
+        root.GetProperty("jsonrpc").GetString().Should().Be("2.0");
+        root.GetProperty("id").GetInt32().Should().Be(1);
+        root.TryGetProperty("result", out _).Should().BeFalse();
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(-32000);
+        error.GetProperty("message").GetString().Should().Be("Authentication with a tenant claim is required.");
+        var data = error.GetProperty("data");
+        data.GetProperty("code").GetString().Should().Be("authentication_required");
+        data.GetProperty("requiresReauthentication").GetBoolean().Should().BeTrue();
+        data.GetProperty("correlationId").GetString().Should().Be(
+            response.Headers.GetValues("X-Correlation-ID").Single());
     }
 
     [IntegrationTest]

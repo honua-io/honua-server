@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Xml;
+using System.Xml.Schema;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -15,6 +16,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
+using Honua.Protocols.GeoServices.Soap;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
@@ -1101,14 +1103,7 @@ internal static class ImageServerSoapEndpoints
 
         try
         {
-            var settings = new XmlReaderSettings
-            {
-                Async = true,
-                DtdProcessing = DtdProcessing.Prohibit,
-                XmlResolver = null,
-                MaxCharactersInDocument = MaxRequestCharacters
-            };
-            using var reader = XmlReader.Create(context.Request.Body, settings);
+            using var reader = SoapRequestXml.CreateReader(context.Request.Body, MaxRequestCharacters);
             var request = await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
             var envelopeNamespace = request.Root?.Name.Namespace;
             if (request.Root?.Name.LocalName != "Envelope" ||
@@ -1159,7 +1154,7 @@ internal static class ImageServerSoapEndpoints
 
             return (operations[0], soap, null);
         }
-        catch (Exception exception) when (exception is XmlException or InvalidOperationException)
+        catch (Exception exception) when (exception is XmlException or XmlSchemaValidationException or InvalidOperationException)
         {
             var requestedSoap = RequestedSoapNamespace(context.Request);
             return (null, requestedSoap, CreateSoapFault(

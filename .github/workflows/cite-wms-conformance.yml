@@ -20,7 +20,7 @@ on:
 
 permissions:
   contents: read
-  packages: read
+  packages: write
 
 concurrency:
   group: cite-wms-conformance-${{ github.ref }}

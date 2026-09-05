@@ -47,6 +47,16 @@ internal sealed class ODataFeatureProviderResolver(
             cancellationToken).ConfigureAwait(false);
     }
 
+    public Task<IFeatureReader> ResolveQueryReaderAsync(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service? service,
+        MetadataV2Resource resource,
+        MetadataV2Publication? publication,
+        int storageLayerId,
+        bool requireCount,
+        CancellationToken cancellationToken)
+            => ResolveQueryReaderAsync(snapshot, service, resource, publication, storageLayerId,
+            requireCount, requireTextSearch: false, cancellationToken);
     public async Task<IFeatureReader> ResolveQueryReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
@@ -54,6 +64,7 @@ internal sealed class ODataFeatureProviderResolver(
         MetadataV2Publication? publication,
         int storageLayerId,
         bool requireCount,
+        bool requireTextSearch,
         CancellationToken cancellationToken)
     {
         if (!RequiresProviderRouting(snapshot, publication))
@@ -70,6 +81,15 @@ internal sealed class ODataFeatureProviderResolver(
             storageLayerId,
             FeatureProviderReadOperation.Query,
             cancellationToken).ConfigureAwait(false);
+
+        if (requireTextSearch && DataProviderNames.Normalize(binding.Provider.ProviderName) is not
+            (DataProviderNames.Postgis or DataProviderNames.PostgreSql or DataProviderNames.SqlServer
+            or DataProviderNames.MySql or DataProviderNames.DuckDb or DataProviderNames.Oracle
+            or DataProviderNames.Redshift or DataProviderNames.Snowflake or DataProviderNames.Databricks))
+        {
+            throw new Honua.Core.Exceptions.ValidationException(
+                "The layer's provider does not support OData $search.");
+        }
 
         if (requireCount && !binding.Provider.Capabilities.SupportsCount)
         {
@@ -110,9 +130,10 @@ internal sealed class ODataFeatureProviderResolver(
             return (false, "The layer's configured data provider is read-only for OData write operations.");
         }
 
-        return ReferenceEquals(binding.Provider.Writer, _fallbackWriter)
-            ? (true, null)
-            : (false, "OData writes through secondary data providers are not supported.");
+        // Even the primary provider's writer targets the managed partition, not this
+        // connection/table binding. Until a binding-aware writer contract exists,
+        // reject before any pre-read or mutation (including batch changesets).
+        return (false, "OData writes through connection-bound or secondary data providers are not supported.");
     }
 
     private static bool RequiresProviderRouting(

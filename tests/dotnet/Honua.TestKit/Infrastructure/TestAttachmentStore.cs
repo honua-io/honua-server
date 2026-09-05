@@ -67,6 +67,20 @@ public sealed class TestAttachmentStore : IAttachmentStore
         return Task.FromResult(attachment);
     }
 
+    public Task<Attachment> UpdateKeywordsAsync(int layerId, long featureId, long attachmentId, string? keywords, CancellationToken cancellationToken = default)
+    {
+        if (!_attachments.TryGetValue((layerId, featureId), out var attachments))
+            throw new InvalidOperationException($"Attachment {attachmentId} not found for update");
+
+        var index = attachments.FindIndex(a => a.Id == attachmentId);
+        if (index == -1)
+            throw new InvalidOperationException($"Attachment {attachmentId} not found for update");
+
+        var updated = attachments[index] with { Keywords = keywords };
+        attachments[index] = updated;
+        return Task.FromResult(updated);
+    }
+
     public async Task<Attachment> ReplaceAsync(
         int layerId,
         long featureId,

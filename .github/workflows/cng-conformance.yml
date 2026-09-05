@@ -65,6 +65,19 @@ jobs:
       - name: Install validator toolchain
         run: |
           set -euo pipefail
+          retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if [[ "$attempt" -eq 3 ]]; then
+                return 1
+              fi
+              echo "validator install failed (attempt ${attempt}/3); retrying in $((attempt * 10))s" >&2
+              sleep "$((attempt * 10))"
+            done
+          }
           # GeoParquet + PMTiles validators (Go).
           go install github.com/planetlabs/gpq/cmd/gpq@v0.24.0
           go install github.com/protomaps/go-pmtiles@v1.30.0
@@ -95,7 +108,9 @@ jobs:
             zarr==3.3.0
           npm install --no-save --package-lock=false flatgeobuf@4.4.0 pmtiles@4.5.0
           # 3D Tiles validator (chains the Khronos glTF validator).
-          npm install -g 3d-tiles-validator@0.6.1
+          # sharp downloads libvips during this install. Retry transient transport
+          # failures without changing the exact validator evidence identity.
+          retry npm install -g 3d-tiles-validator@0.6.1
 
       - name: Run CNG conformance lane
         id: run

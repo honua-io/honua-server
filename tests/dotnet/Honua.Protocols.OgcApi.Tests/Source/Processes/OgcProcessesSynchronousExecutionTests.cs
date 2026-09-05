@@ -11,6 +11,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Geoprocessing;
+using Honua.Geoprocessing.Execution;
+using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -105,6 +107,7 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
         response.Headers.Location.Should().NotBeNull();
         response.Headers.Contains("Preference-Applied").Should().BeFalse(
             "no client preference was supplied");
+        _fixture.SubmittedMetadata.Should().NotContainKey("ogc.processes.response");
     }
 
     [IntegrationTest]
@@ -125,6 +128,370 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         _fixture.SubmittedPlan!.Steps.Single().Inputs["wkb"].Should().Be(PointWkbBase64);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_CanonicalPlanRaw_RejectsBeforeSubmission()
+    {
+        var submissions = _fixture.SubmissionCount;
+        using var content = new StringContent(
+            """{"inputs":{"plan":{"planId":"raw-plan","steps":[{"stepId":"s1","kind":"geoprocess","processId":"surface.slope","inputs":{"source":"AAAA"}}]}},"response":"raw"}""",
+            Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.PostAsync(
+            "/ogc/processes/processes/honua-geoprocessing/execution", content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("requires document mode");
+        _fixture.SubmissionCount.Should().Be(submissions);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_AsyncRawCatalogProcess_IsAdmittedAndPersistsResponseMode()
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}},\"response\":\"raw\"}}",
+            Encoding.UTF8,
+            "application/json");
+
+        using var response = await _fixture.App.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created,
+            "Part 1 applies raw response negotiation to asynchronous results too (#4145)");
+        _fixture.SubmittedMetadata!["ogc.processes.response"].Should().Be("raw");
+
+        using var asyncOnlyRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/surface.slope/execution");
+        asyncOnlyRequest.Content = new StringContent(
+            """{"inputs":{"source":"AAAA"},"response":"raw"}""",
+            Encoding.UTF8,
+            "application/json");
+
+        using var asyncOnlyResponse = await _fixture.App.Client.SendAsync(asyncOnlyRequest);
+
+        asyncOnlyResponse.StatusCode.Should().Be(HttpStatusCode.Created,
+            "raw must also be admitted when the catalog process has no synchronous mode (#4145)");
+        _fixture.SubmittedMetadata!["ogc.processes.response"].Should().Be("raw");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_QualifiedAndReferencedCatalogInputs_AreNormalized()
+    {
+        const string geoJson = "{\"type\":\"Point\",\"coordinates\":[1,2]}";
+        var href = "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(geoJson));
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            $$"""
+            {
+              "inputs": {
+                "wkb": { "href": "{{href}}", "type": "application/geo+json" },
+                "srid": { "value": 4326 },
+                "distance": { "value": 25.5 }
+              }
+            }
+            """,
+            Encoding.UTF8,
+            "application/json");
+
+        using var response = await _fixture.App.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created,
+            "catalog processes must accept the same qualified and by-reference input forms as CITE (#4146)");
+        var inputs = _fixture.SubmittedPlan!.Steps.Single().Inputs;
+        inputs["srid"].Should().Be("4326");
+        inputs["distance"].Should().Be("25.5");
+        new WKBReader().Read(Convert.FromBase64String(inputs["wkb"])).GeometryType.Should().Be("Point");
+        AssertSubmittedPlanIsValid();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_QualifiedWkbAndHttpsReference_ProduceValidCatalogPlans()
+    {
+        var geometries = new[]
+        {
+            $$"""{"value":"{{PointWkbBase64}}","mediaType":"application/wkb"}""",
+            """{"value":{"type":"Point","coordinates":[1,2]},"mediaType":"application/geo+json"}""",
+            """{"href":"https://93.184.216.34/point.geojson","type":"application/geo+json"}"""
+        };
+
+        foreach (var geometry in geometries)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                "/ogc/processes/processes/geometry.buffer/execution");
+            request.Headers.Add("Prefer", "respond-async");
+            request.Content = new StringContent(
+                $$$$"""{"inputs":{"wkb":{{{{geometry}}}},"srid":{"value":4326},"distance":{"value":25.5}}}""",
+                Encoding.UTF8, "application/json");
+
+            using var response = await _fixture.App.Client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            AssertSubmittedPlanIsValid();
+            new WKBReader().Read(Convert.FromBase64String(_fixture.SubmittedPlan!.Steps.Single().Inputs["wkb"]))
+                .GeometryType.Should().Be("Point");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ReferenceWithoutMediaType_PreserveNumericTextAndBinaryWkb()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            "/ogc/processes/processes/geometry.buffer/execution");
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(
+            """{"inputs":{"wkb":{"href":"https://93.184.216.34/point.wkb"},"srid":4326,"distance":{"href":"https://93.184.216.34/distance"}}}""",
+            Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        _fixture.SubmittedPlan!.Steps.Single().Inputs["distance"].Should().Be("25.5");
+        _fixture.SubmittedPlan!.Steps.Single().Inputs["wkb"].Should().Be(PointWkbBase64);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Execute_ReferenceAuthorizationDenied_DoesNotFetch(bool mutating)
+    {
+        var processId = mutating ? "import.dataset" : "generalization.simplify-layer";
+        var layerParameter = mutating ? "rasterLayerId" : "layerId";
+        var body = mutating
+            ? """{"inputs":{"connection":"test","fileName":"layer.geojson","tableName":"layer","layerName":"Layer","rasterLayerId":{"href":"data:text/plain,7"},"sourcePath":{"href":"https://93.184.216.34/number.txt"}}}"""
+            : """{"inputs":{"layerId":{"href":"data:text/plain,7"},"tolerance":{"href":"https://93.184.216.34/number.txt"}}}""";
+        var fetches = _fixture.ReferenceRequestCount;
+        var submissions = _fixture.SubmissionCount;
+        _fixture.DenyReferenceAuthorization = true;
+        try
+        {
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                $"/ogc/processes/processes/{processId}/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            _fixture.ReferenceRequestCount.Should().Be(fetches);
+            _fixture.SubmissionCount.Should().Be(submissions);
+            _fixture.ReferenceAuthorizationPlan!.Steps.Single().ProcessId.Should().Be(processId);
+            _fixture.ReferenceAuthorizationPlan.Steps.Single().Inputs[layerParameter].Should().Be("7");
+        }
+        finally
+        {
+            _fixture.DenyReferenceAuthorization = false;
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ReferenceAuthorizationBindings_ReachCanonicalSubmission()
+    {
+        _fixture.ReferenceAuthorizationBinding = "8";
+        try
+        {
+            using var content = new StringContent(
+                """{"inputs":{"datasetId":"boundaries","input":{"href":"https://93.184.216.34/point.geojson"}}}""",
+                Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/enrichment.enrich/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            var inputs = _fixture.SubmittedPlan!.Steps.Single().Inputs;
+            inputs[EnrichmentJobExecutor.AuthorizedDatasetLayerInput].Should().Be("8");
+            inputs["input"].Should().StartWith("data:application/geo+json;base64,");
+        }
+        finally
+        {
+            _fixture.ReferenceAuthorizationBinding = null;
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ExternalAuthorizationSelector_IsResolvedBeforePayload()
+    {
+        var fetches = _fixture.ReferenceRequestCount;
+        using var content = new StringContent(
+            """{"inputs":{"layerId":{"href":"https://93.184.216.34/layer.txt"},"tolerance":{"href":"https://93.184.216.34/number.txt"}}}""",
+            Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.PostAsync(
+            "/ogc/processes/processes/generalization.simplify-layer/execution", content);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        _fixture.ReferenceRequestCount.Should().Be(fetches + 2);
+        _fixture.SubmittedPlan!.Steps.Single().Inputs["layerId"].Should().Be("7");
+        _fixture.SubmittedPlan.Steps.Single().Inputs["tolerance"].Should().Be("25.5");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ReferencesWithoutMediaType_PreserveNumericAndTextValues()
+    {
+        var requests = new[]
+        {
+            ("geometry.buffer", "distance", "25.5",
+                $$$$"""{"inputs":{"wkb":"{{{{PointWkbBase64}}}}","srid":4326,"distance":{"href":"https://93.184.216.34/number.txt"}}}"""),
+            ("transform.attribute-rename", "to", "renamed",
+                """{"inputs":{"input":{"value":{"type":"FeatureCollection","features":[]},"mediaType":"application/geo+json"},"from":"oldName","to":{"href":"https://93.184.216.34/name.txt"}}}""")
+        };
+        foreach (var (processId, parameter, expected, body) in requests)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                $"/ogc/processes/processes/{processId}/execution");
+            request.Headers.Add("Prefer", "respond-async");
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            _fixture.SubmittedPlan!.Steps.Single().Inputs[parameter].Should().Be(expected);
+            AssertSubmittedPlanIsValid();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_UnsafeInputReferences_AreRejectedBeforeSubmission()
+    {
+        foreach (var href in new[] { "https://127.0.0.1/secret", "https://169.254.169.254/", "file:///C:/secret", "data:application/json;base64,!!!" })
+        {
+            var submissions = _fixture.SubmissionCount;
+            using var content = new StringContent(
+                $$$$"""{"inputs":{"wkb":{"href":"{{{{href}}}}"},"srid":4326,"distance":25.5}}""",
+                Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/geometry.buffer/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _fixture.SubmissionCount.Should().Be(submissions);
+        }
+    }
+
+    private void AssertSubmittedPlanIsValid()
+    {
+        var catalog = _fixture.App.Services.GetRequiredService<IProcessCatalog>();
+        ProcessPlanValidator.Validate(_fixture.SubmittedPlan!, catalog).Violations.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_UnknownInput_DoesNotResolveAnyReferences()
+    {
+        var requestsBefore = _fixture.ReferenceRequestCount;
+        var submissionsBefore = _fixture.SubmissionCount;
+        using var content = new StringContent(
+            """{"inputs":{"wkb":{"href":"https://93.184.216.34/point.geojson"},"srid":4326,"distance":25.5,"unknown":{"href":"https://93.184.216.34/point.geojson"}}}""",
+            Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.PostAsync("/ogc/processes/processes/geometry.buffer/execution", content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        _fixture.ReferenceRequestCount.Should().Be(requestsBefore);
+        _fixture.SubmissionCount.Should().Be(submissionsBefore);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_ReferencedInputs_EnforcesAggregateByteLimit()
+    {
+        var payload = "{\"type\":\"FeatureCollection\",\"features\":[],\"padding\":\"" + new string('x', 700) + "\"}";
+        var href = "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
+        var body = JsonSerializer.Serialize(new { inputs = new { input = new { href }, clip = new { href } } });
+        var submissionsBefore = _fixture.SubmissionCount;
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.PostAsync("/ogc/processes/processes/overlay.clip/execution", content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("exceeds");
+        _fixture.SubmissionCount.Should().Be(submissionsBefore);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_GeoJsonInputs_RejectIncompatibleMediaTypesBeforeSubmission()
+    {
+        var fetches = _fixture.ReferenceRequestCount;
+        var submissions = _fixture.SubmissionCount;
+        foreach (var input in new[]
+        {
+            """{"value":{"type":"FeatureCollection","features":[]},"mediaType":"text/plain"}""",
+            """{"value":{"type":"FeatureCollection","features":[]},"mediaType":"image/tiff"}""",
+            """{"href":"https://93.184.216.34/point.geojson","type":"text/plain"}"""
+        })
+        {
+            using var content = new StringContent(
+                $$$$"""{"inputs":{"input":{{{{input}}}},"from":"oldName","to":"newName"}}""",
+                Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/transform.attribute-rename/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("unsupported mediaType");
+            _fixture.SubmissionCount.Should().Be(submissions);
+            _fixture.ReferenceRequestCount.Should().Be(fetches);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_InvalidQualifiedGeometry_IsRejectedBeforeSubmission()
+    {
+        foreach (var geometry in new[]
+        {
+            """{"value":{"type":"Point","coordinates":[1,2]},"mediaType":"text/plain"}""",
+            """{"value":null,"mediaType":"application/geo+json"}"""
+        })
+        {
+            var submissions = _fixture.SubmissionCount;
+            using var content = new StringContent(
+                $$$$"""{"inputs":{"wkb":{{{{geometry}}}},"srid":4326,"distance":25.5}}""",
+                Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/geometry.buffer/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _fixture.SubmissionCount.Should().Be(submissions);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task ReferenceDocumentation_ExecuteExample_IsRunnableVerbatim()
+    {
+        var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../.."));
+        var documentation = await File.ReadAllTextAsync(
+            Path.Combine(repositoryRoot, "docs", "reference", "protocols", "ogc-apis.md"));
+        const string marker = "In the [API explorer]";
+        var exampleStart = documentation.IndexOf(marker, StringComparison.Ordinal);
+        exampleStart.Should().BeGreaterThanOrEqualTo(0);
+        var methodStart = documentation.IndexOf("`POST ", exampleStart, StringComparison.Ordinal) + 6;
+        var methodEnd = documentation.IndexOf('`', methodStart);
+        var endpoint = documentation[methodStart..methodEnd];
+        var jsonStart = documentation.IndexOf("```json", methodEnd, StringComparison.Ordinal) + 7;
+        var jsonEnd = documentation.IndexOf("```", jsonStart, StringComparison.Ordinal);
+        var body = documentation[jsonStart..jsonEnd].Trim();
+        body.Should().NotContain("<", "the only execute example must not contain a placeholder (#4150)");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Headers.Add("Prefer", "respond-async");
+        request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+        using var response = await _fixture.App.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created,
+            "the reference documentation's only execute request must run verbatim (#4150)");
+        AssertSubmittedPlanIsValid();
     }
 
     [IntegrationTest]
@@ -263,7 +630,17 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
 
     public AnalysisPlan? SubmittedPlan { get; private set; }
 
+    public IReadOnlyDictionary<string, string>? SubmittedMetadata { get; private set; }
+
     public int SubmissionCount { get; private set; }
+
+    public int ReferenceRequestCount { get; private set; }
+
+    public bool DenyReferenceAuthorization { get; set; }
+
+    public string? ReferenceAuthorizationBinding { get; set; }
+
+    public AnalysisPlan? ReferenceAuthorizationPlan { get; private set; }
 
     public OgcProcessesSynchronousExecutionFixture()
     {
@@ -276,13 +653,38 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 OperatorOperation.Execute,
                 Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
+        jobService.EnsurePlanExecutionTierAuthorizedAsync(
+                Arg.Any<AnalysisPlan>(), Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                ReferenceAuthorizationPlan = callInfo.ArgAt<AnalysisPlan>(0);
+                if (DenyReferenceAuthorization)
+                {
+                    throw new GeoprocessingAuthorizationException(false, "Reference input authorization denied.",
+                        OperatorResourceType.Process, OperatorOperation.ExecuteMutatingProcess);
+                }
+
+                if (ReferenceAuthorizationBinding != null)
+                {
+                    var step = ReferenceAuthorizationPlan.Steps.Single();
+                    var inputs = new Dictionary<string, string>(step.Inputs, StringComparer.Ordinal)
+                    {
+                        [EnrichmentJobExecutor.AuthorizedDatasetLayerInput] = ReferenceAuthorizationBinding
+                    };
+                    return ReferenceAuthorizationPlan with { Steps = [step with { Inputs = inputs }] };
+                }
+
+                return ReferenceAuthorizationPlan;
+            });
         jobService.SubmitJobAsync(
                 Arg.Any<AnalysisPlan>(),
                 Arg.Any<string?>(),
                 Arg.Any<ClaimsPrincipal>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(callInfo => RecordSubmission(callInfo.ArgAt<AnalysisPlan>(0)));
+            .Returns(callInfo => RecordSubmission(
+                callInfo.ArgAt<AnalysisPlan>(0),
+                callInfo.ArgAt<IReadOnlyDictionary<string, string>?>(3)));
 
         // The processes adapter submits through SubmitProtocolJobAsync, a default
         // interface member whose default body forwards to SubmitJobAsync. NSubstitute
@@ -295,7 +697,9 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 Arg.Any<IProcessCatalog>(),
                 Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(callInfo => RecordSubmission(callInfo.ArgAt<AnalysisPlan>(0)));
+            .Returns(callInfo => RecordSubmission(
+                callInfo.ArgAt<AnalysisPlan>(0),
+                callInfo.ArgAt<IReadOnlyDictionary<string, string>?>(4)));
 
         var terminalService = Substitute.For<IGeoprocessingJobTerminalService>();
         terminalService.WaitForResultAsync(
@@ -311,17 +715,70 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
             services.AddSingleton(jobService);
             services.RemoveAll<IGeoprocessingJobTerminalService>();
             services.AddSingleton(terminalService);
+            services.AddHttpClient(OgcProcessInputReferenceHttpClient.Name)
+                .ConfigurePrimaryHttpMessageHandler(() => new InputReferenceHandler(() => ReferenceRequestCount++));
+            services.Configure<GeoprocessingExecutorOptions>(options => options.MaxArtifactBytes = 1024);
         });
 
-        Task<ExecutionJobRecord> RecordSubmission(AnalysisPlan plan)
+        Task<ExecutionJobRecord> RecordSubmission(
+            AnalysisPlan plan,
+            IReadOnlyDictionary<string, string>? metadata)
         {
             SubmittedPlan = plan;
+            SubmittedMetadata = metadata;
             SubmissionCount++;
             return Task.FromResult(job);
         }
     }
 
     public Task InitializeAsync() => App.InitializeAsync();
+
+    private sealed class InputReferenceHandler(Action onRequest) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            onRequest();
+            if (request.RequestUri!.AbsolutePath == "/point.wkb")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Convert.FromBase64String("AQEAAAAAAAAAAAAAAAAAAAAAAAAA"))
+                });
+            }
+
+            if (request.RequestUri!.AbsolutePath == "/layer.txt")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("7", Encoding.UTF8, "text/plain")
+                });
+            }
+
+            if (request.RequestUri!.AbsolutePath == "/distance")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes("25.5"))
+                });
+            }
+
+            var uri = request.RequestUri!.AbsoluteUri;
+            if (uri is "https://93.184.216.34/number.txt" or "https://93.184.216.34/name.txt")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(Encoding.UTF8.GetBytes(
+                        uri.EndsWith("number.txt", StringComparison.Ordinal) ? "25.5" : "renamed"))
+                });
+            }
+
+            uri.Should().Be("https://93.184.216.34/point.geojson");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"type":"Point","coordinates":[1,2]}""", Encoding.UTF8, "application/geo+json")
+            });
+        }
+    }
 
     public Task DisposeAsync() => App.DisposeAsync();
 

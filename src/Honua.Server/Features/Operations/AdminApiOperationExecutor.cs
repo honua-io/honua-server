@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net.Http.Headers;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
@@ -19,15 +20,18 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAdminApiKeyStore _adminApiKeyStore;
     private readonly TimeProvider _clock;
+    private readonly OperationLineageAttestationStore _lineageAttestationStore;
 
     public AdminApiOperationExecutor(AdminApiOperationCatalog.Definition definition, IHttpClientFactory httpClientFactory,
-        IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore adminApiKeyStore, TimeProvider clock)
+        IHttpContextAccessor httpContextAccessor, IAdminApiKeyStore adminApiKeyStore, TimeProvider clock,
+        OperationLineageAttestationStore lineageAttestationStore)
     {
         _definition = definition;
         _httpClientFactory = httpClientFactory;
         _httpContextAccessor = httpContextAccessor;
         _adminApiKeyStore = adminApiKeyStore;
         _clock = clock;
+        _lineageAttestationStore = lineageAttestationStore;
     }
 
     public string OperationId => _definition.OperationId;
@@ -62,15 +66,27 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         var relativePath = BindPath(request, request.DryRun && _definition.SupportsDryRun ? _definition.DryRunPath : null);
         var query = _definition.QueryParameters?.Where(name => request.Parameters.TryGetValue(name, out var value) && value is not null)
             .Select(name => $"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(request.Parameters[name]!)}").ToArray();
-        if (query is { Length: > 0 }) relativePath += "?" + string.Join("&", query);
-        var uri = new Uri($"{current.Request.Scheme}://{current.Request.Host}/api/v1/admin{relativePath}");
+        var localPort = current.Connection.LocalPort;
+        if (localPort <= 0)
+        {
+            throw new InvalidOperationException("Admin operation replay requires a local server port.");
+        }
+
+        var scheme = current.Features.Get<Microsoft.AspNetCore.Http.Features.ITlsConnectionFeature>() is null
+            ? Uri.UriSchemeHttp
+            : Uri.UriSchemeHttps;
+        var uri = new UriBuilder(scheme, IPAddress.Loopback.ToString(), localPort, "/api/v1/admin" + relativePath)
+        {
+            Query = query is { Length: > 0 } ? string.Join('&', query) : string.Empty
+        }.Uri;
         using var message = new HttpRequestMessage(_definition.Method, uri);
+        OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
             var issued = await _adminApiKeyStore.CreateAsync(
                 $"approved-operation:{context.ApprovedProposalId}",
-                ["admin:write"],
+                AdminApiKeyPermission.CreateApprovedOperationGrants(_definition.Method.Method, uri.AbsolutePath, context.TenantId),
                 _clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
                 cancellationToken).ConfigureAwait(false);
@@ -118,7 +134,8 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         finally
         {
             if (executionCredential is not null)
-                _ = await _adminApiKeyStore.RevokeAsync(executionCredential.Id, CancellationToken.None).ConfigureAwait(false);
+                await ApprovedOperationCredentialRevocation.RevokeAsync(
+                    _adminApiKeyStore, executionCredential.Id).ConfigureAwait(false);
         }
         using var responseLease = response;
         var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

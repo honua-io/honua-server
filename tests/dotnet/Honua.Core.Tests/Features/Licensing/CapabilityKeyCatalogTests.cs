@@ -154,6 +154,15 @@ public sealed class CapabilityKeyCatalogTests
             k => k.Status == CapabilityKeyCatalog.ExperimentalStatus);
     }
 
+    [Fact]
+    public void CustomerAlertingKeys_AreAllMarkedPreview()
+    {
+        CapabilityKeyCatalog.All
+            .Where(capability => capability.Category is FeatureCatalog.Categories.Alerts
+                or FeatureCatalog.Categories.Channels)
+            .Should().OnlyContain(capability => capability.Status == CapabilityKeyCatalog.PreviewStatus);
+    }
+
     public static TheoryData<string> AllCommunityKeys()
     {
         var data = new TheoryData<string>();

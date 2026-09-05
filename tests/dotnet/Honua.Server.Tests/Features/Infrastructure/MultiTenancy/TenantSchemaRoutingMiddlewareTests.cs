@@ -8,6 +8,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
+using Honua.Infrastructure.RateLimiting;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Builder;
@@ -164,6 +165,133 @@ public class TenantSchemaRoutingMiddlewareTests
         Assert.Equal("acme=4", body);
     }
 
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("acme-east")]
+    [InlineData("acme.east")]
+    [InlineData("acme:east")]
+    [InlineData("ACME")]
+    [InlineData("PUBLIC")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task RoutingEnabled_AmbiguousOrTruncatedTenant_FailsClosed(string tenantId)
+    {
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", tenantId)),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true);
+
+        var response = await client.GetAsync("/schema");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.DoesNotContain("tenant_", await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("acme-east", "acme_east")]
+    [InlineData("acme.east", "acme:east")]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task EncodedRouting_DistinctTenantPrincipals_ReceiveDistinctSchemas(string first, string second)
+    {
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["first"] = AuthenticatedPrincipal(("tid", first)),
+                ["second"] = AuthenticatedPrincipal(("tid", second)),
+            },
+            routingEnabled: true,
+            routingSettings: new() { ["UseEncodedSchemaNames"] = "true" });
+
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/schema");
+        firstRequest.Headers.Add("X-Test-Principal", "first");
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/schema");
+        secondRequest.Headers.Add("X-Test-Principal", "second");
+        var responses = await Task.WhenAll(client.SendAsync(firstRequest), client.SendAsync(secondRequest));
+
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.OK, response.StatusCode));
+        Assert.NotEqual(await responses[0].Content.ReadAsStringAsync(), await responses[1].Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("acme-east", HttpStatusCode.OK, "tenant_acme_east")]
+    [InlineData("acme_east", HttpStatusCode.ServiceUnavailable, null)]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task ExistingSchemaMapping_PreservesOwnerAndBlocksAlias(
+        string tenantId, HttpStatusCode expectedStatus, string? expectedSchema)
+    {
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", tenantId)),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true,
+            routingSettings: new() { ["SchemaMap:acme-east"] = "tenant_acme_east" });
+
+        var response = await client.GetAsync("/schema");
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        if (expectedSchema is not null)
+        {
+            Assert.Equal(expectedSchema, await response.Content.ReadAsStringAsync());
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task ExistingColonTenant_CanPinSchemaThroughConfigurationBinding()
+    {
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", "acme:east")),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true,
+            routingSettings: new()
+            {
+                ["SchemaMappings:0:TenantId"] = "acme:east",
+                ["SchemaMappings:0:SchemaName"] = "legacy_acme",
+            });
+
+        var response = await client.GetAsync("/schema");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("legacy_acme", await response.Content.ReadAsStringAsync());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /schema")]
+    public async Task FailedSchemaRouting_ConsumesRateLimitAndReturnsRetryAfter()
+    {
+        var tenantId = $"rate-{Guid.NewGuid():N}";
+        var client = await CreateAppAsync(
+            principals: new Dictionary<string, ClaimsPrincipal?>
+            {
+                ["default"] = AuthenticatedPrincipal(("tid", tenantId)),
+            },
+            defaultPrincipalKey: "default",
+            routingEnabled: true,
+            rateLimitingEnabled: true);
+
+        var first = await client.GetAsync("/schema");
+        var second = await client.GetAsync("/schema");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, first.StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+        Assert.True(second.Headers.Contains("Retry-After"));
+    }
+
     private static ClaimsPrincipal AuthenticatedPrincipal((string Type, string Value) claim)
     {
         var claims = new List<Claim>
@@ -179,7 +307,9 @@ public class TenantSchemaRoutingMiddlewareTests
         Dictionary<string, ClaimsPrincipal?> principals,
         bool routingEnabled,
         string? defaultPrincipalKey = null,
-        string? pinnedSchema = null)
+        string? pinnedSchema = null,
+        Dictionary<string, string?>? routingSettings = null,
+        bool rateLimitingEnabled = false)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -187,15 +317,31 @@ public class TenantSchemaRoutingMiddlewareTests
         var settings = new Dictionary<string, string?>
         {
             ["MultiTenancy:SchemaRouting:Enabled"] = routingEnabled ? "true" : "false",
+            ["RateLimiting:Enabled"] = rateLimitingEnabled ? "true" : "false",
+            ["RateLimiting:GlobalRequestsPerMinute"] = "1",
         };
+        if (routingSettings is not null)
+        {
+            foreach (var setting in routingSettings)
+            {
+                settings[$"MultiTenancy:SchemaRouting:{setting.Key}"] = setting.Value;
+            }
+        }
+
         var config = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
         builder.Services.AddHonuaTenantContext(config, _ => { });
         builder.Services.AddHonuaTenantSchemaRouting(config);
+        builder.Services.AddRateLimiting(config);
 
-        // Mirror the production registration of the request-scoped schema context.
-        builder.Services.AddScoped<SchemaContext>();
-        builder.Services.AddScoped<ISchemaContext>(sp => sp.GetRequiredService<SchemaContext>());
+        if (!routingEnabled)
+        {
+            // Disabled-routing controls use a test schema context to observe that routing is a no-op.
+            builder.Services.AddScoped<SchemaContext>();
+            builder.Services.AddScoped<ISchemaContext>(sp => sp.GetRequiredService<SchemaContext>());
+        }
+        // Enabled-routing tests rely entirely on the production service registration,
+        // with no HONUA_TEST_SCHEMA_HEADERS or test-only schema context registration.
 
         var app = builder.Build();
 
@@ -203,6 +349,8 @@ public class TenantSchemaRoutingMiddlewareTests
         // (or the default key) and attaches it to HttpContext.User before tenant resolution.
         app.Use(async (ctx, next) =>
         {
+            // TestServer has no socket peer; provide the connection address a real host supplies.
+            ctx.Connection.RemoteIpAddress = IPAddress.Loopback;
             string? key = ctx.Request.Headers.TryGetValue("X-Test-Principal", out var hv) && hv.Count > 0
                 ? hv[0]
                 : defaultPrincipalKey;
@@ -222,6 +370,7 @@ public class TenantSchemaRoutingMiddlewareTests
         });
 
         app.UseHonuaTenantContext();
+        app.UseRateLimiting();
         app.UseHonuaTenantSchemaRouting();
 
         // Report the schema the request was routed to (or <null> when none was set). Reads the

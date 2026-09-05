@@ -102,7 +102,7 @@ internal sealed class FeatureServerEditsHandler(
         string? heldReservationToken = null;
 
         // Whether this request may have put rows in the database. It is deliberately NOT derived
-        // from the ExecuteEdits return value: with the default rollbackOnFailure=false the writer
+        // from the ExecuteEdits return value: when rollbackOnFailure=false the writer
         // commits rows independently, so a cancellation or transport fault part-way through the
         // batch unwinds with earlier rows already committed and no result to inspect. The flag is
         // therefore raised inside ExecuteEdits immediately BEFORE the write is dispatched and only
@@ -185,9 +185,32 @@ internal sealed class FeatureServerEditsHandler(
             var totalCount = (request.Adds?.Length ?? 0) + (request.Updates?.Length ?? 0) + (request.Deletes?.Length ?? 0);
             if (totalCount == 0)
             {
-                return Results.Json(new ApplyEditsResponse { Success = true },
+                return Results.Json(new ApplyEditsResponse
+                {
+                    AddResults = [],
+                    UpdateResults = [],
+                    DeleteResults = [],
+                    Success = true
+                },
                     FeatureServerJsonContext.Default.ApplyEditsResponse,
                     contentType: "application/json");
+            }
+
+            // Metadata capabilities are an editing contract, not merely advisory text. Reject
+            // an edit kind that the published service did not declare instead of allowing the
+            // handler to expose a broader surface than Esri clients were told exists (#4073).
+            var undeclaredOperation = request.Adds?.Length > 0 && !FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Create", publication)
+                ? "Create"
+                : request.Updates?.Length > 0 && !FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Update", publication)
+                    ? "Update"
+                    : request.Deletes?.Length > 0 && !FeatureServerEndpoints.ServiceSupportsOperationV2(service, "Delete", publication)
+                        ? "Delete"
+                        : null;
+            if (undeclaredOperation is not null)
+            {
+                return StandardErrorHelpers.CreateBadRequest(httpContext,
+                    $"{undeclaredOperation} edits are not enabled for this service",
+                    [$"Declare the {undeclaredOperation} capability before submitting {undeclaredOperation.ToLowerInvariant()} edits."]);
             }
 
             // Per-edit-type authorization checks (BH-002 / BH3-001 / BH3-014): the pre-body gate
@@ -381,7 +404,7 @@ internal sealed class FeatureServerEditsHandler(
             // Two cases deliberately KEEP the key. An edit that committed rows, so a retry can never
             // duplicate them whether or not the response was recorded. And an edit whose write was
             // dispatched but whose outcome is unknown — a cancellation between the per-row commits
-            // the default rollbackOnFailure=false performs, a transport fault mid-batch — because
+            // the explicit rollbackOnFailure=false mode performs, a transport fault mid-batch — because
             // rows may already exist and re-running them would duplicate.
             //
             // ReleaseAsync takes no cancellation token on purpose, so cancellation before dispatch
@@ -906,7 +929,7 @@ internal sealed class FeatureServerEditsHandler(
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
 
         // From here the outcome is no longer knowable from control flow alone: under the default
-        // rollbackOnFailure=false the writer commits rows independently, so an exception out of
+        // when rollbackOnFailure=false the writer commits rows independently, so an exception out of
         // ApplyEditsAsync — a cancellation between rows, a transport fault mid-batch — can unwind
         // with rows already committed and no result to inspect. Raise the flag BEFORE dispatching so
         // the handler's finally keeps the idempotency reservation in exactly that case (#3052); the
@@ -995,9 +1018,9 @@ internal sealed class FeatureServerEditsHandler(
 
         var response = new ApplyEditsResponse
         {
-            AddResults = FinalizeResults(context.AddResults),
-            UpdateResults = FinalizeResults(context.UpdateResults),
-            DeleteResults = FinalizeResults(context.DeleteResults),
+            AddResults = FinalizeResults(context.AddResults) ?? [],
+            UpdateResults = FinalizeResults(context.UpdateResults) ?? [],
+            DeleteResults = FinalizeResults(context.DeleteResults) ?? [],
             Success = false
         };
 
@@ -1014,9 +1037,9 @@ internal sealed class FeatureServerEditsHandler(
     /// </summary>
     private static ApplyEditsResponse BuildFinalResponse(EditOperationContext context, FeatureEditResult editResult)
     {
-        var finalAddResults = FinalizeResults(context.AddResults);
-        var finalUpdateResults = FinalizeResults(context.UpdateResults);
-        var finalDeleteResults = FinalizeResults(context.DeleteResults);
+        var finalAddResults = FinalizeResults(context.AddResults) ?? [];
+        var finalUpdateResults = FinalizeResults(context.UpdateResults) ?? [];
+        var finalDeleteResults = FinalizeResults(context.DeleteResults) ?? [];
         var allSuccess = AreAllResultsSuccessful(finalAddResults) &&
                          AreAllResultsSuccessful(finalUpdateResults) &&
                          AreAllResultsSuccessful(finalDeleteResults) &&
@@ -1194,7 +1217,7 @@ internal sealed class FeatureServerEditsHandler(
     /// originating request slot so per-feature rejections map back precisely. When
     /// <paramref name="committedOnly"/> is <see langword="true"/> (the after-hook path), only rows
     /// whose response slot reports success are included, so post-write hooks never observe features
-    /// that failed to write under a partial-failure (rollbackOnFailure=false) edit.
+    /// that failed to write under a partial-failure (explicit rollbackOnFailure=false) edit.
     /// </summary>
     private EditHookContext BuildEditHookContext(
         string serviceId,
@@ -1338,7 +1361,7 @@ internal sealed class FeatureServerEditsHandler(
     /// Carries the "may this request have put rows in the database?" signal out of
     /// <see cref="ExecuteEdits"/> while the write is still in flight (#3052).
     ///
-    /// A return value cannot express this: with the default <c>rollbackOnFailure=false</c> the
+    /// A return value cannot express this: with explicit <c>rollbackOnFailure=false</c> the
     /// writer commits rows independently, so an exception out of the provider unwinds without a
     /// result even though earlier rows are already committed. A mutable holder raised before the
     /// dispatch is observable from the handler's <c>finally</c> on exactly those paths, and decides

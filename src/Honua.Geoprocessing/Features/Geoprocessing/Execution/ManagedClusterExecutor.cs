@@ -335,12 +335,11 @@ internal sealed class ManagedClusterExecutor(
         var envelope = EnvelopeAround(points[origin], eps);
         var candidates = index.Query(envelope);
         var neighbors = new List<int>(candidates.Count);
-        var epsSquared = eps * eps;
         foreach (var candidate in candidates)
         {
             var dx = points[candidate].X - points[origin].X;
             var dy = points[candidate].Y - points[origin].Y;
-            if ((dx * dx) + (dy * dy) <= epsSquared)
+            if (ManagedDistance.IsWithin(dx, dy, eps))
             {
                 neighbors.Add(candidate);
             }

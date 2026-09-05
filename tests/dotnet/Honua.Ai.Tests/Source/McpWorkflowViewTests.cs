@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -49,7 +50,7 @@ public sealed class McpWorkflowViewTests
         var surface = BuildFullSurface();
 
         var view = await ListToolsAsync(surface, view: McpWorkflowViewCatalog.SetupViewName);
-        var full = await ListToolsAsync(surface, view: null);
+        var full = await ListToolsAsync(surface, McpWorkflowViewNegotiation.FullCatalogViewName);
 
         view.Names.Should().NotBeEmpty();
         view.Names.Should().BeSubsetOf(full.Names, "a view can only narrow the canonical catalog");
@@ -91,17 +92,12 @@ public sealed class McpWorkflowViewTests
             "honua_dry_run_plan",
             "honua_execute_plan",
             "honua_list_jobs",
-            "honua_cancel_job",
             "honua_studio_create_draft",
-            "honua_studio_get_draft",
-            "honua_studio_add_layer",
-            "honua_studio_add_widget",
-            "honua_studio_set_view",
             "honua_studio_validate_draft",
             "honua_studio_propose_publication",
-            "honua_propose_operation",
             "honua_supported_operation_kinds",
         ]);
+        view.Names.Should().HaveCountLessThanOrEqualTo(20);
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
         stages.Select(s => s.GetProperty("id").GetString()).Should().Equal(
@@ -153,13 +149,13 @@ public sealed class McpWorkflowViewTests
     {
         var surface = BuildFullSurface();
 
-        var full = await ListToolsAsync(surface, view: null);
+        var full = await ListToolsAsync(surface, McpWorkflowViewNegotiation.FullCatalogViewName);
         var view = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName);
 
         var fullStudio = full.Tools.Single(t =>
-            t.GetProperty("name").GetString() == "honua_studio_add_layer");
+            t.GetProperty("name").GetString() == "honua_studio_create_draft");
         var viewStudio = view.Tools.Single(t =>
-            t.GetProperty("name").GetString() == "honua_studio_add_layer");
+            t.GetProperty("name").GetString() == "honua_studio_create_draft");
 
         fullStudio.GetRawText().Should().Be(
             viewStudio.GetRawText(),
@@ -191,7 +187,7 @@ public sealed class McpWorkflowViewTests
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToArray();
 
-        var full = await ListToolsAsync(surface, view: null);
+        var full = await ListToolsAsync(surface, McpWorkflowViewNegotiation.FullCatalogViewName);
 
         full.Names.Should().Equal(
             expected,
@@ -207,9 +203,33 @@ public sealed class McpWorkflowViewTests
         var surface = BuildFullSurface();
 
         var full = await ListToolsAsync(surface, McpWorkflowViewNegotiation.FullCatalogViewName);
-        var unnarrowed = await ListToolsAsync(surface, view: null);
+        var unnarrowed = await ListToolsAsync(surface, McpWorkflowViewNegotiation.FullCatalogViewName);
 
         full.Names.Should().Equal(unnarrowed.Names);
+    }
+
+    [UnitTest]
+    public async Task ToolsList_FullCatalogExport_IsAvailableToAuthenticatedClients()
+    {
+        var response = await DispatchAsync(
+            BuildFullSurface(),
+            """{"jsonrpc":"2.0","id":"full","method":"tools/list","params":{"view":"full"}}""",
+            McpTestFactory.AuthenticatedHttpContext());
+
+        response!.Error.Should().BeNull();
+        response.Result!.Value.GetProperty("tools").EnumerateArray().Should().NotBeEmpty();
+    }
+
+    [UnitTest]
+    public async Task ToolsList_FullCatalogExport_RequiresAuthentication()
+    {
+        var response = await DispatchAsync(
+            BuildFullSurface(),
+            """{"jsonrpc":"2.0","id":"full","method":"tools/list","params":{"view":"full"}}""",
+            McpTestFactory.AnonymousHttpContext());
+
+        response!.Error.Should().NotBeNull();
+        response.Error!.Data!.Code.Should().Be(McpErrorMapper.Codes.PermissionDenied);
     }
 
     [UnitTest]
@@ -346,11 +366,45 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
+    public async Task ToolsList_DefaultProfile_IsBoundedToTwelveMetaWorkflowTools()
+    {
+        var surface = BuildFullSurface();
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+            services.AddSingleton<IOptionsMonitor<McpWorkflowViewOptions>>(
+                new StubOptionsMonitor(new McpWorkflowViewOptions())));
+
+        var view = await ListToolsAsync(surface, view: null, context: context);
+
+        view.Meta.GetProperty("view").GetString().Should().Be(McpWorkflowViewCatalog.DefaultViewName);
+        view.Names.Should().HaveCountLessThanOrEqualTo(12);
+        view.Names.Should().Contain(
+        [
+            "honua_list_capabilities",
+            "honua_resolve_entity",
+            "honua_describe_layer",
+            "honua_plan_analysis",
+            "honua_execute_plan",
+        ]);
+    }
+
+    [UnitTest]
+    public void PublishedTaskViews_AreBoundedToTwentyTools()
+    {
+        foreach (var definition in McpWorkflowViewCatalog.All.Values)
+        {
+            McpWorkflowViewProjector.Project(definition, BuildCatalogEntries()).Members
+                .Should().HaveCountLessThanOrEqualTo(20, $"view '{definition.Name}' must remain task-bounded");
+        }
+    }
+
+    [UnitTest]
     public async Task ToolsList_ServerProfileDefaultView_UsesTheMonitorCurrentValue()
     {
-        var monitor = new StubOptionsMonitor(new McpWorkflowViewOptions());
+        var monitor = new StubOptionsMonitor(
+            new McpWorkflowViewOptions { DefaultView = McpWorkflowViewNegotiation.FullCatalogViewName });
         var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
             services.AddSingleton<IOptionsMonitor<McpWorkflowViewOptions>>(monitor));
+        ((ClaimsIdentity)context.User.Identity!).AddClaim(new Claim(ClaimTypes.Role, "admin"));
 
         var full = await ListToolsAsync(BuildFullSurface(), view: null, context: context);
         monitor.CurrentValue = new McpWorkflowViewOptions { DefaultView = McpWorkflowViewCatalog.SetupViewName };
@@ -372,15 +426,14 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
-    public async Task ToolsList_WithNoProfileOptionsRegistered_ServesTheCompleteCatalog()
+    public async Task ToolsList_WithNoProfileOptionsRegistered_ServesBoundedDefault()
     {
         var surface = BuildFullSurface();
 
-        var full = await ListToolsAsync(surface, view: null);
+        var view = await ListToolsAsync(surface, view: null);
 
-        full.Meta.ValueKind.Should().Be(
-            JsonValueKind.Undefined,
-            "a host that never configured a default view must be byte-for-byte unchanged");
+        view.Meta.GetProperty("view").GetString().Should().Be(McpWorkflowViewCatalog.DefaultViewName);
+        view.Names.Should().HaveCountLessThanOrEqualTo(12);
     }
 
     // ------------------------------------------------------------------
@@ -401,7 +454,7 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
-    public void Projection_MembershipDigest_ChangesWhenMembershipChanges()
+    public void Projection_LongTailDynamicMembership_DoesNotExpandBoundedView()
     {
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
 
@@ -409,8 +462,8 @@ public sealed class McpWorkflowViewTests
             McpWorkflowViewCatalog.Setup,
             BuildCatalogEntries().Append((DescribeOperation("honua_op_import_geojson"), true)));
 
-        extended.MembershipDigest.Should().NotBe(baseline.MembershipDigest);
-        extended.DescriptorDigest.Should().NotBe(baseline.DescriptorDigest);
+        extended.MembershipDigest.Should().Be(baseline.MembershipDigest);
+        extended.DescriptorDigest.Should().Be(baseline.DescriptorDigest);
         extended.RevisionDigest.Should().Be(
             baseline.RevisionDigest,
             "the revision digest pins the server-authored definition, not the live membership");
@@ -466,7 +519,7 @@ public sealed class McpWorkflowViewTests
     // ------------------------------------------------------------------
 
     [UnitTest]
-    public async Task AddingAnEligibleServerOperation_UpdatesTheViewWithNoSourceListEdit()
+    public async Task AddingLongTailServerOperation_DoesNotExpandBoundedView()
     {
         var before = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
         before.Names.Should().NotContain("honua_op_import_geojson");
@@ -478,10 +531,9 @@ public sealed class McpWorkflowViewTests
 
         var after = await ListToolsAsync(withOperation, McpWorkflowViewCatalog.SetupViewName);
 
-        after.Names.Should().Contain("honua_op_import_geojson")
-            .And.Contain("honua_op_service_promote");
-        StageOf(after, "connect-import").Should().Contain("honua_op_import_geojson");
-        StageOf(after, "publish").Should().Contain("honua_op_service_promote");
+        after.Names.Should().NotContain("honua_op_import_geojson")
+            .And.NotContain("honua_op_service_promote");
+        after.Names.Should().HaveCountLessThanOrEqualTo(20);
 
         // Removing the operation drops it again, still with no edit.
         var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
@@ -495,7 +547,7 @@ public sealed class McpWorkflowViewTests
         var surface = BuildFullSurface(new StubToolSource("honua_op_billing_reconcile"));
 
         var view = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName);
-        var full = await ListToolsAsync(surface, view: null);
+        var full = await ListToolsAsync(surface, McpWorkflowViewNegotiation.FullCatalogViewName);
 
         full.Names.Should().Contain("honua_op_billing_reconcile");
         view.Names.Should().NotContain(
@@ -504,7 +556,7 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
-    public void RuntimePublishedMembers_AreAppendedAfterStaticMembers()
+    public void RuntimePublishedMembers_DoNotExpandBoundedTaskView()
     {
         var projection = McpWorkflowViewProjector.Project(
             McpWorkflowViewCatalog.Setup,
@@ -512,14 +564,9 @@ public sealed class McpWorkflowViewTests
 
         var names = projection.Members.Select(m => m.ToolName).ToArray();
 
-        names[^1].Should().Be(
-            "honua_op_import_geojson",
-            "dynamically published definitions must APPEND to the tools array rather than re-sort it, so a "
-            + "mid-conversation tools/list_changed refresh does not invalidate the host's prompt cache");
-
-        // The static prefix is unchanged by the publication.
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
-        names[..^1].Should().Equal(baseline.Members.Select(m => m.ToolName));
+        names.Should().Equal(baseline.Members.Select(m => m.ToolName));
+        names.Should().HaveCountLessThanOrEqualTo(20);
     }
 
     [UnitTest]
@@ -546,7 +593,7 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
-    public async Task ToolsList_OverBudgetDynamicViewFailsClosed()
+    public async Task ToolsList_LongTailDynamicTools_DoNotExpandTaskView()
     {
         var dynamicNames = Enumerable.Range(0, McpWorkflowViewBudget.MaxDescriptors + 1)
             .Select(i => $"honua_op_import_{i:D3}")
@@ -555,9 +602,11 @@ public sealed class McpWorkflowViewTests
             BuildFullSurface(new StubToolSource(dynamicNames)),
             """{"jsonrpc":"2.0","id":"t","method":"tools/list","params":{"view":"setup"}}""");
 
-        response!.Error.Should().NotBeNull();
-        response.Error!.Code.Should().Be(McpErrorMapper.JsonRpcServerError);
-        response.Error.Data!.Code.Should().Be(McpErrorMapper.Codes.Internal);
+        response!.Error.Should().BeNull();
+        var tools = response.Result!.Value.GetProperty("tools");
+        tools.GetArrayLength().Should().BeLessThanOrEqualTo(20);
+        tools.EnumerateArray().Select(t => t.GetProperty("name").GetString())
+            .Should().NotContain(name => name!.StartsWith("honua_op_import_", StringComparison.Ordinal));
     }
 
     // ------------------------------------------------------------------
@@ -651,11 +700,8 @@ public sealed class McpWorkflowViewTests
             .EnumerateArray()
             .ToArray();
 
-        views.Should().ContainSingle();
-        views[0].GetProperty("name").GetString().Should().Be(McpWorkflowViewCatalog.SetupViewName);
-        views[0].GetProperty("revision").GetString().Should().Be(McpWorkflowViewCatalog.Setup.Revision);
-        views[0].GetProperty("revisionDigest").GetString().Should().StartWith("sha256:");
-        views[0].GetProperty("toolCount").GetInt32().Should().BeGreaterThan(0);
+        views.Select(v => v.GetProperty("name").GetString()).Should().Equal("default", "setup");
+        views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= 20);
     }
 
     // ------------------------------------------------------------------
@@ -787,6 +833,7 @@ public sealed class McpWorkflowViewTests
         string? view,
         HttpContext? context = null)
     {
+        context ??= McpTestFactory.AuthenticatedHttpContext();
         var tools = new List<JsonElement>();
         var meta = default(JsonElement);
         string? cursor = null;

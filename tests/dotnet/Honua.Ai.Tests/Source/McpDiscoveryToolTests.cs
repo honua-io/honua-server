@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Geoprocessing;
@@ -126,6 +127,47 @@ public sealed class McpDiscoveryToolTests
     }
 
     [UnitTest]
+    public async Task ListCapabilities_DefaultIsBoundedAndAdminFullExportIsExplicit()
+    {
+        var listTool = new ListCapabilitiesTool(_jobService, NullLogger<ListCapabilitiesTool>.Instance);
+        var tools = Enumerable.Range(0, 14)
+            .Select(i => (IMcpTool)new StubTool($"honua_long_tail_{i:D2}"))
+            .Append(listTool)
+            .ToArray();
+        var surface = new McpDataAccessSurface(
+            tools,
+            [new FeatureCatalogResource(_jobService, NullLogger<FeatureCatalogResource>.Instance)],
+            NullLogger<McpDataAccessSurface>.Instance);
+        var services = BuildServices(surface);
+
+        var bounded = await surface.DispatchAsync(
+            AuthenticatedContext(services),
+            ToolCall("caps-bounded", ListCapabilitiesTool.ToolName, "{}"),
+            CancellationToken.None);
+        var boundedContent = bounded!.Result!.Value.GetProperty("structuredContent");
+        boundedContent.GetProperty("tools").GetArrayLength().Should().Be(12);
+        boundedContent.GetProperty("totalToolCount").GetInt32().Should().Be(15);
+        boundedContent.GetProperty("nextToolCursor").GetString().Should().NotBeNullOrWhiteSpace();
+
+        var denied = await surface.DispatchAsync(
+            AuthenticatedContext(services),
+            ToolCall("caps-denied", ListCapabilitiesTool.ToolName, """{"fullExport":true}"""),
+            CancellationToken.None);
+        denied!.Error.Should().BeNull();
+        denied.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue();
+
+        var adminContext = AuthenticatedContext(services);
+        ((ClaimsIdentity)adminContext.User.Identity!).AddClaim(new Claim(ClaimTypes.Role, "admin"));
+        var exported = await surface.DispatchAsync(
+            adminContext,
+            ToolCall("caps-full", ListCapabilitiesTool.ToolName, """{"fullExport":true}"""),
+            CancellationToken.None);
+        var exportedContent = exported!.Result!.Value.GetProperty("structuredContent");
+        exportedContent.GetProperty("tools").GetArrayLength().Should().Be(15);
+        exportedContent.TryGetProperty("nextToolCursor", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void DiscoveryModels_AreResolvableFromSourceGeneratedContext()
     {
         // AOT guard: the discovery DTOs must be source-generated for the explicit
@@ -195,5 +237,23 @@ public sealed class McpDiscoveryToolTests
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private sealed class StubTool(string name) : IMcpTool
+    {
+        public string Name => name;
+        public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
+        public McpToolDescriptor Describe() => new()
+        {
+            Name = Name,
+            Description = "Long-tail operation available through bounded discovery.",
+            InputSchema = Json("""{"type":"object"}"""),
+            Annotations = McpToolAnnotationSets.ReadOnly(Name),
+        };
+
+        public Task<McpToolsCallResult> InvokeAsync(
+            HttpContext httpContext,
+            JsonElement? arguments,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

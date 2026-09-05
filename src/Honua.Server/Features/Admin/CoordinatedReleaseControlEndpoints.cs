@@ -7,6 +7,9 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Server.Features.Operations;
 using Honua.Server.Features.Admin.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -244,24 +247,60 @@ internal static class CoordinatedReleaseControlEndpoints
         string operationId,
         [FromBody] CoordinatedReleaseActionRequest? request,
         [FromServices] CoordinatedReleaseControlService controlService,
+        [FromServices] IOperationInvoker operationInvoker,
         HttpContext context)
     {
-        var operation = await controlService.RequestRollbackAsync(
-                operationId,
-                ResolveRequestedBy(context),
-                request?.Reason,
+        var requestedBy = ResolveRequestedBy(context);
+        var handle = await operationInvoker.SubmitAsync(
+                new OperationRequest
+                {
+                    OperationId = WorkflowRollbackOperations.CoordinatedRelease,
+                    Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [WorkflowRollbackOperations.TargetOperationId] = operationId,
+                        [WorkflowRollbackOperations.Reason] = request?.Reason,
+                    },
+                },
+                new OperationPolicyContext
+                {
+                    PrincipalId = requestedBy,
+                    CorrelationId = context.TraceIdentifier,
+                    IdempotencyKey = WorkflowRollbackOperations.ScopeIdempotencyKey(
+                        context.Request.Headers["Idempotency-Key"].FirstOrDefault(),
+                        operationId),
+                    AuthorizationOutcome = "authorized",
+                },
                 context.RequestAborted)
             .ConfigureAwait(false);
 
-        if (operation is null)
+        if (handle.Status != OperationHandleStatus.Completed)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                StatusCodes.Status404NotFound,
-                ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
-                $"Coordinated release operation '{operationId}' was not found.");
+            return CreateRollbackHandleProblem(handle, operationId);
         }
 
+        var operation = await controlService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
+        if (operation is null) return CreateRollbackHandleProblem(handle with { Status = OperationHandleStatus.Indeterminate }, operationId);
+
         return Results.Json(MapResponse(operation), CoordinatedReleaseJsonContext.Default.CoordinatedReleaseOperationResponse);
+    }
+
+    private static IResult CreateRollbackHandleProblem(OperationHandle handle, string operationId)
+    {
+        var statusCode = handle.Status switch
+        {
+            _ when WorkflowRollbackOperations.IsNotFound(handle) => StatusCodes.Status404NotFound,
+            _ when WorkflowRollbackOperations.IsConflict(handle) => StatusCodes.Status409Conflict,
+            OperationHandleStatus.Indeterminate => StatusCodes.Status503ServiceUnavailable,
+            OperationHandleStatus.Denied or OperationHandleStatus.Rejected => StatusCodes.Status403Forbidden,
+            OperationHandleStatus.Failed => StatusCodes.Status502BadGateway,
+            _ => StatusCodes.Status409Conflict,
+        };
+        var detail = handle.Reason
+            ?? $"Rollback for coordinated release operation '{operationId}' returned canonical status '{handle.Status}' (instance '{handle.OperationInstanceId}').";
+        return ProblemDetailsHelpers.CreateAdminProblem(
+            statusCode,
+            ProblemDetailsHelpers.GetTitle(statusCode),
+            detail);
     }
 
     private static bool TryParseGate(string gate, out CoordinatedReleaseStep step)

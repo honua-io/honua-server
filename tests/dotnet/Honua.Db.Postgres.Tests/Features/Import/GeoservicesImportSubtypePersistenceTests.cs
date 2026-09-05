@@ -41,10 +41,12 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
         var environment = $"SubtypeTest-{Guid.NewGuid():N}";
 
         await EnsureCatalogSchemaAsync();
+        await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, "honua");
 
         var graphStore = new PostgresMetadataV2GraphStore(
             new FixtureConnectionProvider(fixture),
-            environment);
+            environment,
+            FixtureBypassDatabaseSchemaGuard.Instance);
 
         try
         {

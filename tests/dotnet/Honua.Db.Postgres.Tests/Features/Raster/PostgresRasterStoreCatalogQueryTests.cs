@@ -280,7 +280,11 @@ public sealed class PostgresRasterStoreCatalogQueryTests(PostgresFixture fixture
     }
 
     private PostgresRasterStore CreateStore(string schema)
-        => new(new FixtureConnectionProvider(fixture.DataSource), NullLogger<PostgresRasterStore>.Instance, schema);
+        => new(
+            new FixtureConnectionProvider(fixture.DataSource),
+            NullLogger<PostgresRasterStore>.Instance,
+            FixtureBypassDatabaseSchemaGuard.Instance,
+            schema);
 
     private async Task SeedGridAsync(string schema, int grid, double cell)
     {

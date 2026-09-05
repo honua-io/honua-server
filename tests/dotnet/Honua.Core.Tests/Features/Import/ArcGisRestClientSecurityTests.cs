@@ -112,7 +112,7 @@ public sealed class ArcGisRestClientSecurityTests
     }
 
     [Fact]
-    public async Task DiscoverServiceAsync_WhenRetryLogsTokenRequest_RedactsTokenValue()
+    public async Task DiscoverServiceAsync_WhenRetryLogsTokenRequest_DoesNotLeakTokenValue()
     {
         const string accessToken = "retry-secret-token";
         var logger = new RecordingLogger<ArcGisRestClient>();
@@ -135,8 +135,8 @@ public sealed class ArcGisRestClientSecurityTests
 
         result.ServiceName.Should().Be("Retry Test");
         handler.RequestCount.Should().Be(2);
-        logger.Messages.Should().Contain(message => message.Contains("token=<redacted>", StringComparison.Ordinal));
         logger.Messages.Should().NotContain(message => message.Contains(accessToken, StringComparison.Ordinal));
+        logger.Messages.Should().NotContain(message => message.Contains("token=", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

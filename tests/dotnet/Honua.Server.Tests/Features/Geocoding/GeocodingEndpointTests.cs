@@ -38,6 +38,7 @@ public sealed class GeocodingEndpointTests
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
     [Endpoint("GET /rest/services/GeocodeServer/findAddressCandidates")]
+    [Endpoint("POST /rest/services/GeocodeServer/findAddressCandidates")]
     public async Task FindAddressCandidates_ReturnsGeoServicesPayload()
     {
         using var factory = CreateDefaultFactory();
@@ -45,9 +46,17 @@ public sealed class GeocodingEndpointTests
 
         using var response = await client.GetAsync("/rest/services/World/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
         using var defaultResponse = await client.GetAsync("/rest/services/GeocodeServer/findAddressCandidates?singleLine=1600+Pennsylvania+Ave+NW&f=json");
+        using var postContent = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["singleLine"] = "1600 Pennsylvania Ave NW",
+            ["f"] = "json",
+        });
+        using var postResponse = await client.PostAsync(
+            "/rest/services/GeocodeServer/findAddressCandidates", postContent);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, postResponse.StatusCode);
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
 
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -61,6 +70,9 @@ public sealed class GeocodingEndpointTests
         Assert.Equal("1600 Pennsylvania Ave NW", firstCandidate.GetProperty("address").GetString());
         Assert.True(firstCandidate.TryGetProperty("location", out _));
         Assert.True(firstCandidate.TryGetProperty("attributes", out _));
+
+        using var postPayload = JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync());
+        Assert.True(postPayload.RootElement.GetProperty("candidates").GetArrayLength() > 0);
     }
 
     // Regression (#1428): findAddressCandidates must reproject candidate locations to a

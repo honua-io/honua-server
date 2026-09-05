@@ -93,7 +93,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         tasks.Should().Contain("geometry.buffer");
         tasks.Should().NotContain("source.geojson");
         tasks.Should().NotContain("analytics.cluster");
-        tasks.Should().NotContain("raster.interpolate-kriging");
+        tasks.Should().Contain("raster.interpolate-kriging");
     }
 
     [IntegrationTest]
@@ -375,6 +375,52 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             results.Should().NotBeEmpty();
             results[0].GetProperty("paramName").GetString().Should().Be("outputFeatureLayer");
             results[0].GetProperty("dataType").GetString().Should().Be("GPFeatureRecordSetLayer");
+        }
+        finally
+        {
+            await executeFixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task ExecutePost_WithEsriResultOptions_TreatsOptionsAsProtocolControls()
+    {
+        var jobService = new SyncExecuteGeoprocessingJobService();
+        var executeFixture = new WebAppFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IGeoprocessingJobService>();
+                services.AddSingleton<IGeoprocessingJobService>(jobService);
+            });
+
+        await executeFixture.InitializeAsync();
+        try
+        {
+            using var client = executeFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "10",
+                ["returnZ"] = "true",
+                ["returnM"] = "true",
+                ["returnFeatureCollection"] = "true",
+                ["returnColumnName"] = "true",
+                ["returnTrueCurves"] = "true"
+            });
+
+            var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/execute", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            jobService.LastSubmittedPlan.Should().NotBeNull();
+            var inputs = jobService.LastSubmittedPlan!.Steps.Single().Inputs;
+            inputs.Keys.Should().NotContain(
+                key => key.StartsWith("return", StringComparison.OrdinalIgnoreCase),
+                "Esri execute result options belong to the protocol adapter, not the canonical process inputs");
         }
         finally
         {
@@ -1883,6 +1929,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     /// </summary>
     private sealed class SyncExecuteGeoprocessingJobService : IGeoprocessingJobService
     {
+        public AnalysisPlan? LastSubmittedPlan { get; private set; }
 
         public Task<GeoprocessingJobListPage> ListJobsAsync(
             GeoprocessingJobListFilter filter,
@@ -1937,6 +1984,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
             IReadOnlyDictionary<string, string>? protocolMetadata = null,
             CancellationToken cancellationToken = default)
         {
+            LastSubmittedPlan = plan;
             var parameters = protocolMetadata != null
                 ? new Dictionary<string, string>(protocolMetadata)
                 : new Dictionary<string, string>();

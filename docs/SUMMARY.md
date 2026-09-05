@@ -3,6 +3,7 @@
 ## Get started
 
 - [Quickstart: zero to a map](get-started/quickstart.md)
+- [One-terminal setup journey](get-started/one-terminal-setup.md)
 - [Your first dataset](get-started/first-dataset.md)
 - [Your first map](get-started/first-map.md)
 
@@ -47,6 +48,7 @@
 - Query & analyze
   - [Query features](guides/query-analyze/query-features.md)
   - [Export data](guides/query-analyze/export-data.md)
+  - [Geoprocessing with AI](guides/query-analyze/geoprocessing-with-ai.md)
   - [Run geoprocessing](guides/query-analyze/run-geoprocessing.md)
   - [Author a geoprocessing process](guides/query-analyze/gp-devkit-authoring.md)
   - [Automate workflows](guides/query-analyze/automate-workflows.md)
@@ -57,8 +59,15 @@
   - [Excel & Power BI](guides/connect/excel-power-bi.md)
   - [MapLibre web maps](guides/connect/maplibre-web-maps.md)
   - [AI agents (MCP)](guides/connect/ai-agents-mcp.md)
-  - [Run the Studio AI proxy](guides/run-studio-ai-proxy.md)
-  - [Run Studio AI on Amazon Bedrock](guides/run-studio-ai-on-bedrock.md)
+- Honua Studio (preview)
+  - [Honua Studio](studio/README.md)
+  - [Run standalone](studio/run-standalone.md)
+  - [Embed Studio](studio/embed.md)
+  - [Bring your own model](studio/byom.md)
+  - [Studio MCP tools](studio/mcp-tools.md)
+  - [Drive Studio from Claude Desktop](studio/drive-from-claude-desktop.md)
+  - [Use the JavaScript Studio agent](studio/sdk-js-studio-agent.md)
+  - [Use the .NET lifecycle client](studio/dotnet-lifecycle.md)
 - Edit data
   - [Edit features](guides/edit/edit-features.md)
   - [Attachments & related records](guides/edit/attachments-and-related-records.md)
@@ -71,6 +80,9 @@
   - [Compliance](guides/secure/compliance.md)
 - Deploy & operate
   - [Operating Honua](guides/operate/README.md)
+  - [Operate scenario](guides/operate/scenario.md)
+  - [Operate metrics](guides/operate/metrics.md)
+  - [Ops evidence posture](guides/operate/evidence-posture.md)
   - [Docker Compose](guides/deploy/docker-compose.md)
   - [Pilot onboarding runbook](guides/deploy/pilot-onboarding-runbook.md)
   - [Kubernetes](guides/deploy/kubernetes.md)

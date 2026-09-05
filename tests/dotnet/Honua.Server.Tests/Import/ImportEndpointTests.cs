@@ -16,7 +16,9 @@ using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Admin.Models;
+using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -535,7 +537,7 @@ public class ImportEndpointTests : IAsyncLifetime
     public async Task ImportFile_DefaultOperationalSchema_CanDiscoverPublishAndQueryFeatureServer()
     {
         var requestedTableName = $"schema_boundary_{Guid.NewGuid():N}"[..48];
-        var physicalTableName = $"imported_{requestedTableName}".ToLowerInvariant();
+        string? physicalTableName = null;
         var serviceName = $"schema_boundary_svc_{Guid.NewGuid():N}"[..48];
         int? layerId = null;
 
@@ -574,13 +576,28 @@ public class ImportEndpointTests : IAsyncLifetime
             var importResponse = await _client.PostAsync("/api/v1/admin/import/upload", content);
             var importPayload = await importResponse.Content.ReadAsStringAsync();
             importResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {importPayload}");
+            var importResult = JsonSerializer.Deserialize<ImportResult>(importPayload, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }) ?? throw new InvalidOperationException("Import response did not contain a result.");
+            var importedPhysicalTableName = importResult.PhysicalTableName
+                ?? throw new InvalidOperationException("Successful import did not return its physical table name.");
+            physicalTableName = importedPhysicalTableName;
+
+            importResult.Should().NotBeNull();
+            importResult.Success.Should().BeTrue($"response: {importPayload}");
+            importResult.TableName.Should().Be(requestedTableName);
+            importResult.Schema.Should().Be("honua_data");
+            importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
+            importResult.PhysicalTableName.Should().StartWith("imported_");
+            importResult.PhysicalTableName.Length.Should().BeLessThanOrEqualTo(40);
 
             await using (var connection = await _fixture.Postgres.GetConnectionAsync())
             {
-                var operationalTableExists = await TableExistsAsync(connection, "honua_data", physicalTableName);
+                var operationalTableExists = await TableExistsAsync(connection, "honua_data", importedPhysicalTableName);
                 operationalTableExists.Should().BeTrue("imports should default to the operational data schema");
 
-                var metadataTableExists = await TableExistsAsync(connection, "honua", physicalTableName);
+                var metadataTableExists = await TableExistsAsync(connection, "honua", importedPhysicalTableName);
                 metadataTableExists.Should().BeFalse("imports should not create operator tables in the metadata schema");
             }
 
@@ -596,7 +613,7 @@ public class ImportEndpointTests : IAsyncLifetime
             discovery.Should().NotBeNull();
             discovery!.Tables.Should().Contain(table =>
                 table.Schema == "honua_data" &&
-                table.Table == physicalTableName &&
+                table.Table == importedPhysicalTableName &&
                 table.GeometryColumn == "geometry");
             discovery.Tables
                 .Where(static table =>
@@ -611,7 +628,7 @@ public class ImportEndpointTests : IAsyncLifetime
             var publishRequest = new PublishLayerRequest
             {
                 Schema = "honua_data",
-                Table = physicalTableName,
+                Table = importedPhysicalTableName,
                 LayerName = "Schema Boundary Import",
                 Description = "Issue 991 schema-boundary import publish test",
                 GeometryColumn = "geometry",
@@ -635,7 +652,7 @@ public class ImportEndpointTests : IAsyncLifetime
             publishApi.Should().NotBeNull();
             publishApi!.Data.Should().NotBeNull();
             publishApi.Data!.Schema.Should().Be("honua_data");
-            publishApi.Data.Table.Should().Be(physicalTableName);
+            publishApi.Data.Table.Should().Be(importedPhysicalTableName);
             layerId = publishApi.Data.LayerId;
 
             var queryResponse = await _client.GetAsync(
@@ -666,7 +683,6 @@ public class ImportEndpointTests : IAsyncLifetime
     public async Task ImportFile_CustomTargetSchema_CanDiscoverAdHocImportSchema()
     {
         var requestedTableName = $"custom_schema_{Guid.NewGuid():N}";
-        var physicalTableName = $"imported_{requestedTableName}".ToLowerInvariant();
         var targetSchema = $"adhoc_{Guid.NewGuid():N}";
 
         try
@@ -705,6 +721,20 @@ public class ImportEndpointTests : IAsyncLifetime
             var importResponse = await _client.PostAsync("/api/v1/admin/import/upload", content);
             var importPayload = await importResponse.Content.ReadAsStringAsync();
             importResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"response: {importPayload}");
+            var importResult = JsonSerializer.Deserialize<ImportResult>(importPayload, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }) ?? throw new InvalidOperationException("Import response did not contain a result.");
+            var physicalTableName = importResult.PhysicalTableName
+                ?? throw new InvalidOperationException("Successful import did not return its physical table name.");
+
+            importResult.Should().NotBeNull();
+            importResult.Success.Should().BeTrue($"response: {importPayload}");
+            importResult.TableName.Should().Be(requestedTableName);
+            importResult.Schema.Should().Be(targetSchema);
+            importResult.PhysicalTableName.Should().NotBeNullOrWhiteSpace();
+            importResult.PhysicalTableName.Should().StartWith("imported_");
+            importResult.PhysicalTableName.Length.Should().BeLessThanOrEqualTo(40);
 
             await using (var connection = await _fixture.Postgres.GetConnectionAsync())
             {
@@ -917,11 +947,25 @@ public class ImportEndpointTests : IAsyncLifetime
         content.Add(new StringContent("true"), "ForceBackground");
         content.Add(new StringContent(uploadId), "UploadId");
 
-        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/import/upload") { Content = content };
+        var lineage = new OperationPolicyContext
+        {
+            OperationInstanceId = "opinst-import-exact",
+            CorrelationId = "corr-import-exact",
+            AuditId = "audit-import-exact",
+            ProposalId = "proposal-import-exact",
+        };
+        var attestationStore = _fixture.Services.GetRequiredService<OperationLineageAttestationStore>();
+        OperationLineageHeaders.Apply(request, lineage, attestationStore);
+        using var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         var queued = await response.Content.ReadFromJsonAsync<JsonElement>();
         queued.GetProperty("uploadId").GetString().Should().Be(uploadId);
+        queued.GetProperty("operationInstanceId").GetString().Should().Be("opinst-import-exact");
+        queued.GetProperty("correlationId").GetString().Should().Be("corr-import-exact");
+        queued.GetProperty("auditId").GetString().Should().Be("audit-import-exact");
+        queued.GetProperty("proposalId").GetString().Should().Be("proposal-import-exact");
         var jobId = queued.GetProperty("jobId").GetString();
         jobId.Should().NotBeNullOrWhiteSpace();
 
@@ -940,6 +984,10 @@ public class ImportEndpointTests : IAsyncLifetime
         jobProgress.GetProperty("fileName").GetString().Should().Be("background.geojson");
         jobProgress.GetProperty("sourceKind").GetString().Should().BeOneOf("file", "cloud-file");
         jobProgress.GetProperty("uploadId").GetString().Should().Be(uploadId);
+        jobProgress.GetProperty("operationInstanceId").GetString().Should().Be("opinst-import-exact");
+        jobProgress.GetProperty("correlationId").GetString().Should().Be("corr-import-exact");
+        jobProgress.GetProperty("auditId").GetString().Should().Be("audit-import-exact");
+        jobProgress.GetProperty("proposalId").GetString().Should().Be("proposal-import-exact");
         jobProgress.GetProperty("currentPhase").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
@@ -1080,22 +1128,26 @@ public class ImportEndpointTests : IAsyncLifetime
         return (bool)(await command.ExecuteScalarAsync())!;
     }
 
-    private async Task CleanupSchemaBoundaryImportAsync(int? layerId, string serviceName, string tableName)
+    private async Task CleanupSchemaBoundaryImportAsync(int? layerId, string serviceName, string? tableName)
     {
         // #2020: serialize the global honua.*/honua_data cleanup deletes + DROP TABLE under the
         // schema-mutation advisory lock (parameterized multi-statement command).
         await _fixture.Postgres.RunUnderSchemaMutationLockAsync(async () =>
         {
-            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            var testSchema = _fixture.CurrentSchema
+                ?? throw new InvalidOperationException("The database fixture schema was not initialized.");
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(testSchema);
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                DELETE FROM features WHERE layer_id = @layerId;
+                DELETE FROM "TEST_SCHEMA".features WHERE layer_id = @layerId;
                 DELETE FROM honua.layer_fields WHERE layer_id = @layerId;
                 DELETE FROM honua.service_layers WHERE layer_id = @layerId;
                 DELETE FROM honua.layers WHERE layer_id = @layerId;
                 DELETE FROM honua.services WHERE service_name = @serviceName;
                 DROP TABLE IF EXISTS honua_data."PLACEHOLDER" CASCADE;
-                """.Replace("\"PLACEHOLDER\"", QuoteIdentifier(tableName), StringComparison.Ordinal);
+                """
+                .Replace("\"TEST_SCHEMA\"", QuoteIdentifier(testSchema), StringComparison.Ordinal)
+                .Replace("\"PLACEHOLDER\"", QuoteIdentifier(tableName ?? "missing_import_table"), StringComparison.Ordinal);
             command.Parameters.AddWithValue("layerId", (object?)layerId ?? DBNull.Value);
             command.Parameters.AddWithValue("serviceName", serviceName);
             await command.ExecuteNonQueryAsync();

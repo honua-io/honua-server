@@ -6,6 +6,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -30,22 +31,20 @@ public sealed class GdalWorkerOutputStagingConfigTests
         var root = Directory.CreateTempSubdirectory("honua-staging-config-").FullName;
         try
         {
-            var provider = BuildProvider(new Dictionary<string, string?>
+            var options = GeoprocessingOutputStoreTestHelper.Attest(new GeoprocessingOutputStagingOptions
             {
-                ["Geoprocessing:OutputStaging:Enabled"] = "true",
-                ["Geoprocessing:OutputStaging:Provider"] = "local",
-                ["Geoprocessing:OutputStaging:LocalRootPath"] = root,
-                ["Geoprocessing:OutputStaging:StoreReference"] = "gp-outputs",
-                ["Geoprocessing:OutputStaging:MaxInlineArtifactBytes"] = "65536",
+                Enabled = true,
+                LocalRootPath = root,
+                MaxInlineArtifactBytes = 65536,
             });
+            using var provider = BuildProvider(GeoprocessingOutputStoreTestHelper.Configuration(options));
 
             var store = provider.GetService<IGeoprocessingOutputObjectStore>();
             store.Should().NotBeNull();
             store!.Provider.Should().Be(CloudStorageProvider.Local);
             store.StoreReference.Should().Be("gp-outputs");
 
-            var options = provider.GetRequiredService<IOptions<GeoprocessingOutputStagingOptions>>().Value;
-            options.MaxInlineArtifactBytes.Should().Be(65536);
+            provider.GetRequiredService<IOptions<GeoprocessingOutputStagingOptions>>().Value.MaxInlineArtifactBytes.Should().Be(65536);
         }
         finally
         {

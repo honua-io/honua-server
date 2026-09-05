@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System;
+using Honua.Core.Features.Capabilities;
+using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Middleware;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
@@ -248,6 +250,8 @@ internal static partial class FeatureServerEndpoints
         .Produces(400)
         .Produces(404);
 
+        // Disconnected-sync routes remain mapped so disabled deployments return the
+        // canonical capability-gated response instead of masquerading as not-found.
         // Replication endpoints
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/replicas", HandleReplicas)
             .WithDisplayName("List Replicas")
@@ -257,7 +261,8 @@ internal static partial class FeatureServerEndpoints
             .WithTags("FeatureServer")
             .Produces<ReplicaSummary[]>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .WithCapabilityGate("sync.offline");
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/replicas/{replicaId}", HandleReplicaInfo)
             .WithDisplayName("Get Replica Info")
@@ -267,7 +272,8 @@ internal static partial class FeatureServerEndpoints
             .WithTags("FeatureServer")
             .Produces<ReplicaInfoResponse>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .WithCapabilityGate("sync.offline");
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/createReplica", HandleCreateReplica)
             .WithDisplayName("Create Replica")
@@ -279,7 +285,8 @@ internal static partial class FeatureServerEndpoints
             .Produces<CreateReplicaResponse>(200, "application/json")
             .Produces(400)
             .Produces(404)
-            .Produces(503);
+            .Produces(503)
+            .WithCapabilityGate("sync.offline");
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/extractChanges", HandleExtractChanges)
             .WithDisplayName("Extract Changes")
@@ -290,7 +297,8 @@ internal static partial class FeatureServerEndpoints
             .AllowAnonymous()
             .Produces<ExtractChangesResponse>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .WithCapabilityGate("sync.offline");
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/synchronizeReplica", HandleSynchronizeReplica)
             .WithDisplayName("Synchronize Replica")
@@ -301,7 +309,8 @@ internal static partial class FeatureServerEndpoints
             .AllowAnonymous()
             .Produces<SynchronizeReplicaResponse>(200, "application/json")
             .Produces(400)
-            .Produces(404);
+            .Produces(404)
+            .WithCapabilityGate("sync.offline");
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/unRegisterReplica", HandleUnRegisterReplica)
             .WithDisplayName("Unregister Replica")
@@ -312,8 +321,8 @@ internal static partial class FeatureServerEndpoints
             .AllowAnonymous()
             .Produces<SuccessResponse>(200, "application/json")
             .Produces(400)
-            .Produces(404);
-
+            .Produces(404)
+            .WithCapabilityGate("sync.offline");
         // Maintenance/utility endpoints
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/append", HandleServiceAppend)
             .WithDisplayName("Append Features (Service)")

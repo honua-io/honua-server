@@ -5,6 +5,7 @@ using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
 using Honua.Server.Features.Console.Models;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -196,7 +197,7 @@ internal static class ConsoleOpenDataPublicEndpoints
                 }
             }
 
-            return TypedResults.Ok(ConsoleOpenDataMapper.BuildStacCatalog(published, StacBasePath));
+            return TypedResults.Ok(ConsoleOpenDataMapper.BuildStacCatalog(published, BaseUrlResolver.GetBaseUrl(context) + StacBasePath));
         }
         catch (OperationCanceledException)
         {
@@ -231,7 +232,7 @@ internal static class ConsoleOpenDataPublicEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure(OpenDataDeniedMessage));
             }
 
-            return TypedResults.Ok(ConsoleOpenDataMapper.BuildStacCollection(resolved.Value.Page, resolved.Value.Publication, StacBasePath));
+            return TypedResults.Ok(ConsoleOpenDataMapper.BuildStacCollection(resolved.Value.Page, resolved.Value.Publication, BaseUrlResolver.GetBaseUrl(context) + StacBasePath));
         }
         catch (OperationCanceledException)
         {
@@ -271,7 +272,7 @@ internal static class ConsoleOpenDataPublicEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure(OpenDataDeniedMessage));
             }
 
-            return TypedResults.Ok(ConsoleOpenDataMapper.BuildStacItem(resolved.Value.Page, resolved.Value.Publication, StacBasePath));
+            return TypedResults.Ok(ConsoleOpenDataMapper.BuildStacItem(resolved.Value.Page, resolved.Value.Publication, BaseUrlResolver.GetBaseUrl(context) + StacBasePath));
         }
         catch (OperationCanceledException)
         {

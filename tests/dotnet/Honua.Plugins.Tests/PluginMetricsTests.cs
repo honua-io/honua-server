@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using FluentAssertions;
 using Xunit;
@@ -14,11 +15,12 @@ public sealed class PluginMetricsTests
     {
         var invocations = new List<(string Plugin, string Extension)>();
         var durations = new List<(string Plugin, string Extension)>();
+        var meter = PluginMetrics.InstrumentMeter;
 
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
         {
-            if (instrument.Meter.Name == "Honua" && instrument.Name.StartsWith("honua_plugin_", StringComparison.Ordinal))
+            if (ReferenceEquals(instrument.Meter, meter))
             {
                 l.EnableMeasurementEvents(instrument);
             }
@@ -39,6 +41,17 @@ public sealed class PluginMetricsTests
         });
         listener.Start();
 
+        using var unrelatedMeter = new Meter("Honua");
+        var unrelatedInvocations = unrelatedMeter.CreateCounter<long>("honua_plugin_invocations_total");
+        var unrelatedDuration = unrelatedMeter.CreateHistogram<double>("honua_plugin_duration_ms");
+        var unrelatedTags = new TagList
+        {
+            { PluginMetrics.PluginIdTag, "p1" },
+            { PluginMetrics.ExtensionPointTag, "validate" },
+        };
+        unrelatedInvocations.Add(1, unrelatedTags);
+        unrelatedDuration.Record(1, unrelatedTags);
+
         using (PluginMetrics.Measure("p1", "validate"))
         {
         }
@@ -55,11 +68,12 @@ public sealed class PluginMetricsTests
     public void Measure_EmitsFailure_WhenMarkedFailed()
     {
         var failures = new List<(string Plugin, string Extension)>();
+        var meter = PluginMetrics.InstrumentMeter;
 
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, l) =>
         {
-            if (instrument.Name == "honua_plugin_failures_total")
+            if (ReferenceEquals(instrument.Meter, meter) && instrument.Name == "honua_plugin_failures_total")
             {
                 l.EnableMeasurementEvents(instrument);
             }

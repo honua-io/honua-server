@@ -142,6 +142,10 @@ internal sealed record CapabilityManifestCapability
 
     public required string Category { get; init; }
 
+    public required string Lifecycle { get; init; }
+
+    public required bool OptInRequired { get; init; }
+
     public required bool Supported { get; init; }
 
     public required bool Available { get; init; }

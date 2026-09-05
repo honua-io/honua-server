@@ -11,6 +11,10 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'scripts/generate-feature-catalog.sh'
+      - 'scripts/generate-admin-operation-parity-exports.sh'
+      - 'scripts/ci/verify-admin-operation-parity.py'
+      - 'docs/gis/data/admin-openapi-operation-ids.json'
+      - 'docs/gis/data/admin-mcp-projection-manifest.json'
       - 'scripts/generate-geoservices-parity.sh'
       - 'scripts/ci/capability-impact.py'
       - 'scripts/ci/generate-capability-matrix.py'
@@ -62,6 +66,8 @@ jobs:
       - name: Regenerate governed projections
         run: |
           bash scripts/generate-feature-catalog.sh --configuration Release -m:1
+          bash scripts/generate-admin-operation-parity-exports.sh --configuration Release -m:1 --no-build --no-restore
+          python3 scripts/ci/verify-admin-operation-parity.py
           bash scripts/generate-geoservices-parity.sh --configuration Release -m:1 --no-build --no-restore
           python3 scripts/ci/generate-capability-matrix.py
 
@@ -73,6 +79,8 @@ jobs:
           projection_root="${RUNNER_TEMP}/normalized-projections"
           projections=(
             'docs/gis/data/feature-catalog.json:4194304'
+            'docs/gis/data/admin-openapi-operation-ids.json:131072'
+            'docs/gis/data/admin-mcp-projection-manifest.json:65536'
             'docs/gis/data/geoservices-rest-parity.json:1048576'
             'docs/gis/data/capability-matrix.v1.json:1048576'
           )
@@ -87,9 +95,13 @@ jobs:
           # data; a nondeterministic or post-generation mutation fails closed.
           git restore --source="${HEAD_SHA}" --worktree -- \
             docs/gis/data/feature-catalog.json \
+            docs/gis/data/admin-openapi-operation-ids.json \
+            docs/gis/data/admin-mcp-projection-manifest.json \
             docs/gis/data/geoservices-rest-parity.json \
             docs/gis/data/capability-matrix.v1.json
           bash scripts/generate-feature-catalog.sh --configuration Release -m:1 --no-build --no-restore
+          bash scripts/generate-admin-operation-parity-exports.sh --configuration Release -m:1 --no-build --no-restore
+          python3 scripts/ci/verify-admin-operation-parity.py
           bash scripts/generate-geoservices-parity.sh --configuration Release -m:1 --no-build --no-restore
           python3 scripts/ci/generate-capability-matrix.py
 
@@ -107,8 +119,8 @@ jobs:
             install -d "${projection_root}/$(dirname "${projection}")"
             install -m 0600 "${projection}" "${projection_root}/${projection}"
           done
-          if (( total > 6291456 )); then
-            echo "normalization projections exceed the 6 MiB aggregate bound" >&2
+          if (( total > 6488064 )); then
+            echo "normalization projections exceed the bounded aggregate" >&2
             exit 1
           fi
 

@@ -1,7 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 //
-// Compliance: OGC CITE 1138/1138 (100%) across 14 conformance suites on trunk.
+// Compliance: OGC CITE 1138/1138 (100%) across 14 conformance suites.
 //   - Authoritative status:   docs/cite-status.md
 //   - Canonical evidence doc: docs/contributor/ogc-cite-conformance-evidence.md
 //   - Evidence workflow:      .github/workflows/cite-evidence-report.yml

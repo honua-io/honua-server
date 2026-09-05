@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using Grpc.Core;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Backpressure;
 using Honua.ServiceDefaults;
 using Proto = Geospatial.V1;
 
@@ -47,7 +48,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
         catch (Exception ex) when (ex is not RpcException)
         {
-            throw MapToRpcException(ex);
+            throw MapToRpcException(ex, context);
         }
     }
 
@@ -78,7 +79,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
         catch (Exception ex) when (ex is not RpcException)
         {
-            throw MapToRpcException(ex);
+            throw MapToRpcException(ex, context);
         }
     }
 
@@ -102,7 +103,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
         catch (Exception ex) when (ex is not RpcException)
         {
-            throw MapToRpcException(ex);
+            throw MapToRpcException(ex, context);
         }
     }
 
@@ -127,7 +128,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
         catch (Exception ex) when (ex is not RpcException)
         {
-            throw MapToRpcException(ex);
+            throw MapToRpcException(ex, context);
         }
     }
 
@@ -155,7 +156,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
         catch (Exception ex) when (ex is not RpcException)
         {
-            throw MapToRpcException(ex);
+            throw MapToRpcException(ex, context);
         }
     }
 
@@ -173,7 +174,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
         catch (Exception ex) when (ex is not RpcException)
         {
-            throw MapToRpcException(ex);
+            throw MapToRpcException(ex, context);
         }
     }
 
@@ -191,7 +192,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
         catch (Exception ex) when (ex is not RpcException)
         {
-            throw MapToRpcException(ex);
+            throw MapToRpcException(ex, context);
         }
     }
 
@@ -209,7 +210,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         }
         catch (Exception ex) when (ex is not RpcException)
         {
-            throw MapToRpcException(ex);
+            throw MapToRpcException(ex, context);
         }
     }
 
@@ -262,7 +263,7 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
         return null;
     }
 
-    private RpcException MapToRpcException(Exception ex)
+    private RpcException MapToRpcException(Exception ex, ServerCallContext context)
     {
         switch (ex)
         {
@@ -304,14 +305,23 @@ internal sealed partial class HonuaProcessService : Proto.ProcessService.Process
                 return new RpcException(new Status(StatusCode.AlreadyExists, conflictEx.Message));
 
             case GeoprocessingAdmissionException admissionEx:
+                var admissionIsThrottled = admissionEx.Outcome ==
+                    Honua.Core.Features.Geoprocessing.Domain.ExecutionAdmissionOutcome.Throttled;
                 return new RpcException(
-                    new Status(StatusCode.ResourceExhausted, admissionEx.Message),
+                    new Status(
+                        admissionIsThrottled ? StatusCode.ResourceExhausted : StatusCode.Unavailable,
+                        admissionEx.Message),
                     new global::Grpc.Core.Metadata
                     {
                         { "honua-admission-outcome", admissionEx.Outcome.ToString() },
                         { "honua-admission-dimension", admissionEx.DenyingDimension.ToString() },
                         { "honua-admission-policy-ref", admissionEx.PolicyRef },
-                        { "retry-after", admissionEx.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                        { BackpressureMetadata.ErrorCodeKey, admissionIsThrottled
+                            ? BackpressureMetadata.RateLimitExceededCode
+                            : BackpressureMetadata.ServiceUnavailableCode },
+                        { BackpressureMetadata.RetryableKey, "true" },
+                        { BackpressureMetadata.RetryAfterKey, admissionEx.RetryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture) },
+                        { BackpressureMetadata.CorrelationIdKey, context.GetHttpContext().TraceIdentifier },
                     });
 
             case InvalidOperationException opEx:

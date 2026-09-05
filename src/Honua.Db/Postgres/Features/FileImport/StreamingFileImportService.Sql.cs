@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Db.Postgres.Features.Infrastructure;
-using Npgsql;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Migration.Abstractions;
@@ -11,13 +11,30 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
-using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
+using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Migration;
+using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    // Reserve enough identifier space for the replace path's `__staging` suffix and
+    // its longest `idx_<table>__staging_properties` index name. PostgreSQL silently
+    // truncates longer identifiers, which can otherwise make the geometry and
+    // properties indexes collide with SQLSTATE 42P07.
+    private const int MaxImportTableNameLength = 40;
+    private const string ImportTableExistsSql = """
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_class AS relation
+            INNER JOIN pg_catalog.pg_namespace AS namespace
+                ON namespace.oid = relation.relnamespace
+            WHERE namespace.nspname = @schema_name
+              AND relation.relname = @table_name)
+        """;
+
     private static string QuoteIdentifier(string identifier)
     {
         return $"\"{identifier.Replace("\"", "\"\"")}\"";
@@ -27,7 +44,49 @@ internal sealed partial class StreamingFileImportService
     {
         ValidateTableName(tableName);
         var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
-        return "imported_" + sanitized.ToLowerInvariant();
+        var physicalName = "imported_" + sanitized.ToLowerInvariant();
+        if (physicalName.Length <= MaxImportTableNameLength)
+        {
+            return physicalName;
+        }
+
+        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(physicalName)))[..12];
+        var prefixLength = MaxImportTableNameLength - hash.Length - 1;
+        return $"{physicalName[..prefixLength]}_{hash}";
+    }
+
+    private static async Task<string> ResolvePhysicalTableNameAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        ValidateTableName(tableName);
+        var sanitized = System.Text.RegularExpressions.Regex.Replace(tableName, @"[^a-zA-Z0-9_]", "_");
+        var legacyName = "imported_" + sanitized.ToLowerInvariant();
+        if (legacyName.Length <= MaxImportTableNameLength)
+        {
+            return legacyName;
+        }
+
+        // Preserve an existing pre-hash table only when its complete physical name
+        // fits in PostgreSQL. A longer identifier would have been truncated, and
+        // distinct logical names with the same 63-character prefix are then
+        // indistinguishable; existence alone cannot prove ownership.
+        if (legacyName.Length > 63)
+        {
+            return GetAllowedTableName(tableName);
+        }
+
+        await using var command = new NpgsqlCommand(ImportTableExistsSql, connection);
+        command.Parameters.AddWithValue("schema_name", schemaName);
+        command.Parameters.AddWithValue("table_name", legacyName);
+        if ((bool?)await command.ExecuteScalarAsync(cancellationToken) == true)
+        {
+            return legacyName;
+        }
+
+        return GetAllowedTableName(tableName);
     }
 
     private static async Task CreateTableAsync(
@@ -81,6 +140,43 @@ internal sealed partial class StreamingFileImportService
         command.Parameters.AddWithValue("target_srid", targetSrid);
         var stagingName = (string?)await command.ExecuteScalarAsync(cancellationToken);
         return stagingName ?? tableName + "__staging";
+    }
+
+    private static async Task<ImportAdvisoryLock> AcquireImportLockAsync(
+        NpgsqlConnection connection,
+        string schemaName,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        var lockKey = $"honua.file-import.replace:{schemaName}.{tableName}";
+        await using var command = new NpgsqlCommand(
+            "SELECT pg_advisory_lock(hashtextextended(@lock_key, 0))",
+            connection);
+        // The request cancellation token remains the upper bound. A command timeout must not
+        // turn a long-running import into a false concurrency failure while waiting its turn.
+        command.CommandTimeout = 0;
+        command.Parameters.AddWithValue("lock_key", lockKey);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return new ImportAdvisoryLock(connection, lockKey);
+    }
+
+    private sealed class ImportAdvisoryLock(NpgsqlConnection connection, string lockKey) : IAsyncDisposable
+    {
+        private int _released;
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _released, 1) != 0)
+            {
+                return;
+            }
+
+            await using var command = new NpgsqlCommand(
+                "SELECT pg_advisory_unlock(hashtextextended(@lock_key, 0))",
+                connection);
+            command.Parameters.AddWithValue("lock_key", lockKey);
+            await command.ExecuteNonQueryAsync(CancellationToken.None);
+        }
     }
 
     /// <summary>

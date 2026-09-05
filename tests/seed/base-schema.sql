@@ -56,6 +56,11 @@ ALTER TABLE IF EXISTS honua.services
 ALTER TABLE IF EXISTS honua.services
     ADD COLUMN IF NOT EXISTS connection_id UUID;
 
+-- The canonical migration keeps service result limits in the layer/service policy
+-- graph; this legacy CI seed still exercises the older service-level column.
+ALTER TABLE IF EXISTS honua.services
+    ADD COLUMN IF NOT EXISTS max_record_count INT NOT NULL DEFAULT 1000;
+
 -- Columns from migrations 005, 007, 009, 011 — keep in sync.
 ALTER TABLE IF EXISTS honua.layers
     ADD COLUMN IF NOT EXISTS table_schema TEXT NOT NULL DEFAULT current_schema();
@@ -367,6 +372,10 @@ CREATE TABLE IF NOT EXISTS honua.feature_change_outbox (
     claim_node_id    text,
     claim_expires_at timestamptz,
     dispatched_at    timestamptz,
+    operation_instance_id text,
+    correlation_id       text,
+    audit_id             text,
+    proposal_id          text,
     CONSTRAINT feature_change_outbox_pkey PRIMARY KEY (outbox_id),
     CONSTRAINT feature_change_outbox_status_chk CHECK (
         status IN ('pending', 'claimed', 'dispatched', 'failed', 'dead_lettered')
@@ -404,6 +413,21 @@ CREATE TABLE IF NOT EXISTS features (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- The canonical migration runner creates the change-tracking function before this CI
+-- fixture provisions the runtime table. Reattach the trigger after the table exists so
+-- transactional outbox writes can link each mutation to its feature_changes row.
+DO $$
+BEGIN
+    IF to_regclass('honua.features') IS NOT NULL
+       AND to_regprocedure('honua.track_feature_changes()') IS NOT NULL THEN
+        DROP TRIGGER IF EXISTS trigger_track_feature_changes ON honua.features;
+        CREATE TRIGGER trigger_track_feature_changes
+            AFTER INSERT OR UPDATE OR DELETE ON honua.features
+            FOR EACH ROW
+            EXECUTE FUNCTION honua.track_feature_changes();
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_service_layers_service_name ON honua.service_layers(service_name);
 CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);
 CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);
@@ -421,6 +445,33 @@ CREATE INDEX IF NOT EXISTS idx_raster_tiles_lookup ON honua.raster_tiles(raster_
 CREATE INDEX IF NOT EXISTS ix_fco_dispatch ON honua.feature_change_outbox (created_at) WHERE status IN ('pending', 'failed');
 CREATE INDEX IF NOT EXISTS ix_fco_claim_recovery ON honua.feature_change_outbox (claim_expires_at) WHERE status = 'claimed';
 CREATE INDEX IF NOT EXISTS ix_fco_dead_lettered ON honua.feature_change_outbox (created_at) WHERE status = 'dead_lettered';
+
+ALTER TABLE IF EXISTS honua.feature_change_outbox
+    ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+    ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+    ADD COLUMN IF NOT EXISTS audit_id TEXT,
+    ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+ALTER TABLE IF EXISTS honua.feature_changes
+    ADD COLUMN IF NOT EXISTS event_id TEXT,
+    ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+    ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+    ADD COLUMN IF NOT EXISTS audit_id TEXT,
+    ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+ALTER TABLE IF EXISTS honua.alert_events
+    ADD COLUMN IF NOT EXISTS source_event_id TEXT,
+    ADD COLUMN IF NOT EXISTS job_id TEXT,
+    ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+    ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+    ADD COLUMN IF NOT EXISTS audit_id TEXT,
+    ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+DO $$
+BEGIN
+    IF to_regclass('honua.feature_changes') IS NOT NULL THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_changes_event_id
+            ON honua.feature_changes(event_id)
+            WHERE event_id IS NOT NULL;
+    END IF;
+END $$;
 
 -- OGC SensorThings API (STA v1.1) Phase 1 storage (#1747). Mirrors migration
 -- 059_CreateSensorThings.sql so the migration-skipping CI fixture has the tables.
@@ -552,6 +603,7 @@ BEGIN
             SELECT
                 sl.service_name,
                 COALESCE(s.description, '') AS service_description,
+                COALESCE(s.capabilities, ARRAY['Query']::text[]) AS service_capabilities,
                 l.layer_id,
                 l.layer_name,
                 COALESCE(l.description, '') AS layer_description,
@@ -820,7 +872,7 @@ BEGIN
             FROM layer_rows
         ),
         service_names AS (
-            SELECT DISTINCT service_name, service_part, service_access_policy
+            SELECT DISTINCT service_name, service_part, service_access_policy, service_capabilities
             FROM layer_rows
         ),
         service_rows AS (
@@ -839,7 +891,7 @@ BEGIN
                     -- (honua-server#1412.)
                     'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
                     'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
-                    'options', '{}'::jsonb,
+                    'options', jsonb_build_object('capabilities', to_jsonb(service_capabilities)),
                     'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),
                     'extensions', '{}'::jsonb
@@ -980,7 +1032,7 @@ BEGIN
                     'layerIndex', layer_id,
                     'serviceLocalId', layer_part,
                     'supportedFormats', '[]'::jsonb,
-                    'capabilities', '[]'::jsonb,
+                    'capabilities', to_jsonb(service_capabilities),
                     'status', (SELECT value FROM status_doc),
                     'options', '{}'::jsonb,
                     'extensions', '{}'::jsonb

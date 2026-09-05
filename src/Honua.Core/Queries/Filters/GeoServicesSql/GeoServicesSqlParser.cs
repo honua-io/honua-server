@@ -47,6 +47,11 @@ public sealed class GeoServicesSqlParser
         "EPOCH"
     };
 
+    private static readonly HashSet<string> _intervalUnits = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND"
+    };
+
     // Allowlist of function names accepted by ParseIdentifierOrFunction for arbitrary
     // call-syntax (i.e. not already handled as a dedicated keyword: CAST, EXTRACT,
     // SUBSTRING, POSITION). Only names that every active ISqlFilterTranslator understands
@@ -418,6 +423,22 @@ public sealed class GeoServicesSqlParser
         if (Match(TokenType.False))
         {
             return new Literal(false, LiteralType.Boolean);
+        }
+
+        if (Match(TokenType.Interval))
+        {
+            var value = Match(TokenType.String)
+                ? new Literal(Previous().Literal, LiteralType.Text)
+                : Match(TokenType.Number)
+                    ? new Literal(Previous().Literal, LiteralType.Number)
+                    : throw Error("Expected an interval value after INTERVAL.");
+            var unit = Consume(TokenType.Identifier, "Expected an interval unit after the interval value.").Lexeme;
+            if (!_intervalUnits.Contains(unit))
+            {
+                throw Error($"Unsupported INTERVAL unit '{unit}'.");
+            }
+
+            return new FunctionCall("INTERVAL", [value, new Literal(unit.ToUpperInvariant(), LiteralType.Text)]);
         }
 
         if (Match(TokenType.DateLiteral))
@@ -921,6 +942,7 @@ public sealed class GeoServicesSqlParser
         CurrentDate,
         CurrentTimestamp,
         CurrentTime,
+        Interval,
         Case,
         When,
         Then,
@@ -955,6 +977,7 @@ public sealed class GeoServicesSqlParser
             ["CURRENT_DATE"] = TokenType.CurrentDate,
             ["CURRENT_TIMESTAMP"] = TokenType.CurrentTimestamp,
             ["CURRENT_TIME"] = TokenType.CurrentTime,
+            ["INTERVAL"] = TokenType.Interval,
             ["CASE"] = TokenType.Case,
             ["WHEN"] = TokenType.When,
             ["THEN"] = TokenType.Then,

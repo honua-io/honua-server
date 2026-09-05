@@ -723,6 +723,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         evaluator ??= Substitute.For<IOperatorAuthorizationEvaluator>();
         var inner = new StudioAuthorizationService(
             evaluator,
+            new OperatorScopeAuthorizer(),
             new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(
                 new StudioEndUserAuthorizationOptions { Enabled = true }),
             new StaticOptionsMonitor<AdminRoleOptions>(new AdminRoleOptions()));

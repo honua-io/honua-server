@@ -74,6 +74,12 @@ auto-submitting HTTP-POST form; leave it unset to return the `LogoutResponse` di
 signed `LogoutRequest`s are honored — unsigned or forged logout requests are rejected so they
 cannot terminate a session.
 
+Admin OIDC logout and SAML SLO require successful removal of the shared session record.
+If the configured session store is unavailable, they return a retryable HTTP `503`,
+preserve the session cookie, and do not emit a successful logout response. The session
+has not been revoked: retry logout after recovery. A successful retry deletes the
+shared record before clearing the cookie, including for other replicas.
+
 ### Known quirks
 
 - **Okta** — group membership is delivered as a multi-valued `groups` attribute; map it to

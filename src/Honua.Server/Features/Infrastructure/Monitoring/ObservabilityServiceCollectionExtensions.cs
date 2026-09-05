@@ -1,10 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
@@ -18,6 +20,7 @@ using Honua.Server.Features.Operations.Status;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
@@ -480,6 +483,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles dataset tile caching policy
             options.AddPolicy("OgcTilesDatasetTile", policy =>
             {
+                policy.VaryByValue(ResolveTileSizeOutputCacheKey);
                 policy.Expire(ttl.OgcTilesDatasetTile);
                 policy.SetVaryByRouteValue("tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs", "collections");
@@ -490,6 +494,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // OGC API Tiles tile caching policy
             options.AddPolicy("OgcTilesTile", policy =>
             {
+                policy.VaryByValue(ResolveTileSizeOutputCacheKey);
                 policy.Expire(ttl.OgcTilesTile);
                 policy.SetVaryByRouteValue("collectionId", "tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs");
@@ -500,6 +505,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // MVT tile caching policy
             options.AddPolicy("MvtTile", policy =>
             {
+                policy.VaryByValue(ResolveTileSizeOutputCacheKey);
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 // `where` for attribute filtering; `time` for the temporal-animation
@@ -513,6 +519,7 @@ internal static class ObservabilityServiceCollectionExtensions
             // varies by resolution since different resolutions produce different cells
             options.AddPolicy("H3MvtTile", policy =>
             {
+                policy.VaryByValue(ResolveTileSizeOutputCacheKey);
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 policy.SetVaryByQuery("where", "resolution");
@@ -671,6 +678,12 @@ internal static class ObservabilityServiceCollectionExtensions
         => LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OutputCacheKey)
             && (!redisOutputCacheConfigured
                 || LicenseGate.HasLiveEntitlement(services, FeatureCatalog.RedisCacheKey));
+
+    // Cache hits bypass the tile handler. Partition by the enforced byte budget so
+    // entries produced before enforcement or under a larger cap cannot bypass it.
+    private static KeyValuePair<string, string> ResolveTileSizeOutputCacheKey(HttpContext context)
+        => new("tile-size-budget", context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>()
+            .Value.Tiles.MaxTileSize.ToString(CultureInfo.InvariantCulture));
 
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");

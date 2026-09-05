@@ -39,9 +39,13 @@ Secrets don't have to be inlined. Two mechanisms exist:
 1. **Connection-string references** — `ConnectionStrings__DefaultConnection` accepts provider-prefixed references such as `aws:secretsmanager:...` or `env:...`, resolved at startup before migrations run.
 2. **Metadata secret references** — connection metadata stores a structured reference instead of a value: `{"provider": "env", "ref": "MY_DB_PASSWORD"}` (optional `version`), with providers like `env`, `azure-key-vault`, or `connection-registry`.
 
+## License renewal and source precedence
+
+A successful admin upload persists `<LicensePath>.uploaded`, which startup reads before a resolved `Licensing__LicenseContentSecretRef`, `Licensing__LicenseContent`, or the ordinary `Licensing__LicensePath` file. Updating an environment variable or replacing that ordinary file does not override an existing upload at the same path. Renew by uploading the replacement, or stop the server and remove the override before switching to a configured source. Persist and back up the containing directory. The [license renewal procedure](../../concepts/editions-and-licensing.md#renew-or-replace-a-license) explains source alignment and verification after restart.
+
 ## `.env` files: Compose vs Kubernetes
 
-- **Docker / Compose**: `.env` files are first-class — `docker compose --env-file .env.production up` or `env_file:` on the service. The repo ships [`.env.example`](../../../.env.example) (annotated catalog) and [`.env.production.example`](../../../.env.production.example) (production-tuned baseline) as starting points.
+- **Docker / Compose**: `.env` files are first-class — `docker compose -f docker-compose.production.yml --env-file .env.production up -d --wait` selects the production stack. An env file only supplies interpolation values; it does not override literal values in a Compose service. The root `docker-compose.yml` is the local Development quickstart. The repo ships [`.env.example`](../../../.env.example) (annotated catalog) and [`.env.production.example`](../../../.env.production.example) (production-tuned baseline) as starting points.
 - **Kubernetes**: there is no `.env` file at runtime. Put secrets in a `Secret`, non-secrets in a `ConfigMap`, and mount both with `envFrom`; the keys are the same `Section__Key` names.
 
 ## Next steps

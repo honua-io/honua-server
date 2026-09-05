@@ -35,6 +35,7 @@ using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Console.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
+using Honua.Infrastructure.Logging;
 using Honua.Io.Export;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Provisioner;
@@ -112,6 +113,8 @@ StartupConfigurationHelpers.EnsureStaticWebAssetContentRootsExist();
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Finalize JSON precedence before any secret becomes a process-lifetime snapshot.
+StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 var useTestSchemaHeaders = builder.Configuration.GetValue<bool>("HONUA_TEST_SCHEMA_HEADERS");
 var forwardedHeadersEnabled = StartupConfigurationHelpers.ConfigureForwardedHeaders(builder.Services, builder.Configuration);
 StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configuration);
@@ -183,8 +186,6 @@ if (loadHostedBlazorStaticWebAssets)
     StartupConfigurationHelpers.LoadHostedBlazorStaticWebAssets(builder);
 }
 
-// Load optional security configuration without overriding environment-specific settings.
-StartupConfigurationHelpers.AddSecurityConfiguration(builder.Configuration, builder.Environment);
 // The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
 // admin credential while preserving its refreshable reference, and snapshot the encryption master
 // key before its direct consumer can mistake the reference text for key material.
@@ -325,7 +326,6 @@ builder.Host.UseSerilog((context, services, config) =>
         .MinimumLevel.Information()
         .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Information)
         .MinimumLevel.Override("Microsoft.AspNetCore.Routing", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
         .Enrich.FromLogContext()
@@ -334,7 +334,8 @@ builder.Host.UseSerilog((context, services, config) =>
         .Enrich.WithThreadId()
         .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
         .Enrich.WithProperty("Application", "Honua")
-        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown");
+        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown")
+        .ConfigureHonuaRequestDiagnostics();
 
     if (benchmarkQuietLogs)
     {
@@ -368,11 +369,13 @@ builder.Host.UseSerilog((context, services, config) =>
 // Standalone Python/JS harnesses can opt back in with HONUA_REGISTER_TEST_INFRASTRUCTURE=true;
 // a self-migrating standalone Test image that enables the Operate observability fixture also
 // opts in automatically so the seed endpoint's providers resolve (honua-server#2350).
-if (Honua.Server.Startup.TestInfrastructureRegistrationPolicy.ShouldRegisterInfrastructure(
+var registerProviderInfrastructure =
+    Honua.Server.Startup.TestInfrastructureRegistrationPolicy.ShouldRegisterInfrastructure(
         isTestEnvironment,
         registerInfrastructureInTestEnvironment,
         operateObservabilityFixtureEnabled,
-        hostManagesOwnMigrations))
+        hostManagesOwnMigrations);
+if (registerProviderInfrastructure)
 {
     InfrastructureCompositionRoot.RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
@@ -710,7 +713,9 @@ builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IFi
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource,
     Honua.Infrastructure.Authentication.FieldMaskSource>();
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
-    new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
+    sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
+        ? new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>())
+        : new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>()));
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
 // defaults; durable providers can replace these via TryAdd later.
@@ -808,10 +813,14 @@ if (!isTestEnvironment)
     builder.Services.AddOrchestrationBackgroundServices(builder.Configuration);
 }
 
-builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
-    new Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore(
-        sp.GetService<IDistributedCache>(),
-        sp.GetRequiredService<ILogger<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
+var offlineSyncEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "sync.offline");
+if (offlineSyncEnabled)
+{
+    builder.Services.AddSingleton<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(sp =>
+        new Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore(
+            sp.GetService<IDistributedCache>(),
+            sp.GetRequiredService<ILogger<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>>()));
+}
 // Replica/change-tracking services are provider-specific: Postgres registers concrete
 // implementations; DuckDB and MySQL (both read-only) register no-op stubs via their own
 // AddXxxServices extensions. Skip the Postgres registration for those providers so the
@@ -822,6 +831,9 @@ var replicaProvider = DataProviderNames.Normalize(
 if (replicaProvider != DataProviderNames.DuckDb &&
     replicaProvider != DataProviderNames.MySql)
 {
+    // Keep the durable repositories resolvable independently of the HTTP sync surface. The
+    // conflict-resolution service is part of the base composition and its dependencies must not
+    // disappear when sync.offline is disabled; route registration remains flag-gated below.
     builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>(sp =>
         new Honua.Db.Postgres.Features.FeatureStore.Services.PostgresReplicaRepository(
             sp.GetRequiredService<Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider>()));
@@ -864,16 +876,15 @@ builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVer
         sp.GetRequiredService<ILogger<Honua.Infrastructure.Coordination.RedisVersionJobStore>>()));
 builder.Services.AddSingleton<Honua.Core.Features.FeatureStore.Abstractions.IVersionJobRunner,
     Honua.Core.Features.FeatureStore.Services.VersionJobRunner>();
-builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
-    new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
-        sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
-        sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
-// Canonical replica-upload synchronization pipeline (#1272). Conflict detection runs against the
-// provider's change log; conflict-record writes use the durable conflict store when supported and
-// otherwise fall back to last-write-wins. Available for all providers since IChangeTracker and
-// IReplicaConflictRepository are always registered (read-only providers register no-op stubs).
-builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
-    Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+if (offlineSyncEnabled)
+{
+    builder.Services.AddScoped<Honua.Protocols.GeoServices.FeatureServer.IReplicaStore>(sp =>
+        new Honua.Protocols.GeoServices.FeatureServer.Services.CachingReplicaStore(
+            sp.GetRequiredService<Honua.Protocols.GeoServices.FeatureServer.DistributedReplicaStore>(),
+            sp.GetRequiredService<Honua.Core.Features.FeatureStore.Abstractions.IReplicaRepository>()));
+    builder.Services.AddScoped<Honua.Core.Features.FeatureStore.Abstractions.IReplicaSyncService,
+        Honua.Core.Features.FeatureStore.Services.ReplicaSyncService>();
+}
 
 // ---- Extracted: import/export job managers, migration evidence, tile operations
 //      (Startup/ImportExportTileOperationsRegistration.cs)
@@ -972,6 +983,18 @@ builder.Services.AddHonuaHeadRequestSupport();
 builder.Services.AddConfigurationOptionsValidation();
 
 var app = builder.Build();
+
+// A PostgreSQL production composition is never allowed to construct an unguarded migration
+// runner or core store. Resolve the guard eagerly, before compatibility checks, migrations, or
+// endpoint activation, so an accidentally removed/overridden registration aborts host startup
+// even when no connection string is configured or migrations are run out-of-band.
+var configuredPrimaryProvider = DataProviderNames.Normalize(
+    builder.Configuration.GetValue<string>("DataSource:Provider"));
+if (registerProviderInfrastructure &&
+    configuredPrimaryProvider is DataProviderNames.Postgis or DataProviderNames.PostgreSql)
+{
+    _ = app.Services.GetRequiredService<IDatabaseSchemaGuard>();
+}
 
 HostedBlazorAssetHelpers.FilterHostedBlazorStaticAssetEndpoints(
     app,
@@ -1332,11 +1355,17 @@ app.UseHonuaClientCertificateAuthentication();
 // Add authentication and authorization middleware early to short-circuit unauthorized requests
 app.UseApiKeyAuthentication();
 
-// Bridge ArcGIS-style portal tokens (?token=, X-Esri-Authorization, Authorization: Bearer)
+// Bridge ArcGIS-style portal tokens (?token=, form POST token, X-Esri-Authorization,
+// Authorization: Bearer)
 // for requests that the default scheme did not authenticate. Must run after
 // UseAuthentication (inside UseApiKeyAuthentication) and before tenant resolution
 // so the tenant middleware sees the hydrated principal claims (#1241).
 app.UsePortalTokenAuthentication();
+
+// Canonical governed-lineage headers are accepted only when accompanied by a
+// one-use, process-local attestation issued by an operation loopback executor.
+// Public callers cannot attach mutations or audit evidence to unrelated operations.
+app.UseOperationLineageAttestation();
 
 // MCP bearer credentials must be fully validated before tenant context, schema
 // routing, or tenant status observes the request. The endpoint filter remains
@@ -1366,6 +1395,12 @@ app.UseWhen(
 // before any downstream feature handler reads ITenantContext (#1144).
 app.UseHonuaTenantContext();
 
+// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
+// so schema-routing failures also consume the tenant + authenticated user/API-key bucket
+// (falling back to source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
+// posture is still edge enforcement (ADR-0004).
+app.UseRateLimiting();
+
 // Route the resolved tenant to its PostgreSQL schema and record a usage signal (#346).
 // No-op unless MultiTenancy:SchemaRouting:Enabled=true. Must run after tenant context
 // resolution and before any feature handler that reads the database.
@@ -1376,11 +1411,9 @@ app.UseHonuaTenantSchemaRouting();
 // unchanged until tenants are provisioned through the admin surface.
 app.UseHonuaTenantStatusEnforcement();
 
-// App-level rate limiting (issue #355). Runs after authentication and tenant resolution
-// so buckets partition by tenant + authenticated user/API-key identity (falling back to
-// source IP for anonymous traffic). No-ops unless RateLimiting:Enabled is set; the MVP
-// posture is still edge enforcement (ADR-0004).
-app.UseRateLimiting();
+// Reject invalid Esri portal tokens only after the shared rate limiter has metered the
+// request, so repeated bad credentials cannot bypass the configured source-IP bucket.
+app.UsePortalTokenAuthenticationRejection();
 
 // Add limits enforcement middleware (after auth, before request logging)
 app.UseLimitsEnforcement();
@@ -1477,19 +1510,32 @@ app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
 app.MapAdminLayerAuthoringEndpoints();
 app.MapAdminLayerFilterConfigurationEndpoints();
-app.MapReplicaManagementEndpoints();
+if (offlineSyncEnabled)
+{
+    app.MapReplicaManagementEndpoints();
+}
 app.MapAdminLayerValidationEndpoints();
 app.MapAdminStyleSuggestionEndpoints();
 app.MapAdminSldStyleEndpoints();
 
 // Configure admin alerting zone/rule endpoints
-app.MapAlertAdminEndpoints();
+var geofenceAlertsEnabled = CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "alerts.geofence");
+if (geofenceAlertsEnabled)
+{
+    app.MapAlertAdminEndpoints();
+}
 
 // Configure alert dispatch self-healing ops endpoints (dead-letter redrive, channel pause/resume) (#2561)
-app.MapAlertOpsAdminEndpoints();
+if (geofenceAlertsEnabled)
+{
+    app.MapAlertOpsAdminEndpoints();
+}
 
 // Configure Console Operate observability endpoints (#1168)
-app.MapObservabilityAlertEndpoints();
+if (geofenceAlertsEnabled)
+{
+    app.MapObservabilityAlertEndpoints();
+}
 app.MapObservabilityAuditEndpoints();
 app.MapObservabilityEventEndpoints();
 app.MapInvestigationEndpoints();
@@ -1584,9 +1630,16 @@ app.MapServerFeatureEndpoints();
 // Configure gRPC feature service endpoint (gRPC-Web enabled via middleware)
 app.MapGrpcService<Honua.Server.Features.Protocols.Grpc.HonuaFeatureService>();
 app.MapGrpcService<Honua.Geoprocessing.HonuaProcessService>();
-app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>();
-app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
-app.MapGrpcService<Honua.Scene.Grpc.HonuaTileGrpcService>();
+app.MapGrpcService<Honua.Server.Features.Spec.HonuaSpecService>()
+    .RequireAdminAuthorization();
+if (CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "scene.catalog"))
+{
+    app.MapGrpcService<Honua.Scene.Grpc.HonuaSceneGrpcService>();
+}
+if (CapabilityFlagOptions.IsExperimentalEnabled(builder.Configuration, "serve.3d-tiles-scene"))
+{
+    app.MapGrpcService<Honua.Scene.Grpc.HonuaTileGrpcService>();
+}
 app.MapGrpcService<Honua.Scene.Grpc.HonuaElevationGrpcService>();
 app.MapGrpcHealthChecksService();
 
@@ -1648,7 +1701,10 @@ app.MapOperationsProgressEndpoints();
 app.MapFeatureChangeEventsEndpoints();
 app.MapCollaborationEndpoints();
 app.MapMobileExceptionIngestionEndpoints();
-app.MapFieldCollectionSyncEndpoints();
+if (offlineSyncEnabled)
+{
+    app.MapFieldCollectionSyncEndpoints();
+}
 app.MapTileOperationsEndpoints();
 
 // Map health endpoints for Aspire dashboard (only when Aspire is enabled)
@@ -1690,7 +1746,56 @@ async Task RunDatabaseMigrationsAsync()
     if (builder.Configuration.GetValue<bool>("HONUA_SKIP_MIGRATIONS"))
     {
         Honua.Infrastructure.Logging.Log.DatabaseMigrationsSkipped(app.Logger);
-        migrationState.MarkSkipped("Migrations skipped by configuration.");
+
+        // Explicitly opted-in Test hosts wire their own isolated providers and schema. The
+        // production PostgreSQL guard cannot validate that externally managed fixture shape;
+        // requiring it here makes the Python compatibility harness exit before its tests run.
+        if (isTestEnvironment && registerInfrastructureInTestEnvironment)
+        {
+            migrationState.MarkSkipped("Migrations skipped; the opted-in test infrastructure owns schema preparation.");
+            return;
+        }
+
+        var schemaGuard = app.Services.GetService<IDatabaseSchemaGuard>();
+        if (schemaGuard is null)
+        {
+            migrationState.MarkSkipped("Migrations skipped by configuration; no schema guard is registered for the active provider.");
+            return;
+        }
+
+        var skippedMigrationSecretResolver =
+            app.Services.GetService<Honua.Core.Features.Security.Abstractions.IConnectionSecretResolver>();
+        var skippedMigrationConnectionString = await ConnectionStringResolutionHelper.ResolveDefaultConnectionStringAsync(
+            builder.Configuration,
+            skippedMigrationSecretResolver,
+            app.Lifetime.ApplicationStopping);
+        if (string.IsNullOrEmpty(skippedMigrationConnectionString))
+        {
+            migrationState.MarkFailed("Migrations were skipped, but the schema guard could not run without a database connection string.");
+            if (!app.Environment.IsDevelopment())
+            {
+                throw new InvalidOperationException(
+                    "Database schema verification is required when HONUA_SKIP_MIGRATIONS=true, but no connection string is configured.");
+            }
+            return;
+        }
+
+        try
+        {
+            await schemaGuard.VerifyAsync(
+                skippedMigrationConnectionString,
+                app.Lifetime.ApplicationStopping);
+            migrationState.MarkSkipped("Migrations skipped by configuration; journal/schema consistency verified.");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            migrationState.MarkFailed("Database schema diverges from the migration journal.");
+            Honua.Infrastructure.Logging.Log.DatabaseMigrationFailed(app.Logger, ex.Message, ex);
+            if (!app.Environment.IsDevelopment())
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+            }
+        }
         return;
     }
 

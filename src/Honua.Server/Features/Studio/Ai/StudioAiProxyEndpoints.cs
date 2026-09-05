@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text;
+using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -10,6 +12,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.RateLimiting;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Studio.Ai;
 
@@ -46,7 +49,9 @@ internal static class StudioAiProxyEndpoints
             .WithMetadata(new RateLimitAttribute(30))
             .Accepts<StudioAiChatHttpRequest>("application/json")
             .Produces(StatusCodes.Status200OK, contentType: "text/event-stream")
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status413PayloadTooLarge)
+            .Produces(StatusCodes.Status415UnsupportedMediaType);
     }
 
     private static async Task<IResult> HandleGetCapabilities(
@@ -63,13 +68,34 @@ internal static class StudioAiProxyEndpoints
 
     private static async Task<IResult> HandleChat(
         HttpContext context,
-        StudioAiChatHttpRequest httpRequest,
         IStudioAiProxyService service,
+        IOptions<StudioAiProxyConfiguration> options,
         IStudioAuthorizationService authorizationService,
         IAuditLog auditLog,
         CancellationToken cancellationToken)
     {
         SetNoStore(context);
+
+        if (!context.Request.HasJsonContentType())
+        {
+            return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        var (httpRequest, acceptedRequestJson, requestTooLarge, readError) = await ReadRequestAsync(
+            context.Request,
+            options.Value.MaxRequestBytes,
+            cancellationToken).ConfigureAwait(false);
+        if (requestTooLarge)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status413PayloadTooLarge,
+                title: "Studio AI request is too large.");
+        }
+
+        if (readError is not null || httpRequest is null)
+        {
+            return BadRequest(context, readError ?? "Invalid request.");
+        }
 
         // Model and output-token limits are operator-controlled provider boundaries: provider
         // credentials may have access to models or token ceilings the deployment did not approve
@@ -83,7 +109,8 @@ internal static class StudioAiProxyEndpoints
 
         var (domainRequest, mappingError) = StudioAiChatRequestMapper.ToDomain(
             httpRequest,
-            allowCallerOverrides);
+            allowCallerOverrides,
+            acceptedRequestJson);
         if (mappingError is not null || domainRequest is null)
         {
             return BadRequest(context, mappingError ?? "Invalid request.");
@@ -139,6 +166,98 @@ internal static class StudioAiProxyEndpoints
 
         return Results.Empty;
     }
+
+    private static async Task<(StudioAiChatHttpRequest? Request, byte[]? AcceptedJson, bool TooLarge, string? Error)> ReadRequestAsync(
+        HttpRequest request,
+        int maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        if (request.ContentLength > maximumBytes)
+        {
+            return (null, null, true, null);
+        }
+
+        await using var body = new MemoryStream(Math.Min(maximumBytes, 64 * 1024));
+        var buffer = new byte[16 * 1024];
+        while (true)
+        {
+            var read = await request.Body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (body.Length + read > maximumBytes)
+            {
+                return (null, null, true, null);
+            }
+
+            await body.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(
+                body.GetBuffer().AsMemory(0, checked((int)body.Length)),
+                new JsonDocumentOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
+            if (FindDuplicateProperty(document.RootElement, StringComparer.OrdinalIgnoreCase) is { } duplicate)
+            {
+                return (null, null, false, $"Duplicate JSON property '{duplicate}' is not allowed.");
+            }
+
+            var acceptedRequestJson = Encoding.UTF8.GetBytes(document.RootElement.GetRawText());
+            var httpRequest = document.RootElement.Deserialize(
+                StudioAiProxyJsonContext.Default.StudioAiChatHttpRequest);
+            return httpRequest is null
+                ? (null, null, false, "Request body is required.")
+                : (httpRequest, acceptedRequestJson, false, null);
+        }
+        catch (JsonException)
+        {
+            return (null, null, false, "Request body must be unambiguous valid JSON.");
+        }
+    }
+
+    private static string? FindDuplicateProperty(JsonElement value, StringComparer comparer)
+    {
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            var names = new HashSet<string>(comparer);
+            foreach (var property in value.EnumerateObject())
+            {
+                if (!names.Add(property.Name))
+                {
+                    return property.Name;
+                }
+
+                var nestedComparer = IsOpaqueJsonProperty(property.Name)
+                    ? StringComparer.Ordinal
+                    : comparer;
+                if (FindDuplicateProperty(property.Value, nestedComparer) is { } nested)
+                {
+                    return nested;
+                }
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in value.EnumerateArray())
+            {
+                if (FindDuplicateProperty(item, comparer) is { } nested)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsOpaqueJsonProperty(string propertyName)
+        => propertyName.Equals("inputSchema", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("annotations", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("outputSchema", StringComparison.OrdinalIgnoreCase)
+            || propertyName.Equals("arguments", StringComparison.OrdinalIgnoreCase);
 
     private static string EventName(StudioAiChatEventType type) => type switch
     {

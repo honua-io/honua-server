@@ -2,6 +2,12 @@
 
 Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol.
 
+Layer discovery, layer descriptions, feature pages, and counts use the shared
+REST resource-access gate, including service/layer policies and per-operation
+grants. Discovery and schema descriptions require metadata access; feature queries
+and descriptions that include a row count additionally require query access.
+Discovery filters inaccessible layers before calculating pagination totals.
+
 For operations work, MCP is the agent seat in the same control loop that Console `/operate` uses. See [Operating Honua](../operate/README.md) for the observe -> diagnose -> propose -> approve model, the autonomy ladder, and the current line between shipped MCP observability tools and in-progress platform-ops tools.
 
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)). Tool calls require an authenticated identity — see [authentication](../secure/authentication.md).
@@ -10,6 +16,23 @@ The endpoint is `POST /mcp`: JSON-RPC 2.0 over HTTP (single requests and batches
 
 Authentication supports both legacy `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`).
 When both are present, bearer tokens are evaluated first for this route.
+
+Applying a catalog style with `honua_apply_style_preset` requires admin write
+access in addition to the published-service publish grant. It uses the
+`style.apply-preset` operation and honors operator approval and
+`Operations:Policy` rules before changing the layer. An approval-required result
+has `approvalRequired: true`; when a durable proposal is created, use its returned
+`proposalId` and resource URI to track approval. Only a completed application
+returns `applied: true`. Set `dryRun: true` to validate without changing the
+layer; a completed preview returns `dryRun: true` and `applied: false`.
+Approval plans identify the service, layer, and preset and preserve preview
+intent when replayed after approval. The proposal also pins the selected publication,
+resource and storage binding; replay refuses a rebound target and requires a new
+approval request.
+If the binding commits but metadata reconciliation fails, the result keeps
+`applied: true` and includes a `warning`; re-apply the preset to retry that
+reconciliation. Policy rules receive the active license tier on both MCP and
+REST operation submissions.
 
 ## Two MCP surfaces: data-access (open) vs. operator (proprietary)
 
@@ -99,10 +122,10 @@ named "operator surface" ships in this repo.
 
    - `honua_ops_health` and `honua://ops/health` - current operational posture.
    - `honua_ops_findings` and `honua://ops/findings` - deterministic findings and recommended actions where real executors exist.
-   - `honua_alert_events` - GIS alert events and ops notifications.
+   - `honua_alert_events` - Preview customer GIS alert events and ops notifications. Customer alerting requires explicit opt-in for 2026.1; the shared ops notification feed does not imply a GA alert-delivery commitment.
    - `honua_operate_events` - fused Operate timeline events.
 
-   Before proposing a mutating control-plane operation, call the read-only `honua_supported_operation_kinds` tool and choose only a returned kind. Then use `honua_propose_operation`; approval still resolves through the Console inbox, and MCP does not approve its own proposals. The `supportedKinds` field on rejected proposal responses remains for compatibility but is deprecated for discovery.
+   Mutating control-plane requests use schema-closed tools: `honua_propose_finding`, `honua_propose_deploy_plan`, `honua_propose_deploy_operation`, `honua_propose_rollback`, and `honua_propose_platform_release_convergence`. Approval resolves through the Console inbox; MCP does not approve its own proposals or accept opaque execution payloads.
 
 7. Compose a Studio draft — the same server-resident lifecycle draft the Studio UI observes (AD-8: composition state IS the draft; the browser is a projection). Every mutating call is optimistic-concurrency checked: pass the `generation` last returned by `honua_studio_get_draft` / `honua_studio_create_draft`, and a stale value returns `failed_precondition` — re-fetch and retry rather than resubmitting blindly.
 
@@ -133,7 +156,7 @@ Select a view three ways, highest precedence first:
 
 1. **Per request** — `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"view":"setup"}}` (or `params._meta["honua.io/workflow-view"]`).
 2. **Per session** — send `_meta: {"honua.io/workflow-view": "setup"}` in `initialize.params`; the negotiated name binds to the issued `Mcp-Session-Id` and applies to every later `tools/list` on that session.
-3. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. Unset by default, so an existing host's `tools/list` is unchanged until an operator opts in.
+3. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. The default is the server-authored `default` view, capped at 12 meta/workflow tools.
 
 The shipped view is `setup`: the bounded terminal path of readiness → connect/import → publish service and layer → verify access → canonical style and render → bounded geoprocessing → Studio map/dashboard composition and lifecycle → publication submit and status. It is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
 
@@ -141,7 +164,9 @@ A view is **discovery, not authority**:
 
 - Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.
 - Every `tools/call` is independently reauthenticated and reauthorized against the current actor, tenant, roles/grants, OAuth scope, and policy — whether or not the tool was discovered through a view.
-- The complete paginated catalog stays available: omit the view, or pass the reserved name `full`, which also overrides a session or profile default. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
+- The complete paginated catalog is an explicit admin operation: pass the reserved name `full`, which overrides a session or profile default and requires an admin role. The narrowed response advertises this escape hatch in its own `_meta.fullCatalogView`.
+- `honua_list_capabilities` returns at most 12 tools and 12 resources by default. Follow `nextToolCursor` and `nextResourceCursor`; `fullExport: true` is admin-only.
+- `resources/read` returns at most 64,000 characters by default. A caller may explicitly request `maxChars` up to the hard ceiling of 1,000,000.
 - Members carry the **exact** canonical description, annotations, and input/output schemas the full catalog serves; nothing is truncated or re-described.
 
 Studio composition and lifecycle members also carry server-owned routing metadata in

@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Security.Claims;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -179,6 +180,10 @@ internal sealed class PublishedOperationTool : IMcpTool
             AuthorizationOutcome = "authorized",
             Tier = ResolveTier(httpContext),
             Roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray(),
+            ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
+            RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
+                .OrderBy(scope => scope, StringComparer.Ordinal)
+                .ToArray(),
         };
 
         var parameters = ReadParameters(arguments);

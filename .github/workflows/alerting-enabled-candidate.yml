@@ -1,0 +1,117 @@
+name: Alerting Enabled Candidate
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/alerting-enabled-candidate.yml'
+      - 'src/Honua.Core/Features/Alerts/**'
+      - 'src/Honua.Db/Postgres/Features/Alerts/**'
+      - 'src/Honua.Server/Features/Alerts/**'
+      - 'src/Honua.Server/Migrations/**'
+      - 'tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertWebhookDeliveryE2eTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/DatabaseShardCollections.cs'
+      - 'scripts/qualification/validate-alerting-candidate.py'
+      - 'scripts/qualification/test_validate_alerting_candidate.py'
+  workflow_dispatch:
+    inputs:
+      candidate_source_sha:
+        description: Exact 40-character candidate commit SHA
+        required: true
+        type: string
+      evidence_run_id:
+        description: Actions run id that produced the exact-candidate hosted evidence artifact
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+
+concurrency:
+  group: alerting-enabled-candidate-${{ github.event.pull_request.head.sha || inputs.candidate_source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  receipt-contract:
+    name: Reject incomplete or unbound receipts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run fail-closed negative matrix
+        run: python3 -m unittest scripts/qualification/test_validate_alerting_candidate.py
+
+  postgres-webhook-e2e:
+    name: ENABLED exact candidate / Postgres webhook E2E
+    if: github.event_name == 'workflow_dispatch'
+    needs: receipt-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      Alerts__Enabled: 'true'
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    steps:
+      - name: Resolve exact candidate
+        id: candidate
+        env:
+          REQUESTED_SHA: ${{ inputs.candidate_source_sha }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          candidate_sha="${PR_SHA:-${REQUESTED_SHA}}"
+          [[ "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]] || { echo 'candidate_source_sha must be an exact 40-character commit SHA' >&2; exit 1; }
+          echo "sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.candidate.outputs.sha }}
+
+      - name: Verify checkout identity
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Download exact-candidate hosted evidence
+        uses: actions/download-artifact@v5
+        with:
+          name: alerting-hosted-evidence-${{ steps.candidate.outputs.sha }}
+          path: artifacts/alerting-enabled-candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.evidence_run_id }}
+
+      - name: Count selected tests
+        id: tests
+        run: |
+          selected="$(python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse('artifacts/alerting-enabled-candidate/alerting-enabled-candidate.trx').getroot()
+          counters = next(node for node in root.iter() if node.tag.endswith('Counters'))
+          print(counters.attrib.get('total', '0'))
+          PY
+          )"
+          test "${selected}" -gt 0
+          echo "selected=${selected}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate immutable qualification receipt
+        env:
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
+        run: |
+          python3 scripts/qualification/validate-alerting-candidate.py \
+            --receipt artifacts/alerting-enabled-candidate/receipt.json \
+            --candidate-sha "${CANDIDATE_SHA}" \
+            --artifact artifacts/alerting-enabled-candidate/honua-server.tar \
+            --trx artifacts/alerting-enabled-candidate/alerting-enabled-candidate.trx \
+            --workflow .github/workflows/alerting-enabled-candidate.yml \
+            --evidence-root artifacts/alerting-enabled-candidate/evidence
+          test "$(jq -r '.testRun.selectedTests' artifacts/alerting-enabled-candidate/receipt.json)" \
+            -eq "${{ steps.tests.outputs.selected }}"
+
+      - name: Retain immutable candidate receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alerting-enabled-candidate-${{ steps.candidate.outputs.sha }}
+          path: artifacts/alerting-enabled-candidate/
+          if-no-files-found: error
+          retention-days: 90

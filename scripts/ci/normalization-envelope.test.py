@@ -154,12 +154,17 @@ class EnvelopeTests(unittest.TestCase):
     def test_generator_allowlist_is_exact(self) -> None:
         required_implementations = {
             "Directory.Build.targets",
+            "scripts/generate-admin-operation-parity-exports.sh",
+            "scripts/ci/verify-admin-operation-parity.py",
             "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogEmitter.cs",
             "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs",
             "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityEmitter.cs",
             "tests/dotnet/Honua.Architecture.Tests/GeoServicesParity/GeoServicesParityGenerator.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Operations/AdminOperationParityExportTests.cs",
         }
         self.assertTrue(required_implementations.issubset(MODULE.GENERATOR_INPUTS))
+
+        self.assertEqual(sum(MODULE.OUTPUT_LIMITS.values()), MODULE.MAX_TOTAL_OUTPUT_BYTES)
 
         value = envelope()
         value["generators"][0]["path"] = "scripts/unsafe.sh"
@@ -213,7 +218,7 @@ class EnvelopeTests(unittest.TestCase):
                 root, root, REPOSITORY, PR, HEAD, TREE, BASE, RUN_ID, ATTEMPT
             )
             validated = MODULE.validate_envelope(raw(built), **expected())
-            self.assertEqual(3, len(validated["outputs"]))
+            self.assertEqual(len(MODULE.OUTPUT_LIMITS), len(validated["outputs"]))
 
 
 if __name__ == "__main__":
