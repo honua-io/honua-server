@@ -43,14 +43,14 @@ public sealed class AdminApprovalReviewTests
     {
         var plan = Map("admin.connections.create", new Dictionary<string, string?>
         {
-            ["name"] = "warehouse", ["password"] = "never-display-this",
+            ["name"] = "warehouse", ["secretReference"] = "vault/warehouse", ["secretType"] = "Vault",
             ["connectionString"] = "Host=private;Password=hidden-password",
             ["unexpected"] = "hidden-unknown-value"
         });
         var review = Review(plan);
-        review.Should().Contain("warehouse").And.Contain("[redacted]");
+        review.Should().Contain("warehouse").And.Contain("vault/warehouse").And.Contain("[redacted]");
         review.Should().NotContain("never-display-this").And.NotContain("hidden-password").And.NotContain("hidden-unknown-value");
-        plan.ExecutionPayload.Should().Contain("never-display-this");
+        plan.ExecutionPayload.Should().Contain("vault/warehouse");
     }
 
     private static OperationProposalPlan Map(string operationId, Dictionary<string, string?> parameters)
@@ -69,7 +69,7 @@ public sealed class AdminApprovalReviewTests
         }
         else
         {
-            mapper = new AdminConnectImportOperationApprovalRequestMapper(
+            mapper = new AdminConnectImportApprovalRequestMapper(
                 AdminConnectImportOperationCatalog.Definitions.Single(item => item.OperationId == operationId));
             descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(item => item.OperationId == operationId);
         }
@@ -77,7 +77,7 @@ public sealed class AdminApprovalReviewTests
         {
             OperationId = operationId, ConnectionId = "connection-a", ServiceName = "service-a", Parameters = parameters
         }, new OperationPolicyContext { TenantId = "tenant-a", PrincipalId = "requester" },
-            new PolicyDecision { Kind = PolicyDecisionKind.ApprovalRequired }).Plan!;
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval }).Plan!;
     }
 
     private static string Review(OperationProposalPlan plan) =>
