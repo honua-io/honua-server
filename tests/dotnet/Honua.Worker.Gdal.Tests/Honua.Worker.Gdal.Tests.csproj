@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Fixtures\RasterProof\**\*" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers" />
