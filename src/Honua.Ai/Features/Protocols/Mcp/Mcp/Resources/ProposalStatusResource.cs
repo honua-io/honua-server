@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -69,7 +70,7 @@ internal sealed class ProposalStatusResource : IMcpResource
         var proposal = await store.GetAsync(proposalId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
 
-        if (!Honua.Infrastructure.MultiTenancy.OperationTenantAuthorization.CanAccess(httpContext, proposal.TenantId))
+        if (!OperationTenantAuthorization.CanAccess(httpContext, proposal.TenantId))
         {
             throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
         }

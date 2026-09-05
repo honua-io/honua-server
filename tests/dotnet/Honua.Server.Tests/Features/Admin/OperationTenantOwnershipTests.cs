@@ -138,6 +138,8 @@ public sealed class OperationTenantOwnershipTests
             Arg.Any<string?>(), Arg.Any<Honua.Core.Features.Authorization.Domain.AuthorizationOperation>(),
             Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(Honua.Core.Features.Authorization.Domain.PermissionDecision.NoMatch());
+        var executor = Substitute.For<Honua.Core.Features.Operations.Abstractions.IOperationExecutor>();
+        executor.OperationId.Returns(LegacyOperationIds.For(Proposal("tenant-a").Kind));
         var args = method.GetParameters().Select(parameter => parameter.Name switch
         {
             "context" => (object)context,
@@ -147,6 +149,7 @@ public sealed class OperationTenantOwnershipTests
             "gateway" => gateway,
             "instanceStore" => instanceStore,
             "permissionResolver" => permission,
+            "operationExecutors" => new[] { executor },
             "request" => new RejectProposalRequest { Reason = "declined" },
             "cancellationToken" => CancellationToken.None,
             _ => null,

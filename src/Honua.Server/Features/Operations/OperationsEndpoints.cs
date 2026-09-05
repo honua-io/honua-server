@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
@@ -241,7 +242,7 @@ internal static class OperationsEndpoints
         }
 
         var handle = await instanceStore.GetAsync(handleId, cancellationToken).ConfigureAwait(false);
-        if (handle is null || !Honua.Infrastructure.MultiTenancy.OperationTenantAuthorization.CanAccess(context, handle.TenantId))
+        if (handle is null || !OperationTenantAuthorization.CanAccess(context, handle.TenantId))
         {
             return NotFound(context, $"Operation handle '{handleId}' was not found.");
         }
