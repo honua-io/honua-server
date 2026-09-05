@@ -79,9 +79,8 @@ internal static class AdminOperateOperationCatalog
         var operation = FindOperation(RequestContract, definition.OpenApiOperationId);
         if (operation.TryGetProperty("parameters", out var parameters))
         {
-            foreach (var candidate in parameters.EnumerateArray())
+            foreach (var parameter in parameters.EnumerateArray().Select(static candidate => Resolve(RequestContract, candidate)))
             {
-                var parameter = Resolve(RequestContract, candidate);
                 if (parameter.GetProperty("name").GetString() == name)
                     return ResolveInputContract(parameter.GetProperty("schema"));
             }

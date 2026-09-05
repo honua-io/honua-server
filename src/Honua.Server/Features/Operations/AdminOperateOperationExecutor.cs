@@ -137,11 +137,11 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
         {
             if (schema.TryGetProperty("required", out var required))
             {
-                foreach (var name in required.EnumerateArray().Select(static item => item.GetString()!))
+                foreach (var name in required.EnumerateArray().Select(static item => item.GetString()!)
+                    .Where(name => !value.TryGetProperty(name, out var member) || member.ValueKind == JsonValueKind.Null ||
+                        (member.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(member.GetString()))))
                 {
-                    if (!value.TryGetProperty(name, out var member) || member.ValueKind == JsonValueKind.Null ||
-                        (member.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(member.GetString())))
-                        messages.Add($"Required parameter '{path}.{name}' is missing.");
+                    messages.Add($"Required parameter '{path}.{name}' is missing.");
                 }
             }
             if (schema.TryGetProperty("properties", out var properties))
@@ -171,7 +171,7 @@ internal sealed class AdminOperateOperationExecutor : IOperationExecutor
             messages.Add($"Parameter '{path}' must be a UUID.");
         if (format.GetString() == "date-time")
         {
-            using var encoded = JsonDocument.Parse("\"" + JsonEncodedText.Encode(value).ToString() + "\"");
+            using var encoded = JsonDocument.Parse("\"" + JsonEncodedText.Encode(value) + "\"");
             if (!encoded.RootElement.TryGetDateTimeOffset(out _))
                 messages.Add($"Parameter '{path}' must be an ISO 8601 date-time.");
         }
