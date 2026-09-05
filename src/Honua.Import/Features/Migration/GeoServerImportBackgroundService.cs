@@ -223,8 +223,10 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
         {
             var failed = (progressController.CurrentProgress ?? GeoServerImportProgress.CreateInitial(jobId, request?.GeoServerRestUrl ?? string.Empty, request?.TargetHonuaUrl ?? string.Empty)) with
             {
-                Status = GeoServerImportStatus.Failed, ErrorMessage = "license expired",
-                CompletedAt = DateTimeOffset.UtcNow, CurrentPhase = "Failed: license expired; partial import is incomplete"
+                Status = GeoServerImportStatus.Failed,
+                ErrorMessage = "license expired",
+                CompletedAt = DateTimeOffset.UtcNow,
+                CurrentPhase = "Failed: license expired; partial import is incomplete"
             };
             await progressController.SetFinalProgressAsync(failed, CancellationToken.None).ConfigureAwait(false);
             await _jobManager.RequestStore.DeleteProgressAsync(jobId, CancellationToken.None).ConfigureAwait(false);

@@ -21,9 +21,12 @@ public sealed partial class LicenseFailureContractTests
         var key = new Org.BouncyCastle.Crypto.Parameters.Ed25519PrivateKeyParameters(new Org.BouncyCastle.Security.SecureRandom());
         var payload = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new
         {
-            schema = "honua.license/v1", edition = "professional",
-            licenseId = "synthetic-professional-alias", licensedTo = "Synthetic operator",
-            issuedAt = DateTimeOffset.UtcNow.AddDays(-2), expiresAt = DateTimeOffset.UtcNow.AddDays(-1),
+            schema = "honua.license/v1",
+            edition = "professional",
+            licenseId = "synthetic-professional-alias",
+            licensedTo = "Synthetic operator",
+            issuedAt = DateTimeOffset.UtcNow.AddDays(-2),
+            expiresAt = DateTimeOffset.UtcNow.AddDays(-1),
             entitlements = Array.Empty<string>()
         });
         var signer = new Org.BouncyCastle.Crypto.Signers.Ed25519Signer();
@@ -31,12 +34,15 @@ public sealed partial class LicenseFailureContractTests
         signer.BlockUpdate(payload, 0, payload.Length);
         var envelope = System.Text.Json.JsonSerializer.Serialize(new
         {
-            version = 1, keyId = "synthetic-alias-key",
-            payload = LicenseTestSupport.Base64Url(payload), signature = LicenseTestSupport.Base64Url(signer.GenerateSignature())
+            version = 1,
+            keyId = "synthetic-alias-key",
+            payload = LicenseTestSupport.Base64Url(payload),
+            signature = LicenseTestSupport.Base64Url(signer.GenerateSignature())
         });
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Licensing:Edition"] = "Pro", ["Licensing:LicenseContent"] = envelope,
+            ["Licensing:Edition"] = "Pro",
+            ["Licensing:LicenseContent"] = envelope,
             ["Licensing:TrustedKeys:synthetic-alias-key"] = "base64url:" + LicenseTestSupport.Base64Url(key.GeneratePublicKey().GetEncoded())
         }).Build();
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>

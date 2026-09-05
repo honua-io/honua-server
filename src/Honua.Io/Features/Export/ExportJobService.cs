@@ -278,9 +278,12 @@ internal sealed class ExportJobService(
             {
                 var failed = progress with
                 {
-                    Status = OperationStatus.Failed, ErrorMessage = "license expired",
-                    CompletedAt = DateTimeOffset.UtcNow, CurrentPhase = "Failed: license expired",
-                    DownloadUrl = null, OutputSizeBytes = 0
+                    Status = OperationStatus.Failed,
+                    ErrorMessage = "license expired",
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    CurrentPhase = "Failed: license expired",
+                    DownloadUrl = null,
+                    OutputSizeBytes = 0
                 };
                 await _progressStore.SetProgressAsync(job.JobId, failed, _jobRetention, CancellationToken.None).ConfigureAwait(false);
                 _jobRequests.TryRemove(job.JobId, out _);

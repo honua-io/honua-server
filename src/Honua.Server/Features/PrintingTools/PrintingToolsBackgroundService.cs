@@ -85,9 +85,12 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             {
                 await progressStore.SetProgressAsync(job.JobId, progress with
                 {
-                    Status = OperationStatus.Failed, ErrorMessage = "license expired",
-                    CurrentPhase = "Failed: license expired", CompletedAt = DateTimeOffset.UtcNow,
-                    DownloadUrl = null, OutputSizeBytes = 0
+                    Status = OperationStatus.Failed,
+                    ErrorMessage = "license expired",
+                    CurrentPhase = "Failed: license expired",
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    DownloadUrl = null,
+                    OutputSizeBytes = 0
                 }, PrintingToolsRequestHandlers.ResultTtl, CancellationToken.None).ConfigureAwait(false);
             }
         }

@@ -367,7 +367,8 @@ internal sealed partial class TileOperationJobService(
                 shouldRequeue = false;
                 finalProgress = started with
                 {
-                    Status = OperationStatus.Failed, ErrorMessage = "license expired",
+                    Status = OperationStatus.Failed,
+                    ErrorMessage = "license expired",
                     CurrentPhase = "Failed: license expired; partial tile operation is incomplete",
                     CompletedAt = DateTimeOffset.UtcNow
                 };

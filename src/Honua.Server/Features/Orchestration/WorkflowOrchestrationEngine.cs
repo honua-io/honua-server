@@ -543,12 +543,16 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 var now = _clock.GetUtcNow();
                 var failed = run with
                 {
-                    Status = WorkflowRunStatus.Failed, ErrorMessage = "license expired",
-                    CompletedAt = now, UpdatedAt = now,
+                    Status = WorkflowRunStatus.Failed,
+                    ErrorMessage = "license expired",
+                    CompletedAt = now,
+                    UpdatedAt = now,
                     StepStates = run.StepStates.Select(step => IsStepTerminal(step.Status) ? step : step with
                     {
-                        Status = WorkflowStepStatus.Failed, ErrorMessage = "license expired",
-                        CompletedAt = now, OutputArtifacts = null
+                        Status = WorkflowStepStatus.Failed,
+                        ErrorMessage = "license expired",
+                        CompletedAt = now,
+                        OutputArtifacts = null
                     }).ToArray()
                 };
                 await PersistRunAsync(failed, CancellationToken.None).ConfigureAwait(false);

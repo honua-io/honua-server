@@ -398,7 +398,7 @@ internal sealed partial class FileBackedLicenseService :
     /// <see cref="ILicenseContentSecretResolver"/> that recognizes the reference (e.g. AWS Secrets
     /// Manager for <c>aws:secretsmanager:</c>, Azure Key Vault for <c>azure:keyvault:</c>). Never
     /// throws: no registered resolver, an unsupported reference, or an unreachable secret returns
-    /// <c>null</c> so the caller falls through to inline content / file / Community.
+    /// <c>null</c> so the caller falls through to inline content / file validation.
     /// </summary>
     private async Task<string?> TryResolveLicenseContentSecretAsync(
         LicenseOptions options,
