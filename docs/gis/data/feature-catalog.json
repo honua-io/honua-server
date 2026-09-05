@@ -16998,7 +16998,10 @@
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_ClientCredentialsBearerReturns403",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_NonAdminCannotRequestCertifiedTranscript",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_NonAdminScopedApiKeyReturns403",
-        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_SameNonAdminBearerReachesProxyAndMcpDiscovery"
+        "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_SameNonAdminBearerReachesProxyAndMcpDiscovery",
+        "Honua.Server.Tests.Features.StudioAiProxy.StudioAiCertificationEndpointTests.Anthropic_Certification_SignsTheActualEndpointResponse",
+        "Honua.Server.Tests.Features.StudioAiProxy.StudioAiCertificationEndpointTests.Bedrock_Certification_SignsTheActualEndpointResponse",
+        "Honua.Server.Tests.Features.StudioAiProxy.StudioAiCertificationEndpointTests.OpenAi_Certification_SignsTheActualEndpointResponse"
       ],
       "proof_ledger_surface": "studio-package-lifecycle",
       "maturity": "implemented",
