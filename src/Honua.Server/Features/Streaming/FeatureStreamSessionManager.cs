@@ -519,7 +519,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
                 var match = matches[matchIndex];
                 var subscriptionMessage = message with
                 {
-                    Envelope = message.Envelope with { SubscriptionId = match.SubscriptionId },
+                    Envelope = (match.Envelope ?? message.Envelope) with { SubscriptionId = match.SubscriptionId },
                     SubscriptionGeneration = match.Generation
                 };
                 delivered += TryQueueMessage(id, entry, subscriptionMessage) ? 1 : 0;
@@ -1365,7 +1365,8 @@ internal sealed class FeatureStreamSessionManager : IDisposable
 
                 if (matched)
                 {
-                    matches.Add(new SubscriptionMatch(subscriptionId, state.Generation));
+                    matches.Add(new SubscriptionMatch(subscriptionId, state.Generation,
+                        state.Filter is StreamSubscriptionFilter securedFilter ? securedFilter.Project(envelope) : envelope));
                 }
             }
 
@@ -1379,7 +1380,7 @@ internal sealed class FeatureStreamSessionManager : IDisposable
     /// queued frame so the writer can verify the subscription has not been replaced or
     /// removed before sending.
     /// </summary>
-    internal readonly record struct SubscriptionMatch(string SubscriptionId, long Generation);
+    internal readonly record struct SubscriptionMatch(string SubscriptionId, long Generation, FeatureStreamEnvelope? Envelope = null);
 
     /// <summary>
     /// Snapshot of a non-default WebSocket subscription that the writer's cross-node poll
