@@ -36,12 +36,14 @@ Licensing__AllowAdminUpload=false   # default
 Licensing__ExpiryWarningDays=30     # default
 ```
 
-- `Licensing__LicensePath` — path to the signed license file. Empty or unset runs Community mode.
+- `Licensing__LicensePath` — path to the signed license file and the location prefix for the persisted `.uploaded` override. With no file, inline content, or secret reference configured, the server runs Community mode.
+- `Licensing__LicenseContent` — inline signed JSON envelope.
+- `Licensing__LicenseContentSecretRef` — secret-store reference to the signed envelope.
 - `Licensing__TrustedKeys__<keyId>` — trusted raw Ed25519 public key per key id (`base64url:<key>`, unprefixed Base64URL, or `base64:<key>`). The envelope's `keyId` must match a configured entry.
-- `Licensing__AllowAdminUpload` — enables runtime license upload through the admin API.
+- `Licensing__AllowAdminUpload` — enables future runtime uploads through the admin API; disabling it does not undo a previously uploaded license.
 - `Licensing__ExpiryWarningDays` — expiry warning threshold surfaced in admin status.
 
-The license file is loaded at startup; changing `LicensePath` requires a restart, while admin upload (when enabled) takes effect at runtime.
+Startup reads `<LicensePath>.uploaded` first when present, then a resolved secret reference, inline content, and finally the ordinary `LicensePath` file. Admin upload takes effect immediately and survives restart. Persist and back up the containing directory, including both files. Configuration changes require a restart; replacing the ordinary file alone does not replace an existing uploaded override. Follow the renewal procedure below.
 
 ## How gating responds
 
@@ -56,7 +58,19 @@ Denials are also logged as structured events (licensing event ids `10000`–`100
 
 In the authorized [API explorer](../reference/openapi-and-explorer.md), run `GET /api/v1/admin/license/status` to inspect the current edition, validation state, expiry, and entitlements. To replace the license when `Licensing__AllowAdminUpload=true`, run `POST /api/v1/admin/license/upload` and attach `license.honua-license.json` as the binary request body.
 
-Upload runs the same validator as startup load and atomically replaces the file at `LicensePath`; it returns `400` when `AllowAdminUpload` is `false`. The status response reports a `validationState` of `Valid`, `NoLicenseConfigured`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, or `Expired` — anything other than `Valid` means the server is effectively in Community mode.
+Upload runs the same validator as startup load and atomically commits the signed envelope at `<LicensePath>.uploaded`, then updates `LicensePath` as a compatibility mirror. A mirror-only failure is reported in the successful upload result; startup still uses the committed override. Upload returns `400` when `AllowAdminUpload` is `false`. The status response reports a `validationState` of `Valid`, `NoLicenseConfigured`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, or `Expired` — anything other than `Valid` means the server is effectively in Community mode.
+
+## Renew or replace a license
+
+After any successful admin upload, renew through the upload endpoint so the persisted override is replaced as well. Upload the new signed envelope, then verify the expected `licenseId`, expiry, edition, and entitlements with `GET /api/v1/admin/license/status` and `GET /api/v1/admin/license/entitlements`. Further uploads may be disabled afterward without reverting the license.
+
+To switch back to a file or configuration-managed source:
+
+1. Stop the server and back up both license files and the licensing configuration.
+2. Remove `<LicensePath>.uploaded`. Replace the ordinary `LicensePath` file, or update the intended inline/secret source. Remove or update any higher-precedence configured source so it cannot continue to select an older license.
+3. Restart and verify the expected license identity, expiry, edition, and entitlements through the admin endpoints.
+
+Replacing `LicensePath` and restarting while leaving `.uploaded` present continues to load the override. An invalid, unreadable, or expired override leaves the server in a safe Community state; it does not restore an older configured license. Coordinate renewal across replicas with separate filesystems. Uploads made by older server versions must be re-uploaded once after upgrade to establish the persisted override.
 
 ## Issuing Pro / Enterprise licenses (publisher only)
 
@@ -141,7 +155,7 @@ The runtime accepts only the signed JSON envelope above; there is no legacy lice
 
 1. Deploy a server release that includes runtime licensing and configure `Licensing__TrustedKeys__<keyId>` on every instance.
 2. Obtain re-issued license files in the signed envelope format for every deployment.
-3. Load each file — set `Licensing__LicensePath` and restart, or temporarily set `Licensing__AllowAdminUpload=true` and use the upload endpoint.
+3. Load each file through the upload endpoint with `Licensing__AllowAdminUpload=true`, or provision the configured source using [Renew or replace a license](#renew-or-replace-a-license). Remove any existing upload override before switching to file/configuration management; replacing the ordinary file alone is insufficient.
 4. Verify `GET /api/v1/admin/license/status` shows `validationState=Valid`, the expected `edition` and `licenseId`, and the expected active entitlements.
 5. Set `Licensing__AllowAdminUpload` back to `false` unless uploads are part of your operating model, and remove superseded license files from configuration management.
 

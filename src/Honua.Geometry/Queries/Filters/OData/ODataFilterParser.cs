@@ -612,6 +612,12 @@ public sealed class ODataFilterParser
             identifier.Equals("geometry", StringComparison.OrdinalIgnoreCase))
         {
             var token = Advance();
+            if (identifier.Equals("geometry", StringComparison.OrdinalIgnoreCase) &&
+                !token.Value.TrimStart().StartsWith("SRID=", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ODataFilterParseException(
+                    "Geometry literals require an explicit SRID=####; prefix", token.Position);
+            }
             literal = ParseGeographyLiteral(token.Value, token.Position);
             return true;
         }

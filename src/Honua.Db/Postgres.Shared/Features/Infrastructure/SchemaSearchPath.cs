@@ -21,8 +21,7 @@ internal static partial class SchemaSearchPath
             return;
         }
 
-        var sanitized = schemaName.Trim();
-        if (!_schemaNameRegex.IsMatch(sanitized))
+        if (!IsValidIdentifier(schemaName))
         {
             throw new InvalidOperationException($"Invalid schema name '{schemaName}'.");
         }
@@ -32,7 +31,7 @@ internal static partial class SchemaSearchPath
         // physical-connection initializer (or the Options startup parameter when
         // multiplexing is enabled). Tier 3 optimization.
         if (!string.IsNullOrWhiteSpace(connectionStringDefaultSchema) &&
-            string.Equals(sanitized, connectionStringDefaultSchema.Trim(), StringComparison.Ordinal))
+            string.Equals(schemaName, connectionStringDefaultSchema, StringComparison.Ordinal))
         {
             return;
         }
@@ -42,13 +41,14 @@ internal static partial class SchemaSearchPath
         // The provider quotes the allow-listed schema as an identifier, while the entire
         // search_path value is still transmitted as data rather than interpolated SQL.
         command.CommandText = "SELECT set_config('search_path', @searchPath, false);";
-        command.Parameters.AddWithValue("searchPath", BuildSearchPathValue(sanitized));
+        command.Parameters.AddWithValue("searchPath", BuildSearchPathValue(schemaName));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="value"/> is a safe SQL identifier
-    /// (starts with a letter or underscore, followed by letters, digits, or underscores).
+    /// (one to 63 ASCII characters; starts with a letter or underscore, followed by
+    /// letters, digits, or underscores). Identity is never trimmed or truncated.
     /// </summary>
     public static bool IsValidIdentifier(string value)
     {
@@ -60,13 +60,12 @@ internal static partial class SchemaSearchPath
     /// </summary>
     public static string ValidateAndQuote(string schemaName)
     {
-        var sanitized = schemaName.Trim();
-        if (!_schemaNameRegex.IsMatch(sanitized))
+        if (!IsValidIdentifier(schemaName))
         {
             throw new InvalidOperationException($"Invalid schema name '{schemaName}'.");
         }
 
-        return QuoteIdentifier(sanitized);
+        return QuoteIdentifier(schemaName);
     }
 
     /// <summary>
@@ -80,7 +79,9 @@ internal static partial class SchemaSearchPath
         return $"{quotedSchema}.{tableName}";
     }
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    // Absolute anchors reject a trailing newline; the bound prevents PostgreSQL
+    // from truncating distinct resource/schema identities onto the same name.
+    [GeneratedRegex("\\A[A-Za-z_][A-Za-z0-9_]{0,62}\\z", RegexOptions.CultureInvariant)]
     private static partial Regex SchemaNamePattern();
 
     private static string QuoteIdentifier(string identifier)

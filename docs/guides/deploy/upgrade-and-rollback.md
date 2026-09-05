@@ -90,6 +90,17 @@ Do not restore the vulnerable normalization behavior as an isolation workaround.
 Single-tenant deployments and the explicitly excluded `public` tenant retain
 their configured default schema behavior.
 
+### Preview raster and coverage surfaces
+
+ImageServer, WMTS, OGC API Coverages, and EDR are Preview in 2026.1. Their
+capability manifests and evidence catalogs now agree on that lifecycle.
+ImageServer, WMTS, and Coverages retain their existing default availability;
+Preview is a release maturity statement and does not itself disable their routes.
+EDR retains its existing explicit opt-in through
+`Capabilities:Experimental:serve.ogc-api-edr:Enabled=true` (or the global experimental switch).
+Existing authorization and entitlement checks still apply. CITE and functional
+parity results describe the tested operations and do not promote these surfaces to GA.
+
 ### SensorThings API
 
 The OGC SensorThings API remains experimental and is not registered unless

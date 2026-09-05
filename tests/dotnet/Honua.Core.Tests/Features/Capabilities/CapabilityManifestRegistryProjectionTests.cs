@@ -51,6 +51,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "serve.sensorthings",
         "serve.geoservices-imageserver",
         "serve.wmts",
+        "serve.ogc-api-coverages",
         "alerts.geofence",
         "jobs.runner",
         "ai.spec-apply",
@@ -80,6 +81,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
     [Theory]
     [InlineData("serve.geoservices-imageserver")]
     [InlineData("serve.wmts")]
+    [InlineData("serve.ogc-api-coverages")]
     public void Registry_LifecycleOnlyPreviews_RemainEnabledWithoutOptIn(string id)
     {
         var descriptor = Registry.Find(id)!;
@@ -134,6 +136,7 @@ public sealed class CapabilityManifestRegistryProjectionTests
         "serve.sensorthings",
         "serve.geoservices-imageserver",
         "serve.wmts",
+        "serve.ogc-api-coverages",
     ];
 
     [Fact]

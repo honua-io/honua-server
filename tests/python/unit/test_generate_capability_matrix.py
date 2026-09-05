@@ -183,5 +183,30 @@ class CustomerAlertingLifecycleTests(unittest.TestCase):
                 )
 
 
+class PreviewLifecycleEvidenceTests(unittest.TestCase):
+    def assert_preview_evidence(self, key):
+        matrix = json.loads((ROOT / "docs/gis/data/capability-matrix.v1.json").read_text())
+        capability = next(row for row in matrix["capabilities"] if row["key"] == key)
+        self.assertGreater(capability["entryCount"], 0)
+        self.assertEqual({"preview": capability["entryCount"]}, capability["maturity"])
+        self.assertEqual("preview", capability["status"])
+        catalog = json.loads((ROOT / "docs/gis/data/feature-catalog.json").read_text())
+        entries = [row for row in catalog["entries"] if row.get("capability") == key]
+        self.assertTrue(entries)
+        self.assertTrue(all(row["maturity"] == "preview" for row in entries))
+
+    def test_imageserver_is_preview(self):
+        self.assert_preview_evidence("serve.geoservices-imageserver")
+
+    def test_wmts_is_preview(self):
+        self.assert_preview_evidence("serve.wmts")
+
+    def test_edr_remains_preview(self):
+        self.assert_preview_evidence("serve.ogc-api-edr")
+
+    def test_coverages_is_preview(self):
+        self.assert_preview_evidence("serve.ogc-api-coverages")
+
+
 if __name__ == "__main__":
     unittest.main()

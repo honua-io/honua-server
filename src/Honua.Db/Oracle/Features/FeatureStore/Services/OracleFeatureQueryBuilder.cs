@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 
 namespace Honua.Db.Oracle.Features.FeatureStore.Services;
 
@@ -289,6 +290,17 @@ internal static partial class OracleFeatureQueryBuilder
         List<object> parameters,
         Func<string, string> resolveColumnName)
     {
+        if (query.TextSearch is { } search)
+        {
+            var predicate = FeatureTextSearchSql.Build(search, field => OracleIdentifier.Quote(resolveColumnName(field)), text =>
+            {
+                var marker = ":p" + parameters.Count.ToString(CultureInfo.InvariantCulture);
+                parameters.Add(text);
+                return marker;
+            }, (column, value) => $"INSTR({column}, {value})");
+            sb.Append(" AND ").Append(predicate);
+        }
+
         // Only the canonical Where text is consumed here. The shared ISqlFilterTranslator
         // pipeline registers a PostgreSQL translator (FeatureQuery.SqlFilter is therefore
         // Postgres-flavored: JSONB ->> operators, ::casts, ST_* calls). Pasting that through

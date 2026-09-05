@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -23,20 +24,23 @@ namespace Honua.Protocols.OData.Services;
 internal sealed class ODataAggregationHandler
 {
     private readonly IFeatureReader _featureReader;
-    private readonly IStreamingFeatureStore _streamingFeatureStore;
+    private readonly IStreamingFeatureStore? _streamingFeatureStore;
     private readonly ODataQueryService _queryService;
+    private readonly int _maxInputRows;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataAggregationHandler"/> class.
     /// </summary>
     public ODataAggregationHandler(
         IFeatureReader featureReader,
-        IStreamingFeatureStore streamingFeatureStore,
-        ODataQueryService queryService)
+        IStreamingFeatureStore? streamingFeatureStore,
+        ODataQueryService queryService,
+        int maxInputRows = 10000)
     {
         _featureReader = featureReader;
         _streamingFeatureStore = streamingFeatureStore;
         _queryService = queryService;
+        _maxInputRows = Math.Clamp(maxInputRows, 1, 100000);
     }
 
     /// <summary>
@@ -61,7 +65,9 @@ internal sealed class ODataAggregationHandler
         var segments = SplitApplyTransforms(applyExpression);
 
         // Build the query, starting from the $filter query option (composes with $apply).
-        var query = new FeatureQuery();
+        // Read one sentinel row beyond the budget so truncation never produces a
+        // plausible but incorrect aggregate. Apply the same bound to every transform.
+        var query = new FeatureQuery { Limit = _maxInputRows + 1 };
         query = ApplyODataFilter(query, filter, resource);
 
         // The terminal (last) transform decides whether the result is an aggregation or features.
@@ -74,15 +80,19 @@ internal sealed class ODataAggregationHandler
         }
 
         object[] aggregatedValues;
-        if (terminal.Type is AggregationType.Aggregate or AggregationType.GroupBy)
+        if (_streamingFeatureStore != null && terminal.Type is AggregationType.Aggregate or AggregationType.GroupBy)
         {
             var stream = _streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
-            aggregatedValues = await ApplyAggregationStreamingAsync(stream, terminal);
+            aggregatedValues = await ApplyAggregationStreamingAsync(BoundInputAsync(stream, cancellationToken), terminal);
         }
         else
         {
             // Fallback to in-memory aggregation for non-aggregate/groupby operations
             var result = await _featureReader.QueryAsync(layerId, query, cancellationToken);
+            if (result.Items.Length > _maxInputRows || result.HasMoreResults)
+            {
+                throw InputLimitExceeded();
+            }
             aggregatedValues = ApplyAggregation(result.Items, terminal);
         }
 
@@ -92,6 +102,26 @@ internal sealed class ODataAggregationHandler
             Value = aggregatedValues
         };
     }
+
+    private async IAsyncEnumerable<Feature> BoundInputAsync(
+        IAsyncEnumerable<Feature> features,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var count = 0;
+        await foreach (var feature in features.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (++count > _maxInputRows)
+            {
+                throw InputLimitExceeded();
+            }
+
+            yield return feature;
+        }
+    }
+
+    private Honua.Core.Exceptions.ValidationException InputLimitExceeded() => new(
+        $"$apply exceeds the maximum input row count of {_maxInputRows}. Narrow the query with $filter or filter().");
 
     /// <summary>
     /// Splits an OData <c>$apply</c> expression into its pipeline transformation segments on each

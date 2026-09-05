@@ -36,6 +36,64 @@ public class DuckDBFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void TextSearch_ExecutedPredicate_PreservesLiteralBooleanAndNullSemantics()
+    {
+        using var connection = new global::DuckDB.NET.Data.DuckDBConnection("Data Source=:memory:");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        var search = new FeatureTextSearch(["name", "type"],
+            [new FeatureSearchTerm[] { new("harbor%_", false), new("closed", true) },
+             new FeatureSearchTerm[] { new("o'reilly", false) }]);
+        var predicate = FeatureTextSearchSql.Build(search, field => "\"" + field + "\"", text =>
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "p" + command.Parameters.Count;
+            parameter.Value = text;
+            command.Parameters.Add(parameter);
+            return "$" + parameter.ParameterName;
+        }, (column, value) => $"STRPOS({column}, {value})");
+        command.CommandText = """
+            SELECT id FROM (VALUES
+              (1, 'HARBOR%_front', NULL),
+              (2, 'harborXYfront', NULL),
+              (3, 'Harbor%_front', 'closed'),
+              (4, NULL, 'O''Reilly'),
+              (5, NULL, NULL)) AS rows(id, name, type)
+            WHERE
+            """ + predicate + " ORDER BY id";
+
+        using var reader = command.ExecuteReader();
+        var ids = new List<int>();
+        while (reader.Read())
+        {
+            ids.Add(reader.GetInt32(0));
+        }
+        Assert.Equal([1, 4], ids);
+    }
+    [Fact]
+    public void BuildSelectQuery_TextSearch_BindsLiteralTermsInProviderDialect()
+    {
+        const string term = "Harbor%_'\\";
+        var query = new FeatureQuery
+        {
+            TextSearch = new FeatureTextSearch(["name", "type"],
+                [new FeatureSearchTerm[] { new(term, false), new("closed", true) }]),
+            Limit = 2,
+            Offset = 1
+        };
+        var result = _builder.BuildSelectQuery(TestLayerId, query);
+        Assert.Contains("STRPOS(", result.Sql, StringComparison.Ordinal);
+        Assert.Contains(" OR ", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("NOT ", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain(term, result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("ILIKE", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("attributes->>", result.Sql, StringComparison.Ordinal);
+        Assert.Equal(term, result.WhereParameters[0]);
+        Assert.Equal(term, result.WhereParameters[1]);
+        Assert.Equal("closed", result.WhereParameters[2]);
+        Assert.Equal("closed", result.WhereParameters[3]);
+    }
+    [Fact]
     public void BuildSelectQuery_DefaultQuery_GeneratesCorrectSql()
     {
         var query = new FeatureQuery();
