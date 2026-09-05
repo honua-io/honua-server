@@ -1707,7 +1707,8 @@ internal static class GPServerEndpoints
             .Where(parameter => parameter.AcceptsGeoJsonDataUri)
             .Select(parameter => parameter.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var esriResult = GPServerEsriInputTranslation.Translate(inputs, collectionParameters);
+        var esriResult = GPServerEsriInputTranslation.Translate(inputs, collectionParameters,
+            includeDerivedSrid: definition.Parameters.Any(parameter => parameter.Name.Equals("srid", StringComparison.OrdinalIgnoreCase)));
         if (esriResult.CapabilityMessage is not null)
         {
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);

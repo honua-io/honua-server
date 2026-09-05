@@ -163,6 +163,8 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             submit.StatusCode.Should().Be(HttpStatusCode.OK,
                 "the seeded default GP service must resolve through the GPServer facade out of the box");
             using var submitDoc = JsonDocument.Parse(await submit.Content.ReadAsStringAsync());
+            submitDoc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+                "the real task submission must succeed: {0}", submitDoc.RootElement.GetRawText());
             var jobId = submitDoc.RootElement.GetProperty("jobId").GetString();
             jobId.Should().NotBeNullOrWhiteSpace();
             submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");

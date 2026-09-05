@@ -50,9 +50,11 @@ internal static class GPServerEsriInputTranslation
     /// Esri geometry / FeatureSet JSON.
     /// </param>
     /// <param name="featureCollectionParameters">Catalog parameters consuming complete FeatureCollections.</param>
+    /// <param name="includeDerivedSrid">Whether the process declares a canonical srid parameter.</param>
     public static EsriInputTranslationResult Translate(
         IReadOnlyDictionary<string, string> inputs,
-        IReadOnlySet<string>? featureCollectionParameters = null)
+        IReadOnlySet<string>? featureCollectionParameters = null,
+        bool includeDerivedSrid = true)
     {
         ArgumentNullException.ThrowIfNull(inputs);
 
@@ -197,7 +199,7 @@ internal static class GPServerEsriInputTranslation
         // When the caller supplied an esriGeometry/FeatureSet but no explicit
         // 'srid' input, surface the geometry's spatial reference so the adapter
         // can populate the canonical srid parameter the engine requires.
-        if (anyTranslated && inputSpatialReference is { } sridValue && !translated.ContainsKey("srid"))
+        if (includeDerivedSrid && anyTranslated && inputSpatialReference is { } sridValue && !translated.ContainsKey("srid"))
         {
             translated["srid"] = sridValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
