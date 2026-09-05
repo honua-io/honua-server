@@ -25,13 +25,18 @@ def free_port():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image", required=True, help="Exact published image@sha256 digest")
+    artifact = parser.add_mutually_exclusive_group(required=True)
+    artifact.add_argument("--image", help="Exact published image@sha256 digest")
+    artifact.add_argument("--runtime", type=Path,
+                          help="Local Honua.Server.dll for source validation; never a published-image receipt")
     parser.add_argument("--initialize-postgis", action="store_true",
                         help="Apply the documented troubleshooting remedy to isolate the mapper regression")
     parser.add_argument("--timeout", type=int, default=180)
     args = parser.parse_args()
-    if not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", args.image):
+    if args.image and not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", args.image):
         parser.error("--image must be an immutable published digest")
+    if args.runtime and (not args.runtime.is_file() or args.runtime.name != "Honua.Server.dll"):
+        parser.error("--runtime must name a built Honua.Server.dll")
     project = "honua-production-smoke-" + secrets.token_hex(6)
     port = free_port()
     proxy_port = free_port()
@@ -42,11 +47,12 @@ def main():
     compose_text = match.group(1).replace("127.0.0.1:8080:8080", f"127.0.0.1:{port}:8080")
     compose_text = compose_text.replace("127.0.0.1:8081:8081", f"127.0.0.1:{free_port()}:8081")
     environment = dict(os.environ)
-    environment.update(HONUA_IMAGE=args.image, POSTGRES_PASSWORD=secrets.token_hex(32),
+    environment.update(HONUA_IMAGE=args.image or "mcr.microsoft.com/dotnet/aspnet:10.0", POSTGRES_PASSWORD=secrets.token_hex(32),
                        HONUA_ADMIN_PASSWORD="Aa1!" + secrets.token_hex(32),
                        HONUA_MASTER_KEY=secrets.token_hex(32), HONUA_CORS_ORIGIN="https://app.example.com",
                        HONUA_HOST="honua.example.com", HONUA_STORAGE_VOLUME_NAME=project + "-storage")
-    receipt = {"image": args.image, "fresh_volumes": True, "production": True,
+    receipt = {"image": args.image, "published_image": args.image is not None,
+               "fresh_volumes": True, "production": True,
                "postgis_remedy": args.initialize_postgis, "ready": False}
     with tempfile.TemporaryDirectory(prefix=project) as directory:
         compose_file = Path(directory) / "compose.yml"
@@ -64,6 +70,15 @@ def main():
             (Path(directory) / filename).write_text(sql + "\n")
         command = ["docker", "compose", "--project-name", project,
                    "-f", str(compose_file), "-f", str(proxy_file)]
+        if args.runtime:
+            runtime_file = Path(directory) / "runtime.json"
+            runtime_file.write_text(json.dumps({"services": {"honua": {
+                "entrypoint": ["dotnet", "/app/Honua.Server.dll"],
+                "working_dir": "/app",
+                "volumes": [{"type": "bind", "source": str(args.runtime.resolve().parent),
+                             "target": "/app", "read_only": True}],
+            }}}))
+            command += ["-f", str(runtime_file)]
 
         def compose(*arguments):
             return subprocess.run(command + list(arguments), env=environment,
