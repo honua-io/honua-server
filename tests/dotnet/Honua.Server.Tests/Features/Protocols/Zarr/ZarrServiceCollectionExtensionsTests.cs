@@ -85,6 +85,9 @@ public sealed class ZarrServiceCollectionExtensionsTests
         var firstService = firstScope.ServiceProvider.GetRequiredService<IZarrTileService>();
         firstService.Should().BeSameAs(firstScope.ServiceProvider.GetRequiredService<IZarrTileService>());
         firstService.Should().NotBeSameAs(secondScope.ServiceProvider.GetRequiredService<IZarrTileService>());
+
+        Action resolveFromRoot = () => provider.GetRequiredService<IZarrTileService>();
+        resolveFromRoot.Should().Throw<InvalidOperationException>();
     }
 
     private static ServiceCollection CreateServices()
