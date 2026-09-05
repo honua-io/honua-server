@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -154,6 +155,84 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
             invalidDelete);
         await deleteResponse.AssertGeoServicesErrorAsync(400);
         await AssertFeatureNameAsync(originalId, "mutation-original");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ApplyEdits_ConcurrentAttributeOnlyUpdates_PreserveGeometryAndReportSuccess()
+    {
+        const string path = "/rest/services/test/FeatureServer/0/applyEdits";
+        using var add = await PostJsonAsync(path,
+            """{"adds":[{"attributes":{"name":"before"},"geometry":{"x":-122.25,"y":37.75,"spatialReference":{"wkid":4326}}}]}""");
+        var added = await DeserializeEditsAsync(add);
+        var objectId = added.AddResults.Should().ContainSingle(result => result.Success).Subject.ObjectId!.Value;
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(async _ =>
+        {
+            using var form = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["updates"] = $$"""[{"attributes":{"objectid":{{objectId}},"name":"after"}}]"""
+            });
+            using var response = await _fixture.Client.PostAsync(path, form);
+            var result = await DeserializeEditsAsync(response);
+            result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId);
+            result.UpdateResults![0].Error.Should().BeNull();
+        }));
+
+        using var query = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?f=json&objectIds={objectId}&outFields=*&returnGeometry=true&outSR=4326");
+        query.Be200Ok();
+        using var document = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Single();
+        feature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("after");
+        feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-122.25);
+        feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(37.75);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query, Operations.Metadata)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    public async Task ApplyEdits_NumericPrimaryKeyAndDuplicateIdAttribute_TargetsOnlyPrimaryKey()
+    {
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false
+        });
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "gid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"]
+        });
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
+        {
+            Name = "id", Type = MetadataV2FieldType.Integer
+        });
+        const string path = "/rest/services/test/FeatureServer/0/applyEdits";
+        using var add = await PostJsonAsync(path, """
+            {"adds":[
+              {"attributes":{"gid":701,"id":0,"name":"first"},"geometry":{"x":-122.25,"y":37.75}},
+              {"attributes":{"gid":702,"id":0,"name":"second"},"geometry":{"x":-121.25,"y":38.75}}
+            ]}
+            """);
+        var added = await DeserializeEditsAsync(add);
+        added.AddResults.Should().HaveCount(2).And.OnlyContain(result => result.Success);
+
+        using var metadataResponse = await _fixture.Client.GetAsync("/rest/services/test/FeatureServer/0?f=json");
+        metadataResponse.Be200Ok();
+        using var metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync());
+        metadata.RootElement.GetProperty("objectIdField").GetString().Should().Be("gid");
+
+        using var update = await PostJsonAsync(path,
+            """{"updates":[{"attributes":{"gid":701,"name":"changed"}}]}""");
+        var updated = await DeserializeEditsAsync(update);
+        updated.UpdateResults.Should().ContainSingle(result => result.Success && result.ObjectId == 701);
+        await AssertFeatureNameAsync(701, "changed");
+        await AssertFeatureNameAsync(702, "second");
+        (await ReadFeatureCountAsync(0)).Should().Be(0);
     }
 
     private async Task<HttpResponseMessage> PostJsonAsync(string path, string json)
