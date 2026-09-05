@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -437,6 +438,15 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         var identity = new ClaimsIdentity(claims, Scheme.Name);
+        if (isApprovedOperationKey)
+        {
+            // This binding came from the persisted server-minted grant. Preserve it
+            // through OIDC's removal of untrusted issuer-supplied framework claims.
+            CanonicalSecurityActor.StampFrameworkClaim(
+                identity,
+                AdminApiKeyPermission.ApprovedOperationTenantClaim,
+                identity.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim)!.Value);
+        }
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 

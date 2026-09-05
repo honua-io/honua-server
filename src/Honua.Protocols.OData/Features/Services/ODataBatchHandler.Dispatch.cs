@@ -175,7 +175,10 @@ internal sealed partial class ODataBatchHandler
         normalizedUrl = trimmed.TrimStart('/');
         errorMessage = null;
 
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+        // On Unix, Uri treats an OData root-relative path as an absolute file URI.
+        // Accept one leading slash, while still rejecting network-path references.
+        var isRootRelative = trimmed.StartsWith('/') && !trimmed.StartsWith("//", StringComparison.Ordinal);
+        if (!isRootRelative && Uri.TryCreate(trimmed, UriKind.Absolute, out _))
         {
             normalizedUrl = string.Empty;
             errorMessage = AbsoluteBatchRequestUrlMessage;

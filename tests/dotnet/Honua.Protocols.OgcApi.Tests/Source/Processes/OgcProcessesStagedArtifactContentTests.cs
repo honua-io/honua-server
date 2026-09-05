@@ -266,6 +266,7 @@ public sealed class OgcProcessesStagedArtifactStoreUnavailableTestsFixture : IAs
         var succeeded = new ExecutionJobRecord
         {
             OperationId = JobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = ExecutionJobStatus.Succeeded,
             CreatedAt = now.AddMinutes(-10),
             UpdatedAt = now,
@@ -446,6 +447,7 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         return new ExecutionJobRecord
         {
             OperationId = jobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = status,
             CreatedAt = now.AddMinutes(-10),
             UpdatedAt = now,
