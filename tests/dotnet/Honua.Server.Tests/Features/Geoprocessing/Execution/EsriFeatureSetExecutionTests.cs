@@ -78,6 +78,32 @@ public sealed class EsriFeatureSetExecutionTests
         feature.GetProperty("attributes").GetProperty("missing").ValueKind.Should().Be(JsonValueKind.Null);
         value.GetProperty("fields").EnumerateArray().Should().Contain(field =>
             field.GetProperty("name").GetString() == "name" && field.GetProperty("type").GetString() == "esriFieldTypeString");
+        value.GetProperty("hasZ").GetBoolean().Should().BeTrue();
+        value.GetProperty("hasM").GetBoolean().Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void Input_FeatureSetLevelZFlag_PreservesPolylineElevation()
+    {
+        var translated = GPServerEsriInputTranslation.Translate(new Dictionary<string, string>
+        {
+            ["input"] = """{"hasZ":true,"spatialReference":{"wkid":4326},"features":[{"attributes":{"name":"line"},"geometry":{"paths":[[[1,2,30],[4,5,60]]]}}]}"""
+        }, new HashSet<string> { "input" });
+        translated.CapabilityMessage.Should().BeNull();
+        var coordinates = ReadFeatures(translated.Inputs["input"]).Single().Geometry.Coordinates;
+        coordinates.Select(coordinate => (coordinate.X, coordinate.Y, coordinate.Z)).Should()
+            .Equal((1d, 2d, 30d), (4d, 5d, 60d));
+    }
+
+    [UnitTest]
+    public void Input_MeasuredFeatureSet_RejectsRatherThanDroppingMeasures()
+    {
+        var translated = GPServerEsriInputTranslation.Translate(new Dictionary<string, string>
+        {
+            ["input"] = """{"hasM":true,"features":[{"attributes":{},"geometry":{"paths":[[[1,2,30],[4,5,60]]]}}]}"""
+        }, new HashSet<string> { "input" });
+        translated.CapabilityMessage.Should().Contain("Measured FeatureSets");
+        translated.Translated.Should().BeFalse();
     }
 
     [Theory]

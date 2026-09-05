@@ -11,9 +11,8 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// Translates stock ArcGIS GP geometry inputs — <c>esriGeometry</c> JSON
 /// (point / polyline / polygon / multipoint / envelope) and the
 /// <c>GPFeatureRecordSetLayer</c> / <c>GPRecordSet</c> <c>FeatureSet</c>
-/// envelope — into the canonical single-geometry process input contract
-/// (base64-encoded WKB plus an SRID) that the Honua geoprocessing engine
-/// consumes.
+/// envelope — into the canonical WKB or GeoJSON FeatureCollection contract
+/// declared by the process parameter.
 ///
 /// This is additive: native string inputs and base64-WKB inputs pass through
 /// untouched. Only values whose JSON shape matches a recognised Esri geometry
@@ -216,6 +215,11 @@ internal static class GPServerEsriInputTranslation
         value = string.Empty;
         srid = ReadSpatialReference(root);
         error = null;
+        if (root.TryGetProperty("hasM", out var hasM) && hasM.ValueKind == JsonValueKind.True)
+        {
+            error = "Measured FeatureSets cannot be represented by the canonical GeoJSON input. Remove M ordinates before submission.";
+            return false;
+        }
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
         {
@@ -236,10 +240,15 @@ internal static class GPServerEsriInputTranslation
                 {
                     attributes.WriteTo(writer);
                 }
-                else
+                else if (attributes.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
                 {
                     writer.WriteStartObject();
                     writer.WriteEndObject();
+                }
+                else
+                {
+                    error = "FeatureSet attributes must be an object or null.";
+                    return false;
                 }
                 writer.WritePropertyName("geometry");
                 if (!feature.TryGetProperty("geometry", out var geometry) || geometry.ValueKind == JsonValueKind.Null)
@@ -248,7 +257,7 @@ internal static class GPServerEsriInputTranslation
                 }
                 else
                 {
-                    if (!TryConvertEsriGeometry(geometry, srid, out var encoded, out var geometrySrid, out error))
+                    if (!TryConvertEsriGeometry(InheritDimensions(geometry, root), srid, out var encoded, out var geometrySrid, out error))
                     {
                         return false;
                     }
@@ -274,6 +283,30 @@ internal static class GPServerEsriInputTranslation
         }
         value = "data:application/geo+json;base64," + Convert.ToBase64String(buffer.ToArray());
         return true;
+    }
+
+    private static JsonElement InheritDimensions(JsonElement geometry, JsonElement featureSet)
+    {
+        if (geometry.ValueKind != JsonValueKind.Object || geometry.TryGetProperty("hasZ", out _) ||
+            !featureSet.TryGetProperty("hasZ", out var hasZ))
+        {
+            return geometry;
+        }
+
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            foreach (var property in geometry.EnumerateObject())
+            {
+                property.WriteTo(writer);
+            }
+            writer.WritePropertyName("hasZ");
+            hasZ.WriteTo(writer);
+            writer.WriteEndObject();
+        }
+        using var document = JsonDocument.Parse(buffer.ToArray());
+        return document.RootElement.Clone();
     }
 
     private static bool LooksLikeJsonObject(string? value)

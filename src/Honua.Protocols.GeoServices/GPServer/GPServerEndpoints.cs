@@ -685,9 +685,9 @@ internal static class GPServerEndpoints
                 if (envControls.OutSr is { } outSr && artifact.Kind == ArtifactKind.FeatureLayer)
                 {
                     var outcome = GPServerOutputReprojection.TryReprojectGeoJsonValue(value, workingSrid, outSr);
-                    if (outcome.Reprojected)
+                    if (outcome.Reprojected && outcome.Value is { } reprojectedValue)
                     {
-                        value = outcome.Value;
+                        value = reprojectedValue;
                         resultSrid = outSr;
                     }
                     else if (outcome.CapabilityMessage is not null)
