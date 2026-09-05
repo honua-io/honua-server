@@ -44,8 +44,8 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
             })
             // The shared test configuration defaults the ops-health rollup sampler OFF for every
             // integration host (it would otherwise add background Postgres load across the whole
-            // parallel test fleet). This suite owns the rollup surface, so it opts back in â€”
-            // PostConfigure wins over the config binding â€” keeping the enabled/hosted sampler path
+            // parallel test fleet). This suite owns the rollup surface, so it opts back in —
+            // PostConfigure wins over the config binding — keeping the enabled/hosted sampler path
             // booted by at least one host. The sampler's initial jitter + flush interval keep it from
             // flushing mid-test; the history assertions seed the store directly instead.
             .ConfigureServices(services =>

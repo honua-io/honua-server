@@ -355,7 +355,7 @@ public sealed class OpsFindingsServiceTests
     public async Task Evaluate_DbPoolPressure_FromRealAdmissionGateExhaustion_FiresFinding()
     {
         // #2805: prove the finding fires from the REAL admission gate under a simulated exhaustion, not from
-        // a fake snapshot â€” this is the regression the dead ConnectionPoolMetrics counters could not catch.
+        // a fake snapshot — this is the regression the dead ConnectionPoolMetrics counters could not catch.
         using var gate = new QueryConcurrencyGate(new ConnectionLimits
         {
             MaxConcurrentQueries = 1,
@@ -629,7 +629,7 @@ public sealed class OpsFindingsServiceTests
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_PlatformReleaseRuntimeDivergence_ConfigPinnedTargetIsSkipped()
     {
-        // A target with an explicit ArtifactReference pin is the platform-release-skew rule's concern â€”
+        // A target with an explicit ArtifactReference pin is the platform-release-skew rule's concern —
         // config-derived skew cannot be cleared at runtime, so this rule must not also fire for it.
         var controlPlane = new ControlPlaneOptions
         {
@@ -671,7 +671,7 @@ public sealed class OpsFindingsServiceTests
     public void AllRecommendedActions_AdminConfigChangeActionNamesAreRegistered()
     {
         // RC-2556: every recommendedAction's embedded ops-action name (for AdminConfigChange-kind
-        // actions) must exist in the actuator registry (#2579) â€” enumerate both sides and assert subset.
+        // actions) must exist in the actuator registry (#2579) — enumerate both sides and assert subset.
         var registeredActions = new[]
         {
             OpsActionExecutionPayloads.RedriveDeadLetters(),
@@ -1096,8 +1096,8 @@ public sealed class OpsFindingsServiceTests
     {
         // Reproduces the #2511 startup failure at the composition level: the server registers
         // IOpsFindingsService unconditionally, but IOperationGateway is only registered when the
-        // durable backend (Redis) is present. With ValidateOnBuild â€” exactly as Program.cs builds
-        // the host â€” resolving the service must NOT throw when the gateway is absent.
+        // durable backend (Redis) is present. With ValidateOnBuild — exactly as Program.cs builds
+        // the host — resolving the service must NOT throw when the gateway is absent.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
@@ -1106,7 +1106,7 @@ public sealed class OpsFindingsServiceTests
         services.AddSingleton<IAlertDispatchHealth>(new FakeAlertDispatchHealth());
         services.AddSingleton<IDeployPreflightProbe>(new FakeDeployPreflightProbe(BuildDeploySnapshot()));
 
-        // Deliberately no IOperationGateway / IWorkflowOperationStore / IExecutionJobStore â€”
+        // Deliberately no IOperationGateway / IWorkflowOperationStore / IExecutionJobStore —
         // these are the Redis-gated control-plane registrations.
         services.AddScoped<IOpsFindingsService, OpsFindingsService>();
 

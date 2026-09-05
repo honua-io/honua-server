@@ -7,7 +7,9 @@ Only the alert-dispatch relation is interrupted; the process, authentication, an
 import argparse
 import datetime as dt
 import json
+import hashlib
 import os
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -23,6 +25,7 @@ def main():
     parser.add_argument("--postgres-container", default="honua-3475-postgres")
     parser.add_argument("--redis-container", default="honua-3475-redis")
     parser.add_argument("--source-sha", required=True)
+    parser.add_argument("--server-assembly", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--allow-isolated-outage", action="store_true", required=True)
     args = parser.parse_args()
@@ -30,10 +33,13 @@ def main():
         raise RuntimeError("This harness requires the native Windows host.")
     if not args.base_url.startswith("http://127.0.0.1:"):
         raise ValueError("The disposable harness must listen on IPv4 loopback.")
+    if not re.fullmatch(r"[0-9a-f]{40}", args.source_sha):
+        raise ValueError("source-sha must be an exact 40-character revision.")
     api_key = os.environ["HONUA_LIVE_EVIDENCE_API_KEY"]
     receipt = {"schemaVersion": "1.0", "sourceSha": args.source_sha,
                "execution": "windows-native-dotnet/docker-desktop-postgres-redis",
                "candidateQualification": False, "sourceId": SOURCE, "passed": False}
+    receipt["serverAssemblySha256"] = hashlib.sha256(args.server_assembly.read_bytes()).hexdigest()
 
     def docker(*arguments):
         return subprocess.run(["docker", *arguments], check=True, capture_output=True,

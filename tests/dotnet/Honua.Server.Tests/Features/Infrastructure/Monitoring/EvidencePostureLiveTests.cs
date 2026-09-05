@@ -41,6 +41,7 @@ public sealed class EvidencePostureLiveTests
         try
         {
             outageRequested = true;
+            var outageRequestedAt = DateTimeOffset.UtcNow;
             await InvokeControlAsync(controls, RequiredUri(OutageUrlEnv));
 
             var unavailable = await WaitForSourceAsync(
@@ -51,6 +52,8 @@ public sealed class EvidencePostureLiveTests
             unavailable.GetProperty("evidencePosture").GetProperty("status").GetString()
                 .Should().Be("unavailable");
             var unavailableSource = FindSource(unavailable, sourceId);
+            unavailableSource.GetProperty("observedAt").GetDateTimeOffset().Should().BeOnOrBefore(outageRequestedAt);
+            unavailableSource.GetProperty("lastSuccessfulAt").GetDateTimeOffset().Should().BeOnOrBefore(outageRequestedAt);
             unavailableSource.GetProperty("reasonCodes").EnumerateArray()
                 .Select(reason => reason.GetString())
                 .Should().Contain("sourceUnavailable");
@@ -153,8 +156,10 @@ public sealed class EvidencePostureLiveTests
         source.GetProperty("completeness").GetString().Should().Be("complete");
         source.GetProperty("backendKind").GetString().Should().NotBe("unverified");
         source.GetProperty("backendId").GetString().Should().NotBeNullOrWhiteSpace();
-        source.GetProperty("observedAt").GetDateTimeOffset().Should().BeBefore(DateTimeOffset.UtcNow.AddMinutes(1));
-        source.GetProperty("lastSuccessfulAt").GetDateTimeOffset().Should().BeBefore(DateTimeOffset.UtcNow.AddMinutes(1));
+        var now = DateTimeOffset.UtcNow;
+        var oldestValid = now.AddSeconds(-source.GetProperty("maximumAgeSeconds").GetInt64());
+        source.GetProperty("observedAt").GetDateTimeOffset().Should().BeOnOrAfter(oldestValid).And.BeOnOrBefore(now);
+        source.GetProperty("lastSuccessfulAt").GetDateTimeOffset().Should().BeOnOrAfter(oldestValid).And.BeOnOrBefore(now);
         source.GetProperty("validUntil").GetDateTimeOffset().Should().BeAfter(DateTimeOffset.UtcNow);
     }
 

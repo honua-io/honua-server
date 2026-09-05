@@ -384,7 +384,7 @@ public sealed class ReadinessCheckServiceTests
     [Operation(Operations.HealthCheck)]
     public async Task CheckReadinessAsync_WithDisabledAlertDispatch_ReturnsReady()
     {
-        // A disabled dispatcher is an operating choice, never a readiness fault â€” even with a very
+        // A disabled dispatcher is an operating choice, never a readiness fault — even with a very
         // old (irrelevant) LastPollAt.
         var dispatch = new StubDispatchHealth
         {
