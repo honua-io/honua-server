@@ -31,6 +31,118 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 public sealed class OgcProcessesCiteEchoFixtureTests(RedisFixture redis)
 {
     [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Operation(Operations.JobResults)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task CiteStyleClient_TransformGeoJsonInputs_ReachTheCanonicalExecutor()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        var fixture = CreateFixture(redis.ConnectionString);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            const string features = """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"oldName":7}}]}""";
+            var href = "data:application/geo+json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(features));
+            foreach (var input in new[]
+            {
+                $$"""{"value":{{features}},"mediaType":"application/geo+json"}""",
+                $$"""{"href":"{{href}}","type":"application/geo+json"}"""
+            })
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post,
+                    "/ogc/processes/processes/transform.attribute-rename/execution");
+                request.Headers.Add("Prefer", "respond-async");
+                request.Content = new StringContent(
+                    $$$$"""{"inputs":{"input":{{{{input}}}},"from":"oldName","to":"newName"},"response":"raw"}""",
+                    Encoding.UTF8, "application/json");
+                using var submit = await client.SendAsync(request);
+                submit.StatusCode.Should().Be(HttpStatusCode.Created);
+                var jobId = await ReadJobIdAsync(submit);
+                using var terminal = await PollUntilSucceededAsync(client, jobId);
+                using var response = await client.GetAsync($"/ogc/processes/jobs/{jobId}/results");
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                var attributes = json.RootElement.GetProperty("features")[0].GetProperty("properties");
+                attributes.GetProperty("newName").GetInt32().Should().Be(7);
+                attributes.TryGetProperty("oldName", out _).Should().BeFalse();
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Operation(Operations.ProcessExecution)]
+    [Operation(Operations.JobStatus)]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}")]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task CiteStyleClient_CatalogBuffer_ExecutesQualifiedInputsAndReadsNegotiatedResults()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        var fixture = CreateFixture(redis.ConnectionString);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var descriptionResponse = await client.GetAsync("/ogc/processes/processes/geometry.buffer");
+            descriptionResponse.EnsureSuccessStatusCode();
+            using var description = JsonDocument.Parse(await descriptionResponse.Content.ReadAsStringAsync());
+            description.RootElement.GetProperty("inputs").GetProperty("geodesic")
+                .GetProperty("minOccurs").GetInt32().Should().Be(0);
+            description.RootElement.GetProperty("outputTransmission")[0].GetString().Should().Be("value");
+
+            foreach (var mode in new[] { "document", "raw" })
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post,
+                    "/ogc/processes/processes/geometry.buffer/execution");
+                request.Headers.Add("Prefer", "respond-async");
+                request.Content = new StringContent(
+                    $$"""
+                    {
+                      "inputs": {
+                        "wkb": { "value": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA", "mediaType": "application/wkb" },
+                        "srid": { "value": 4326 },
+                        "distance": { "value": 0.1 }
+                      },
+                      "outputs": { "outputFeatureLayer": { "transmissionMode": "value" } },
+                      "response": "{{mode}}"
+                    }
+                    """, Encoding.UTF8, "application/json");
+                using var submit = await client.SendAsync(request);
+                submit.StatusCode.Should().Be(HttpStatusCode.Created);
+                submit.Headers.Location.Should().NotBeNull();
+                var jobId = await ReadJobIdAsync(submit);
+                using var terminal = await PollUntilSucceededAsync(client, jobId);
+                using var resultResponse = await client.GetAsync($"/ogc/processes/jobs/{jobId}/results");
+                resultResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var result = JsonDocument.Parse(await resultResponse.Content.ReadAsStringAsync());
+                var value = mode == "raw"
+                    ? result.RootElement
+                    : result.RootElement.GetProperty("outputFeatureLayer").GetProperty("value");
+                value.GetProperty("type").GetString().Should().Be("Feature");
+                value.GetProperty("geometry").GetProperty("type")
+                    .GetString().Should().Be("Polygon");
+                value.GetProperty("geometry").GetProperty("coordinates")[0].GetArrayLength()
+                    .Should().BeGreaterThan(4);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ProcessDiscovery)]
     [Operation(Operations.ProcessExecution)]
     [Operation(Operations.JobStatus)]

@@ -11,6 +11,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
+using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -166,6 +167,23 @@ public sealed class OgcProcessesStagedArtifactContentTests
         // The link is a stable authenticated route, not a provider location.
         href.Should().NotContain("gp-outputs");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /ogc/processes/jobs/{jobId}/results")]
+    public async Task JobResults_StagedArtifactWithAdvertisedValueTransmission_ReturnsInlineValue()
+    {
+        var response = await _fixture.App.Client.GetAsync(
+            $"/ogc/processes/jobs/{OgcProcessesStagedArtifactContentTestsFixture.ValueJobId}/results");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var output = json.RootElement.GetProperty("outputRaster");
+        output.TryGetProperty("href", out _).Should().BeFalse();
+        output.GetProperty("mediaType").GetString().Should().Be("image/tiff");
+        output.GetProperty("encoding").GetString().Should().Be("base64");
+        Convert.FromBase64String(output.GetProperty("value").GetString()!).Should().Equal(_fixture.StagedPayload);
+    }
 }
 
 /// <summary>
@@ -285,6 +303,7 @@ public sealed class OgcProcessesStagedArtifactStoreUnavailableTestsFixture : IAs
 public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifetime
 {
     public const string SucceededJobId = "gp-staged-succeeded-001";
+    public const string ValueJobId = "gp-staged-value-001";
     public const string RunningJobId = "gp-staged-running-001";
     public const string CancelledJobId = "gp-staged-cancelled-001";
     public const string RegistrationPendingJobId = "gp-staged-registration-pending-001";
@@ -326,6 +345,20 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
             ObjectKey = objectKey,
         };
         var reference = RasterOutputJson.Serialize(descriptor);
+        var valueObjectKey = GeoprocessingOutputObjectKeys.Build(
+            stagingOptions.KeyPrefix, ValueJobId, attemptNumber: 1, "outputRaster", "result.tif");
+        RasterContentIdentity valueContent;
+        using (var payload = new MemoryStream(StagedPayload))
+        {
+            valueContent = store.WriteAsync(valueObjectKey, payload, "image/tiff").GetAwaiter().GetResult();
+        }
+
+        var valueReference = RasterOutputJson.Serialize(descriptor with
+        {
+            JobId = ValueJobId,
+            Content = valueContent,
+            ObjectKey = valueObjectKey,
+        });
         var invalidDescriptorReference = RasterOutputJson.Serialize(descriptor with
         {
             JobId = InvalidDescriptorJobId,
@@ -336,6 +369,11 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         });
 
         var succeeded = CreateJob(SucceededJobId, ExecutionJobStatus.Succeeded, reference);
+        var value = CreateJob(
+            ValueJobId,
+            ExecutionJobStatus.Succeeded,
+            valueReference,
+            responseMode: "document");
         var running = CreateJob(RunningJobId, ExecutionJobStatus.Running, reference);
         var cancelled = CreateJob(CancelledJobId, ExecutionJobStatus.Cancelled, reference);
         var registrationPending = CreateJob(
@@ -350,6 +388,7 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
 
         var mockJobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
         mockJobStore.GetAsync(SucceededJobId, Arg.Any<CancellationToken>()).Returns(succeeded);
+        mockJobStore.GetAsync(ValueJobId, Arg.Any<CancellationToken>()).Returns(value);
         mockJobStore.GetAsync(RunningJobId, Arg.Any<CancellationToken>()).Returns(running);
         mockJobStore.GetAsync(CancelledJobId, Arg.Any<CancellationToken>()).Returns(cancelled);
         mockJobStore.GetAsync(RegistrationPendingJobId, Arg.Any<CancellationToken>()).Returns(registrationPending);
@@ -357,6 +396,7 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         mockJobStore.GetAsync(MismatchedDescriptorJobId, Arg.Any<CancellationToken>()).Returns(mismatchedDescriptor);
         mockJobStore.GetAsync(
                 Arg.Is<string>(id => id != SucceededJobId
+                    && id != ValueJobId
                     && id != RunningJobId
                      && id != CancelledJobId
                     && id != RegistrationPendingJobId
@@ -399,7 +439,8 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
         string jobId,
         ExecutionJobStatus status,
         string reference,
-        string? registrationTarget = null)
+        string? registrationTarget = null,
+        string? responseMode = null)
     {
         var now = DateTimeOffset.UtcNow;
         return new ExecutionJobRecord
@@ -417,13 +458,27 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
                 Backend = "test-backend",
                 Kind = ExecutionJobKind.Geoprocessing,
                 WorkloadName = "raster.resample",
-                Parameters = registrationTarget is null
-                    ? new Dictionary<string, string>(StringComparer.Ordinal)
-                    : new Dictionary<string, string>(StringComparer.Ordinal)
-                    {
-                        ["honua.geoprocessing.output_registration.outputRaster"] = registrationTarget,
-                    }
+                Parameters = CreateParameters(registrationTarget, responseMode)
             }
         };
+    }
+
+    private static Dictionary<string, string> CreateParameters(
+        string? registrationTarget,
+        string? responseMode)
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (registrationTarget is not null)
+        {
+            parameters["honua.geoprocessing.output_registration.outputRaster"] = registrationTarget;
+        }
+
+        if (responseMode is not null)
+        {
+            parameters[OgcProcessesExecutionMetadata.ResponseMode] = responseMode;
+            parameters["process.output.0"] = "outputRaster";
+        }
+
+        return parameters;
     }
 }
