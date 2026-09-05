@@ -113,6 +113,7 @@ public sealed class McpStyleGovernanceEndpointTests
                 },
             });
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("32-bit integer");
         }
         finally
         {
