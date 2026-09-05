@@ -76,7 +76,8 @@ internal sealed class QueryFeaturesTool : IMcpTool
 
         var graphProvider = httpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var layer = MapToolLayerResolver.Resolve(snapshot, argument.ServiceId, argument.LayerId);
+        var layer = await MapToolLayerResolver.ResolveForReadAsync(
+            httpContext, snapshot, argument.ServiceId, argument.LayerId, cancellationToken).ConfigureAwait(false);
 
         var limit = ResolveLimit(argument.Limit);
         var offset = ResolveOffset(argument.ResultOffset, argument.Cursor);

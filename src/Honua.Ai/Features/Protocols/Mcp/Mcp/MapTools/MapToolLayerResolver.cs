@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
@@ -75,6 +77,26 @@ internal static class MapToolLayerResolver
         }
 
         return new MapToolLayerContext(service, publication, resource!, resolvedStorageLayerId);
+    }
+
+    /// <summary>Resolves a readable layer through the same resource-access gate as REST.</summary>
+    public static async Task<MapToolLayerContext> ResolveForReadAsync(
+        HttpContext httpContext,
+        MetadataV2GraphSnapshot snapshot,
+        string? serviceId,
+        int? layerId,
+        CancellationToken cancellationToken)
+    {
+        var layer = Resolve(snapshot, serviceId, layerId);
+        var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
+            httpContext, layer.Resource, layer.Service, AuthorizationOperation.Query, cancellationToken)
+            .ConfigureAwait(false);
+        if (!decision.IsAllowed)
+        {
+            throw new GeoprocessingAuthorizationException(decision.RequiresAuthentication);
+        }
+
+        return layer;
     }
 
     private static MetadataV2Service? ResolveService(MetadataV2GraphSnapshot snapshot, string serviceId)
