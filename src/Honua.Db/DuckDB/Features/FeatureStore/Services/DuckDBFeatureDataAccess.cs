@@ -386,7 +386,7 @@ internal sealed class DuckDBFeatureDataAccess : IFeatureDataAccess
     }
 
     /// <inheritdoc />
-    public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, CancellationToken cancellationToken)
+    public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
     {
         throw new NotSupportedException("DuckDB provider does not support native MVT tile generation.");
     }

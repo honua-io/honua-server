@@ -144,7 +144,7 @@ internal interface IFeatureDataAccess
     /// <summary>
     /// Generates MVT tile data
     /// </summary>
-    Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, CancellationToken cancellationToken);
+    Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken);
 
     /// <summary>
     /// Streams features for large result sets
