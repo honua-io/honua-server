@@ -56,6 +56,8 @@ public sealed class PatchConcurrencyTests
     [InlineData(true)]
     [Protocol(TestProtocols.ODataV4)]
     [Operation(Operations.Update)]
+    [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    [Endpoint("POST /odata/$batch")]
     public Task ODataPatch_IfNoneMatchBecomesFalse_ReturnsPreconditionFailed(bool batch)
         => VerifyConcurrentPatchAsync(true, true, firstIsBatch: batch, withIfNoneMatch: true);
 
@@ -67,6 +69,10 @@ public sealed class PatchConcurrencyTests
     [InlineData("ogc", true)]
     [InlineData("batch", true)]
     [Operation(Operations.Update)]
+    [Protocol(TestProtocols.ODataV4, TestProtocols.OgcApiFeatures)]
+    [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
+    [Endpoint("POST /odata/$batch")]
     public async Task Patch_MaskedAttribute_PreservesStoredValueWithoutExposingIt(string protocol, bool concurrent)
     {
         var barrier = new WriteBarrier();
@@ -117,6 +123,12 @@ public sealed class PatchConcurrencyTests
     }
 
     [IntegrationTest]
+    [Protocol(TestProtocols.ODataV4, TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Update)]
+    [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    [Endpoint("PATCH /odata/Layers({layerId})/Features({objectId})")]
+    [Endpoint("PATCH /odata/Features({layerId},{objectId})")]
+    [Endpoint("PATCH /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task PatchEndpoints_DeclareConflictAndPreconditionResponses()
     {
         var fixture = CreateFixture(new WriteBarrier());
@@ -124,13 +136,13 @@ public sealed class PatchConcurrencyTests
         try
         {
             var names = new[] { "ODataUpdateFeature", "ODataUpdateLayerFeature", "ODataUpdateFeatureLegacy", "PatchItem" };
-            var endpoints = fixture.GetService<EndpointDataSource>().Endpoints;
+            var endpoints = fixture.GetService<IEnumerable<EndpointDataSource>>().SelectMany(source => source.Endpoints).ToArray();
             foreach (var name in names)
             {
-                var endpoint = Assert.Single(endpoints.Where(e => e.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == name));
+                var endpoint = Assert.Single(endpoints, e => e.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == name);
                 foreach (var status in new[] { 409, 412 })
                 {
-                    var response = Assert.Single(endpoint.Metadata.GetOrderedMetadata<IProducesResponseTypeMetadata>().Where(m => m.StatusCode == status));
+                    var response = Assert.Single(endpoint.Metadata.GetOrderedMetadata<IProducesResponseTypeMetadata>(), m => m.StatusCode == status);
                     Assert.Equal(name == "PatchItem" ? typeof(Microsoft.AspNetCore.Mvc.ProblemDetails) : typeof(Honua.Protocols.OData.Features.Models.ODataError), response.Type);
                 }
             }

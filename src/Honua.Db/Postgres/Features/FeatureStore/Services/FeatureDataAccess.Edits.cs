@@ -1550,10 +1550,10 @@ internal sealed partial class FeatureDataAccess
                         {
                             // requireTransaction guarantees tx is non-null here.
                             var current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
-                                    if (current.HasValue)
-                                    {
-                                        update = PreserveMaskedAttributes(feature, current.Value, precondition.MaskedFields);
-                                    }
+                            if (current.HasValue)
+                            {
+                                update = PreserveMaskedAttributes(feature, current.Value, precondition.MaskedFields);
+                            }
                         }
 
                         var u = await UpdateWithConnectionAsync(layerId, update, conn, tx, ct).ConfigureAwait(false);

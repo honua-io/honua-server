@@ -22,7 +22,7 @@ Connection-bound publications use their configured provider for reads, including
 
 PATCH, PUT, and DELETE are also available on the layer-scoped key form `/odata/Layers({layerId})/Features({objectId})` and the legacy form `/odata/Features({layerId},{objectId})`. Legacy aggregation/search routes `/odata/Features({layerId})/$apply` and `/$search` remain available.
 
-On managed PostgreSQL layers, a PATCH that races another edit returns `409 Conflict` when no `If-Match` was supplied, preserving the competing edit. Read the current feature and retry the partial update. Requests with `If-Match` continue to return `412 Precondition Failed` when their precondition fails.
+On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict`, preserving the competing edit. Read the current feature and retry the partial update. Requests whose `If-Match` or `If-None-Match` precondition fails return `412 Precondition Failed`. Fields hidden by field-level security are preserved when omitted from the PATCH.
 
 ## Query options
 
