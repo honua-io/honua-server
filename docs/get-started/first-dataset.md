@@ -29,6 +29,8 @@ python3 -m pip install \
   "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-sdk" \
   "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
 python3 - <<'PY'
+import subprocess
+
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
 
 with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-password") as admin:
@@ -38,7 +40,10 @@ with HonuaAdminClient("http://localhost:8080", api_key="quickstart-admin-passwor
         port=5432,
         database_name="honua_dev",
         username="honua_user",
-        password="honua_password",
+        password=subprocess.check_output(
+            ["docker", "compose", "exec", "-T", "postgres", "printenv", "POSTGRES_PASSWORD"],
+            text=True,
+        ).strip(),
         ssl_mode="Prefer",
         ssl_required=False,
     ))

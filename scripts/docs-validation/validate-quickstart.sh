@@ -44,6 +44,9 @@ mkdir -p "${artifacts}"
 
 python3 "${extractor}" "${document}" --list --output "${extracted}" | tee "${artifacts}/blocks.txt"
 
+python3 "${repo_root}/scripts/docker/test_quickstart.py"
+python3 "${repo_root}/scripts/docker/quickstart.py" --init-only
+
 # A validation run owns an isolated Compose project and always begins without its
 # containers or volumes, proving the documented bootstrap against a clean install.
 "${compose[@]}" down --volumes --remove-orphans

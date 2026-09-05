@@ -61,11 +61,12 @@ dependency is recorded here instead.
 | `analytics.slice` | **Demoted (documented decision only — no lever wired in this PR)** | Audit found the sole proving test asserts `> 0`, not a value (same shallow-evidence class as sun-shadow/viewshed). Unlike those, **#2945's acceptance criteria does not mention `analytics.slice`** — only viewshed/line-of-sight/sun-shadow/density/reporting/temporal.histogram are listed as fixed. See "Mechanism" below for why this demotion is recorded here rather than applied at runtime. |
 | `scene.catalog` | **Demoted (documented decision only — no lever wired in this PR)** | Audit found only 3 shape-level discovery tests (`GET /api/scenes`, `/api/scenes/{sceneId}`, `/api/scenes/{sceneId}/resolve`) with no depth beyond listing/resolving a fixture. **Not mentioned anywhere in #2945.** See "Mechanism" below. |
 
-**Explicitly not demoted** (per the issue's own instruction, these are "keep-GA-and-fix"
-regardless of evidence depth, because the underlying surfaces are too core to hide and
-#2945 is adding the missing depth): `identity.oidc`, `serve.wms`, `serve.wmts`, and the
-`alerts.*` family (`alerts.evaluation`, `alerts.enter-exit`, `alerts.threshold`,
-`alerts.dwell`).
+**Historical July disposition, superseded for alerting on 2026-09-04.** The audit
+kept `identity.oidc`, `serve.wms`, and `serve.wmts` GA while #2945 added depth.
+It also kept the `alerts.*` family (`alerts.evaluation`, `alerts.enter-exit`,
+`alerts.threshold`, `alerts.dwell`) GA at that time. The 2026.1 operator ruling
+now classifies customer alerting and its delivery channels as Preview regardless
+of that qualification depth; section 7.3 conditional GA is not pursued this release.
 
 ## Mechanism: why `analytics.slice` / `scene.catalog` are a documentation-only demotion
 

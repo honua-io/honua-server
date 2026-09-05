@@ -309,10 +309,9 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // operator ruling (honua-release#266 / #264).
             ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             ("serve.wmts", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
-            // Geofence enter/exit alerting — promoted to GA (Implemented) in #2427.
-            // First Experimental->Implemented promotion; engine ships as shared,
-            // un-gated GA infrastructure. Workers still self-gate on
-            // AlertOptions.Enabled (default false); GA does not mean on-by-default.
+            // Customer alerting ships as Preview in 2026.1 by operator ruling
+            // (2026-09-04). The implementation and qualification coverage remain,
+            // but the surface stays off by default behind the canonical opt-in.
             ("alerts.geofence", "alerts", "alerts.enter-exit", CapabilityKind.Feature, null, CapabilityMaturity.Preview),
             ("jobs.runner", "jobs", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("ai.spec-apply", "ai", FeatureCatalog.AiSpecApplyKey, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),

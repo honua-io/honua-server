@@ -193,6 +193,7 @@ public sealed class FeatureCatalogDriftTests
             .Where(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview)
             .Select(entry => entry.Route)
             .ToArray();
+        previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/alerts", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/streaming/features", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/api/v1/admin/streaming/features", StringComparison.OrdinalIgnoreCase));
         previewRoutes.Should().Contain(route => route.StartsWith("/sta/v1.1", StringComparison.OrdinalIgnoreCase));
@@ -211,6 +212,19 @@ public sealed class FeatureCatalogDriftTests
             .Should().Be("scene.bim-ingest");
         FeatureCatalogGenerator.ResolveDescriptorIdForRoute("/scenes/{sceneId}/tileset.json")
             .Should().Be("serve.3d-tiles-scene");
+    }
+
+    [ArchitectureTest]
+    public void CustomerAlertingRoutes_RemainPreviewWithoutGaReceipts()
+    {
+        var alerting = LoadCommittedCatalog().Entries
+            .Where(entry => entry.Route.StartsWith("/api/v1/admin/alerts/", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        alerting.Should().NotBeEmpty();
+        alerting.Should().OnlyContain(entry => entry.Maturity == FeatureCatalogGenerator.MaturityPreview,
+            "the 2026-09-04 operator ruling keeps every customer-alerting route Preview; "
+            + "qualification tests do not replace a reviewed GA promotion with receipts");
     }
 
     [ArchitectureTest]
