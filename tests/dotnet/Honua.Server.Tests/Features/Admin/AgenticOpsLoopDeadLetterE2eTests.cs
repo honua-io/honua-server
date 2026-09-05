@@ -551,6 +551,9 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
 
         public DateTimeOffset? BacklogObservedAt => LastPollAt;
 
+        public Honua.Alerts.AlertDispatchObservation? LastObservation =>
+            LastBacklog is { } backlog ? new(backlog, BacklogObservedAt) : null;
+
         public AlertDispatchBacklog? LastBacklog { get; private set; }
 
         public bool IsStoragePollFailing => false;

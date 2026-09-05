@@ -111,6 +111,9 @@ public sealed class AlertDispatchAutonomousOperationConvergenceTests
 
         public DateTimeOffset? BacklogObservedAt => LastPollAt;
 
+        public Honua.Alerts.AlertDispatchObservation? LastObservation =>
+            LastBacklog is { } backlog ? new(backlog, BacklogObservedAt) : null;
+
         public AlertDispatchBacklog? LastBacklog { get; private set; }
 
         public bool IsStoragePollFailing => false;

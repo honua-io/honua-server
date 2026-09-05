@@ -394,7 +394,8 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
 
     private OpsAlertDispatchView BuildAlertDispatchView()
     {
-        var backlog = _alertHealth.LastBacklog;
+        var observation = _alertHealth.LastObservation;
+        var backlog = observation?.Backlog;
         var now = _timeProvider.GetUtcNow();
         return new OpsAlertDispatchView
         {
@@ -402,7 +403,7 @@ internal sealed class OpsHealthSnapshotService : IOpsHealthSnapshotService
             DispatcherEnabled = _alertHealth.IsDispatcherEnabled,
             StoragePollFailing = _alertHealth.IsStoragePollFailing,
             LastPollAt = _alertHealth.LastPollAt,
-            BacklogObservedAt = _alertHealth.BacklogObservedAt,
+            BacklogObservedAt = observation?.ObservedAt,
             PendingCount = backlog?.PendingCount,
             DeadLetteredCount = backlog?.DeadLetteredCount,
             RetryingCount = backlog?.RetryingCount,

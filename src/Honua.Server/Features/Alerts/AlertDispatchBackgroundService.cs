@@ -27,9 +27,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
     private volatile bool _isRunning;
     private long _lastPollAtTicks;
     private volatile bool _storagePollFailing;
-    private BacklogObservation? _lastBacklogObservation;
-
-    private sealed record BacklogObservation(AlertDispatchBacklog Backlog, DateTimeOffset ObservedAt);
+    private AlertDispatchObservation? _lastBacklogObservation;
 
     public AlertDispatchBackgroundService(
         IServiceScopeFactory scopeFactory,
@@ -70,6 +68,9 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
 
     /// <inheritdoc />
     public DateTimeOffset? BacklogObservedAt => Volatile.Read(ref _lastBacklogObservation)?.ObservedAt;
+
+    /// <inheritdoc />
+    public AlertDispatchObservation? LastObservation => Volatile.Read(ref _lastBacklogObservation);
 
     /// <inheritdoc />
     public bool IsStoragePollFailing => _storagePollFailing;
@@ -181,7 +182,7 @@ internal sealed partial class AlertDispatchBackgroundService : BackgroundService
         CancellationToken cancellationToken)
     {
         var backlog = await dispatchStore.GetBacklogAsync(cancellationToken).ConfigureAwait(false);
-        Volatile.Write(ref _lastBacklogObservation, new BacklogObservation(backlog, DateTimeOffset.UtcNow));
+        Volatile.Write(ref _lastBacklogObservation, new AlertDispatchObservation(backlog, DateTimeOffset.UtcNow));
         _storagePollFailing = false;
         _metrics.RecordBacklog(backlog.PendingCount, backlog.DeadLetteredCount);
         return backlog;

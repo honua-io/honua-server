@@ -117,9 +117,9 @@ def main():
         receipt["initial"] = initial
         before_proposals = proposals()
         before_rows = sql("SELECT dispatch_id,status,attempts,updated_at FROM honua.alert_dispatch ORDER BY dispatch_id")
-        outage_at = dt.datetime.now(dt.timezone.utc)
         sql("ALTER TABLE honua.alert_dispatch RENAME TO alert_dispatch_evidence_outage")
         interrupted = True
+        outage_at = dt.datetime.now(dt.timezone.utc)
         unavailable = wait_for("unavailable")
         receipt["unavailable"] = unavailable
         assert unavailable["evidencePosture"]["status"] == "unavailable"

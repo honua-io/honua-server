@@ -93,8 +93,10 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         var options = _options.CurrentValue;
         var findings = new List<OpsFinding>();
 
-        EvaluateAlertDispatchBacklog(now, options, findings);
-        EvaluateAlertDispatchChannelFailures(now, options, findings);
+        var alertObservation = _alertHealth.LastObservation;
+        var alertSource = BuildAlertDispatchSource(alertObservation);
+        EvaluateAlertDispatchBacklog(now, options, findings, alertObservation?.Backlog);
+        EvaluateAlertDispatchChannelFailures(now, options, findings, alertObservation?.Backlog);
         EvaluateLocalBackendSubstrate(now, findings);
         EvaluatePlatformReleaseSkew(now, findings);
         EvaluateDbBoundedAdmissionPressure(now, options, findings);
@@ -113,7 +115,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 .ThenBy(f => f.Rule, StringComparer.Ordinal)
                 .ThenBy(f => f.Id, StringComparer.Ordinal)
                 .ToList(),
-            Posture = BuildEvidencePosture(now, options, rollupDegraded),
+            Posture = BuildEvidencePosture(now, options, rollupDegraded, alertSource),
         };
     }
 
@@ -123,11 +125,11 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     /// backend failed reports <c>unavailable</c>, and a heartbeat-bearing source publishes its own
     /// observation time rather than the evaluation time.
     /// </summary>
-    private EvidencePosture BuildEvidencePosture(DateTimeOffset now, OpsFindingsOptions options, bool rollupDegraded)
+    private EvidencePosture BuildEvidencePosture(DateTimeOffset now, OpsFindingsOptions options, bool rollupDegraded, EvidenceSourceEnvelope alertSource)
     {
         var sections = new[]
         {
-            BuildAlertDispatchSource(),
+            alertSource,
             EvidencePostureFactory.Complete(
                 EvidencePostureVocabulary.SourceIds.FindingsControlPlane,
                 EvidencePostureVocabulary.BackendKinds.ConfigProjection,
@@ -174,7 +176,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         return EvidencePostureFactory.Build(now, [aggregate, .. validated]);
     }
 
-    private EvidenceSourceEnvelope BuildAlertDispatchSource()
+    private EvidenceSourceEnvelope BuildAlertDispatchSource(AlertDispatchObservation? observation)
     {
         const string BackendId = "alert-dispatch-store";
         if (!_alertHealth.IsDispatcherEnabled)
@@ -194,12 +196,12 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 EvidencePostureVocabulary.BackendKinds.DurableStore,
                 BackendId,
                 EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
-                observedAt: _alertHealth.BacklogObservedAt,
-                lastSuccessfulAt: _alertHealth.BacklogObservedAt,
+                observedAt: observation?.ObservedAt,
+                lastSuccessfulAt: observation?.ObservedAt,
                 maximumAge: SignalValidity);
         }
 
-        return _alertHealth.BacklogObservedAt is { } lastPollAt
+        return observation?.ObservedAt is { } lastPollAt
             ? EvidencePostureFactory.Complete(
                 EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch,
                 EvidencePostureVocabulary.BackendKinds.DurableStore,
@@ -361,9 +363,9 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     // recommended action now that the ops-action registry has a redrive actuator (#2579): re-enqueue
     // the dead-lettered rows for redelivery. A pending-only backlog (not yet dead-lettered) stays
     // informational — there is no safe automatic fix for deliveries that are merely lagging.
-    private void EvaluateAlertDispatchBacklog(DateTimeOffset now, OpsFindingsOptions options, List<OpsFinding> findings)
+    private void EvaluateAlertDispatchBacklog(DateTimeOffset now, OpsFindingsOptions options, List<OpsFinding> findings, AlertDispatchBacklog? backlog)
     {
-        if (!_alertHealth.IsDispatcherEnabled || _alertHealth.LastBacklog is not { } backlog)
+        if (!_alertHealth.IsDispatcherEnabled || backlog is null)
         {
             return;
         }
@@ -419,9 +421,10 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     private void EvaluateAlertDispatchChannelFailures(
         DateTimeOffset now,
         OpsFindingsOptions options,
-        List<OpsFinding> findings)
+        List<OpsFinding> findings,
+        AlertDispatchBacklog? backlog)
     {
-        if (!_alertHealth.IsDispatcherEnabled || _alertHealth.LastBacklog is not { } backlog)
+        if (!_alertHealth.IsDispatcherEnabled || backlog is null)
         {
             return;
         }

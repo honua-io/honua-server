@@ -320,7 +320,10 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
 
         public DateTimeOffset? LastPollAt => TestNow;
 
-        public DateTimeOffset? BacklogObservedAt => LastPollAt;
+        // Legacy separate reads deliberately differ, so the endpoint must use the atomic pair.
+        public DateTimeOffset? BacklogObservedAt => TestNow.AddHours(1);
+
+        public Honua.Alerts.AlertDispatchObservation? LastObservation => new(backlog, TestNow);
 
         public AlertDispatchBacklog? LastBacklog => backlog;
 

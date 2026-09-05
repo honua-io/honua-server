@@ -5,6 +5,9 @@ using Honua.Core.Features.Alerts.Domain;
 
 namespace Honua.Alerts;
 
+/// <summary>One backlog and the observation timestamp belonging to those exact values.</summary>
+internal sealed record AlertDispatchObservation(AlertDispatchBacklog Backlog, DateTimeOffset? ObservedAt);
+
 /// <summary>
 /// Exposes the alert dispatcher's most recent operational snapshot to the
 /// dispatch-backlog health check. Implemented by
@@ -25,6 +28,9 @@ internal interface IAlertDispatchHealth
 
     /// <summary>Timestamp of the most recent successfully collected backlog, when known.</summary>
     DateTimeOffset? BacklogObservedAt { get; }
+
+    /// <summary>Atomically captured backlog and timestamp; null before the first collection.</summary>
+    AlertDispatchObservation? LastObservation { get; }
 
     /// <summary>Most recent backlog snapshot captured by the dispatcher, when available.</summary>
     AlertDispatchBacklog? LastBacklog { get; }

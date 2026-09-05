@@ -480,6 +480,9 @@ public sealed class ReadinessCheckServiceTests
         public DateTimeOffset? LastPollAt { get; init; }
 
         public DateTimeOffset? BacklogObservedAt => LastPollAt;
+
+        public Honua.Alerts.AlertDispatchObservation? LastObservation =>
+            LastBacklog is { } backlog ? new(backlog, BacklogObservedAt) : null;
         public Honua.Core.Features.Alerts.Domain.AlertDispatchBacklog? LastBacklog { get; init; }
         public bool IsStoragePollFailing { get; init; }
 

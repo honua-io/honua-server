@@ -784,6 +784,32 @@ public sealed class OpsFindingsServiceTests
             Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_CapturesBacklogAndTimestampOnceForTheWholeEvaluation()
+    {
+        var observedAt = DateTimeOffset.UtcNow.AddHours(-1);
+        var reads = 0;
+        var health = new FakeAlertDispatchHealth
+        {
+            IsDispatcherEnabled = true,
+            IsDispatcherRunning = true,
+            LastPollAt = DateTimeOffset.UtcNow,
+            ObservationReader = () => ++reads == 1
+                ? new AlertDispatchObservation(new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 }, observedAt)
+                : new AlertDispatchObservation(new AlertDispatchBacklog { PendingCount = 0, DeadLetteredCount = 0 }, DateTimeOffset.UtcNow),
+        };
+        var evaluation = await CreateService(alertHealth: health).EvaluateWithEvidenceAsync();
+        Assert.Equal(1, reads);
+        var finding = Assert.Single(evaluation.Findings, item => item.Rule == OpsFindingsService.RuleAlertDispatchBacklog);
+        Assert.Equal(2, finding.RecommendedAction!.BlastRadius);
+        var source = Assert.Single(evaluation.Posture.Sources,
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch);
+        Assert.Equal(observedAt, source.ObservedAt);
+        Assert.Equal(observedAt, source.LastSuccessfulAt);
+        Assert.Contains(EvidencePostureVocabulary.ReasonCodes.Stale, source.ReasonCodes);
+    }
+
     [Theory]
     [InlineData("backendOutage")]
     [InlineData("neverSucceeded")]
@@ -1335,6 +1361,12 @@ public sealed class OpsFindingsServiceTests
         public DateTimeOffset? SuccessfulBacklogAt { get; set; }
 
         public DateTimeOffset? BacklogObservedAt => SuccessfulBacklogAt ?? LastPollAt;
+
+        public Func<AlertDispatchObservation?>? ObservationReader { get; set; }
+
+        public AlertDispatchObservation? LastObservation => ObservationReader is { } read
+            ? read()
+            : LastBacklog is { } backlog ? new(backlog, BacklogObservedAt) : null;
 
         public AlertDispatchBacklog? LastBacklog { get; set; }
 

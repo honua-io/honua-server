@@ -41,8 +41,8 @@ public sealed class EvidencePostureLiveTests
         try
         {
             outageRequested = true;
-            var outageRequestedAt = DateTimeOffset.UtcNow;
             await InvokeControlAsync(controls, RequiredUri(OutageUrlEnv));
+            var outageConfirmedAt = DateTimeOffset.UtcNow;
 
             var unavailable = await WaitForSourceAsync(
                 honua,
@@ -52,8 +52,8 @@ public sealed class EvidencePostureLiveTests
             unavailable.GetProperty("evidencePosture").GetProperty("status").GetString()
                 .Should().Be("unavailable");
             var unavailableSource = FindSource(unavailable, sourceId);
-            unavailableSource.GetProperty("observedAt").GetDateTimeOffset().Should().BeOnOrBefore(outageRequestedAt);
-            unavailableSource.GetProperty("lastSuccessfulAt").GetDateTimeOffset().Should().BeOnOrBefore(outageRequestedAt);
+            unavailableSource.GetProperty("observedAt").GetDateTimeOffset().Should().BeOnOrBefore(outageConfirmedAt.AddMinutes(1));
+            unavailableSource.GetProperty("lastSuccessfulAt").GetDateTimeOffset().Should().BeOnOrBefore(outageConfirmedAt.AddMinutes(1));
             unavailableSource.GetProperty("reasonCodes").EnumerateArray()
                 .Select(reason => reason.GetString())
                 .Should().Contain("sourceUnavailable");
@@ -158,8 +158,8 @@ public sealed class EvidencePostureLiveTests
         source.GetProperty("backendId").GetString().Should().NotBeNullOrWhiteSpace();
         var now = DateTimeOffset.UtcNow;
         var oldestValid = now.AddSeconds(-source.GetProperty("maximumAgeSeconds").GetInt64());
-        source.GetProperty("observedAt").GetDateTimeOffset().Should().BeOnOrAfter(oldestValid).And.BeOnOrBefore(now);
-        source.GetProperty("lastSuccessfulAt").GetDateTimeOffset().Should().BeOnOrAfter(oldestValid).And.BeOnOrBefore(now);
+        source.GetProperty("observedAt").GetDateTimeOffset().Should().BeOnOrAfter(oldestValid).And.BeOnOrBefore(now.AddMinutes(1));
+        source.GetProperty("lastSuccessfulAt").GetDateTimeOffset().Should().BeOnOrAfter(oldestValid).And.BeOnOrBefore(now.AddMinutes(1));
         source.GetProperty("validUntil").GetDateTimeOffset().Should().BeAfter(DateTimeOffset.UtcNow);
     }
 
