@@ -145,7 +145,7 @@ internal sealed class DescribeLayerTool : IMcpTool
         {
             await MapToolLayerResolver.EnsureAccessAsync(
                 httpContext, context, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
-            rowCount = await TryCountRowsAsync(httpContext, context.StorageLayerId, cancellationToken).ConfigureAwait(false);
+            rowCount = await TryCountRowsAsync(httpContext, snapshot, context, cancellationToken).ConfigureAwait(false);
         }
 
         var output = BuildOutput(context, argument.LayerId!.Value, rowCount);
@@ -154,13 +154,16 @@ internal sealed class DescribeLayerTool : IMcpTool
 
     private async Task<long?> TryCountRowsAsync(
         HttpContext httpContext,
-        int storageLayerId,
+        MetadataV2GraphSnapshot snapshot,
+        MapToolLayerContext layer,
         CancellationToken cancellationToken)
     {
-        var reader = httpContext.RequestServices.GetRequiredService<IFeatureReader>();
         try
         {
-            return await reader.CountAsync(storageLayerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
+            var reader = await MapToolLayerResolver.ResolveReaderAsync(httpContext, snapshot, layer,
+                Honua.Core.Features.FeatureStore.Services.FeatureProviderReadOperation.Count,
+                cancellationToken).ConfigureAwait(false);
+            return await reader.CountAsync(layer.StorageLayerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
