@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -53,6 +54,8 @@ public sealed class McpMapToolTests
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
 
     [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData(true, false)]
     [InlineData(false, false)]
     [InlineData(true, true)]
@@ -101,6 +104,8 @@ public sealed class McpMapToolTests
     }
 
     [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData(true)]
     [InlineData(false)]
     [Operation(Operations.Query)]
@@ -119,6 +124,26 @@ public sealed class McpMapToolTests
         result.GetProperty("isError").GetBoolean().Should().BeTrue();
         result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("permission_denied");
         await reader.DidNotReceiveWithAnyArgs().CountAsync(default, default!, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_query_features")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task QueryFeatures_AllowedResourceRole_ReturnsCount()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(42L);
+        using var services = BuildServices(reader: reader, accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-reader"] });
+        var context = AuthenticatedContext(services);
+        context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, "restricted-reader")]));
+        var response = await BuildSurface().DispatchAsync(context,
+            ToolCall("allowed-count", QueryFeaturesTool.ToolName,
+                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":true}"""),
+            CancellationToken.None);
+        response!.Error.Should().BeNull();
+        response.Result!.Value.GetProperty("structuredContent").GetProperty("count").GetInt64().Should().Be(42);
+        await reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
