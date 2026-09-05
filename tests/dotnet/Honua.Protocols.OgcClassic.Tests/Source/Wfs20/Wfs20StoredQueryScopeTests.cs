@@ -35,32 +35,32 @@ public sealed class Wfs20StoredQueryScopeTests
 
     /// <summary>
     /// A stored query created by tenant A must not be drop-able from tenant B's context.
-    /// Before the fix <see cref="Wfs20Handler.HandleDropStoredQuery"/> accepted any query ID
+    /// Before the fix <see cref="Wfs20Handler.HandleDropStoredQueryAsync"/> accepted any query ID
     /// regardless of which service (tenant) created it.
     /// </summary>
     [UnitTest]
-    public void HandleDropStoredQuery_QueryFromOtherScope_ReturnsInvalidParameterValue()
+    public async Task HandleDropStoredQuery_QueryFromOtherScope_ReturnsInvalidParameterValue()
     {
         var storedQueryId = $"urn:bh3-009:cross-drop:{Guid.NewGuid():N}";
 
         // Service A creates the query.
         var contextA = CreateContextWithTenant("tenant-a");
         SetParsedCreateDocument(contextA, storedQueryId);
-        var createResult = Wfs20Handler.HandleCreateStoredQuery(contextA);
+        var createResult = await Wfs20Handler.HandleCreateStoredQueryAsync(contextA);
         createResult.Should().BeAssignableTo<IResult>("create must return an IResult");
         // The create should have succeeded (status 200 / CreateStoredQueryResponse).
-        AssertXmlResultStatus(contextA, createResult, expectedContains: "CreateStoredQueryResponse");
+        await AssertXmlResultStatusAsync(contextA, createResult, expectedContains: "CreateStoredQueryResponse");
 
         // Service B attempts to drop Service A's query — must be rejected.
         var contextB = CreateContextWithTenant("tenant-b");
-        var dropResult = Wfs20Handler.HandleDropStoredQuery(contextB, storedQueryId);
+        var dropResult = await Wfs20Handler.HandleDropStoredQueryAsync(contextB, storedQueryId);
 
-        AssertXmlResultStatus(contextB, dropResult, expectedContains: "InvalidParameterValue",
+        await AssertXmlResultStatusAsync(contextB, dropResult, expectedContains: "InvalidParameterValue",
             "a cross-scope drop must return InvalidParameterValue, not succeed");
 
         // Service A can still drop its own query.
-        var ownDropResult = Wfs20Handler.HandleDropStoredQuery(contextA, storedQueryId);
-        AssertXmlResultStatus(contextA, ownDropResult, expectedContains: "DropStoredQueryResponse",
+        var ownDropResult = await Wfs20Handler.HandleDropStoredQueryAsync(contextA, storedQueryId);
+        await AssertXmlResultStatusAsync(contextA, ownDropResult, expectedContains: "DropStoredQueryResponse",
             "owner tenant must be able to drop its own stored query");
     }
 
@@ -70,26 +70,26 @@ public sealed class Wfs20StoredQueryScopeTests
     /// under <c>tenant-b</c>'s scope — the response must be an error, not the definition.
     /// </summary>
     [UnitTest]
-    public void HandleCreateStoredQuery_TwoScopesReuseQueryId_BothSucceed()
+    public async Task HandleCreateStoredQuery_TwoScopesReuseQueryId_BothSucceed()
     {
         // The same logical query ID may be registered independently in two different scopes.
         var sharedId = $"urn:bh3-009:shared-id:{Guid.NewGuid():N}";
 
         var contextA = CreateContextWithTenant("scope-x");
         SetParsedCreateDocument(contextA, sharedId);
-        var resultA = Wfs20Handler.HandleCreateStoredQuery(contextA);
-        AssertXmlResultStatus(contextA, resultA, expectedContains: "CreateStoredQueryResponse",
+        var resultA = await Wfs20Handler.HandleCreateStoredQueryAsync(contextA);
+        await AssertXmlResultStatusAsync(contextA, resultA, expectedContains: "CreateStoredQueryResponse",
             "scope-x should be able to register the shared ID in its own namespace");
 
         var contextB = CreateContextWithTenant("scope-y");
         SetParsedCreateDocument(contextB, sharedId);
-        var resultB = Wfs20Handler.HandleCreateStoredQuery(contextB);
-        AssertXmlResultStatus(contextB, resultB, expectedContains: "CreateStoredQueryResponse",
+        var resultB = await Wfs20Handler.HandleCreateStoredQueryAsync(contextB);
+        await AssertXmlResultStatusAsync(contextB, resultB, expectedContains: "CreateStoredQueryResponse",
             "scope-y must not see scope-x's registration, so the same ID must be accepted independently");
 
         // Cleanup: both scopes drop their own copy.
-        Wfs20Handler.HandleDropStoredQuery(contextA, sharedId);
-        Wfs20Handler.HandleDropStoredQuery(contextB, sharedId);
+        await Wfs20Handler.HandleDropStoredQueryAsync(contextA, sharedId);
+        await Wfs20Handler.HandleDropStoredQueryAsync(contextB, sharedId);
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ public sealed class Wfs20StoredQueryScopeTests
     /// Executes an <see cref="IResult"/> against a temporary <see cref="DefaultHttpContext"/>
     /// and asserts that the response body XML contains <paramref name="expectedContains"/>.
     /// </summary>
-    private static void AssertXmlResultStatus(
+    private static async Task AssertXmlResultStatusAsync(
         DefaultHttpContext originalContext,
         IResult result,
         string expectedContains,
@@ -142,11 +142,11 @@ public sealed class Wfs20StoredQueryScopeTests
         };
         httpContext.Response.Body = new System.IO.MemoryStream();
 
-        result.ExecuteAsync(httpContext).GetAwaiter().GetResult();
+        await result.ExecuteAsync(httpContext);
 
         httpContext.Response.Body.Position = 0;
         using var reader = new System.IO.StreamReader(httpContext.Response.Body, Encoding.UTF8);
-        var body = reader.ReadToEnd();
+        var body = await reader.ReadToEndAsync();
         body.Should().Contain(expectedContains,
             because ?? $"response body must contain '{expectedContains}'");
     }
