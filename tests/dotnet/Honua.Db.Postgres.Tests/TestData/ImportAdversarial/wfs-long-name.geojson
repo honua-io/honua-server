@@ -1,0 +1,12 @@
+{
+  "type": "FeatureCollection",
+  "numberMatched": 1,
+  "features": [
+    {
+      "type": "Feature",
+      "id": "long-name-row",
+      "geometry": { "type": "Point", "coordinates": [-157.85, 21.30] },
+      "properties": { "name": "identifier-limit-row", "population": 1 }
+    }
+  ]
+}
