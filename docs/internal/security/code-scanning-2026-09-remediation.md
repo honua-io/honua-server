@@ -43,7 +43,7 @@ No filter or ignore-file change is part of this remediation.
 | --- | --- |
 | Repository filesystem, vulnerability scanner, all severities | 0 vulnerabilities |
 | Fully rebuilt JIT application image, explicit High/Critical CLI filter | 0 findings; this does not reproduce the action SARIF default |
-| Fully rebuilt JIT application image, actual action-equivalent all-severity SARIF | Rerun in progress |
+| Fully rebuilt JIT application image, actual action-equivalent all-severity SARIF | 34 findings: 29 Medium, 5 Low; no fixed versions listed |
 | Rebuilt Alpine arm64 runtime package layer, all severities | 0 findings |
 | Exact JIT runtime package layer, all severities without ignores | 29 Medium, 5 Low; no vendor fixed versions |
 | Fully rebuilt Lambda JIT, release actionable SARIF | 0 findings |
@@ -53,8 +53,9 @@ No filter or ignore-file change is part of this remediation.
 The remaining unpatched OS inventory includes glibc, libexpat, ICU, systemd,
 shadow/login, tar, and wget advisories. A clean High/Critical gate does not mean
 this full inventory is empty. None of these findings is dismissed or newly
-suppressed by this remediation. The actual nightly SARIF includes lower severities and is being reproduced
-locally. Clearing the default-branch API still requires
+suppressed by this remediation. The reproduced actual nightly SARIF contains 34 lower-severity findings,
+each with an empty fixed-version field. This prevents claiming zero open
+Trivy alerts under the unchanged CI configuration. Clearing the default-branch API still requires
 merged fixes and successful scans of the same analysis categories.
 
 Full AOT and other platform-image validation is pending; the PR must record
@@ -100,3 +101,8 @@ Source paths for review:
 At the time this evidence was written, none of these new alerts had been
 dismissed. Any subsequent false-positive disposition must include its specific
 code-path evidence in the GitHub dismissal comment.
+
+Pinned action source confirming the SARIF behavior:
+[entrypoint.sh:75-79](https://github.com/aquasecurity/trivy-action/blob/ed142fd0673e97e23eac54620cfb913e5ce36c25/entrypoint.sh#L75).
+The full-image action-equivalent SARIF receipt is
+`/tmp/honua-security-jit-action-equivalent.sarif` on the validation host.
