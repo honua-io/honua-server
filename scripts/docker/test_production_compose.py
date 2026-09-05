@@ -20,6 +20,8 @@ class ProductionComposeTests(unittest.TestCase):
         self.values = {
             "HONUA_IMAGE": "ghcr.io/honua-io/honua-server@sha256:" + "a" * 64,
             "HONUA_HOST": "honua.example.com",
+            "HONUA_PROXY_IP": "192.0.2.1",
+            "HONUA_NETWORK_NAME": "production-render-only",
             "HONUA_ADMIN_PASSWORD": secrets.token_hex(32),
             "POSTGRES_PASSWORD": secrets.token_hex(32),
             "HONUA_MASTER_KEY": secrets.token_hex(32),
@@ -31,6 +33,7 @@ class ProductionComposeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             compose = Path(directory) / "compose.yml"
             compose.write_text(self.compose)
+            (Path(directory) / ".env.production").write_text("")
             values = self.values | overrides
             environment = {key: value for key, value in os.environ.items()
                            if not (key.startswith(("HONUA_", "ConnectionStrings__", "Security__", "Cors__"))
@@ -53,6 +56,8 @@ class ProductionComposeTests(unittest.TestCase):
         environment = self.model()["services"]["honua"]["environment"]
         self.assertIn(self.values["HONUA_HOST"], environment.get("AllowedHosts", "").split(";"))
         self.assertEqual(environment.get("PUBLIC_BASE_URL"), "https://honua.example.com")
+        self.assertEqual(environment.get("ForwardedHeaders__Enabled"), "true")
+        self.assertEqual(environment.get("ForwardedHeaders__KnownProxies__0"), self.values["HONUA_PROXY_IP"])
 
     def test_postgis_is_initialized_before_final_database_health(self):
         model = self.model()
@@ -84,6 +89,12 @@ class ProductionComposeTests(unittest.TestCase):
             "ConnectionStrings__DefaultConnection": "Host=private-db;Password=" + secrets.token_hex(32),
             "ConnectionStrings__Redis": "private-redis:6379,password=" + secrets.token_hex(32),
             "Security__ConnectionEncryption__MasterKey": secrets.token_hex(32),
+            "Cors__AllowedOrigins__1": "https://second.example.com",
+            "Cache__DefaultTtlSeconds": "321",
+            "SecurityHeaders__HstsMaxAge": "654321",
+            "Limits__Query__MaxRecordCount": "4321",
+            "HONUA_OBSERVABILITY": "false",
+            "Database__MigrationSafety__ContractApplyPolicy": "Auto",
         }
         values.pop("HONUA_MASTER_KEY")
         with tempfile.TemporaryDirectory() as directory:
@@ -101,9 +112,12 @@ class ProductionComposeTests(unittest.TestCase):
             for key in ("ConnectionStrings__DefaultConnection", "ConnectionStrings__Redis",
                         "Security__ConnectionEncryption__MasterKey", "HONUA_ADMIN_PASSWORD"):
                 self.assertTrue(hmac.compare_digest(environment[key], values[key]), key)
+            for key in ("Cors__AllowedOrigins__1", "Cache__DefaultTtlSeconds", "SecurityHeaders__HstsMaxAge",
+                        "Limits__Query__MaxRecordCount", "HONUA_OBSERVABILITY", "Database__MigrationSafety__ContractApplyPolicy"):
+                self.assertEqual(environment[key], values[key])
 
     def test_missing_required_inputs_fail_before_container_creation(self):
-        for key in ("HONUA_IMAGE", "HONUA_HOST", "POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY"):
+        for key in ("HONUA_IMAGE", "HONUA_HOST", "HONUA_PROXY_IP", "POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY"):
             self.assertNotEqual(self.render(**{key: ""}).returncode, 0, key)
 
     def test_datastores_are_unpublished_and_api_is_loopback_only(self):

@@ -11,7 +11,7 @@ You'll run a production-shaped Honua stack on a single host: pinned image, secre
 ```bash
 mkdir -p /opt/honua && cd /opt/honua
 umask 077
-cat > .env <<EOF
+cat > .env.production <<EOF
 # Supply an immutable GHCR image reference (tag plus digest) from the release
 # manifest; floating tags such as latest are not suitable for production.
 HONUA_IMAGE=${HONUA_IMAGE:?Set the immutable published image digest first}
@@ -19,13 +19,15 @@ POSTGRES_PASSWORD=$(openssl rand -hex 32)
 HONUA_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 32)
 HONUA_MASTER_KEY=$(openssl rand -hex 32)
 HONUA_HOST=honua.example.com
+HONUA_NETWORK_NAME=honua-production
+HONUA_PROXY_IP=
 HONUA_CORS_ORIGIN=https://app.example.com
 HONUA_STORAGE_VOLUME_NAME=honua_production_storage
 EOF
-chmod 600 .env
+chmod 600 .env.production
 ```
 
-Set `HONUA_HOST` in `.env` to the DNS name your proxy serves; it is also the server's trusted hostname and public URL. Retain the private env file with your persistent volumes; regenerating it does not rotate existing database credentials.
+Set `HONUA_HOST` in `.env.production` to the DNS name your proxy serves; it is also the server's trusted hostname and public URL. Retain the private env file with your persistent volumes; regenerating it does not rotate existing database credentials.
 
 2. Create the compose file. This block matches the shipped [`docker-compose.production.yml`](../../../docker-compose.production.yml). The server process is replaceable, while PostGIS, Redis durable-control-plane state, and local file storage live on persistent volumes. The server binds to localhost only, so the proxy is the sole public entrypoint.
 
@@ -34,6 +36,7 @@ cat > docker-compose.yml <<'EOF'
 services:
   honua:
     image: ${HONUA_IMAGE:?Set an immutable HONUA_IMAGE from the release manifest}
+    env_file: .env.production
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8081:8081"
@@ -41,13 +44,16 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       AllowedHosts: "${HONUA_HOST:?Set the public proxy hostname};localhost;127.0.0.1"
       PUBLIC_BASE_URL: "https://${HONUA_HOST:?Set the public proxy hostname}"
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__ForwardLimit: "1"
+      ForwardedHeaders__KnownProxies__0: "${HONUA_PROXY_IP:?Set the trusted proxy address from the Compose network gateway}"
       ConnectionStrings__DefaultConnection: "${ConnectionStrings__DefaultConnection:-Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}}"
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Set HONUA_ADMIN_PASSWORD}
       Security__ConnectionEncryption__MasterKey: ${Security__ConnectionEncryption__MasterKey:-${HONUA_MASTER_KEY:?Set the connection encryption master key}}
       Cors__AllowedOrigins__0: ${Cors__AllowedOrigins__0:-${HONUA_CORS_ORIGIN:?Set the browser origin}}
-      HONUA_OBSERVABILITY: "true"
+      HONUA_OBSERVABILITY: "${HONUA_OBSERVABILITY:-true}"
       ConnectionStrings__Redis: "${ConnectionStrings__Redis:-redis:6379}"
-      Database__MigrationSafety__ContractApplyPolicy: Gate
+      Database__MigrationSafety__ContractApplyPolicy: "${Database__MigrationSafety__ContractApplyPolicy:-Gate}"
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
     depends_on:
@@ -112,6 +118,10 @@ volumes:
   honua_storage:
     name: ${HONUA_STORAGE_VOLUME_NAME}
 
+networks:
+  default:
+    name: ${HONUA_NETWORK_NAME:-honua-production}
+
 configs:
   postgis_init:
     content: |
@@ -125,15 +135,23 @@ EOF
 3. Put a TLS-terminating reverse proxy in front — Honua does not terminate TLS. Any proxy works; Caddy on the host is the shortest path (port 8080 carries HTTP/1 REST, port 8081 carries h2c gRPC for native SDK clients).
 
 ```bash
-HONUA_HOST="$(sed -n 's/^HONUA_HOST=//p' .env)"
+HONUA_HOST="$(sed -n 's/^HONUA_HOST=//p' .env.production)"
 printf '%s {\n  reverse_proxy 127.0.0.1:8080\n}\n' "$HONUA_HOST" | sudo tee /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
 
 4. Start the stack. Redis is part of the production-shaped baseline because durable jobs, queued imports, workflows, operation proposals, and Console approval flows need it.
 
 ```bash
-docker compose up -d --wait --wait-timeout 180
+# Create the network and containers without starting them. The temporary
+# loopback trust value is replaced before the server starts.
+HONUA_PROXY_IP=127.0.0.1 docker compose --env-file .env.production create
+HONUA_NETWORK_NAME="$(sed -n 's/^HONUA_NETWORK_NAME=//p' .env.production)"
+HONUA_PROXY_IP="$(docker network inspect "$HONUA_NETWORK_NAME" --format '{{(index .IPAM.Config 0).Gateway}}')"
+sed -i "s/^HONUA_PROXY_IP=.*/HONUA_PROXY_IP=$HONUA_PROXY_IP/" .env.production
+docker compose --env-file .env.production up -d --wait --wait-timeout 180
 ```
+
+Caddy on the host reaches the server through the Docker bridge gateway, which is the only additional trusted proxy. If Caddy runs in a container or on another host, set `HONUA_PROXY_IP` to that proxy’s actual source IP instead. Recalculate the gateway after recreating the Compose network. The server accepts one forwarded hop; never use a wildcard proxy trust setting.
 
 For headless deployments, keep Redis unless every durable control-plane feature is intentionally disabled — see [Redis is optional; PostGIS is not](#redis-is-optional-postgis-is-not) for exactly what you give up. To add Console in production, use a published Console image tag that is compatible with the server ops-health contract and add this service:
 
@@ -159,7 +177,7 @@ For headless deployments, keep Redis unless every durable control-plane feature 
     restart: unless-stopped
 ```
 
-Then start it with `docker compose up -d console`, or disable it with `docker compose up -d --scale console=0`.
+Then start it with `docker compose --env-file .env.production up -d console`, or disable it with `docker compose --env-file .env.production up -d --scale console=0`.
 
 ## Verify
 
@@ -272,17 +290,17 @@ Because "add Redis" is not the fix here, this case reports itself differently. T
 For the repository quickstart, the repository ships an override that composes the root stack as PostGIS + Honua Server only, with `ConnectionStrings__Redis` unset:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.no-redis.yml up -d
+docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.no-redis.yml up -d
 ```
 
-The production flow on this page creates its Compose file directly in `/opt/honua`; it does not copy that repository override. To run that inline stack without Redis, remove `ConnectionStrings__Redis` from `honua.environment`, remove the `redis` entry from `honua.depends_on`, remove the entire `redis` service, and remove `redis_data` from the top-level `volumes` list before running `docker compose up -d`.
+The production flow on this page creates its Compose file directly in `/opt/honua`; it does not copy that repository override. To run that inline stack without Redis, remove `ConnectionStrings__Redis` from `honua.environment`, remove the `redis` entry from `honua.depends_on`, remove the entire `redis` service, and remove `redis_data` from the top-level `volumes` list before running `docker compose --env-file .env.production up -d`.
 
 ### Adding Redis later
 
 For the repository quickstart, drop the override and start again with the Pro development grant (or install a licence that includes `caching.redis`):
 
 ```bash
-HONUA_DEV_GRANT_EDITION=Pro docker compose up -d
+HONUA_DEV_GRANT_EDITION=Pro docker compose --env-file .env.production up -d
 ```
 
 For the inline production stack, restore the four Redis entries removed above and install a licence that includes `caching.redis` before restarting. Redis holds only job, workflow, proposal, and cache state, none of which is durable across an install that never had it — so nothing is lost by adding it. PostGIS-backed metadata state is untouched by the change, and durable jobs and workflows become available on the next boot.
@@ -294,7 +312,7 @@ For the inline production stack, restore the four Redis entries removed above an
 - **Browser requests blocked by CORS** — the permissive dev CORS policy is force-disabled inside containers; set `Cors__AllowedOrigins__0` to your app's exact origin.
 - **`503` on OGC Processes, import job routes, or proposal flows** — those need Redis; check the `redis` container health and `ConnectionStrings__Redis`. A `503` whose body carries `"code": "dependency-unavailable"` means the server was started with no Redis at all — see [Redis is optional; PostGIS is not](#redis-is-optional-postgis-is-not).
 - **Console shows a missing server binding** — set `HONUA_SERVER_BASE_URL` to the server origin reachable from the Console container and pass `HONUA_ADMIN_API_KEY`.
-- **Container restarts in a loop** — check `docker compose logs honua` for migration failures; the server applies database migrations at startup.
+- **Container restarts in a loop** — check `docker compose --env-file .env.production logs honua` for migration failures; the server applies database migrations at startup.
 
 ## Upgrade & Rollback
 
@@ -307,22 +325,22 @@ A single-node compose deployment cannot upgrade with zero downtime — there is 
 2. Back up the database (this is your rollback floor for any destructive migration).
 
 ```bash
-docker compose exec -T postgres pg_dump -U honua -d honua -Fc > "honua-$(date +%F).dump"
+docker compose --env-file .env.production exec -T postgres pg_dump -U honua -d honua -Fc > "honua-$(date +%F).dump"
 ```
 
 3. Pull the new tag and recreate the server. Migrations run automatically when the new container starts.
 
 ```bash
 sed -i 's/^HONUA_TAG=.*/HONUA_TAG=vX.Y.Z/' .env   # pin the new version
-docker compose pull honua
-docker compose up -d honua
+docker compose --env-file .env.production pull honua
+docker compose --env-file .env.production up -d honua
 ```
 
 4. Verify readiness, then confirm no migration failure in the logs.
 
 > Open `http://127.0.0.1:8080/healthz/ready` in a browser.
 
-**Roll back:** re-pin `HONUA_TAG` to the previous version and `docker compose up -d honua`. Additive (expand) migrations leave the schema backward-compatible, so the previous image runs against it unchanged. Restore the database (`pg_restore` from your dump) **only** when a contract-phase (schema-narrowing) migration ran and made the old version unusable — stop the container first, restore, then start the previous tag.
+**Roll back:** re-pin `HONUA_TAG` to the previous version and `docker compose --env-file .env.production up -d honua`. Additive (expand) migrations leave the schema backward-compatible, so the previous image runs against it unchanged. Restore the database (`pg_restore` from your dump) **only** when a contract-phase (schema-narrowing) migration ran and made the old version unusable — stop the container first, restore, then start the previous tag.
 
 ### Gating contract-phase migrations (optional)
 

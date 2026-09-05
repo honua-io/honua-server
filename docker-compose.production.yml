@@ -1,6 +1,7 @@
 services:
   honua:
     image: ${HONUA_IMAGE:?Set an immutable HONUA_IMAGE from the release manifest}
+    env_file: .env.production
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8081:8081"
@@ -8,13 +9,16 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       AllowedHosts: "${HONUA_HOST:?Set the public proxy hostname};localhost;127.0.0.1"
       PUBLIC_BASE_URL: "https://${HONUA_HOST:?Set the public proxy hostname}"
+      ForwardedHeaders__Enabled: "true"
+      ForwardedHeaders__ForwardLimit: "1"
+      ForwardedHeaders__KnownProxies__0: "${HONUA_PROXY_IP:?Set the trusted proxy address from the Compose network gateway}"
       ConnectionStrings__DefaultConnection: "${ConnectionStrings__DefaultConnection:-Host=postgres;Database=honua;Username=honua;Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}}"
       HONUA_ADMIN_PASSWORD: ${HONUA_ADMIN_PASSWORD:?Set HONUA_ADMIN_PASSWORD}
       Security__ConnectionEncryption__MasterKey: ${Security__ConnectionEncryption__MasterKey:-${HONUA_MASTER_KEY:?Set the connection encryption master key}}
       Cors__AllowedOrigins__0: ${Cors__AllowedOrigins__0:-${HONUA_CORS_ORIGIN:?Set the browser origin}}
-      HONUA_OBSERVABILITY: "true"
+      HONUA_OBSERVABILITY: "${HONUA_OBSERVABILITY:-true}"
       ConnectionStrings__Redis: "${ConnectionStrings__Redis:-redis:6379}"
-      Database__MigrationSafety__ContractApplyPolicy: Gate
+      Database__MigrationSafety__ContractApplyPolicy: "${Database__MigrationSafety__ContractApplyPolicy:-Gate}"
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
     depends_on:
@@ -78,6 +82,10 @@ volumes:
   redis_data:
   honua_storage:
     name: ${HONUA_STORAGE_VOLUME_NAME}
+
+networks:
+  default:
+    name: ${HONUA_NETWORK_NAME:-honua-production}
 
 configs:
   postgis_init:
