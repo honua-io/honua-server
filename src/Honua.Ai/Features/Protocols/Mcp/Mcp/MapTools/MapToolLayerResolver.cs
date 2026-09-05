@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Geoprocessing;
 
@@ -25,25 +23,6 @@ internal readonly record struct MapToolLayerContext(
 
 internal static class MapToolLayerResolver
 {
-    public static Task<IFeatureReader> ResolveReaderAsync(
-        HttpContext httpContext,
-        MetadataV2GraphSnapshot snapshot,
-        MapToolLayerContext layer,
-        FeatureProviderReadOperation operation,
-        CancellationToken cancellationToken)
-    {
-        // Match the REST adapter's provider selection for bound publications.
-        // Storeless compositions retain the default reader when no router exists.
-        var router = httpContext.RequestServices.GetService<FeatureProviderQueryRouter>();
-        if (!string.IsNullOrWhiteSpace(layer.Publication.StorageBindingId) && router is not null)
-        {
-            return router.ResolveReaderAsync(snapshot, layer.Service, layer.Resource,
-                layer.Publication, layer.StorageLayerId, operation, cancellationToken);
-        }
-
-        return Task.FromResult(httpContext.RequestServices.GetRequiredService<IFeatureReader>());
-    }
-
     /// <summary>
     /// Resolves the layer addressing tuple against the supplied metadata
     /// snapshot. The service is matched by id first, then by name (mirroring the

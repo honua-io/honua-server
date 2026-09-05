@@ -60,11 +60,13 @@ public sealed class McpProviderRoutingTests
             .AddService("svc-remote", "Remote")
             .AddPublication("pub-remote", "svc-remote", "res-remote", layerIndex: 0, storageBindingId: "bind-remote")
             .BuildProvider();
+        var geometry = Substitute.For<IGeometryService>();
+        geometry.ConvertWkbToGeoJson(Arg.Any<byte[]?>()).Returns((string?)null);
         using var services = new ServiceCollection()
             .AddSingleton<IMetadataV2GraphProvider>(graph)
             .AddSingleton(defaultReader)
             .AddSingleton(new FeatureProviderQueryRouter(connections, new FeatureDataProviderRegistry([provider])))
-            .AddSingleton(Substitute.For<IGeometryService>())
+            .AddSingleton(geometry)
             .AddSingleton(Substitute.For<IFilterExpressionService>())
             .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
             .AddOptions<RbacOptions>().Services
@@ -91,7 +93,7 @@ public sealed class McpProviderRoutingTests
         }, CancellationToken.None);
 
         response!.Error.Should().BeNull();
-        response.Result!.Value.GetProperty("isError").GetBoolean().Should().BeFalse();
+        response.Result!.Value.GetProperty("isError").GetBoolean().Should().BeFalse(response.Result.Value.ToString());
         var output = response.Result.Value.GetProperty("structuredContent");
         output.GetProperty(toolName == DescribeLayerTool.ToolName ? "rowCount" : "count").GetInt64().Should().Be(17);
         if (toolName == QueryFeaturesTool.ToolName && !countOnly)
