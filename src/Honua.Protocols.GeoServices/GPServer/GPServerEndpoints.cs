@@ -1614,7 +1614,9 @@ internal static class GPServerEndpoints
                 Name = parameter.Name,
                 DisplayName = parameter.DisplayName,
                 Description = parameter.Description,
-                DataType = GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
+                DataType = parameter.AcceptsGeoJsonDataUri
+                    ? "GPFeatureRecordSetLayer"
+                    : GPServerParameterTranslation.ToEsriDataType(parameter.ValueType),
                 Direction = "esriGPParameterDirectionInput",
                 DefaultValue = parameter.DefaultValue,
                 ParameterType = parameter.Required

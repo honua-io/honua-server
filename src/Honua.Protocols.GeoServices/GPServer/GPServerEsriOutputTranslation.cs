@@ -93,7 +93,9 @@ internal static class GPServerEsriOutputTranslation
                 }
                 geometryType = type;
                 esri = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                    new WKBWriter(ByteOrder.LittleEndian, true, true, true).Write(nts), srid > 0 ? srid : null);
+                    new WKBWriter(ByteOrder.LittleEndian, true,
+                        nts.Coordinates.Any(coordinate => !double.IsNaN(coordinate.Z)),
+                        nts.Coordinates.Any(coordinate => !double.IsNaN(coordinate.M))).Write(nts), srid > 0 ? srid : null);
             }
             geometries.Add(esri);
         }

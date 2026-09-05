@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
-using System.Text;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using NetTopologySuite.IO;
 
@@ -50,6 +49,7 @@ internal static class GPServerEsriInputTranslation
     /// place). Values may be simple strings, base64 WKB, GP unit objects, or
     /// Esri geometry / FeatureSet JSON.
     /// </param>
+    /// <param name="featureCollectionParameters">Catalog parameters consuming complete FeatureCollections.</param>
     public static EsriInputTranslationResult Translate(
         IReadOnlyDictionary<string, string> inputs,
         IReadOnlySet<string>? featureCollectionParameters = null)

@@ -193,7 +193,7 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
             return new GPResult(
                 root.GetProperty("paramName").GetString()!,
                 root.GetProperty("dataType").GetString()!,
-                root.GetProperty("value").GetString()!);
+                root.GetProperty("value").GetProperty("url").GetString()!);
         }
 
         public async Task<GPError> SubmitBufferJobExpectingErrorAsync(
