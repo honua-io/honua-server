@@ -514,7 +514,7 @@ internal sealed class FileBackedLicenseService :
             await WriteLicenseFileAsync(options.LicensePath, licenseData, CancellationToken.None).ConfigureAwait(false);
             return new LicenseUploadResult(true, "License applied.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             LicenseRuntimeLog.LicenseUploadSaveFailed(_logger, ex);
             return new LicenseUploadResult(true,
