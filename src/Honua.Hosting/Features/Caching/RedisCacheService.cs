@@ -57,6 +57,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private Task<bool>? _activeHealthProbe;
     private Task? _disposeTask;
     private readonly string _healthCheckKey = HealthCheckKey + ":" + Guid.NewGuid().ToString("N");
+    private readonly string _healthIndexKey = CacheKeyIndexKey + ":probe:" + Guid.NewGuid().ToString("N");
     // Bounded set of invalidation keys that failed to reach Redis during an outage and
     // must be replayed when the connection is restored.
     private readonly ConcurrentQueue<string> _pendingInvalidationKeys = new();
@@ -734,12 +735,26 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             }
             else
             {
+                // IDistributedCache has no cross-replica atomic update primitive. Read
+                // the production index, but exercise writes on a reserved index entry
+                // so a probe cannot overwrite a concurrent application's index update.
+                var indexProbeKey = GetPrefixedKey(_healthIndexKey);
                 try
                 {
                     await _distributedCache!.SetAsync(healthKey, HealthCheckValue,
                         new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
                         cancellationToken).ConfigureAwait(false);
-                    await TrackIndexedKeyAsync(healthKey, cancellationToken).ConfigureAwait(false);
+                    await LoadDistributedIndexedKeysAsync(cancellationToken).ConfigureAwait(false);
+                    var indexData = JsonSerializer.SerializeToUtf8Bytes(
+                        new CachedCacheKeyIndex([healthKey]), CacheJsonContext.Default.CachedCacheKeyIndex);
+                    await _distributedCache.SetAsync(indexProbeKey, indexData,
+                        new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = HealthCheckTtl },
+                        cancellationToken).ConfigureAwait(false);
+                    var cachedIndex = await _distributedCache.GetAsync(indexProbeKey, cancellationToken).ConfigureAwait(false);
+                    if (cachedIndex is null || !cachedIndex.AsSpan().SequenceEqual(indexData))
+                    {
+                        return false;
+                    }
                     cachedValue = await _distributedCache.GetAsync(healthKey, cancellationToken).ConfigureAwait(false);
                 }
                 finally
@@ -750,7 +765,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                     }
                     finally
                     {
-                        await RemoveIndexedKeyAsync(healthKey, CancellationToken.None).ConfigureAwait(false);
+                        await _distributedCache!.RemoveAsync(indexProbeKey, CancellationToken.None).ConfigureAwait(false);
                     }
                 }
             }

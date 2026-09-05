@@ -507,10 +507,17 @@ public sealed class RedisCacheServiceTests : IDisposable
                 return Task.CompletedTask;
             });
         var distributedRead = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var probeEntries = new ConcurrentDictionary<string, byte[]>();
+        distributedCache.SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<DistributedCacheEntryOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                probeEntries[call.ArgAt<string>(0)] = call.ArgAt<byte[]>(1);
+                return Task.CompletedTask;
+            });
         distributedCache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(call => call.ArgAt<string>(0).EndsWith("__cache_key_index__", StringComparison.Ordinal)
-                ? Task.FromResult<byte[]?>(null)
-                : distributedRead.Task);
+            .Returns(call => call.ArgAt<string>(0).Contains("__health_check__", StringComparison.Ordinal)
+                ? distributedRead.Task
+                : Task.FromResult(probeEntries.TryGetValue(call.ArgAt<string>(0), out var value) ? value : null));
         var redis = Substitute.For<IConnectionMultiplexer>();
         var database = Substitute.For<IDatabase>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
