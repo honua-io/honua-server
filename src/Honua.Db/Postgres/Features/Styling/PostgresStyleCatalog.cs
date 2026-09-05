@@ -342,12 +342,53 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
             """;
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        // Serialize association changes per layer, including an initially empty
+        // association set. A primary promotion must never leave two ordinal-zero
+        // styles visible to catalog readers or graph reconciliation.
+        await using (var lockCommand = new NpgsqlCommand(
+            $"SELECT layer_id FROM {_layersTable} WHERE layer_id = @layerId FOR UPDATE", connection, transaction))
+        {
+            _ = lockCommand.Parameters.AddWithValue("@layerId", layerId);
+            if (await lockCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
+            {
+                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         _ = command.Parameters.AddWithValue("@layerId", layerId);
         _ = command.Parameters.AddWithValue("@styleId", styleId);
         _ = command.Parameters.AddWithValue("@ordinal", ordinal);
 
         var affected = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (affected > 0 && ordinal == 0)
+        {
+            var reorderSql = $"""
+                WITH last_alternate AS (
+                    SELECT COALESCE(MAX(ordinal), 0) AS ordinal
+                    FROM {_refsTable}
+                    WHERE layer_id = @layerId
+                ), demoted AS (
+                    SELECT style_id,
+                        (SELECT ordinal FROM last_alternate) + ROW_NUMBER() OVER (ORDER BY style_id)::integer AS new_ordinal
+                    FROM {_refsTable}
+                    WHERE layer_id = @layerId AND style_id <> @styleId AND ordinal = 0
+                )
+                UPDATE {_refsTable} AS refs
+                SET ordinal = demoted.new_ordinal
+                FROM demoted
+                WHERE refs.layer_id = @layerId AND refs.style_id = demoted.style_id
+                """;
+            await using var reorder = new NpgsqlCommand(reorderSql, connection, transaction);
+            _ = reorder.Parameters.AddWithValue("@layerId", layerId);
+            _ = reorder.Parameters.AddWithValue("@styleId", styleId);
+            _ = await reorder.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return affected > 0;
     }
 
