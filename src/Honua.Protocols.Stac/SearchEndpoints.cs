@@ -399,14 +399,6 @@ internal static class SearchEndpoints
                     break;
                 }
 
-                // An unknown acquisition time cannot intersect a requested interval. Do not
-                // let the legacy display fallback turn undated rows into time-search matches.
-                if (!string.IsNullOrWhiteSpace(request.Datetime) &&
-                    StacFilterHelpers.ResolveTemporalField(target.Resource, out _) is null)
-                {
-                    continue;
-                }
-
                 var isStorageBound = !string.IsNullOrEmpty(target.Publication.StorageBindingId);
                 var layerQueryResult = await TryBuildLayerQuery(
                     request,
@@ -432,6 +424,13 @@ internal static class SearchEndpoints
                 }
 
                 appliedToAnyCollection = true;
+
+                // Validate the other query parameters before excluding an undated collection.
+                // A display fallback is not an acquisition time and cannot supply a match.
+                if (!string.IsNullOrWhiteSpace(request.Datetime) && layerQueryResult.Query.TemporalFilter is null)
+                {
+                    continue;
+                }
 
                 var query = layerQueryResult.Query;
                 var projection = layerQueryResult.Projection;
@@ -512,7 +511,8 @@ internal static class SearchEndpoints
                 if (globallyOrderedCandidates is not null && requestedItemIds is { Length: > 0 } unboundItemIds)
                 {
                     var candidateLimit = checked(unboundItemIds.Length + 1);
-                    var result = await targetReader.QueryAsync(
+                    var result = await StacPageReader.ReadAsync(
+                        targetReader,
                         storageLayerId,
                         query with
                         {
@@ -521,14 +521,15 @@ internal static class SearchEndpoints
                             OrderBy = null,
                             OutFields = null
                         },
+                        true,
                         cancellationToken).ConfigureAwait(false);
-                    if (result.TotalCount > unboundItemIds.Length || result.Features.Length > unboundItemIds.Length)
+                    if (result.TotalCount > unboundItemIds.Length || result.Items.Length > unboundItemIds.Length || result.HasMoreResults)
                     {
                         throw new InvalidOperationException(
                             $"STAC item id candidate query exceeded the {unboundItemIds.Length}-feature safety limit.");
                     }
 
-                    var incomingCount = checked((int)Math.Max(result.TotalCount, result.Features.Length));
+                    var incomingCount = result.Items.Length;
                     if (ExceedsGlobalCandidateBudget(globallyOrderedCandidates.Count, incomingCount))
                     {
                         StacTelemetry.SetFailed(activity, "aggregate_id_candidate_limit");
@@ -538,7 +539,7 @@ internal static class SearchEndpoints
                     }
 
                     totalMatched += incomingCount;
-                    globallyOrderedCandidates.AddRange(result.Features.Select(feature =>
+                    globallyOrderedCandidates.AddRange(result.Items.Select(feature =>
                         new GlobalSearchCandidate(feature, target, projection)));
                     continue;
                 }

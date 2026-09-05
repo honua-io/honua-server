@@ -240,8 +240,8 @@ internal static class StacFilterHelpers
     /// temporal field via <paramref name="endTimeField"/>.  When the resource declares an
     /// explicit start time field the configured end time field is propagated (matching the
     /// OGC/GeoServices construction) so interval rows are filtered as
-    /// <c>[start, end]</c> rather than as instants.  The fallback schema scan resolves only a
-    /// single (instant) field and leaves <paramref name="endTimeField"/> null.
+    /// <c>[start, end]</c> rather than as instants. The fallback schema scan also recognizes a
+    /// typed start_datetime/end_datetime pair; other fallback fields represent instants.
     /// </summary>
     internal static string? ResolveTemporalField(MetadataV2Resource resource, out string? endTimeField)
     {
@@ -274,6 +274,12 @@ internal static class StacFilterHelpers
 
             if (temporalField is not null)
             {
+                if (string.Equals(temporalField.Name, "start_datetime", StringComparison.OrdinalIgnoreCase))
+                {
+                    endTimeField = resource.SchemaFields.FirstOrDefault(field =>
+                        string.Equals(field.Name, "end_datetime", StringComparison.OrdinalIgnoreCase) &&
+                        field.Type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time)?.Name;
+                }
                 return temporalField.Name;
             }
         }

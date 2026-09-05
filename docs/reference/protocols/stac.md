@@ -58,7 +58,7 @@ Clients should follow `next` links until absent; pagination does not require a m
 Providers implementing the shared count-free paging capability avoid exact counts. Other
 providers retain their normal query fallback. Cross-collection offsets consume skipped rows
 in bounded pages, so memory remains bounded, but large offsets still require proportionate
-read work. Prefer following the returned continuation links to reconstructing offsets.
+read work.
 
 ## Conformance classes
 
@@ -92,6 +92,9 @@ The Item Search Filter Extension is conformant against `stac-api-validator` (`--
 In the [API explorer](../openapi-and-explorer.md), run `POST /stac/search` with `{"collections":["imagery"],"bbox":[-122.5,37.7,-122.3,37.9],"datetime":"2025-01-01T00:00:00Z/..","limit":10}`.
 
 A read-only open-data STAC projection is also published per dataset under `/api/v1/open-data/stac` for datasets opted into open-data publication.
+Its item dates and collection intervals use UTC. Set `Public:BaseUrl` (or `PUBLIC_BASE_URL`)
+to the externally reachable origin and any deployment path prefix so exported STAC links
+remain resolvable outside the request that retrieved them.
 
 ## Conformance
 

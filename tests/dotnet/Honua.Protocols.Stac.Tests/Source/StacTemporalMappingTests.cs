@@ -25,7 +25,8 @@ public sealed class StacTemporalMappingTests
 
         var item = StacMappingService.MapFeatureToItem(feature, resource, new MetadataV2Publication(), 0, "https://example.test");
 
-        item.Properties["honua:datetime_source"].Should().Be("unknown");
+        item.Properties.Should().NotBeNull();
+        item.Properties!["honua:datetime_source"].Should().Be("unknown");
         StacFilterHelpers.ParseDatetime("2024-01-01T00:00:00Z", resource).Should().BeNull();
     }
 
@@ -47,7 +48,8 @@ public sealed class StacTemporalMappingTests
         var collection = await StacMappingService.MapResourceToCollectionAsync(
             resource, new MetadataV2Publication(), new MetadataV2Service(), 0, reader, "https://example.test", null, CancellationToken.None);
 
-        item.Properties["datetime"].Should().Be(instant.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+        item.Properties.Should().NotBeNull();
+        item.Properties!["datetime"].Should().Be(instant.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
         filter!.Value.PropertyName.Should().Be("TIMESTAMP");
         collection.Extent.Temporal.Interval.Single().Should().OnlyContain(value => value != null);
     }

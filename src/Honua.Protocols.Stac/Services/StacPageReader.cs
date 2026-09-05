@@ -16,7 +16,15 @@ internal static class StacPageReader
         CancellationToken cancellationToken,
         long? knownCount = null)
     {
+        if ((omitCount || knownCount.HasValue) && reader is IPagedFeatureReader pagedReader)
+        {
+            var page = await pagedReader.QueryPageAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            return page with { TotalCount = omitCount ? null : knownCount ?? page.TotalCount };
+        }
+
+        // Providers without the optional capability retain their normal query behavior.
         var result = await reader.QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
-        return PagedQueryResult<Feature>.Create(result.Features, result.HasMoreResults, result.TotalCount);
+        var hasMore = result.HasMoreResults || result.TotalCount > (long)(query.Offset ?? 0) + result.Features.Length;
+        return PagedQueryResult<Feature>.Create(result.Features, hasMore, omitCount ? null : knownCount ?? result.TotalCount);
     }
 }

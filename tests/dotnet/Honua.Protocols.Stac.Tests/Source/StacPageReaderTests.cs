@@ -21,6 +21,8 @@ public sealed class StacPageReaderTests
         var reader = Substitute.For<IFeatureReader, IPagedFeatureReader>();
         var query = new FeatureQuery { Limit = 1, Offset = 10 };
         var features = ImmutableArray.Create(Feature.Create(11, null));
+        reader.QueryAsync(1, query, CancellationToken.None)
+            .Returns(QueryResult<Feature>.Create(100, features, true));
         ((IPagedFeatureReader)reader).QueryPageAsync(1, query, CancellationToken.None)
             .Returns(PagedQueryResult<Feature>.Create(features, true));
 
@@ -31,5 +33,23 @@ public sealed class StacPageReaderTests
         page.TotalCount.Should().Be(omitCount ? null : knownCount);
         await reader.DidNotReceiveWithAnyArgs().QueryAsync(default, default!, default);
         await reader.DidNotReceiveWithAnyArgs().CountAsync(default, default!, default);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReaderWithoutPagingCapability_PreservesQueryFallbackAndNextPage(bool omitCount)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var query = new FeatureQuery { Limit = 1, Offset = 1 };
+        var features = ImmutableArray.Create(Feature.Create(2, null));
+        reader.QueryAsync(1, query, CancellationToken.None).Returns(QueryResult<Feature>.Create(5, features));
+
+        var page = await StacPageReader.ReadAsync(reader, 1, query, omitCount, CancellationToken.None);
+
+        page.Items.Should().Equal(features);
+        page.HasMoreResults.Should().BeTrue();
+        page.TotalCount.Should().Be(omitCount ? null : 5);
+        await reader.Received(1).QueryAsync(1, query, CancellationToken.None);
     }
 }

@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Protocols.Stac;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -39,10 +40,15 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
         _reader.CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(3L);
         ((IPagedFeatureReader)_reader).QueryPageAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(call => Page(call.ArgAt<int>(0), call.ArgAt<FeatureQuery>(1)));
+        var provider = Substitute.For<IFeatureDataProvider, IBindableFeatureDataProvider>();
+        provider.ProviderName.Returns("postgis");
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        provider.Reader.Returns(_reader);
+        ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(Arg.Any<FeatureProviderBinding>()).Returns(_reader);
         _fixture = new WebAppFixture().ConfigureServices(services =>
         {
-            services.RemoveAll<IFeatureReader>();
-            services.AddSingleton(_reader);
+            services.RemoveAll<IFeatureDataProvider>();
+            services.AddSingleton(provider);
             services.PostConfigure<StacOptions>(options => options.NumberMatchedPolicy = StacNumberMatchedPolicy.OmitWhenExpensive);
         });
     }
@@ -51,9 +57,21 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
     {
         await _fixture.InitializeAsync();
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var primaryPublication = snapshot.Graph.Publications.First(p => p.LayerIndex == 0);
+        var primaryBinding = snapshot.Graph.StorageBindings.First(b => b.ResourceId == primaryPublication.ResourceId && b.StorageLayerId.HasValue);
+        var secondaryPublication = snapshot.Graph.Publications.First(p => p.LayerIndex == 1);
+        var secondaryBinding = primaryBinding with
+        {
+            Metadata = primaryBinding.Metadata with { Id = $"{primaryBinding.Metadata.Id}-paging-secondary" },
+            ResourceId = secondaryPublication.ResourceId,
+            StorageLayerId = 1
+        };
         _fixture.GetService<TestMetadataV2GraphProvider>().SetGraph(snapshot.Graph with
         {
-            Publications = snapshot.Graph.Publications.Select(p => p with { StorageBindingId = null }).ToArray(),
+            Publications = snapshot.Graph.Publications.Select(p => p.LayerIndex is 0 or 1
+                ? p with { StorageBindingId = p.LayerIndex == 0 ? primaryBinding.Metadata.Id : secondaryBinding.Metadata.Id }
+                : p).ToArray(),
+            StorageBindings = [.. snapshot.Graph.StorageBindings, secondaryBinding],
             Revision = snapshot.Graph.Revision + 1
         }, schema: _fixture.CurrentSchema);
         _reader.ClearReceivedCalls();
@@ -124,7 +142,7 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
         var limit = query.Limit ?? 2;
         var features = Enumerable.Range(0, 3).Skip(offset).Take(limit)
             .Select(i => Feature.Create(i, null, ImmutableDictionary<string, object?>.Empty
-                .Add("stac_id", $"{layerId}-{i}").Add("timestamp", DateTimeOffset.UnixEpoch))).ToImmutableArray();
+                .Add("stac_id", $"{layerId}-{i}").Add("timestamp", "2024-01-01T00:00:00Z"))).ToImmutableArray();
         return PagedQueryResult<Feature>.Create(features, offset + features.Length < 3);
     }
 }
