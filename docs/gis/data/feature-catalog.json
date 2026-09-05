@@ -6493,7 +6493,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6509,7 +6509,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6525,7 +6525,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6541,7 +6541,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6573,7 +6573,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesOversizeDepthTests.Coverage_NativeSizeExceedsCap_WithoutSubsetting_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6589,7 +6589,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6603,7 +6603,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {
@@ -6619,7 +6619,7 @@
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.OpenApiDocuments_OidcEnabled_TenantlessValidBearer_ContinuePastTenantResolution"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
-      "maturity": "implemented",
+      "maturity": "preview",
       "capability": "serve.ogc-api-coverages"
     },
     {

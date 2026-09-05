@@ -309,6 +309,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // operator ruling (honua-release#266 / #264).
             ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             ("serve.wmts", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
+            ("serve.ogc-api-coverages", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             // Customer alerting ships as Preview in 2026.1 by operator ruling
             // (2026-09-04). The implementation and qualification coverage remain,
             // but the surface stays off by default behind the canonical opt-in.
@@ -363,7 +364,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
                 Category = category,
                 Kind = kind,
                 Maturity = maturity,
-                RequiresOptIn = id is not ("serve.geoservices-imageserver" or "serve.wmts"),
+                RequiresOptIn = id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"),
                 EntitlementKey = entitlementKey,
                 MinimumEdition = ResolveMinimumEdition(entitlementKey),
                 PackageSchemaVersion = packageSchemaVersion,

@@ -213,11 +213,11 @@ public sealed class CapabilityKeyDriftTests
     }
 
     [ArchitectureTest]
-    public void ImageServerAndWmts_ArePreviewInRegistryAndEveryCatalogProjection()
+    public void RasterAndEnvironmentalSurfaces_ArePreviewInRegistryAndEveryCatalogProjection()
     {
         var registry = new CapabilityRegistry();
         var catalog = LoadCommittedCatalog();
-        foreach (var capability in new[] { "serve.geoservices-imageserver", "serve.wmts" })
+        foreach (var capability in new[] { "serve.geoservices-imageserver", "serve.wmts", "serve.ogc-api-coverages", "serve.ogc-api-edr" })
         {
             registry.Find(capability).Should().NotBeNull();
             registry.Find(capability)!.Maturity.Should().Be(CapabilityMaturity.Preview);

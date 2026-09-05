@@ -1756,7 +1756,7 @@
       "displayName": "ImageServer",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "preview",
       "entryCount": 142,
       "provingTestCount": 376,
       "maturity": {
@@ -1974,11 +1974,11 @@
       "displayName": "OGC API Coverages",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "preview",
       "entryCount": 8,
       "provingTestCount": 37,
       "maturity": {
-        "implemented": 8
+        "preview": 8
       },
       "noSurface": null,
       "cite": [],
@@ -2390,7 +2390,7 @@
       "displayName": "WMTS 1.0",
       "category": "Serve",
       "edition": "Community",
-      "status": null,
+      "status": "preview",
       "entryCount": 1,
       "provingTestCount": 6,
       "maturity": {
