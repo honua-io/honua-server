@@ -97,13 +97,13 @@ internal static partial class Wps20Endpoint
         }
 
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("ogc.wps." + request.Operation.ToLowerInvariant());
-        activity?.SetTag(HonuaTelemetry.Tags.Protocol, "WPS-2.0.2");
+        activity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wps20);
         activity?.SetTag(HonuaTelemetry.Tags.Operation, request.Operation);
         if (request.JobId is not null)
         {
             activity?.SetTag(HonuaTelemetry.Tags.JobId, request.JobId);
         }
-        context.Items["__honua_request_operation"] = "wps." + request.Operation.ToLowerInvariant();
+        context.Items[RequestTelemetryClassifier.OperationItemKey] = "wps." + request.Operation.ToLowerInvariant();
         Log.OperationRequested(logger, request.Operation);
 
         try

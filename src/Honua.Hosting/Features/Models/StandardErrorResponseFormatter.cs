@@ -59,8 +59,17 @@ internal static class StandardErrorResponseFormatter
         options ??= new ErrorResponseFormatterOptions();
 
         TryRecordRecentError(context, errorResponse);
-        RecordErrorTelemetry(context, errorResponse.StatusCode);
+        var result = FormatProtocolError(context, errorResponse, options);
+        // The envelope's logical error code can differ from the transport status
+        // (GeoServices errors are HTTP 200). Observe the selected result, including
+        // protocol aliases, instead of inferring transport semantics from the path.
+        var httpStatusCode = (result as IStatusCodeHttpResult)?.StatusCode ?? errorResponse.StatusCode;
+        RecordErrorTelemetry(context, errorResponse.StatusCode, httpStatusCode);
+        return result;
+    }
 
+    private static IResult FormatProtocolError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
         var path = context.Request.Path;
 
         if (ProtocolRequestClassifier.IsOData(path))
@@ -533,11 +542,12 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     /// <param name="context">The HTTP context for protocol/operation classification.</param>
     /// <param name="statusCode">The HTTP status carried by the error envelope.</param>
-    internal static void RecordErrorTelemetry(HttpContext context, int statusCode)
+    /// <param name="httpStatusCode">Actual HTTP response status, when different from the logical error code.</param>
+    internal static void RecordErrorTelemetry(HttpContext context, int statusCode, int? httpStatusCode = null)
     {
         var path = context.Request.Path;
         var (serviceType, isGeoServices) = ClassifyServiceType(path);
-        HonuaTelemetry.RecordErrorEnvelope(serviceType, ResolveOperation(path), statusCode, isGeoServices);
+        HonuaTelemetry.RecordErrorEnvelope(serviceType, ResolveOperation(path), statusCode, isGeoServices, httpStatusCode);
     }
 
     private static readonly string[] GeoServicesServiceTypes =

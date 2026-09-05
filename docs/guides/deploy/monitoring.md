@@ -80,6 +80,13 @@ On Azure Monitor managed Prometheus, define rule-group resources (ARM/Bicep/Terr
 helm install monitoring prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace
 ```
 
+The standalone error-rate alerts aggregate protocol, operation, and status dimensions within each Prometheus `job`/`instance` before dividing error envelopes by serving requests. This keeps the two different instrument label sets compatible and prevents healthy instances from masking an instance outage. Validate the complete standalone ruleset and its firing thresholds from the repository root:
+
+```bash
+cd docs/guides/deploy/examples
+promtool test rules prometheus-alerts.test.yml
+```
+
 5. (Optional one-command Docker depth) For local or single-node deployments that also need Grafana and Prometheus, bring up the curated bundle - provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards - against a running server:
 
 ```bash

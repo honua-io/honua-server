@@ -62,9 +62,9 @@ public sealed class GeoServicesErrorTelemetryTests
     }
 
     [Fact]
-    public void FormatError_GeoServicesSub500Error_IncrementsCountersWithInBandFalse()
+    public void FormatError_GeoServicesSub500Error_IncrementsCountersWithInBandTrue()
     {
-        // Arrange: a sub-500 error returned with its real HTTP status (400).
+        // Arrange: logical 400 is returned inside the GeoServices HTTP-200 envelope.
         var context = CreateContext("/rest/services/0/FeatureServer/0/query");
         var errorResponse = StandardErrorResponse.BadRequest("Invalid where clause");
 
@@ -86,8 +86,8 @@ public sealed class GeoServicesErrorTelemetryTests
                 "honua_request_error_total",
                 ("service_type", "FeatureServer"),
                 ("error_code", StatusCodes.Status400BadRequest),
-                ("in_band", false))
-            .Should().ContainSingle("a 4xx status is reflected by the HTTP transport (in_band=false)");
+                ("in_band", true))
+            .Should().ContainSingle("the logical 400 error is returned over HTTP 200 (in_band=true)");
     }
 
     [Fact]

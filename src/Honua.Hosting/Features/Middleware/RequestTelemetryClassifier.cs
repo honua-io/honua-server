@@ -68,6 +68,11 @@ internal static class RequestTelemetryClassifier
             return HonuaTelemetry.Protocols.OgcRecords;
         }
 
+        if (StartsWithPathSegment(value, "/wps"))
+        {
+            return HonuaTelemetry.Protocols.Wps20;
+        }
+
         if (StartsWithPathSegment(value, "/wfs"))
         {
             return HonuaTelemetry.Protocols.Wfs20;
@@ -247,6 +252,11 @@ internal static class RequestTelemetryClassifier
         if (path.Contains("/GPServer", StringComparison.OrdinalIgnoreCase))
         {
             return ResolveGpServerOperation(path);
+        }
+
+        if (StartsWithPathSegment(path, "/wps"))
+        {
+            return ResolveQueryRequestOperation(context, "wps");
         }
 
         if (StartsWithPathSegment(path, "/wfs"))

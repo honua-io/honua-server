@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Geoprocessing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Classic.Wps20;
@@ -48,7 +49,7 @@ public sealed class ServingObservabilityContractTests
         Assert.Equal(errorCode, inBand
             ? json.RootElement.GetProperty("error").GetProperty("code").GetInt32()
             : json.RootElement.GetProperty("status").GetInt32());
-        var error = Assert.Single(metrics.Samples.Where(sample => sample.Name == "honua_request_error_total"));
+        var error = Assert.Single(metrics.Samples, sample => sample.Name == "honua_request_error_total");
         Assert.Equal(1, error.Value);
         Assert.Equal(errorCode, error.Tags["error_code"]);
         Assert.Equal(inBand, error.Tags["in_band"]);
@@ -95,7 +96,7 @@ public sealed class ServingObservabilityContractTests
 
         Assert.Equal(statusCode, (int)response.StatusCode);
         Assert.Contains(statusCode == 200 ? "Capabilities" : "NoSuchProcess", xml, StringComparison.Ordinal);
-        var serving = Assert.Single(metrics.Samples.Where(sample => sample.Name == "honua_serving_request_duration_ms"));
+        var serving = Assert.Single(metrics.Samples, sample => sample.Name == "honua_serving_request_duration_ms");
         Assert.True(serving.Value >= 0);
         Assert.Equal("WPS-2.0.2", serving.Tags[HonuaTelemetry.Tags.Protocol]);
         Assert.Equal(telemetryOperation, serving.Tags[HonuaTelemetry.Tags.Operation]);

@@ -201,7 +201,8 @@ public static class HonuaTelemetry
     /// <param name="operation">The logical operation (e.g. query, addfeatures) or "unknown".</param>
     /// <param name="errorCode">The error code carried in the envelope (HTTP status or GeoServices code).</param>
     /// <param name="isGeoServices">When true, also increments the GeoServices-specific counter.</param>
-    public static void RecordErrorEnvelope(string serviceType, string operation, int errorCode, bool isGeoServices)
+    /// <param name="httpStatusCode">Actual HTTP response status, when different from the logical error code.</param>
+    public static void RecordErrorEnvelope(string serviceType, string operation, int errorCode, bool isGeoServices, int? httpStatusCode = null)
     {
         serviceType = string.IsNullOrWhiteSpace(serviceType) ? "unknown" : serviceType;
         operation = string.IsNullOrWhiteSpace(operation) ? "unknown" : operation;
@@ -210,7 +211,7 @@ public static class HonuaTelemetry
         // the body carries an {error} envelope but the transport status reads
         // success, so load-balancer/SLO 5xx metrics never see it. This is the
         // keystone signal the audit is blind to today.
-        var inBand = errorCode < 400;
+        var inBand = (httpStatusCode ?? errorCode) < 400;
 
         var requestTags = new TagList
         {
@@ -532,6 +533,9 @@ public static class HonuaTelemetry
 
         /// <summary>OGC Web Coverage Service 2.0.1.</summary>
         public const string Wcs20 = "WCS-2.0.1";
+
+        /// <summary>OGC Web Processing Service 2.0.2.</summary>
+        public const string Wps20 = "WPS-2.0.2";
 
         /// <summary>Real-time feature-change streaming (WebSocket/SSE).</summary>
         public const string Streaming = "Streaming";
