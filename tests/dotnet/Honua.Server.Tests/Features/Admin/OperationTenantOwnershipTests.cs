@@ -42,7 +42,7 @@ public sealed class OperationTenantOwnershipTests
         var context = Context(services);
         var result = await Invoke(typeof(ProposalEndpoints), handler, context, store, gateway);
         ((IStatusCodeHttpResult)result).StatusCode.Should().Be(404);
-        await gateway.DidNotReceiveWithAnyArgs().ApplyApprovedProposalAsync(default!, default!, default);
+        await gateway.DidNotReceiveWithAnyArgs().ApplyApprovedProposalAsync(default!, default(string)!, default);
         await gateway.DidNotReceiveWithAnyArgs().RejectProposalAsync(default!, default!, default!, default);
     }
 
@@ -50,11 +50,22 @@ public sealed class OperationTenantOwnershipTests
     [InlineData("tenant-a", "admin", 1)]
     [InlineData("tenant-b", "admin", 0)]
     [InlineData("tenant-b", "platform_admin", 1)]
-    public async Task ListProposals_FiltersByTenantUnlessExplicitCrossTenantRole(string tenant, string role, int count)
+    [InlineData("tenant-a", "admin", 1, "tenant-a")]
+    [InlineData("tenant-a", "admin", 0, "tenant-b")]
+    [InlineData("tenant-b", "admin", 0, "tenant-b")]
+    [InlineData("tenant-b", "platform_admin", 0, "tenant-a")]
+    public async Task ListProposals_FiltersByTenantUnlessExplicitCrossTenantRole(
+        string tenant, string role, int count, string? evidenceTenant = null)
     {
         var store = Substitute.For<IOperationProposalStore>();
         store.ListActiveAsync(Arg.Any<Honua.Core.Features.Guardrails.Domain.OperationClass?>(), Arg.Any<CancellationToken>())
-            .Returns(new[] { Proposal("tenant-a") });
+            .Returns(new[]
+            {
+                Proposal("tenant-a") with
+                {
+                    Evidence = evidenceTenant is null ? null : ProposalTenantOwnershipTests.Evidence(evidenceTenant),
+                },
+            });
         using var services = Services(tenant, store);
         var result = await Invoke(typeof(ProposalEndpoints), "HandleListProposals", Context(services, role), store);
         var response = (ProposalListResponse)((IValueHttpResult)result).Value!;
@@ -87,6 +98,28 @@ public sealed class OperationTenantOwnershipTests
         using var services = Services("tenant-a", store);
         var result = await Invoke(typeof(ProposalEndpoints), "HandleGetProposal", Context(services, role), store);
         (((IStatusCodeHttpResult)result).StatusCode ?? 200).Should().Be(status);
+    }
+
+    [Theory]
+    [InlineData("HandleGetProposal", "tenant-a", "tenant-b", "admin")]
+    [InlineData("HandleGetProposal", "tenant-b", "tenant-b", "admin")]
+    [InlineData("HandleGetProposal", "tenant-b", "tenant-a", "platform_admin")]
+    [InlineData("HandleRejectProposal", "tenant-a", "tenant-b", "admin")]
+    [InlineData("HandleRejectProposal", "tenant-b", "tenant-b", "admin")]
+    [InlineData("HandleRejectProposal", "tenant-b", "tenant-a", "platform_admin")]
+    public async Task ProposalEndpoint_EitherOwnershipOrEvidenceTenantMismatch_ReturnsNotFound(
+        string handler, string tenant, string evidenceTenant, string role)
+    {
+        var proposal = Proposal("tenant-a") with { Evidence = ProposalTenantOwnershipTests.Evidence(evidenceTenant) };
+        var store = Substitute.For<IOperationProposalStore>();
+        store.GetAsync("proposal-a", Arg.Any<CancellationToken>()).Returns(proposal);
+        var gateway = Substitute.For<IOperationGateway>();
+        using var services = Services(tenant, store);
+
+        var result = await Invoke(typeof(ProposalEndpoints), handler, Context(services, role), store, gateway);
+
+        ((IStatusCodeHttpResult)result).StatusCode.Should().Be(404);
+        await gateway.DidNotReceiveWithAnyArgs().RejectProposalAsync(default!, default!, default!, default);
     }
 
     [Fact]
@@ -170,6 +203,7 @@ public sealed class OperationTenantOwnershipTests
         var args = method.GetParameters().Select(parameter => parameter.Name switch
         {
             "context" => (object)context,
+            "tenantContext" => context.RequestServices.GetService<ITenantContext>(),
             "id" => "proposal-a",
             "handleId" => "handle-a",
             "proposalStore" => store,
