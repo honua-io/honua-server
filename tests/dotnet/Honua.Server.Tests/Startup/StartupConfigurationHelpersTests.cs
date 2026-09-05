@@ -88,8 +88,8 @@ public sealed class StartupConfigurationHelpersTests
             configuration.AddJsonFile("appsettings.Production.json");
             configuration.AddInMemoryCollection(new Dictionary<string, string?> { [key] = reference });
             var resolver = Substitute.For<IConnectionSecretResolver>();
-            resolver.CanResolve(reference).Returns(true);
-            resolver.ResolveSecretAsync(reference, Arg.Any<CancellationToken>()).Returns(resolved);
+            resolver.CanResolveSecretAsync(reference, Arg.Any<CancellationToken>()).Returns(true);
+            resolver.ResolveConnectionStringAsync(reference, Arg.Any<CancellationToken>()).Returns(resolved);
             var environment = Substitute.For<IHostEnvironment>();
             environment.EnvironmentName.Returns(Environments.Production);
 
@@ -97,7 +97,8 @@ public sealed class StartupConfigurationHelpersTests
             StartupConfigurationHelpers.AddSecurityConfiguration(configuration, environment);
 
             string.Equals(configuration[key], resolved, StringComparison.Ordinal).Should().BeTrue();
-            await resolver.Received(1).ResolveSecretAsync(reference, Arg.Any<CancellationToken>());
+            await resolver.Received(1).CanResolveSecretAsync(reference, Arg.Any<CancellationToken>());
+            await resolver.Received(1).ResolveConnectionStringAsync(reference, Arg.Any<CancellationToken>());
         }
         finally
         {
