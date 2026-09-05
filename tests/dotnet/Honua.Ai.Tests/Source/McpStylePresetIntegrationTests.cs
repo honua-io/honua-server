@@ -5,6 +5,8 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin.Models;
@@ -14,6 +16,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -21,7 +24,14 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    // The Test host adds its real Postgres catalog after the production MCP
+    // composition gate runs. Advertise the same concrete style tools once the
+    // fixture supplies that catalog; keep authorization and persistence real.
+    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureServices(services =>
+    {
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ApplyStylePresetTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, GetStyleTool>());
+    });
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
