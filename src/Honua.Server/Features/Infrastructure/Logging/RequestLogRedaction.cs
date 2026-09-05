@@ -42,6 +42,11 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
             return value;
         }
 
+        if (IsSafeDiagnosticIdentifier(name, value))
+        {
+            return value;
+        }
+
         if (IsCredentialName(name) || name.Contains("QueryString", StringComparison.OrdinalIgnoreCase) ||
             name.EndsWith("Headers", StringComparison.OrdinalIgnoreCase))
         {
@@ -61,6 +66,27 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
         };
     }
 
+    private static bool IsSafeDiagnosticIdentifier(string name, LogEventPropertyValue value)
+    {
+        if (value is not ScalarValue { Value: string text })
+        {
+            return false;
+        }
+
+        // These existing diagnostics are derived by LogValueRedactor and the bounded
+        // cache/rate-limit/session family classifiers, never raw cache keys or credentials.
+        // Validate their shapes; the exemptions do not apply to URL parameter names.
+        if (name.Equals("KeyHash", StringComparison.OrdinalIgnoreCase))
+        {
+            return text.Length == 8 && text.All(char.IsAsciiHexDigit);
+        }
+
+        return name.Equals("KeyFamily", StringComparison.OrdinalIgnoreCase) && text is
+            "empty" or "layer" or "service" or "query" or "tile" or "catalog" or "replica" or
+            "schema" or "auth" or "general" or "tenant" or "user" or "ip" or "unknown" or
+            "admin-auth:pending" or "admin-auth:session" or "admin-auth:unknown";
+    }
+
     private static bool IsCredentialName(string name) =>
         name.Contains("key", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("token", StringComparison.OrdinalIgnoreCase) ||
@@ -77,7 +103,10 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
     {
         try
         {
-            return QueryParameter().Replace(text, match =>
+            // Hosting start events run before routing, so matched endpoint metadata is
+            // unavailable there. Scrub the known capability-token paths at the same seam.
+            var safePath = CredentialRoute().Replace(text, "$1" + Redacted);
+            return QueryParameter().Replace(safePath, match =>
                 IsCredentialName(Uri.UnescapeDataString(match.Groups[2].Value))
                     ? string.Concat(match.Groups[1].Value, match.Groups[2].Value, "=", Redacted)
                     : match.Value);
@@ -88,6 +117,9 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
             return Redacted;
         }
     }
+
+    [GeneratedRegex(@"((?:/api/v[0-9]+(?:\.[0-9]+)?/console/share/(?:link|embed)|/wps/conformance/results)/)[^/?#\s]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex CredentialRoute();
 
     [GeneratedRegex(@"([?&])([^?&=\s]+)=([^&\s]*)", RegexOptions.CultureInvariant, 100)]
     private static partial Regex QueryParameter();

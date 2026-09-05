@@ -22,8 +22,12 @@ namespace Honua.Server.Tests.Infrastructure;
 [Trait("Tier", "Fast")]
 public sealed class RequestLogRedactionTests
 {
-    [Fact]
-    public async Task ProductionDiagnostics_RedactsCredentialsBeforeSinksAndProviders()
+    [Theory]
+    [InlineData("/rest/services/demo/FeatureServer/0/query", "GET")]
+    [InlineData("/api/v1/console/share/link/path-marker", "GET")]
+    [InlineData("/api/v1/console/share/embed/path-marker/redeem", "POST")]
+    [InlineData("/wps/conformance/results/path-marker", "GET")]
+    public async Task ProductionDiagnostics_RedactsCredentialsBeforeSinksAndProviders(string path, string method)
     {
         var sink = new CaptureSink();
         var provider = new CaptureProvider();
@@ -44,6 +48,7 @@ public sealed class RequestLogRedactionTests
                 });
                 app.Run(context =>
                 {
+                    Assert.Equal(path, context.Request.Path.Value);
                     Assert.Equal("query-marker", context.Request.Query["token"].ToString());
                     Assert.Equal("Bearer header-marker", context.Request.Headers.Authorization.ToString());
                     return context.Response.WriteAsync("ok");
@@ -51,8 +56,8 @@ public sealed class RequestLogRedactionTests
             }))
             .StartAsync();
         using var client = host.GetTestClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get,
-            "/rest/services/demo/FeatureServer/0/query?token=query-marker&where=email%3Dfilter-marker");
+        using var request = new HttpRequestMessage(new HttpMethod(method),
+            path + "?token=query-marker&where=email%3Dfilter-marker");
         request.Headers.Add("Authorization", "Bearer header-marker");
         request.Headers.Add("X-Api-Key", "key-marker");
         request.Headers.Add("Cookie", "session=cookie-marker");
@@ -72,9 +77,10 @@ public sealed class RequestLogRedactionTests
             formatter.Format(entry, json);
         }
         var forwarded = string.Join('\n', provider.Messages);
-        Assert.Contains("/rest/services/demo/FeatureServer/0/query", rendered, StringComparison.Ordinal);
-        Assert.Contains("/rest/services/demo/FeatureServer/0/query", forwarded, StringComparison.Ordinal);
-        foreach (var marker in new[] { "query-marker", "filter-marker", "header-marker", "key-marker", "cookie-marker" })
+        var safePathPrefix = path.Split("path-marker", StringSplitOptions.None)[0];
+        Assert.Contains(safePathPrefix, rendered, StringComparison.Ordinal);
+        Assert.Contains(safePathPrefix, forwarded, StringComparison.Ordinal);
+        foreach (var marker in new[] { "query-marker", "filter-marker", "header-marker", "key-marker", "cookie-marker", "path-marker" })
         {
             Assert.DoesNotContain(marker, rendered, StringComparison.Ordinal);
             Assert.DoesNotContain(marker, forwarded, StringComparison.Ordinal);
@@ -123,6 +129,31 @@ public sealed class RequestLogRedactionTests
         Assert.DoesNotContain("synthetic-marker", string.Join(' ', entry.Properties.Values), StringComparison.Ordinal);
         Assert.Contains("[REDACTED]", string.Join(' ', entry.Properties.Values), StringComparison.Ordinal);
         Assert.Contains("safe-correlation", entry.RenderMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("KeyHash", "12ab34cd")]
+    [InlineData("KeyFamily", "user")]
+    [InlineData("KeyFamily", "query")]
+    [InlineData("KeyFamily", "admin-auth:session")]
+    public void SafeDiagnosticIdentifiers_RetainCorrelation(string name, string value)
+    {
+        var sink = new CaptureSink();
+        using var logger = new LoggerConfiguration().ConfigureHonuaRequestDiagnostics().WriteTo.Sink(sink).CreateLogger();
+        logger.ForContext(name, value).Information("Safe diagnostic event");
+        Assert.Equal(value, Assert.IsType<ScalarValue>(Assert.Single(sink.Events).Properties[name]).Value);
+    }
+
+    [Theory]
+    [InlineData("KeyHash")]
+    [InlineData("KeyFamily")]
+    public void SafeDiagnosticNames_DoNotExemptRawCredentials(string name)
+    {
+        var sink = new CaptureSink();
+        using var logger = new LoggerConfiguration().ConfigureHonuaRequestDiagnostics().WriteTo.Sink(sink).CreateLogger();
+        logger.ForContext(name, "synthetic-marker").Information("Request {Url}", $"https://example.test/?{name}=synthetic-marker");
+        var entry = Assert.Single(sink.Events);
+        Assert.DoesNotContain("synthetic-marker", string.Join(' ', entry.Properties.Values), StringComparison.Ordinal);
     }
 
     private sealed class CaptureSink : ILogEventSink
