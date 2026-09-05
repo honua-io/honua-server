@@ -18,8 +18,8 @@ using Honua.TestKit.Helpers;
 namespace Honua.Server.Tests.Comprehensive;
 
 /// <summary>
-/// Meta-tests that validate the quality and completeness of the test suite itself.
-/// These tests ensure we achieve a perfect 100/100 testing score.
+/// Exercises shared endpoint, malformed-input, security, contract, performance,
+/// and test-infrastructure scenarios.
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
