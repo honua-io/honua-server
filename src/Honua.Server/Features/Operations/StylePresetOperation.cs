@@ -46,9 +46,27 @@ internal static class StylePresetOperation
 }
 
 // Resolve storage services only when selected, preserving protocol-only compositions.
-internal sealed class StylePresetExecutor(IServiceProvider services) : IOperationExecutor
+internal sealed class StylePresetExecutor(IServiceProvider services) : IOperationExecutor, IOperationRequestPreparer
 {
     public string OperationId => StylePresetOperation.OperationId;
+
+    public async Task<OperationRequest> PrepareAsync(OperationRequest request, OperationPolicyContext context,
+        CancellationToken cancellationToken = default)
+    {
+        var target = await ResolveTargetAsync(request, cancellationToken).ConfigureAwait(false);
+        if (StylePresetTargetPin.HasPin(request) || !string.IsNullOrWhiteSpace(context.ApprovedProposalId))
+        {
+            target.Verify(request, required: true);
+            return request;
+        }
+
+        var parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal);
+        foreach (var (key, value) in target.Parameters())
+        {
+            parameters[key] = value;
+        }
+        return request with { Parameters = parameters };
+    }
 
     public async Task<OperationValidation> ValidateAsync(OperationRequest request, CancellationToken cancellationToken = default)
     {
@@ -67,7 +85,7 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
     public async Task<OperationHandle> SubmitAsync(OperationRequest request, OperationPolicyContext context,
         CancellationToken cancellationToken = default)
     {
-        var storageLayerId = await ResolveStorageLayerAsync(request, cancellationToken).ConfigureAwait(false);
+        var storageLayerId = await ResolveStorageLayerAsync(request, cancellationToken, requirePin: true).ConfigureAwait(false);
         var catalog = services.GetRequiredService<IStyleCatalog>();
         var graphSync = services.GetRequiredService<IMetadataV2StyleGraphSync>();
         var styleId = Required(request, "styleId");
@@ -125,7 +143,15 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
             Reason = handle.Reason,
         });
 
-    private async Task<int> ResolveStorageLayerAsync(OperationRequest request, CancellationToken cancellationToken)
+    private async Task<int> ResolveStorageLayerAsync(OperationRequest request, CancellationToken cancellationToken,
+        bool requirePin = false)
+    {
+        var target = await ResolveTargetAsync(request, cancellationToken).ConfigureAwait(false);
+        target.Verify(request, requirePin);
+        return target.StorageLayerId;
+    }
+
+    private async Task<StylePresetTargetPin> ResolveTargetAsync(OperationRequest request, CancellationToken cancellationToken)
     {
         var snapshot = await services.GetRequiredService<IMetadataV2GraphProvider>()
             .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -146,12 +172,56 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
             throw new ArgumentException("The published layer is not routable.", nameof(request));
         }
 
-        return snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(snapshot.ResolveResource(publication)!)
+        var resource = snapshot.ResolveResource(publication)!;
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource)
             ?? throw new ArgumentException("The published layer has no storage binding.", nameof(request));
+        return new StylePresetTargetPin(publication.Metadata.Id, resource.Metadata.Id,
+            publication.StorageBindingId ?? string.Empty, storageLayerId);
     }
 
     private static string Required(OperationRequest request, string name)
         => request.Parameters.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value : throw new ArgumentException($"Required operation parameter '{name}' is missing.");
+}
+
+
+internal sealed record StylePresetTargetPin(string PublicationId, string ResourceId, string StorageBindingId, int StorageLayerId)
+{
+    private static readonly string[] PinKeys =
+        ["expectedPublicationId", "expectedResourceId", "expectedStorageBindingId", "expectedStorageLayerId"];
+
+    public Dictionary<string, string?> Parameters() => new(StringComparer.Ordinal)
+    {
+        [PinKeys[0]] = PublicationId,
+        [PinKeys[1]] = ResourceId,
+        [PinKeys[2]] = StorageBindingId,
+        [PinKeys[3]] = StorageLayerId.ToString(CultureInfo.InvariantCulture),
+    };
+
+    public static bool HasPin(OperationRequest request) => PinKeys.Any(request.Parameters.ContainsKey);
+
+    public static void RequirePin(OperationRequest request)
+    {
+        if (!PinKeys.All(request.Parameters.ContainsKey))
+        {
+            throw new ArgumentException("The style preset request is missing its approved target identity.", nameof(request));
+        }
+    }
+
+    public void Verify(OperationRequest request, bool required)
+    {
+        if (!required && !HasPin(request))
+        {
+            return;
+        }
+        RequirePin(request);
+        foreach (var (key, value) in Parameters())
+        {
+            if (!string.Equals(request.Parameters[key], value, StringComparison.Ordinal))
+            {
+                throw new ArgumentException("The style preset target changed; create a new approval request.", nameof(request));
+            }
+        }
+    }
 }

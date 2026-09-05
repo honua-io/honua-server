@@ -330,6 +330,10 @@ public sealed class McpStyleToolTests
                 replay.Request.Parameters["serviceId"].Should().Be(ServiceId);
                 replay.Request.Parameters["layerId"].Should().Be("0");
                 replay.Request.Parameters["styleId"].Should().Be(PresetStyleId);
+                replay.Request.Parameters["expectedPublicationId"].Should().Be("pub-parcels");
+                replay.Request.Parameters["expectedResourceId"].Should().Be(ResourceId);
+                replay.Request.Parameters["expectedStorageBindingId"].Should().Be("bind-parcels");
+                replay.Request.Parameters["expectedStorageLayerId"].Should().Be("42");
                 call.Arg<OperationPolicyContext>().AuthorizationOutcome.Should().Be("authorized");
                 return new OperationApprovalBridgeResult
                 {
@@ -380,15 +384,16 @@ public sealed class McpStyleToolTests
     }
 
     [Theory]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [Operation(Operations.Update)]
     [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ToolsCall_ApplyStylePreset_MissingRuntime_ReturnsStructuredUnavailable(
-        bool includeApprovalRuntime, bool includeOperationRuntime)
+        bool includeApprovalRuntime, bool includeOperationRuntime, bool includeGraphSyncRuntime)
     {
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
@@ -396,7 +401,8 @@ public sealed class McpStyleToolTests
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
             $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
             catalog: catalog, graphSync: graphSync,
-            includeApprovalRuntime: includeApprovalRuntime, includeOperationRuntime: includeOperationRuntime);
+            includeApprovalRuntime: includeApprovalRuntime, includeOperationRuntime: includeOperationRuntime,
+            includeGraphSyncRuntime: includeGraphSyncRuntime);
 
         response!.Error.Should().BeNull();
         var result = response.Result!.Value;
@@ -512,6 +518,92 @@ public sealed class McpStyleToolTests
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
+    [Theory]
+    [InlineData("unchanged")]
+    [InlineData("publication")]
+    [InlineData("storage")]
+    [InlineData("missing-pin")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ApprovedPresetReplay_RequiresTheOriginalTarget(string mutation)
+    {
+        var graph = BuildGraphProvider();
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        catalog.AssociateLayerAsync(Arg.Any<int>(), PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        OperationRequest? capturedReplay = null;
+        var bridge = Substitute.For<IOperationApprovalBridge>();
+        bridge.CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+                Arg.Any<OperationPolicyContext>(), Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var mapper = new StylePresetApprovalMapper();
+                var gateway = mapper.Map(call.Arg<IOperationDescriptor>(), call.Arg<OperationRequest>(),
+                    call.Arg<OperationPolicyContext>(), call.Arg<PolicyDecision>());
+                capturedReplay = mapper.MapReplay(gateway).Request;
+                return new OperationApprovalBridgeResult
+                {
+                    IsDurable = true,
+                    ProposalId = "pinned-style-proposal",
+                    AuditId = "pinned-style-audit",
+                };
+            });
+        var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
+            $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
+            catalog: catalog, graphSync: graphSync, graphProvider: graph,
+            policyDecision: PolicyDecisionKind.RequireApproval, approvalBridge: bridge);
+        response!.Result!.Value.GetProperty("structuredContent").GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        var replay = capturedReplay ?? throw new InvalidOperationException("The proposal did not capture a replay request.");
+        if (mutation is "publication" or "storage")
+        {
+            var rebound = BuildGraphProvider(storageLayerId: 77,
+                resourceId: mutation == "publication" ? "res-rebound" : ResourceId,
+                publicationId: mutation == "publication" ? "pub-rebound" : "pub-parcels",
+                storageBindingId: "bind-rebound");
+            graph.SetGraph((await rebound.GetCurrentAsync(CancellationToken.None)).Graph);
+        }
+        else if (mutation == "missing-pin")
+        {
+            replay = replay with
+            {
+                Parameters = replay.Parameters.Where(pair => !pair.Key.StartsWith("expected", StringComparison.Ordinal))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
+            };
+        }
+
+        using var services = new ServiceCollection()
+            .AddSingleton<IMetadataV2GraphProvider>(graph)
+            .AddSingleton(catalog)
+            .AddSingleton(graphSync)
+            .AddSingleton(TimeProvider.System)
+            .BuildServiceProvider();
+        var executor = new StylePresetExecutor(services);
+        var context = new OperationPolicyContext { ApprovedProposalId = "pinned-style-proposal" };
+        async Task<OperationHandle> ReplayAsync()
+        {
+            var prepared = await executor.PrepareAsync(replay, context);
+            return await executor.SubmitAsync(prepared, context);
+        }
+
+        if (mutation == "unchanged")
+        {
+            (await ReplayAsync()).Status.Should().Be(OperationHandleStatus.Completed);
+            await catalog.Received(1).AssociateLayerAsync(StorageLayerId, PresetStyleId, 0, Arg.Any<CancellationToken>());
+            await graphSync.Received(1).SyncLayerStylesAsync(StorageLayerId, CancellationToken.None);
+        }
+        else
+        {
+            Func<Task> act = async () => { _ = await ReplayAsync(); };
+            await act.Should().ThrowAsync<ArgumentException>();
+            await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+            await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
+        }
+    }
+
     // ---------------------------------------------------------------
     // render reflects the applied style (mock-level)
     // ---------------------------------------------------------------
@@ -568,7 +660,9 @@ public sealed class McpStyleToolTests
         bool includeOperationRuntime = true,
         ILicenseEntitlementService? license = null,
         OperationPolicyOptions? policyOptions = null,
-        IOperationInstanceStore? instanceStore = null)
+        IOperationInstanceStore? instanceStore = null,
+        TestMetadataV2GraphProvider? graphProvider = null,
+        bool includeGraphSyncRuntime = true)
     {
         var surface = new McpDataAccessSurface(
             [
@@ -589,7 +683,7 @@ public sealed class McpStyleToolTests
             .Returns(approvalRequired ? ApprovalRequirement.Required("operator.publish") : ApprovalRequirement.NotRequired());
         services.AddSingleton(new OperatorApprovalGate(
             Substitute.For<IOperatorAuthorizationEvaluator>(), approval, NullLogger<OperatorApprovalGate>.Instance));
-        services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());
+        services.AddSingleton<IMetadataV2GraphProvider>(graphProvider ?? BuildGraphProvider());
         services.AddSingleton(catalog ?? Substitute.For<IStyleCatalog>());
         services.AddSingleton(graphSync ?? Substitute.For<IMetadataV2StyleGraphSync>());
         services.AddSingleton(renderer ?? Substitute.For<IRasterMapRenderer>());
@@ -630,6 +724,10 @@ public sealed class McpStyleToolTests
         {
             services.RemoveAll<IOperationInvoker>();
         }
+        if (!includeGraphSyncRuntime)
+        {
+            services.RemoveAll<IMetadataV2StyleGraphSync>();
+        }
 
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services.BuildServiceProvider();
@@ -637,7 +735,11 @@ public sealed class McpStyleToolTests
         return await surface.DispatchAsync(context, ToolCall("style-1", toolName, argumentsJson), CancellationToken.None);
     }
 
-    private static TestMetadataV2GraphProvider BuildGraphProvider()
+    private static TestMetadataV2GraphProvider BuildGraphProvider(
+        int storageLayerId = StorageLayerId,
+        string resourceId = ResourceId,
+        string publicationId = "pub-parcels",
+        string storageBindingId = "bind-parcels")
     {
         var spatial = new MetadataV2ResourceSpatial
         {
@@ -647,10 +749,10 @@ public sealed class McpStyleToolTests
         };
 
         return new TestMetadataV2GraphBuilder()
-            .AddResource(ResourceId, "Parcels Dataset", spatial: spatial)
-            .AddStorageBinding("bind-parcels", ResourceId, "public.parcels", storageLayerId: StorageLayerId)
+            .AddResource(resourceId, "Parcels Dataset", spatial: spatial)
+            .AddStorageBinding(storageBindingId, resourceId, "public.parcels", storageLayerId: storageLayerId)
             .AddService(ServiceId, ServiceName)
-            .AddPublication("pub-parcels", ServiceId, ResourceId, layerIndex: LayerIndex, storageBindingId: "bind-parcels")
+            .AddPublication(publicationId, ServiceId, resourceId, layerIndex: LayerIndex, storageBindingId: storageBindingId)
             .BuildProvider();
     }
 

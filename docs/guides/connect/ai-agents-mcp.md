@@ -20,7 +20,9 @@ has `approvalRequired: true`; when a durable proposal is created, use its return
 returns `applied: true`. Set `dryRun: true` to validate without changing the
 layer; a completed preview returns `dryRun: true` and `applied: false`.
 Approval plans identify the service, layer, and preset and preserve preview
-intent when replayed after approval.
+intent when replayed after approval. The proposal also pins the selected publication,
+resource and storage binding; replay refuses a rebound target and requires a new
+approval request.
 If the binding commits but metadata reconciliation fails, the result keeps
 `applied: true` and includes a `warning`; re-apply the preset to retry that
 reconciliation. Policy rules receive the active license tier on both MCP and

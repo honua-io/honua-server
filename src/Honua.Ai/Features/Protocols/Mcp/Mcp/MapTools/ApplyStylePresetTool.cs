@@ -84,6 +84,8 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             ?? throw new GeoprocessingStoreUnavailableException("The operator approval runtime is not available on this server.");
         var invoker = httpContext.RequestServices.GetService<IOperationInvoker>()
             ?? throw new GeoprocessingStoreUnavailableException("The style operation runtime is not available on this server.");
+        _ = httpContext.RequestServices.GetService<IMetadataV2StyleGraphSync>()
+            ?? throw new GeoprocessingStoreUnavailableException("The style metadata reconciliation service is not available on this server.");
         var authorization = await OperationAdminAuthorization.EvaluateAsync(
             httpContext, principal, OperationSideEffectClass.MutatesMetadata, cancellationToken).ConfigureAwait(false);
         if (!authorization.IsAuthorized)

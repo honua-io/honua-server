@@ -22,6 +22,7 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
         {
             throw new ArgumentException("The mapper only accepts style.apply-preset requests.", nameof(request));
         }
+        StylePresetTargetPin.RequirePin(request);
         var payload = new StylePresetApprovalPayload
         {
             Parameters = new Dictionary<string, string?>(request.Parameters, StringComparer.Ordinal),
@@ -55,9 +56,11 @@ internal sealed class StylePresetApprovalMapper : IOperationApprovalRequestMappe
             ?? throw new InvalidOperationException("The style preset replay payload is unavailable."),
             StylePresetApprovalJsonContext.Default.StylePresetApprovalPayload)
             ?? throw new InvalidOperationException("The style preset replay payload is invalid.");
+        var replay = new OperationRequest { OperationId = OperationId, Parameters = payload.Parameters, DryRun = payload.DryRun };
+        StylePresetTargetPin.RequirePin(replay);
         return new OperationApprovalReplayMapping
         {
-            Request = new OperationRequest { OperationId = OperationId, Parameters = payload.Parameters, DryRun = payload.DryRun },
+            Request = replay,
             TenantId = payload.TenantId,
             SchemaName = payload.SchemaName,
         };
