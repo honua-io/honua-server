@@ -12,6 +12,11 @@ was used. This is source-built implementation evidence, not candidate qualificat
 | Studio MCP, scope authorization, and error-mapping tests | `972ba3ff5` | 103 passed, 0 failed, 0 skipped |
 | Studio Core tests, including the shared validator | `1920d4c95` | 297 passed, 0 failed, 0 skipped |
 | Real MCP / Postgres dashboard lifecycle test | `572726090` | 1 passed, 0 failed, 0 skipped |
+| Admin OpenAPI / MCP projection export suite | `91d65ae36` | 3 passed, 0 failed, 0 skipped |
+
+The shared error field also changes the published Admin MCP output projection.
+The canonical exporter regenerated its committed manifest to include
+`currentGeneration`; the existing projection drift assertions pass unchanged.
 
 The [dashboard integration fixture](../../tests/dotnet/Honua.Server.Tests/Features/Studio/StudioDashboardMcpIntegrationTests.cs)
 creates a dashboard through MCP and exercises all eleven composition verbs.
