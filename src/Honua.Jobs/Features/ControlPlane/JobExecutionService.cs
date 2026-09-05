@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Licensing.Abstractions;
 
 namespace Honua.ControlPlane;
 
@@ -21,7 +22,8 @@ internal sealed partial class JobExecutionService(
     ExecutionJobCancellationTokens cancellationTokens,
     IEnumerable<IJobTerminalCallback> terminalCallbacks,
     IExecutionLogStore? logStore,
-    ILogger<JobExecutionService> logger) : BackgroundService
+    ILogger<JobExecutionService> logger,
+    ILicenseOperationPolicy? licensePolicy = null) : BackgroundService
 {
     private const string SafeExecutionFailureMessage = "Job execution failed.";
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
@@ -232,8 +234,9 @@ internal sealed partial class JobExecutionService(
         // the subsequent Running transition could overwrite.
         var timeoutPolicy = job.TimeoutPolicy ?? JobTimeoutPolicy.Default;
         using var timeoutCts = new CancellationTokenSource(timeoutPolicy.MaxDuration);
+        var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
         using var jobCts = cancellationTokens.CreateLinkedTokenSource(
-            operationId, workerId, stoppingToken, timeoutCts.Token);
+            operationId, workerId, stoppingToken, timeoutCts.Token, licenseCancellation);
 
         // Re-read before promoting to Running to catch cancellations that arrived
         // after the claim but before the worker registered its CTS.
@@ -364,7 +367,7 @@ internal sealed partial class JobExecutionService(
         // fences artifact publication: a stale attempt cannot publish after requeue.
         using var context = new JobExecutionContext(
             operationId, workerId, jobStore, logStore, job.HeartbeatPolicy ?? JobHeartbeatPolicy.Default, jobCts, logger,
-            running.AttemptCount);
+            running.AttemptCount, licenseCancellation);
 
         // Start heartbeat pump in background.
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(jobCts.Token);
@@ -394,8 +397,10 @@ internal sealed partial class JobExecutionService(
 
         try
         {
+            licenseCancellation.ThrowIfCancellationRequested();
             var result = await executor.ExecuteAsync(running, context, jobCts.Token).ConfigureAwait(false);
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            licenseCancellation.ThrowIfCancellationRequested();
 
             // Executors are expected to observe cancellation, but a late cancellation can race a
             // normal return and third-party executors may ignore the token. Never finalize from a
@@ -448,7 +453,7 @@ internal sealed partial class JobExecutionService(
                         result,
                         partitionLeaseId,
                         partitionLeaseOwner,
-                        CancellationToken.None)
+                        licenseCancellation)
                     .ConfigureAwait(false);
                 if (!finalized)
                 {
@@ -489,6 +494,12 @@ internal sealed partial class JobExecutionService(
                 await AbandonJobAsync(running, workerId, failureReason,
                     CancellationToken.None, result.Warnings).ConfigureAwait(false);
             }
+        }
+        catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
+        {
+            await StopHeartbeatPumpAsync().ConfigureAwait(false);
+            await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,
+                "license expired", CancellationToken.None).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -689,6 +700,7 @@ internal sealed partial class JobExecutionService(
         CancellationToken cancellationToken)
     {
         var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         if (job == null)
         {
             return true;
@@ -735,6 +747,7 @@ internal sealed partial class JobExecutionService(
             }
         };
 
+        cancellationToken.ThrowIfCancellationRequested();
         var finalized = partitionLeaseId is null
             ? await jobStore.TrySetAsync(final, cancellationToken: cancellationToken).ConfigureAwait(false)
             : await jobStore.TrySetIfLeaseOwnedAsync(
@@ -748,6 +761,10 @@ internal sealed partial class JobExecutionService(
             Log.TerminalStateSkipped(logger, operationId, "CAS conflict or partition lease lost on finalize");
             return false;
         }
+
+        // Expiry may race a store that commits before observing its cancellation token.
+        // The caller's expiry handler replaces that attempt's late success with failure.
+        cancellationToken.ThrowIfCancellationRequested();
 
         ControlPlaneTelemetry.RecordExecutionTransition(job, final);
 
@@ -796,7 +813,9 @@ internal sealed partial class JobExecutionService(
             return;
         }
 
-        if (IsTerminalOrNotOwnedBy(job, workerId))
+        var lateExpiredSuccess = reason == "license expired" && job.Status == ExecutionJobStatus.Succeeded &&
+            string.Equals(job.ClaimedBy, workerId, StringComparison.Ordinal);
+        if (IsTerminalOrNotOwnedBy(job, workerId) && !lateExpiredSuccess)
         {
             Log.TerminalStateSkipped(logger, operationId, job.Status.ToString());
             return;
@@ -809,6 +828,8 @@ internal sealed partial class JobExecutionService(
             UpdatedAt = now,
             CompletedAt = now,
             ErrorMessage = reason,
+            ArtifactReferences = reason == "license expired" ? [] : job.ArtifactReferences,
+            PercentComplete = reason == "license expired" ? null : job.PercentComplete,
             CurrentPhase = terminalStatus == ExecutionJobStatus.Cancelled ? "Cancelled" : "Failed"
         };
 
@@ -1251,7 +1272,8 @@ internal sealed partial class JobExecutionContext(
     JobHeartbeatPolicy heartbeatPolicy,
     CancellationTokenSource? durableCancellationCts,
     ILogger logger,
-    int claimedAttempt = 0) : IJobExecutionContext, IDisposable
+    int claimedAttempt = 0,
+    CancellationToken licenseCancellation = default) : IJobExecutionContext, IDisposable
 {
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
@@ -1329,11 +1351,14 @@ internal sealed partial class JobExecutionContext(
         ArgumentException.ThrowIfNullOrWhiteSpace(artifactReference);
         const int maxCasRetries = 10;
 
+        licenseCancellation.ThrowIfCancellationRequested();
+
         await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             for (var attempt = 0; attempt < maxCasRetries; attempt++)
             {
+                licenseCancellation.ThrowIfCancellationRequested();
                 var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
                 if (job == null || !IsOwnedBy(job))
                 {

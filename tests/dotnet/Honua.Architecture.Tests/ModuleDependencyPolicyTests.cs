@@ -359,10 +359,13 @@ public sealed class ModuleDependencyPolicyTests
         // Worker.Gdal is a side-car GDAL process. Per ADR-0038 it deliberately
         // does NOT reference Honua.Server (to avoid pulling the whole host into
         // the worker image); it consumes the job substrate and contracts
-        // directly: Abstractions + Core + Jobs.
+        // directly: Abstractions + Core + Jobs. The strict-license contract
+        // also composes cloud license secret resolvers at this executable root.
         (ModuleRole.Worker, ModuleRole.Abstractions),
         (ModuleRole.Worker, ModuleRole.Core),
         (ModuleRole.Worker, ModuleRole.Jobs),
+        (ModuleRole.Worker, ModuleRole.Aws),
+        (ModuleRole.Worker, ModuleRole.Azure),
 
         // Server may host a sample/demo app as static content (the StacOpsDemo
         // Blazor WASM client). Samples never reference back into the runtime.

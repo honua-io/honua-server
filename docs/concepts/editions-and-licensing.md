@@ -8,7 +8,7 @@ Honua's source is available under the [Elastic License 2.0](https://github.com/h
 | Pro | Signed license file with Pro entitlements | Adds features such as GeoServices FeatureServer editing, spatial analytics, real-time streams, Redis caching, geocoding, single-provider OIDC SSO |
 | Enterprise | Signed license file with Enterprise entitlements | Adds features such as multi-provider OIDC governance, claim-to-role mapping, branch versioning, service imports, the plugin SDK |
 
-A server with no license — or with a missing, malformed, or expired one — runs in Community mode. Nothing breaks; paid features simply stay inactive.
+Community requires no license and is unaffected by license expiry. Pro and Enterprise use the strict failure-mode contract: a missing, invalid or expired license refuses startup with a non-zero exit; no Community fallback is permitted. Declare `Licensing__Edition=Pro` or `Enterprise` so a missing source is identified as a paid deployment. Explicit `Community` ignores license sources; with no declared edition and no source the default remains Community.
 
 ## License files
 
@@ -25,25 +25,27 @@ A license is a small UTF-8 JSON envelope signed with Ed25519:
 
 The decoded payload declares `licenseId`, `licensedTo`, `edition`, `issuedAt`, an optional `expiresAt`, and an `entitlements` array of feature keys. Validation is fully offline — the server verifies the signature against locally configured trusted public keys; no license server or phone-home is involved.
 
-Feature activation is entitlement-based: Community-tier features are always active, and a paid feature is active only when its key (for example `editing.featureserver-edits` or `identity.oidc`) appears in the signed `entitlements` array. GeoServices FeatureServer writes are Pro-gated; open-protocol edits through OGC API Features, WFS-T, OData, and gRPC remain Community while using the shared edit pipeline. Basic single-provider OIDC is a Pro entitlement; multi-provider OIDC configuration and claim-to-role mapping remain Enterprise entitlements. The `edition` label is operator-facing and does not by itself activate every feature in that edition. Inspect the full feature inventory at `GET /api/v1/admin/license/entitlements`.
+Feature activation is entitlement-based: Community-tier features are active on Community and on valid paid deployments, and a paid feature is active only when its key (for example `editing.featureserver-edits` or `identity.oidc`) appears in the signed `entitlements` array. GeoServices FeatureServer writes are Pro-gated; open-protocol edits through OGC API Features, WFS-T, OData, and gRPC remain Community while using the shared edit pipeline. Basic single-provider OIDC is a Pro entitlement; multi-provider OIDC configuration and claim-to-role mapping remain Enterprise entitlements. The `edition` label is operator-facing and does not by itself activate every feature in that edition. Inspect the full feature inventory at `GET /api/v1/admin/license/entitlements`.
 
 ## Configuration
 
 ```bash
+Licensing__Edition=Pro
 Licensing__LicensePath=/etc/honua/license.honua-license.json
 Licensing__TrustedKeys__honua-2026-q2=base64url:<32-byte-raw-ed25519-public-key>
 Licensing__AllowAdminUpload=false   # default
 Licensing__ExpiryWarningDays=30     # default
 ```
 
-- `Licensing__LicensePath` — path to the signed license file and the location prefix for the persisted `.uploaded` override. With no file, inline content, or secret reference configured, the server runs Community mode.
+- `Licensing__Edition` — `Community`, `Pro`, or `Enterprise`. Set it on every paid server and worker. If omitted, a configured source selects paid-license validation and a valid signed license determines the tier.
+- `Licensing__LicensePath` — path to the signed license file and the location prefix for the persisted `.uploaded` override. With no paid edition declared and no file, inline content, or secret reference configured, the server runs Community mode.
 - `Licensing__LicenseContent` — inline signed JSON envelope.
 - `Licensing__LicenseContentSecretRef` — secret-store reference to the signed envelope.
 - `Licensing__TrustedKeys__<keyId>` — trusted raw Ed25519 public key per key id (`base64url:<key>`, unprefixed Base64URL, or `base64:<key>`). The envelope's `keyId` must match a configured entry.
 - `Licensing__AllowAdminUpload` — enables future runtime uploads through the admin API; disabling it does not undo a previously uploaded license.
-- `Licensing__ExpiryWarningDays` — expiry warning threshold surfaced in admin status.
+- `Licensing__ExpiryWarningDays` — admin warning threshold, clamped to at least 30 days. It cannot disable the required 30/14/7/1-day warning schedule.
 
-Startup reads `<LicensePath>.uploaded` first when present, then a resolved secret reference, inline content, and finally the ordinary `LicensePath` file. Admin upload takes effect immediately and survives restart. Persist and back up the containing directory, including both files. Configuration changes require a restart; replacing the ordinary file alone does not replace an existing uploaded override. Follow the renewal procedure below.
+Startup reads `<LicensePath>.uploaded` first when present, then a resolved secret reference, inline content, and finally the ordinary `LicensePath` file. Admin upload takes effect immediately and survives restart. Persist and back up the containing directory, including both files. The authoritative file or secret is re-read every minute and on restart. Environment/configuration changes require a restart; replacing the ordinary file alone does not replace an existing uploaded override. Follow the renewal procedure below.
 
 ## How gating responds
 
@@ -58,7 +60,7 @@ Denials are also logged as structured events (licensing event ids `10000`–`100
 
 In the authorized [API explorer](../reference/openapi-and-explorer.md), run `GET /api/v1/admin/license/status` to inspect the current edition, validation state, expiry, and entitlements. To replace the license when `Licensing__AllowAdminUpload=true`, run `POST /api/v1/admin/license/upload` and attach `license.honua-license.json` as the binary request body.
 
-Upload runs the same validator as startup load and atomically commits the signed envelope at `<LicensePath>.uploaded`, then updates `LicensePath` as a compatibility mirror. A mirror-only failure is reported in the successful upload result; startup still uses the committed override. Upload returns `400` when `AllowAdminUpload` is `false`. The status response reports a `validationState` of `Valid`, `NoLicenseConfigured`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, or `Expired` — anything other than `Valid` means the server is effectively in Community mode.
+Upload runs the same validator as startup load and atomically commits the signed envelope at `<LicensePath>.uploaded`, then updates `LicensePath` as a compatibility mirror. A mirror-only failure is reported in the successful upload result; startup still uses the committed override. Upload returns `400` when `AllowAdminUpload` is `false`. The status response reports a `validationState` of `Valid`, `NoLicenseConfigured`, `MissingFile`, `Malformed`, `UnknownKey`, `InvalidSignature`, or `Expired` — an invalid paid license blocks operations and retains the paid tier rather than reverting to Community.
 
 ## Renew or replace a license
 
@@ -70,7 +72,31 @@ To switch back to a file or configuration-managed source:
 2. Remove `<LicensePath>.uploaded`. Replace the ordinary `LicensePath` file, or update the intended inline/secret source. Remove or update any higher-precedence configured source so it cannot continue to select an older license.
 3. Restart and verify the expected license identity, expiry, edition, and entitlements through the admin endpoints.
 
-Replacing `LicensePath` and restarting while leaving `.uploaded` present continues to load the override. An invalid, unreadable, or expired override leaves the server in a safe Community state; it does not restore an older configured license. Coordinate renewal across replicas with separate filesystems. Uploads made by older server versions must be re-uploaded once after upgrade to establish the persisted override.
+Replacing `LicensePath` and restarting while leaving `.uploaded` present continues to load the override. An invalid, unreadable, or expired override refuses paid startup and blocks paid runtime operations; it does not restore an older configured license. Coordinate renewal across replicas with separate filesystems. Uploads made by older server versions must be re-uploaded once after upgrade to establish the persisted override.
+
+## Expiry and recovery
+
+At expiry, Pro and Enterprise stop all data operations, including reads and exports
+of existing data. In-flight jobs receive cancellation and are recorded as failed
+with the exact reason `license expired`. Cancelled jobs do not present partial
+outputs as complete: artifact references/download links are removed or an explicit
+failed/incomplete import marker is persisted. Renewal does not resume those jobs;
+inspect the failure and submit a new job after renewing.
+
+Expiry warnings are surfaced in admin status and logs at **30, 14, 7 and 1 days**.
+The admin banner remains visible between thresholds. Each log threshold is emitted
+once per license expiry per process, including crossed thresholds at startup.
+Renew before expiry, or complete the documented [backup/export procedure](../guides/deploy/backup-and-restore.md)
+before expiry. Exporting through the expired paid instance is not a recovery path.
+
+Renewal takes effect on restart and during the running instance's **one-minute
+re-validation interval**. Admin upload also applies immediately. The authenticated
+license status/upload recovery routes and health probes remain available while
+paid data operations are blocked. Configure the same edition and authoritative
+license source on each API replica and native worker.
+
+For the exact startup errors and remedies, see
+[operator troubleshooting](../guides/deploy/troubleshooting.md#license-failure-mode).
 
 ## Issuing Pro / Enterprise licenses (publisher only)
 

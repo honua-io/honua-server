@@ -315,7 +315,7 @@ internal static class GeoservicesCatalogEndpoints
         catch (Exception exception) when (exception is InvalidOperationException or XmlException or XmlSchemaValidationException)
         {
             return CreateSoapFault(
-                "Malformed SOAP request.",
+                SoapRequestXml.GetSafeErrorMessage(exception),
                 StatusCodes.Status400BadRequest,
                 RequestedSoapNamespace(context.Request));
         }
