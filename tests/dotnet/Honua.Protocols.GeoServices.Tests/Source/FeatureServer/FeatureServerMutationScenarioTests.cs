@@ -202,15 +202,20 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     {
         _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
-            Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false
+            Name = "objectid",
+            Type = MetadataV2FieldType.BigInteger,
+            Nullable = false
         });
         _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
-            Name = "gid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"]
+            Name = "gid",
+            Type = MetadataV2FieldType.BigInteger,
+            SemanticRoles = ["id.primary"]
         });
         _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field
         {
-            Name = "id", Type = MetadataV2FieldType.Integer
+            Name = "id",
+            Type = MetadataV2FieldType.Integer
         });
         const string path = "/rest/services/test/FeatureServer/0/applyEdits";
         // Represent a published source whose physical primary keys are 701/702 and

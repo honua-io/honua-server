@@ -17,7 +17,9 @@ public sealed class GeoServicesObjectIdFieldResolverTests
     {
         var primary = new MetadataV2Field
         {
-            Name = "gid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"]
+            Name = "gid",
+            Type = MetadataV2FieldType.BigInteger,
+            SemanticRoles = ["id.primary"]
         };
         var resource = new MetadataV2Resource
         {
