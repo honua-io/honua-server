@@ -6,11 +6,24 @@ import subprocess
 import tempfile
 import unittest
 
+from quickstart import initialize
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class QuickstartTests(unittest.TestCase):
+    def test_existing_settings_survive_and_weak_credentials_are_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            env_file.write_text("HONUA_HTTP_PORT=18080\n")
+            initialize(env_file)
+            self.assertTrue(env_file.read_text().startswith("HONUA_HTTP_PORT=18080\n"))
+            env_file.write_text("POSTGRES_PASSWORD=\n")
+            with self.assertRaises(ValueError):
+                initialize(env_file)
+            self.assertTrue(env_file.read_text() == "POSTGRES_PASSWORD=\n")
+
     def render(self, env_file, **overrides):
         env = {key: value for key, value in os.environ.items()
                if key not in ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "HONUA_BIND_ADDRESS")}
