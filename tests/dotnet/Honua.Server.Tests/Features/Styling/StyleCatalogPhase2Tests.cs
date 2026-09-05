@@ -83,6 +83,40 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
             .Select(style => style.StyleId).Should().Contain(oldStyle).And.Contain(newStyle);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ConcurrentPrimaryPromotions_PreserveOnePrimaryAndMissingStyleLeavesOrderUnchanged()
+    {
+        using var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+        using var scope = _fixture.Services.CreateScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var first = $"primary-first-{Guid.NewGuid():N}";
+        var second = $"primary-second-{Guid.NewGuid():N}";
+        (await catalog.CreateStyleAsync(first, BuildDefaultStyleJson())).Should().NotBeNull();
+        (await catalog.CreateStyleAsync(second, BuildDefaultStyleJson())).Should().NotBeNull();
+
+        var promoted = await Task.WhenAll(
+            catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, first),
+            catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, second));
+        promoted.Should().OnlyContain(applied => applied);
+        var before = (await catalog.ListAssociationsAsync())
+            .Where(association => association.LayerId == WebAppFixture.TestLayerId)
+            .OrderBy(association => association.Ordinal).ToArray();
+        before.Count(association => association.Ordinal == 0).Should().Be(1);
+        before.Select(association => association.Ordinal).Should().OnlyHaveUniqueItems();
+        before.Select(association => association.StyleId).Should().Contain(first).And.Contain(second);
+
+        (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, $"missing-{Guid.NewGuid():N}"))
+            .Should().BeFalse();
+        var after = (await catalog.ListAssociationsAsync())
+            .Where(association => association.LayerId == WebAppFixture.TestLayerId)
+            .OrderBy(association => association.Ordinal).ToArray();
+        after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
     private static async Task<JsonElement> CallMcpStyleAsync(HttpClient client, string session,
         string toolName, string? styleId)
     {
