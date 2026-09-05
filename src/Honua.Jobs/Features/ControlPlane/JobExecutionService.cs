@@ -495,7 +495,7 @@ internal sealed partial class JobExecutionService(
                     CancellationToken.None, result.Warnings).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+        catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
             await StopHeartbeatPumpAsync().ConfigureAwait(false);
             await TerminateJobAsync(operationId, workerId, ExecutionJobStatus.Failed,

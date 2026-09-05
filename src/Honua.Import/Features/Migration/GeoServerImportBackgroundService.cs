@@ -219,7 +219,7 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
                 Log.JobFailed(_logger, jobId, result.ErrorMessage ?? "Unknown error", stopwatch.Elapsed.TotalSeconds);
             }
         }
-        catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+        catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
             var failed = (progressController.CurrentProgress ?? GeoServerImportProgress.CreateInitial(jobId, request?.GeoServerRestUrl ?? string.Empty, request?.TargetHonuaUrl ?? string.Empty)) with
             {

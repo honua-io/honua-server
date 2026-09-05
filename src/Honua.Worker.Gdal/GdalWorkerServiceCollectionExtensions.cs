@@ -32,6 +32,14 @@ namespace Honua.Worker.Gdal;
 /// </summary>
 public static class GdalWorkerServiceCollectionExtensions
 {
+    internal static void AddLicenseSecretResolvers(IServiceCollection services, IConfiguration configuration)
+    {
+        Honua.Cloud.Aws.Features.Licensing.AwsLicenseSecretResolverServiceCollectionExtensions
+            .AddAwsLicenseSecretResolver(services, configuration);
+        Honua.Licensing.AzureLicenseSecretResolverServiceCollectionExtensions
+            .AddAzureLicenseSecretResolver(services, configuration);
+    }
+
     /// <summary>
     /// Wires the GDAL worker host: Redis connection, the shared durable execution
     /// substrate (queue, job store, log store, cancellation registry), the two
@@ -54,6 +62,7 @@ public static class GdalWorkerServiceCollectionExtensions
                 + "coordination layer per ADR-0031 / ADR-0038).");
 
         services.Configure<LicenseOptions>(configuration.GetSection(LicenseOptions.SectionName));
+        AddLicenseSecretResolvers(services, configuration);
         services.TryAddSingleton<IEd25519Verifier, BouncyCastleEd25519Verifier>();
         services.TryAddSingleton<FileBackedLicenseService>();
         services.TryAddSingleton<ILicenseOperationPolicy>(sp => sp.GetRequiredService<FileBackedLicenseService>());

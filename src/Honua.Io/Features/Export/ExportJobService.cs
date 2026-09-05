@@ -274,7 +274,7 @@ internal sealed class ExportJobService(
                 activity?.SetStatus(ActivityStatusCode.Ok);
                 ExportLog.AsyncExportCompleted(_logger, job.JobId, job.TotalFeatures, fileInfo.Length);
             }
-            catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+            catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
             {
                 var failed = progress with
                 {

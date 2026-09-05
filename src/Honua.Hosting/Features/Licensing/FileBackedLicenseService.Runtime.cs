@@ -87,12 +87,39 @@ internal sealed partial class FileBackedLicenseService
             using var timer = new PeriodicTimer(RevalidationInterval, _timeProvider);
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
-                await RevalidateAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await RevalidateAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // A source timeout must not permanently stop renewal polling. The independent
+                    // expiry timer still revokes the last verified license at its signed deadline.
+                    LicenseRuntimeLog.RevalidationFailed(_logger, ex.GetType().Name);
+                }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Hosted-service shutdown.
+        }
+    }
+
+    private void CancelOperations()
+    {
+        try
+        {
+            _operationCancellation.Cancel();
+        }
+        catch (AggregateException)
+        {
+            // Cancellation invokes every callback before throwing. Keep the timer/host alive
+            // so workers can persist their failures even if a plugin callback misbehaves.
+            LicenseRuntimeLog.CancellationCallbackFailed(_logger);
         }
     }
 

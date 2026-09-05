@@ -182,7 +182,7 @@ The #338 runtime publishes these `LicenseValidationState` values:
 
 | Result | Meaning | Operator action |
 |--------|---------|-----------------|
-| `NoLicenseConfigured` | `Licensing:LicensePath` is empty/unset. Community mode is active and `isValid=true`. | None. |
+| `NoLicenseConfigured` | No license source is configured. Community remains available; a declared paid edition refuses startup. | None. |
 | `Valid` | Signature, payload, expiry, and trusted key are all OK. | None. |
 | `MissingFile` | A configured path does not exist. | Mount/provision the file or clear `LicensePath`. |
 | `Malformed` | Envelope JSON, payload JSON, Base64URL, configured public key, required payload fields, or file size failed validation. | Inspect the file and key config; reissue if needed. |

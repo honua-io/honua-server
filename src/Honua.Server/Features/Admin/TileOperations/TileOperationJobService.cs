@@ -46,7 +46,8 @@ internal sealed partial class TileOperationJobService(
     IOptions<LimitsOptions> limitsOptions,
     ILogger<TileOperationJobService> logger,
     IConnectionMultiplexer? redis = null,
-    ITileCacheGenerationCheckpointStore? checkpointStore = null) : ITileOperationJobService
+    ITileCacheGenerationCheckpointStore? checkpointStore = null,
+    ILicenseOperationPolicy? licensePolicy = null) : ITileOperationJobService
 {
     private const string MissingRequestFailureMessage = "Tile operation request metadata is no longer available.";
     private readonly IUniversalProgressStore _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));

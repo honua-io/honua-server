@@ -20,8 +20,11 @@ namespace Honua.Server.Tests.Features.Licensing;
 // compile against the baseline, without backporting any production implementation.
 public sealed partial class LicenseFailureContractTests
 {
-    [UnitTest]
-    public async Task RuntimeExpiry_RegisteredWorker_CancelsAndFailsPublishedPartialOutput()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task RuntimeExpiry_RegisteredWorker_CancelsAndFailsPublishedPartialOutput(bool expireDuringCommit)
     {
         var clock = new TransitionClock();
         var expires = clock.GetUtcNow().AddMinutes(2);
@@ -49,18 +52,31 @@ public sealed partial class LicenseFailureContractTests
         var store = Substitute.For<IExecutionJobStore>();
         store.GetAsync(job.OperationId, Arg.Any<CancellationToken>()).Returns(_ => job);
         store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(call => { job = call.Arg<ExecutionJobRecord>(); return true; });
+            .Returns(call =>
+            {
+                job = call.Arg<ExecutionJobRecord>();
+                if (expireDuringCommit && job.Status == ExecutionJobStatus.Succeeded)
+                {
+                    clock.Advance(TimeSpan.FromMinutes(2));
+                }
+                return true;
+            });
         var executor = Substitute.For<IJobExecutor>();
         executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
         var cancelled = false;
+        CancellationToken observedToken = default;
         executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
                 var token = call.Arg<CancellationToken>();
+                observedToken = token;
                 await call.Arg<IJobExecutionContext>().PublishArtifactAsync("synthetic-partial-output", token);
                 Assert.NotEmpty(job.ArtifactReferences);
                 using var registration = token.Register(() => cancelled = true);
-                clock.Advance(TimeSpan.FromMinutes(2));
+                if (!expireDuringCommit)
+                {
+                    clock.Advance(TimeSpan.FromMinutes(2));
+                }
                 // Challenge the completion guard too: a late executor may return success
                 // even after receiving cancellation. The durable outcome must still fail.
                 return JobExecutionResult.Succeeded();
@@ -79,7 +95,11 @@ public sealed partial class LicenseFailureContractTests
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         await ((Task)method.Invoke(worker, [job.OperationId, "test-worker", CancellationToken.None])!).WaitAsync(TimeSpan.FromSeconds(5));
 
-        Assert.True(cancelled, "License expiry must cancel the executor's in-flight token.");
+        Assert.True(observedToken.IsCancellationRequested, "License expiry must cancel the executor's in-flight token.");
+        if (!expireDuringCommit)
+        {
+            Assert.True(cancelled);
+        }
         Assert.Equal(ExecutionJobStatus.Failed, job.Status);
         Assert.Equal("license expired", job.ErrorMessage);
         Assert.Empty(job.ArtifactReferences);

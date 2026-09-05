@@ -535,7 +535,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 await PersistRunAsync(updated, reconciliationCancellation.Token).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+        catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
             var run = await _runStore.GetAsync(runId, CancellationToken.None).ConfigureAwait(false);
             if (run is not null && !IsRunTerminal(run.Status))

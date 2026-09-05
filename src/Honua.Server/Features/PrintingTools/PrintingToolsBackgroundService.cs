@@ -77,7 +77,7 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
             await ProcessJobCoreAsync(job, linkedCts.Token).ConfigureAwait(false);
             licenseCancellation.ThrowIfCancellationRequested();
         }
-        catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+        catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var progressStore = scope.ServiceProvider.GetRequiredService<IUniversalProgressStore>();

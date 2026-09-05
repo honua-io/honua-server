@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Licensing;
 
@@ -20,6 +21,32 @@ namespace Honua.Server.Tests.Features.Licensing;
 [Operation(Operations.LicenseManagement)]
 public sealed class LicenseGateTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public void ExpiredPaidTier_EditionFallback_CannotReactivateOperations(bool statusFacade)
+    {
+        const string key = "serve.i3s-scene";
+        var services = new ServiceCollection();
+        if (statusFacade)
+        {
+            var status = Substitute.For<ILicenseStatusProvider>();
+            status.GetCurrentStatus().Returns(new LicenseStatus(HonuaEdition.Enterprise, false,
+                DateTimeOffset.UtcNow.AddDays(-1), "Synthetic operator", LicenseValidationState.Expired));
+            services.AddSingleton(status);
+        }
+        else
+        {
+            var entitlements = Substitute.For<ILicenseEntitlementService>();
+            entitlements.CheckEntitlement(key).Returns(new LicenseEntitlementDecision(key, false,
+                HonuaEdition.Enterprise, LicenseValidationState.Expired, HonuaEdition.Enterprise, "license expired"));
+            services.AddSingleton(entitlements);
+        }
+        using var provider = services.BuildServiceProvider();
+        Assert.False(LicenseGate.CheckEntitlement(provider, key).IsActive);
+    }
+
     [UnitTest]
     public async Task RequireEntitlement_MissingPaidEntitlement_ReturnsPaymentRequired()
     {

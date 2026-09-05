@@ -108,7 +108,7 @@ internal sealed partial class FileBackedLicenseService :
             {
                 snapshot = CreateExpiredSnapshot(snapshot);
                 _snapshot = snapshot;
-                _operationCancellation.Cancel();
+                CancelOperations();
                 LicenseRuntimeLog.LicenseExpired(_logger, snapshot.LicenseId, snapshot.ExpiresAt);
             }
             return snapshot;
@@ -659,7 +659,7 @@ internal sealed partial class FileBackedLicenseService :
 
         if (payload.ExpiresAt.HasValue && payload.ExpiresAt.Value <= _timeProvider.GetUtcNow())
         {
-            return CreateInvalidResult(LicenseValidationState.Expired, "expired", payload, envelope.KeyId);
+            return CreateInvalidResult(LicenseValidationState.Expired, "expired", payload, envelope.KeyId, edition);
         }
 
         var snapshot = CreateSnapshot(
@@ -754,7 +754,7 @@ internal sealed partial class FileBackedLicenseService :
 
     private static bool TryParseEdition(string value, out HonuaEdition edition)
     {
-        if (Enum.TryParse(value, ignoreCase: true, out edition))
+        if (Enum.TryParse(value, ignoreCase: true, out edition) && Enum.IsDefined(edition))
         {
             return true;
         }
@@ -772,11 +772,12 @@ internal sealed partial class FileBackedLicenseService :
         LicenseValidationState state,
         string reason,
         SignedLicensePayload? payload,
-        string? keyId)
+        string? keyId,
+        HonuaEdition edition = HonuaEdition.Community)
     {
         var snapshot = state == LicenseValidationState.Expired && payload is not null
             ? CreateSnapshot(
-                Enum.Parse<HonuaEdition>(payload.Edition!, ignoreCase: true),
+                edition,
                 isValid: false,
                 state,
                 NextSnapshotVersion(),
@@ -896,7 +897,7 @@ internal sealed partial class FileBackedLicenseService :
             var blocked = snapshot.Edition > HonuaEdition.Community && !snapshot.IsValid;
             if (blocked)
             {
-                _operationCancellation.Cancel();
+                CancelOperations();
             }
             else if (_operationCancellation.IsCancellationRequested)
             {

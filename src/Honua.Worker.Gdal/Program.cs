@@ -12,9 +12,14 @@ using Honua.Infrastructure.Licensing;
 // "native" (raster reproject, vector conversion, and future heavy GP families).
 // It is never reachable from public ingress.
 var builder = Host.CreateApplicationBuilder(args);
-using (var licenseLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole()))
+var licenseBootstrapServices = new ServiceCollection();
+licenseBootstrapServices.AddLogging(logging => logging.AddConsole());
+GdalWorkerServiceCollectionExtensions.AddLicenseSecretResolvers(licenseBootstrapServices, builder.Configuration);
+using (var licenseBootstrap = licenseBootstrapServices.BuildServiceProvider())
 {
-    await FileBackedLicenseService.LoadBootstrapSnapshotAsync(builder.Configuration, licenseLoggerFactory);
+    await FileBackedLicenseService.LoadBootstrapSnapshotAsync(builder.Configuration,
+        licenseBootstrap.GetRequiredService<ILoggerFactory>(),
+        secretResolvers: licenseBootstrap.GetServices<ILicenseContentSecretResolver>());
 }
 
 builder.Services.AddGdalWorker(builder.Configuration);

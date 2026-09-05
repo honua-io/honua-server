@@ -384,7 +384,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                     {
                         Status = ImportStatus.Failed,
                         CompletedAt = DateTimeOffset.UtcNow,
-                        ErrorMessage = SafeImportFailureMessage
+                        ErrorMessage = licenseCancellation.IsCancellationRequested ? "license expired" : SafeImportFailureMessage
                     };
                     await _progressStore.SetProgressAsync(jobId, failedProgress, TimeSpan.FromDays(1), CancellationToken.None);
                 }

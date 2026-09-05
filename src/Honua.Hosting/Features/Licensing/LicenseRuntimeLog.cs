@@ -7,6 +7,12 @@ namespace Honua.Infrastructure.Licensing;
 
 internal static partial class LicenseRuntimeLog
 {
+    [LoggerMessage(10016, LogLevel.Error, "A license cancellation callback failed; operation tokens remain cancelled.")]
+    public static partial void CancellationCallbackFailed(ILogger logger);
+
+    [LoggerMessage(10017, LogLevel.Warning, "License re-validation failed; retrying in one minute. reason={Reason}")]
+    public static partial void RevalidationFailed(ILogger logger, string reason);
+
     [LoggerMessage(10015, LogLevel.Warning,
         "License expiry warning: {Days}-day threshold; expiresAt={ExpiresAt}. Renew the license or complete backup/export before expiry. Paid operations, including reads and exports, stop at expiry; in-flight jobs fail with reason 'license expired'.")]
     public static partial void ExpiryWarning(ILogger logger, int days, DateTimeOffset expiresAt);

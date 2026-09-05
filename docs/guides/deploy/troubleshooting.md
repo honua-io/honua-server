@@ -30,13 +30,15 @@ workers. A missing, invalid or expired license stops startup before serving
 requests, exits non-zero, and never falls back to Community. Community requires
 no license; `Licensing__Edition=Community` ignores license sources.
 
-These are the exact Pro startup errors (Enterprise substitutes `Enterprise` in
-both places):
+These are the exact startup errors:
 
 ```text
 Honua Pro startup refused: license missing. Install a valid Pro license in the configured licensing source and restart. Community fallback is disabled.
 Honua Pro startup refused: license invalid. Install a valid Pro license in the configured licensing source and restart. Community fallback is disabled.
 Honua Pro startup refused: license expired. Install a valid Pro license in the configured licensing source and restart. Community fallback is disabled.
+Honua Enterprise startup refused: license missing. Install a valid Enterprise license in the configured licensing source and restart. Community fallback is disabled.
+Honua Enterprise startup refused: license invalid. Install a valid Enterprise license in the configured licensing source and restart. Community fallback is disabled.
+Honua Enterprise startup refused: license expired. Install a valid Enterprise license in the configured licensing source and restart. Community fallback is disabled.
 ```
 
 | State | Operator remedy |
@@ -60,7 +62,7 @@ Use the supported SDK's license upload operation for an enabled admin upload, or
 follow [the source-switch procedure](../../concepts/editions-and-licensing.md#renew-or-replace-a-license)
 while stopped. Verify status through the SDK's `getLicenseStatus` operation after
 renewal. Apply the same source update to every replica and worker. Environment
-variable changes require restart; file and secret contents are re-read every minute. The native GDAL worker supports a mounted file and inline content; mount the authoritative license file and configure its trusted public key when the API host obtains its copy from a secret store.
+variable changes require restart; file and secret contents are re-read every minute. The native GDAL worker uses the same file, inline, AWS Secrets Manager and Azure Key Vault resolvers as the API host.
 
 ## Database connections
 
