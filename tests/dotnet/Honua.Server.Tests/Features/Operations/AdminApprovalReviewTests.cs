@@ -13,6 +13,30 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class AdminApprovalReviewTests
 {
     [Fact]
+    public void AdminApprovalPlan_ReviewerProjection_IdentifiesTargetAndChange()
+    {
+        var definition = AdminApiOperationCatalog.Definitions.Single(d => d.OperationId == "admin.layer.filter.set");
+        var descriptor = AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == definition.OperationId);
+        var mapper = new AdminApiOperationApprovalRequestMapper(definition);
+        var proposal = mapper.Map(descriptor, new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?>
+            {
+                ["layerId"] = "123",
+                ["permanentFilter"] = """{"expression":"status = 'open'","language":"arcgis-sql"}"""
+            }
+        }, new OperationPolicyContext { PrincipalId = "requester", TenantId = "tenant-a" },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+        // ProposalEndpoints.ToDetail exposes these fields, not ExecutionPayload.
+        var reviewerText = string.Join("\n", new[] { proposal.Plan!.Summary }
+            .Concat(proposal.Plan.Diff).Concat(proposal.Plan.DryRun));
+        reviewerText.Should().Contain("123", "the reviewer must be shown the target resource");
+        reviewerText.Should().Contain("status = 'open'", "the reviewer must be shown the proposed change");
+    }
+
+    [Fact]
     public void LayerFilter_ReviewIdentifiesTenantTargetAndExactChange()
     {
         var plan = Map("admin.layer.filter.set", new Dictionary<string, string?>
