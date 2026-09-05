@@ -127,6 +127,11 @@ internal static class MapToolLayerResolver
         AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
+        if (!TenantScopeHelpers.IsPublicationVisible(httpContext, layer.Publication, layer.Resource, layer.Service))
+        {
+            throw new GeoprocessingNotFoundException("Layer was not found in the published catalog.");
+        }
+
         var decision = await AccessPolicyHelpers.EvaluateResourceAccessAsync(
             httpContext, layer.Resource, layer.Service, operation, cancellationToken)
             .ConfigureAwait(false);
