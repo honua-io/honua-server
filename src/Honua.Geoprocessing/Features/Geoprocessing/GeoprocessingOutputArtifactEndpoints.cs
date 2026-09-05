@@ -46,6 +46,23 @@ internal static class GeoprocessingOutputArtifactEndpoints
         HttpContext context,
         IGeoprocessingJobService jobService)
     {
+        try
+        {
+            return await GetArtifactContentCore(jobId, artifactIndex, context, jobService).ConfigureAwait(false);
+        }
+        catch (GeoprocessingOutputStoreUnavailableException exception)
+        {
+            return GeoprocessingProblemDetailsHelpers.StoreUnavailable(
+                context, new GeoprocessingStoreUnavailableException(exception.Message));
+        }
+    }
+
+    private static async Task<IResult> GetArtifactContentCore(
+        string jobId,
+        int artifactIndex,
+        HttpContext context,
+        IGeoprocessingJobService jobService)
+    {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity(
             "geoprocessing.getoutputartifactcontent");
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "Geoprocessing");
