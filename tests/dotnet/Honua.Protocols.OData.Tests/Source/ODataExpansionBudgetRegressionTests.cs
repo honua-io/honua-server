@@ -1,7 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Net;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Protocols.OData;
@@ -17,41 +20,69 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 public sealed class ODataExpansionBudgetRegressionTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
+    private readonly ConcurrentQueue<RelatedQuery> _relatedQueries = new();
 
     public async Task InitializeAsync()
     {
         _fixture.UseSeed(Path.Join("tests", "seed", "odata.yaml"));
         _fixture.ConfigureServices(services =>
-            services.Configure<ODataOptions>(options => options.MaxPageSize = 1));
+        {
+            services.Configure<ODataOptions>(options => options.MaxPageSize = 1);
+            var registration = services.Last(descriptor => descriptor.ServiceType == typeof(IRelationshipStore));
+            services.Remove(registration);
+            services.Add(new ServiceDescriptor(typeof(IRelationshipStore), provider =>
+            {
+                var inner = (IRelationshipStore)(registration.ImplementationInstance
+                    ?? registration.ImplementationFactory?.Invoke(provider)
+                    ?? ActivatorUtilities.GetServiceOrCreateInstance(provider, registration.ImplementationType!));
+                return new RecordingRelationshipStore(inner, _relatedQueries);
+            }, registration.Lifetime));
+        });
         await _fixture.InitializeAsync();
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [Theory]
+    [InlineData("", "InvalidQuery")]
+    [InlineData("&$search=San", "InvalidQueryOption")]
+    [Trait("Category", "Integration")]
+    [Operation(Operations.ODataExpand)]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    public async Task Expand_OneRowPage_RejectsOverBudgetChildren(string search, string errorCode)
+    {
+        // The seed has two landmarks for city 1: one more than the configured budget.
+        using var response = await _fixture.Client.GetAsync(
+            "/odata/Layers(0)/Features?$filter=ObjectId eq 1&$top=1&$expand=Landmarks" + search);
+
+        _relatedQueries.Should().NotBeEmpty();
+        _relatedQueries.Should().OnlyContain(query => query.Limit.HasValue && query.Limit <= 2,
+            "the provider must receive the budget plus one overflow probe before materialization");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("error").GetProperty("code").GetString().Should().Be(errorCode);
+    }
+
     [IntegrationTest]
     [Operation(Operations.ODataExpand)]
     [Endpoint("GET /odata/Layers({layerId})/Features")]
-    public async Task Expand_OneRowPage_DoesNotMaterializeUnpagedChildren()
+    public async Task Expand_ExactlyAtBudget_ReturnsCompleteChildren()
     {
-        // The ordinary seed already has two landmarks for city 1; no scale fixture is needed.
         using var response = await _fixture.Client.GetAsync(
-            "/odata/Layers(0)/Features?$filter=ObjectId eq 1&$top=1&$expand=Landmarks");
-
-        // Explicitly refusing an expansion that exceeds the budget is also bounded behavior.
-        if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge)
-        {
-            return;
-        }
+            "/odata/Layers(0)/Features?$filter=ObjectId eq 3&$top=1&$expand=Landmarks");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var parents = body.RootElement.GetProperty("value");
-        parents.GetArrayLength().Should().Be(1);
-        var parent = parents[0];
-        var children = parent.GetProperty("Landmarks");
-        children.GetArrayLength().Should().BeLessThanOrEqualTo(1,
-            "the configured OData page budget must also bound expanded relationship rows");
-        parent.TryGetProperty("Landmarks@odata.nextLink", out _).Should().BeTrue(
-            "the second seeded landmark must remain reachable rather than being silently truncated");
+        body.RootElement.GetProperty("value")[0].GetProperty("Landmarks").GetArrayLength().Should().Be(1);
+    }
+
+    private sealed class RecordingRelationshipStore(
+        IRelationshipStore inner, ConcurrentQueue<RelatedQuery> queries) : IRelationshipStore
+    {
+        public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
+        {
+            queries.Enqueue(query);
+            return inner.QueryRelatedAsync(layerId, query, cancellationToken);
+        }
     }
 }
