@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
 using Microsoft.Extensions.Hosting;
 
 namespace Honua.ControlPlane;
@@ -19,7 +20,8 @@ internal sealed partial class ExecutionJobReconciler(
     IExecutionJobStore jobStore,
     IEnumerable<IBatchComputeBackend> backends,
     IUniversalProgressStore progressStore,
-    ILogger<ExecutionJobReconciler> logger) : IExecutionJobReconciler
+    ILogger<ExecutionJobReconciler> logger,
+    ILicenseOperationPolicy? licensePolicy = null) : IExecutionJobReconciler
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
@@ -52,7 +54,9 @@ internal sealed partial class ExecutionJobReconciler(
         var reconcileJobKind = "unknown";
         var reconcileOutcome = "error";
 
-        using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
+        var persistedSuccess = false;
+        using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
         var renewalTask = RenewLeaseUntilCancelledAsync(operationId, reconciliationCancellation);
 
         try
@@ -72,6 +76,7 @@ internal sealed partial class ExecutionJobReconciler(
                 return;
             }
 
+            licenseCancellation.ThrowIfCancellationRequested();
             var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
             if (backend == null)
             {
@@ -125,9 +130,12 @@ internal sealed partial class ExecutionJobReconciler(
                 _ => job
             };
 
+            licenseCancellation.ThrowIfCancellationRequested();
             if (!ReferenceEquals(updated, job))
             {
                 var persisted = await jobStore.TrySetAsync(updated, cancellationToken: reconciliationCancellation.Token).ConfigureAwait(false);
+                persistedSuccess = persisted && updated.Status == ExecutionJobStatus.Succeeded;
+                licenseCancellation.ThrowIfCancellationRequested();
                 if (!persisted)
                 {
                     reconcileOutcome = "cas_conflict";
@@ -144,6 +152,11 @@ internal sealed partial class ExecutionJobReconciler(
             {
                 reconcileOutcome = "unchanged";
             }
+        }
+        catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
+        {
+            reconcileOutcome = "license_expired";
+            await FailExpiredJobAsync(operationId, persistedSuccess).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
@@ -195,6 +208,60 @@ internal sealed partial class ExecutionJobReconciler(
             }
 
             await jobStore.ReleaseLeaseAsync(operationId, _ownerId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task FailExpiredJobAsync(string operationId, bool replaceLateSuccess)
+    {
+        var job = await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false);
+        if (job is null || (IsTerminal(job.Status) && !(replaceLateSuccess && job.Status == ExecutionJobStatus.Succeeded)))
+        {
+            return;
+        }
+
+        try
+        {
+            var backend = _backends.Resolve(job.Spec.Backend, job.Spec.TargetKind);
+            if (backend is not null && (job.Status != ExecutionJobStatus.Queued ||
+                ExecutionJobCancellationHelper.HasSubmittedProviderMarker(job) ||
+                string.Equals(job.Spec.Backend, LocalBatchComputeBackend.BackendId, StringComparison.Ordinal)))
+            {
+                // Cancellation of the provider workload must use a token independent of
+                // the expired license. All shipped batch backends support cancellation.
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                await backend.CancelAsync(job, timeout.Token).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                var current = await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false);
+                if (current is null || (IsTerminal(current.Status) &&
+                    !(replaceLateSuccess && current.Status == ExecutionJobStatus.Succeeded)))
+                {
+                    break;
+                }
+                var now = DateTimeOffset.UtcNow;
+                var failed = current with
+                {
+                    Status = ExecutionJobStatus.Failed,
+                    ErrorMessage = "license expired",
+                    CurrentPhase = "Failed: license expired",
+                    UpdatedAt = now,
+                    CompletedAt = now,
+                    CancellationRequestedAt = current.CancellationRequestedAt ?? now,
+                    ArtifactReferences = [],
+                    PercentComplete = null,
+                    NextRetryAt = null
+                };
+                if (await jobStore.TrySetAsync(failed, cancellationToken: CancellationToken.None).ConfigureAwait(false))
+                {
+                    ControlPlaneTelemetry.RecordExecutionTransition(current, failed);
+                    await BridgeProgressAsync(current, failed, CancellationToken.None).ConfigureAwait(false);
+                    break;
+                }
+            }
         }
     }
 

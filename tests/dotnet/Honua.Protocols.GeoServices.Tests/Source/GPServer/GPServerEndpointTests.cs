@@ -1174,6 +1174,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         => new()
         {
             OperationId = jobId,
+            Audit = new OperationAuditInfo { SubmitterSecurityContext = new(null, "public", []) },
             Status = status,
             CreatedAt = createdAt,
             UpdatedAt = createdAt,

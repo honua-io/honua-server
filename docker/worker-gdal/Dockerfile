@@ -51,6 +51,8 @@ COPY src/Honua.Core/*.csproj src/Honua.Core/
 COPY src/Honua.Geometry/*.csproj src/Honua.Geometry/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
 COPY src/Honua.Jobs/*.csproj src/Honua.Jobs/
+COPY src/Honua.Cloud/Aws/*.csproj src/Honua.Cloud/Aws/
+COPY src/Honua.Cloud/Azure/*.csproj src/Honua.Cloud/Azure/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
 COPY src/Honua.Worker.Gdal/*.csproj src/Honua.Worker.Gdal/
 COPY eng/ eng/

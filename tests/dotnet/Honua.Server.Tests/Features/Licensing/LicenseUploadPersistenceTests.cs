@@ -99,6 +99,7 @@ public class LicenseUploadPersistenceTests
         {
             var inline = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro);
             var options = CreateOptions(Path.Join(directory.FullName, "license.json"), inline.PublicKeySetting);
+            options.Edition = HonuaEdition.Pro;
             options.LicenseContent = Encoding.UTF8.GetString(inline.LicenseData);
             var invalid = state == LicenseValidationState.Malformed
                 ? Encoding.UTF8.GetBytes("not a license")
@@ -109,9 +110,11 @@ public class LicenseUploadPersistenceTests
             await File.WriteAllBytesAsync(options.LicensePath + ".uploaded", invalid);
 
             using var service = CreateService(options);
-            await service.StartAsync(CancellationToken.None);
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
+            Assert.Contains(state == LicenseValidationState.Expired ? "license expired" : "license invalid", error.Message);
 
-            Assert.Equal(HonuaEdition.Community, service.GetSnapshot().Edition);
+            Assert.Equal(HonuaEdition.Pro, service.GetSnapshot().Edition);
+            Assert.False(service.GetSnapshot().IsValid);
             Assert.Equal(state, service.GetSnapshot().ValidationState);
         }
         finally

@@ -3627,6 +3627,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.GetProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_FindingMetadata_ReturnsStableLinkWithoutExecutionPayload",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_WhenFound_ReturnsPlanDetail",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.GetProposal_WhenMissing_ReturnsNotFound"
@@ -15833,6 +15834,7 @@
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.ApproveAndRejectProposal_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsDegradedTests.RejectProposal_WithoutDurableControlPlane_ReturnsTypedCapabilityUnavailableRefusal",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces",
+        "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ReadOnlyScopedKey_ApproveNamesMissingGrant",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithReason_MarksRejected",
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.RejectProposal_WithoutReason_ReturnsBadRequest"
       ],
