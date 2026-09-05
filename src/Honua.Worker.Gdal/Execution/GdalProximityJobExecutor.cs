@@ -20,7 +20,8 @@ namespace Honua.Worker.Gdal.Execution;
 /// Distance reads a base64-encoded source GeoTIFF whose non-zero (or
 /// <c>values</c>-listed) pixels are the proximity targets, and publishes a Float32
 /// distance raster honoring the requested distance units and optional maximum
-/// distance.
+/// distance. A bundled step runs the real CLI and declares its negative nodata
+/// sentinel on the output band before publication.
 /// </para>
 /// <para>
 /// Allocation (assigning each cell the VALUE/id of its nearest source — a discrete
