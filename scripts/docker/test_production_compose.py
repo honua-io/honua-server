@@ -79,6 +79,28 @@ class ProductionComposeTests(unittest.TestCase):
             self.assertTrue(hmac.compare_digest(environment[key], value), key)
         self.assertEqual(environment["Database__MigrationSafety__ContractApplyPolicy"], "Gate")
 
+    def test_documented_env_file_command_uses_private_runtime_values(self):
+        values = self.values | {
+            "ConnectionStrings__DefaultConnection": "Host=private-db;Password=" + secrets.token_hex(32),
+            "ConnectionStrings__Redis": "private-redis:6379,password=" + secrets.token_hex(32),
+            "Security__ConnectionEncryption__MasterKey": secrets.token_hex(32),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "docker-compose.production.yml").write_text(self.compose)
+            (root / ".env.production").write_text("\n".join(f"{key}={value}" for key, value in values.items()))
+            result = subprocess.run(
+                ["docker", "compose", "-f", "docker-compose.production.yml", "--env-file", ".env.production",
+                 "config", "--format", "json"], cwd=root,
+                env={key: value for key, value in os.environ.items()
+                     if key not in values and not key.startswith("COMPOSE_")}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, "Documented production env-file command must render")
+            environment = json.loads(result.stdout)["services"]["honua"]["environment"]
+            self.assertEqual(environment["ASPNETCORE_ENVIRONMENT"], "Production")
+            for key in ("ConnectionStrings__DefaultConnection", "ConnectionStrings__Redis",
+                        "Security__ConnectionEncryption__MasterKey", "HONUA_ADMIN_PASSWORD"):
+                self.assertTrue(hmac.compare_digest(environment[key], values[key]), key)
+
     def test_missing_required_inputs_fail_before_container_creation(self):
         for key in ("HONUA_IMAGE", "HONUA_HOST", "POSTGRES_PASSWORD", "HONUA_ADMIN_PASSWORD", "HONUA_MASTER_KEY"):
             self.assertNotEqual(self.render(**{key: ""}).returncode, 0, key)
