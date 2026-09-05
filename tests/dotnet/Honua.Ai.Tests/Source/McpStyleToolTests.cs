@@ -463,9 +463,18 @@ public sealed class McpStyleToolTests
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
         var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+        var bridge = Substitute.For<IOperationApprovalBridge>();
+        bridge.CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+                Arg.Any<OperationPolicyContext>(), Arg.Any<PolicyDecision>(), Arg.Any<CancellationToken>())
+            .Returns(new OperationApprovalBridgeResult
+            {
+                IsDurable = true,
+                ProposalId = "tier-style-proposal",
+                AuditId = "tier-style-audit",
+            });
         var response = await DispatchAsync(ApplyStylePresetTool.ToolName,
             $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"styleId":"{{PresetStyleId}}"}""",
-            catalog: catalog, graphSync: graphSync, license: license,
+            catalog: catalog, graphSync: graphSync, license: license, approvalBridge: bridge,
             policyOptions: new OperationPolicyOptions
             {
                 Enabled = true,
@@ -474,6 +483,9 @@ public sealed class McpStyleToolTests
                     Tier = "pro", Decision = PolicyDecisionKind.RequireApproval }],
             });
         response!.Result!.Value.GetProperty("structuredContent").GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        await bridge.Received(1).CreateProposalAsync(Arg.Any<IOperationDescriptor>(), Arg.Any<OperationRequest>(),
+            Arg.Is<OperationPolicyContext>(context => context.Tier == "pro"),
+            Arg.Is<PolicyDecision>(decision => decision.Kind == PolicyDecisionKind.RequireApproval), Arg.Any<CancellationToken>());
         await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }

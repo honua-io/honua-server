@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -81,6 +82,14 @@ public sealed class OperationEnvelopeFactory(
         catch (OperationCanceledException)
         {
             await PersistFailureAsync(envelope, "Operation acceptance was canceled.").ConfigureAwait(false);
+            throw;
+        }
+        catch (CapabilityUnavailableException)
+        {
+            // Preserve the structured dependency receipt for REST/MCP while
+            // retaining a failed envelope if acceptance reached durable storage.
+            await PersistFailureAsync(envelope, "Operation acceptance requires an unavailable capability.")
+                .ConfigureAwait(false);
             throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)

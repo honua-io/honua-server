@@ -102,12 +102,13 @@ public sealed class McpStyleGovernanceEndpointTests
         await fixture.InitializeAsync();
         try
         {
+            var serviceId = fixture.GetCurrentV2GraphSnapshot().FindService(WebAppFixture.TestServiceId)!.Metadata.Id;
             using var client = fixture.CreateAdminClient();
             using var response = await client.PostAsJsonAsync("/api/v1/operations/style.apply-preset/validate", new
             {
                 parameters = new Dictionary<string, string>
                 {
-                    ["serviceId"] = WebAppFixture.TestServiceId,
+                    ["serviceId"] = serviceId,
                     ["layerId"] = layerId,
                     ["styleId"] = "validation-preset",
                 },
