@@ -34,9 +34,9 @@ public sealed class OfflineSyncDisabledStartupTests
                 options.ValidateScopes = true;
             });
         });
+        await fixture.InitializeAsync();
         try
         {
-            await fixture.InitializeAsync();
             using var scope = fixture.Services.CreateScope();
             scope.ServiceProvider.GetRequiredService<IReplicaConflictRepository>().Should().NotBeNull();
             scope.ServiceProvider.GetRequiredService<ReplicaConflictResolutionService>().Should().NotBeNull();
