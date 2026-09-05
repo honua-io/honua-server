@@ -77,10 +77,11 @@ public sealed class PatchConcurrencyTests
             }
 
             using var firstResponse = await firstTask;
-            Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
             var current = (await fixture.GetService<IFeatureReader>().GetAsync(0, objectId))!.Value;
-            Assert.Equal(committed.Attributes["population"], current.Attributes["population"]);
+            Assert.True(current.Attributes.TryGetValue("population", out var population));
+            Assert.Equal(committed.Attributes["population"], population);
             Assert.Equal(committed.Geometry, current.Geometry);
+            Assert.Equal(HttpStatusCode.Conflict, firstResponse.StatusCode);
             Assert.Equal("original name", current.Attributes["name"]);
 
             // A client can retry the rejected partial edit against the current state.
