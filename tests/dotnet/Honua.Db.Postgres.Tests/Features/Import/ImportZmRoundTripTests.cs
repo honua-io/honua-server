@@ -241,7 +241,7 @@ public sealed class ImportZmRoundTripTests
 
         wkt.Should().NotBeNull();
         wkt.Should().StartWith(hasZ ? "MULTIPOLYGON ZM " : "MULTIPOLYGON M ");
-        var polygon = (MultiPolygon)new NetTopologySuite.IO.WKTReader().Read(wkt!);
+        var polygon = (MultiPolygon)new WKTReader().Read(wkt!);
         var ring = ((Polygon)polygon.GetGeometryN(0)).ExteriorRing;
         ring.Coordinates.Select(c => c.M).Should().BeEquivalentTo([500d, 501d, 502d, 503d, 500d]);
         if (hasZ)
