@@ -338,7 +338,8 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         var hasInteractions = body.TryGetProperty("interactions", out var rawInteractions);
         var hasLayout = body.TryGetProperty("layout", out var rawLayout);
         var hasControls = body.TryGetProperty("controls", out var rawControls);
-        if (!hasInteractions && !hasLayout && !hasControls)
+        if (!ValidateCompositionCollection(body, "layers", requireKind: false, diagnostics)
+            | !ValidateCompositionCollection(body, "widgets", requireKind: true, diagnostics))
         {
             return;
         }
@@ -365,8 +366,13 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
             diagnostics.Add(Error(
                 "studio.composition.invalid",
                 "/body",
-                "the composition's interactions/layout blocks do not match the standard shape."));
+                "the composition members do not match the standard shape."));
             return;
+        }
+
+        if (!StudioCompositionViewBounds.TryValidate(composition.View, out var viewError))
+        {
+            diagnostics.Add(Error("studio.composition.view.invalid", "/body/view", viewError));
         }
 
         // Controls first: interaction and layout reference resolution reads the controls
@@ -375,6 +381,58 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         ValidateControls(composition, diagnostics);
         ValidateInteractions(composition, diagnostics);
         ValidateLayout(composition, diagnostics);
+    }
+
+    private static bool ValidateCompositionCollection(
+        JsonElement body,
+        string member,
+        bool requireKind,
+        List<StudioValidationDiagnostic> diagnostics)
+    {
+        if (!body.TryGetProperty(member, out var collection))
+        {
+            return true;
+        }
+
+        if (collection.ValueKind != JsonValueKind.Array)
+        {
+            diagnostics.Add(Error($"studio.composition.{member}.array", $"/body/{member}", $"{member} must be an array."));
+            return false;
+        }
+
+        var valid = true;
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var index = 0;
+        foreach (var item in collection.EnumerateArray())
+        {
+            var path = $"/body/{member}/{index++}";
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                diagnostics.Add(Error("studio.composition.item.object", path, "composition items must be non-null objects."));
+                valid = false;
+                continue;
+            }
+
+            if (ValidateRequiredString(item, "id", path, "studio.composition.item.id.required", diagnostics))
+            {
+                if (!ids.Add(item.GetProperty("id").GetString()!))
+                {
+                    diagnostics.Add(Error("studio.composition.item.id.duplicate", $"{path}/id", "composition ids must be unique within their collection."));
+                    valid = false;
+                }
+            }
+            else
+            {
+                valid = false;
+            }
+
+            if (requireKind)
+            {
+                valid &= ValidateRequiredString(item, "kind", path, "studio.composition.widget.kind.required", diagnostics);
+            }
+        }
+
+        return valid;
     }
 
     private static bool ValidateCompositionWireShape(
