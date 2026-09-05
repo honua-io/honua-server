@@ -77,7 +77,10 @@ public sealed class McpProviderRoutingTests
         var context = McpTestFactory.AuthenticatedHttpContext();
         context.RequestServices = services;
         using var parameters = JsonDocument.Parse($$"""
-            {"name":"{{toolName}}","arguments":{"serviceId":"svc-remote","layerId":0,"returnCountOnly":{{(countOnly ? "true" : "false")}}}}
+            {"name":"{{toolName}}","arguments":{
+              "serviceId":"svc-remote","layerId":0,"returnCountOnly":{{(countOnly ? "true" : "false")}}
+            }
+            }
             """);
         var response = await surface.DispatchAsync(context, new McpJsonRpcRequest
         {
