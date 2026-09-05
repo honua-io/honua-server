@@ -226,4 +226,31 @@ public sealed class ImportZmRoundTripTests
         firstLine[0].GetArrayLength().Should().Be(3);
         firstLine[2][2].GetDouble().Should().Be(12.0);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConvertEsriGeometryToWkt_PolygonWithMeasures_PreservesDimensionAndOrdinates(bool hasZ)
+    {
+        var coordinates = hasZ
+            ? "[[0,0,10,500],[0,1,11,501],[1,1,12,502],[1,0,13,503],[0,0,10,500]]"
+            : "[[0,0,500],[0,1,501],[1,1,502],[1,0,503],[0,0,500]]";
+        using var geometry = JsonDocument.Parse($$"""{"rings":[{{coordinates}}]}""");
+
+        var wkt = GeoservicesImportService.ConvertEsriGeometryToWkt(geometry.RootElement, hasZ, hasM: true);
+
+        wkt.Should().NotBeNull();
+        wkt.Should().StartWith(hasZ ? "MULTIPOLYGON ZM " : "MULTIPOLYGON M ");
+        var polygon = (MultiPolygon)new NetTopologySuite.IO.WKTReader().Read(wkt!);
+        var ring = ((Polygon)polygon.GetGeometryN(0)).ExteriorRing;
+        ring.Coordinates.Select(c => c.M).Should().BeEquivalentTo([500d, 501d, 502d, 503d, 500d]);
+        if (hasZ)
+        {
+            ring.Coordinates.Select(c => c.Z).Should().BeEquivalentTo([10d, 11d, 12d, 13d, 10d]);
+        }
+        else
+        {
+            ring.Coordinates.Should().OnlyContain(c => double.IsNaN(c.Z));
+        }
+    }
 }
