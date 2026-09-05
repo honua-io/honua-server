@@ -5912,7 +5912,6 @@
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.PerformanceTesting_AllEndpoints_MeetPerformanceTargets",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestInfrastructure_Quality_MeetsHighStandards",
-        "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestQualityMetrics_AllCriteria_AchievesPerfectScore",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.Health_GetLiveness_ShouldReturnHealthy",
         "Honua.Server.Tests.Features.Admin.AdminAuthEndpointsTests.IssueOperatorBearer_WithAuthenticatedSession_ReturnsForwardableBearerThatAuthorizesAdminApi",
         "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.ConfiguredProfile_ReportsAndEnforcesExactHttpSurface",
