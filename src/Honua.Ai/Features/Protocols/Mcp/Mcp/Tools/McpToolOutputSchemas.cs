@@ -1142,18 +1142,22 @@ internal static class McpToolOutputSchemas
 
     /// <summary>
     /// Schema for <c>McpStudioProposePublicationOutput</c>
-    /// (<c>honua_studio_propose_publication</c>). <c>recorded</c> and
-    /// <c>humanConfirmationRequired</c> are structural proof the tool only
-    /// recorded intent on the draft — it never executed publish/share/embed.
+    /// (<c>honua_studio_propose_publication</c>).
     /// </summary>
     public static readonly JsonElement StudioProposePublicationOutputSchema = Parse(
         """
         {
           "type": "object",
-          "required": ["draft", "recorded", "humanConfirmationRequired", "message"],
+          "required": ["operation", "operationInstanceId", "proposalId", "proposalUri", "auditId", "correlationId", "idempotencyIdentity", "status", "humanConfirmationRequired", "message"],
           "properties": {
-            "draft": { "type": "object" },
-            "recorded": { "type": "boolean", "const": true },
+            "operation": { "type": "object" },
+            "operationInstanceId": { "type": "string", "minLength": 1 },
+            "proposalId": { "type": "string", "minLength": 1 },
+            "proposalUri": { "type": "string", "pattern": "^honua://proposals/.+" },
+            "auditId": { "type": "string", "minLength": 1 },
+            "correlationId": { "type": "string", "minLength": 1 },
+            "idempotencyIdentity": { "type": "string", "minLength": 1 },
+            "status": { "type": "string", "const": "AwaitingApproval" },
             "humanConfirmationRequired": { "type": "boolean", "const": true },
             "message": { "type": "string" }
           }

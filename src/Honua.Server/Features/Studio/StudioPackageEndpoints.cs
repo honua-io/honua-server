@@ -1595,6 +1595,7 @@ internal static class StudioPackageEndpoints
             var receipt = await mutationRuntime.CreatePublicationRequestAsync(
                 itemId,
                 versionId,
+                targetVersion.ContentHash,
                 request.Intent,
                 request.WarningAcknowledgement,
                 actor,

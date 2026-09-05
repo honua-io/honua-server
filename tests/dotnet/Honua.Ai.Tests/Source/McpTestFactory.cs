@@ -181,6 +181,33 @@ internal static class McpTestFactory
                     itemId, versionId, intent, warningAcknowledgement, actorId, cancellationToken).ConfigureAwait(false),
                 "studio.content.create-publication-request");
 
+        public Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
+            Guid itemId,
+            Guid versionId,
+            string contentHash,
+            StudioPublicationIntent? intent,
+            string? warningAcknowledgement,
+            string? actorId,
+            StudioDraftMutationContext context,
+            CancellationToken cancellationToken = default)
+        {
+            var now = DateTimeOffset.UtcNow;
+            return Task.FromResult(new StudioDraftMutationReceipt<StudioPublicationRequest>
+            {
+                Operation = new OperationHandle
+                {
+                    OperationInstanceId = "opinst-studio-publication",
+                    OperationId = "studio.content.create-publication-request",
+                    CorrelationId = context.CorrelationId ?? "corr-studio-publication",
+                    AuditId = "audit-studio-publication",
+                    ProposalId = "proposal-studio-publication",
+                    Status = OperationHandleStatus.RequiresApproval,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                },
+            });
+        }
+
         public async Task<StudioDraftMutationReceipt<StudioPackageDraft>> ReopenVersionAsync(
             Guid itemId,
             Guid versionId,
