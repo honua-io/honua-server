@@ -37,7 +37,6 @@ public sealed class SoapXmlSecurityTests
         using var factory = ServiceRbacTestFixture.CreateFactory(
             configureServices: services => services.AddSingleton(Substitute.For<IRasterStore>()));
         using var client = factory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(10);
         var request = $"""
             <!DOCTYPE Envelope [<!ENTITY external SYSTEM "http://127.0.0.1:{port}/entity">]>
             <soap:Envelope xmlns:soap="{soapNamespace}">
@@ -69,7 +68,6 @@ public sealed class SoapXmlSecurityTests
         using var factory = ServiceRbacTestFixture.CreateFactory(
             configureServices: services => services.AddSingleton(Substitute.For<IRasterStore>()));
         using var client = factory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(10);
         var request = $"""
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
                            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
