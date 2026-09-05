@@ -53,6 +53,7 @@ public sealed class LicenseMintRoundTripTests
         snapshot.HasEntitlement(FeatureCatalog.FeatureServerEditsKey).Should().BeTrue();
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
         snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeTrue();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeFalse();
         snapshot.HasEntitlement(FeatureCatalog.PluginSdkKey).Should().BeFalse();
     }
 
@@ -75,6 +76,7 @@ public sealed class LicenseMintRoundTripTests
         snapshot.ValidationState.Should().Be(LicenseValidationState.Valid);
         snapshot.Edition.Should().Be(HonuaEdition.Enterprise);
         snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeTrue();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeTrue();
         snapshot.HasEntitlement(FeatureCatalog.PluginSdkKey).Should().BeTrue();
         snapshot.ExpiresAt.Should().BeNull("a perpetual license omits expiresAt");
     }
@@ -100,6 +102,8 @@ public sealed class LicenseMintRoundTripTests
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
         snapshot.HasEntitlement("staticmap.high-dpi").Should().BeTrue();
         snapshot.HasEntitlement("analytics.spatial-join").Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeFalse();
     }
 
     [UnitTest]
