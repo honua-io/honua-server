@@ -53,6 +53,16 @@ public sealed class ProductionWorkerContainerHandoffTests(ITestOutputHelper outp
             .WithNetwork(network)
             .WithNetworkAliases(RedisAlias)
             .WithPortBinding(6379, true)
+            .WithCommand(
+                "redis-server",
+                "--appendonly",
+                "yes",
+                "--appendfsync",
+                "always",
+                "--save",
+                "",
+                "--maxmemory-policy",
+                "noeviction")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted("redis-cli", "ping"))
             .Build();
 

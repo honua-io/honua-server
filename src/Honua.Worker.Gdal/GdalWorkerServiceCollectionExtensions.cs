@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -51,8 +52,21 @@ public static class GdalWorkerServiceCollectionExtensions
                 "The GDAL worker requires a 'redis' connection string (the durable job substrate's "
                 + "coordination layer per ADR-0031 / ADR-0038).");
 
-        services.TryAddSingleton<IConnectionMultiplexer>(
-            _ => ConnectionMultiplexer.Connect(redisConnectionString));
+        var redisOptions = ConfigurationOptions.Parse(redisConnectionString, ignoreUnknown: true);
+        redisOptions.AllowAdmin = true;
+        redisOptions.AbortOnConnectFail = true;
+        var redis = ConnectionMultiplexer.Connect(redisOptions);
+        var durability = RedisDurabilityAttestor.InspectAsync(redis).GetAwaiter().GetResult();
+        if (!durability.Accepted)
+        {
+            redis.Dispose();
+            throw new InvalidOperationException(
+                $"The GDAL worker requires an accepted Redis durability attestation, but Redis was "
+                + $"rejected ({durability.FailureCause}): {durability.FailureDetail}");
+        }
+
+        services.TryAddSingleton<IConnectionMultiplexer>(redis);
+        services.TryAddSingleton(durability.Attestation!);
 
         // Shared durable substrate stores. These are the same internal Redis-backed
         // implementations the API/serving host registers; the worker host reuses them
