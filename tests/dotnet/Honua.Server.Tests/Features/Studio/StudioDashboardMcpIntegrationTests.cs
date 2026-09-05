@@ -139,6 +139,10 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         var malformed = await RpcAsync("update_draft", $$$"""{"draftId":"{{{draftId}}}","generation":{{{generation}}},"packageKey":"{{{packageKey}}}","schemaVersion":"1.0","body":{"interactions":{"id":"invalid"} } }""");
         malformed.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeTrue();
         malformed.GetProperty("result").GetProperty("structuredContent").GetProperty("code").GetString().Should().Be("invalid_argument");
+        var unsupported = await RpcAsync("update_draft",
+            $$"""{"draftId":"{{draftId}}","generation":{{generation}},"packageKey":"{{packageKey}}","schemaVersion":"1.0","format":"unsupported.dashboard.v1"}""");
+        unsupported.GetProperty("result").GetProperty("structuredContent").GetProperty("code")
+            .GetString().Should().Be("invalid_argument");
         var afterRejected = await CallAsync("get_draft", $$"""{"draftId":"{{draftId}}"}""");
         afterRejected.GetProperty("generation").GetInt64().Should().Be(generation);
         afterRejected.GetProperty("envelope").GetProperty("body").GetProperty("layers")[0]
@@ -200,7 +204,12 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             var lifecycle = reader.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
             reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
                 .Should().Be(StudioPackagePersistenceMode.Durable);
+            var intent = await CallAsync("propose_publication",
+                $$"""{"draftId":"{{reopened.DraftId}}","generation":{{reopened.Generation}},"route":"/studio/dashboard-fixture","visibility":"private"}""");
+            intent.GetProperty("recorded").GetBoolean().Should().BeTrue();
+            intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
             (await lifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
+            (await lifecycle.GetVersionAsync(version.ItemId, version.VersionId))!.ContentHash.Should().Be(expectedHash);
         }
         finally
         {
