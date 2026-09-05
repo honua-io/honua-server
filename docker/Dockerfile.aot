@@ -39,8 +39,9 @@ ARG TARGETARCH
 ARG HONUA_BUILD_PROFILE=full
 ARG HONUA_INCLUDE_AWS=
 ARG HONUA_INCLUDE_AZURE=
-ARG HONUA_INCLUDE_ORACLE=
-ARG HONUA_INCLUDE_SNOWFLAKE=
+# Match the other native-AOT images: these providers require the JIT runtime.
+ARG HONUA_INCLUDE_ORACLE=false
+ARG HONUA_INCLUDE_SNOWFLAKE=false
 
 # Restore dependencies for the target runtime so the AOT self-contained publish
 # (which runs --no-restore) finds obj/project.assets.json for every project in
