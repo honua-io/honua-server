@@ -35,6 +35,7 @@ using Honua.Server.Features.Collaboration;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Console.Collaboration;
 using Honua.Server.Features.Collaboration.Sessions;
+using Honua.Infrastructure.Logging;
 using Honua.Io.Export;
 using Honua.Server.Features.PrintingTools;
 using Honua.Server.Features.Provisioner;
@@ -325,7 +326,6 @@ builder.Host.UseSerilog((context, services, config) =>
         .MinimumLevel.Information()
         .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("Microsoft.AspNetCore", Serilog.Events.LogEventLevel.Warning)
-        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting", Serilog.Events.LogEventLevel.Information)
         .MinimumLevel.Override("Microsoft.AspNetCore.Routing", Serilog.Events.LogEventLevel.Warning)
         .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
         .Enrich.FromLogContext()
@@ -334,7 +334,8 @@ builder.Host.UseSerilog((context, services, config) =>
         .Enrich.WithThreadId()
         .Enrich.WithSpan()  // OpenTelemetry trace/span IDs
         .Enrich.WithProperty("Application", "Honua")
-        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown");
+        .Enrich.WithProperty("Version", typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown")
+        .ConfigureHonuaRequestDiagnostics();
 
     if (benchmarkQuietLogs)
     {
