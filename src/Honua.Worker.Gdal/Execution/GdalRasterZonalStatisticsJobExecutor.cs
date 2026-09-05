@@ -264,8 +264,14 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                     continue;
                 }
 
-                var infoArgs = new List<string> { "-json", "-stats", clippedPath };
-                await GdalCommandLog.LogCommandAsync(context, "gdalinfo", infoArgs, workspace, cancellationToken).ConfigureAwait(false);
+                // gdalinfo rounds its displayed mean and does not expose an exact
+                // valid count. Read every valid cell in bounded windows instead;
+                // percentages cannot reconstruct counts reliably on large rasters.
+                const string StatisticsScript = "gdal_zonal_statistics.py";
+                var scriptPath = Path.Join(workspace, StatisticsScript);
+                File.Copy(Path.Join(AppContext.BaseDirectory, "Scripts", StatisticsScript), scriptPath, overwrite: true);
+                var infoArgs = new List<string> { scriptPath, clippedPath };
+                await GdalCommandLog.LogCommandAsync(context, "python3", infoArgs, workspace, cancellationToken).ConfigureAwait(false);
 
                 GdalCommandResult infoResult;
                 using (var infoTimeoutCts = new CancellationTokenSource(opts.ToolTimeout))
@@ -273,19 +279,19 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 {
                     try
                     {
-                        infoResult = await runner.RunAsync("gdalinfo", infoArgs, workspace, infoLinked.Token).ConfigureAwait(false);
+                        infoResult = await runner.RunAsync("python3", infoArgs, workspace, infoLinked.Token).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (infoTimeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
                     {
                         Log.ToolTimedOut(logger, job.OperationId, opts.ToolTimeout);
-                        return JobExecutionResult.Failed($"gdalinfo timed out after {opts.ToolTimeout}.");
+                        return JobExecutionResult.Failed($"Zonal statistics timed out after {opts.ToolTimeout}.");
                     }
                 }
 
                 if (!infoResult.Succeeded)
                 {
                     zonalResults.Add(ZonalRow.Skipped(zoneIndex, ZoneId(feature, zoneIndex),
-                        $"gdalinfo failed: {GdalErrorSanitizer.Sanitize(infoResult.StandardError, workspace)}"));
+                        $"Zonal statistics failed: {GdalErrorSanitizer.Sanitize(infoResult.StandardError, workspace)}"));
                     continue;
                 }
 
@@ -304,7 +310,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                 {
                     Log.ZoneStatisticsParseFailed(logger, job.OperationId, zoneIndex, ex);
                     zonalResults.Add(ZonalRow.Skipped(zoneIndex, ZoneId(feature, zoneIndex),
-                        "gdalinfo JSON parse error."));
+                        "Zonal statistics JSON parse error."));
                 }
             }
 
@@ -426,7 +432,8 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
         if (requested.Contains("sum"))
         {
             var mean = ReadNumber(target, "mean");
-            stats["sum"] = (mean.HasValue && count.HasValue) ? mean.Value * count.Value : null;
+            stats["sum"] = ReadNumber(target, "sum")
+                ?? ((mean.HasValue && count.HasValue) ? mean.Value * count.Value : null);
         }
 
         return stats;

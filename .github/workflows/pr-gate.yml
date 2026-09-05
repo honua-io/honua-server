@@ -216,6 +216,24 @@ jobs:
           # format job above. The default remains inline for every other caller.
           run-format: 'false'
 
+      - name: Prove raster catalog execution with production GDAL
+        if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
+        timeout-minutes: 10
+        run: |
+          dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
+            --configuration Release -maxcpucount:4 \
+            --filter 'Category=RasterExecutionProof' \
+            --logger 'trx;LogFileName=raster-execution-proof.trx' \
+            --results-directory tests/TestResults
+
+      - name: Upload raster execution proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: raster-execution-proof
+          path: tests/TestResults/raster-execution-proof.trx
+          if-no-files-found: warn
+
       # Exercise all clean and injected-rootfs fixtures here without building a
       # container. The separate serving-image workflow and release/deploy/nightly
       # lanes apply this detector to the final production root filesystems.

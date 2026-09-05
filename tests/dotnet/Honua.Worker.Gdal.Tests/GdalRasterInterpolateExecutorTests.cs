@@ -56,7 +56,7 @@ public sealed class GdalRasterInterpolateExecutorTests
 
             var invocation = runner.Invocations.Single();
             invocation.Tool.Should().Be("gdal_grid");
-            invocation.Arguments.Should().ContainInOrder("-a", "invdist:power=2:smoothing=0");
+            invocation.Arguments.Should().ContainInOrder("-a", "invdist:power=2:smoothing=0:nodata=nan");
             invocation.Arguments.Should().ContainInOrder("-zfield", "elevation");
             invocation.Arguments.Should().Contain("-l").And.Contain("points");
         }
@@ -86,7 +86,7 @@ public sealed class GdalRasterInterpolateExecutorTests
 
             result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
             var args = runner.Invocations.Single().Arguments;
-            args.Should().ContainInOrder("-a", "invdist:power=3:smoothing=0.5:radius=100");
+            args.Should().ContainInOrder("-a", "invdist:power=3:smoothing=0.5:nodata=nan:radius=100");
             args.Should().ContainInOrder("-outsize", "256", "128");
         }
         finally

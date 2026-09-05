@@ -10,6 +10,7 @@ using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.IO;
+using Xunit;
 
 namespace Honua.Worker.Gdal.Tests;
 
@@ -21,7 +22,7 @@ public sealed class RasterExecutionProofTests : IDisposable
     private const string Image = "ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a";
     private static readonly double[] Grid = [1, 2, 3, 4, 5, NoData, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
     private readonly string _scratch = Path.Join(AppContext.BaseDirectory, "raster-proof", Guid.NewGuid().ToString("N"));
-    private readonly IGdalCommandRunner _runner = new DockerGdalCommandRunner(
+    private readonly DockerGdalCommandRunner _runner = new(
         new PortableDockerInvoker(),
         Options.Create(new GdalContainerExecutionOptions { Image = Image }),
         Options.Create(new GdalHardeningOptions()), Options.Create(new AwsS3Options()),
@@ -125,7 +126,7 @@ public sealed class RasterExecutionProofTests : IDisposable
     [InlineData("last")]
     public async Task Mosaic_OverlappingTwoBandTiles_ProvesPrecedenceAndNoDataFallback(string policy)
     {
-        var output = await ExecuteRaster("raster.mosaic", ("sources", Input("mosaic-a.tif") + ";" + Input("mosaic-b.tif")),
+        var output = await ExecuteRaster("raster.mosaic", ("sources", Input("mosaic-a.tif") + "|" + Input("mosaic-b.tif")),
             ("operator", policy), ("resampling", "nearest"));
         AssertGrid(output, 5, 2, 4326, [0, 1, 0, 2, 0, -1], 2);
         AssertBand(output, 0, [1, 2, policy == "first" ? 3 : 30, 40, 50, 4, 5, 60, NoData, 80]);
@@ -147,18 +148,19 @@ public sealed class RasterExecutionProofTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task InterpolateIdw_KnownPoints_MatchesInverseDistanceAndEmptySearchCells(bool bounded)
+    [InlineData(false, 100)]
+    [InlineData(true, 100)]
+    [InlineData(true, 0)]
+    public async Task InterpolateIdw_KnownPoints_MatchesInverseDistanceAndEmptySearchCells(bool bounded, double centerValue)
     {
-        var inputs = new List<(string, string)> { ("points", Input("points.geojson")), ("zField", "value"), ("width", "5"), ("height", "5") };
+        var inputs = new List<(string, string)> { ("points", Input(centerValue == 0 ? "points-zero.geojson" : "points.geojson")), ("zField", "value"), ("width", "5"), ("height", "5") };
         if (bounded)
         {
             inputs.Add(("radius", "0.1"));
         }
         var output = await ExecuteRaster("raster.interpolate-idw", inputs.ToArray());
         AssertGrid(output, 5, 5, 4326, [0, 0.8, 0, 4, 0, -0.8], 1);
-        (double X, double Y, double Value)[] points = [(0, 0, 10), (4, 0, 20), (0, 4, 30), (4, 4, 40), (2, 2, 100)];
+        (double X, double Y, double Value)[] points = [(0, 0, 10), (4, 0, 20), (0, 4, 30), (4, 4, 40), (2, 2, centerValue)];
         var expected = new double[25];
         for (var i = 0; i < 25; i++)
         {
@@ -166,14 +168,14 @@ public sealed class RasterExecutionProofTests : IDisposable
             var y = 4 - (i / 5 + 0.5) * 0.8;
             if (i == 12)
             {
-                expected[i] = 100; // Exact coincident source location takes precedence over weighting.
+                expected[i] = centerValue; // Exact source values, including valid zero, take precedence.
                 continue;
             }
             var weights = points.Select(p => (p.Value, Distance: (p.X - x) * (p.X - x) + (p.Y - y) * (p.Y - y)))
                 .Where(p => !bounded || p.Distance <= 0.01).ToArray();
-            expected[i] = weights.Length == 0 ? 0 : weights.Sum(p => p.Value / p.Distance) / weights.Sum(p => 1 / p.Distance);
+            expected[i] = weights.Length == 0 ? double.NaN : weights.Sum(p => p.Value / p.Distance) / weights.Sum(p => 1 / p.Distance);
         }
-        AssertBand(output, 0, expected, "Float64", 0, 1e-6);
+        AssertBand(output, 0, expected, "Float64", double.NaN, 1e-6);
     }
 
     [Fact]
@@ -249,7 +251,14 @@ public sealed class RasterExecutionProofTests : IDisposable
     {
         var band = raster.GetProperty("bands")[bandIndex];
         band.GetProperty("type").GetString().Should().Be(type);
-        band.GetProperty("nodata").GetDouble().Should().Be(nodata);
+        if (double.IsNaN(nodata))
+        {
+            band.GetProperty("nodata").GetString().Should().Be("nan");
+        }
+        else
+        {
+            band.GetProperty("nodata").GetDouble().Should().Be(nodata);
+        }
         var values = band.GetProperty("values").EnumerateArray().ToArray();
         values.Should().HaveCount(expected.Length);
         for (var i = 0; i < expected.Length; i++)

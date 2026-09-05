@@ -44,3 +44,5 @@ for name, x0, y0, x1, y1 in [("left", 0, 2, 2, 4), ("right", 2, 2, 4, 4), ("over
 points = [{"type": "Feature", "properties": {"value": v}, "geometry": {"type": "Point", "coordinates": [x, y]}}
           for x, y, v in [(0, 0, 10), (4, 0, 20), (0, 4, 30), (4, 4, 40), (2, 2, 100)]]
 (root / "points.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": points}) + "\n")
+points[-1]["properties"]["value"] = 0
+(root / "points-zero.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": points}) + "\n")
