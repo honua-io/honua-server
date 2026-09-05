@@ -54,8 +54,10 @@ public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
         {
             var query = new ExecutionJobQuery
             {
-                RequestedBy = owner, ApplyTenantScope = true,
-                TenantId = tenant == "unscoped" ? null : tenant, Limit = 1
+                RequestedBy = owner,
+                ApplyTenantScope = true,
+                TenantId = tenant == "unscoped" ? null : tenant,
+                Limit = 1
             };
             var first = await harness.JobStore.QueryAsync(query);
             first.Items.Should().ContainSingle().Which.OperationId.Should().Be(ids[0]);

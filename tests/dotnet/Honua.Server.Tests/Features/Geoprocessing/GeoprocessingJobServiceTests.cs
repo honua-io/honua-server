@@ -22,6 +22,7 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Security;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.ControlPlane;
@@ -2448,6 +2449,31 @@ public sealed class GeoprocessingJobServiceTests
         (await sut.GetJobAsync(own.OperationId, principal)).Should().BeSameAs(own);
         _cancellationNotifier.DidNotReceiveWithAnyArgs().Cancel(default!);
         _resultPackageStore.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("tenant-b")]
+    [InlineData(null)]
+    public async Task JobAccess_DetachedRequest_PreservesEffectiveTenant(string? tenant)
+    {
+        var principal = CreatePrincipal();
+        ((ClaimsIdentity)principal.Identity!).AddClaim(new Claim("tenant_id", "tenant-a"));
+        CanonicalSecurityActor.StampRequestBinding(principal, tenant);
+        var accessor = new HttpContextAccessor { HttpContext = null };
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier], _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(), NullLogger<GeoprocessingJobService>.Instance,
+            DefaultExecutorOptions, _jobStore, _jobQueue, httpContextAccessor: accessor);
+        var own = CreateTenantJobRecord("own-detached", tenant);
+        var foreign = CreateTenantJobRecord("foreign-detached", "tenant-a");
+        _jobStore.GetAsync(own.OperationId, Arg.Any<CancellationToken>()).Returns(own);
+        _jobStore.GetAsync(foreign.OperationId, Arg.Any<CancellationToken>()).Returns(foreign);
+
+        (await sut.GetJobAsync(own.OperationId, principal)).Should().BeSameAs(own);
+        var denied = () => sut.GetJobAsync(foreign.OperationId, principal);
+        await denied.Should().ThrowAsync<GeoprocessingNotFoundException>();
     }
 
     private GeoprocessingJobService CreateTenantJobService(IServiceProvider services, ClaimsPrincipal principal)
