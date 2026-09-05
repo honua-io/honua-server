@@ -384,7 +384,12 @@ internal sealed class UpdateStudioDraftTool : StudioDraftToolBase, IMcpTool
             StudioAuthorizationOperation.UpdateDraft,
             draftId.ToString("D"),
             OperatorOperation.Create).ConfigureAwait(false);
-        if (StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(existing.Family))
+        // Draft metadata may be renamed before a body is composed. Validate document replacements
+        // and format/schema changes, while retaining the existing metadata-only draft workflow.
+        var documentChanged = argument.Body is not null
+            || argument.Format is not null
+            || !string.Equals(argument.SchemaVersion, existing.Envelope.SchemaVersion, StringComparison.Ordinal);
+        if (documentChanged && StudioCompositionBodyEditor.CompositionEligibleFamilies.Contains(existing.Family))
         {
             var validation = RequireValidator(httpContext).Validate(envelope);
             if (validation.Status == StudioPackageValidationStatus.Invalid)
