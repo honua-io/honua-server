@@ -85,6 +85,8 @@ public sealed class ServingObservabilityContractTests
     [InlineData("POST", "GetCapabilities", 200, "wps.getcapabilities")]
     [InlineData("GET", "DescribeProcess", 404, "wps.describeprocess")]
     [InlineData("POST", "DescribeProcess", 404, "wps.describeprocess")]
+    [InlineData("GET", "Unsupported", 501, "wps.unsupported")]
+    [InlineData("POST", "Unsupported", 501, "wps.unsupported")]
     public async Task WpsEndpoint_RecordsServingLatencyAndRequestDenominator(string method, string operation, int statusCode, string telemetryOperation)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
@@ -120,15 +122,58 @@ public sealed class ServingObservabilityContractTests
         await app.StopAsync();
 
         Assert.Equal(statusCode, (int)response.StatusCode);
-        Assert.Contains(statusCode == 200 ? "Capabilities" : "NoSuchProcess", xml, StringComparison.Ordinal);
+        Assert.Contains(statusCode switch { 200 => "Capabilities", 404 => "NoSuchProcess", _ => "OperationNotSupported" }, xml, StringComparison.Ordinal);
         var serving = Assert.Single(metrics.Samples, sample => sample.Name == "honua_serving_request_duration_ms");
         Assert.True(serving.Value >= 0);
         Assert.Equal("WPS-2.0.2", serving.Tags[HonuaTelemetry.Tags.Protocol]);
         Assert.Equal(telemetryOperation, serving.Tags[HonuaTelemetry.Tags.Operation]);
-        Assert.Equal(statusCode == 200 ? "2xx" : "4xx", serving.Tags["status_class"]);
+        Assert.Equal($"{statusCode / 100}xx", serving.Tags["status_class"]);
+        if (statusCode >= 400)
+        {
+            var error = Assert.Single(metrics.Samples, sample => sample.Name == "honua_request_error_total");
+            Assert.Equal(1, error.Value);
+            Assert.Equal("WPS-2.0.2", error.Tags["service_type"]);
+            Assert.Equal(telemetryOperation, error.Tags["operation"]);
+            Assert.Equal(statusCode, error.Tags["error_code"]);
+            Assert.Equal(false, error.Tags["in_band"]);
+        }
+        else
+        {
+            Assert.DoesNotContain(metrics.Samples, sample => sample.Name == "honua_request_error_total");
+        }
         var after = Assert.Single(HonuaTelemetry.GetServingLatencySnapshot().Protocols,
             protocol => protocol.Protocol == "WPS-2.0.2");
         Assert.Equal(before + 1, after.RequestCount);
+    }
+
+    [Theory]
+    [InlineData("/wps", 400)]
+    [InlineData("/wps/conformance/results/missing", 404)]
+    public async Task WpsEarlyFailure_RecordsBothErrorAndServingCounters(string path, int statusCode)
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton(Substitute.For<IProcessCatalog>());
+        builder.Services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
+        builder.Services.AddSingleton<Wps20ConformanceEcho>();
+        builder.Services.AddOptions<Wps20Options>();
+        await using var app = builder.Build();
+        app.UseMiddleware<CorrelationIdMiddleware>();
+        app.MapWps20Endpoint();
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        using var metrics = new Metrics();
+
+        using var response = await client.GetAsync(path);
+        await app.StopAsync();
+
+        Assert.Equal(statusCode, (int)response.StatusCode);
+        var serving = Assert.Single(metrics.Samples, sample => sample.Name == "honua_serving_request_duration_ms");
+        var error = Assert.Single(metrics.Samples, sample => sample.Name == "honua_request_error_total");
+        Assert.Equal("WPS-2.0.2", error.Tags["service_type"]);
+        Assert.Equal(serving.Tags[HonuaTelemetry.Tags.Operation], error.Tags["operation"]);
+        Assert.Equal(statusCode, error.Tags["error_code"]);
+        Assert.Equal(false, error.Tags["in_band"]);
     }
 
     [Theory]

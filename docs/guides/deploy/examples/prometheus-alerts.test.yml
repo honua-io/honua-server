@@ -155,3 +155,21 @@ tests:
   - eval_time: 10m
     alertname: HonuaErrorRateCritical
     exp_alerts: []
+- name: Failed WPS requests contribute to both sides and fire the outage alert
+  interval: 1m
+  input_series:
+  - series: honua_request_error_total{service_type="WPS-2.0.2",operation="wps.execute",error_code="503",in_band="false"}
+    values: 0+100x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="WPS-2.0.2",honua_operation="wps.execute",status_class="5xx"}
+    values: 0+100x15
+  alert_rule_test:
+  - eval_time: 3m
+    alertname: HonuaErrorRateCritical
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        component: reliability
+      exp_annotations:
+        summary: Honua error rate is critical
+        description: Error rate is 100% - immediate investigation required
+        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
