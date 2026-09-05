@@ -592,6 +592,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private void AppendFilter(SqlBuilder sql, FeatureQuery query, string prefix = "WHERE")
     {
         var conditions = new List<string>();
+        if (query.TextSearch is { } search)
+        {
+            conditions.Add(FeatureTextSearchSql.Build(search,
+                field => ResolveColumnExpression(field, sql),
+                text => sql.AddParameter(text),
+                (column, value) => $"STRPOS({column}, {value})"));
+        }
 
         // Constrain shared-table reads to the bound layer's rows. The discriminator
         // (e.g. 'layer_id' on the shared 'features' table) is applied to every read path

@@ -6209,6 +6209,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Read_ConnectionBoundPublication_UsesBoundReader",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.GetFeature_ReturnsETagInResponse",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.GetFeature_WithIfMatchWildcard_Returns200",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.GetFeature_WithMatchingIfMatch_Returns200",
@@ -6229,6 +6230,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Reference_ConnectionBoundPublication_UsesBoundReader",
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.FeatureReferenceEndpoint_ReturnsCanonicalReference"
       ],
       "proof_ledger_surface": "odata-v4",
@@ -6431,6 +6433,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBboxShorthandTests.Apply_ConfiguredInputBudget_RejectsOverflowAndAcceptsExactLimit",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBboxShorthandTests.Bbox_NextLink_StaysInsideWindow",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBboxShorthandTests.PowerQuery_DocumentedFeed_LoadsFeatureRows",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Apply_ConnectionBoundPublication_CountsBoundRows",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Search_ConnectionBoundCount_UsesTotalInsteadOfPageSize",
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.LayerFeatures_ReturnsCollection",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataQuery_NoGrant_FallsBackToCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataQuery_QueryGrant_OverridesCoarseDeny"
@@ -13429,6 +13436,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.OData.ODataAuthorizationTests.UpdateFeature_WithMalformedJsonWithoutApiKey_ReturnsUnauthorizedBeforeBodyValidation",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAuthorizationTests.UpdateFeature_WithoutApiKey_ReturnsUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Write_ConnectionBoundPublication_RejectsBeforeManagedReadOrWrite",
         "Honua.Server.Tests.Features.Protocols.OData.ODataCrudEndpointTests.UpdateFeature_WithNamedKeys_ReturnsUpdatedFeature",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.UpdateFeature_ETagChangesAfterUpdate",
         "Honua.Server.Tests.Features.Protocols.OData.ODataETagConcurrencyTests.UpdateFeature_WithPreferMinimal_Returns204"
@@ -17471,6 +17479,7 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataAdvancedFeaturesTests.Batch_WithPutRequest_ReplacesFeature",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAdvancedFeaturesTests.Batch_WithSingleGetRequest_ReturnsFeature",
         "Honua.Server.Tests.Features.Protocols.OData.ODataAdvancedOperationsTests.Batch_WithEmptyRequests_ReturnsClientErrorOrUnauthorized",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Batch_ConnectionBoundWrite_RejectsBeforeShadowMutation",
         "Honua.Server.Tests.Features.Protocols.OData.ODataChangesetEditionGateTests.MultipartBatch_ChangesetWrite_UnderCommunity_CreatesFeature",
         "Honua.Server.Tests.Features.Protocols.OData.ODataMultipartBatchTests.MultipartBatch_ResponseContainsODataVersionHeader",
         "Honua.Server.Tests.Features.Protocols.OData.ODataMultipartBatchTests.MultipartBatch_WithAbsoluteSubrequestUrl_ReturnsBadRequestWithoutEchoingHost",

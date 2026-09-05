@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -93,7 +94,16 @@ internal sealed class ODataCrudHandler(
 
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
-        var result = await _crudService.GetFeatureAsync(layerId, objectId, baseUrl, effectiveToken);
+        var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+            layerValidation.Snapshot!, layerValidation.Publication, layerValidation.Resource!)
+            ?? throw new InvalidOperationException("The layer storage binding is not configured.");
+        var reader = await context.RequestServices.GetRequiredService<ODataFeatureProviderResolver>()
+            .ResolveReaderAsync(
+                layerValidation.Snapshot!, layerValidation.Service, layerValidation.Resource!,
+                layerValidation.Publication, storageLayerId, FeatureProviderReadOperation.Query,
+                effectiveToken).ConfigureAwait(false);
+        var result = await _crudService.GetFeatureAsync(
+            layerId, objectId, baseUrl, reader, storageLayerId, effectiveToken);
         if (result.IsSuccess && result.Data is Dictionary<string, object?> payload)
         {
             if (!string.IsNullOrWhiteSpace(result.ETag))
@@ -167,7 +177,16 @@ internal sealed class ODataCrudHandler(
             return layerValidation.ErrorResult!;
         }
         var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
-        var result = await _crudService.GetFeatureAsync(layerId, objectId, baseUrl, effectiveToken);
+        var storageLayerId = ODataV2Lookups.ResolveStorageLayerId(
+            layerValidation.Snapshot!, layerValidation.Publication, layerValidation.Resource!)
+            ?? throw new InvalidOperationException("The layer storage binding is not configured.");
+        var reader = await context.RequestServices.GetRequiredService<ODataFeatureProviderResolver>()
+            .ResolveReaderAsync(
+                layerValidation.Snapshot!, layerValidation.Service, layerValidation.Resource!,
+                layerValidation.Publication, storageLayerId, FeatureProviderReadOperation.Query,
+                effectiveToken).ConfigureAwait(false);
+        var result = await _crudService.GetFeatureAsync(
+            layerId, objectId, baseUrl, reader, storageLayerId, effectiveToken);
         if (!result.IsSuccess)
         {
             return ODataUtilityService.CreateResultFromCrudResult(context, result);
