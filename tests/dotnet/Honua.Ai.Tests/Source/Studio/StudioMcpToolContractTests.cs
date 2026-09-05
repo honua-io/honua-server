@@ -40,6 +40,13 @@ public sealed class StudioMcpToolContractTests
     private readonly IStudioPackageValidator _validator = Substitute.For<IStudioPackageValidator>();
     private readonly IGeoprocessingJobService _jobService = Substitute.For<IGeoprocessingJobService>();
 
+    public StudioMcpToolContractTests()
+    {
+        _lifecycleService.GetCapabilities().Returns(
+            new Honua.Core.Features.Studio.Services.StudioPackageFamilyRegistry(
+                new Honua.Core.Features.Studio.Services.InMemoryStudioPackageStore()).GetCapabilities());
+    }
+
     [UnitTest]
     [Operation(Operations.StudioLifecycle)]
     [Endpoint("POST /mcp tools/call honua_studio_*")]
