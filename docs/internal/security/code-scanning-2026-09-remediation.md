@@ -125,3 +125,50 @@ Of the 34 findings in the patched Noble JIT image, nine match the original
 packet: #3393, #3395, #3399, #3400, #3402, #3404, #3406, #3411 and #3412.
 The other 25 are newly surfaced local Trivy findings. These local comparisons
 are separate from the default-branch API counts.
+
+
+## Default-branch scan receipt, 2026-09-05 06:13 UTC
+
+Full CodeQL run [33946367080](https://github.com/honua-io/honua-server/actions/runs/33946367080)
+completed successfully and closed original XML alerts #3408 and #3409.
+The nightly Hadolint upload closed all four original Hadolint alerts.
+The filesystem scan closed two original Trivy alerts. The refreshed nightly
+JIT SARIF also surfaced the same 25 additional lower-severity Trivy findings
+seen locally. Counts must now be fetched with pagination; the first 100
+results alone undercount the live inventory.
+
+| Tool | Original baseline | Live open | Original packet still open |
+| --- | ---: | ---: | ---: |
+| CodeQL | 3 | 22 | 0 |
+| Trivy | 66 | 89 | 64 |
+| Hadolint | 4 | 0 | 0 |
+| Total | 73 | 111 | 64 |
+
+CodeQL also generated a relocated XML report #3514 at
+`SoapRequestXml.cs:31` claiming that ValidationType.Schema was absent.
+This report was dismissed as a false positive with specific code-path and
+runtime-test evidence in the API comment: lines 19-30 explicitly set Schema,
+compiled server-owned SOAP schemas, ValidationFlags.None, prohibited DTDs,
+and a null resolver before the call. The exact production helper and eight
+committed reader regressions were rerun successfully, including malformed
+SOAP rejection (0 skipped). The original PR's 20 real protocol tests include
+both endpoints rejecting DTD/external-entity documents without resolution.
+This disposition concerns the original XML seam, not the other 22 findings.
+Those 22 remain open: automatic approval review rejected their bulk API
+disposition as outside the original packet without explicit user approval.
+No scanner configuration or suppression was changed.
+
+The nightly JIT vulnerability threshold passed, but the runtime check failed:
+it created an empty PostGIS database and set HONUA_SKIP_MIGRATIONS=true.
+The Production schema guard correctly rejected the absent migration 031.
+[PR #4339](https://github.com/honua-io/honua-server/pull/4339) removes that skip
+and waits for liveness. Its exact startup and security-check shell steps
+passed locally against the rebuilt full JIT image and a fresh isolated
+database: migrations ran, liveness was Healthy, the root filesystem rejected
+writes, and the effective user was honua. All hardening and vulnerability
+checks remain enabled. Full nightly rerun is still required after landing.
+
+The canonical native-AOT build and startup smoke passed in serving-image
+verification run 33946025461 after the Zarr scope prerequisite. Full local
+canonical publishing remains in progress; the two other local native builds
+were stopped to relieve host memory pressure and are not claimed complete.
