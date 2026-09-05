@@ -55,6 +55,10 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
     [Endpoint("POST /services")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer")]
     public async Task PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus()
     {
         var protectedPolicy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["catalog-reader"]);
@@ -164,6 +168,10 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         soapEntries.Should().Equal(restEntries);
         soapEntries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal)
             .Should().BeEquivalentTo(expectedNames);
+        soapEntries.Select(entry => (entry.Name, entry.Type)).Should().BeEquivalentTo(
+            expectedNames.SelectMany(name => new[] { "FeatureServer", "MapServer", "GPServer", "VectorTileServer" }
+                .Select(type => (name, type))),
+            "both catalogs must enumerate every published non-raster service in this fixture");
 
         foreach (var entry in soapEntries)
         {
