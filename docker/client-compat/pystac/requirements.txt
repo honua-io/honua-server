@@ -30,9 +30,8 @@ jsonschema==4.26.0
 shapely==2.1.2
 
 # --- test runner ---------------------------------------------------------
-# pytest is held on the 8.x line: tests/python/stac_client/conftest.py uses the
-# `hookwrapper=True` hook form and `item.fspath`, which pytest 9 removes.
-pytest==8.4.2
+# Keep the runner on the patched line (CVE-2025-71176).
+pytest==9.0.3
 # tests/python/pytest.ini sets `asyncio_mode` and `timeout`; without these
 # plugins pytest warns about unknown ini options on every run.
 pytest-asyncio==1.4.0
