@@ -66,7 +66,7 @@ public sealed class GeometryBufferJobExecutorIntegrationTests(RedisFixture redis
             resultsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             using var resultsDoc = JsonDocument.Parse(await resultsResponse.Content.ReadAsStringAsync());
 
-            var feature = resultsDoc.RootElement.GetProperty("outputFeatureLayer");
+            var feature = resultsDoc.RootElement.GetProperty("outputFeatureLayer").GetProperty("value");
             feature.GetProperty("type").GetString().Should().Be("Feature");
             feature.GetProperty("properties").GetProperty("processId").GetString().Should().Be("geometry.buffer");
             feature.GetProperty("properties").GetProperty("inputSrid").GetInt32().Should().Be(Srid);

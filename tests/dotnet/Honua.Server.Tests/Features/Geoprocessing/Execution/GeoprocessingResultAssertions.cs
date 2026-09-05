@@ -24,7 +24,9 @@ internal static class GeoprocessingResultAssertions
         artifact.Uri.Should().StartWith(prefix);
         var stored = JsonNode.Parse(Convert.FromBase64String(artifact.Uri![prefix.Length..]));
         var output = results.RootElement.GetProperty(artifact.Label!);
-        JsonNode.DeepEquals(stored, JsonNode.Parse(output.GetRawText())).Should().BeTrue(
+        output.GetProperty("mediaType").GetString().Should().Be(artifact.ContentType);
+        output.TryGetProperty("href", out _).Should().BeFalse();
+        JsonNode.DeepEquals(stored, JsonNode.Parse(output.GetProperty("value").GetRawText())).Should().BeTrue(
             "OGC value transmission must preserve the complete canonical artifact payload");
     }
 }

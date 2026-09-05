@@ -772,7 +772,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
 
     private static JsonElement DecodeOutputFeature(JsonDocument resultsDoc, string expectedProcessId)
     {
-        var feature = resultsDoc.RootElement.GetProperty("outputFeatureLayer").Clone();
+        var feature = resultsDoc.RootElement.GetProperty("outputFeatureLayer").GetProperty("value").Clone();
         feature.GetProperty("type").GetString().Should().Be("Feature");
         feature.GetProperty("properties").GetProperty("processId").GetString()
             .Should().Be(expectedProcessId);
@@ -781,7 +781,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
 
     private static JsonElement DecodeOutputFeatureCollection(JsonDocument resultsDoc, string expectedProcessId)
     {
-        var collection = resultsDoc.RootElement.GetProperty("outputFeatureLayer").Clone();
+        var collection = resultsDoc.RootElement.GetProperty("outputFeatureLayer").GetProperty("value").Clone();
         collection.GetProperty("type").GetString().Should().Be("FeatureCollection");
         collection.GetProperty("processId").GetString().Should().Be(expectedProcessId);
         return collection;
@@ -792,7 +792,7 @@ public sealed class VectorProcessParityIntegrationTests(RedisFixture redis)
 
     private static JsonElement DecodeScalarMeasure(JsonDocument resultsDoc, string expectedProcessId)
     {
-        var root = resultsDoc.RootElement.GetProperty("outputScalar").Clone();
+        var root = resultsDoc.RootElement.GetProperty("outputScalar").GetProperty("value").Clone();
         root.GetProperty("type").GetString().Should().Be("MeasureResult");
         root.GetProperty("processId").GetString().Should().Be(expectedProcessId);
         return root;
