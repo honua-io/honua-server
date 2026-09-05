@@ -12590,7 +12590,9 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_SelfLinkMatchesRequestedUrl",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithDatelineCrossingBbox_ReturnsMatchingItem",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithInvalidThreeDimensionalBbox_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithLimit_RespectsLimit"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithLimit_RespectsLimit",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.OptionalCounts_PageAcrossCollectionsWithoutCounting",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
@@ -12686,6 +12688,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishLayer_CreatesDiscoverableStacCollection",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.ExactCounts_CrossCollectionOffset_DoesNotCountThePageCollectionTwice",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.OptionalCounts_PageAcrossCollectionsWithoutCounting",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WhenGraphActivatesAfterAuthorization_RoutesAuthorizedSnapshotBinding",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_WhenRoutedCandidateQueryExceedsSafetyCap_ReturnsInternalServerError",
         "Honua.Server.Tests.Features.Protocols.Stac.StacProviderNeutralRoutingTests.SearchGet_With512DistinctIds_UsesBoundedOverflowSentinelQuery",
@@ -12726,7 +12730,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithThreeDimensionalBbox_ReturnsItems",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithUndeclaredQueryable_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithUnsupportedExplicitGeometryCrsInFilter_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithValidatorFieldsSyntax_ProjectsTopLevelFields"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchGet_WithValidatorFieldsSyntax_ProjectsTopLevelFields",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
@@ -20933,6 +20938,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.OptionalCounts_PageAcrossCollectionsWithoutCounting",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_AllItemsHaveStacFields",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WhenMorePagesExist_EmitsConformantPostNextLink",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithBbox_ReturnsFilteredResults",
@@ -20943,7 +20949,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithNonNumericCollectionId_IsAcceptedAndReturnsEmpty",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithOutOfRangeBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithStringIds_FiltersByStacItemId",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithThreeDimensionalBbox_ReturnsItems"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithThreeDimensionalBbox_ReturnsItems",
+        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
