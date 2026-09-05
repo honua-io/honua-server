@@ -842,6 +842,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             services.AddScoped<IReplicaConflictRepository>(_ => new NoOpReplicaConflictRepository());
         });
         await fixture.InitializeAsync();
+        fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
 
         try
         {

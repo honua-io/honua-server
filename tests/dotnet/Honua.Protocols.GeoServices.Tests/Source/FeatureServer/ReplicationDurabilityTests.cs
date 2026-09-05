@@ -338,6 +338,7 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         });
 
         await limitedFixture.InitializeAsync();
+        limitedFixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
         try
         {
             await limitedFixture.EnsureLargeTestDatasetAsync();
