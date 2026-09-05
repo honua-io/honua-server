@@ -173,6 +173,74 @@ public sealed class AdminOperationRequestContractTests
         body.RootElement.GetProperty("changeClasses").GetProperty("layer-a").GetString().Should().Be("metadata");
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Validate_EmptyRequiredValues_AreInvalid(string? value)
+    {
+        using var capture = new CaptureHandler();
+        using var client = new HttpClient(capture);
+        var executor = CreateOperate("admin.metadata.release-packages.create", client);
+        var validation = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?> { ["sourceEnvironment"] = value }
+        });
+        validation.IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("layer", "serviceId")]
+    [InlineData("service", "serviceId")]
+    [InlineData("collection", "collectionId")]
+    public async Task Validate_CacheScopeRequiresItsTarget(string scope, string missing)
+    {
+        using var capture = new CaptureHandler();
+        using var client = new HttpClient(capture);
+        var executor = CreateOperate("admin.cache.invalidate", client);
+        var validation = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?> { ["scope"] = scope }
+        });
+        validation.IsValid.Should().BeFalse();
+        validation.Messages.Should().Contain(message => message.Contains(missing, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Validate_InlinePackageRequiresDeclaredNestedFields()
+    {
+        using var capture = new CaptureHandler();
+        using var client = new HttpClient(capture);
+        var executor = CreateOperate("admin.metadata.prevalidate", client);
+        var validation = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?> { ["targetEnvironment"] = "production", ["releasePackage"] = "{}" }
+        });
+        validation.IsValid.Should().BeFalse();
+        validation.Messages.Should().Contain(message => message.Contains("releasePackage.sourceEnvironment", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Validate_PersistedPackageAndTarget_AreValidWithoutHttp()
+    {
+        using var capture = new CaptureHandler();
+        using var client = new HttpClient(capture);
+        var executor = CreateOperate("admin.metadata.prevalidate", client);
+        var validation = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?>
+            {
+                ["targetEnvironment"] = "production", ["releasePackageId"] = "11111111-1111-1111-1111-111111111111"
+            }
+        });
+        validation.IsValid.Should().BeTrue();
+        capture.Uri.Should().BeNull();
+    }
+
     private sealed class ContractProvider : IOperationDescriptorProvider
     {
         public string ProviderId => ServicePublishOperation.ProviderId;

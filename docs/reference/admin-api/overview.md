@@ -82,3 +82,18 @@ complete execution payload is not returned by proposal-detail endpoints.
 Proposals created before this projection was available retain their original
 sealed plan. Re-propose such work to obtain the target-and-value review rather
 than relying on a generic legacy summary.
+
+## Canonical operation requests
+
+Admin release and operate requests use the required inputs declared by the
+operation catalog. Validation and dry-run reject missing or blank required
+values, missing required fields within structured inputs, and missing conditional
+cache targets. Metadata prevalidation requires a target environment and exactly
+one persisted package ID or inline release package. This input validation does
+not establish that a referenced package exists or replace live compatibility
+prevalidation.
+
+Supply declared text directly: a title of `2026`, `true`, or `null` stays a JSON
+string when sent to the Admin API. Supply numbers, booleans, arrays, and objects
+as JSON in the operation parameter value. Pagination and service filters are
+forwarded as query parameters, including values containing reserved characters.
