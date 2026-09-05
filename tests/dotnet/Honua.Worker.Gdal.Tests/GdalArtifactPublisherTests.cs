@@ -38,7 +38,7 @@ public sealed class GdalArtifactPublisherTests : IDisposable
     private readonly string _scratch = Directory.CreateTempSubdirectory("honua-gdal-publish-tests-").FullName;
 
     [IntegrationTest]
-    [Protocol(TestProtocols.OgcApiProcesses)]
+    [Protocol(ProtocolNames.OgcApiProcesses)]
     [Operation(Operations.JobResults)]
     [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
     public async Task PublishFileAsync_ForcedStagingOnAttestedVolume_ReplacementReadsOracleBytes()
