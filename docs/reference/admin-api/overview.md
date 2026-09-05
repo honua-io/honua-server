@@ -63,3 +63,22 @@ Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per
 ## Versioning
 
 The admin API follows the control-plane versioning and deprecation policy in [Versioning and support](../versioning-and-support.md).
+
+## Reviewing Admin operation proposals
+
+New Admin operation proposals include the HTTP operation, accepted tenant,
+connection/service target, selected fields, and declared parameter values in the
+reviewable `diff`. For example, a layer-filter proposal identifies the layer and
+its proposed permanent-filter expression. REST proposal details and the MCP
+proposal resource expose `sealedPlanHash`, which identifies the exact persisted
+plan, including its replay payload. Approval replay verifies this seal.
+
+Credentials, opaque bodies, malformed JSON, and undeclared values are marked as
+redacted. Known secret references remain visible so the reviewer can identify the
+selected credential without seeing its secret. URL credentials and query strings
+are removed from displayed URLs. Review warnings identify these omissions; the
+complete execution payload is not returned by proposal-detail endpoints.
+
+Proposals created before this projection was available retain their original
+sealed plan. Re-propose such work to obtain the target-and-value review rather
+than relying on a generic legacy summary.
