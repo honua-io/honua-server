@@ -79,6 +79,10 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         await _jobService
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.PublishedService, OperatorOperation.Publish, cancellationToken)
             .ConfigureAwait(false);
+        var gate = httpContext.RequestServices.GetService<OperatorApprovalGate>()
+            ?? throw new GeoprocessingStoreUnavailableException("The operator approval runtime is not available on this server.");
+        var invoker = httpContext.RequestServices.GetService<IOperationInvoker>()
+            ?? throw new GeoprocessingStoreUnavailableException("The style operation runtime is not available on this server.");
         var authorization = await OperationAdminAuthorization.EvaluateAsync(
             httpContext, principal, OperationSideEffectClass.MutatesMetadata, cancellationToken).ConfigureAwait(false);
         if (!authorization.IsAuthorized)
@@ -86,8 +90,6 @@ internal sealed class ApplyStylePresetTool : IMcpTool
             throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
         }
 
-        var gate = httpContext.RequestServices.GetService<OperatorApprovalGate>()
-            ?? throw new GeoprocessingStoreUnavailableException("The operator approval runtime is not available on this server.");
         var approval = gate.CheckApproval(principal, new OperatorAuthorizationRequest
         {
             ResourceType = OperatorResourceType.Catalog,
@@ -127,8 +129,6 @@ internal sealed class ApplyStylePresetTool : IMcpTool
                 + "List presets with honua_get_style (omit styleId).");
         }
 
-        var invoker = httpContext.RequestServices.GetService<IOperationInvoker>()
-            ?? throw new GeoprocessingStoreUnavailableException("The style operation runtime is not available on this server.");
         var operation = await invoker.SubmitAsync(new OperationRequest
         {
             OperationId = "style.apply-preset",
