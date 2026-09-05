@@ -14,13 +14,10 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private const string VersionPrefix = "response-version:";
     private static readonly TimeSpan VersionTtl = TimeSpan.FromDays(30);
 
-    // Short-lived in-process cache for namespace version strings (PA-052).
-    // Reduces per-cache-operation Redis reads from O(N namespaces) sequential
-    // calls to zero for warm paths. A 30-second TTL is well within VersionTtl
-    // (30 days) and ensures invalidations from this node propagate immediately
-    // (eviction in TryInvalidateNamespaceAsync). Invalidations from remote nodes
-    // are visible within 30 s, which is safe because a stale version causes a
-    // cache miss (DB fetch) rather than stale data.
+    // Write-only cache operations can reuse a namespace version: writing under an
+    // obsolete version merely produces an unreachable entry. Reads (including
+    // GetOrCreate) and removals must always resolve the shared versions so an
+    // acknowledged invalidation is visible on every warm replica immediately.
     private static readonly TimeSpan VersionLocalCacheTtl = TimeSpan.FromSeconds(30);
     private readonly ConcurrentDictionary<string, (string Version, DateTimeOffset Expiry)> _localVersionCache
         = new(StringComparer.Ordinal);
@@ -44,10 +41,10 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     }
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
-        => await _cacheService.GetAsync<T>(await BuildStorageKeyAsync(key, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+        => await _cacheService.GetAsync<T>(await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
 
     public async Task SetAsync<T>(string key, T value, TimeSpan expiration, CancellationToken cancellationToken = default) where T : class
-        => await _cacheService.SetAsync(await BuildStorageKeyAsync(key, cancellationToken).ConfigureAwait(false), value, expiration, cancellationToken).ConfigureAwait(false);
+        => await _cacheService.SetAsync(await BuildStorageKeyAsync(key, allowLocalVersionCache: true, cancellationToken).ConfigureAwait(false), value, expiration, cancellationToken).ConfigureAwait(false);
 
     public async Task<T> GetOrCreateAsync<T>(
         string key,
@@ -57,7 +54,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     {
         ArgumentNullException.ThrowIfNull(factory);
 
-        var storageKey = await BuildStorageKeyAsync(key, cancellationToken).ConfigureAwait(false);
+        var storageKey = await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false);
         var value = await _cacheService.GetOrSetAsync(
             storageKey,
             async ct => await factory().WaitAsync(ct).ConfigureAwait(false),
@@ -68,7 +65,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     }
 
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
-        => await _cacheService.RemoveAsync(await BuildStorageKeyAsync(key, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+        => await _cacheService.RemoveAsync(await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
 
     public async Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
@@ -80,9 +77,9 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         await _cacheService.RemoveByPatternAsync(NormalizeKey(pattern), cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<string> BuildStorageKeyAsync(string key, CancellationToken cancellationToken)
+    private async Task<string> BuildStorageKeyAsync(string key, bool allowLocalVersionCache, CancellationToken cancellationToken)
     {
-        var namespaceVersions = await ResolveNamespaceVersionsAsync(key, cancellationToken).ConfigureAwait(false);
+        var namespaceVersions = await ResolveNamespaceVersionsAsync(key, allowLocalVersionCache, cancellationToken).ConfigureAwait(false);
         if (namespaceVersions.Count == 0)
         {
             return NormalizeKey(key);
@@ -92,7 +89,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         return NormalizeKey($"{key}:v:{versionSuffix}");
     }
 
-    private async Task<IReadOnlyList<string>> ResolveNamespaceVersionsAsync(string key, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<string>> ResolveNamespaceVersionsAsync(string key, bool allowLocalVersionCache, CancellationToken cancellationToken)
     {
         var namespaces = GetNamespaceKeysForCacheKey(key);
         if (namespaces.Count == 0)
@@ -104,10 +101,10 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         var resolved = new string[namespaces.Count];
         List<int>? missIndices = null;
 
-        // Local-cache pass: O(N) dictionary lookups, zero Redis round-trips for warm namespaces.
+        // Only SetAsync may reuse local versions. Every read checks shared invalidations.
         for (var i = 0; i < namespaces.Count; i++)
         {
-            if (_localVersionCache.TryGetValue(namespaces[i], out var entry) && entry.Expiry > now)
+            if (allowLocalVersionCache && _localVersionCache.TryGetValue(namespaces[i], out var entry) && entry.Expiry > now)
             {
                 resolved[i] = entry.Version;
             }
@@ -160,7 +157,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             .ConfigureAwait(false);
 
         // Evict from the local in-process cache so this node sees the new version
-        // on the very next cache operation, without waiting for the 30 s local TTL.
+        // on the very next write too, without waiting for the 30 s local TTL.
         foreach (var ns in namespaces)
         {
             _localVersionCache.TryRemove(ns, out _);
