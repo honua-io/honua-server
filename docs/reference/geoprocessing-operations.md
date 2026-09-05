@@ -17,6 +17,18 @@ Execution notes that apply across families:
 - **Deferred role revalidation.** Approval resumes re-resolve current roles for identities managed by the configured membership source and fail closed when the submitter is inactive or lost required membership. For identity-provider modes that cannot answer membership queries, the durable submitter snapshot remains authoritative with an operator warning; resubmit pending approvals after revoking roles in that mode.
 - **Admission.** Submissions pass through admission control (`ExecutionAdmission__*` — see [environment variables](configuration/environment-variables.md#admission-and-pooling)).
 
+## Job ownership and tenant scope
+
+Job lookup, listing, result retrieval, and cancellation require the effective request
+tenant to match the tenant recorded at submission. A matching subject or display name
+in another tenant does not grant access. The `admin` role can manage other owners'
+jobs within the effective tenant; it does not bypass this tenant boundary. Requests
+for another tenant's job return not found, and listings omit those jobs.
+
+Jobs without a recorded tenant remain accessible only from an unscoped request,
+subject to the existing owner and operator permissions. Tenant-scoped callers must
+resubmit legacy jobs whose submission did not record a tenant.
+
 ## Geometry (14)
 
 Single-geometry operations; inputs are base64-encoded WKB plus an SRID. Managed (NetTopologySuite/PostGIS-equivalent).
