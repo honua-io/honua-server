@@ -14,6 +14,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Rendering;
 
+[Trait("Tier", "Fast")]
+[Trait("Category", "Unit")]
 public sealed class VectorTileSizeLimitTests
 {
     [Theory]

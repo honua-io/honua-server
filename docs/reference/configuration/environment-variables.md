@@ -227,3 +227,20 @@ Geoprocessing job admission and executor guardrails:
 - [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
 - [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
 - [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
+
+
+## Vector tile output budget
+
+`Limits__Tiles__MaxTileSize` defaults to `512000` bytes and accepts positive byte counts.
+It limits encoded MVT bytes before HTTP content compression; it does not set tile
+pixel dimensions. Managed and source-backed PostGIS reads check the byte length
+before allocating the response array. Oversized output is rejected without a
+partial tile or tile cache headers. OGC API Tiles returns HTTP 413 with an
+`application/problem+json` body (`status: 413`, `title: Payload Too Large`).
+GeoServices MVT routes return the documented HTTP 200 error envelope with
+`error.code: 413`. Request a higher zoom level or reduce the included data.
+
+Previously this option had no effect and its model default was 512 with pixel
+units. Explicitly configured values now mean bytes; review any existing value
+that was chosen as a pixel dimension. The database still encodes the tile under
+its existing feature and statement limits before the output length is known.
