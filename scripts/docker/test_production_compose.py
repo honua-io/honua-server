@@ -85,6 +85,7 @@ class ProductionComposeTests(unittest.TestCase):
             "ConnectionStrings__Redis": "private-redis:6379,password=" + secrets.token_hex(32),
             "Security__ConnectionEncryption__MasterKey": secrets.token_hex(32),
         }
+        values.pop("HONUA_MASTER_KEY")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "docker-compose.production.yml").write_text(self.compose)
