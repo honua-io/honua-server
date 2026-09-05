@@ -31,14 +31,19 @@ actual `tests/python/stac_client` suite successfully.
 
 Trivy 0.70.0 matches the nightly scanner in the live alerts. Platform JIT
 images also pass the exact Trivy 0.68.1 actionable SARIF configuration pinned
-by the release workflow (High/Critical, fixed vulnerabilities only). The application
-image check uses the nightly workflow's existing High/Critical severity filter
-and existing `.trivyignore`; neither the filters nor ignore files are changed.
+by the release workflow (High/Critical, fixed vulnerabilities only). The High/Critical CLI check uses the workflow's declared severity input and
+existing `.trivyignore`. However, the pinned action overrides this input for
+SARIF by default: `entrypoint.sh:75-79` unsets `TRIVY_SEVERITY` unless
+`limit-severities-for-sarif` is true. The nightly workflow does not set that
+input. Its actual SARIF scan therefore includes all severities. The earlier
+High/Critical SARIF receipt is not equivalent to that action behavior.
+No filter or ignore-file change is part of this remediation.
 
 | Target | Result |
 | --- | --- |
 | Repository filesystem, vulnerability scanner, all severities | 0 vulnerabilities |
-| Fully rebuilt JIT application image, nightly High/Critical JSON and SARIF configuration | 0 findings |
+| Fully rebuilt JIT application image, explicit High/Critical CLI filter | 0 findings; this does not reproduce the action SARIF default |
+| Fully rebuilt JIT application image, actual action-equivalent all-severity SARIF | Rerun in progress |
 | Rebuilt Alpine arm64 runtime package layer, all severities | 0 findings |
 | Exact JIT runtime package layer, all severities without ignores | 29 Medium, 5 Low; no vendor fixed versions |
 | Fully rebuilt Lambda JIT, release actionable SARIF | 0 findings |
@@ -48,8 +53,8 @@ and existing `.trivyignore`; neither the filters nor ignore files are changed.
 The remaining unpatched OS inventory includes glibc, libexpat, ICU, systemd,
 shadow/login, tar, and wget advisories. A clean High/Critical gate does not mean
 this full inventory is empty. None of these findings is dismissed or newly
-suppressed by this remediation. The exact nightly SARIF pass is clean; this is separate from the broader
-all-severity package inventory. Clearing the default-branch API still requires
+suppressed by this remediation. The actual nightly SARIF includes lower severities and is being reproduced
+locally. Clearing the default-branch API still requires
 merged fixes and successful scans of the same analysis categories.
 
 Full AOT and other platform-image validation is pending; the PR must record
