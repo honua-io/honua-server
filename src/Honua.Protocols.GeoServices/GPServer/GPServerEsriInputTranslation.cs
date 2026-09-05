@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using NetTopologySuite.IO;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
@@ -48,7 +50,9 @@ internal static class GPServerEsriInputTranslation
     /// place). Values may be simple strings, base64 WKB, GP unit objects, or
     /// Esri geometry / FeatureSet JSON.
     /// </param>
-    public static EsriInputTranslationResult Translate(IReadOnlyDictionary<string, string> inputs)
+    public static EsriInputTranslationResult Translate(
+        IReadOnlyDictionary<string, string> inputs,
+        IReadOnlySet<string>? featureCollectionParameters = null)
     {
         ArgumentNullException.ThrowIfNull(inputs);
 
@@ -88,6 +92,24 @@ internal static class GPServerEsriInputTranslation
                 if (root.TryGetProperty("features", out var featuresProp) &&
                     featuresProp.ValueKind == JsonValueKind.Array)
                 {
+                    if (featureCollectionParameters?.Contains(key) == true)
+                    {
+                        if (!TryConvertFeatureSet(root, out var collection, out var collectionSrid, out var collectionError))
+                        {
+                            return new EsriInputTranslationResult(translated, false,
+                                $"Input '{key}': {collectionError}", inputSpatialReference);
+                        }
+                        if (inputSpatialReference is { } previous && collectionSrid is { } current && previous != current)
+                        {
+                            return new EsriInputTranslationResult(translated, false,
+                                "FeatureSet inputs must use the same spatial reference.", inputSpatialReference);
+                        }
+                        translated[key] = collection;
+                        inputSpatialReference ??= collectionSrid;
+                        anyTranslated = true;
+                        continue;
+                    }
+
                     var featureCount = featuresProp.GetArrayLength();
                     if (featureCount == 0)
                     {
@@ -186,6 +208,67 @@ internal static class GPServerEsriInputTranslation
             CapabilityMessage: null,
             InputSpatialReference: inputSpatialReference)
         { Translated = anyTranslated };
+    }
+
+    private static bool TryConvertFeatureSet(
+        JsonElement root, out string value, out int? srid, out string? error)
+    {
+        value = string.Empty;
+        srid = ReadSpatialReference(root);
+        error = null;
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("type", "FeatureCollection");
+            writer.WriteStartArray("features");
+            foreach (var feature in root.GetProperty("features").EnumerateArray())
+            {
+                if (feature.ValueKind != JsonValueKind.Object)
+                {
+                    error = "FeatureSet entries must be feature objects.";
+                    return false;
+                }
+                writer.WriteStartObject();
+                writer.WriteString("type", "Feature");
+                writer.WritePropertyName("properties");
+                if (feature.TryGetProperty("attributes", out var attributes) && attributes.ValueKind == JsonValueKind.Object)
+                {
+                    attributes.WriteTo(writer);
+                }
+                else
+                {
+                    writer.WriteStartObject();
+                    writer.WriteEndObject();
+                }
+                writer.WritePropertyName("geometry");
+                if (!feature.TryGetProperty("geometry", out var geometry) || geometry.ValueKind == JsonValueKind.Null)
+                {
+                    writer.WriteNullValue();
+                }
+                else
+                {
+                    if (!TryConvertEsriGeometry(geometry, srid, out var encoded, out var geometrySrid, out error))
+                    {
+                        return false;
+                    }
+                    if (srid is { } setSrid && geometrySrid is { } featureSrid && setSrid != featureSrid)
+                    {
+                        error = "FeatureSet geometries must use the same spatial reference.";
+                        return false;
+                    }
+                    srid ??= geometrySrid;
+                    var nts = new WKBReader().Read(Convert.FromBase64String(encoded));
+                    using var geoJson = JsonDocument.Parse(new GeoJsonWriter().Write(nts));
+                    geoJson.RootElement.WriteTo(writer);
+                }
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+        value = "data:application/geo+json;base64," + Convert.ToBase64String(buffer.ToArray());
+        return true;
     }
 
     private static bool LooksLikeJsonObject(string? value)

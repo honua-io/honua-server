@@ -721,7 +721,7 @@ internal static class GPServerEndpoints
                 {
                     ParamName = paramName,
                     DataType = dataType,
-                    Value = value
+                    Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, envControls.OutSr ?? workingSrid)
                 });
             }
         }
@@ -1087,7 +1087,7 @@ internal static class GPServerEndpoints
             {
                 ParamName = publishedName,
                 DataType = GPServerParameterTranslation.ToEsriDataType(artifact.Kind),
-                Value = value
+                Value = GPServerEsriOutputTranslation.Translate(artifact.Kind, value, ResolveResultSrid(job))
             };
 
             return Results.Json(response, GPServerJsonContext.Default.GPResultResponse,
@@ -1700,7 +1700,11 @@ internal static class GPServerEndpoints
         // and single-feature FeatureSet payloads into canonical base64-WKB + srid.
         // Native string / base64-WKB inputs pass through untouched. Multi-feature
         // FeatureSets surface a capability error rather than dropping features.
-        var esriResult = GPServerEsriInputTranslation.Translate(inputs);
+        var collectionParameters = definition.Parameters
+            .Where(parameter => parameter.AcceptsGeoJsonDataUri)
+            .Select(parameter => parameter.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var esriResult = GPServerEsriInputTranslation.Translate(inputs, collectionParameters);
         if (esriResult.CapabilityMessage is not null)
         {
             return new SubmissionPlanResult(Plan: null, esriResult.CapabilityMessage, esriResult.InputSpatialReference);
@@ -1773,6 +1777,14 @@ internal static class GPServerEndpoints
     /// geometry (<see cref="ArtifactKind.FeatureLayer"/>) outputs; other output
     /// kinds are served unchanged, matching Esri <c>env:outSR</c> semantics.
     /// </summary>
+    private static int ResolveResultSrid(ExecutionJobRecord job)
+    {
+        var parameters = job.Spec.Parameters;
+        var raw = parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerOutSr)
+            ?? parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkingSr);
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var srid) ? srid : 0;
+    }
+
     private static IResult? TryApplyAsyncOutSr(
         HttpContext context,
         ExecutionJobRecord job,
