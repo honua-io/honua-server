@@ -438,12 +438,11 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         var identity = new ClaimsIdentity(claims, Scheme.Name);
-        if (isApprovedOperationKey)
+        if (identity.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim) is { } approvedTenantClaim)
         {
             // This binding came from the persisted server-minted grant. Preserve it
             // through OIDC's removal of untrusted issuer-supplied framework claims.
-            identity.FindFirst(AdminApiKeyPermission.ApprovedOperationTenantClaim)!
-                .Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
+            approvedTenantClaim.Properties[CanonicalSecurityActor.FrameworkOwnedClaimProperty] = bool.TrueString;
         }
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
