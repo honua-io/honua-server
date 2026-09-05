@@ -251,6 +251,52 @@ public sealed class AdminOperationRequestContractTests
         capture.Uri.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("scope", "typo")]
+    [InlineData("layerId", "1.5")]
+    [InlineData("layerId", "2147483648")]
+    public async Task Validate_InvalidScalarOrEnum_IsRejected(string parameter, string value)
+    {
+        using var client = new HttpClient(new CaptureHandler());
+        var executor = CreateOperate("admin.cache.invalidate", client);
+        var parameters = new Dictionary<string, string?> { ["scope"] = "layer", ["serviceId"] = "roads", ["layerId"] = "1" };
+        parameters[parameter] = value;
+        (await executor.ValidateAsync(new OperationRequest { OperationId = executor.OperationId, Parameters = parameters }))
+            .IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("[null]")]
+    public async Task Validate_NonNullableScriptCollection_RejectsExplicitNull(string scripts)
+    {
+        using var client = new HttpClient(new CaptureHandler());
+        var executor = CreateOperate("admin.metadata.prevalidate", client);
+        var request = new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?>
+            {
+                ["targetEnvironment"] = "production",
+                ["releasePackageId"] = "11111111-1111-1111-1111-111111111111",
+                ["dataScripts"] = scripts
+            }
+        };
+        (await executor.ValidateAsync(request)).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Validate_NullableOptionalNumber_AllowsExplicitNull()
+    {
+        using var client = new HttpClient(new CaptureHandler());
+        var executor = CreateOperate("admin.cache.invalidate", client);
+        (await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            Parameters = new Dictionary<string, string?> { ["scope"] = "all", ["layerId"] = "null" }
+        })).IsValid.Should().BeTrue();
+    }
+
     private sealed class ContractProvider : IOperationDescriptorProvider
     {
         public string ProviderId => ServicePublishOperation.ProviderId;
