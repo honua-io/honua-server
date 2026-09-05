@@ -338,8 +338,9 @@ public sealed class StudioPackageValidator : IStudioPackageValidator
         var hasInteractions = body.TryGetProperty("interactions", out var rawInteractions);
         var hasLayout = body.TryGetProperty("layout", out var rawLayout);
         var hasControls = body.TryGetProperty("controls", out var rawControls);
-        if (!ValidateCompositionCollection(body, "layers", requireKind: false, diagnostics)
-            | !ValidateCompositionCollection(body, "widgets", requireKind: true, diagnostics))
+        var layersValid = ValidateCompositionCollection(body, "layers", requireKind: false, diagnostics);
+        var widgetsValid = ValidateCompositionCollection(body, "widgets", requireKind: true, diagnostics);
+        if (!layersValid || !widgetsValid)
         {
             return;
         }
