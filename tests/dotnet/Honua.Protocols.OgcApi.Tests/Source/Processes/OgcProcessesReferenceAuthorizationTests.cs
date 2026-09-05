@@ -193,7 +193,8 @@ public sealed class OgcProcessesReferenceAuthorizationTests
                 StorageBindings = LayerIds.Select(id => new MetadataV2StorageBinding
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = $"binding-{id}", Name = $"binding-{id}" },
-                    ResourceId = $"resource-{id}", StorageLayerId = id,
+                    ResourceId = $"resource-{id}",
+                    StorageLayerId = id,
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
                 }).ToArray(),
                 Publications = LayerIds.Select(id => new MetadataV2Publication
