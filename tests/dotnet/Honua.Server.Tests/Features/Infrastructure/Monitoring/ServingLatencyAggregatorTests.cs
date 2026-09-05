@@ -111,10 +111,29 @@ public sealed class ServingLatencyAggregatorTests
 
         var entry = Assert.Single(aggregator.GetSnapshot().Protocols);
         Assert.Equal(8, entry.RequestCount); // only the most recent 8 of 20 survive
+        Assert.Equal(8, entry.RetentionCapacity);
+        Assert.Equal(20, entry.TotalRecordedSinceReset);
+        Assert.Equal(12, entry.OverwrittenSampleCount);
         Assert.Equal(20d, entry.MaxMs); // last written sample retained
         // Retained set sorted ascending is [13,14,15,16,17,18,19,20];
         // nearest-rank p50 => ceil(0.50*8)=4th sample => 16ms.
         Assert.Equal(16d, entry.P50Ms);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void GetSnapshot_ExposesEffectiveRetainedInterval()
+    {
+        long now = 100 * TicksPerSecond;
+        var aggregator = new ServingLatencyAggregator(TimeSpan.FromMinutes(5), samplesPerProtocol: 8, timestampProvider: () => now);
+
+        aggregator.Record("MapServer", 1, statusCode: 200);
+        now = 125 * TicksPerSecond;
+        aggregator.Record("MapServer", 2, statusCode: 200);
+
+        var entry = Assert.Single(aggregator.GetSnapshot().Protocols);
+        Assert.Equal(25d, entry.OldestRetainedSampleAgeSeconds, precision: 6);
+        Assert.Equal(0d, entry.NewestRetainedSampleAgeSeconds, precision: 6);
     }
 
     [UnitTest]

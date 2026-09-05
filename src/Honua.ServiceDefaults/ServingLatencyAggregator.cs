@@ -93,7 +93,8 @@ public sealed class ServingLatencyAggregator
         var protocols = new List<ServingLatencyProtocolSnapshot>(_reservoirs.Count);
         foreach (var pair in _reservoirs)
         {
-            var (durations, errorCount) = pair.Value.CopyInWindow(minTimestamp);
+            var retained = pair.Value.CopyInWindow(minTimestamp);
+            var durations = retained.Durations;
             if (durations.Length == 0)
             {
                 continue;
@@ -104,12 +105,17 @@ public sealed class ServingLatencyAggregator
             {
                 Protocol = pair.Key,
                 RequestCount = durations.Length,
-                ErrorCount = errorCount,
-                ErrorRate = (double)errorCount / durations.Length,
+                ErrorCount = retained.ErrorCount,
+                ErrorRate = (double)retained.ErrorCount / durations.Length,
                 P50Ms = Percentile(durations, 50),
                 P95Ms = Percentile(durations, 95),
                 P99Ms = Percentile(durations, 99),
                 MaxMs = durations[^1],
+                RetentionCapacity = _samplesPerProtocol,
+                TotalRecordedSinceReset = retained.TotalRecorded,
+                OverwrittenSampleCount = Math.Max(0, retained.TotalRecorded - _samplesPerProtocol),
+                OldestRetainedSampleAgeSeconds = Math.Max(0, (double)(now - retained.OldestTimestamp) / Stopwatch.Frequency),
+                NewestRetainedSampleAgeSeconds = Math.Max(0, (double)(now - retained.NewestTimestamp) / Stopwatch.Frequency),
                 // Mergeable distribution sketch (#2809): lets cluster-wide percentiles be recomputed from
                 // summed per-replica distributions instead of a mean of percentiles that hides a sick replica.
                 Distribution = LatencyDistribution.FromDurations(durations),
@@ -143,6 +149,7 @@ public sealed class ServingLatencyAggregator
         private readonly bool[] _errors;
         private int _next;
         private int _count;
+        private long _totalRecorded;
 
         public Reservoir(int capacity)
         {
@@ -163,21 +170,25 @@ public sealed class ServingLatencyAggregator
                 {
                     _count++;
                 }
+
+                _totalRecorded++;
             }
         }
 
-        public (double[] Durations, long ErrorCount) CopyInWindow(long minTimestamp)
+        public ReservoirWindow CopyInWindow(long minTimestamp)
         {
             lock (_gate)
             {
                 if (_count == 0)
                 {
-                    return (Array.Empty<double>(), 0);
+                    return new ReservoirWindow(Array.Empty<double>(), 0, _totalRecorded, 0, 0);
                 }
 
                 var durations = new double[_count];
                 var written = 0;
                 long errorCount = 0;
+                var oldestTimestamp = long.MaxValue;
+                var newestTimestamp = long.MinValue;
                 for (var i = 0; i < _count; i++)
                 {
                     if (_timestamps[i] < minTimestamp)
@@ -186,6 +197,8 @@ public sealed class ServingLatencyAggregator
                     }
 
                     durations[written++] = _durations[i];
+                    oldestTimestamp = Math.Min(oldestTimestamp, _timestamps[i]);
+                    newestTimestamp = Math.Max(newestTimestamp, _timestamps[i]);
                     if (_errors[i])
                     {
                         errorCount++;
@@ -194,15 +207,28 @@ public sealed class ServingLatencyAggregator
 
                 if (written == durations.Length)
                 {
-                    return (durations, errorCount);
+                    return new ReservoirWindow(
+                        durations, errorCount, _totalRecorded, oldestTimestamp, newestTimestamp);
                 }
 
                 var trimmed = new double[written];
                 Array.Copy(durations, trimmed, written);
-                return (trimmed, errorCount);
+                return new ReservoirWindow(
+                    trimmed,
+                    errorCount,
+                    _totalRecorded,
+                    written == 0 ? 0 : oldestTimestamp,
+                    written == 0 ? 0 : newestTimestamp);
             }
         }
     }
+
+    private readonly record struct ReservoirWindow(
+        double[] Durations,
+        long ErrorCount,
+        long TotalRecorded,
+        long OldestTimestamp,
+        long NewestTimestamp);
 }
 
 /// <summary>
@@ -248,6 +274,21 @@ public sealed record ServingLatencyProtocolSnapshot
 
     /// <summary>Gets the maximum retained request duration in milliseconds.</summary>
     public required double MaxMs { get; init; }
+
+    /// <summary>Gets the fixed number of samples this replica can retain for the protocol.</summary>
+    public int RetentionCapacity { get; init; }
+
+    /// <summary>Gets the number of protocol samples recorded by this aggregator since its last process-local reset.</summary>
+    public long TotalRecordedSinceReset { get; init; }
+
+    /// <summary>Gets the number of samples overwritten after the fixed reservoir reached capacity.</summary>
+    public long OverwrittenSampleCount { get; init; }
+
+    /// <summary>Gets the age in seconds of the oldest sample actually retained in the current snapshot.</summary>
+    public double OldestRetainedSampleAgeSeconds { get; init; }
+
+    /// <summary>Gets the age in seconds of the newest sample actually retained in the current snapshot.</summary>
+    public double NewestRetainedSampleAgeSeconds { get; init; }
 
     /// <summary>
     /// Gets the mergeable latency distribution sketch over the retained in-window samples (#2809). Persisted

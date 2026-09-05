@@ -9,7 +9,7 @@ namespace Honua.Server.Features.Operations.Status;
 /// Server-authoritative aggregated operational status returned by
 /// <c>GET /api/v{version}/operate/status</c>. One request yields a server-computed overall verdict
 /// plus per-domain rollups (deploys, jobs, alerts, migrations, findings, telemetry backends) and,
-/// when configured, an availability SLO / error-budget snapshot — so a copilot no longer has to
+/// an explicitly sourced SLO posture plus a replica-local retained-tail diagnostic — so a copilot no longer has to
 /// stitch ~8 endpoints and invent its own "is the system healthy" verdict. The verdict logic lives
 /// server-side (see <see cref="OperateStatusVerdictEvaluator"/>); each domain carries a
 /// <c>source</c> hint so a caller can drill down to the authoritative endpoint.
@@ -40,7 +40,7 @@ public sealed class OperateStatusResponse
     [JsonPropertyName("domains")]
     public required OperateStatusDomains Domains { get; init; }
 
-    /// <summary>Gets the availability SLO / error-budget snapshot (or its explicit not-configured state).</summary>
+    /// <summary>Gets the platform SLO posture and the separately named node-local diagnostic.</summary>
     [JsonPropertyName("slo")]
     public required OperateSloView Slo { get; init; }
 }
@@ -332,7 +332,7 @@ public sealed class OperateTelemetryBackendView
     public required string ReachabilityPosture { get; init; }
 }
 
-/// <summary>Availability SLO / error-budget snapshot, or its explicit not-configured state.</summary>
+/// <summary>Platform SLO posture plus a non-authoritative node-local retained-tail diagnostic.</summary>
 public sealed class OperateSloView
 {
     /// <summary>Gets a value indicating whether an availability SLO target is configured.</summary>
@@ -343,9 +343,17 @@ public sealed class OperateSloView
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 
-    /// <summary>Gets the availability SLO evaluation when configured, otherwise <c>null</c>.</summary>
+    /// <summary>
+    /// Gets the distributed platform availability SLO evaluation when a qualifying source exists.
+    /// The replica-local retained tail is never projected here.
+    /// </summary>
     [JsonPropertyName("availability")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public OperateSloAvailabilityView? Availability { get; init; }
+
+    /// <summary>Gets this replica's bounded, restart-resettable serving-latency retained tail.</summary>
+    [JsonPropertyName("nodeLocalRetainedTail")]
+    public required OperateNodeLocalRetainedTailView NodeLocalRetainedTail { get; init; }
 }
 
 /// <summary>Evaluated availability SLO: target, observed availability, burn rate, remaining budget.</summary>
@@ -389,4 +397,107 @@ public sealed class OperateSloAvailabilityView
     /// <summary>Gets a short label naming what the SLO actually evaluated against.</summary>
     [JsonPropertyName("evaluationSource")]
     public required string EvaluationSource { get; init; }
+}
+
+/// <summary>
+/// Honest projection of the bounded per-process serving-latency reservoir. This is useful for node
+/// diagnosis only; it is not the platform request population, availability, burn rate, or error budget.
+/// </summary>
+public sealed class OperateNodeLocalRetainedTailView
+{
+    /// <summary>Gets the fixed diagnostic scope token: <c>replica-local</c>.</summary>
+    [JsonPropertyName("scope")]
+    public required string Scope { get; init; }
+
+    /// <summary>Gets a value that is always false because this retained tail is not a platform SLI.</summary>
+    [JsonPropertyName("isPlatformSli")]
+    public required bool IsPlatformSli { get; init; }
+
+    /// <summary>Gets the configured target for context only; the diagnostic does not evaluate it.</summary>
+    [JsonPropertyName("configuredTarget")]
+    public double? ConfiguredTarget { get; init; }
+
+    /// <summary>Gets the operator-configured intended horizon, which may differ from actual retention.</summary>
+    [JsonPropertyName("configuredWindowSeconds")]
+    public required int ConfiguredWindowSeconds { get; init; }
+
+    /// <summary>Gets the reservoir's configured maximum age before samples expire.</summary>
+    [JsonPropertyName("retentionWindowSeconds")]
+    public required double RetentionWindowSeconds { get; init; }
+
+    /// <summary>Gets the age of the oldest sample actually retained across protocols.</summary>
+    [JsonPropertyName("oldestRetainedSampleAgeSeconds")]
+    public double? OldestRetainedSampleAgeSeconds { get; init; }
+
+    /// <summary>Gets the age of the newest sample actually retained across protocols.</summary>
+    [JsonPropertyName("newestRetainedSampleAgeSeconds")]
+    public double? NewestRetainedSampleAgeSeconds { get; init; }
+
+    /// <summary>Gets the count of samples actually retained on this replica.</summary>
+    [JsonPropertyName("retainedRequestCount")]
+    public required long RetainedRequestCount { get; init; }
+
+    /// <summary>Gets the HTTP 5xx count among the retained samples.</summary>
+    [JsonPropertyName("retainedHttpServerErrorCount")]
+    public required long RetainedHttpServerErrorCount { get; init; }
+
+    /// <summary>Gets HTTP-5xx-only success over retained samples, or null for an empty tail.</summary>
+    [JsonPropertyName("retainedHttpSuccessRatio")]
+    public double? RetainedHttpSuccessRatio { get; init; }
+
+    /// <summary>Gets the number of samples recorded since this process-local aggregator was reset.</summary>
+    [JsonPropertyName("totalRecordedSinceReset")]
+    public required long TotalRecordedSinceReset { get; init; }
+
+    /// <summary>Gets the known count overwritten after the per-protocol rings reached capacity.</summary>
+    [JsonPropertyName("overwrittenSampleCount")]
+    public required long OverwrittenSampleCount { get; init; }
+
+    /// <summary>Gets a value indicating whether 2xx in-band protocol errors are counted. Always false.</summary>
+    [JsonPropertyName("includesInBandErrors")]
+    public required bool IncludesInBandErrors { get; init; }
+
+    /// <summary>Gets the reset behavior token.</summary>
+    [JsonPropertyName("resetBehavior")]
+    public required string ResetBehavior { get; init; }
+
+    /// <summary>Gets the diagnostic source token.</summary>
+    [JsonPropertyName("source")]
+    public required string Source { get; init; }
+
+    /// <summary>Gets the retained population details for every protocol present on this replica.</summary>
+    [JsonPropertyName("protocols")]
+    public required IReadOnlyList<OperateNodeLocalProtocolTailView> Protocols { get; init; }
+}
+
+/// <summary>Per-protocol retained population details for the node-local diagnostic.</summary>
+public sealed class OperateNodeLocalProtocolTailView
+{
+    /// <summary>Gets the protocol token.</summary>
+    [JsonPropertyName("protocol")]
+    public required string Protocol { get; init; }
+
+    /// <summary>Gets the retained sample count.</summary>
+    [JsonPropertyName("retainedRequestCount")]
+    public required long RetainedRequestCount { get; init; }
+
+    /// <summary>Gets the fixed ring capacity.</summary>
+    [JsonPropertyName("retentionCapacity")]
+    public required int RetentionCapacity { get; init; }
+
+    /// <summary>Gets the total recorded since the process-local reset.</summary>
+    [JsonPropertyName("totalRecordedSinceReset")]
+    public required long TotalRecordedSinceReset { get; init; }
+
+    /// <summary>Gets the number overwritten by ring wrap.</summary>
+    [JsonPropertyName("overwrittenSampleCount")]
+    public required long OverwrittenSampleCount { get; init; }
+
+    /// <summary>Gets the oldest retained sample age in seconds.</summary>
+    [JsonPropertyName("oldestRetainedSampleAgeSeconds")]
+    public required double OldestRetainedSampleAgeSeconds { get; init; }
+
+    /// <summary>Gets the newest retained sample age in seconds.</summary>
+    [JsonPropertyName("newestRetainedSampleAgeSeconds")]
+    public required double NewestRetainedSampleAgeSeconds { get; init; }
 }
