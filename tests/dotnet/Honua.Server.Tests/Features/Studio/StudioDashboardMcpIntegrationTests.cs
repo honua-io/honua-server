@@ -110,8 +110,20 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
         reread.GetProperty("generation").GetInt64().Should().Be(generation);
         reread.GetProperty("envelope").GetProperty("body").GetProperty("layers").GetArrayLength().Should().Be(1);
 
-        // Re-read proves the independent control removal remains valid. Apply it once.
+        // A stale independent removal is retried only after checking its unchanged target.
+        var staleControl = await RpcAsync("remove_control", $$"""{"draftId":"{{draftId}}","generation":1,"controlId":"scale"}""");
+        staleControl.GetProperty("result").GetProperty("structuredContent").GetProperty("code")
+            .GetString().Should().Be("failed_precondition");
+        reread = await CallAsync("get_draft", $$"""{"draftId":"{{draftId}}"}""");
+        reread.GetProperty("envelope").GetProperty("body").GetProperty("controls")[0]
+            .GetProperty("id").GetString().Should().Be("scale");
+        generation = reread.GetProperty("generation").GetInt64();
+        var retryGeneration = generation;
         await Mutate("remove_control", "\"controlId\":\"scale\"");
+        var duplicateRetry = await RpcAsync("remove_control",
+            $$"""{"draftId":"{{draftId}}","generation":{{retryGeneration}},"controlId":"scale"}""");
+        duplicateRetry.GetProperty("result").GetProperty("structuredContent").GetProperty("code")
+            .GetString().Should().Be("failed_precondition");
         await Mutate("remove_interaction", "\"interactionId\":\"select\"");
         await Mutate("remove_widget", "\"widgetId\":\"legend\"");
         await Mutate("remove_layer", "\"layerId\":\"parcels\"");
@@ -133,17 +145,14 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             .GetProperty("id").GetString().Should().Be("roads");
 
         await CallAsync("validate_draft", $$"""{"draftId":"{{draftId}}"}""");
-        StudioContentVersion version;
-        await using (var writer = _fixture.Services.CreateAsyncScope())
-        {
-            writer.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
-                .Should().Be(StudioPackagePersistenceMode.Durable);
-            var lifecycle = writer.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
-            version = (await lifecycle.SaveDraftAsVersionAsync(
-                draftId, "dashboard fixture", WebAppFixture.SharedAdminActorId, generation))!;
-            version.Should().NotBeNull();
-            version.Validation.Status.Should().Be(StudioPackageValidationStatus.Valid);
-        }
+        using var saveResponse = await _client.PostAsync(
+            $"/api/v1/studio/package-drafts/{draftId:D}/content-versions",
+            new StringContent("""{"changeNote":"dashboard fixture"}""", Encoding.UTF8, "application/json"));
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.Created, await saveResponse.Content.ReadAsStringAsync());
+        using var savedDocument = JsonDocument.Parse(await saveResponse.Content.ReadAsStringAsync());
+        var version = JsonSerializer.Deserialize(savedDocument.RootElement.GetProperty("data"),
+            StudioJsonContext.Default.StudioContentVersion)!;
+        version.Validation.Status.Should().Be(StudioPackageValidationStatus.Valid);
 
         // Independent fixture expectation: PostgreSQL jsonb orders these body keys by length.
         // Hash the declared expected document, never a copy of the server's returned envelope.
@@ -160,17 +169,43 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             expectedEnvelope, StudioJsonContext.Default.StudioPackageEnvelope))).ToLowerInvariant();
         version.ContentHash.Should().Be(expectedHash);
 
-        // A fresh scope constructs another production store and lifecycle service. No draft or
-        // version is passed into it; all reopened state must come back from Postgres.
-        await using var reader = _fixture.Services.CreateAsyncScope();
-        var reopenedLifecycle = reader.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
-        var reloaded = await reopenedLifecycle.GetVersionAsync(version.ItemId, version.VersionId);
-        reloaded!.VersionId.Should().Be(version.VersionId);
-        reloaded.ContentHash.Should().Be(expectedHash);
-        var reopened = await reopenedLifecycle.ReopenVersionAsync(version.ItemId, version.VersionId, WebAppFixture.SharedAdminActorId);
-        reopened!.BaseVersionId.Should().Be(version.VersionId);
-        StudioPackageHash.Compute(reopened.Envelope).Should().Be(expectedHash);
-        (await reopenedLifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
+        // A second application host has its own lifecycle/runtime/store instances. Only the
+        // database connection is shared; no draft or version object crosses the replica boundary.
+        var connectionProvider = _fixture.Services.GetRequiredService<IAdoNetDatabaseConnectionProvider>();
+        var replica = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IStudioPackageStore>();
+            services.AddScoped<IStudioPackageStore>(_ => new PostgresStudioPackageStore(connectionProvider, _studioSchema));
+        });
+        await replica.InitializeAsync();
+        try
+        {
+            using var replicaClient = replica.CreateAdminClient();
+            var versionPath = $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}";
+            using var getResponse = await replicaClient.GetAsync(versionPath);
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var reloadedDocument = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+            var reloaded = reloadedDocument.RootElement.GetProperty("data");
+            reloaded.GetProperty("versionId").GetGuid().Should().Be(version.VersionId);
+            reloaded.GetProperty("contentHash").GetString().Should().Be(expectedHash);
+            using var reopenResponse = await replicaClient.PostAsync(versionPath + "/reopen",
+                new StringContent("{}", Encoding.UTF8, "application/json"));
+            reopenResponse.StatusCode.Should().Be(HttpStatusCode.Created, await reopenResponse.Content.ReadAsStringAsync());
+            using var reopenedDocument = JsonDocument.Parse(await reopenResponse.Content.ReadAsStringAsync());
+            var reopened = JsonSerializer.Deserialize(reopenedDocument.RootElement.GetProperty("data"),
+                StudioJsonContext.Default.StudioPackageDraft)!;
+            reopened.BaseVersionId.Should().Be(version.VersionId);
+            StudioPackageHash.Compute(reopened.Envelope).Should().Be(expectedHash);
+            await using var reader = replica.Services.CreateAsyncScope();
+            var lifecycle = reader.ServiceProvider.GetRequiredService<IStudioPackageLifecycleService>();
+            reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
+                .Should().Be(StudioPackagePersistenceMode.Durable);
+            (await lifecycle.GetPointersAsync(version.ItemId))!.PublishedVersionId.Should().BeNull();
+        }
+        finally
+        {
+            await replica.DisposeAsync();
+        }
     }
 
     private async Task<JsonElement> CallAsync(string verb, string arguments)
