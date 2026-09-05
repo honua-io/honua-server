@@ -23,6 +23,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
 
+[Trait("Tier", "Fast")]
+[Trait("Category", "Unit")]
 public sealed class OgcMapsTimeoutRegressionTests
 {
     [Theory]
@@ -54,8 +56,8 @@ public sealed class OgcMapsTimeoutRegressionTests
         graphProvider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(call =>
         {
             observed = call.Arg<CancellationToken>();
-            return ValueTask.FromResult(new MetadataV2GraphSnapshot(
-                new MetadataV2Graph(), "\"empty\"", DateTimeOffset.UnixEpoch));
+            return new MetadataV2GraphSnapshot(
+                new MetadataV2Graph(), "\"empty\"", DateTimeOffset.UnixEpoch);
         });
         var handler = new OgcMapsRenderingHandler(
             graphProvider,
