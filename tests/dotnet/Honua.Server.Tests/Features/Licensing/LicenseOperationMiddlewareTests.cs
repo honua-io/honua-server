@@ -15,11 +15,31 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Licensing;
 
 public sealed class LicenseOperationMiddlewareTests
 {
+    [UnitTest]
+    public async Task ExpiredGrpcRead_ReturnsFailedPreconditionWithoutExecutingHandler()
+    {
+        var policy = Substitute.For<ILicenseOperationPolicy>();
+        policy.IsBlocked.Returns(true);
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "application/grpc";
+        var executed = false;
+        var middleware = new LicenseOperationMiddleware(_ => { executed = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context, policy);
+
+        Assert.False(executed);
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.Equal("9", context.Response.Headers["grpc-status"]);
+        Assert.Contains("Renew", context.Response.Headers["grpc-message"].ToString(), StringComparison.Ordinal);
+        Assert.Equal(0, context.Response.ContentLength);
+    }
+
     [Theory]
     [InlineData(HonuaEdition.Pro)]
     [InlineData(HonuaEdition.Enterprise)]

@@ -28,6 +28,11 @@ internal sealed class LicenseOperationMiddleware(RequestDelegate next)
             await DenyAsync(context).ConfigureAwait(false);
             return;
         }
+        if (!licenseCancellation.CanBeCanceled)
+        {
+            await next(context).ConfigureAwait(false);
+            return;
+        }
 
         var original = context.RequestAborted;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(original, licenseCancellation);
@@ -77,6 +82,15 @@ internal sealed class LicenseOperationMiddleware(RequestDelegate next)
             return;
         }
         context.Response.Clear();
+        if (context.Request.ContentType?.StartsWith("application/grpc", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            context.Response.ContentType = "application/grpc";
+            context.Response.ContentLength = 0;
+            context.Response.Headers["grpc-status"] = "9"; // FAILED_PRECONDITION
+            context.Response.Headers["grpc-message"] = "License unavailable or expired. Renew the configured license; re-validation runs every minute, or restart.";
+            return;
+        }
         await StandardErrorHelpers.CreatePaymentRequired(context,
             "License unavailable or expired. Renew the configured license; re-validation runs every minute, or restart.")
             .ExecuteAsync(context).ConfigureAwait(false);

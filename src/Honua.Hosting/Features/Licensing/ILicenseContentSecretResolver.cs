@@ -9,7 +9,7 @@ namespace Honua.Infrastructure.Licensing;
 /// concrete implementation lives in a provider project (e.g. <c>Honua.Aws</c>)
 /// so the heavy cloud SDK surface stays out of the cloud-neutral
 /// <c>Honua.Hosting</c> licensing pipeline. When no implementation is
-/// registered, <see cref="FileBackedLicenseService"/> rejects paid-tier startup with a license-invalid error.
+/// registered, <see cref="FileBackedLicenseService"/> rejects paid-tier startup with the documented license-state error.
 /// </summary>
 public interface ILicenseContentSecretResolver
 {
@@ -26,7 +26,7 @@ public interface ILicenseContentSecretResolver
     /// supplied secret reference. Returns <c>null</c> when the reference is
     /// unsupported or the secret could not be resolved; implementations must
     /// return null for a missing/unreachable secret so the licensing pipeline
-    /// reports its documented license-invalid startup error.
+    /// reports its documented license-state startup error.
     /// </summary>
     /// <param name="secretReference">The configured secret reference value.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

@@ -27,7 +27,10 @@ internal sealed partial class FileBackedLicenseService
         {
             lock (_runtimeLock)
             {
-                GetSnapshot();
+                if (GetSnapshot().Edition == HonuaEdition.Community)
+                {
+                    return CancellationToken.None;
+                }
                 return _operationCancellation.Token;
             }
         }
