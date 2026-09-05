@@ -7,7 +7,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationsToolset;
 
 [Trait("Tier", "Fast")]
 public sealed class AdminApprovalReviewTests
@@ -17,14 +17,16 @@ public sealed class AdminApprovalReviewTests
     {
         var plan = Map("admin.layer.filter.set", new Dictionary<string, string?>
         {
-            ["layerId"] = "123", ["permanentFilter"] = """{"expression":"status = 'open'","language":"arcgis-sql","token":"nested-secret"}"""
+            ["layerId"] = "123",
+            ["permanentFilter"] = """{"expression":"status = 'open'","language":"arcgis-sql","token":"nested-secret"}"""
         });
         var review = Review(plan);
         review.Should().Contain("tenant-a").And.Contain("123").And.Contain("status = 'open'");
         review.Should().Contain("connection-a").And.Contain("service-a").And.NotContain("nested-secret");
         var different = Map("admin.layer.filter.set", new Dictionary<string, string?>
         {
-            ["layerId"] = "456", ["permanentFilter"] = """{"expression":"status = 'closed'","language":"arcgis-sql"}"""
+            ["layerId"] = "456",
+            ["permanentFilter"] = """{"expression":"status = 'closed'","language":"arcgis-sql"}"""
         });
         Review(different).Should().NotBe(review);
     }
@@ -43,7 +45,9 @@ public sealed class AdminApprovalReviewTests
     {
         var plan = Map("admin.connections.create", new Dictionary<string, string?>
         {
-            ["name"] = "warehouse", ["secretReference"] = "vault/warehouse", ["secretType"] = "Vault",
+            ["name"] = "warehouse",
+            ["secretReference"] = "vault/warehouse",
+            ["secretType"] = "Vault",
             ["connectionString"] = "Host=private;Password=hidden-password",
             ["unexpected"] = "hidden-unknown-value"
         });
@@ -75,7 +79,10 @@ public sealed class AdminApprovalReviewTests
         }
         return mapper.Map(descriptor, new OperationRequest
         {
-            OperationId = operationId, ConnectionId = "connection-a", ServiceName = "service-a", Parameters = parameters
+            OperationId = operationId,
+            ConnectionId = "connection-a",
+            ServiceName = "service-a",
+            Parameters = parameters
         }, new OperationPolicyContext { TenantId = "tenant-a", PrincipalId = "requester" },
             new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval }).Plan!;
     }
