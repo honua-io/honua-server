@@ -309,6 +309,7 @@ internal static class GeoservicesCatalogEndpoints
                 Async = true,
                 DtdProcessing = DtdProcessing.Prohibit,
                 XmlResolver = null,
+                MaxCharactersFromEntities = 1_024,
                 MaxCharactersInDocument = MaxSoapRequestCharacters
             };
             using var reader = XmlReader.Create(context.Request.Body, settings);

@@ -1106,6 +1106,7 @@ internal static class ImageServerSoapEndpoints
                 Async = true,
                 DtdProcessing = DtdProcessing.Prohibit,
                 XmlResolver = null,
+                MaxCharactersFromEntities = 1_024,
                 MaxCharactersInDocument = MaxRequestCharacters
             };
             using var reader = XmlReader.Create(context.Request.Body, settings);
