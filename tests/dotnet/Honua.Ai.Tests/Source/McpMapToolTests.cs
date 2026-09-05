@@ -1113,7 +1113,9 @@ public sealed class McpMapToolTests
                 "Parcels Dataset", AuthorizationOperation.Query, true, Arg.Any<CancellationToken>())
             .Returns(PermissionDecision.Allow(new PermissionGrant
             {
-                Service = ServiceName, Layer = "Parcels Dataset", Operation = "query",
+                Service = ServiceName,
+                Layer = "Parcels Dataset",
+                Operation = "query",
             }));
         var reader = Substitute.For<IFeatureReader>();
         reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(42L);
