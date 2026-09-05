@@ -21,7 +21,7 @@
       "type": "counter",
       "labels": ["service_type", "operation", "error_code", "in_band"],
       "scope": "Every protocol surface.",
-      "role": "All-surface error-envelope numerator. in_band=\"true\" is the GeoServices HTTP-200-with-{error} class that transport 5xx metrics cannot see (server#2243, devops#113). error_code carries the HTTP status, so in_band=\"true\" (status < 400) and error_code=~\"5..\" are disjoint sets.",
+      "role": "All-surface error-envelope numerator. in_band=\"true\" is the GeoServices HTTP-200-with-{error} class that transport 5xx metrics cannot see (server#2243, devops#113). error_code carries the logical envelope code independently of the transport status. An HTTP-200 envelope with logical code 500 has both in_band=\"true\" and error_code=\"500\"; selectors must not count it twice.",
       "recorded_by": "HonuaTelemetry.RecordErrorEnvelope"
     },
     {
@@ -71,10 +71,10 @@
       "why": "Both sides cover every protocol surface, so no selector is needed. Counts 4xx client errors: this is an error-ENVELOPE rate, not an availability signal."
     },
     "platform_fault_rate": {
-      "numerator": "honua_request_error_total{in_band=\"true\"} + honua_request_error_total{error_code=~\"5..\"}",
+      "numerator": "honua_request_error_total{in_band=\"true\"} or honua_request_error_total{in_band=\"false\",error_code=~\"5..\"}",
       "denominator": "honua_serving_request_duration_ms_count",
       "denominator_selector": null,
-      "why": "The availability / error-budget numerator. Transport 5xx plus every in-band (HTTP<400 body-envelope) error, which is the class load-balancer metrics cannot see. Ordinary out-of-band 4xx — an Esri client probing capabilities and getting 404s — is excluded, so routine client behaviour cannot breach an availability target. The two selectors are disjoint because in_band is defined as error_code < 400. LIMITATION: an in-band error cannot currently be attributed to client vs server fault, so all of them count against availability. That is deliberate (an in-band error storm is exactly what devops#113 exists to catch) but it means this is not a true fault-attributed availability SLO; a `fault` tag on the error counter would be needed for that."
+      "why": "The availability / error-budget numerator. Transport 5xx plus every in-band (HTTP<400 body-envelope) error, which is the class load-balancer metrics cannot see. Ordinary out-of-band 4xx — an Esri client probing capabilities and getting 404s — is excluded, so routine client behaviour cannot breach an availability target. The selectors are explicitly disjoint: in_band reflects the actual HTTP transport status, so the logical-5xx selector excludes in-band envelopes. Use a PromQL union before aggregation, not vector addition: either class may be absent. Apply rate/increase to each selector over the same window, union the results, then aggregate over matching target labels before dividing. LIMITATION: an in-band error cannot currently be attributed to client vs server fault, so all of them count against availability. That is deliberate (an in-band error storm is exactly what devops#113 exists to catch) but it means this is not a true fault-attributed availability SLO; a `fault` tag on the error counter would be needed for that."
     }
   },
   "not_emitted": [
