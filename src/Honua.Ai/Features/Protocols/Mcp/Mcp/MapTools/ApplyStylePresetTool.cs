@@ -2,6 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Globalization;
+using System.Security.Claims;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
@@ -12,16 +19,9 @@ using Honua.Ai.Protocols.Mcp.Tools;
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
 /// <summary>
-/// MCP tool that applies a named style preset — a reusable catalog
-/// <c>styleId</c> — as the primary/default style of a published layer. It is a
-/// thin adapter over the canonical styling pipeline (ADR-0048): it validates the
-/// preset exists in the styleId-keyed <see cref="IStyleCatalog"/>, binds it to
-/// the layer at ordinal 0 via <see cref="IStyleCatalog.AssociateLayerAsync"/>,
-/// then reconciles the Metadata v2 graph through
-/// <see cref="IMetadataV2StyleGraphSync.SyncLayerStylesAsync"/> — the same seams
-/// the <c>/ogc/styles</c> authoring surface drives. It persists presentation
-/// metadata on the hosted service so a subsequent <c>honua_render_map</c>
-/// resolves the applied style; it never edits feature records (ADR-0028).
+/// Applies a catalog preset through the canonical operation runtime. REST admin
+/// authorization and operator approval precede submission; the operation policy
+/// and durable audit boundary own actuation and approval replay.
 /// </summary>
 internal sealed class ApplyStylePresetTool : IMcpTool
 {
@@ -73,16 +73,28 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         McpTelemetry.EnrichActivity("ApplyStylePreset");
         McpLog.ToolInvoked(_logger, ToolName, WorkflowFamily);
 
-        // Applying a preset mutates the hosted service's presentation metadata, so
-        // it is gated on the authoring/publish grant the /ogc/styles authoring path
-        // enforces (admin authorization there; the operator model maps it to a
-        // PublishedService.Publish write grant). This is deliberately stronger than
-        // the generic Process.Execute data-plane gate: a query-only principal
-        // (Read/Discover grants) is denied.
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await _jobService
             .EnsureCallerAuthorizedAsync(principal, OperatorResourceType.PublishedService, OperatorOperation.Publish, cancellationToken)
             .ConfigureAwait(false);
+        var authorization = await OperationAdminAuthorization.EvaluateAsync(
+            httpContext, principal, OperationSideEffectClass.MutatesMetadata, cancellationToken).ConfigureAwait(false);
+        if (!authorization.IsAuthorized)
+        {
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        }
+
+        var gate = httpContext.RequestServices.GetRequiredService<OperatorApprovalGate>();
+        var approval = gate.CheckApproval(principal, new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Catalog,
+            Operation = OperatorOperation.Publish,
+        });
+        if (approval.IsRequired)
+        {
+            throw new GeoprocessingApprovalRequiredException(
+                approval.PolicyRef ?? "operator.publish");
+        }
 
         var argument = McpToolHelpers.ParseArguments(arguments, MapToolJsonContext.Default.McpApplyStylePresetArgument);
 
@@ -93,8 +105,6 @@ internal sealed class ApplyStylePresetTool : IMcpTool
 
         var styleCatalog = httpContext.RequestServices.GetService<IStyleCatalog>()
             ?? throw new GeoprocessingStoreUnavailableException("The style catalog is not available on this server.");
-        var graphSync = httpContext.RequestServices.GetService<IMetadataV2StyleGraphSync>()
-            ?? throw new GeoprocessingStoreUnavailableException("The style graph synchronizer is not available on this server.");
         var graphProvider = httpContext.RequestServices.GetService<IMetadataV2GraphProvider>()
             ?? throw new GeoprocessingStoreUnavailableException("The metadata catalog is not available on this server.");
 
@@ -114,12 +124,41 @@ internal sealed class ApplyStylePresetTool : IMcpTool
                 + "List presets with honua_get_style (omit styleId).");
         }
 
-        // Bind the preset as the layer's primary (ordinal 0) style, then reconcile
-        // the canonical graph so StyleResourceIds[0] and the Type=Style resource
-        // reflect it — the same sequence LayerStyleService uses on the HTTP path.
-        await styleCatalog.AssociateLayerAsync(layer.StorageLayerId, styleId, ordinal: 0, cancellationToken)
-            .ConfigureAwait(false);
-        await graphSync.SyncLayerStylesAsync(layer.StorageLayerId, cancellationToken).ConfigureAwait(false);
+        var invoker = httpContext.RequestServices.GetRequiredService<IOperationInvoker>();
+        var operation = await invoker.SubmitAsync(new OperationRequest
+        {
+            OperationId = "style.apply-preset",
+            Parameters = new Dictionary<string, string?>
+            {
+                ["serviceId"] = layer.Service.Metadata.Id,
+                ["layerId"] = argument.LayerId!.Value.ToString(CultureInfo.InvariantCulture),
+                ["styleId"] = styleId,
+            },
+        }, new OperationPolicyContext
+        {
+            PrincipalId = McpAuthorizationHelper.ResolveActorId(principal),
+            AuthorizationOutcome = authorization.AuthorizationOutcome,
+            TenantId = httpContext.RequestServices.GetService<ITenantContext>()?.TenantId,
+            SchemaName = httpContext.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
+            Roles = principal.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray(),
+            ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
+            RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
+                .OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
+        }, cancellationToken).ConfigureAwait(false);
+        if (operation.Status == OperationHandleStatus.RequiresApproval)
+        {
+            throw new GeoprocessingApprovalRequiredException(
+                operation.ApprovalLane ?? operation.OperationId, operation.Reason, operation.ProposalId);
+        }
+        if (operation.Status == OperationHandleStatus.Denied)
+        {
+            throw new GeoprocessingAuthorizationException(requiresAuthentication: false);
+        }
+        if (operation.Status != OperationHandleStatus.Completed)
+        {
+            throw new GeoprocessingPreconditionFailedException(
+                operation.Reason ?? "The style preset operation did not complete.");
+        }
 
         var output = new McpApplyStylePresetOutput
         {
