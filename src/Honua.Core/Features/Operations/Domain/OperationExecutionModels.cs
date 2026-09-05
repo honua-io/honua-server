@@ -173,6 +173,9 @@ public sealed record OperationValidation
 /// </summary>
 public sealed record OperationHandle
 {
+    /// <summary>Trusted tenant owner captured when the operation was accepted.</summary>
+    public string? TenantId { get; init; }
+
     /// <summary>Optimistic-concurrency version incremented by the durable store.</summary>
     public long Version { get; init; }
 

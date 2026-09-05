@@ -347,13 +347,15 @@ public sealed class WebAppFixture : IAsyncLifetime
         string serviceName,
         IReadOnlyList<string>? enabledProtocols = null,
         AccessPolicy? accessPolicy = null,
-        bool clearAccessPolicy = false)
+        bool clearAccessPolicy = false,
+        IReadOnlyList<string>? capabilities = null)
         => Honua.TestKit.Mixins.WebAppFixtureMetadataV2GraphMutationMixin.UpdateServiceMetadata(
             this,
             serviceName,
             enabledProtocols,
             accessPolicy,
-            clearAccessPolicy);
+            clearAccessPolicy,
+            capabilities);
 
     /// <summary>
     /// Toggles the runtime visibility of the Metadata v2 publications/resources bound to

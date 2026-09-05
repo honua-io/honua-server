@@ -66,7 +66,6 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         var relativePath = BindPath(request, request.DryRun && _definition.SupportsDryRun ? _definition.DryRunPath : null);
         var query = _definition.QueryParameters?.Where(name => request.Parameters.TryGetValue(name, out var value) && value is not null)
             .Select(name => $"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(request.Parameters[name]!)}").ToArray();
-        if (query is { Length: > 0 }) relativePath += "?" + string.Join("&", query);
         var localPort = current.Connection.LocalPort;
         if (localPort <= 0)
         {
@@ -76,7 +75,10 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         var scheme = current.Features.Get<Microsoft.AspNetCore.Http.Features.ITlsConnectionFeature>() is null
             ? Uri.UriSchemeHttp
             : Uri.UriSchemeHttps;
-        var uri = new UriBuilder(scheme, IPAddress.Loopback.ToString(), localPort, "/api/v1/admin" + relativePath).Uri;
+        var uri = new UriBuilder(scheme, IPAddress.Loopback.ToString(), localPort, "/api/v1/admin" + relativePath)
+        {
+            Query = query is { Length: > 0 } ? string.Join('&', query) : string.Empty
+        }.Uri;
         using var message = new HttpRequestMessage(_definition.Method, uri);
         OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
@@ -84,7 +86,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor
         {
             var issued = await _adminApiKeyStore.CreateAsync(
                 $"approved-operation:{context.ApprovedProposalId}",
-                [AdminApiKeyPermission.CreateApprovedOperationGrant(_definition.Method.Method, uri.AbsolutePath)],
+                AdminApiKeyPermission.CreateApprovedOperationGrants(_definition.Method.Method, uri.AbsolutePath, context.TenantId),
                 _clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
                 cancellationToken).ConfigureAwait(false);

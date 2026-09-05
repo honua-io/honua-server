@@ -63,3 +63,41 @@ Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per
 ## Versioning
 
 The admin API follows the control-plane versioning and deprecation policy in [Versioning and support](../versioning-and-support.md).
+
+## Reviewing Admin operation proposals
+
+New Admin operation proposals include the HTTP operation, accepted tenant,
+connection/service target, selected fields, and declared parameter values in the
+reviewable `diff`. For example, a layer-filter proposal identifies the layer and
+its proposed permanent-filter expression. The review distinguishes dry-run
+validation from execution. Approval replay verifies the complete plan seal
+internally; neither REST nor MCP exposes that private seal or replay payload.
+
+Credentials, opaque bodies, malformed JSON, and undeclared values are marked as
+redacted. Known secret references remain visible so the reviewer can identify the
+selected credential without seeing its secret. URL credentials and query strings
+are removed from displayed URLs. Review warnings identify these omissions; the
+complete execution payload is not returned by proposal-detail endpoints.
+
+Proposals created before this projection was available retain their original
+sealed plan. Re-propose such work to obtain the target-and-value review rather
+than relying on a generic legacy summary.
+
+## Canonical operation requests
+
+Admin release and operate requests use the required inputs declared by the
+operation catalog. Validation and dry-run reject missing or blank required
+values, missing required fields within structured inputs, and missing conditional
+cache targets. Metadata prevalidation requires a target environment and exactly
+one persisted package ID or inline release package. This input validation does
+not establish that a referenced package exists or replace live compatibility
+prevalidation.
+
+Supply declared text directly: a title of `2026`, `true`, or `null` stays a JSON
+string when sent to the Admin API. Supply numbers, booleans, arrays, and objects
+as JSON in the operation parameter value. Pagination and service filters are
+forwarded as query parameters, including values containing reserved characters.
+
+Operate validation also enforces declared scalar types, enum and format constraints,
+and explicit nullability of supplied objects, collections, and collection entries.
+Optional nullable values remain valid when their target scope does not require them.
