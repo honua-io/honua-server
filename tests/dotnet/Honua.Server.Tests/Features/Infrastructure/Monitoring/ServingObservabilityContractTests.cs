@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using OpenTelemetry.Metrics;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
@@ -25,6 +26,30 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Trait("Tier", "Fast")]
 public sealed class ServingObservabilityContractTests
 {
+    [Fact]
+    public async Task GeoServicesError_ExportsInBandTrueForDashboardQueries()
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
+        builder.WebHost.UseTestServer();
+        builder.Services.AddOpenTelemetry().WithMetrics(metrics =>
+            metrics.AddMeter(HonuaTelemetry.ServiceName).AddPrometheusExporter());
+        await using var app = builder.Build();
+        app.MapGet("/rest/services/demo/FeatureServer/0/query", (HttpContext context) =>
+            StandardErrorResponseFormatter.WriteErrorAsync(context, StandardErrorResponse.BadRequest("Synthetic invalid input")));
+        app.MapPrometheusScrapingEndpoint();
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/rest/services/demo/FeatureServer/0/query");
+        Assert.Equal(200, (int)response.StatusCode);
+        var exposition = await client.GetStringAsync("/metrics");
+        var error = Assert.Single(exposition.Split('\n'), line =>
+            line.StartsWith("honua_request_error_total{", StringComparison.Ordinal) &&
+            line.Contains("error_code=\"400\"", StringComparison.Ordinal));
+        Assert.Contains("in_band=\"true\"", error, StringComparison.Ordinal);
+        await app.StopAsync();
+    }
+
     [Theory]
     [InlineData("/rest/services/demo/FeatureServer/0/query", 400, 200, true)]
     [InlineData("/rest/services/demo/MapServer/query", 500, 200, true)]
