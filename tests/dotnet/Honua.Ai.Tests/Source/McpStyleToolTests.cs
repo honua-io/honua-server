@@ -523,6 +523,8 @@ public sealed class McpStyleToolTests
     [InlineData("publication")]
     [InlineData("storage")]
     [InlineData("missing-pin")]
+    [InlineData("fallback-null")]
+    [InlineData("fallback-invalid")]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [Operation(Operations.Update)]
@@ -530,7 +532,9 @@ public sealed class McpStyleToolTests
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
     public async Task ApprovedPresetReplay_RequiresTheOriginalTarget(string mutation)
     {
-        var graph = BuildGraphProvider();
+        var fallback = mutation.StartsWith("fallback-", StringComparison.Ordinal);
+        var publicationBindingId = mutation == "fallback-invalid" ? "missing-binding" : null;
+        var graph = BuildGraphProvider(useFallbackBinding: fallback, publicationBindingId: publicationBindingId);
         var catalog = Substitute.For<IStyleCatalog>();
         catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
         catalog.AssociateLayerAsync(Arg.Any<int>(), PresetStyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
@@ -564,6 +568,12 @@ public sealed class McpStyleToolTests
                 resourceId: mutation == "publication" ? "res-rebound" : ResourceId,
                 publicationId: mutation == "publication" ? "pub-rebound" : "pub-parcels",
                 storageBindingId: "bind-rebound");
+            graph.SetGraph((await rebound.GetCurrentAsync(CancellationToken.None)).Graph);
+        }
+        else if (fallback)
+        {
+            var rebound = BuildGraphProvider(storageBindingId: "bind-rebound",
+                useFallbackBinding: true, publicationBindingId: publicationBindingId);
             graph.SetGraph((await rebound.GetCurrentAsync(CancellationToken.None)).Graph);
         }
         else if (mutation == "missing-pin")
@@ -739,7 +749,8 @@ public sealed class McpStyleToolTests
         int storageLayerId = StorageLayerId,
         string resourceId = ResourceId,
         string publicationId = "pub-parcels",
-        string storageBindingId = "bind-parcels")
+        string storageBindingId = "bind-parcels",
+        bool useFallbackBinding = false, string? publicationBindingId = null)
     {
         var spatial = new MetadataV2ResourceSpatial
         {
@@ -752,7 +763,7 @@ public sealed class McpStyleToolTests
             .AddResource(resourceId, "Parcels Dataset", spatial: spatial)
             .AddStorageBinding(storageBindingId, resourceId, "public.parcels", storageLayerId: storageLayerId)
             .AddService(ServiceId, ServiceName)
-            .AddPublication(publicationId, ServiceId, resourceId, layerIndex: LayerIndex, storageBindingId: storageBindingId)
+            .AddPublication(publicationId, ServiceId, resourceId, layerIndex: LayerIndex, storageBindingId: useFallbackBinding ? publicationBindingId : storageBindingId)
             .BuildProvider();
     }
 
