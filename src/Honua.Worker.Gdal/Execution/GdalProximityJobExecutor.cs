@@ -211,9 +211,14 @@ internal sealed partial class GdalProximityJobExecutor(
             // src/dst pair last so the output path is the final argument.
             var args = new List<string>
             {
+                Path.Join(AppContext.BaseDirectory, "Scripts", "gdal_euclidean_distance.py"),
                 "-of", "GTiff",
                 "-ot", "Float32",
                 "-distunits", distUnits,
+                // GDAL otherwise fills beyond-max-distance cells with 65535
+                // without declaring band nodata metadata. A negative sentinel
+                // cannot collide with a valid nonnegative Euclidean distance.
+                "-nodata", "-9999",
             };
             if (maxDistance.HasValue)
             {
@@ -234,7 +239,7 @@ internal sealed partial class GdalProximityJobExecutor(
 
             return await GdalToolExecution.RunAndPublishAsync(
                 runner, context, opts, logger, job.OperationId,
-                "gdal_proximity.py", args, workspace, outputPath,
+                "python3", args, workspace, outputPath,
                 GeoTiffContentType, "Proximity raster",
                 "Encoding proximity raster artifact", "Proximity completed",
                 cancellationToken).ConfigureAwait(false);

@@ -117,7 +117,7 @@ public sealed class GdalProximityCorrectnessTests
                 var outputPath = Path.Join(scratch, "decoded-output.tif");
                 await File.WriteAllBytesAsync(outputPath, GdalCli.DecodeDataUri(context.Artifacts.Single()));
                 using var output = await DecodeAsync(runner, outputPath, scratch);
-                var noData = allocation ? InputNoData : 65535d;
+                var noData = InputNoData;
                 AssertGrid(output.RootElement, allocation ? "Int16" : "Float32", noData);
 
                 for (var y = 0; y < 5; y++)
@@ -129,8 +129,7 @@ public sealed class GdalProximityCorrectnessTests
                         var nearestSquared = onlySecond ? secondSquared : Math.Min(firstSquared, secondSquared);
                         var distance = Math.Sqrt(nearestSquared) * (units == "GEO" ? 10 : 1);
                         // This fixture's ties (4,0), (3,2), (2,4) select the
-                        // source in the lower column, label 7 (not the smaller
-                        // row-major index or a label inferred from actual output).
+                        // source in the lower column, label 7.
                         var label = !onlySecond && firstSquared <= secondSquared ? 7 : 23;
                         var expected = limit.HasValue && distance > limit.Value
                             ? noData : allocation ? label : distance;
@@ -164,6 +163,8 @@ public sealed class GdalProximityCorrectnessTests
         raster.GetProperty("transform").EnumerateArray().Select(value => value.GetDouble())
             .Should().Equal(500000, 10, 0, 2200000, 0, -10);
         raster.GetProperty("type").GetString().Should().Be(dataType);
+        raster.GetProperty("nodata").ValueKind.Should().Be(JsonValueKind.Number,
+            "the band must declare nodata so consumers can mask beyond-cutoff cells");
         raster.GetProperty("nodata").GetDouble().Should().Be(noData);
     }
 
