@@ -41,10 +41,10 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     }
 
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
-        => await _cacheService.GetAsync<T>(await BuildStorageKeyAsync(key, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+        => await _cacheService.GetAsync<T>(await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
 
     public async Task SetAsync<T>(string key, T value, TimeSpan expiration, CancellationToken cancellationToken = default) where T : class
-        => await _cacheService.SetAsync(await BuildStorageKeyAsync(key, cancellationToken, allowLocalVersionCache: true).ConfigureAwait(false), value, expiration, cancellationToken).ConfigureAwait(false);
+        => await _cacheService.SetAsync(await BuildStorageKeyAsync(key, allowLocalVersionCache: true, cancellationToken).ConfigureAwait(false), value, expiration, cancellationToken).ConfigureAwait(false);
 
     public async Task<T> GetOrCreateAsync<T>(
         string key,
@@ -54,7 +54,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     {
         ArgumentNullException.ThrowIfNull(factory);
 
-        var storageKey = await BuildStorageKeyAsync(key, cancellationToken).ConfigureAwait(false);
+        var storageKey = await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false);
         var value = await _cacheService.GetOrSetAsync(
             storageKey,
             async ct => await factory().WaitAsync(ct).ConfigureAwait(false),
@@ -65,7 +65,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     }
 
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
-        => await _cacheService.RemoveAsync(await BuildStorageKeyAsync(key, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+        => await _cacheService.RemoveAsync(await BuildStorageKeyAsync(key, allowLocalVersionCache: false, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
 
     public async Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
@@ -77,9 +77,9 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         await _cacheService.RemoveByPatternAsync(NormalizeKey(pattern), cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<string> BuildStorageKeyAsync(string key, CancellationToken cancellationToken, bool allowLocalVersionCache = false)
+    private async Task<string> BuildStorageKeyAsync(string key, bool allowLocalVersionCache, CancellationToken cancellationToken)
     {
-        var namespaceVersions = await ResolveNamespaceVersionsAsync(key, cancellationToken, allowLocalVersionCache).ConfigureAwait(false);
+        var namespaceVersions = await ResolveNamespaceVersionsAsync(key, allowLocalVersionCache, cancellationToken).ConfigureAwait(false);
         if (namespaceVersions.Count == 0)
         {
             return NormalizeKey(key);
@@ -89,7 +89,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         return NormalizeKey($"{key}:v:{versionSuffix}");
     }
 
-    private async Task<IReadOnlyList<string>> ResolveNamespaceVersionsAsync(string key, CancellationToken cancellationToken, bool allowLocalVersionCache)
+    private async Task<IReadOnlyList<string>> ResolveNamespaceVersionsAsync(string key, bool allowLocalVersionCache, CancellationToken cancellationToken)
     {
         var namespaces = GetNamespaceKeysForCacheKey(key);
         if (namespaces.Count == 0)
