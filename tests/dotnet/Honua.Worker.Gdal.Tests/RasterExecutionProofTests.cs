@@ -19,7 +19,7 @@ namespace Honua.Worker.Gdal.Tests;
 public sealed class RasterExecutionProofTests : IDisposable
 {
     private const double NoData = -9999;
-    private const string Image = "ghcr.io/osgeo/gdal:ubuntu-full-3.13.1@sha256:aff1d5515aa0e9b50be34ab11d6c0c2cfabc23cdcb7a2e0bc5748101eedb3e4a";
+    private static readonly string Image = ReadProductionImage();
     private static readonly double[] Grid = [1, 2, 3, 4, 5, NoData, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
     private readonly string _scratch = Path.Join(AppContext.BaseDirectory, "raster-proof", Guid.NewGuid().ToString("N"));
     private readonly DockerGdalCommandRunner _runner = new(
@@ -64,6 +64,23 @@ public sealed class RasterExecutionProofTests : IDisposable
         {
             zones[3].GetProperty(name).ValueKind.Should().Be(JsonValueKind.Null);
         }
+    }
+
+    [Fact]
+    public async Task ZonalStatistics_MultipleReadWindows_MergesExactCountsSumsAndPopulationVariance()
+    {
+        using var json = JsonDocument.Parse(await Execute("raster.zonal-statistics", ("source", Input("zonal-wide.tif")),
+            ("zones", Input("zones-wide.geojson")), ("statistics", "count,sum,mean,min,max,stddev,variance")));
+        var zone = json.RootElement.GetProperty("zones").EnumerateArray().Should().ContainSingle().Which;
+        // Two rows 0..512 excluding 256. Each row crosses two 256-cell
+        // windows and the final one-cell window; derive moments algebraically.
+        const int count = 1024;
+        const double sum = 2 * (512 * 513 / 2 - 256);
+        const double squareSum = 2 * (512.0 * 513 * 1025 / 6 - 256 * 256);
+        var variance = squareSum / count - Math.Pow(sum / count, 2);
+        AssertZone(zone, "wide", count, 0, 512, sum);
+        zone.GetProperty("variance").GetDouble().Should().BeApproximately(variance, 1e-9);
+        zone.GetProperty("stddev").GetDouble().Should().BeApproximately(Math.Sqrt(variance), 1e-9);
     }
 
     [Theory]
@@ -325,6 +342,21 @@ public sealed class RasterExecutionProofTests : IDisposable
     private static string Fixture(string name) => Path.Join(AppContext.BaseDirectory, "Fixtures", "RasterProof", name);
     private static string Input(string name) => Convert.ToBase64String(File.ReadAllBytes(Fixture(name)));
     public void Dispose() => GdalCli.CleanupScratch(_scratch);
+
+    private static string ReadProductionImage()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Join(root.FullName, "Honua.sln")))
+        {
+            root = root.Parent;
+        }
+        root.Should().NotBeNull("the proof must consume the production worker's native dependency pin");
+        const string prefix = "ARG GDAL_BASE_IMAGE=";
+        var image = File.ReadLines(Path.Join(root!.FullName, "docker", "worker-gdal", "Dockerfile"))
+            .Single(line => line.StartsWith(prefix, StringComparison.Ordinal))[prefix.Length..];
+        image.Should().Contain("@sha256:", "native correctness evidence must use an immutable tool image");
+        return image;
+    }
 
     // Only translate host paths at the Docker transport boundary. The production
     // runner still builds the command, applies hardening and invokes real tools.

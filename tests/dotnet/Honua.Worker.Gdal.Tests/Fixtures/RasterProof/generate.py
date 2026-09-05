@@ -29,6 +29,8 @@ raster("reflectance.tif", [[[0.2, 0.1, 0, -9999], [0.3, 0.2, 0.4, 0.1]],
 raster("mosaic-a.tif", [[[1, 2, 3], [4, 5, -9999]], [[11, 12, 13], [14, 15, -9999]]], (0, 1, 0, 2, 0, -1))
 raster("mosaic-b.tif", [[[30, 40, 50], [60, -9999, 80]], [[130, 140, 150], [160, -9999, 180]]], (2, 1, 0, 2, 0, -1))
 raster("histogram.tif", [[[0, 0, 0, 1], [1, 2, 2, 2], [2, 2, 3, 255]]], dtype=gdal.GDT_Byte, nodata=255)
+wide_row = [i if i != 256 else -9999 for i in range(513)]
+raster("zonal-wide.tif", [[wide_row, wide_row]], (0, 0.01, 0, 2, 0, -0.01))
 
 
 def polygon(ring, name):
@@ -41,6 +43,8 @@ zones = []
 for name, x0, y0, x1, y1 in [("left", 0, 2, 2, 4), ("right", 2, 2, 4, 4), ("overlap", 1, 2, 3, 4), ("nodata", 1, 2, 2, 3)]:
     zones.append(polygon([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]], name))
 (root / "zones.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": zones}) + "\n")
+(root / "zones-wide.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": [
+    polygon([[0, 1.98], [5.13, 1.98], [5.13, 2], [0, 2], [0, 1.98]], "wide") ]}) + "\n")
 points = [{"type": "Feature", "properties": {"value": v}, "geometry": {"type": "Point", "coordinates": [x, y]}}
           for x, y, v in [(0, 0, 10), (4, 0, 20), (0, 4, 30), (4, 4, 40), (2, 2, 100)]]
 (root / "points.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": points}) + "\n")
