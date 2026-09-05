@@ -21,6 +21,8 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 [Protocol(TestProtocols.GeoservicesCatalog)]
 public sealed class GeoservicesSoapCatalogDiscoveryTests
 {
+    private static readonly string[] _publishedTypes = ["FeatureServer", "MapServer", "GPServer", "VectorTileServer"];
+
     private const string ArcGisSoapNamespace = "http://www.esri.com/schemas/ArcGIS/10.8";
 
     [IntegrationTest]
@@ -169,7 +171,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         soapEntries.Select(entry => entry.Name).Distinct(StringComparer.Ordinal)
             .Should().BeEquivalentTo(expectedNames);
         soapEntries.Select(entry => (entry.Name, entry.Type)).Should().BeEquivalentTo(
-            expectedNames.SelectMany(name => new[] { "FeatureServer", "MapServer", "GPServer", "VectorTileServer" }
+            expectedNames.SelectMany(name => _publishedTypes
                 .Select(type => (name, type))),
             "both catalogs must enumerate every published non-raster service in this fixture");
 
@@ -253,7 +255,7 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
 
         foreach (var service in new[] { ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService })
         {
-            foreach (var protocol in new[] { "FeatureServer", "MapServer", "GPServer", "VectorTileServer" })
+            foreach (var protocol in _publishedTypes)
             {
                 using var handoff = await client.GetAsync($"/rest/services/{service}/{protocol}?f=json");
                 var body = await handoff.Content.ReadAsStringAsync();
