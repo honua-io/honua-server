@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Honua.TestKit;
@@ -22,6 +23,51 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Operation(Operations.TestInfrastructure)]
 public sealed class RedisExecutionSubstrateIntegrationTests(RedisFixture redis)
 {
+    [IntegrationTest]
+    public async Task ExecutionJobStore_TenantScope_FiltersBeforePaginationAndCursorCreation()
+    {
+        await using var harness = await ControlPlaneRedisHarness.CreateAsync(redis.ConnectionString);
+        var owner = $"tenant-owner-{Guid.NewGuid():N}";
+        var created = DateTimeOffset.UtcNow;
+        var expected = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var tenant in new[] { "tenant-a", "tenant-b", "unscoped" })
+        {
+            expected[tenant] = [];
+            for (var i = 0; i < 2; i++)
+            {
+                var id = $"{tenant}-{Guid.NewGuid():N}";
+                expected[tenant].Add(id);
+                var job = CreateQueuedJob(id) with
+                {
+                    CreatedAt = created.AddMinutes(-i),
+                    Audit = new OperationAuditInfo
+                    {
+                        RequestedBy = owner,
+                        SubmitterSecurityContext = tenant == "unscoped" ? null : new JobSecurityContext(owner, tenant, [], "roles")
+                    }
+                };
+                (await harness.JobStore.TryCreateAsync(job)).Should().BeTrue();
+            }
+        }
+
+        foreach (var (tenant, ids) in expected)
+        {
+            var query = new ExecutionJobQuery
+            {
+                RequestedBy = owner,
+                ApplyTenantScope = true,
+                TenantId = tenant == "unscoped" ? null : tenant,
+                Limit = 1
+            };
+            var first = await harness.JobStore.QueryAsync(query);
+            first.Items.Should().ContainSingle().Which.OperationId.Should().Be(ids[0]);
+            first.NextCursor.Should().NotBeNull();
+            var second = await harness.JobStore.QueryAsync(query with { Cursor = first.NextCursor });
+            second.Items.Should().ContainSingle().Which.OperationId.Should().Be(ids[1]);
+            second.NextCursor.Should().BeNull();
+        }
+    }
+
     [IntegrationTest]
     public async Task ExecutionJobStore_WithRedis_SupportsCasUpdatesAndActiveIndexes()
     {
