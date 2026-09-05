@@ -6,115 +6,78 @@ using Honua.ServiceDefaults;
 namespace Honua.Server.Features.Operations.Status;
 
 /// <summary>
-/// Pure evaluation of the minimal v1 availability SLO from the telemetry the server already
-/// aggregates in-process. No metrics database is involved: availability is computed from the
-/// GIS-protocol-partitioned serving-latency rolling window (request and server-error counts).
+/// Projects the replica-local serving-latency reservoir as an explicitly non-authoritative
+/// diagnostic. A distributed platform SLO is intentionally not fabricated from this source.
 /// </summary>
 /// <remarks>
-/// <para>
-/// <b>What v1 actually evaluates:</b> observed availability = 1 - (server errors / requests) over the
-/// aggregator's window, where a "server error" is an HTTP response with status &gt;= 500
-/// (<c>ServingLatencyAggregator.ServerErrorFloor</c>). The error budget is <c>1 - target</c>; the burn
-/// rate is the observed error fraction divided by that budget; remaining budget is
-/// <c>1 - burnRate</c> clamped to [0, 1].
-/// </para>
-/// <para>
-/// <b>Honest limitation / where a richer signal would plug in:</b> the in-process rolling window
-/// counts 5xx serving errors only. The GIS-aware <em>in-band</em> GeoServices error signal (error
-/// envelopes delivered with a 2xx status, emitted as the cumulative <c>honua_geoservices_error_total</c>
-/// / <c>honua_request_error_total{in_band}</c> counters) is not yet windowed, so it does not currently
-/// contribute to this availability figure. Adding a windowed aggregator for those counters and folding
-/// its error count into <see cref="Evaluate"/> is the single, well-scoped extension point; the
-/// contract shape here does not change when that lands.
-/// </para>
+/// The retained tail is bounded per protocol, resets with the process, and counts HTTP 5xx only. Its
+/// population and effective interval are exposed so callers can use it for node diagnosis without
+/// mistaking it for the all-request, cross-replica, in-band-aware release SLI.
 /// </remarks>
 internal static class OperateSloEvaluator
 {
-    internal const string EvaluationSource = "serving-latency-window(http-5xx)";
+    internal const string DiagnosticSource = "node-local-retained-tail(http-5xx-only)";
 
     /// <summary>
-    /// Evaluates the availability SLO against a serving-latency snapshot.
+    /// Projects a serving-latency snapshot as a node-local retained-tail diagnostic.
     /// </summary>
     /// <param name="options">The SLO configuration.</param>
     /// <param name="snapshot">The in-process serving-latency snapshot.</param>
-    /// <returns>The SLO view: configured with an evaluation, or the explicit not-configured state.</returns>
+    /// <returns>The explicit unavailable platform SLO state plus retained-tail diagnostic.</returns>
     public static OperateSloView Evaluate(OperateSloOptions options, ServingLatencySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        if (!options.HasAvailabilityTarget)
-        {
-            return new OperateSloView
-            {
-                Configured = false,
-                Reason = "No availability SLO target is configured. Set Slo:Availability:Target to a "
-                    + "fraction in (0, 1) (for example 0.995) to evaluate an error budget from the "
-                    + "in-process serving-latency window.",
-                Availability = null,
-            };
-        }
-
-        var target = options.Availability.Target!.Value;
-
         long requestCount = 0;
         long errorCount = 0;
+        long totalRecorded = 0;
+        long overwritten = 0;
         foreach (var protocol in snapshot.Protocols)
         {
             requestCount += protocol.RequestCount;
             errorCount += protocol.ErrorCount;
+            totalRecorded += protocol.TotalRecordedSinceReset;
+            overwritten += protocol.OverwrittenSampleCount;
         }
 
-        double? observed = null;
-        double? burnRate = null;
-        double? budgetRemaining = null;
-
-        if (requestCount > 0)
+        var protocols = snapshot.Protocols.Select(protocol => new OperateNodeLocalProtocolTailView
         {
-            var errorFraction = (double)errorCount / requestCount;
-            observed = 1.0 - errorFraction;
-
-            var errorBudget = 1.0 - target; // allowed error fraction
-            if (errorBudget <= 0)
-            {
-                // A target of 1.0 admits no error budget; any error is an infinite burn. Guarded here
-                // even though HasAvailabilityTarget excludes target >= 1.
-                burnRate = errorFraction > 0 ? double.PositiveInfinity : 0.0;
-                budgetRemaining = errorFraction > 0 ? 0.0 : 1.0;
-            }
-            else
-            {
-                burnRate = errorFraction / errorBudget;
-                budgetRemaining = Math.Clamp(1.0 - burnRate.Value, 0.0, 1.0);
-            }
-        }
+            Protocol = protocol.Protocol,
+            RetainedRequestCount = protocol.RequestCount,
+            RetentionCapacity = protocol.RetentionCapacity,
+            TotalRecordedSinceReset = protocol.TotalRecordedSinceReset,
+            OverwrittenSampleCount = protocol.OverwrittenSampleCount,
+            OldestRetainedSampleAgeSeconds = protocol.OldestRetainedSampleAgeSeconds,
+            NewestRetainedSampleAgeSeconds = protocol.NewestRetainedSampleAgeSeconds,
+        }).ToList();
 
         return new OperateSloView
         {
-            Configured = true,
-            Reason = null,
-            Availability = new OperateSloAvailabilityView
+            Configured = false,
+            Reason = options.HasAvailabilityTarget
+                ? "A target is configured, but platform availability requires a distributed, all-request, in-band-aware query; the replica-local retained tail is diagnostic only."
+                : "Platform availability requires a distributed, all-request, in-band-aware query; no qualifying platform SLO source is configured.",
+            Availability = null,
+            NodeLocalRetainedTail = new OperateNodeLocalRetainedTailView
             {
-                Target = target,
-                WindowSeconds = snapshot.WindowSeconds,
-                RequestCount = requestCount,
-                ErrorCount = errorCount,
-                Observed = observed,
-                BurnRate = burnRate,
-                ErrorBudgetRemaining = budgetRemaining,
-                EvaluationSource = EvaluationSource,
+                Scope = "replica-local",
+                IsPlatformSli = false,
+                ConfiguredTarget = options.Availability.Target,
+                ConfiguredWindowSeconds = options.Availability.RollingWindowSeconds,
+                RetentionWindowSeconds = snapshot.WindowSeconds,
+                OldestRetainedSampleAgeSeconds = protocols.Count == 0 ? null : protocols.Max(item => item.OldestRetainedSampleAgeSeconds),
+                NewestRetainedSampleAgeSeconds = protocols.Count == 0 ? null : protocols.Min(item => item.NewestRetainedSampleAgeSeconds),
+                RetainedRequestCount = requestCount,
+                RetainedHttpServerErrorCount = errorCount,
+                RetainedHttpSuccessRatio = requestCount == 0 ? null : 1.0 - ((double)errorCount / requestCount),
+                TotalRecordedSinceReset = totalRecorded,
+                OverwrittenSampleCount = overwritten,
+                IncludesInBandErrors = false,
+                ResetBehavior = "process-start-or-telemetry-reconfigure",
+                Source = DiagnosticSource,
+                Protocols = protocols,
             },
         };
     }
-
-    /// <summary>
-    /// Determines whether a configured SLO has exhausted its error budget over the window (a verdict
-    /// degradation signal). Only true when there is traffic to evaluate and the remaining budget is
-    /// at or below zero.
-    /// </summary>
-    /// <param name="slo">The evaluated SLO view.</param>
-    /// <returns><see langword="true"/> when the error budget is exhausted.</returns>
-    public static bool IsErrorBudgetExhausted(OperateSloView slo)
-        => slo.Configured
-           && slo.Availability is { ErrorBudgetRemaining: <= 0.0 };
 }

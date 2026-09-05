@@ -28,7 +28,8 @@ guess:
 
 `GET /api/v1/operate/status` returns one `healthy`, `degraded`, or `unhealthy`
 verdict plus rollups for deploys, jobs, alerts, migrations, findings, telemetry
-backends, and the availability SLO when configured. An `ops:read` key can read
+backends, an explicitly sourced platform-SLO posture, and a separately named node-local retained-tail
+diagnostic. An `ops:read` key can read
 this and the read-only observability surfaces without gaining rollback or
 proposal authority.
 
