@@ -233,7 +233,7 @@ public sealed class McpStyleToolTests
 
     [Theory]
     [InlineData(false, false, "permission_denied")]
-    [InlineData(true, true, "approval_required")]
+    [InlineData(true, true, "failed_precondition")]
     [Operation(Operations.Update)]
     [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
@@ -256,6 +256,10 @@ public sealed class McpStyleToolTests
         var result = response.Result!.Value;
         result.GetProperty("isError").GetBoolean().Should().BeTrue();
         result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be(errorCode);
+        if (approvalRequired)
+        {
+            result.GetProperty("structuredContent").GetProperty("approvalRequired").GetBoolean().Should().BeTrue();
+        }
         await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
