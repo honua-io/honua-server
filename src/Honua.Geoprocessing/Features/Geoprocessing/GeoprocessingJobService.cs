@@ -945,7 +945,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Page the canonical store (newest first, status-filtered there), then apply
         // the adapter binding constraint and per-job ownership in the shared service so
         // no protocol surface can list jobs the caller cannot read. The store cursor is
-        // returned verbatim so the client walks the full history without dupes; a page
+        // tenant-scoped before pagination so the returned cursor cannot expose a foreign
+        // job identifier. The cursor lets the client walk history without dupes; a page
         // may carry fewer than `limit` items after post-filtering.
         var page = await jobStore.QueryAsync(
             new ExecutionJobQuery
@@ -953,6 +954,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
                 Kind = ExecutionJobKind.Geoprocessing,
                 Statuses = filter.Statuses,
                 RequestedBy = ownerScope,
+                ApplyTenantScope = true,
+                TenantId = _authorizer.CaptureSecurityContext(principal, _rbacOptions).TenantId,
                 Cursor = filter.Cursor,
                 Limit = limit
             },
