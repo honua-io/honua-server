@@ -57,6 +57,25 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     /// <inheritdoc />
     public async Task<SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
     {
+        var predicates = await ResolvePredicatesAsync(resource, cancellationToken).ConfigureAwait(false);
+        SqlFragment? combined = null;
+        foreach (var (_, predicate) in predicates)
+        {
+            combined = combined is null ? predicate : AndFragments(combined, predicate);
+        }
+
+        return combined;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<FilterExpression>> ResolveExpressionsAsync(
+        MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        => (await ResolvePredicatesAsync(resource, cancellationToken).ConfigureAwait(false))
+            .Select(static predicate => predicate.Expression).ToArray();
+
+    private async Task<IReadOnlyList<(FilterExpression Expression, SqlFragment Sql)>> ResolvePredicatesAsync(
+        MetadataV2Resource resource, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(resource);
 
         var principal = ResolvePrincipal();
@@ -67,7 +86,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
             // enforce here. The metadata permanent filter still applies independently.
             // Geoprocessing reads never land here: JobSecurityScope is active for the whole
             // job dispatch, so they either resolve the submitter or fail closed below.
-            return null;
+            return [];
         }
 
         var roles = RbacRoleClaims.Enumerate(
@@ -78,7 +97,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         var layerName = resource.Metadata.Name;
         if (string.IsNullOrWhiteSpace(layerName))
         {
-            return null;
+            return [];
         }
 
         // A resource can be published through several services; collect the candidate
@@ -89,26 +108,10 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         var policies = await CollectPoliciesAsync(roles, serviceNames, layerName, cancellationToken).ConfigureAwait(false);
         if (policies.Count == 0)
         {
-            return null;
+            return [];
         }
 
-        // Combine every applicable policy's predicate with AND so the request is
-        // constrained by the intersection of all matching row-visibility rules.
-        // Kept as an explicit loop (not Select/Aggregate) because it folds into a
-        // running accumulator across iterations, which does not reduce to a plain
-        // filter+project.
-        SqlFragment? combined = null;
-        foreach (var predicate in (policies).Select(policy => BuildPredicate(policy, principal, resource)))
-        {
-            if (predicate is null)
-            {
-                continue;
-            }
-
-            combined = combined is null ? predicate : AndFragments(combined, predicate);
-        }
-
-        return combined;
+        return policies.Select(policy => BuildPredicate(policy, principal, resource)).ToArray();
     }
 
     private async Task<IReadOnlyList<RlsPolicy>> CollectPoliciesAsync(
@@ -177,12 +180,11 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
 
     /// <summary>
     /// Builds the parameterized predicate for a single policy by comparing the
-    /// policy attribute against the principal's claim value(s). Returns
-    /// <see langword="null"/> only when the policy cannot be translated (treated as
-    /// "no additional constraint" is unsafe, so translation failures throw); an empty
-    /// claim set yields a <c>FALSE</c> predicate (fail-secure, no rows).
+    /// policy attribute against the principal's claim value(s). Returns both the
+    /// normalized event predicate and SQL translation; translation failures throw.
+    /// An empty claim set yields a FALSE predicate (fail-secure, no rows).
     /// </summary>
-    private SqlFragment? BuildPredicate(RlsPolicy policy, ClaimsPrincipal principal, MetadataV2Resource resource)
+    private (FilterExpression Expression, SqlFragment Sql) BuildPredicate(RlsPolicy policy, ClaimsPrincipal principal, MetadataV2Resource resource)
     {
         var values = principal
             .FindAll(policy.ClaimType)
@@ -203,7 +205,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
                 $"RLS policy '{policy.PolicyId}' for layer '{resource.Metadata.Name}' could not be translated: {translation.ErrorMessage ?? "unknown error"}.");
         }
 
-        return translation.SqlFilter;
+        return (normalized, translation.SqlFilter);
     }
 
     private static BinaryExpression BuildExpression(RlsPolicy policy, List<string> values)
