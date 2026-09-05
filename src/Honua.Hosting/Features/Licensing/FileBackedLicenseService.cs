@@ -171,6 +171,7 @@ internal sealed partial class FileBackedLicenseService :
             new BouncyCastleEd25519Verifier(),
             loggerFactory.CreateLogger<FileBackedLicenseService>(),
             secretResolvers);
+        service._suppressExpiryWarnings = true;
         await service.LoadConfiguredLicenseAsync(cancellationToken).ConfigureAwait(false);
         service.EnsureStartupLicense();
         return service.GetSnapshot();

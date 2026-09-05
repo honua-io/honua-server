@@ -15,6 +15,7 @@ internal sealed partial class FileBackedLicenseService
     private readonly List<CancellationTokenSource> _retiredCancellations = [];
     private CancellationTokenSource _operationCancellation = new();
     private Task? _revalidationTask;
+    private bool _suppressExpiryWarnings;
     private readonly HashSet<(string? LicenseId, DateTimeOffset? Expiry, int Days)> _warnings = [];
 
     public bool IsBlocked => GetSnapshot() is { Edition: > HonuaEdition.Community, IsValid: false };
@@ -96,7 +97,7 @@ internal sealed partial class FileBackedLicenseService
 
     private void LogExpiryWarning(LicenseSnapshot snapshot)
     {
-        if (snapshot.Edition == HonuaEdition.Community || !snapshot.IsValid || snapshot.ExpiresAt is null)
+        if (_suppressExpiryWarnings || snapshot.Edition == HonuaEdition.Community || !snapshot.IsValid || snapshot.ExpiresAt is null)
         {
             return;
         }

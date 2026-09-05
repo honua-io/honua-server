@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Abstractions;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
@@ -289,9 +290,12 @@ internal sealed partial class TileOperationJobService(
             };
             await _progressStore.SetProgressAsync(jobId, started, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
 
+            var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
+            using var licenseRegistration = licenseCancellation.Register(() => linkedCts.Cancel());
             TileOperationProgress finalProgress;
             try
             {
+                licenseCancellation.ThrowIfCancellationRequested();
                 using var scope = _serviceScopeFactory.CreateScope();
                 var schemaContext = scope.ServiceProvider.GetService<SchemaContext>();
                 var previousSchema = schemaContext?.CurrentSchema;
@@ -357,6 +361,16 @@ internal sealed partial class TileOperationJobService(
                 stopwatch.Stop();
             }
 
+            if (licenseCancellation.IsCancellationRequested)
+            {
+                shouldRequeue = false;
+                finalProgress = started with
+                {
+                    Status = OperationStatus.Failed, ErrorMessage = "license expired",
+                    CurrentPhase = "Failed: license expired; partial tile operation is incomplete",
+                    CompletedAt = DateTimeOffset.UtcNow
+                };
+            }
             await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromHours(24), cancellationToken).ConfigureAwait(false);
             TileOperationMetrics.JobDurationMs.Record(
                 stopwatch.Elapsed.TotalMilliseconds,

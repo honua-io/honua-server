@@ -38,7 +38,7 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
-    public async Task StartAsync_MissingLicenseFile_PublishesSafeCommunitySnapshot()
+    public async Task StartAsync_MissingLicenseFile_RefusesStartup()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
@@ -46,7 +46,7 @@ public sealed class FileBackedLicenseServiceTests
         var logger = new RecordingLogger<FileBackedLicenseService>();
         var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
 
-        await service.StartAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
         var snapshot = service.GetSnapshot();
         snapshot.Edition.Should().Be(HonuaEdition.Community);
@@ -160,7 +160,7 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
-    public async Task StartAsync_MalformedLicenseFile_PublishesSafeCommunitySnapshot()
+    public async Task StartAsync_MalformedLicenseFile_RefusesStartup()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
@@ -169,7 +169,7 @@ public sealed class FileBackedLicenseServiceTests
         var logger = new RecordingLogger<FileBackedLicenseService>();
         var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
 
-        await service.StartAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
         var snapshot = service.GetSnapshot();
         snapshot.Edition.Should().Be(HonuaEdition.Community);
@@ -179,7 +179,7 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
-    public async Task StartAsync_OversizedLicenseFile_PublishesMalformedCommunitySnapshot()
+    public async Task StartAsync_OversizedLicenseFile_RefusesStartup()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
@@ -188,7 +188,7 @@ public sealed class FileBackedLicenseServiceTests
         var logger = new RecordingLogger<FileBackedLicenseService>();
         var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
 
-        await service.StartAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
         var snapshot = service.GetSnapshot();
         snapshot.Edition.Should().Be(HonuaEdition.Community);
@@ -201,7 +201,7 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
-    public async Task StartAsync_UnknownSigningKey_PublishesSafeCommunitySnapshot()
+    public async Task StartAsync_UnknownSigningKey_RefusesStartup()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
@@ -211,7 +211,7 @@ public sealed class FileBackedLicenseServiceTests
         var logger = new RecordingLogger<FileBackedLicenseService>();
         var service = CreateService(new LicenseOptions { LicensePath = licensePath }, logger);
 
-        await service.StartAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
         var snapshot = service.GetSnapshot();
         snapshot.Edition.Should().Be(HonuaEdition.Community);
@@ -221,7 +221,7 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
-    public async Task StartAsync_InvalidSignature_PublishesSafeCommunitySnapshot()
+    public async Task StartAsync_InvalidSignature_RefusesStartup()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
@@ -240,7 +240,7 @@ public sealed class FileBackedLicenseServiceTests
             },
             logger);
 
-        await service.StartAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
         var snapshot = service.GetSnapshot();
         snapshot.Edition.Should().Be(HonuaEdition.Community);
@@ -250,7 +250,7 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
-    public async Task StartAsync_ExpiredLicense_PublishesSafeCommunitySnapshotWithLicenseIdentity()
+    public async Task StartAsync_ExpiredLicense_RefusesStartup()
     {
         var tempDirectory = Directory.CreateTempSubdirectory();
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk.
@@ -272,10 +272,10 @@ public sealed class FileBackedLicenseServiceTests
             },
             logger);
 
-        await service.StartAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
         var snapshot = service.GetSnapshot();
-        snapshot.Edition.Should().Be(HonuaEdition.Community);
+        snapshot.Edition.Should().Be(HonuaEdition.Pro);
         snapshot.IsValid.Should().BeFalse();
         snapshot.ValidationState.Should().Be(LicenseValidationState.Expired);
         snapshot.LicenseId.Should().Be("lic-test-338");
@@ -327,7 +327,7 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
-    public async Task StartAsync_LicenseContentSecretRef_NoResolverRegistered_FallsBackToCommunity()
+    public async Task StartAsync_LicenseContentSecretRef_NoResolverRegistered_RefusesStartup()
     {
         var logger = new RecordingLogger<FileBackedLicenseService>();
         var service = CreateService(
@@ -338,7 +338,7 @@ public sealed class FileBackedLicenseServiceTests
             logger,
             secretResolver: null);
 
-        await service.StartAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
         var snapshot = service.GetSnapshot();
         snapshot.Edition.Should().Be(HonuaEdition.Community);
@@ -348,7 +348,7 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
-    public async Task StartAsync_LicenseContentSecretRef_ResolverThrows_FallsBackToCommunity()
+    public async Task StartAsync_LicenseContentSecretRef_ResolverThrows_RefusesStartup()
     {
         var resolver = new FakeLicenseSecretResolver(
             content: null,
@@ -362,7 +362,7 @@ public sealed class FileBackedLicenseServiceTests
             logger,
             resolver);
 
-        await service.StartAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.StartAsync(CancellationToken.None));
 
         var snapshot = service.GetSnapshot();
         snapshot.Edition.Should().Be(HonuaEdition.Community);
@@ -441,24 +441,15 @@ public sealed class FileBackedLicenseServiceTests
     }
 
     [UnitTest]
-    public async Task LoadBootstrapSnapshotAsync_LicenseContentSecretRef_NoResolver_FallsBackToCommunity()
+    public async Task LoadBootstrapSnapshotAsync_LicenseContentSecretRef_NoResolver_RefusesStartup()
     {
-        // Reproduces the pre-fix bug shape: with no resolver supplied, an SM-only Pro license
-        // cannot be fetched at bootstrap and the snapshot degrades to Community (no caching.redis).
         var configuration = BuildLicenseConfiguration(new Dictionary<string, string?>
         {
-            ["Licensing:LicenseContentSecretRef"] = "aws:secretsmanager:honua/license-pro"
+            ["Licensing:LicenseContentSecretRef"] = "aws:secretsmanager:synthetic/license-pro"
         });
-
         using var loggerFactory = LoggerFactory.Create(static builder => { });
-        var snapshot = await FileBackedLicenseService.LoadBootstrapSnapshotAsync(
-            configuration,
-            loggerFactory,
-            honorDevGrant: false,
-            secretResolvers: null);
-
-        snapshot.Edition.Should().Be(HonuaEdition.Community);
-        snapshot.HasEntitlement("caching.redis").Should().BeFalse();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => FileBackedLicenseService.LoadBootstrapSnapshotAsync(
+            configuration, loggerFactory, honorDevGrant: false, secretResolvers: null));
     }
 
     [UnitTest]

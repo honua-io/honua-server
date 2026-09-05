@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Abstractions;
 using System.Diagnostics;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
@@ -35,6 +36,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
     private readonly IWorkflowDefinitionStore _definitionStore;
     private readonly IWorkflowJobExecutor _jobService;
     private readonly IUniversalProgressStore _progressStore;
+    private readonly ILicenseOperationPolicy? _licensePolicy;
     private readonly TimeProvider _clock;
     private readonly ILogger<WorkflowOrchestrationEngine> _logger;
     private readonly RbacOptions _rbacOptions;
@@ -51,8 +53,10 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         ILogger<WorkflowOrchestrationEngine> logger,
         IOptions<RbacOptions>? rbacOptions = null,
         IHttpContextAccessor? httpContextAccessor = null,
-        IPrincipalMembershipSource? principalMembershipSource = null)
+        IPrincipalMembershipSource? principalMembershipSource = null,
+        ILicenseOperationPolicy? licensePolicy = null)
     {
+        _licensePolicy = licensePolicy;
         _rbacOptions = rbacOptions?.Value ?? new RbacOptions();
         _runStore = runStore;
         _definitionStore = definitionStore;
@@ -428,7 +432,8 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             return;
         }
 
-        using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
+        using var reconciliationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
         var renewalTask = RenewLeaseUntilCancelledAsync(runId, reconciliationCancellation);
 
         using var activity = OrchestrationTelemetry.StartReconcileRunActivity(runId, string.Empty, 0);
@@ -524,9 +529,29 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             }
 
             var updated = await ReconcileRunAsync(run, definition, reconciliationCancellation.Token).ConfigureAwait(false);
+            reconciliationCancellation.Token.ThrowIfCancellationRequested();
             if (!Equals(updated, run))
             {
                 await PersistRunAsync(updated, reconciliationCancellation.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested)
+        {
+            var run = await _runStore.GetAsync(runId, CancellationToken.None).ConfigureAwait(false);
+            if (run is not null && !IsRunTerminal(run.Status))
+            {
+                var now = _clock.GetUtcNow();
+                var failed = run with
+                {
+                    Status = WorkflowRunStatus.Failed, ErrorMessage = "license expired",
+                    CompletedAt = now, UpdatedAt = now,
+                    StepStates = run.StepStates.Select(step => IsStepTerminal(step.Status) ? step : step with
+                    {
+                        Status = WorkflowStepStatus.Failed, ErrorMessage = "license expired",
+                        CompletedAt = now, OutputArtifacts = null
+                    }).ToArray()
+                };
+                await PersistRunAsync(failed, CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)

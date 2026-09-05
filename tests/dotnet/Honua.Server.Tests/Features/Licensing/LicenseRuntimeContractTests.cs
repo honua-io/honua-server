@@ -11,6 +11,7 @@ using Honua.Infrastructure.Licensing;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -18,13 +19,38 @@ namespace Honua.Server.Tests.Features.Licensing;
 
 public sealed class LicenseRuntimeContractTests
 {
+    [UnitTest]
+    public async Task WarningSchedule_EmitsThirtyFourteenSevenOneDayThresholdsOnce()
+    {
+        var clock = new LicenseFailureContractTests.TransitionClock();
+        var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, clock.GetUtcNow().AddDays(31));
+        var logger = new WarningLogger();
+        using var service = new FileBackedLicenseService(Options.Create(new LicenseOptions
+        {
+            Edition = HonuaEdition.Pro, LicenseContent = Encoding.UTF8.GetString(license.LicenseData),
+            TrustedKeys = new() { [LicenseTestSupport.KeyId] = license.PublicKeySetting }
+        }), new BouncyCastleEd25519Verifier(), logger, timeProvider: clock);
+        await service.StartAsync(CancellationToken.None);
+        Assert.Empty(logger.Warnings);
+        foreach (var (advance, days) in new[] { (1, 30), (16, 14), (7, 7), (6, 1) })
+        {
+            clock.Advance(TimeSpan.FromDays(advance));
+            await service.RevalidateAsync(CancellationToken.None);
+            Assert.Contains(logger.Warnings, warning => warning.Contains($"{days}-day", StringComparison.Ordinal));
+        }
+        await service.RevalidateAsync(CancellationToken.None);
+        Assert.Equal(4, logger.Warnings.Count);
+        Assert.All(logger.Warnings, warning => Assert.Contains("backup/export before expiry", warning, StringComparison.Ordinal));
+        await service.StopAsync(CancellationToken.None);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
     [Trait("Tier", "Fast")]
     public async Task Expiry_InFlightJob_CancelsAndFailsWithoutCompletedPartialOutputs(bool ignoreCancellation)
     {
-        var clock = new LicenseClock();
+        var clock = new LicenseFailureContractTests.TransitionClock();
         var license = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, clock.GetUtcNow().AddMinutes(2));
         using var policy = CreateService(license, clock);
         await policy.StartAsync(CancellationToken.None);
@@ -82,7 +108,7 @@ public sealed class LicenseRuntimeContractTests
     [UnitTest]
     public async Task Renewal_ChangedSource_RevalidatesOnIntervalAndSurvivesRestart()
     {
-        var clock = new LicenseClock();
+        var clock = new LicenseFailureContractTests.TransitionClock();
         var old = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, clock.GetUtcNow().AddMinutes(2));
         var renewed = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro, clock.GetUtcNow().AddDays(60));
         var directory = Directory.CreateTempSubdirectory();
@@ -138,46 +164,18 @@ public sealed class LicenseRuntimeContractTests
         }
     }
 
-    private sealed class LicenseClock : TimeProvider
+    private sealed class WarningLogger : ILogger<FileBackedLicenseService>
     {
-        private DateTimeOffset _now = DateTimeOffset.UtcNow;
-        private readonly List<LicenseTimer> _timers = [];
-        public override DateTimeOffset GetUtcNow() => _now;
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        public System.Collections.Concurrent.ConcurrentQueue<string> Warnings { get; } = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
         {
-            var timer = new LicenseTimer(this, callback, state);
-            timer.Change(dueTime, period);
-            _timers.Add(timer);
-            return timer;
-        }
-        public void Advance(TimeSpan time)
-        {
-            _now += time;
-            foreach (var timer in _timers.ToArray())
+            if (eventId.Id == 10015)
             {
-                timer.Fire();
+                Warnings.Enqueue(formatter(state, exception));
             }
-        }
-        private sealed class LicenseTimer(LicenseClock clock, TimerCallback callback, object? state) : ITimer
-        {
-            private DateTimeOffset? _due;
-            private TimeSpan _period;
-            public bool Change(TimeSpan dueTime, TimeSpan period)
-            {
-                _due = dueTime == Timeout.InfiniteTimeSpan ? null : clock.GetUtcNow() + dueTime;
-                _period = period;
-                return true;
-            }
-            public void Fire()
-            {
-                if (_due <= clock.GetUtcNow())
-                {
-                    Change(_period, _period);
-                    callback(state);
-                }
-            }
-            public void Dispose() => _due = null;
-            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
         }
     }
 }

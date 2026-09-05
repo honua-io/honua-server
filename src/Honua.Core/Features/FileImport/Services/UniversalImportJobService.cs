@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Licensing.Abstractions;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Cryptography;
@@ -32,6 +33,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IUniversalProgressStore _progressStore;
     private readonly IPerformanceMonitor _performanceMonitor;
+    private readonly ILicenseOperationPolicy? _licensePolicy;
     private readonly ILogger<UniversalImportJobService> _logger;
     private readonly ConcurrentDictionary<string, ImportJobState> _jobs = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
@@ -41,8 +43,10 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         IServiceScopeFactory scopeFactory,
         IUniversalProgressStore progressStore,
         IPerformanceMonitor performanceMonitor,
-        ILogger<UniversalImportJobService> logger)
+        ILogger<UniversalImportJobService> logger,
+        ILicenseOperationPolicy? licensePolicy = null)
     {
+        _licensePolicy = licensePolicy;
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _progressStore = progressStore ?? throw new ArgumentNullException(nameof(progressStore));
         _performanceMonitor = performanceMonitor ?? throw new ArgumentNullException(nameof(performanceMonitor));
@@ -199,6 +203,9 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         string? tempFilePath,
         CancellationToken cancellationToken)
     {
+        var licenseCancellation = _licensePolicy?.OperationCancellation ?? CancellationToken.None;
+        using var licensedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, licenseCancellation);
+        cancellationToken = licensedCancellation.Token;
         // PA-016: fire-and-forget (`_ = ProcessJobAsync(...)`) off the request handler. The
         // continuation still flows the caller's ExecutionContext, so Activity.Current here would
         // otherwise be the HTTP request's activity — which ends when the response returns, long
@@ -297,6 +304,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 if (currentProgress != null)
                 {
                     var clientErrorMessage = result.Success ? result.ErrorMessage : SafeImportFailureMessage;
+                    cancellationToken.ThrowIfCancellationRequested();
                     var finalProgress = currentProgress with
                     {
                         Status = result.Success ? ImportStatus.Completed : ImportStatus.Failed,
@@ -308,6 +316,7 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                         CurrentPhase = result.Success ? "Import completed" : "Import failed"
                     };
                     await _progressStore.SetProgressAsync(jobId, finalProgress, TimeSpan.FromDays(1), cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
 
                 if (result.Success)
@@ -339,7 +348,9 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
                 {
                     var cancelledProgress = currentProgress with
                     {
-                        Status = ImportStatus.Cancelled,
+                        Status = licenseCancellation.IsCancellationRequested ? ImportStatus.Failed : ImportStatus.Cancelled,
+                        ErrorMessage = licenseCancellation.IsCancellationRequested ? "license expired" : currentProgress.ErrorMessage,
+                        CurrentPhase = licenseCancellation.IsCancellationRequested ? "Failed: license expired; partial import is incomplete" : "Cancelled",
                         CompletedAt = DateTimeOffset.UtcNow
                     };
                     await _progressStore.SetProgressAsync(jobId, cancelledProgress, TimeSpan.FromDays(1), CancellationToken.None);
@@ -616,7 +627,8 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
     private sealed class SerializedImportProgressWriter
     {
         private readonly IUniversalProgressStore _progressStore;
-        private readonly ILogger<UniversalImportJobService> _logger;
+        private readonly ILicenseOperationPolicy? _licensePolicy;
+    private readonly ILogger<UniversalImportJobService> _logger;
         private readonly string _jobId;
         private readonly object _gate = new();
         private Task _tail = Task.CompletedTask;
