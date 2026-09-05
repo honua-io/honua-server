@@ -393,6 +393,32 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_GeoJsonInputs_RejectIncompatibleMediaTypesBeforeSubmission()
+    {
+        var fetches = _fixture.ReferenceRequestCount;
+        var submissions = _fixture.SubmissionCount;
+        foreach (var input in new[]
+        {
+            """{"value":{"type":"FeatureCollection","features":[]},"mediaType":"text/plain"}""",
+            """{"value":{"type":"FeatureCollection","features":[]},"mediaType":"image/tiff"}""",
+            """{"href":"https://93.184.216.34/point.geojson","type":"text/plain"}"""
+        })
+        {
+            using var content = new StringContent(
+                $$$$"""{"inputs":{"input":{{{{input}}}},"from":"oldName","to":"newName"}}""",
+                Encoding.UTF8, "application/json");
+            using var response = await _fixture.App.Client.PostAsync(
+                "/ogc/processes/processes/transform.attribute-rename/execution", content);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("unsupported mediaType");
+            _fixture.SubmissionCount.Should().Be(submissions);
+            _fixture.ReferenceRequestCount.Should().Be(fetches);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_InvalidQualifiedGeometry_IsRejectedBeforeSubmission()
     {
         foreach (var geometry in new[]

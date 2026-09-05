@@ -799,6 +799,14 @@ internal static class ProcessEndpoints
                 return false;
             }
 
+            if (parameter?.AcceptsGeoJsonDataUri == true
+                && !string.IsNullOrWhiteSpace(mediaType)
+                && !IsJsonMediaType(mediaType))
+            {
+                error = $"Input '{input.Key}' declares an unsupported mediaType; a JSON or GeoJSON media type is required.";
+                return false;
+            }
+
             if (parameter?.ValueType == ProcessParameterValueType.Wkb
                 && !string.IsNullOrWhiteSpace(mediaType)
                 && !string.Equals(GetMediaTypeEssence(mediaType), "application/wkb", StringComparison.OrdinalIgnoreCase)
@@ -975,6 +983,15 @@ internal static class ProcessEndpoints
                 && (reference.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(reference.GetString())))
             {
                 return new InputNormalizationResult(null, $"Input '{input.Key}' href must be a non-empty string.");
+            }
+
+            if (parameters[input.Key].AcceptsGeoJsonDataUri
+                && TryGetReferenceHref(input.Value, out _)
+                && input.Value.TryGetProperty("type", out var referenceType)
+                && (referenceType.ValueKind != JsonValueKind.String || !IsJsonMediaType(referenceType.GetString())))
+            {
+                return new InputNormalizationResult(null,
+                    $"Input '{input.Key}' reference declares an unsupported mediaType; a JSON or GeoJSON media type is required.");
             }
 
             if ((parameters[input.Key].IsAuthorizationSelector
