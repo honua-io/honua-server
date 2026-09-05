@@ -5,6 +5,7 @@ using System.Text;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.TestKit.Helpers;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -41,7 +42,7 @@ public class LicenseUploadPersistenceTests
                 await File.WriteAllBytesAsync(options.LicensePath!, oldLicense.LicenseData);
             }
 
-            var service = CreateService(options, resolver);
+            using var service = CreateService(options, resolver);
             await service.StartAsync(CancellationToken.None);
             Assert.Equal(HonuaEdition.Pro, service.GetSnapshot().Edition);
             using var upload = new MemoryStream(replacement.LicenseData);
@@ -50,7 +51,7 @@ public class LicenseUploadPersistenceTests
             Assert.Equal(replacement.LicenseData, await File.ReadAllBytesAsync(options.LicensePath!));
 
             options.AllowAdminUpload = false;
-            var restarted = CreateService(options, resolver);
+            using var restarted = CreateService(options, resolver);
             await restarted.StartAsync(CancellationToken.None);
 
             Assert.Equal(HonuaEdition.Enterprise, restarted.GetSnapshot().Edition);
@@ -75,7 +76,7 @@ public class LicenseUploadPersistenceTests
             options.LicenseContent = Encoding.UTF8.GetString(inline.LicenseData);
             await File.WriteAllBytesAsync(options.LicensePath!, file.LicenseData);
 
-            var service = CreateService(options);
+            using var service = CreateService(options);
             await service.StartAsync(CancellationToken.None);
 
             Assert.Equal(HonuaEdition.Pro, service.GetSnapshot().Edition);
@@ -107,11 +108,124 @@ public class LicenseUploadPersistenceTests
                     tamperSignature: state == LicenseValidationState.InvalidSignature).LicenseData;
             await File.WriteAllBytesAsync(options.LicensePath + ".uploaded", invalid);
 
-            var service = CreateService(options);
+            using var service = CreateService(options);
             await service.StartAsync(CancellationToken.None);
 
             Assert.Equal(HonuaEdition.Community, service.GetSnapshot().Edition);
             Assert.Equal(state, service.GetSnapshot().ValidationState);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task BootstrapSnapshot_HonorsUploadedOverride()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var inline = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro);
+            var uploaded = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Enterprise);
+            var options = CreateOptions(Path.Join(directory.FullName, "license.json"), inline.PublicKeySetting);
+            using var service = CreateService(options);
+            await service.ApplyLicenseAsync(uploaded.LicenseData);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Licensing:LicensePath"] = options.LicensePath,
+                    ["Licensing:LicenseContent"] = Encoding.UTF8.GetString(inline.LicenseData),
+                    [$"Licensing:TrustedKeys:{LicenseTestSupport.KeyId}"] = inline.PublicKeySetting,
+                }).Build();
+
+            var snapshot = await FileBackedLicenseService.LoadBootstrapSnapshotAsync(
+                configuration, NullLoggerFactory.Instance);
+
+            Assert.Equal(HonuaEdition.Enterprise, snapshot.Edition);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task FailedOverrideWrite_DoesNotChangeFallbackFileOrActiveLicense()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var original = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Pro);
+            var uploaded = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Enterprise);
+            var options = CreateOptions(Path.Join(directory.FullName, "license.json"), original.PublicKeySetting);
+            await File.WriteAllBytesAsync(options.LicensePath!, original.LicenseData);
+            using var service = CreateService(options);
+            await service.StartAsync(CancellationToken.None);
+            Directory.CreateDirectory(options.LicensePath + ".uploaded");
+
+            using var stream = new MemoryStream(uploaded.LicenseData);
+            Assert.False((await service.UploadLicenseAsync(stream)).Success);
+            Assert.Equal(HonuaEdition.Pro, service.GetSnapshot().Edition);
+            Assert.Equal(original.LicenseData, await File.ReadAllBytesAsync(options.LicensePath!));
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task FailedMirrorWrite_ReturnsSuccessForCommittedOverrideAndSurvivesRestart()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var uploaded = LicenseTestSupport.CreateSignedLicense(HonuaEdition.Enterprise);
+            var options = CreateOptions(Path.Join(directory.FullName, "license.json"), uploaded.PublicKeySetting);
+            Directory.CreateDirectory(options.LicensePath!);
+            using var service = CreateService(options);
+            using var stream = new MemoryStream(uploaded.LicenseData);
+
+            var result = await service.UploadLicenseAsync(stream);
+
+            Assert.True(result.Success);
+            Assert.Contains("mirror could not be updated", result.Message);
+            using var restarted = CreateService(options);
+            await restarted.StartAsync(CancellationToken.None);
+            Assert.Equal(HonuaEdition.Enterprise, restarted.GetSnapshot().Edition);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ConcurrentUploads_LeaveSnapshotAndRestartOnSameLicense()
+    {
+        var directory = Directory.CreateTempSubdirectory();
+        try
+        {
+            var licenses = Enumerable.Range(1, 12).Select(day => LicenseTestSupport.CreateSignedLicense(
+                HonuaEdition.Enterprise, expiresAt: DateTimeOffset.UtcNow.AddDays(day))).ToArray();
+            var options = CreateOptions(Path.Join(directory.FullName, "license.json"), licenses[0].PublicKeySetting);
+            using var service = CreateService(options);
+            await Task.WhenAll(licenses.Select(async license =>
+            {
+                using var stream = new MemoryStream(license.LicenseData);
+                Assert.True((await service.UploadLicenseAsync(stream)).Success);
+            }));
+
+            using var restarted = CreateService(options);
+            await restarted.StartAsync(CancellationToken.None);
+            Assert.Equal(service.GetSnapshot().ExpiresAt, restarted.GetSnapshot().ExpiresAt);
+            Assert.Equal(await File.ReadAllBytesAsync(options.LicensePath!),
+                await File.ReadAllBytesAsync(options.LicensePath + ".uploaded"));
         }
         finally
         {

@@ -270,8 +270,7 @@ internal sealed class FileBackedLicenseService :
         }
 
         // Without an uploaded override, a secret-store reference takes highest precedence:
-        // the ~2KB signed envelope is
-        // fetched from a secret manager (e.g. AWS Secrets Manager) at startup so it does not
+        // the ~2KB signed envelope is fetched from a secret manager (e.g. AWS Secrets Manager) at startup so it does not
         // have to fit a serverless environment-variable size limit or be baked into the image.
         // Resolution is fail-safe — a missing resolver / unreachable secret degrades to Community
         // rather than crashing the host.
@@ -495,19 +494,31 @@ internal sealed class FileBackedLicenseService :
                 Directory.CreateDirectory(directory);
             }
 
-            // Keep LicensePath compatible with existing tooling. The second atomic
-            // replacement commits the authoritative upload before publishing success.
-            await WriteLicenseFileAsync(options.LicensePath, licenseData, cancellationToken).ConfigureAwait(false);
+            // This atomic replacement is the commit point. A failed upload must never
+            // change the fallback file before the authoritative override is durable.
             await WriteLicenseFileAsync(options.LicensePath + ".uploaded", licenseData, cancellationToken).ConfigureAwait(false);
 
             PublishSnapshot(result.Snapshot);
             LogValidationResult(result);
-            return new LicenseUploadResult(true, "License applied.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             LicenseRuntimeLog.LicenseUploadSaveFailed(_logger, ex);
             return new LicenseUploadResult(false, "License upload could not be saved. See server logs for details.");
+        }
+
+        // Retain the configured file for existing operator tooling. Once committed,
+        // cancellation or a mirror failure cannot turn the applied upload into a rejection.
+        try
+        {
+            await WriteLicenseFileAsync(options.LicensePath, licenseData, CancellationToken.None).ConfigureAwait(false);
+            return new LicenseUploadResult(true, "License applied.");
+        }
+        catch (Exception ex)
+        {
+            LicenseRuntimeLog.LicenseUploadSaveFailed(_logger, ex);
+            return new LicenseUploadResult(true,
+                "License applied to the persisted upload override; the LicensePath mirror could not be updated. See server logs for details.");
         }
     }
 
