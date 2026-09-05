@@ -6453,6 +6453,8 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Apply_ConnectionBoundPublication_CountsBoundRows",
         "Honua.Server.Tests.Features.Protocols.OData.ODataBoundProviderEndpointTests.Search_ConnectionBoundCount_UsesTotalInsteadOfPageSize",
         "Honua.Server.Tests.Features.Protocols.OData.ODataEndpointTests.LayerFeatures_ReturnsCollection",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataExpansionBudgetRegressionTests.Expand_ExactlyAtBudget_ReturnsCompleteChildren",
+        "Honua.Server.Tests.Features.Protocols.OData.ODataExpansionBudgetRegressionTests.Expand_OneRowPage_RejectsOverBudgetChildren",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataQuery_NoGrant_FallsBackToCoarseDeny",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.ODataQuery_QueryGrant_OverridesCoarseDeny"
       ],
