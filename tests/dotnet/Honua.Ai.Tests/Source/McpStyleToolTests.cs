@@ -6,6 +6,9 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -228,6 +231,35 @@ public sealed class McpStyleToolTests
         await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
     }
 
+    [Theory]
+    [InlineData(false, false, "permission_denied")]
+    [InlineData(true, true, "approval_required")]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_ApplyStylePreset_GovernanceDenies_LeavesCatalogAndGraphUntouched(
+        bool adminAuthorized, bool approvalRequired, string errorCode)
+    {
+        var catalog = Substitute.For<IStyleCatalog>();
+        catalog.GetStyleAsync(PresetStyleId, Arg.Any<CancellationToken>()).Returns(Preset());
+        var graphSync = Substitute.For<IMetadataV2StyleGraphSync>();
+
+        var response = await DispatchAsync(
+            ApplyStylePresetTool.ToolName,
+            $$"""{ "serviceId": "{{ServiceId}}", "layerId": {{LayerIndex}}, "styleId": "{{PresetStyleId}}" }""",
+            catalog: catalog,
+            graphSync: graphSync,
+            adminAuthorized: adminAuthorized,
+            approvalRequired: approvalRequired);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("structuredContent").GetProperty("code").GetString().Should().Be(errorCode);
+        await catalog.DidNotReceiveWithAnyArgs().AssociateLayerAsync(default, default!, default, default);
+        await graphSync.DidNotReceiveWithAnyArgs().SyncLayerStylesAsync(default, default);
+    }
+
     // ---------------------------------------------------------------
     // render reflects the applied style (mock-level)
     // ---------------------------------------------------------------
@@ -275,7 +307,9 @@ public sealed class McpStyleToolTests
         string argumentsJson,
         IStyleCatalog? catalog = null,
         IMetadataV2StyleGraphSync? graphSync = null,
-        IRasterMapRenderer? renderer = null)
+        IRasterMapRenderer? renderer = null,
+        bool adminAuthorized = true,
+        bool approvalRequired = false)
     {
         var surface = new McpDataAccessSurface(
             [
@@ -287,6 +321,15 @@ public sealed class McpStyleToolTests
             NullLogger<McpDataAccessSurface>.Instance);
 
         var services = new ServiceCollection();
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
+            .Returns(adminAuthorized ? AuthorizationResult.Success() : AuthorizationResult.Failed());
+        services.AddSingleton(authorization);
+        var approval = Substitute.For<IOperatorApprovalEvaluator>();
+        approval.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(approvalRequired ? ApprovalRequirement.Required("operator.publish") : ApprovalRequirement.NotRequired());
+        services.AddSingleton(new OperatorApprovalGate(
+            Substitute.For<IOperatorAuthorizationEvaluator>(), approval, NullLogger<OperatorApprovalGate>.Instance));
         services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());
         services.AddSingleton(catalog ?? Substitute.For<IStyleCatalog>());
         services.AddSingleton(graphSync ?? Substitute.For<IMetadataV2StyleGraphSync>());
