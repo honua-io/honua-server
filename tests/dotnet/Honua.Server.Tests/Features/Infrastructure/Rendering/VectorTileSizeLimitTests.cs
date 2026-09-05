@@ -93,7 +93,8 @@ public sealed class VectorTileSizeLimitTests
                 app.UseEndpoints(endpoints => endpoints.MapGet(path, async (HttpContext context) =>
                 {
                     Interlocked.Increment(ref invocations);
-                    return await ExecuteAsync(context, 5, limits.Tiles.MaxTileSize);
+                    var result = await ExecuteAsync(context, 5, limits.Tiles.MaxTileSize);
+                    await result.ExecuteAsync(context);
                 }).CacheOutput(policy));
             })).StartAsync();
         using var client = host.GetTestClient();

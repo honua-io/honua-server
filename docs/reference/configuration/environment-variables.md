@@ -239,6 +239,8 @@ partial tile or tile cache headers. OGC API Tiles returns HTTP 413 with an
 `application/problem+json` body (`status: 413`, `title: Payload Too Large`).
 GeoServices MVT routes return the documented HTTP 200 error envelope with
 `error.code: 413`. Request a higher zoom level or reduce the included data.
+Tile output-cache keys include the byte budget, so entries created before enforcement
+or under a larger cap cannot bypass the limit.
 
 Previously this option had no effect and its model default was 512 with pixel
 units. Explicitly configured values now mean bytes; review any existing value
