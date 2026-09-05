@@ -51,6 +51,7 @@ internal sealed partial class ODataSearchService
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly ODataFeatureProviderResolver _providerResolver;
     private readonly int _maxApplyInputRows;
+    private readonly int _maxExpandedRows;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataSearchService"/> class.
@@ -67,6 +68,7 @@ internal sealed partial class ODataSearchService
         _graphProvider = dependencies.GraphProvider;
         _providerResolver = dependencies.ProviderResolver;
         _maxApplyInputRows = dependencies.Options.Value.MaxApplyInputRows;
+        _maxExpandedRows = dependencies.Options.Value.MaxPageSize;
     }
 
     /// <summary>
@@ -677,6 +679,7 @@ internal sealed partial class ODataSearchService
 
         var result = new Dictionary<long, Dictionary<string, object?[]>>();
         var requestedIds = objectIds.ToHashSet();
+        var remainingRows = _maxExpandedRows;
 
         if (objectIds.Length == 0)
         {
@@ -690,6 +693,7 @@ internal sealed partial class ODataSearchService
         // Find matching relationships
         foreach (var relationship in resource.Relationships)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var sanitizedName = ODataUtilityService.SanitizeIdentifier(relationship.Name);
             var metadataName = ODataUtilityService.BuildRelationshipMetadataNameForV2(
                 relationship.Name,
@@ -736,15 +740,30 @@ internal sealed partial class ODataSearchService
                 objectIds,
                 related.StorageLayerId,
                 relationship.OriginField,
-                relationship.DestinationField);
+                relationship.DestinationField) with
+            {
+                // Bound the database read across all parents and relationships. The extra
+                // row detects overflow so no incomplete navigation collection is returned.
+                Limit = checked(remainingRows + 1)
+            };
             var relatedResult = await _relationshipStore.QueryRelatedAsync(
                 sourceStorageLayerId,
                 relatedQuery,
                 cancellationToken);
 
+            if (relatedResult.Items.Length > remainingRows)
+            {
+                throw new ArgumentException(
+                    $"The $expand result exceeds the OData:MaxPageSize related-row budget ({_maxExpandedRows}). Narrow the parent query or request related features separately.");
+            }
+
+            remainingRows -= relatedResult.Items.Length;
+            var childGroups = new Dictionary<long, List<object?>>();
+
             // Group related features by origin object ID
             foreach (var feature in relatedResult.Items)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 // Try to get the origin key from the related feature's attributes
                 if (!feature.Attributes.TryGetValue(relationship.DestinationField, out var originKeyValue))
                 {
@@ -771,12 +790,6 @@ internal sealed partial class ODataSearchService
                     continue;
                 }
 
-                if (!result.TryGetValue(originId.Value, out var relationsDict))
-                {
-                    relationsDict = new Dictionary<string, object?[]>();
-                    result[originId.Value] = relationsDict;
-                }
-
                 var relatedGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                     _geometryService,
                     feature.Geometry,
@@ -796,17 +809,19 @@ internal sealed partial class ODataSearchService
                         string.Join(",", selectedFields));
                 }
 
-                if (relationsDict.TryGetValue(outputName, out var existingRelations))
+                if (!childGroups.TryGetValue(originId.Value, out var children))
                 {
-                    var newRelations = new object?[existingRelations.Length + 1];
-                    Array.Copy(existingRelations, newRelations, existingRelations.Length);
-                    newRelations[existingRelations.Length] = relatedFeatureDict;
-                    relationsDict[outputName] = newRelations;
+                    children = new List<object?>();
+                    childGroups.Add(originId.Value, children);
                 }
-                else
-                {
-                    relationsDict[outputName] = new object?[] { relatedFeatureDict };
-                }
+
+                children.Add(relatedFeatureDict);
+            }
+
+            foreach (var (originId, children) in childGroups)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                result[originId][outputName] = children.ToArray();
             }
         }
 

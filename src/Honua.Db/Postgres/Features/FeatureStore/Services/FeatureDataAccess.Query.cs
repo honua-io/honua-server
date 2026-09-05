@@ -557,7 +557,7 @@ internal sealed partial class FeatureDataAccess
         return TemporalExtentResult.Create(start, end);
     }
 
-    public async Task<byte[]?> GetMvtTileAsync(int layerId, CoreParameterizedQuery query, CancellationToken cancellationToken)
+    public async Task<byte[]?> GetMvtTileAsync(int layerId, CoreParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateSafeCommand(connection, query.Sql);
@@ -568,14 +568,7 @@ internal sealed partial class FeatureDataAccess
         }
         ApplyCommandTimeout(command, _tileTimeoutSeconds);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-        if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
-        {
-            return null;
-        }
-
-        return reader.GetFieldValue<byte[]>(0);
+        return await PostgresMvtReader.ReadAsync(command, maxTileSize, cancellationToken).ConfigureAwait(false);
     }
 
     private static DateTimeOffset? ReadTemporalValue(NpgsqlDataReader reader, int ordinal)

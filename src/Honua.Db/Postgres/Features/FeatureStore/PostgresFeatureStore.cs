@@ -570,7 +570,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             : await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType, gridGeometry);
-        return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
+        return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, tileLimits.MaxTileSize, cancellationToken);
     }
 
     public async Task<byte[]?> GetH3MvtTileAsync(
@@ -589,7 +589,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             : await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var tileQuery = _queryBuilder.BuildH3TileQuery(layerId, x, y, z, resolution, query, tileOptions, tileLimits, geometryStorageType);
-        return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, cancellationToken);
+        return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, tileLimits.MaxTileSize, cancellationToken);
     }
 
     #endregion
