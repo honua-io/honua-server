@@ -117,7 +117,7 @@ templates, not fabricated successful tool output.
 | `honua_get_style` | `{}` lists presets; then `{serviceId, layerId, includeStylesheet: true}` resolves the published layer's current style. |
 | `honua_apply_style_preset` | `{serviceId, layerId, styleId}` selects an existing catalog preset as the layer's primary/default style. |
 | `honua_get_style` | Resolve the same layer again; assert its style ID and stylesheet match the selected preset. |
-| `honua_render_map` | `{layers: [{serviceId, layerId}], bbox: [minX,minY,maxX,maxY], bboxSrid: 4326, width: 512, height: 512}`, using the fixture's actual CRS/extent. |
+| `honua_render_map` | `{layers: [{serviceId, layerId}], bbox: [minX,minY,maxX,maxY], bboxSrid: fixtureSrid, width: 512, height: 512}`, substituting the fixture's numeric SRID and extent in that CRS. Transform the extent first if requesting another output CRS. |
 | Resource read | Read the returned resource URI with MCP `resources/read` when supported; fetch an HTTP artifact link through the authenticated client as directed by the returned descriptor. Retain artifact identity, media type, dimensions and style references. |
 
 Render evidence must show the expected fixture features and selected style,
@@ -131,8 +131,12 @@ Follow [Geoprocessing with AI](../guides/query-analyze/geoprocessing-with-ai.md)
 describe `geometry.buffer`, validate the plan with `honua_validate_plan`,
 then use `honua_execute_plan` only with its required Pro entitlements and
 `Process.Execute` authority. Community can use the authenticated OGC process
-path described there. Read `honua://jobs/{jobId}` until terminal, then
-`honua://jobs/{jobId}/results`; retain the output artifact and CRS.
+path described there. For the Pro MCP plan, read its returned
+`honua://jobs/{jobId}` until terminal, then `honua://jobs/{jobId}/results`.
+For synchronous Community OGC execution, retrieve output through the SDK's
+`run.results()`; there is no asynchronous job ID to fabricate. For an
+asynchronous OGC request, poll its returned OGC job URL and follow its results
+link. In each case retain the output artifact and CRS.
 
 Use the explicit analysis/Esri profile discovery to check the candidate's
 available adapters. Never infer a direct `buffer_features` implementation
@@ -149,8 +153,17 @@ evidence. Carry the verified artifact into the Studio composition.
 
 ## 6. Author, validate, save and reopen (partially available)
 
-Discover `honua_studio_create_draft`, `honua_studio_get_draft` and
-`honua_studio_update_draft` from the setup view. Use their returned envelope
+The `setup` view includes create/validate but omits most draft mutation tools.
+Before authoring, explicitly request the authenticated full catalog:
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{"view":"full"}}
+```
+
+Follow `nextCursor` with the same view to discover `honua_studio_create_draft`,
+`honua_studio_get_draft`, `honua_studio_update_draft` and the composition tools
+below. Retain the full-view digests separately from setup-view evidence; this
+escape hatch does not broaden write authority. Use the returned envelope
 schemas. Add the published layer/GP result with `honua_studio_add_layer`,
 set its view/style, and validate with `honua_studio_validate_draft`.
 Pass the latest returned `generation` on every mutation. A stale generation
