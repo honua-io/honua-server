@@ -60,7 +60,6 @@ internal static class McpServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PreviewPackageTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ExecutePlanTool>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, CancelJobTool>());
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeOperationTool>());
 
         // ── MCP capability-breadth tools (#2813) ──────────────────────────────
         // honua_list_jobs: caller-scoped job enumeration (status filter + cursor
@@ -83,7 +82,7 @@ internal static class McpServiceCollectionExtensions
         // descriptor-list check here would never see IOperationInvoker. Instead
         // the tool resolves the invoker per-request and returns a structured
         // "unavailable" handle when no operations toolset is composed — the same
-        // pattern ProposeOperationTool uses for the operation gateway.
+        // pattern the typed governed proposal tools use for the operation gateway.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, PublishServiceTool>());
 
         // honua_publish_result (#2482): promotes a completed analysis job's
@@ -212,6 +211,11 @@ internal static class McpServiceCollectionExtensions
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DeployOperationsTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, SupportedOperationKindsTool>());
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeRollbackTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeFindingTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeDeployPlanTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeDeployOperationTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposeMetadataReleaseTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ProposePlatformReleaseConvergenceTool>());
         }
 
         // honua_list_capabilities (#1949): a self-describing manifest of the live

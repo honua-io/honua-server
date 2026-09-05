@@ -32,6 +32,7 @@ using Honua.ServiceDefaults;
 using NetTopologySuite;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using StackExchange.Redis;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
@@ -72,12 +73,77 @@ internal sealed partial class Wfs20Handler
     /// scoped to the service (tenant) of the current request. Creates the per-scope bucket
     /// on first access; subsequent calls for the same scope reuse the existing bucket.
     /// </summary>
-    private static ConcurrentDictionary<string, StoredQueryDefinition> GetScopedStoredQueries(HttpContext context)
+    private static async Task<ConcurrentDictionary<string, StoredQueryDefinition>> GetScopedStoredQueriesAsync(
+        HttpContext context, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var scope = ResolveStoredQueryScope(context);
-        return ManagedStoredQueriesByScope.GetOrAdd(
+        var bucket = ManagedStoredQueriesByScope.GetOrAdd(
             scope,
             static _ => new ConcurrentDictionary<string, StoredQueryDefinition>(StringComparer.OrdinalIgnoreCase));
+
+        // Redis is the shared source of truth when the server is running in its
+        // distributed deployment shape. Refreshing the bucket on each operation
+        // prevents a replica-local dictionary from hiding definitions created by
+        // another replica or surviving a restart only by accident (#32).
+        if (context.RequestServices.GetService<IConnectionMultiplexer>() is { } redis)
+        {
+            var database = redis.GetDatabase();
+            var ids = await database.SetMembersAsync(BuildStoredQueryScopeKey(scope))
+                .WaitAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            var values = ids.Length == 0
+                ? Array.Empty<RedisValue>()
+                : await database.StringGetAsync(ids.Select(id => (RedisKey)BuildStoredQueryKey(scope, id.ToString())).ToArray())
+                    .WaitAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            bucket.Clear();
+            foreach (var definition in values
+                         .Where(static value => value.HasValue)
+                         .Select(static value => JsonSerializer.Deserialize<StoredQueryDefinition>((string)value!))
+                         .OfType<StoredQueryDefinition>())
+            {
+                bucket[definition.Id] = definition;
+            }
+        }
+
+        return bucket;
+    }
+
+    private static string BuildStoredQueryScopeKey(string scope) => $"honua:wfs:stored-query:{scope}";
+    private static string BuildStoredQueryKey(string scope, string id) => $"honua:wfs:stored-query:{scope}:{Convert.ToBase64String(Encoding.UTF8.GetBytes(id)).TrimEnd('=').Replace('+', '-').Replace('/', '_')}";
+
+    private static async Task PersistStoredQueryAsync(
+        HttpContext context, StoredQueryDefinition definition, CancellationToken cancellationToken)
+    {
+        if (context.RequestServices.GetService<IConnectionMultiplexer>() is not { } redis) return;
+        cancellationToken.ThrowIfCancellationRequested();
+        var scope = ResolveStoredQueryScope(context);
+        var database = redis.GetDatabase();
+        var serialized = JsonSerializer.Serialize(definition);
+        cancellationToken.ThrowIfCancellationRequested();
+        // Dispatch the bounded mutation pair before awaiting either command. Redis
+        // commands cannot be retracted: cancellation must not strand a definition
+        // whose index update was never dispatched. Both complete under Redis's own
+        // timeout even when the request stops waiting; outage atomicity is unchanged.
+        var persist = database.StringSetAsync(BuildStoredQueryKey(scope, definition.Id), serialized);
+        var index = database.SetAddAsync(BuildStoredQueryScopeKey(scope), definition.Id);
+        await Task.WhenAll(persist, index).WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> RemovePersistedStoredQueryAsync(
+        HttpContext context, string id, CancellationToken cancellationToken)
+    {
+        if (context.RequestServices.GetService<IConnectionMultiplexer>() is not { } redis) return false;
+        cancellationToken.ThrowIfCancellationRequested();
+        var scope = ResolveStoredQueryScope(context);
+        var database = redis.GetDatabase();
+        // As with persistence, dispatch deletion and index cleanup together before
+        // exposing a cancellable wait. Cancellation cannot leave a stale scope id.
+        var remove = database.KeyDeleteAsync(BuildStoredQueryKey(scope, id));
+        var unindex = database.SetRemoveAsync(BuildStoredQueryScopeKey(scope), id);
+        var results = await Task.WhenAll(remove, unindex).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return results[0];
     }
 
     public async Task<IResult> HandleListStoredQueriesAsync(
@@ -88,7 +154,7 @@ internal sealed partial class Wfs20Handler
         // default headers. The response is always application/xml.
 
         var descriptors = await GetPublishedFeatureTypesAsync(context, cancellationToken).ConfigureAwait(false);
-        var scopedQueries = GetScopedStoredQueries(context);
+        var scopedQueries = await GetScopedStoredQueriesAsync(context, cancellationToken).ConfigureAwait(false);
         var xml = BuildListStoredQueriesXml(
             descriptors,
             scopedQueries.Values.OrderBy(query => query.Id, StringComparer.Ordinal).ToArray());
@@ -103,7 +169,7 @@ internal sealed partial class Wfs20Handler
     {
         // Same story — DescribeStoredQueries is XML-only.
 
-        var scopedQueries = GetScopedStoredQueries(context);
+        var scopedQueries = await GetScopedStoredQueriesAsync(context, cancellationToken).ConfigureAwait(false);
         var requestedIds = ParseQualifiedList(storedQueryIds);
         var invalidId = requestedIds.FirstOrDefault(requestedId =>
             !IsGetFeatureByIdStoredQuery(requestedId) && !scopedQueries.ContainsKey(requestedId));
@@ -129,7 +195,8 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    public static IResult HandleCreateStoredQuery(HttpContext context)
+    public static async Task<IResult> HandleCreateStoredQueryAsync(
+        HttpContext context, CancellationToken cancellationToken = default)
     {
         var document = GetParsedStoredQueryRequestDocument(context);
         if (document?.Root is null ||
@@ -166,7 +233,7 @@ internal sealed partial class Wfs20Handler
                 "id");
         }
 
-        var scopedQueries = GetScopedStoredQueries(context);
+        var scopedQueries = await GetScopedStoredQueriesAsync(context, cancellationToken).ConfigureAwait(false);
         if (IsGetFeatureByIdStoredQuery(id) || scopedQueries.ContainsKey(id))
         {
             return Wfs20ErrorResults.CreateBadRequest(
@@ -274,6 +341,8 @@ internal sealed partial class Wfs20Handler
                 id);
         }
 
+        await PersistStoredQueryAsync(context, definition, cancellationToken).ConfigureAwait(false);
+
         var xml = WriteXmlDocument(writer =>
         {
             writer.WriteStartDocument();
@@ -286,9 +355,10 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    public static IResult HandleDropStoredQuery(
+    public static async Task<IResult> HandleDropStoredQueryAsync(
         HttpContext context,
-        string? storedQueryId)
+        string? storedQueryId,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(storedQueryId))
         {
@@ -309,7 +379,7 @@ internal sealed partial class Wfs20Handler
                 "storedquery_id");
         }
 
-        var scopedQueries = GetScopedStoredQueries(context);
+        var scopedQueries = await GetScopedStoredQueriesAsync(context, cancellationToken).ConfigureAwait(false);
         if (IsGetFeatureByIdStoredQuery(storedQueryId) ||
             !scopedQueries.TryRemove(storedQueryId, out _))
         {
@@ -319,6 +389,8 @@ internal sealed partial class Wfs20Handler
                 $"Stored query '{storedQueryId}' does not exist.",
                 "storedquery_id");
         }
+
+        await RemovePersistedStoredQueryAsync(context, storedQueryId, cancellationToken).ConfigureAwait(false);
 
         var xml = WriteXmlDocument(writer =>
         {
@@ -343,7 +415,7 @@ internal sealed partial class Wfs20Handler
     {
         if (!IsGetFeatureByIdStoredQuery(storedQueryId))
         {
-            if (GetScopedStoredQueries(context).TryGetValue(storedQueryId, out var definition))
+            if ((await GetScopedStoredQueriesAsync(context, cancellationToken).ConfigureAwait(false)).TryGetValue(storedQueryId, out var definition))
             {
                 return await HandleManagedStoredQueryGetFeatureAsync(
                     context,
@@ -492,6 +564,12 @@ internal sealed partial class Wfs20Handler
         foreach (var parameter in definition.Parameters)
         {
             var value = context.Request.Query[parameter.Name].FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(value) &&
+                context.Items.TryGetValue(Wfs20DispatcherEndpoint.RequestParameterValuesItemKey, out var rawValues) &&
+                rawValues is IReadOnlyDictionary<string, string> requestValues)
+            {
+                requestValues.TryGetValue(parameter.Name, out value);
+            }
             if (!string.IsNullOrWhiteSpace(value))
             {
                 filter = filter.Replace("${" + parameter.Name + "}", SecurityElement.Escape(value), StringComparison.Ordinal);

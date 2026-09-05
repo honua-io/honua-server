@@ -71,7 +71,7 @@ See the [OGC API Coverages Coverage](../../reference/protocols/ogc-apis.md) docu
 - List, poll, and dismiss jobs (`GET /jobs`, `GET /jobs/{jobId}`, `DELETE /jobs/{jobId}`)
 - Retrieve results when available (`GET /jobs/{jobId}/results`)
 
-> **V1 notes**: The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omission selects bounded synchronous execution for processes advertising `sync-execute`; async-only processes remain asynchronous, and `Prefer: respond-async` explicitly requests a durable job. All current execution modes and job lifecycle routes require Redis-backed durable storage (`503` when unavailable). Results endpoints return `200 OK` with a document-mode JSON body on success; synchronous single-output values may instead request `"response": "raw"`. See the [OGC API Processes Coverage](../../reference/protocols/ogc-apis.md) for conformance classes, endpoint details, and V1 limitations.
+> **V1 notes**: The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omission selects bounded synchronous execution for processes advertising `sync-execute`; async-only processes remain asynchronous, and `Prefer: respond-async` explicitly requests a durable job. All current execution modes and job lifecycle routes require Redis-backed durable storage (`503` when unavailable). Catalog results honor the execute request's response mode: document mode returns inline value-transmitted outputs, while `"response": "raw"` returns the native representation for synchronous executions and from the results endpoint for asynchronous jobs. The canonical `honua-geoprocessing` plan runner requires document mode and retains its artifact document. See the [OGC API Processes Coverage](../../reference/protocols/ogc-apis.md) for conformance classes, endpoint details, and V1 limitations.
 
 ---
 
@@ -138,15 +138,17 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 >
 > **Sibling control-plane surfaces**: Console (`/api/v1/console/**`) and Studio
 > (`/api/v1/studio/**`) require the same admin authorization posture but are not
-> part of this `/api/v1/admin` OpenAPI snapshot. Console workflow package
+> part of this `/api/v1/admin` OpenAPI snapshot. The Studio surface is published
+> independently in [studio-api.json](studio-api.json), with bidirectional route
+> drift enforcement against `EndpointRegistry`. Console workflow package
 > contracts are maintained in
 > [Console Workflow Packages](../../internal/admin-api/console-workflow-packages.md),
-> the Studio package lifecycle contract is maintained in
+> the Studio package lifecycle guide is maintained in
 > [Studio Package Lifecycle API](../../internal/admin-api/studio-package-lifecycle.md),
 > and the map/dashboard/report/generated-app publication route contract is
 > maintained in
 > [Content Publication Registry API](../../internal/admin-api/content-publication-registry.md)
-> until dedicated Console and Studio OpenAPI documents are published.
+> until a dedicated Console OpenAPI document is published.
 >
 > **Runtime capability discovery**: `GET /api/v1/capabilities/manifest` is a
 > public, request-scoped discovery contract outside the admin OpenAPI snapshot.
@@ -167,12 +169,21 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 - Validate packages and request read-only preview plans before publish or execute decisions
 - Access recent errors and telemetry status
 - Inspect deploy preflight and upgrade-readiness state per Honua instance
-- Manage geofence alert zones, realtime alert rules, draft validation, enable/disable state, and delivery health for Console Operate workflows
+- Manage Preview geofence alert zones, realtime alert rules, draft validation, enable/disable state, and delivery health for Console Operate workflows (explicit `alerts.geofence` capability opt-in required in 2026.1)
 - Inspect runtime license status, upload signed license files when enabled, and read the active feature/entitlement inventory
 - Save and reopen analysis content under `/api/v1/analysis/**` using the
   markdown contract while the OpenAPI snapshot catches up
 
 {% swagger src="admin-api.json" %}
+
+## Studio API
+
+The [Studio OpenAPI document](studio-api.json) is the canonical, SDK-generation-ready
+contract for every `/api/v1/studio/*` endpoint. Its absolute route inventory is checked
+bidirectionally against `EndpointRegistry.Studio.cs`; adding, removing, or renaming a
+Studio route without updating the document fails the OpenAPI drift gate.
+
+{% swagger src="studio-api.json" %}
 {% endswagger %}
 
 ## GeoServices REST Services

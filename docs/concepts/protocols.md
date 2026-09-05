@@ -24,7 +24,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | OGC API Records | `/ogc/records` | Catalog/metadata search clients | Standards-based catalog discovery and record search |
 | OGC API Environmental Data Retrieval (EDR) | `/edr` | Environmental/scientific tooling | Query environmental data resources by position or cube |
 | OGC API Styles | `/ogc/styles` | Style-aware map clients | Discover and fetch published layer styles and metadata |
-| OGC SensorThings v1.1 | `/sta/v1.1` | IoT/observation clients | REST access to Things, Datastreams, Sensors, and Observations |
+| OGC SensorThings v1.1 (Preview) | `/sta/v1.1` | IoT/observation clients | REST access to Things, Datastreams, Sensors, and Observations; enable `Capabilities:Experimental:serve.sensorthings:Enabled=true` |
 | WMS 1.3 / 1.1.1 | `/rest/services/{serviceId}/MapServer/WMS` or `/ogc/services/{serviceId}/wms` | QGIS, legacy OGC clients | Clients expect classic GetMap/GetFeatureInfo |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks | Clients expect classic GetFeature with GML output |
 | WCS 2.0.1 | `/rest/services/{serviceId}/ImageServer/WCS` or `/ogc/services/{serviceId}/wcs` | Science/elevation tooling | Clients need raw subsetted coverage values |
@@ -69,7 +69,7 @@ Honua implements the ArcGIS GeoServices REST contract so Esri clients connect wi
   `POST /rest/services/Utilities/Geometry/GeometryServer/buffer`
 - **GPServer** — catalog-backed task discovery, async `submitJob`, job polling, cancellation, per-parameter results over the canonical process runtime.
   `POST /rest/services/analysis/GPServer/geometry.buffer/submitJob`
-- **Portal token issuance** — `POST /sharing/rest/generateToken` exchanges username/password for an opaque token presented via `?token=`, `Authorization: Bearer`, or `X-Esri-Authorization: Bearer`. See [Authentication](../guides/secure/authentication.md).
+- **Portal token issuance** — `POST /sharing/rest/generateToken` exchanges username/password for an opaque token presented via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. See [Authentication](../guides/secure/authentication.md).
 
 ## OGC API
 
@@ -83,6 +83,9 @@ Modern resource-oriented OGC standards, each with its own landing page, `/confor
   `GET /ogc/tiles/collections/parcels/tiles/WebMercatorQuad/12/654/1583`
 - **Coverages** (`/ogc/coverages`) — raster collection metadata and coverage export with bbox/CRS/band/scaling controls.
   `GET /ogc/coverages/collections/dem/coverage?bbox=…&f=png`
+- **Environmental Data Retrieval (EDR) — Preview** (`/edr`) — environmental data
+  queries by position or cube. Remaining CRS, temporal-selection, output-format,
+  and coordinate-query corrections target release 2026.2.
 - **Processes** (`/ogc/processes`) — async process execution and job lifecycle over the same runtime as GPServer and MCP.
   `POST /ogc/processes/processes/honua-geoprocessing/execution`
 

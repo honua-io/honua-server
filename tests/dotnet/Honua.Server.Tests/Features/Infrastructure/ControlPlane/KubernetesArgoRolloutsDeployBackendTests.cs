@@ -275,6 +275,7 @@ public sealed class KubernetesArgoRolloutsDeployBackendTests
             {
                 Name = RolloutName,
                 Phase = ArgoRolloutPhase.Healthy,
+                IsAborted = true,
                 PodTemplateImage = PreviousImage,
                 CurrentPodHash = "stable999",
                 StableRevisionHash = "stable999"
@@ -384,6 +385,7 @@ public sealed class KubernetesArgoRolloutsDeployBackendTests
         observation.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
         observation.ObservedRevision.Should().Be(PreviousImage);
         client.AbortCalled.Should().BeTrue();
+        client.LastSetImage.Should().Be(PreviousImage);
     }
 
     [Fact]
@@ -423,11 +425,14 @@ public sealed class KubernetesArgoRolloutsDeployBackendTests
     {
         var client = new StubArgoRolloutsClient
         {
+            RolloutState = ProgressingRollout(DesiredImage),
             AbortException = new HttpRequestException("Conflict: resourceVersion=secret-rv-999", null, HttpStatusCode.Conflict)
         };
         var backend = CreateBackend(client);
 
-        var observation = await backend.RollbackAsync(CreateOperation(parameters: CanaryParameters()));
+        var observation = await backend.RollbackAsync(CreateOperation(
+            currentRevision: PreviousImage,
+            parameters: CanaryParameters()));
 
         observation.Status.Should().Be(WorkflowOperationStatus.Failed);
         observation.Message.Should().NotContain("secret-rv-999");

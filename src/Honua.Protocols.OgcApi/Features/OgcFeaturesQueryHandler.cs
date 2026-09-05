@@ -50,6 +50,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
     private readonly IETagService _etagService = dependencies.ETagService;
     private readonly CacheOptions _cacheOptions = dependencies.CacheOptions;
     private readonly OgcFeaturesOptions _ogcFeaturesOptions = dependencies.OgcFeaturesOptions;
+    private readonly int _maxOffset = dependencies.QueryValidator.QueryLimits.MaxOffset;
     private readonly FeatureProviderQueryRouter? _providerQueryRouter = dependencies.ProviderQueryRouter;
     private readonly ILogger<OgcFeaturesQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private const int StreamingThreshold = 200;
@@ -279,6 +280,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                             streamBasePath,
                             effectiveLimit,
                             effectiveOffset,
+                            _maxOffset,
                             cancellationToken);
                     }
 
@@ -295,6 +297,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                         streamBasePath,
                         effectiveLimit,
                         effectiveOffset,
+                        _maxOffset,
                         _ogcFeaturesOptions.IncludeFeatureLinks,
                         snapshotCount, // advisory snapshot estimate; see comment above
                         outputCrsUri,
@@ -465,6 +468,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 outputFormat,
                 effectiveLimit,
                 effectiveOffset,
+                _maxOffset,
                 queryHasMoreResults);
 
             context.Response.Headers["Content-Crs"] = FormatContentCrs(outputCrsUri);
@@ -856,6 +860,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         string outputFormat,
         int limit,
         int? offset,
+        int maxOffset,
         bool hasMoreResults)
     {
         var links = OgcCommonUtilities.BuildFormatLinks(
@@ -875,11 +880,11 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 title: "Previous page"));
         }
 
-        if (hasMoreResults)
+        var nextOffset = (long)(offset ?? 0) + limit;
+        if (hasMoreResults && nextOffset <= maxOffset)
         {
-            var nextOffset = (offset ?? 0) + limit;
             links.Add(Link.Create(
-                href: BuildPagedUrl(request, basePath, outputFormat, limit, nextOffset),
+                href: BuildPagedUrl(request, basePath, outputFormat, limit, (int)nextOffset),
                 rel: RelationTypes.Next,
                 type: outputFormat,
                 title: "Next page"));
@@ -1023,7 +1028,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberReturned", features.Length);
         writer.WritePropertyName("links");
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
-        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
         writer.Flush();
 
@@ -1078,7 +1083,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         writer.WriteNumber("numberReturned", features.Length);
         writer.WritePropertyName("links");
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
-        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
         writer.Flush();
 
@@ -1420,7 +1425,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var links = buildLinks(hasMoreResults);
         JsonSerializer.Serialize(writer, links, OgcJsonContext.Default.ImmutableArrayLink);
 
-        writer.WriteString("timeStamp", DateTimeOffset.UtcNow);
+        writer.WriteString("timeStamp", OgcTimestampFormatter.Format(DateTimeOffset.UtcNow));
         writer.WriteEndObject();
 
         await writer.FlushAsync(cancellationToken);
@@ -1451,6 +1456,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly string _streamBasePath;
         private readonly int _effectiveLimit;
         private readonly int _effectiveOffset;
+        private readonly int _maxOffset;
         private readonly bool _includeFeatureLinks;
         private readonly ImmutableHashSet<string>? _projectedProperties;
         private readonly long _numberMatched;
@@ -1471,6 +1477,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             string streamBasePath,
             int effectiveLimit,
             int effectiveOffset,
+            int maxOffset,
             bool includeFeatureLinks,
             long numberMatched,
             string crsUri,
@@ -1490,6 +1497,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             _streamBasePath = streamBasePath;
             _effectiveLimit = effectiveLimit;
             _effectiveOffset = effectiveOffset;
+            _maxOffset = maxOffset;
             _includeFeatureLinks = includeFeatureLinks;
             _numberMatched = numberMatched;
             _crsUri = crsUri;
@@ -1525,7 +1533,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 _projectedProperties,
                 _outputFormat,
                 _effectiveLimit,
-                hasMore => BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, _outputFormat, _effectiveLimit, _effectiveOffset, hasMore),
+                hasMore => BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, _outputFormat, _effectiveLimit, _effectiveOffset, _maxOffset, hasMore),
                 _includeFeatureLinks,
                 _numberMatched,
                 cancellationToken);
@@ -1551,6 +1559,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
         private readonly string _streamBasePath;
         private readonly int _effectiveLimit;
         private readonly int _effectiveOffset;
+        private readonly int _maxOffset;
         private readonly CancellationToken _requestCancellationToken;
 
         public StreamingGmlItemsResult(
@@ -1565,6 +1574,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             string streamBasePath,
             int effectiveLimit,
             int effectiveOffset,
+            int maxOffset,
             CancellationToken requestCancellationToken)
         {
             _streamingFeatureStore = streamingFeatureStore;
@@ -1579,6 +1589,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             _streamBasePath = streamBasePath;
             _effectiveLimit = effectiveLimit;
             _effectiveOffset = effectiveOffset;
+            _maxOffset = maxOffset;
             _requestCancellationToken = requestCancellationToken;
         }
 
@@ -1621,7 +1632,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // by OgcResponseFormatter.StreamGmlFeatureCollectionAsync, which is
             // the spec-compliant location.
 
-            var links = BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, MediaTypes.Gml, _effectiveLimit, _effectiveOffset, hasMoreResults);
+            var links = BuildItemsLinks(httpContext.Request, _collectionId, _streamBasePath, MediaTypes.Gml, _effectiveLimit, _effectiveOffset, _maxOffset, hasMoreResults);
             foreach (var link in links.Where(link => !string.IsNullOrEmpty(link.Href)))
             {
                 httpContext.Response.Headers.Append("Link", $"<{link.Href}>; rel=\"{link.Rel}\"");

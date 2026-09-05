@@ -5,6 +5,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Studio.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -29,6 +30,7 @@ internal static class OperationsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(environment);
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<OperationLineageAttestationStore>();
         services.TryAddScoped<IOperationApprovalBridge, AdminOperationApprovalBridge>();
         // The real verifier's constructor requires the durable proposal store, and the
         // dispatcher requires a verifier, so hosts composed without the store failed
@@ -45,6 +47,14 @@ internal static class OperationsServiceCollectionExtensions
                 : new UnavailableOperationApprovalReplayVerifier());
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, ServicePublishApprovalRequestMapper>());
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(WorkflowRollbackApprovalRegistrationMarker)))
+        {
+            services.AddSingleton<WorkflowRollbackApprovalRegistrationMarker>();
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new WorkflowRollbackApprovalRequestMapper(WorkflowRollbackOperations.Deploy));
+            services.AddSingleton<IOperationApprovalRequestMapper>(
+                new WorkflowRollbackApprovalRequestMapper(WorkflowRollbackOperations.CoordinatedRelease));
+        }
         foreach (var operationId in new[]
                  {
                      StudioDraftOperations.Create,
@@ -52,6 +62,10 @@ internal static class OperationsServiceCollectionExtensions
                      StudioDraftOperations.Delete,
                      StudioDraftOperations.Validate,
                      StudioDraftOperations.PreviewPlan,
+                     StudioDraftOperations.SaveVersion,
+                     StudioDraftOperations.CreatePublicationRequest,
+                     StudioDraftOperations.ReopenVersion,
+                     StudioDraftOperations.Rollback,
                  })
         {
             services.AddSingleton<IOperationApprovalRequestMapper>(
@@ -64,7 +78,9 @@ internal static class OperationsServiceCollectionExtensions
         else
         {
             services.TryAddSingleton<IOperationInstanceStore>(sp =>
-                new RedisOperationInstanceStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+                sp.GetService<IConnectionMultiplexer>() is { } redis
+                    ? new RedisOperationInstanceStore(redis)
+                    : new UnavailableOperationInstanceStore());
             if (services.Any(descriptor => descriptor.ServiceType ==
                     typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore)))
             {
@@ -86,6 +102,9 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetServices<IOperationDescriptorProvider>(),
                 sp.GetRequiredService<TimeProvider>()));
 
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StylePresetExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
+
         // Executors: concrete work, registered as an enumerable for the dispatcher.
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IOperationExecutor, DeferredServicePublishExecutor>());
@@ -96,6 +115,12 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftDeleteExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftValidateExecutor>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftPreviewPlanExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioSaveVersionExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioCreatePublicationRequestExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioReopenVersionExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioRollbackExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, DeployRollbackOperationExecutor>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, CoordinatedReleaseRollbackOperationExecutor>());
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
 
         var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==
@@ -118,9 +143,38 @@ internal static class OperationsServiceCollectionExtensions
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
                     sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
-                    sp.GetRequiredService<TimeProvider>()));
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<OperationLineageAttestationStore>()));
             }
             services.AddHttpClient(AdminConnectImportOperationExecutor.HttpClientName);
+            services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+        }
+
+        if (hasProposalStore &&
+            !services.Any(descriptor => descriptor.ServiceType == typeof(AdminApiOperationRegistrationMarker)))
+        {
+            services.AddSingleton<AdminApiOperationRegistrationMarker>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider,
+                AdminApiOperationDescriptorProvider>());
+            foreach (var definition in AdminApiOperationCatalog.Definitions)
+            {
+                if (definition.Destructive)
+                {
+                    services.AddSingleton<IOperationApprovalRequestMapper>(
+                        new AdminApiOperationApprovalRequestMapper(definition));
+                }
+                services.AddScoped<IOperationExecutor>(sp => new AdminApiOperationExecutor(
+                    definition,
+                    sp.GetRequiredService<IHttpClientFactory>(),
+                    sp.GetRequiredService<IHttpContextAccessor>(),
+                    sp.GetRequiredService<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(),
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<OperationLineageAttestationStore>()));
+            }
+            services.AddHttpClient(AdminApiOperationExecutor.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         }
 
@@ -144,11 +198,19 @@ internal static class OperationsServiceCollectionExtensions
 
         foreach (var definition in AdminOperateOperationCatalog.Definitions)
         {
+            if (definition.ApprovalModel != Honua.Core.Features.Operations.Domain.OperationApprovalModel.None &&
+                definition.SideEffect != Honua.Core.Features.Operations.Domain.OperationSideEffectClass.ReadOnly)
+            {
+                services.AddSingleton<IOperationApprovalRequestMapper>(
+                    new AdminOperateOperationApprovalRequestMapper(definition));
+            }
             services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
                 definition,
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<IHttpContextAccessor>(),
-                sp.GetRequiredService<TimeProvider>()));
+                sp.GetService<IAdminApiKeyStore>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<OperationLineageAttestationStore>()));
         }
 
         services.AddHttpClient(AdminOperateOperationExecutor.HttpClientName);
@@ -195,4 +257,6 @@ internal static class OperationsServiceCollectionExtensions
     internal sealed class LegacyAdapterRegistrationMarker;
 
     internal sealed class AdminConnectImportRegistrationMarker;
+    internal sealed class AdminApiOperationRegistrationMarker;
+    internal sealed class WorkflowRollbackApprovalRegistrationMarker;
 }

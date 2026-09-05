@@ -39,6 +39,24 @@ public sealed class FeatureStreamHealthCheckTests
     }
 
     [UnitTest]
+    public async Task CheckHealth_TotalAcrossPartitionsDoesNotCauseFalseSaturation()
+    {
+        using var manager = CreateManager(maxConcurrentSessions: 2);
+        using var first = manager.TryCreateSession("SSE", null, admissionPartition: "tenant:a");
+        using var second = manager.TryCreateSession("SSE", null, admissionPartition: "tenant:b");
+        var healthy = await CheckAsync(manager);
+        healthy.Status.Should().Be(HealthStatus.Healthy);
+        healthy.Data["active_sessions"].Should().Be(2);
+        healthy.Data["maximum_partition_sessions"].Should().Be(1);
+
+        using var saturated = manager.TryCreateSession("SSE", null, admissionPartition: "tenant:a");
+        var degraded = await CheckAsync(manager);
+        degraded.Status.Should().Be(HealthStatus.Degraded);
+        degraded.Data["active_sessions"].Should().Be(3);
+        degraded.Data["maximum_partition_sessions"].Should().Be(2);
+    }
+
+    [UnitTest]
     public async Task CheckHealth_WithNoSessions_ReportsHealthy()
     {
         using var manager = CreateManager(maxConcurrentSessions: 10);

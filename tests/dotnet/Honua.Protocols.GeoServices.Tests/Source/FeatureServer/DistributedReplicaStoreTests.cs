@@ -28,7 +28,7 @@ public sealed class DistributedReplicaStoreTests
             NullLogger<DistributedReplicaStore>.Instance);
 
         var createdAt = DateTimeOffset.UtcNow;
-        var replica = CreateReplicaState("replica-a", "svc-a", createdAt);
+        var replica = CreateReplicaState("replica-a", "svc-a", createdAt, ownerId: "alice");
 
         await store.SetAsync(replica);
         var result = await store.GetAsync(replica.ReplicaId);
@@ -37,6 +37,7 @@ public sealed class DistributedReplicaStoreTests
         result!.ReplicaId.Should().Be(replica.ReplicaId);
         result.ServiceId.Should().Be("svc-a");
         result.SyncModel.Should().Be("perReplica");
+        result.OwnerId.Should().Be("alice");
     }
 
     [UnitTest]
@@ -164,7 +165,11 @@ public sealed class DistributedReplicaStoreTests
         expiredFallback.Should().BeNull();
     }
 
-    private static ReplicaState CreateReplicaState(string replicaId, string serviceId, DateTimeOffset createdAt)
+    private static ReplicaState CreateReplicaState(
+        string replicaId,
+        string serviceId,
+        DateTimeOffset createdAt,
+        string? ownerId = null)
     {
         return new ReplicaState(
             ReplicaId: replicaId,
@@ -172,7 +177,8 @@ public sealed class DistributedReplicaStoreTests
             ServiceId: serviceId,
             SyncModel: "perReplica",
             LayerIds: [0, 1],
-            CreatedAt: createdAt);
+            CreatedAt: createdAt,
+            OwnerId: ownerId);
     }
 
     private sealed class ThrowingDistributedCache : IDistributedCache

@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
 
@@ -22,18 +26,19 @@ internal static class AdminOperateOperationCatalog
         string? DryRunPath = null,
         HttpMethod? DryRunMethod = null,
         string? ContentType = null,
-        OperationApprovalModel? ApprovalModel = null);
+        OperationApprovalModel? ApprovalModel = null,
+        OperationClass OperationClass = OperationClass.AdminConfigChange);
 
     public static IReadOnlyList<Definition> Definitions { get; } =
     [
         Read("admin.metadata.release-packages.list", "List metadata release packages", "/metadata/release-packages", "listMetadataReleasePackages"),
         Read("admin.metadata.release-packages.get", "Get metadata release package", "/metadata/release-packages/{packageId}", "getMetadataReleasePackage"),
         Read("admin.metadata.release-packages.gitops-manifest", "Get metadata release GitOps manifest", "/metadata/release-packages/{packageId}/gitops-manifest", "getMetadataReleaseGitOpsManifest"),
-        Write("admin.metadata.release-packages.create", "Create metadata release package", HttpMethod.Post, "/metadata/release-packages", "createMetadataReleasePackage", OperationSideEffectClass.CreatesMetadata),
+        Write("admin.metadata.release-packages.create", "Create metadata release package", HttpMethod.Post, "/metadata/release-packages", "createMetadataReleasePackage", OperationSideEffectClass.CreatesMetadata, operationClass: OperationClass.MetadataRelease),
         new("admin.metadata.prevalidate", "Prevalidate metadata release", HttpMethod.Post, "/metadata/prevalidate", "prevalidateMetadataReleasePackageCompatibility", OperationSideEffectClass.CreatesMetadata, OperationBlastRadiusClass.ResourceScope, true, "/metadata/prevalidate", HttpMethod.Post, ApprovalModel: OperationApprovalModel.None),
-        Write("admin.metadata.releases.activate", "Activate metadata release", HttpMethod.Post, "/metadata/releases/operations", "createMetadataReleaseOperation", OperationSideEffectClass.MutatesMetadata, OperationBlastRadiusClass.DeploymentScope),
+        Write("admin.metadata.releases.activate", "Activate metadata release", HttpMethod.Post, "/metadata/releases/operations", "createMetadataReleaseOperation", OperationSideEffectClass.MutatesMetadata, OperationBlastRadiusClass.DeploymentScope, OperationClass.MetadataRelease),
         Read("admin.metadata.releases.status", "Get metadata release status", "/metadata/releases/{packageId}/operation", "getMetadataReleaseOperationByPackageId"),
-        Write("admin.metadata.coordinated-releases.rollback", "Roll back coordinated release", HttpMethod.Post, "/metadata/coordinated-releases/operations/{operationId}/rollback", "rollbackCoordinatedReleaseOperation", OperationSideEffectClass.DestroysState, OperationBlastRadiusClass.DeploymentScope),
+        Write("admin.metadata.coordinated-releases.rollback", "Roll back coordinated release", HttpMethod.Post, "/metadata/coordinated-releases/operations/{operationId}/rollback", "rollbackCoordinatedReleaseOperation", OperationSideEffectClass.DestroysState, OperationBlastRadiusClass.DeploymentScope, OperationClass.MetadataRelease),
         Read("admin.cache.status", "Get cache status", "/cache/status", "getAdminCacheStatus"),
         Write("admin.cache.invalidate", "Invalidate cache", HttpMethod.Post, "/cache/invalidate", "invalidateAdminCache", OperationSideEffectClass.DestroysState),
         Read("admin.license.status", "Get license status", "/license/status", "getPlatformLicenseStatus"),
@@ -45,22 +50,52 @@ internal static class AdminOperateOperationCatalog
         Read("admin.server.features", "Get server features", "/features", "getFeatureOverview")
     ];
 
+    private static readonly JsonElement RequestContract = LoadContract();
+
     public static IReadOnlyList<OperationDescriptor> Descriptors { get; } = BuildDescriptors();
 
     private static Definition Read(string id, string title, string path, string openApiId) =>
         new(id, title, HttpMethod.Get, path, openApiId, OperationSideEffectClass.ReadOnly, OperationBlastRadiusClass.ResourceScope);
 
     private static Definition Write(string id, string title, HttpMethod method, string path, string openApiId,
-        OperationSideEffectClass sideEffect, OperationBlastRadiusClass blastRadius = OperationBlastRadiusClass.ResourceScope) =>
-        new(id, title, method, path, openApiId, sideEffect, blastRadius);
+        OperationSideEffectClass sideEffect, OperationBlastRadiusClass blastRadius = OperationBlastRadiusClass.ResourceScope,
+        OperationClass operationClass = OperationClass.AdminConfigChange) =>
+        new(id, title, method, path, openApiId, sideEffect, blastRadius, OperationClass: operationClass);
 
-    private static OperationDescriptor[] BuildDescriptors()
+    private static JsonElement LoadContract()
     {
         using var stream = typeof(AdminOperateOperationCatalog).Assembly.GetManifestResourceStream("Honua.Server.admin-api.json")
             ?? throw new InvalidOperationException("Embedded admin-api.json contract was not found.");
         using var document = JsonDocument.Parse(stream);
-        return Definitions.Select(definition => BuildDescriptor(document.RootElement, definition)).ToArray();
+        return document.RootElement.Clone();
     }
+
+    private static OperationDescriptor[] BuildDescriptors() =>
+        Definitions.Select(definition => BuildDescriptor(RequestContract, definition)).ToArray();
+
+    internal static JsonElement GetInputContract(string operationId, string name)
+    {
+        var definition = Definitions.Single(item => item.OperationId == operationId);
+        var operation = FindOperation(RequestContract, definition.OpenApiOperationId);
+        if (operation.TryGetProperty("parameters", out var parameters))
+        {
+            foreach (var parameter in parameters.EnumerateArray().Select(static candidate => Resolve(RequestContract, candidate)))
+            {
+                if (parameter.GetProperty("name").GetString() == name)
+                    return ResolveInputContract(parameter.GetProperty("schema"));
+            }
+        }
+        if (TryGetContentSchema(operation, "requestBody", out var body))
+        {
+            body = ResolveInputContract(body);
+            if (body.TryGetProperty("properties", out var properties) && properties.TryGetProperty(name, out var property))
+                return ResolveInputContract(property);
+            if (name == "body") return body;
+        }
+        throw new InvalidOperationException($"Input contract '{operationId}.{name}' was not found.");
+    }
+
+    internal static JsonElement ResolveInputContract(JsonElement schema) => Resolve(RequestContract, schema);
 
     private static OperationDescriptor BuildDescriptor(JsonElement root, Definition definition)
     {
@@ -186,6 +221,66 @@ internal static class AdminOperateOperationCatalog
             RequiredProperties = resolved.TryGetProperty("required", out var required)
                 ? required.EnumerateArray().Select(static value => value.GetString()!).ToArray()
                 : []
+        };
+    }
+}
+
+internal sealed class AdminOperateOperationApprovalRequestMapper(
+    AdminOperateOperationCatalog.Definition definition) : IOperationApprovalRequestMapper
+{
+    public string OperationId => definition.OperationId;
+
+    public OperationGatewayRequest Map(
+        IOperationDescriptor descriptor,
+        OperationRequest request,
+        OperationPolicyContext context,
+        PolicyDecision decision)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(decision);
+        if (descriptor.OperationId != OperationId || request.OperationId != OperationId)
+        {
+            throw new ArgumentException($"The mapper only accepts {OperationId} requests.", nameof(request));
+        }
+
+        var payload = AdminApiOperationApprovalPayload.From(request, context);
+        var serialized = JsonSerializer.Serialize(
+            payload,
+            AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
+        return new OperationGatewayRequest
+        {
+            OperationInstanceId = context.OperationInstanceId,
+            OperationId = OperationId,
+            Kind = definition.OperationClass,
+            RequestedBy = context.PrincipalId,
+            Reason = decision.Reason,
+            CorrelationId = context.CorrelationId,
+            ExecutionPayload = serialized,
+            Plan = AdminOperationReview.Create(descriptor, request, context, definition.Method.Method,
+                definition.Path, definition.SideEffect == OperationSideEffectClass.DestroysState ? ProposalRiskLevel.High : ProposalRiskLevel.Medium, serialized)
+        };
+    }
+
+    public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var payload = JsonSerializer.Deserialize(
+            request.Plan?.ExecutionPayload ?? request.ExecutionPayload
+                ?? throw new InvalidOperationException("The persisted admin operation replay payload is unavailable."),
+            AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+            ?? throw new InvalidOperationException("The persisted admin operation replay payload is invalid.");
+        if (payload.OperationId != OperationId)
+        {
+            throw new InvalidOperationException("The persisted admin operation replay identity does not match its mapper.");
+        }
+
+        return new OperationApprovalReplayMapping
+        {
+            Request = payload.ToOperationRequest(),
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName,
         };
     }
 }

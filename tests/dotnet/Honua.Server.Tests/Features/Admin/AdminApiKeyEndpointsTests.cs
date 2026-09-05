@@ -6,11 +6,13 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Honua.Server.Features.Admin.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -249,6 +251,26 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithReservedApprovedOperationGrant_ReturnsBadRequest()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest
+            {
+                Name = "forged-operation-key",
+                Permissions = ["admin:operation:POST:/api/v1/admin/connections"],
+            },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "minted internally",
+            await response.Content.ReadAsStringAsync(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/api-keys")]
     public async Task GenuinelyScopedApiKey_IsDeniedAdminEndpoint()
     {
@@ -262,6 +284,47 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         var response = await scopedClient.GetAsync("/api/v1/admin/api-keys");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/studio/content-items")]
+    public async Task ApprovedOperationKey_AllowsExactOperation_ButRoleOnlySurfaceRefusesIt()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var issued = await store.CreateAsync(
+            "approved-operation:test-proposal",
+            AdminApiKeyPermission.CreateApprovedOperationGrants("GET", "/api/v1/admin/api-keys", "public"),
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "test-requester",
+            CancellationToken.None);
+        using var operationClient = CreateApiKeyClient(issued.Key);
+
+        var exactOperation = await operationClient.GetAsync("/api/v1/admin/api-keys");
+        var unrelatedRoleOnlySurface = await operationClient.GetAsync("/api/v1/studio/content-items");
+
+        Assert.Equal(HttpStatusCode.OK, exactOperation.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, unrelatedRoleOnlySurface.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    public async Task InternalReplayCredential_CannotBeDiscoveredOrReissuedThroughKeyManagement()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var issued = await store.CreateAsync("approved-operation:other-tenant-proposal",
+            AdminApiKeyPermission.CreateApprovedOperationGrants("PUT", "/api/v1/admin/metadata/layers/1/filter", "tenant-a"),
+            DateTimeOffset.UtcNow.AddMinutes(5), "requester", CancellationToken.None);
+
+        var list = await _client.GetStringAsync("/api/v1/admin/api-keys");
+        Assert.DoesNotContain(issued.Record.Id.ToString(), list, StringComparison.Ordinal);
+        var rotate = await _client.PostAsync($"/api/v1/admin/api-keys/{issued.Record.Id}/rotate", null);
+        Assert.Equal(HttpStatusCode.NotFound, rotate.StatusCode);
+        var permissions = await _client.GetAsync($"/api/v1/admin/api-keys/{issued.Record.Id}/effective-permissions");
+        Assert.Equal(HttpStatusCode.NotFound, permissions.StatusCode);
+        Assert.NotNull(await store.ValidateAsync(issued.Key, CancellationToken.None));
     }
 
     [IntegrationTest]

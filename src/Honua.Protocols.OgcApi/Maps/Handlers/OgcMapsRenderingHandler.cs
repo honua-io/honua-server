@@ -119,10 +119,29 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
+            var parsedRenderRequest = renderRequest.Value;
+            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
+                parsedRenderRequest,
+                context,
+                cancellationToken).ConfigureAwait(false);
+            if (renderRequest == null)
+            {
+                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
+                return CreateBadRequestResult(context, validationError!);
+            }
+
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
             if (editionError != null)
             {
                 return editionError;
+            }
+
+            var (temporalFilters, temporalError) = CreateVectorTemporalFilters(
+                request.Datetime,
+                [(layerId, resource)]);
+            if (temporalError is not null)
+            {
+                return CreateBadRequestResult(context, temporalError);
             }
 
             OgcMapsLog.CollectionMapRenderStarted(_logger, layerId, renderRequest.Value.Width, renderRequest.Value.Height);
@@ -132,7 +151,8 @@ internal sealed class OgcMapsRenderingHandler
             // pick the wrong (e.g. raster) resource for a colliding StorageLayerId (#2799).
             var mapRenderRequest = renderRequest.Value with
             {
-                ResolvedLayers = new[] { new ResolvedMapLayer(layerId, resource.Metadata.Id) }
+                ResolvedLayers = new[] { new ResolvedMapLayer(layerId, resource.Metadata.Id) },
+                TemporalFiltersByResourceId = temporalFilters
             };
 
             // Render the map
@@ -353,10 +373,29 @@ internal sealed class OgcMapsRenderingHandler
                 return CreateBadRequestResult(context, validationError!);
             }
 
+            var parsedRenderRequest = renderRequest.Value;
+            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
+                parsedRenderRequest,
+                context,
+                cancellationToken).ConfigureAwait(false);
+            if (renderRequest == null)
+            {
+                OgcMapsLog.InvalidMapParameters(_logger, 0, validationError!);
+                return CreateBadRequestResult(context, validationError!);
+            }
+
             var editionError = RequireProEditionForDatetime(context, renderRequest.Value);
             if (editionError != null)
             {
                 return editionError;
+            }
+
+            var (temporalFilters, temporalError) = CreateVectorTemporalFilters(
+                request.Datetime,
+                entries.Select(entry => (entry.LayerId, entry.Resource)));
+            if (temporalError is not null)
+            {
+                return CreateBadRequestResult(context, temporalError);
             }
 
             OgcMapsLog.DatasetMapRenderStarted(_logger, resolvedLayerCount, renderRequest.Value.Width, renderRequest.Value.Height);
@@ -365,7 +404,8 @@ internal sealed class OgcMapsRenderingHandler
             // re-resolve each layer through the first-wins storage-layer index (#2799).
             var datasetRenderRequest = renderRequest.Value with
             {
-                ResolvedLayers = entries.Select(e => new ResolvedMapLayer(e.LayerId, e.Resource.Metadata.Id)).ToArray()
+                ResolvedLayers = entries.Select(e => new ResolvedMapLayer(e.LayerId, e.Resource.Metadata.Id)).ToArray(),
+                TemporalFiltersByResourceId = temporalFilters
             };
 
             // Render the dataset map
@@ -452,8 +492,39 @@ internal sealed class OgcMapsRenderingHandler
                 }
             }
 
+            var styleMayBeAssociated =
+                string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal) ||
+                IsStyleAssociatedWithResource(snapshot, resource, styleId);
+            if (!styleMayBeAssociated)
+            {
+                return CreateNotFoundResult(context, $"Style '{styleId}' is not associated with collection {layerId}");
+            }
+
+            var stylesheet = await _styleProjection
+                .GetAssociatedStylesheetAsync(
+                    resource.Metadata.Id,
+                    styleId,
+                    OgcStyleEncoding.MapboxStyle,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (stylesheet is null)
+            {
+                return CreateNotFoundResult(context, $"Style '{styleId}' is not associated with collection {layerId}");
+            }
+
             // Create map render request
             var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
+            if (renderRequest == null)
+            {
+                OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
+                return CreateBadRequestResult(context, validationError!);
+            }
+
+            var parsedRenderRequest = renderRequest.Value;
+            (renderRequest, validationError) = await NormalizeBoundingBoxForOutputCrsAsync(
+                parsedRenderRequest,
+                context,
+                cancellationToken).ConfigureAwait(false);
             if (renderRequest == null)
             {
                 OgcMapsLog.InvalidMapParameters(_logger, layerId, validationError!);
@@ -466,7 +537,20 @@ internal sealed class OgcMapsRenderingHandler
                 return editionError;
             }
 
-            OgcMapsLog.StyledMapRenderStarted(_logger, layerId, styleId, renderRequest.Value.Width, renderRequest.Value.Height);
+            var (temporalFilters, temporalError) = CreateVectorTemporalFilters(
+                request.Datetime,
+                [(layerId, resource)]);
+            if (temporalError is not null)
+            {
+                return CreateBadRequestResult(context, temporalError);
+            }
+
+            var styledRequest = renderRequest.Value with
+            {
+                TemporalFiltersByResourceId = temporalFilters
+            };
+
+            OgcMapsLog.StyledMapRenderStarted(_logger, layerId, styleId, styledRequest.Width, styledRequest.Height);
 
             // Renderer dispatch (ADR-0048): vector collections render through the shared
             // Skia pipeline with an explicit styleId-resolved MapLibre style (the same path
@@ -479,7 +563,8 @@ internal sealed class OgcMapsRenderingHandler
                     styleId,
                     resource,
                     service,
-                    renderRequest.Value,
+                    stylesheet.Content,
+                    styledRequest,
                     context,
                     scope,
                     cancellationToken).ConfigureAwait(false);
@@ -487,7 +572,7 @@ internal sealed class OgcMapsRenderingHandler
 
             // Render the styled map (raster path). Flow the handler-resolved resource
             // identity so the renderer does not re-resolve the layer first-wins (#2799).
-            var styledRenderRequest = renderRequest.Value with
+            var styledRenderRequest = styledRequest with
             {
                 ResolvedLayers = new[] { new ResolvedMapLayer(layerId, resource.Metadata.Id) }
             };
@@ -501,7 +586,7 @@ internal sealed class OgcMapsRenderingHandler
             OgcMapsLog.StyledMapRenderCompleted(_logger, layerId, styleId, result.Data.Length);
             scope.SetSuccess(1);
 
-            return CreateMapFileResult(context, result, renderRequest.Value);
+            return CreateMapFileResult(context, result, styledRequest);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -529,14 +614,14 @@ internal sealed class OgcMapsRenderingHandler
     /// <summary>
     /// Renders a styled map for a vector collection through the shared Skia pipeline,
     /// resolving the MapLibre style for <paramref name="styleId"/> via the OGC API - Styles
-    /// projection (ADR-0048). Falls back to default styling when the styleId does not
-    /// resolve to a stored style for the collection.
+    /// projection (ADR-0048).
     /// </summary>
     private async Task<IResult> RenderStyledVectorMapAsync(
         int layerId,
         string styleId,
         MetadataV2Resource resource,
         MetadataV2Service? service,
+        string mapLibreStyleJson,
         MapRenderRequest renderRequest,
         HttpContext? context,
         HonuaTelemetryScope scope,
@@ -563,22 +648,11 @@ internal sealed class OgcMapsRenderingHandler
                 "Format 'tiff' is not supported for styled vector collections. Supported formats: png, jpeg.");
         }
 
-        // Resolve the requested style (canonical MapLibre). A missing/unknown style renders
-        // with the collection's default styling rather than failing the request.
-        string? mapLibreStyleJson = null;
-        var stylesheet = await _styleProjection
-            .GetStylesheetAsync(styleId, OgcStyleEncoding.MapboxStyle, cancellationToken)
-            .ConfigureAwait(false);
-        if (stylesheet is not null)
-        {
-            mapLibreStyleJson = stylesheet.Content;
-        }
-
         var geometryType = resource.ReadGeometryType();
         var serviceSrid = service?.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? DefaultBboxCrsSrid;
-        var requestSrid = renderRequest.BoundingBoxCrs ?? renderRequest.Crs ?? DefaultBboxCrsSrid;
+        var requestSrid = renderRequest.Crs ?? renderRequest.BoundingBoxCrs ?? DefaultBboxCrsSrid;
         var requestExtent = new SkiaMapRenderer.RenderExtent(
             renderRequest.BoundingBox[0],
             renderRequest.BoundingBox[1],
@@ -600,8 +674,11 @@ internal sealed class OgcMapsRenderingHandler
             renderRequest.Height,
             format,
             renderRequest.Transparent,
-            backgroundColor: null,
-            temporalFilter: null,
+            RasterMapRenderingPipeline.ResolveBackgroundColor(renderRequest.BackgroundColor),
+            temporalFilter: renderRequest.TemporalFiltersByResourceId is not null &&
+                renderRequest.TemporalFiltersByResourceId.TryGetValue(resource.Metadata.Id, out var temporalFilter)
+                    ? temporalFilter
+                    : null,
             cancellationToken).ConfigureAwait(false);
 
         if (!renderResult.IsSuccess)
@@ -618,7 +695,15 @@ internal sealed class OgcMapsRenderingHandler
             ContentType = renderRequest.Format.ToContentType(),
             Width = renderRequest.Width,
             Height = renderRequest.Height,
-            Srid = requestSrid
+            Srid = requestSrid,
+            Extent = new RasterExtent
+            {
+                XMin = requestExtent.MinX,
+                YMin = requestExtent.MinY,
+                XMax = requestExtent.MaxX,
+                YMax = requestExtent.MaxY,
+                Srid = requestSrid
+            }
         };
 
         return CreateMapFileResult(context, result, renderRequest);
@@ -637,6 +722,15 @@ internal sealed class OgcMapsRenderingHandler
         return resource.FindPrimaryGeometryField() is not null;
     }
 
+    internal static bool IsStyleAssociatedWithResource(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Resource resource,
+        string styleId)
+        => resource.StyleResourceIds.Any(styleResourceId =>
+            snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource) &&
+            styleResource.Type == MetadataV2ResourceType.Style &&
+            string.Equals(styleResource.Metadata.Name, styleId, StringComparison.Ordinal));
+
     /// <summary>
     /// Creates a not-found result using StandardErrorHelpers when context is available,
     /// or a plain 404 when it is not.
@@ -645,6 +739,94 @@ internal sealed class OgcMapsRenderingHandler
         => context is not null
             ? StandardErrorHelpers.CreateBadRequest(context, message)
             : Results.BadRequest(message);
+
+    private static async Task<(MapRenderRequest? Request, string? Error)> NormalizeBoundingBoxForOutputCrsAsync(
+        MapRenderRequest request,
+        HttpContext? context,
+        CancellationToken cancellationToken)
+    {
+        if (!request.Crs.HasValue ||
+            !request.BoundingBoxCrs.HasValue ||
+            request.Crs.Value == request.BoundingBoxCrs.Value)
+        {
+            return (request, null);
+        }
+
+        var sourceSrid = request.BoundingBoxCrs.Value;
+        var outputSrid = request.Crs.Value;
+        var sourceExtent = new SkiaMapRenderer.RenderExtent(
+            request.BoundingBox[0],
+            request.BoundingBox[1],
+            request.BoundingBox[2],
+            request.BoundingBox[3]);
+
+        SkiaMapRenderer.RenderExtent outputExtent;
+        if (context is not null)
+        {
+            var transform = await RasterMapRenderingPipeline.TryTransformExtentAsync(
+                context,
+                sourceExtent,
+                sourceSrid,
+                outputSrid,
+                cancellationToken).ConfigureAwait(false);
+            if (!transform.IsSuccess)
+            {
+                return (null, transform.Error ?? "The bbox could not be transformed to the requested output CRS.");
+            }
+
+            outputExtent = transform.Extent;
+        }
+        else
+        {
+            try
+            {
+                outputExtent = CoordinateTransformer.TransformExtent(sourceExtent, sourceSrid, outputSrid);
+            }
+            catch (NotSupportedException)
+            {
+                return (null, "The bbox could not be transformed to the requested output CRS.");
+            }
+        }
+
+        return (request with
+        {
+            BoundingBox = [outputExtent.MinX, outputExtent.MinY, outputExtent.MaxX, outputExtent.MaxY],
+            BoundingBoxCrs = outputSrid
+        }, null);
+    }
+
+    private static (IReadOnlyDictionary<string, TemporalFilter>? Filters, string? Error) CreateVectorTemporalFilters(
+        string? datetime,
+        IEnumerable<(int LayerId, MetadataV2Resource Resource)> layers)
+    {
+        if (string.IsNullOrWhiteSpace(datetime))
+        {
+            return (null, null);
+        }
+
+        var filters = new Dictionary<string, TemporalFilter>(StringComparer.Ordinal);
+        foreach (var (layerId, resource) in layers)
+        {
+            if (!ResourceHasGeometry(resource))
+            {
+                continue;
+            }
+
+            if (!OgcTemporalFilterParser.TryParse(datetime, resource, out var temporalFilter, out var errorMessage))
+            {
+                return (null,
+                    $"Collection {layerId} cannot satisfy the requested datetime filter. " +
+                    (errorMessage ?? "Invalid datetime parameter."));
+            }
+
+            if (temporalFilter.HasValue)
+            {
+                filters[resource.Metadata.Id] = temporalFilter.Value;
+            }
+        }
+
+        return (filters.Count == 0 ? null : filters, null);
+    }
 
     private static IResult? RequireProEditionForDatetime(HttpContext? context, MapRenderRequest renderRequest)
     {
@@ -893,18 +1075,6 @@ internal sealed class OgcMapsRenderingHandler
     {
         try
         {
-            if (request.Transparent is false || HasExplicitQueryParameter(context, "transparent"))
-            {
-                return (null, "The transparent parameter is not currently supported for OGC API Maps rendering.");
-            }
-
-            if ((context is null && !string.IsNullOrWhiteSpace(request.BackgroundColor) &&
-                 !string.Equals(request.BackgroundColor, "0xFFFFFF", StringComparison.OrdinalIgnoreCase)) ||
-                HasExplicitQueryParameter(context, "bgcolor"))
-            {
-                return (null, "The bgcolor parameter is not currently supported for OGC API Maps rendering.");
-            }
-
             // Parse CRS - log when requested CRS is not recognized
             var outputCrs = SpatialReferenceHelpers.TryParseSrid(request.Crs);
             if (!string.IsNullOrEmpty(request.Crs) && outputCrs == null)
@@ -1026,7 +1196,7 @@ internal sealed class OgcMapsRenderingHandler
                 Width = width,
                 Height = height,
                 Format = format.Value,
-                Transparent = true,
+                Transparent = request.Transparent ?? true,
                 BackgroundColor = request.BackgroundColor,
                 DateTime = datetimeTo,
                 DateTimeFrom = datetimeFrom,
@@ -1047,6 +1217,4 @@ internal sealed class OgcMapsRenderingHandler
         }
     }
 
-    private static bool HasExplicitQueryParameter(HttpContext? context, string parameterName)
-        => context?.Request.Query.ContainsKey(parameterName) == true;
 }

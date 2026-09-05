@@ -1,0 +1,10 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type":"Feature","id":"repeated-point-line","properties":{"case":"zero-length-segments"},"geometry":{"type":"LineString","coordinates":[[157.8583,21.3069],[157.8583,21.3069],[157.8583,21.3069]]}},
+    {"type":"Feature","id":"collinear-ring","properties":{"case":"zero-area-ring"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,1],[2,2],[0,0]]]}},
+    {"type":"Feature","id":"collapsed-hole","properties":{"case":"zero-area-hole"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[4,0],[4,4],[0,4],[0,0]],[[2,2],[2,2],[2,2],[2,2]]]}},
+    {"type":"Feature","id":"empty-collection","properties":{"case":"empty-members"},"geometry":{"type":"GeometryCollection","geometries":[]}},
+    {"type":"Feature","id":"null-geometry","properties":{"case":"absent-shape"},"geometry":null}
+  ]
+}

@@ -39,6 +39,7 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new
         {
             operation = "archive",
+            serviceId = WebAppFixture.TestServiceId,
             layerId = WebAppFixture.TestLayerId,
             minZoom = 0,
             maxZoom = 1
@@ -171,6 +172,7 @@ public sealed class PMTilesArchiveEndpointTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/api/v1/admin/tile-operations/jobs", new
         {
             operation = "archive",
+            serviceId = WebAppFixture.TestServiceId,
             layerId = WebAppFixture.TestLayerId,
             minZoom = 0,
             maxZoom = 1,

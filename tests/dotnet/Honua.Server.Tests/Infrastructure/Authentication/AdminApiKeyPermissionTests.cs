@@ -118,4 +118,43 @@ public sealed class AdminApiKeyPermissionTests
     {
         AdminApiKeyPermission.IsAuthorized(AdminPrincipal("write:roads"), "GET").Should().BeFalse();
     }
+
+    [Fact]
+    public void IsAuthorized_ApprovedOperationGrant_AllowsOnlyExactMethodAndPath()
+    {
+        var grant = AdminApiKeyPermission.CreateApprovedOperationGrant(
+            "POST", "/api/v1/admin/connections");
+        var principal = AdminPrincipal(grant);
+
+        AdminApiKeyPermission.ResolveAccessLevel(principal)
+            .Should().Be(AdminApiKeyPermission.AdminAccessLevel.None);
+        AdminApiKeyPermission.IsAuthorized(
+            principal, "POST", "/api/v1/admin/connections").Should().BeTrue();
+        AdminApiKeyPermission.IsAuthorized(
+            principal, "PUT", "/api/v1/admin/connections").Should().BeFalse();
+        AdminApiKeyPermission.IsAuthorized(
+            principal, "POST", "/api/v1/admin/users").Should().BeFalse();
+        AdminApiKeyPermission.IsAuthorized(
+            principal, "GET", "/api/v1/admin/connections").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("/healthz/metrics")]
+    [InlineData("/metrics")]
+    [InlineData("/ogc/features/collections")]
+    [InlineData("/")]
+    public void IsAuthorized_NonAdminPath_DoesNotThrow(string path)
+    {
+        // The approved-operation grant factory throws for non-admin paths, and
+        // IsAuthorized runs for every authenticated request: computing the grant
+        // unconditionally converted ALL non-admin traffic into 400s (trunk red at
+        // bf7ce4956, run 33333044607). Non-admin paths must fall through to the
+        // ordinary access-level rules without touching the grant vocabulary.
+        var principal = AdminPrincipal("admin:read");
+
+        var act = () => AdminApiKeyPermission.IsAuthorized(principal, "GET", path);
+
+        act.Should().NotThrow();
+        act().Should().BeTrue();
+    }
 }

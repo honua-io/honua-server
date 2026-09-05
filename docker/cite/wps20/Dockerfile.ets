@@ -15,7 +15,7 @@ ARG ETS_COMMIT=e2acc691440fad98d32e873a6b7237c9d759b8df
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin cite
 COPY --from=build /tmp/ets-wps20-aio.jar /opt/ets/ets-wps20-aio.jar
-RUN printf 'suite=ets-wps20\nversion=1.1\ncommit=%s\nsource=https://github.com/opengeospatial/ets-wps20\n' \
+RUN printf 'suite=ets-wps20\nversion=1.1\ncommit=%s\nsource=https://github.com/opengeospatial/ets-wps20\nteam_engine=not-applicable\n' \
         "${ETS_COMMIT}" > /opt/ets/PROVENANCE \
     && chown -R cite:cite /opt/ets
 

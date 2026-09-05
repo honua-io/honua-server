@@ -1,16 +1,18 @@
 # Realtime / Geofence / Threshold / Dwell Alert Rules — Backend Scoping & Handoff
 
-**Status:** Implemented · promoted to GA (`alerts.geofence` maturity `Implemented`) in honua-server#2427.
-The engine ships as shared, un-gated infrastructure with pipeline telemetry, a dispatch-backlog health
-check, a per-channel notification rate cap, and a second consumer (ops deploy/job-event notifications).
-It remains OFF by default operationally (`Alerts:Enabled`, default `false`).
+**Status:** Preview for 2026.1 (`alerts.geofence` maturity `Preview`) by operator ruling 2026-09-04.
+The implementation and its qualification coverage remain intact: the engine has pipeline telemetry, a
+dispatch-backlog health check, a per-channel notification rate cap, and a second consumer (ops
+deploy/job-event notifications). The customer surface remains OFF by default and requires the canonical
+`Capabilities:Experimental:alerts.geofence:Enabled` opt-in plus `Alerts:Enabled`.
 
 > **Upgrade note (#3055):** The binding fix makes `Alerts:Enabled` (or `Alerts__Enabled` as an
 > environment variable) effective with the source-generated configuration binder. Deployments that
-> already set it to `true` will start the alert processing workers after upgrading and restarting.
+> already set it to `true` will start the alert processing workers after upgrading and restarting
+> when the canonical `alerts.geofence` capability opt-in is also enabled.
 > Remove the setting or set it to `false` before upgrading if activation is not intended.
 
-**Issue:** honua-server#1169 (GA promotion: honua-server#2427)
+**Issue:** honua-server#1169 (2026.1 Preview ruling supersedes the earlier #2427 GA claim)
 **Owner (UI side):** honua-console `/operate/alerts/rules` editor (rule authoring + per-rule delivery-state)
 **Audience:** the engineer/agent implementing the honua-server side
 **Goal:** confirm and finalize the alert **rule authoring + delivery-state** contract the

@@ -97,6 +97,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
             var routed = await gateway.RouteAsync(new OperationGatewayRequest
             {
+                TenantId = "public",
                 Kind = kind,
                 RequestedBy = requestedBy,
                 ExecutionPayload = executionPayload,
@@ -114,6 +115,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         var proposal = new OperationProposal
         {
             ProposalId = $"proposal-{Guid.NewGuid():N}",
+            TenantId = "public",
             Kind = kind,
             Status = status,
             RequestedBy = requestedBy,
@@ -156,6 +158,9 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("proposalId").GetString().Should().Be(proposal.ProposalId);
         document.RootElement.GetProperty("summary").GetString().Should().Be("Change setting X");
+        proposal.SealedPlanHash.Should().HaveLength(64);
+        document.RootElement.TryGetProperty("sealedPlanHash", out _).Should().BeFalse();
+        document.RootElement.TryGetProperty("executionPayload", out _).Should().BeFalse();
         document.RootElement.GetProperty("riskLevel").GetString().Should().Be("Medium");
     }
 
@@ -300,9 +305,9 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties()
     {
-        // The admin client authenticates as the "admin" principal; seeding the
-        // proposal with that same requester must trip the separation-of-duties guard.
-        var proposal = await SeedProposalAsync(requestedBy: "admin");
+        // Seed the proposal with the bootstrap admin's stable API-key actor id so
+        // the same authenticated caller must trip the separation-of-duties guard.
+        var proposal = await SeedProposalAsync(requestedBy: WebAppFixture.SharedAdminActorId);
 
         var response = await _client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
 

@@ -59,8 +59,20 @@ internal static class StandardErrorResponseFormatter
         options ??= new ErrorResponseFormatterOptions();
 
         TryRecordRecentError(context, errorResponse);
-        RecordErrorTelemetry(context, errorResponse.StatusCode);
+        var result = FormatProtocolError(context, errorResponse, options);
+        // The envelope's logical error code can differ from the transport status
+        // (GeoServices errors are HTTP 200). Observe the selected result, including
+        // protocol aliases, instead of inferring transport semantics from the path.
+        var httpStatusCode = (result as IStatusCodeHttpResult)?.StatusCode ?? errorResponse.StatusCode;
+        var errorCode = result is IValueHttpResult { Value: ApiErrorResponse apiError }
+            ? apiError.Error.Code
+            : errorResponse.StatusCode;
+        RecordErrorTelemetry(context, errorCode, httpStatusCode);
+        return result;
+    }
 
+    private static IResult FormatProtocolError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
         var path = context.Request.Path;
 
         if (ProtocolRequestClassifier.IsOData(path))
@@ -71,6 +83,21 @@ internal static class StandardErrorResponseFormatter
         if (ProtocolRequestClassifier.IsWmsAlias(path))
         {
             return FormatWmsAliasError(context, errorResponse, options);
+        }
+
+        if (ProtocolRequestClassifier.IsWmtsAlias(path))
+        {
+            return FormatWmtsError(context, errorResponse, options);
+        }
+
+        if (ProtocolRequestClassifier.IsWcs(path))
+        {
+            return FormatWcsError(context, errorResponse, options);
+        }
+
+        if (ProtocolRequestClassifier.IsWps(path))
+        {
+            return FormatWcsError(context, errorResponse, options);
         }
 
         if (ProtocolRequestClassifier.IsOgcServiceAlias(path))
@@ -136,12 +163,8 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static IResult FormatOgcError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        return ProblemDetailsHelpers.CreateProblem(
-            context,
-            type: "about:blank",
-            statusCode: errorResponse.StatusCode,
-            title: errorResponse.Title,
-            detail: BuildDetailWithExtras(errorResponse, options));
+        AddResponseHeaders(context, options);
+        return FormatProblem(context, "about:blank", errorResponse, options);
     }
 
     /// <summary>
@@ -208,6 +231,68 @@ internal static class StandardErrorResponseFormatter
     }
 
     /// <summary>
+    /// Formats errors for WCS 2.0 aliases using the OWS 2.0 exception contract.
+    /// </summary>
+    private static IResult FormatWcsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
+        AddResponseHeaders(context, options);
+        var exceptionCode = string.IsNullOrWhiteSpace(options.WcsExceptionCode)
+            ? MapWfsCode(errorResponse)
+            : options.WcsExceptionCode;
+        var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
+            ? string.Empty
+            : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
+        var xmlContent = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/2.0"
+                                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                 version="2.0.0"
+                                 xsi:schemaLocation="http://www.opengis.net/ows/2.0 http://schemas.opengis.net/ows/2.0/owsExceptionReport.xsd">
+              <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
+                <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
+              </ows:Exception>
+            </ows:ExceptionReport>
+            """;
+
+        return Results.Content(
+            xmlContent,
+            "application/xml",
+            System.Text.Encoding.UTF8,
+            errorResponse.StatusCode);
+    }
+
+    /// <summary>
+    /// Formats WMTS errors using the OWS 1.1 exception contract required by WMTS 1.0.0.
+    /// </summary>
+    private static IResult FormatWmtsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
+    {
+        AddResponseHeaders(context, options);
+        var exceptionCode = string.IsNullOrWhiteSpace(options.WmtsExceptionCode)
+            ? MapWfsCode(errorResponse)
+            : options.WmtsExceptionCode;
+        var locatorAttribute = string.IsNullOrWhiteSpace(options.WfsExceptionLocator)
+            ? string.Empty
+            : $" locator=\"{EscapeForXml(options.WfsExceptionLocator)}\"";
+        var xmlContent = $$"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ows:ExceptionReport xmlns:ows="http://www.opengis.net/ows/1.1"
+                                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                 version="1.0.0"
+                                 xsi:schemaLocation="http://www.opengis.net/ows/1.1 http://schemas.opengis.net/ows/1.1.0/owsExceptionReport.xsd">
+              <ows:Exception exceptionCode="{{EscapeForXml(exceptionCode!)}}"{{locatorAttribute}}>
+                <ows:ExceptionText>{{EscapeForXml(BuildDetailWithExtras(errorResponse, options))}}</ows:ExceptionText>
+              </ows:Exception>
+            </ows:ExceptionReport>
+            """;
+
+        return Results.Content(
+            xmlContent,
+            "application/xml",
+            System.Text.Encoding.UTF8,
+            errorResponse.StatusCode);
+    }
+
+    /// <summary>
     /// Formats infrastructure errors on WMS alias paths (/ogc/services/{id}/wms,
     /// /rest/services/{id}/MapServer/wms) as a WMS ServiceExceptionReport with HTTP 200,
     /// matching the WMS 1.3.0 § 7.3.3.4 requirement.
@@ -215,7 +300,9 @@ internal static class StandardErrorResponseFormatter
     private static IResult FormatWmsAliasError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
-        var exceptionCode = MapWmsAliasCode(errorResponse);
+        var exceptionCode = string.IsNullOrWhiteSpace(options.WmsExceptionCode)
+            ? MapWmsAliasCode(errorResponse)
+            : options.WmsExceptionCode;
         var xmlContent = $$"""
             <?xml version="1.0" encoding="UTF-8"?>
             <ServiceExceptionReport xmlns="http://www.opengis.net/ogc"
@@ -245,12 +332,8 @@ internal static class StandardErrorResponseFormatter
     /// </summary>
     private static IResult FormatAdminError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        return ProblemDetailsHelpers.CreateProblem(
-            context,
-            type: "https://honua.io/problems/admin",
-            statusCode: errorResponse.StatusCode,
-            title: errorResponse.Title,
-            detail: BuildDetailWithExtras(errorResponse, options));
+        AddResponseHeaders(context, options);
+        return FormatProblem(context, "https://honua.io/problems/admin", errorResponse, options);
     }
 
     /// <summary>
@@ -277,7 +360,9 @@ internal static class StandardErrorResponseFormatter
             {
                 Code = bodyCode,
                 Message = errorResponse.Title,
-                Details = details?.Length > 0 ? details : null
+                Details = details?.Length > 0 ? details : null,
+                Retryable = options.Retryable,
+                RetryAfterSeconds = options.RetryAfterSeconds,
             }
         };
 
@@ -297,12 +382,32 @@ internal static class StandardErrorResponseFormatter
     private static IResult FormatGenericError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
-        return ProblemDetailsHelpers.CreateProblem(
-            context,
-            type: "about:blank",
-            statusCode: errorResponse.StatusCode,
-            title: errorResponse.Title,
-            detail: BuildDetailWithExtras(errorResponse, options));
+        return FormatProblem(context, "about:blank", errorResponse, options);
+    }
+
+    private static IResult FormatProblem(
+        HttpContext context,
+        string type,
+        StandardErrorResponse errorResponse,
+        ErrorResponseFormatterOptions options)
+    {
+        var detail = BuildDetailWithExtras(errorResponse, options);
+        return string.IsNullOrWhiteSpace(options.MachineCode)
+            ? ProblemDetailsHelpers.CreateProblem(
+                context,
+                type,
+                errorResponse.StatusCode,
+                errorResponse.Title,
+                detail)
+            : ProblemDetailsHelpers.CreateProblem(
+                context,
+                type,
+                errorResponse.StatusCode,
+                errorResponse.Title,
+                detail,
+                options.MachineCode!,
+                options.Retryable,
+                options.RetryAfterSeconds);
     }
 
     /// <summary>
@@ -316,6 +421,11 @@ internal static class StandardErrorResponseFormatter
         if (!string.IsNullOrWhiteSpace(errorResponse.Detail))
         {
             detailsList.Add(errorResponse.Detail);
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.MachineCode))
+        {
+            detailsList.Add($"Code: {options.MachineCode}");
         }
 
         // Include additional details if requested
@@ -431,15 +541,16 @@ internal static class StandardErrorResponseFormatter
     /// <c>ValidationErrorHelpers</c> that bypass this formatter — so the platform
     /// can aggregate and alert on its own compat error rate. Classifies the
     /// surface from the request path and delegates to
-    /// <see cref="HonuaTelemetry.RecordErrorEnvelope"/>.
+    /// <see cref="HonuaTelemetry.RecordErrorEnvelope(string, string, int, bool, int)"/>.
     /// </summary>
     /// <param name="context">The HTTP context for protocol/operation classification.</param>
-    /// <param name="statusCode">The HTTP status carried by the error envelope.</param>
-    internal static void RecordErrorTelemetry(HttpContext context, int statusCode)
+    /// <param name="statusCode">The logical error code carried by the error envelope.</param>
+    /// <param name="httpStatusCode">Actual HTTP response status, when different from the logical error code.</param>
+    internal static void RecordErrorTelemetry(HttpContext context, int statusCode, int? httpStatusCode = null)
     {
         var path = context.Request.Path;
         var (serviceType, isGeoServices) = ClassifyServiceType(path);
-        HonuaTelemetry.RecordErrorEnvelope(serviceType, ResolveOperation(path), statusCode, isGeoServices);
+        HonuaTelemetry.RecordErrorEnvelope(serviceType, ResolveOperation(path), statusCode, isGeoServices, httpStatusCode ?? statusCode);
     }
 
     private static readonly string[] GeoServicesServiceTypes =
@@ -475,6 +586,11 @@ internal static class StandardErrorResponseFormatter
         if (ProtocolRequestClassifier.IsWfs(path))
         {
             return ("WFS", false);
+        }
+
+        if (ProtocolRequestClassifier.IsWcs(path))
+        {
+            return ("WCS", false);
         }
 
         if (ProtocolRequestClassifier.IsAdmin(path))

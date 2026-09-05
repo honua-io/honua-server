@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Tiles.PMTiles;
+using System.Text.Json;
 
 namespace Honua.Core.Tests.Features.Tiles.PMTiles;
 
@@ -217,6 +218,113 @@ public class PMTilesWriterTests
     }
 
     [Fact]
+    public async Task WriteAsync_LargeRootDirectory_FitsWithinHeaderWindow()
+    {
+        var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
+        for (var x = 0; x < 16_384; x++)
+        {
+            writer.AddTile(14, x, 0, [0x01, 0x02, 0x03, 0x04]);
+        }
+
+        using var stream = new MemoryStream();
+        await writer.WriteAsync(stream, DefaultMetadata);
+
+        var header = PMTilesHeader.ReadFrom(stream.ToArray());
+
+        header.RootDirectoryLength.Should().BeLessOrEqualTo((ulong)(16 * 1024 - PMTilesHeader.HeaderSize));
+        header.LeafDirectoryLength.Should().BeGreaterThan(0, "a root that cannot fit must use leaf directories");
+    }
+
+    [Fact]
+    public async Task WriteAsync_StreamsTileBlobsIndividually()
+    {
+        var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
+        writer.AddTile(0, 0, 0, [0x01, 0x02]);
+        writer.AddTile(1, 0, 0, [0x03, 0x04]);
+
+        using var stream = new RecordingWriteStream();
+        await writer.WriteAsync(stream, DefaultMetadata);
+
+        stream.Writes.TakeLast(2).Should().BeEquivalentTo(
+            new[] { new byte[] { 0x01, 0x02 }, new byte[] { 0x03, 0x04 } },
+            options => options.WithStrictOrdering());
+    }
+
+    [Fact]
+    public async Task WriteAsync_DuplicatePayloads_CountEveryWrittenBlob()
+    {
+        var tile = CreateFakeTileData(32);
+        var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
+        writer.AddTile(0, 0, 0, tile);
+        writer.AddTile(1, 0, 0, tile);
+
+        using var stream = new MemoryStream();
+        await writer.WriteAsync(stream, DefaultMetadata);
+
+        var header = PMTilesHeader.ReadFrom(stream.ToArray());
+        header.TileEntriesCount.Should().Be(2);
+        header.TileContentsCount.Should().Be(2, "the writer emits two blobs and does not deduplicate them");
+    }
+
+    [Fact]
+    public async Task WriteAsync_EmitsNameAndVectorLayerMetadata()
+    {
+        var metadata = DefaultMetadata with
+        {
+            Name = "Roads",
+            VectorLayers =
+            [
+                new PMTilesVectorLayerMetadata
+                {
+                    Id = "layer",
+                    Description = "Road features",
+                    MinZoom = 0,
+                    MaxZoom = 2,
+                    Fields = new Dictionary<string, string> { ["name"] = "string" }
+                }
+            ]
+        };
+        var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
+        writer.AddTile(0, 0, 0, CreateFakeTileData(16));
+
+        using var stream = new MemoryStream();
+        await writer.WriteAsync(stream, metadata);
+
+        var header = PMTilesHeader.ReadFrom(stream.ToArray());
+        var json = JsonDocument.Parse(stream.ToArray().AsMemory(
+            checked((int)header.JsonMetadataOffset), checked((int)header.JsonMetadataLength)));
+        json.RootElement.GetProperty("name").GetString().Should().Be("Roads");
+        var layer = json.RootElement.GetProperty("vector_layers")[0];
+        layer.GetProperty("id").GetString().Should().Be("layer");
+        layer.GetProperty("fields").GetProperty("name").GetString().Should().Be("string");
+    }
+
+    [Fact]
+    public async Task WriteAsync_LargeTileSection_WritesAllPayloadsWithoutStagingArchiveInOutputMemory()
+    {
+        var writer = new PMTilesWriter(PMTilesCompression.None, PMTilesCompression.None);
+        const int tileSize = 128 * 1024;
+        const int tileCount = 64;
+        for (var x = 0; x < tileCount; x++)
+        {
+            writer.AddTile(8, x, 0, CreateFakeTileData(tileSize));
+        }
+
+        var outputPath = Path.Combine(Path.GetTempPath(), $"honua-pmtiles-test-{Guid.NewGuid():N}.pmtiles");
+        try
+        {
+            await using var stream = new FileStream(outputPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+            var bytesWritten = await writer.WriteAsync(stream, DefaultMetadata);
+            bytesWritten.Should().Be(stream.Length);
+            stream.Length.Should().BeGreaterThan(tileCount * tileSize);
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
     public async Task WriteAsync_CancellationToken_Throws()
     {
         var writer = new PMTilesWriter();
@@ -329,5 +437,22 @@ public class PMTilesWriterTests
         data[0] = (byte)(data[0] | 1);
         data[^1] = (byte)(data[^1] | 1);
         return data;
+    }
+
+    private sealed class RecordingWriteStream : MemoryStream
+    {
+        public List<byte[]> Writes { get; } = [];
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            Writes.Add(buffer.AsSpan(offset, count).ToArray());
+            base.Write(buffer, offset, count);
+        }
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            Writes.Add(buffer.AsSpan(offset, count).ToArray());
+            return base.WriteAsync(buffer, offset, count, cancellationToken);
+        }
     }
 }

@@ -129,6 +129,27 @@ public sealed class ScopedAdminKeyOidcEnforcementTests : IAsyncLifetime
         response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/services")]
+    public async Task ApprovedOperationKey_WithOidcEnabled_AllowsOnlyExactOperation()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var issued = await store.CreateAsync(
+            "approved-operation:oidc-test-proposal",
+            AdminApiKeyPermission.CreateApprovedOperationGrants("GET", "/api/v1/admin/api-keys", "public"),
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "test-requester",
+            CancellationToken.None);
+        using var operationClient = CreateApiKeyClient(issued.Key);
+
+        var exactOperation = await operationClient.GetAsync("/api/v1/admin/api-keys");
+        var unrelatedAdminOperation = await operationClient.GetAsync("/api/v1/admin/services");
+
+        exactOperation.StatusCode.Should().Be(HttpStatusCode.OK);
+        unrelatedAdminOperation.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
     private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(string name, IReadOnlyList<string> permissions)
     {
         var response = await _bootstrapClient.PostAsJsonAsync(

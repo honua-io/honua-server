@@ -56,7 +56,8 @@ internal static partial class AdminApiKeyEndpoints
         HttpContext context)
     {
         var records = await store.ListAsync(context.RequestAborted);
-        var response = records.Select(ToResponse).ToList().AsReadOnly();
+        var response = records.Where(record => !record.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+            .Select(ToResponse).ToList().AsReadOnly();
         return TypedResults.Ok(ApiResponse<IReadOnlyList<AdminApiKeyResponse>>.CreateSuccess(response));
     }
 
@@ -136,7 +137,7 @@ internal static partial class AdminApiKeyEndpoints
             HttpContext context)
     {
         var record = await store.GetAsync(id, context.RequestAborted);
-        if (record is null)
+        if (record is null || record.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
         {
             return TypedResults.NotFound(ApiResponse<object>.Failure("API key not found"));
         }
@@ -189,6 +190,12 @@ internal static partial class AdminApiKeyEndpoints
         if (request.Permissions.Any(static permission => permission.Length > 200))
         {
             validationMessage = "Validation failed: permission labels must be 200 characters or fewer";
+            return false;
+        }
+
+        if (request.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+        {
+            validationMessage = "Validation failed: approved-operation grants are minted internally";
             return false;
         }
 

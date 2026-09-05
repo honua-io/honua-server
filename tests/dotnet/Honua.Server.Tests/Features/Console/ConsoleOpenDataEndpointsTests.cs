@@ -53,6 +53,7 @@ public sealed class ConsoleOpenDataEndpointsTests : IAsyncLifetime
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+                builder.UseSetting("Public:BaseUrl", "https://data.example.test/honua");
             })
             .ReplaceService<TimeProvider>(_clock)
             .ReplaceService<IConsoleShareStore>(new InMemoryConsoleShareStore(_clock))
@@ -294,11 +295,13 @@ public sealed class ConsoleOpenDataEndpointsTests : IAsyncLifetime
         var catalog = await ReadStacAsync<StacProjectionCatalog>(
             await _anonymousClient.GetAsync("/api/v1/open-data/stac"));
         Assert.Contains(catalog.Links, link => link.Rel == "child" && link.Href.Contains(collectionId, StringComparison.Ordinal));
+        Assert.All(catalog.Links, link => Assert.StartsWith("https://data.example.test/honua/api/v1/open-data/stac", link.Href));
 
         var collectionResponse = await _anonymousClient.GetAsync($"/api/v1/open-data/stac/collections/{collectionId}");
         Assert.Equal(HttpStatusCode.OK, collectionResponse.StatusCode);
         var collection = await ReadStacAsync<StacProjectionCollection>(collectionResponse);
         Assert.Equal(collectionId, collection.Id);
+        Assert.All(collection.Links, link => Assert.StartsWith("https://data.example.test/honua/api/v1/open-data/stac", link.Href));
         var bbox = Assert.Single(collection.Extent.Spatial.Bbox);
         Assert.Equal(ExpectedBbox, bbox);
 
@@ -306,6 +309,7 @@ public sealed class ConsoleOpenDataEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, itemResponse.StatusCode);
         var item = await ReadStacAsync<StacProjectionItem>(itemResponse);
         Assert.Equal(collectionId, item.Collection);
+        Assert.All(item.Links, link => Assert.StartsWith("https://data.example.test/honua/api/v1/open-data/stac", link.Href));
         Assert.NotNull(item.Geometry);
 
         // A mismatched item id under the collection is a non-leaking 404.

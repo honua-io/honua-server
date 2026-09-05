@@ -4,11 +4,20 @@ Honua's day-2 operating model is one loop shared by humans, Console, and MCP
 agents: observe, diagnose, remediate, learn, and graduate. The server stays the
 source of truth for health, findings, proposals, approvals, and execution. Tools
 may explain or propose, but the control plane applies only deterministic,
-authorized operations.
+authorized operations. Start with the execution-verified [Operate
+scenario](scenario.md), then use the [metric inventory](metrics.md) and [evidence
+posture contract](evidence-posture.md) to decide whether a successful read is
+actually actionable.
 
-This guide describes behavior on `trunk` as of August 20, 2026. The self-operating
-platform workstream in #2552 is landed; the remaining limits are called out
-explicitly so “runs itself” never means “may mutate anything unattended.”
+This guide describes the shipped surfaces; the scenario pins its exact candidate
+and marks its unexecutable proposal/approval/actuation stages with #3411, #3430,
+#3431, and #3475. The remaining limits are called out explicitly so “runs
+itself” never means “may mutate anything unattended.”
+
+> **Customer alerting is Preview in 2026.1.** Alert zones, rules, evaluation,
+> delivery channels, and their Console Operate views require an explicit
+> `alerts.geofence` capability opt-in. The qualification lanes and operational
+> evidence described here prove the implementation; they are not a GA claim.
 
 ## The loop
 
@@ -32,10 +41,8 @@ proposal authority.
    `honua_ops_findings`. Findings are deterministic, evaluated on demand, and
    include evidence references. No server-side model call is involved.
 3. Remediate: when a finding has a real executor, propose its action with
-   `POST /api/v1/admin/observability/findings/{findingId}/propose` or route an
-   operation through `honua_propose_operation`. The operation gateway either
-   executes under the configured guardrail tier, blocks, or creates an approval
-   proposal.
+   `POST /api/v1/admin/observability/findings/{findingId}/propose` or call
+   `honua_propose_finding`. The governed path creates an approval proposal.
 4. Learn: use the persisted ops-health history and fused operate timeline to
    understand whether the action improved health. This is operational memory,
    not model training.
@@ -61,18 +68,15 @@ The useful split is:
 | Read current posture | Status, health, findings, alerts, timeline | `honua_ops_health`, `honua_ops_findings`, `honua_alert_events`, `honua_operate_events` |
 | Investigate evidence | Drill into the endpoint named by `source` or `evidenceRefs` | Read the same resources and include evidence in the proposal rationale |
 | Discover routable fixes | Operator action catalogs | `honua_supported_operation_kinds` (read-only, live executor catalog) |
-| Propose a fix | `findings/{id}/propose` and approval inbox actions | `honua_propose_operation`; verify the kind with `honua_supported_operation_kinds` first |
+| Propose a fix | `findings/{id}/propose` and approval inbox actions | `honua_propose_finding` plus the typed deploy/release proposal tools |
 | Approve or reject | Human approval inbox | Not allowed |
 | Mutate source GIS data | Human protocol/API workflows only | Not exposed; ADR-0028 forbids AI-driven source-data editing |
 
-Current MCP status: observability read tools are present. The generic
-`honua_supported_operation_kinds` reports the actually routable operation classes
-without requiring write authority; do not assume unsupported kinds. The
-`supportedKinds` field on rejected `honua_propose_operation` responses remains a
-compatibility aid but is deprecated as a discovery mechanism. Platform-ops MCP
-tools for release status, deploy operation listing, and rollback proposal are
-also part of the current-trunk baseline. Architecture tests enforce the REST/MCP
-seat-parity map and reject a finding action that has no real executor.
+Current MCP status: observability read tools and schema-closed proposal tools are
+present. `honua_supported_operation_kinds` reports the actually routable operation
+classes without requiring write authority; do not assume unsupported kinds.
+Architecture tests enforce the REST/MCP seat-parity map and reject a finding
+action that has no real executor.
 
 ## The autonomy ladder
 
@@ -212,7 +216,7 @@ restore last.
 
    ```bash
    Database__MigrationSafety__ContractApplyPolicy=Gate
-   HONUA_APPROVE_CONTRACT_MIGRATIONS=true
+   HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce printed by the migration safety error>
    Database__MigrationSafety__BackupCommand="your-backup-command"
    ```
 

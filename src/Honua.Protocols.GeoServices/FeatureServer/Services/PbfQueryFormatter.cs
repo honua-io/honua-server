@@ -231,7 +231,8 @@ internal sealed class PbfQueryFormatter
         bool returnM,
         int? geometryPrecision,
         double? maxAllowableOffset,
-        string[]? outFields)
+        string[]? outFields,
+        QuantizationTransform? quantizationTransform = null)
     {
         var effectiveLimits = GeometryOutputProcessor.CreateEffectiveLimits(
             _geometryLimits,
@@ -255,7 +256,8 @@ internal sealed class PbfQueryFormatter
                 returnZ,
                 returnM,
                 effectiveLimits,
-                outFields);
+                outFields,
+                quantizationTransform);
 
             var queryResult = new ProtobufWriter(featureResult.Position + 16);
             try
@@ -297,7 +299,8 @@ internal sealed class PbfQueryFormatter
         bool returnZ,
         bool returnM,
         GeometryLimits geometryLimits,
-        string[]? outFields)
+        string[]? outFields,
+        QuantizationTransform? quantizationTransform)
     {
         writer.WriteString(1, objectIdFieldName);
 
@@ -333,7 +336,7 @@ internal sealed class PbfQueryFormatter
 
         if (hasGeometry && returnGeometry)
         {
-            WriteTransform(ref writer, effectiveZ, effectiveM);
+            WriteTransform(ref writer, effectiveZ, effectiveM, quantizationTransform);
         }
 
         var declaredAttributeFields = resource.SchemaFields
@@ -358,7 +361,7 @@ internal sealed class PbfQueryFormatter
             fieldIndex[queryFields[i].Name] = i;
         }
 
-        double scale = ComputeScale(geometryLimits);
+        double scale = ComputeScale(geometryLimits, quantizationTransform);
         foreach (var feature in result.Items)
         {
             var featureMsg = new ProtobufWriter(256);
@@ -372,7 +375,8 @@ internal sealed class PbfQueryFormatter
                 effectiveZ,
                 effectiveM,
                 geometryLimits,
-                scale);
+                scale,
+                quantizationTransform);
             writer.WriteMessage(15, ref featureMsg);
             featureMsg.Dispose();
         }
@@ -391,7 +395,8 @@ internal sealed class PbfQueryFormatter
         bool returnZ,
         bool returnM,
         GeometryLimits geometryLimits,
-        double scale)
+        double scale,
+        QuantizationTransform? quantizationTransform)
     {
         // field 1: attributes (repeated Value messages)
         WriteAttributes(ref writer, feature, fields, fieldIndex, objectIdFieldName);
@@ -399,7 +404,7 @@ internal sealed class PbfQueryFormatter
         // field 2: geometry
         if (returnGeometry && feature.Geometry != null)
         {
-            WriteGeometry(ref writer, feature.Geometry, returnZ, returnM, geometryLimits, scale);
+            WriteGeometry(ref writer, feature.Geometry, returnZ, returnM, geometryLimits, scale, quantizationTransform);
         }
     }
 
@@ -519,7 +524,8 @@ internal sealed class PbfQueryFormatter
         bool returnZ,
         bool returnM,
         GeometryLimits geometryLimits,
-        double scale)
+        double scale,
+        QuantizationTransform? quantizationTransform)
     {
         Geometry? geometry;
         try
@@ -540,7 +546,7 @@ internal sealed class PbfQueryFormatter
         geoMsg.WriteEnum(1, MapNtsGeometryType(geometry));
 
         // Encode coordinates as delta-encoded sint64 values
-        var (lengths, coords) = EncodeGeometryCoordinates(geometry, scale, returnZ, returnM);
+        var (lengths, coords) = EncodeGeometryCoordinates(geometry, scale, returnZ, returnM, quantizationTransform);
 
         // field 2: lengths (packed uint32)
         if (lengths.Count > 0)
@@ -574,28 +580,33 @@ internal sealed class PbfQueryFormatter
         Geometry geometry,
         double scale,
         bool returnZ,
-        bool returnM)
+        bool returnM,
+        QuantizationTransform? quantizationTransform)
     {
         var lengths = new List<uint>();
         var coords = new List<long>();
+        // A client quantization transform describes XY precision only. Esri's PBF
+        // schema carries independent Z/M scales, so keep the established six-decimal
+        // ordinate precision instead of accidentally reusing the XY tolerance.
+        var ordinateScale = quantizationTransform is null ? scale : DefaultQuantizationScale;
         long prevX = 0, prevY = 0;
 
         switch (geometry)
         {
             case Point pt:
-                AppendCoordinate(coords, pt.Coordinate, scale, ref prevX, ref prevY, returnZ, returnM);
+                AppendCoordinate(coords, pt.Coordinate, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
                 break;
 
             case MultiPoint mp:
                 lengths.Add((uint)mp.NumGeometries);
                 for (int i = 0; i < mp.NumGeometries; i++)
                 {
-                    AppendCoordinate(coords, mp.GetGeometryN(i).Coordinate, scale, ref prevX, ref prevY, returnZ, returnM);
+                    AppendCoordinate(coords, mp.GetGeometryN(i).Coordinate, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
                 }
                 break;
 
             case LineString ls:
-                AppendCoordinateSequence(coords, ls.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM);
+                AppendCoordinateSequence(coords, ls.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform: quantizationTransform);
                 lengths.Add((uint)ls.NumPoints);
                 break;
 
@@ -607,18 +618,18 @@ internal sealed class PbfQueryFormatter
                     // Each path restarts delta encoding from an absolute first vertex.
                     prevX = 0;
                     prevY = 0;
-                    AppendCoordinateSequence(coords, line.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM);
+                    AppendCoordinateSequence(coords, line.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform: quantizationTransform);
                 }
                 break;
 
             case Polygon poly:
-                EncodePolygon(poly, coords, lengths, scale, ref prevX, ref prevY, returnZ, returnM);
+                EncodePolygon(poly, coords, lengths, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
                 break;
 
             case MultiPolygon mpoly:
                 for (int i = 0; i < mpoly.NumGeometries; i++)
                 {
-                    EncodePolygon((Polygon)mpoly.GetGeometryN(i), coords, lengths, scale, ref prevX, ref prevY, returnZ, returnM);
+                    EncodePolygon((Polygon)mpoly.GetGeometryN(i), coords, lengths, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM, quantizationTransform);
                 }
                 break;
         }
@@ -631,10 +642,12 @@ internal sealed class PbfQueryFormatter
         List<long> coords,
         List<uint> lengths,
         double scale,
+        double ordinateScale,
         ref long prevX,
         ref long prevY,
         bool returnZ,
-        bool returnM)
+        bool returnM,
+        QuantizationTransform? quantizationTransform)
     {
         // Esri ring convention (mirrors GeoServicesGeometryConverter.BuildRingCoordinates
         // on the f=json path): exterior rings clockwise, holes counter-clockwise in map
@@ -647,7 +660,8 @@ internal sealed class PbfQueryFormatter
         prevX = 0;
         prevY = 0;
         AppendCoordinateSequence(
-            coords, exterior.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM,
+            coords, exterior.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM,
+            quantizationTransform: quantizationTransform,
             reverse: ShouldReverseRing(exterior, clockwise: true));
 
         // Interior rings (holes)
@@ -658,7 +672,8 @@ internal sealed class PbfQueryFormatter
             prevX = 0;
             prevY = 0;
             AppendCoordinateSequence(
-                coords, ring.CoordinateSequence, scale, ref prevX, ref prevY, returnZ, returnM,
+                coords, ring.CoordinateSequence, scale, ordinateScale, ref prevX, ref prevY, returnZ, returnM,
+                quantizationTransform: quantizationTransform,
                 reverse: ShouldReverseRing(ring, clockwise: false));
         }
     }
@@ -683,13 +698,15 @@ internal sealed class PbfQueryFormatter
         List<long> coords,
         Coordinate coord,
         double scale,
+        double ordinateScale,
         ref long prevX,
         ref long prevY,
         bool returnZ,
-        bool returnM)
+        bool returnM,
+        QuantizationTransform? quantizationTransform)
     {
-        long x = (long)Math.Round(coord.X * scale);
-        long y = (long)Math.Round(coord.Y * scale);
+        long x = quantizationTransform?.QuantizeX(coord.X) ?? (long)Math.Round(coord.X * scale);
+        long y = quantizationTransform?.QuantizeY(coord.Y) ?? (long)Math.Round(coord.Y * scale);
         coords.Add(x - prevX);
         coords.Add(y - prevY);
         prevX = x;
@@ -700,13 +717,13 @@ internal sealed class PbfQueryFormatter
         if (returnZ)
         {
             var z = double.IsNaN(coord.Z) ? 0d : coord.Z;
-            coords.Add((long)Math.Round(z * scale));
+            coords.Add((long)Math.Round(z * ordinateScale));
         }
 
         if (returnM)
         {
             var m = double.IsNaN(coord.M) ? 0d : coord.M;
-            coords.Add((long)Math.Round(m * scale));
+            coords.Add((long)Math.Round(m * ordinateScale));
         }
     }
 
@@ -714,17 +731,19 @@ internal sealed class PbfQueryFormatter
         List<long> coords,
         CoordinateSequence sequence,
         double scale,
+        double ordinateScale,
         ref long prevX,
         ref long prevY,
         bool returnZ,
         bool returnM,
+        QuantizationTransform? quantizationTransform = null,
         bool reverse = false)
     {
         for (int index = 0; index < sequence.Count; index++)
         {
             var i = reverse ? sequence.Count - 1 - index : index;
-            long x = (long)Math.Round(sequence.GetX(i) * scale);
-            long y = (long)Math.Round(sequence.GetY(i) * scale);
+            long x = quantizationTransform?.QuantizeX(sequence.GetX(i)) ?? (long)Math.Round(sequence.GetX(i) * scale);
+            long y = quantizationTransform?.QuantizeY(sequence.GetY(i)) ?? (long)Math.Round(sequence.GetY(i) * scale);
             coords.Add(x - prevX);
             coords.Add(y - prevY);
             prevX = x;
@@ -738,7 +757,7 @@ internal sealed class PbfQueryFormatter
                     z = 0d;
                 }
 
-                coords.Add((long)Math.Round(z * scale));
+                coords.Add((long)Math.Round(z * ordinateScale));
             }
 
             if (returnM)
@@ -749,7 +768,7 @@ internal sealed class PbfQueryFormatter
                     m = 0d;
                 }
 
-                coords.Add((long)Math.Round(m * scale));
+                coords.Add((long)Math.Round(m * ordinateScale));
             }
         }
     }
@@ -795,27 +814,38 @@ internal sealed class PbfQueryFormatter
     /// <summary>
     /// Writes the Transform message with quantization scale/translate.
     /// </summary>
-    private static void WriteTransform(ref ProtobufWriter writer, bool hasZ, bool hasM)
+    private static void WriteTransform(
+        ref ProtobufWriter writer,
+        bool hasZ,
+        bool hasM,
+        QuantizationTransform? quantizationTransform)
     {
-        double scale = DefaultQuantizationScale;
+        var scaleX = quantizationTransform?.ScaleX ?? 1.0 / DefaultQuantizationScale;
+        var scaleY = quantizationTransform?.ScaleY ?? 1.0 / DefaultQuantizationScale;
+        var translateX = quantizationTransform?.TranslateX ?? 0.0;
+        var translateY = quantizationTransform?.TranslateY ?? 0.0;
         var transform = new ProtobufWriter(64);
 
-        // field 1: quantizeOriginPosition (0 = upperLeft, default).
+        // field 1: quantizeOriginPosition (0 = upperLeft, 1 = lowerLeft).
+        if (string.Equals(quantizationTransform?.OriginPosition, QuantizationTransform.LowerLeft, StringComparison.Ordinal))
+        {
+            transform.WriteEnum(1, 1);
+        }
 
         // field 2: scale (Scale: xScale=1, yScale=2, mScale=3, zScale=4).
-        // Z/M ordinates are quantized at the same precision as X/Y, so their scales
-        // must be emitted whenever those ordinates are present, or decoders dequantize
-        // them with the default 0.0 scale and every Z/M collapses to 0.
+        // Z/M ordinates retain the independent six-decimal default precision when a
+        // client supplies an XY quantization transform.
+        var ordinateScale = 1.0 / DefaultQuantizationScale;
         var scaleMsg = new ProtobufWriter(48);
-        scaleMsg.WriteDouble(1, 1.0 / scale);   // xScale
-        scaleMsg.WriteDouble(2, 1.0 / scale);   // yScale
+        scaleMsg.WriteDouble(1, scaleX);   // xScale
+        scaleMsg.WriteDouble(2, scaleY);   // yScale
         if (hasM)
         {
-            scaleMsg.WriteDouble(3, 1.0 / scale);   // mScale
+            scaleMsg.WriteDouble(3, ordinateScale);   // mScale
         }
         if (hasZ)
         {
-            scaleMsg.WriteDouble(4, 1.0 / scale);   // zScale
+            scaleMsg.WriteDouble(4, ordinateScale);   // zScale
         }
         transform.WriteMessage(2, ref scaleMsg);
         scaleMsg.Dispose();
@@ -824,8 +854,8 @@ internal sealed class PbfQueryFormatter
         // zTranslate=4), all zero. Forced writes keep the Translate message non-empty
         // so it is present on the wire for decoders that dereference it directly.
         var translateMsg = new ProtobufWriter(48);
-        translateMsg.WriteDoubleAlways(1, 0.0);        // xTranslate
-        translateMsg.WriteDoubleAlways(2, 0.0);        // yTranslate
+        translateMsg.WriteDoubleAlways(1, translateX);        // xTranslate
+        translateMsg.WriteDoubleAlways(2, translateY);        // yTranslate
         if (hasM)
         {
             translateMsg.WriteDoubleAlways(3, 0.0);    // mTranslate
@@ -841,10 +871,8 @@ internal sealed class PbfQueryFormatter
         transform.Dispose();
     }
 
-    private static double ComputeScale(GeometryLimits limits)
-    {
-        return DefaultQuantizationScale;
-    }
+    private static double ComputeScale(GeometryLimits limits, QuantizationTransform? quantizationTransform)
+        => quantizationTransform is null ? DefaultQuantizationScale : 1.0 / quantizationTransform.ScaleX;
 
     // ── Enum mapping ──────────────────────────────────────────
 

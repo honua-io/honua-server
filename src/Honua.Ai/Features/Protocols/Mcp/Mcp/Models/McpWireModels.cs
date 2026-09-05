@@ -93,6 +93,12 @@ internal sealed class McpErrorData
     [JsonPropertyName("retryable")]
     public bool? Retryable { get; set; }
 
+    [JsonPropertyName("retryAfterSeconds")]
+    public int? RetryAfterSeconds { get; set; }
+
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; set; }
+
     /// <summary>
     /// Identifier of the infrastructure dependency that was not composed (for example
     /// <c>redis</c>) when the error is a capability-unavailable refusal (honua-release#202).
@@ -348,6 +354,14 @@ internal sealed class McpToolDescriptor
     /// </summary>
     [JsonPropertyName("annotations")]
     public McpToolAnnotations? Annotations { get; set; }
+
+    /// <summary>
+    /// MCP's forward-compatible extension slot. Honua uses a namespaced entry
+    /// here for server-authored workflow classification; clients must treat all
+    /// unrecognized entries as opaque metadata.
+    /// </summary>
+    [JsonPropertyName("_meta")]
+    public JsonElement? Meta { get; set; }
 }
 
 /// <summary>
@@ -551,6 +565,14 @@ internal sealed class McpResourcesReadParams
     /// </summary>
     [JsonPropertyName("cursor")]
     public string? Cursor { get; set; }
+
+    /// <summary>
+    /// Explicit per-request character budget. Omit for the bounded 64,000-character
+    /// default; callers may opt up to 1,000,000 characters when they deliberately
+    /// need a larger document window.
+    /// </summary>
+    [JsonPropertyName("maxChars")]
+    public int? MaxChars { get; set; }
 }
 
 /// <summary>

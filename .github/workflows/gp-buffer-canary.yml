@@ -1,0 +1,37 @@
+name: GP geometry.buffer Canary
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gp-geometry-buffer-canary
+  cancel-in-progress: false
+jobs:
+  geometry-buffer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HONUA_GP_CANARY_URL: ${{ vars.GP_CANARY_URL }}
+      HONUA_GP_CANARY_TOKEN: ${{ secrets.GP_CANARY_TOKEN }}
+      HONUA_GP_CANARY_RECEIPT: ${{ github.workspace }}/artifacts/gp-canary/receipt.json
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Execute synchronous geometry.buffer canary
+        run: scripts/qualification/gp-canary.sh
+      - name: Record seven-run burn-in history
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HONUA_GP_CANARY_STREAK_RECEIPT: ${{ github.workspace }}/artifacts/gp-canary/streak.json
+        run: scripts/qualification/gp-canary-streak.sh
+      - name: Retain machine-readable canary receipt
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: gp-buffer-canary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gp-canary/*.json
+          if-no-files-found: error
+          retention-days: 30

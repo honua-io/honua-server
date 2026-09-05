@@ -42,6 +42,21 @@ public sealed class StudioAiProxyConfiguration
     /// </summary>
     public int MaxPromptCharacters { get; set; } = 32_000;
 
+    /// <summary>Maximum UTF-8 bytes accepted by the Studio AI chat HTTP route.</summary>
+    public int MaxRequestBytes { get; set; } = 1_048_576;
+
+    /// <summary>Maximum serialized provider-event bytes accepted for one response.</summary>
+    public int MaxResponseBytes { get; set; } = 4_194_304;
+
+    /// <summary>Maximum serialized bytes accepted for one provider event.</summary>
+    public int MaxEventBytes { get; set; } = 262_144;
+
+    /// <summary>Maximum provider events accepted for one response.</summary>
+    public int MaxResponseEventCount { get; set; } = 4_096;
+
+    /// <summary>Maximum UTF-8 argument bytes accumulated for one streamed tool call.</summary>
+    public int MaxToolArgumentBytes { get; set; } = 262_144;
+
     /// <summary>Operator-named provider blocks.</summary>
     public Dictionary<string, StudioAiProxyProviderOptions> Providers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -114,6 +129,10 @@ public sealed class StudioAiProxyProviderOptions
     /// </summary>
     public string ApiKey { get; set; } = string.Empty;
 
+    // Set only by the environment fallback in PostConfigure so the resolver can distinguish a
+    // trusted environment-bound credential from a hosted inline literal.
+    internal bool ApiKeyFromEnvironment { get; set; }
+
     /// <summary>HTTP request timeout in seconds, applied as a ceiling over the whole streamed call.</summary>
     public int TimeoutSeconds { get; set; } = 120;
 
@@ -145,6 +164,11 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
 
         ValidateRequiredString(options.DefaultProvider, "StudioAiProxy:DefaultProvider", errors);
         ValidateRange(options.MaxPromptCharacters, 1, 500_000, "StudioAiProxy:MaxPromptCharacters", errors);
+        ValidateRange(options.MaxRequestBytes, 1, 16_777_216, "StudioAiProxy:MaxRequestBytes", errors);
+        ValidateRange(options.MaxResponseBytes, 1, 67_108_864, "StudioAiProxy:MaxResponseBytes", errors);
+        ValidateRange(options.MaxEventBytes, 1, options.MaxResponseBytes, "StudioAiProxy:MaxEventBytes", errors);
+        ValidateRange(options.MaxResponseEventCount, 1, 65_536, "StudioAiProxy:MaxResponseEventCount", errors);
+        ValidateRange(options.MaxToolArgumentBytes, 1, options.MaxResponseBytes, "StudioAiProxy:MaxToolArgumentBytes", errors);
 
         if (options.Providers.Count == 0)
         {
@@ -205,6 +229,16 @@ public sealed class StudioAiProxyConfigurationValidator : ConfigurationValidator
             if (publicKey.Length != Ed25519PublicKeyParameters.KeySize)
             {
                 errors.Add($"{prefix}:PublicKey must decode to {Ed25519PublicKeyParameters.KeySize} bytes.");
+            }
+
+            if (overlap.NotBefore is null)
+            {
+                errors.Add($"{prefix}:NotBefore is required to define the rotation overlap window.");
+            }
+
+            if (overlap.NotAfter is null)
+            {
+                errors.Add($"{prefix}:NotAfter is required to define the rotation overlap window.");
             }
 
             if (overlap.NotBefore is { } notBefore && overlap.NotAfter is { } notAfter && notBefore >= notAfter)

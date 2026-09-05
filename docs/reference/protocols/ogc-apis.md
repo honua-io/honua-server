@@ -40,12 +40,16 @@ Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages,
 | `limit`, `offset` | Paging, normalized by server limits. |
 | `ids`, `properties`, `sortby` | ID filter, property projection, `+`/`-`/`asc`/`desc` sorting. |
 | `bbox`, `bbox-crs` | 4 or 6 values; anti-meridian supported; any registry-resolvable EPSG CRS. |
-| `crs` | Output CRS; response includes `Content-Crs` (Part 2). |
+| `crs` | Output CRS; response includes `Content-Crs`. Part 2 conformance is not currently advertised. |
 | `datetime` | RFC 3339 instant or interval; requires temporal fields. |
-| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering (Part 3): `cql2-text` (default) and `cql2-json`. |
+| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering: `cql2-text` (default) and `cql2-json`. Filtering is implemented and blocking-tested, but its complete CQL2/Features Part 3 classes are not currently advertised. |
 | Queryable properties | Simple-valued queryables accepted directly as query parameters (combined with AND). |
 
-CQL2 support covers logical/comparison/arithmetic operators, `LIKE`, `IN`, `BETWEEN`, all `S_*` spatial predicates (including `S_DWITHIN`/`S_BEYOND`), the full `T_*` temporal predicate set, `A_*` array predicates, and a string/numeric/datetime/`CASEI`/`ACCENTI` function set. Unsupported operators and functions return 400. Full operator tables: [archived coverage matrix](../../archive/specifications/ogc-api-features-coverage.md).
+CQL2 parsing and translation support is broader than the currently advertised
+classes. Unsupported operators and functions return 400; the specialized
+comparison, temporal, array, and case/accent-insensitive classes remain
+unadvertised until the exact-candidate lane proves them. Full operator tables:
+[archived coverage matrix](../../archive/specifications/ogc-api-features-coverage.md).
 
 > Open `https://server.example.com/ogc/features/collections/roads/items?filter=S_INTERSECTS(geometry,POINT(-122.4%2037.8))&limit=10` in a browser.
 
@@ -60,6 +64,8 @@ CQL2 support covers logical/comparison/arithmetic operators, `LIKE`, `IN`, `BETW
 | GET | `/ogc/maps/map` | Dataset map (multi-collection via `collections=`). |
 
 Key parameters: `bbox`, `bbox-crs`, `crs`, `width`/`height` (1–4096, default 256), `f` (`png`, `jpeg`, `tiff`), `transparent` (default true), `bgcolor` (`0xRRGGBB`), `datetime`, `quality`.
+
+Map rendering and map tileset metadata observe the end-to-end `Limits__Connections__RequestTimeout` budget. An expired budget cancels metadata lookup and rendering through the shared request token and returns the existing HTTP 408 timeout response. Client disconnects also propagate cancellation.
 
 > Open `https://server.example.com/ogc/maps/collections/roads/map?bbox=-122.5,37.7,-122.3,37.9&width=800&height=600&f=png` in a browser.
 
@@ -79,6 +85,8 @@ Custom tile matrix sets are merged in from the `TileMatrixSets` configuration se
 > Open `https://server.example.com/ogc/tiles/collections/roads/tiles/WebMercatorQuad/12/1586/2412` in a browser.
 
 ## OGC API Coverages
+
+OGC API Coverages is **Preview in 2026.1** and retains its existing default route availability. It has no GA support commitment. Security, tenant isolation, and truthful lifecycle reporting remain required.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -101,27 +109,24 @@ Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `b
 | GET | `/ogc/processes/jobs`, `.../jobs/{jobId}`, `.../jobs/{jobId}/results` | Job list (active only, `limit`), status, results. |
 | DELETE | `/ogc/processes/jobs/{jobId}` | Dismiss (cancel) a job. |
 
-The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. All current execution modes and job endpoints require Redis-backed durable storage (503 otherwise).
+The process list includes the canonical `honua-geoprocessing` plan runner and individually projected job-callable catalog processes. Omit `Prefer` for bounded synchronous execution when a process advertises `sync-execute`; send `Prefer: respond-async` for a durable asynchronous job. Async-only processes remain asynchronous when the header is omitted. Catalog inputs accept bare values, qualified values such as `{ "value": 100 }`, and `href` references (public HTTPS URLs or bounded data URIs). Layer, raster and enrichment-dataset references are resolved as bounded identifier lookups (at most 4 KiB each) after process authorization. Resource authorization precedes other HTTPS input downloads; authorized resource bindings are retained through submission. When a reference and its HTTP response omit a media type, the catalog parameter type supplies the interpretation; specify a media type for binary inputs. Catalog outputs advertise value transmission: document responses inline each output (with media-type and base64 qualifiers where needed), while `response: "raw"` returns the native representation from either a synchronous execution or the asynchronous job results endpoint. The canonical `honua-geoprocessing` plan runner requires document mode and retains its artifact document. All current execution modes and job endpoints require Redis-backed durable storage (503 otherwise).
 
-In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/processes/honua-geoprocessing/execution` with `Prefer: respond-async` and this body:
+In the [API explorer](../openapi-and-explorer.md), run `POST /ogc/processes/processes/geometry.buffer/execution` with `Prefer: respond-async` and this body:
 
 ```json
 {
   "inputs": {
-    "plan": {
-      "planId": "buffer-demo",
-      "steps": [
-        {
-          "kind": "geoprocess",
-          "processId": "geometry.buffer",
-          "inputs": { "layerId": "0", "distance": "100" }
-        }
-      ]
-    }
+    "wkb": "AQEAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "srid": 4326,
+    "distance": 100
   },
   "response": "document"
 }
 ```
+
+The example supplies a complete little-endian WKB point at `(0, 0)` and the
+catalog process's required `srid` and `distance` inputs, so it can be submitted
+verbatim. Replace the WKB value and distance for a useful buffer operation.
 
 ## OGC API Records
 
@@ -134,6 +139,13 @@ Read-only catalog discovery over published services and layers (record ids `laye
 | GET | `/ogc/records/collections/{collectionId}/items`, `.../items/{recordId}` | GeoJSON records. |
 
 `/items` parameters: `limit` (cap 1000), `offset`, `ids`, `type` (`service`/`dataset`), `externalIds`, `q`, `bbox`, `datetime`. Record create/update/delete, harvesting, facets, and CQL filtering are not implemented.
+
+## OGC API - Environmental Data Retrieval (EDR) — Preview
+
+The `/edr` surface is Preview in release 2026.1 and requires
+`Capabilities:Experimental:serve.ogc-api-edr:Enabled=true`. Functional CRS, temporal
+selection, output-format, and MULTIPOINT coordinate corrections are deferred to
+release 2026.2.
 
 ## OGC API Styles
 

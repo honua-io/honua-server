@@ -29,6 +29,11 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required." >&2
+  exit 1
+fi
+
 export COMPOSE_PROJECT_NAME="${HONUA_MOBILE_OFFLINE_DEMO_PROJECT:-honua-mobile-offline-demo}"
 export HONUA_HTTP_PORT="${HONUA_MOBILE_OFFLINE_DEMO_HTTP_PORT:-18081}"
 export HONUA_GRPC_PORT="${HONUA_MOBILE_OFFLINE_DEMO_GRPC_PORT:-18082}"
@@ -47,7 +52,7 @@ readonly CONFLICT_SEED="${ROOT_DIR}/tests/seed/mobile-offline-demo-conflict-delt
 readonly COMPOSE_FILE="${ROOT_DIR}/docker-compose.yml"
 readonly DB_SERVICE="${HONUA_MOBILE_OFFLINE_DEMO_POSTGRES_SERVICE:-postgres}"
 readonly DB_USER="${HONUA_MOBILE_OFFLINE_DEMO_DB_USER:-honua_user}"
-readonly DB_PASSWORD="${HONUA_MOBILE_OFFLINE_DEMO_DB_PASSWORD:-honua_password}"
+readonly DB_PASSWORD="${HONUA_MOBILE_OFFLINE_DEMO_DB_PASSWORD:-}"
 readonly DB_NAME="${HONUA_MOBILE_OFFLINE_DEMO_DB_NAME:-honua_dev}"
 
 compose() {
@@ -73,7 +78,8 @@ apply_sql() {
   compose exec -T \
     -e PGPASSWORD="${DB_PASSWORD}" \
     "${DB_SERVICE}" \
-    psql -v ON_ERROR_STOP=1 -U "${DB_USER}" -d "${DB_NAME}" < "${sql_file}"
+    sh -c 'export PGPASSWORD="${PGPASSWORD:-$POSTGRES_PASSWORD}"; exec psql "$@"' sh \
+    -v ON_ERROR_STOP=1 -U "${DB_USER}" -d "${DB_NAME}" < "${sql_file}"
 }
 
 restart_honua() {
@@ -84,12 +90,18 @@ restart_honua() {
 smoke_fixture() {
   curl -fsS "${SERVICE_URL}" >/dev/null
   curl -fsS "${LAYER_URL}" >/dev/null
-  curl -fsS "${QUERY_URL}" >/dev/null
+  curl -fsS "${QUERY_URL}" | jq -e '.features | length > 0' >/dev/null
 }
+
+python3 "${ROOT_DIR}/scripts/docker/quickstart.py" --init-only
 
 echo "Starting isolated mobile offline demo stack (${COMPOSE_PROJECT_NAME}) on ${BASE_URL}."
 compose down --remove-orphans --volumes >/dev/null 2>&1 || true
-compose up -d --build postgres honua >/dev/null
+if [[ -n "${HONUA_SERVER_IMAGE:-}" ]]; then
+  compose up -d --no-build postgres honua >/dev/null
+else
+  compose up -d --build postgres honua >/dev/null
+fi
 wait_for_ready
 
 echo "Applying baseline seed: ${BASE_SEED}"

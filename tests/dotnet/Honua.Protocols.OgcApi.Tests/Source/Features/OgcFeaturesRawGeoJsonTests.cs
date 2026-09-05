@@ -15,6 +15,25 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Features;
 public sealed class OgcFeaturesRawGeoJsonTests
 {
     [Fact]
+    public void FeatureCollectionTimeStamp_UsesFixedWidthRfc3339UtcSerialization()
+    {
+        var value = new DateTimeOffset(2026, 8, 30, 12, 34, 56, TimeSpan.FromHours(-10))
+            .AddTicks(1_230_000);
+        var collection = new FeatureCollection
+        {
+            Features = [],
+            NumberReturned = 0,
+            TimeStamp = value
+        };
+
+        using var document = JsonDocument.Parse(
+            JsonSerializer.SerializeToUtf8Bytes(collection, OgcJsonContext.Default.FeatureCollection));
+
+        document.RootElement.GetProperty("timeStamp").GetString()
+            .Should().Be("2026-08-30T22:34:56.1230000Z");
+    }
+
+    [Fact]
     public void CreateRawFeatureCollectionPayload_UsesConfiguredIdAttribute()
     {
         var resource = CreateResource(

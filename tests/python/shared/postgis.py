@@ -314,6 +314,22 @@ class PostGISFixture:
             try:
                 conn.execute("CREATE SCHEMA IF NOT EXISTS honua;")
 
+                # The Python server intentionally skips DbUp migrations, but the metadata-v2
+                # store still uses the public journal as its schema-floor receipt. Record the
+                # physical metadata-v2 baseline provisioned below so this compatibility fixture
+                # has the same receipt contract as a canonical migration run.
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS public.schema_versions (
+                        scriptname TEXT PRIMARY KEY,
+                        applied TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    );
+                    INSERT INTO public.schema_versions (scriptname)
+                    VALUES ('Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql')
+                    ON CONFLICT (scriptname) DO NOTHING;
+                    """
+                )
+
                 conn.execute(
                     """
                     CREATE TABLE IF NOT EXISTS honua.services (
@@ -355,6 +371,9 @@ class PostGISFixture:
                         maplibre_style JSONB,
                         geoservices_drawing_info JSONB,
                         style_version INT DEFAULT 0,
+                        style_revised_at TIMESTAMPTZ,
+                        style_revised_by TEXT,
+                        style_change_summary TEXT,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
@@ -379,6 +398,14 @@ class PostGISFixture:
                 conn.execute(
                     "ALTER TABLE IF EXISTS honua.layers "
                     "ADD COLUMN IF NOT EXISTS storage_options JSONB NOT NULL DEFAULT '{}'::jsonb;"
+                )
+                # Style catalog reads include the revision metadata from migration
+                # 022, including when WMS/WMTS resolves a layer's default style.
+                conn.execute(
+                    "ALTER TABLE IF EXISTS honua.layers "
+                    "ADD COLUMN IF NOT EXISTS style_revised_at TIMESTAMPTZ, "
+                    "ADD COLUMN IF NOT EXISTS style_revised_by TEXT, "
+                    "ADD COLUMN IF NOT EXISTS style_change_summary TEXT;"
                 )
 
                 conn.execute(
@@ -518,11 +545,46 @@ class PostGISFixture:
                         claim_node_id    text,
                         claim_expires_at timestamptz,
                         dispatched_at    timestamptz,
+                        operation_instance_id text,
+                        correlation_id       text,
+                        audit_id             text,
+                        proposal_id          text,
                         CONSTRAINT feature_change_outbox_pkey PRIMARY KEY (outbox_id),
                         CONSTRAINT feature_change_outbox_status_chk CHECK (
                             status IN ('pending', 'claimed', 'dispatched', 'failed', 'dead_lettered')
                         )
                     );
+                    """
+                )
+
+                conn.execute(
+                    """
+                    ALTER TABLE IF EXISTS honua.feature_change_outbox
+                        ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+                        ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+                        ADD COLUMN IF NOT EXISTS audit_id TEXT,
+                        ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+                    ALTER TABLE IF EXISTS honua.feature_changes
+                        ADD COLUMN IF NOT EXISTS event_id TEXT,
+                        ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+                        ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+                        ADD COLUMN IF NOT EXISTS audit_id TEXT,
+                        ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+                    ALTER TABLE IF EXISTS honua.alert_events
+                        ADD COLUMN IF NOT EXISTS source_event_id TEXT,
+                        ADD COLUMN IF NOT EXISTS job_id TEXT,
+                        ADD COLUMN IF NOT EXISTS operation_instance_id TEXT,
+                        ADD COLUMN IF NOT EXISTS correlation_id TEXT,
+                        ADD COLUMN IF NOT EXISTS audit_id TEXT,
+                        ADD COLUMN IF NOT EXISTS proposal_id TEXT;
+                    DO $$
+                    BEGIN
+                        IF to_regclass('honua.feature_changes') IS NOT NULL THEN
+                            CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_changes_event_id
+                                ON honua.feature_changes(event_id)
+                                WHERE event_id IS NOT NULL;
+                        END IF;
+                    END $$;
                     """
                 )
 
@@ -536,6 +598,75 @@ class PostGISFixture:
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
                     );
+                    """
+                )
+
+                # Replication/change tracking is part of the canonical feature mutation path.
+                # The Python server skips DbUp, so provision the current 012/105/110 shape and
+                # trigger here; otherwise create/update/delete requests fail after metadata has
+                # loaded successfully.
+                conn.execute(
+                    """
+                    CREATE SEQUENCE IF NOT EXISTS honua.sync_generation
+                        AS BIGINT START WITH 1 INCREMENT BY 1 NO CYCLE;
+                    CREATE TABLE IF NOT EXISTS honua.feature_changes (
+                        change_id BIGSERIAL PRIMARY KEY,
+                        generation BIGINT NOT NULL,
+                        layer_id INT NOT NULL,
+                        objectid BIGINT NOT NULL,
+                        public_objectid BIGINT,
+                        operation SMALLINT NOT NULL,
+                        changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                        event_id TEXT,
+                        operation_instance_id TEXT,
+                        correlation_id TEXT,
+                        audit_id TEXT,
+                        proposal_id TEXT,
+                        CONSTRAINT feature_changes_valid_operation CHECK(operation IN (1, 2, 3))
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_feature_changes_generation_layer
+                        ON honua.feature_changes(generation, layer_id);
+                    CREATE INDEX IF NOT EXISTS idx_feature_changes_changed_at
+                        ON honua.feature_changes(changed_at);
+                    CREATE INDEX IF NOT EXISTS idx_feature_changes_layer_objectid
+                        ON honua.feature_changes(layer_id, objectid, generation);
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_feature_changes_event_id
+                        ON honua.feature_changes(event_id)
+                        WHERE event_id IS NOT NULL;
+                    CREATE OR REPLACE FUNCTION honua.track_feature_changes()
+                    RETURNS TRIGGER AS $$
+                    DECLARE
+                        gen BIGINT;
+                        lid INT;
+                        oid BIGINT;
+                        op SMALLINT;
+                    BEGIN
+                        gen := nextval('honua.sync_generation');
+                        IF TG_OP = 'INSERT' THEN
+                            lid := NEW.layer_id;
+                            oid := NEW.objectid;
+                            op := 1;
+                        ELSIF TG_OP = 'UPDATE' THEN
+                            lid := NEW.layer_id;
+                            oid := NEW.objectid;
+                            op := 2;
+                        ELSIF TG_OP = 'DELETE' THEN
+                            lid := OLD.layer_id;
+                            oid := OLD.objectid;
+                            op := 3;
+                        END IF;
+                        INSERT INTO honua.feature_changes (generation, layer_id, objectid, operation)
+                        VALUES (gen, lid, oid, op);
+                        IF TG_OP = 'DELETE' THEN
+                            RETURN OLD;
+                        END IF;
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql;
+                    DROP TRIGGER IF EXISTS trigger_track_feature_changes ON features;
+                    CREATE TRIGGER trigger_track_feature_changes
+                        AFTER INSERT OR UPDATE OR DELETE ON features
+                        FOR EACH ROW EXECUTE FUNCTION honua.track_feature_changes();
                     """
                 )
 
@@ -892,6 +1023,20 @@ class PostGISFixture:
 
     def _seed_metadata_v2_snapshot(self, conn: psycopg.Connection) -> None:
         """Seed a Metadata v2 snapshot that mirrors the v1 compatibility catalog."""
+        # The STAC compatibility fixture seeds the metadata snapshot directly rather than
+        # through seed_test_catalog. Keep the schema-floor receipt alongside the physical
+        # metadata-v2 baseline so the migration-skipping Python server can load it.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS public.schema_versions (
+                scriptname TEXT PRIMARY KEY,
+                applied TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            INSERT INTO public.schema_versions (scriptname)
+            VALUES ('Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql')
+            ON CONFLICT (scriptname) DO NOTHING;
+            """
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS honua.metadata_v2_snapshots (
@@ -917,6 +1062,86 @@ class PostGISFixture:
                 FOREIGN KEY (environment, revision)
                     REFERENCES honua.metadata_v2_snapshots(environment, revision)
                     ON DELETE RESTRICT
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS honua.metadata_v2_resources_idx (
+                environment TEXT NOT NULL,
+                revision BIGINT NOT NULL,
+                resource_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                namespace TEXT,
+                type TEXT NOT NULL,
+                primary_storage_binding_id TEXT,
+                PRIMARY KEY (environment, revision, resource_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES honua.metadata_v2_snapshots(environment, revision)
+                    ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_metadata_v2_resources_name
+                ON honua.metadata_v2_resources_idx (environment, revision, name);
+            CREATE TABLE IF NOT EXISTS honua.metadata_v2_services_idx (
+                environment TEXT NOT NULL,
+                revision BIGINT NOT NULL,
+                service_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                service_type TEXT NOT NULL,
+                route TEXT,
+                PRIMARY KEY (environment, revision, service_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES honua.metadata_v2_snapshots(environment, revision)
+                    ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_metadata_v2_services_name
+                ON honua.metadata_v2_services_idx (environment, revision, lower(name));
+            CREATE TABLE IF NOT EXISTS honua.metadata_v2_publications_idx (
+                environment TEXT NOT NULL,
+                revision BIGINT NOT NULL,
+                publication_id TEXT NOT NULL,
+                service_id TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                storage_binding_id TEXT,
+                publication_type TEXT NOT NULL,
+                path TEXT,
+                layer_index INT,
+                service_local_id TEXT,
+                PRIMARY KEY (environment, revision, publication_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES honua.metadata_v2_snapshots(environment, revision)
+                    ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_metadata_v2_publications_service
+                ON honua.metadata_v2_publications_idx (environment, revision, service_id);
+            CREATE INDEX IF NOT EXISTS idx_metadata_v2_publications_resource
+                ON honua.metadata_v2_publications_idx (environment, revision, resource_id);
+            CREATE TABLE IF NOT EXISTS honua.metadata_v2_storage_bindings_idx (
+                environment TEXT NOT NULL,
+                revision BIGINT NOT NULL,
+                storage_binding_id TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                connection_id TEXT,
+                storage_type TEXT NOT NULL,
+                locator TEXT NOT NULL,
+                PRIMARY KEY (environment, revision, storage_binding_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES honua.metadata_v2_snapshots(environment, revision)
+                    ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_metadata_v2_storage_bindings_resource
+                ON honua.metadata_v2_storage_bindings_idx (environment, revision, resource_id);
+            CREATE TABLE IF NOT EXISTS honua.metadata_v2_connections_idx (
+                environment TEXT NOT NULL,
+                revision BIGINT NOT NULL,
+                connection_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                provider TEXT,
+                PRIMARY KEY (environment, revision, connection_id),
+                FOREIGN KEY (environment, revision)
+                    REFERENCES honua.metadata_v2_snapshots(environment, revision)
+                    ON DELETE CASCADE
             );
             """
         )

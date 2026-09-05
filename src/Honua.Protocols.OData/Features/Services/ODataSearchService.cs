@@ -17,8 +17,19 @@ using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.OData.Models;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.OData.Services;
+
+internal sealed record ODataSearchDependencies(
+    IFeatureReader FeatureReader,
+    IRelationshipStore RelationshipStore,
+    IStreamingFeatureStore StreamingFeatureStore,
+    IGeometryService GeometryService,
+    ICrsRegistry CrsRegistry,
+    IMetadataV2GraphProvider GraphProvider,
+    ODataFeatureProviderResolver ProviderResolver,
+    IOptions<ODataOptions> Options);
 
 /// <summary>
 /// Service for handling OData search and aggregation operations.
@@ -38,26 +49,26 @@ internal sealed partial class ODataSearchService
     private readonly ICrsRegistry _crsRegistry;
     private readonly ODataQueryService _queryService;
     private readonly IMetadataV2GraphProvider _graphProvider;
+    private readonly ODataFeatureProviderResolver _providerResolver;
+    private readonly int _maxApplyInputRows;
+    private readonly int _maxExpandedRows;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ODataSearchService"/> class.
     /// </summary>
-    public ODataSearchService(
-        IFeatureReader featureReader,
-        IRelationshipStore relationshipStore,
-        IStreamingFeatureStore streamingFeatureStore,
-        IGeometryService geometryService,
-        ICrsRegistry crsRegistry,
-        ODataQueryService queryService,
-        IMetadataV2GraphProvider graphProvider)
+    public ODataSearchService(ODataSearchDependencies dependencies, ODataQueryService queryService)
     {
-        _featureReader = featureReader;
-        _relationshipStore = relationshipStore;
-        _streamingFeatureStore = streamingFeatureStore;
-        _geometryService = geometryService;
-        _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
+        ArgumentNullException.ThrowIfNull(dependencies);
+        _featureReader = dependencies.FeatureReader;
+        _relationshipStore = dependencies.RelationshipStore;
+        _streamingFeatureStore = dependencies.StreamingFeatureStore;
+        _geometryService = dependencies.GeometryService;
+        _crsRegistry = dependencies.CrsRegistry;
         _queryService = queryService;
-        _graphProvider = graphProvider ?? throw new ArgumentNullException(nameof(graphProvider));
+        _graphProvider = dependencies.GraphProvider;
+        _providerResolver = dependencies.ProviderResolver;
+        _maxApplyInputRows = dependencies.Options.Value.MaxApplyInputRows;
+        _maxExpandedRows = dependencies.Options.Value.MaxPageSize;
     }
 
     /// <summary>
@@ -112,7 +123,7 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException("$search parameter is required.");
         }
 
-        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken, requireCount: count == true, requireTextSearch: true).ConfigureAwait(false);
         var resource = resolvedLayer.Resource;
         var srid = resource.ReadSrid() ?? 4326;
 
@@ -141,10 +152,25 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException(queryError);
         }
 
-        query = ODataSqlFragmentMergeHelper.Merge(query, textSearchFilter);
+        query = ReferenceEquals(resolvedLayer.Reader, _featureReader)
+            ? ODataSqlFragmentMergeHelper.Merge(query, textSearchFilter)
+            : query with
+            {
+                TextSearch = new FeatureTextSearch(
+                    resource.SchemaFields.Where(field => field.Type == MetadataV2FieldType.String)
+                        .Select(field => field.Name).Take(MaxSearchableStringFields).ToArray(),
+                    searchTerms.Select(group => (IReadOnlyList<FeatureSearchTerm>)group
+                        .Select(term => new FeatureSearchTerm(term.term, term.isNegated)).ToArray()).ToArray())
+            };
 
         // Storage handle is still int-keyed at the IFeatureReader boundary.
-        var result = await _featureReader.QueryAsync(resolvedLayer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+        var result = await resolvedLayer.Reader.QueryAsync(resolvedLayer.StorageLayerId, query, cancellationToken).ConfigureAwait(false);
+        // Some provider readers report only the current page size in TotalCount.
+        // Resolve a requested total explicitly using the same search and filter predicates.
+        var totalCount = count == true
+            ? await resolvedLayer.Reader.CountAsync(resolvedLayer.StorageLayerId,
+                query with { Limit = null, Offset = null }, cancellationToken).ConfigureAwait(false)
+            : (long?)null;
         var axisOrder = await ODataCrsUtilities.ResolveAxisOrderAsync(
             _crsRegistry,
             srid,
@@ -216,7 +242,7 @@ internal sealed partial class ODataSearchService
         return new ODataSearchResult
         {
             Context = ODataUtilityService.BuildContextUrl(baseUrl, "Features", select: select, expand: expand),
-            Count = count == true ? result.TotalCount : null,
+            Count = totalCount,
             Value = selected
         };
     }
@@ -246,7 +272,11 @@ internal sealed partial class ODataSearchService
         ValidateAggregationFields(aggregation, resource);
 
         // Use existing aggregation handler for processing
-        var handler = new ODataAggregationHandler(_featureReader, _streamingFeatureStore, _queryService);
+        var reader = resolvedLayer.Reader;
+        var stream = ReferenceEquals(reader, _featureReader)
+            ? _streamingFeatureStore
+            : reader as IStreamingFeatureStore;
+        var handler = new ODataAggregationHandler(reader, stream, _queryService, _maxApplyInputRows);
         return await handler.ProcessAggregationAsync(
             resolvedLayer.StorageLayerId,
             resource,
@@ -475,7 +505,9 @@ internal sealed partial class ODataSearchService
 
     private async Task<ResolvedODataLayer> ResolveODataLayerAsync(
         int layerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireCount = false,
+        bool requireTextSearch = false)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
@@ -507,7 +539,12 @@ internal sealed partial class ODataSearchService
                 continue;
             }
 
+            var reader = await _providerResolver.ResolveQueryReaderAsync(
+                snapshot, service, resource!, publication, storageLayerId.Value,
+                requireCount, requireTextSearch, cancellationToken).ConfigureAwait(false);
+
             return new ResolvedODataLayer(
+                reader,
                 publication,
                 resource!,
                 layerId,
@@ -596,6 +633,7 @@ internal sealed partial class ODataSearchService
     }
 
     private sealed record ResolvedODataLayer(
+        IFeatureReader Reader,
         MetadataV2Publication Publication,
         MetadataV2Resource Resource,
         int PublicLayerId,
@@ -641,6 +679,7 @@ internal sealed partial class ODataSearchService
 
         var result = new Dictionary<long, Dictionary<string, object?[]>>();
         var requestedIds = objectIds.ToHashSet();
+        var remainingRows = _maxExpandedRows;
 
         if (objectIds.Length == 0)
         {
@@ -654,6 +693,7 @@ internal sealed partial class ODataSearchService
         // Find matching relationships
         foreach (var relationship in resource.Relationships)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var sanitizedName = ODataUtilityService.SanitizeIdentifier(relationship.Name);
             var metadataName = ODataUtilityService.BuildRelationshipMetadataNameForV2(
                 relationship.Name,
@@ -700,15 +740,30 @@ internal sealed partial class ODataSearchService
                 objectIds,
                 related.StorageLayerId,
                 relationship.OriginField,
-                relationship.DestinationField);
+                relationship.DestinationField) with
+            {
+                // Bound the database read across all parents and relationships. The extra
+                // row detects overflow so no incomplete navigation collection is returned.
+                Limit = checked(remainingRows + 1)
+            };
             var relatedResult = await _relationshipStore.QueryRelatedAsync(
                 sourceStorageLayerId,
                 relatedQuery,
                 cancellationToken);
 
+            if (relatedResult.Items.Length > remainingRows)
+            {
+                throw new ArgumentException(
+                    $"The $expand result exceeds the OData:MaxPageSize related-row budget ({_maxExpandedRows}). Narrow the parent query or request related features separately.");
+            }
+
+            remainingRows -= relatedResult.Items.Length;
+            var childGroups = new Dictionary<long, List<object?>>();
+
             // Group related features by origin object ID
             foreach (var feature in relatedResult.Items)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 // Try to get the origin key from the related feature's attributes
                 if (!feature.Attributes.TryGetValue(relationship.DestinationField, out var originKeyValue))
                 {
@@ -735,12 +790,6 @@ internal sealed partial class ODataSearchService
                     continue;
                 }
 
-                if (!result.TryGetValue(originId.Value, out var relationsDict))
-                {
-                    relationsDict = new Dictionary<string, object?[]>();
-                    result[originId.Value] = relationsDict;
-                }
-
                 var relatedGeometry = ODataGeometryConverter.ConvertWkbToGeometry(
                     _geometryService,
                     feature.Geometry,
@@ -760,17 +809,19 @@ internal sealed partial class ODataSearchService
                         string.Join(",", selectedFields));
                 }
 
-                if (relationsDict.TryGetValue(outputName, out var existingRelations))
+                if (!childGroups.TryGetValue(originId.Value, out var children))
                 {
-                    var newRelations = new object?[existingRelations.Length + 1];
-                    Array.Copy(existingRelations, newRelations, existingRelations.Length);
-                    newRelations[existingRelations.Length] = relatedFeatureDict;
-                    relationsDict[outputName] = newRelations;
+                    children = new List<object?>();
+                    childGroups.Add(originId.Value, children);
                 }
-                else
-                {
-                    relationsDict[outputName] = new object?[] { relatedFeatureDict };
-                }
+
+                children.Add(relatedFeatureDict);
+            }
+
+            foreach (var (originId, children) in childGroups)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                result[originId][outputName] = children.ToArray();
             }
         }
 

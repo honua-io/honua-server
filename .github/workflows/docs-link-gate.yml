@@ -29,6 +29,7 @@ on:
   pull_request:
     branches: [trunk]
     paths:
+      - 'README.md'
       - 'docs/**'
       - 'src/**'
       - 'docker/**'
@@ -38,6 +39,9 @@ on:
       - 'scripts/ci/check-doc-links.test.py'
       - 'scripts/ci/code-referenced-anchors.v1.json'
       - 'scripts/ci/doc-link-rot-allowlist.v1.json'
+      - 'scripts/ci/check-doc-example-surfaces.py'
+      - 'scripts/ci/check-doc-example-surfaces.test.py'
+      - 'scripts/ci/doc-wire-reference-allowlist.v1.json'
       - '.github/workflows/docs-link-gate.yml'
   workflow_dispatch:
 
@@ -57,6 +61,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          # The additions-only example gate diffs the PR head against its base.
+          fetch-depth: 0
 
       # The checker's own tests run first and are self-contained (synthetic docs
       # trees in temp directories). A checker that wrongly reports clean is the
@@ -66,5 +73,11 @@ jobs:
       - name: Test the documentation link checker
         run: python3 scripts/ci/check-doc-links.test.py
 
+      - name: Test documentation example surface enforcement
+        run: python3 scripts/ci/check-doc-example-surfaces.test.py
+
       - name: Check documentation links, anchors, and code-referenced anchors
         run: python3 scripts/ci/check-doc-links.py
+
+      - name: Reject raw curl additions in documentation
+        run: python3 scripts/ci/check-doc-example-surfaces.py --base "${{ github.event.pull_request.base.sha || 'origin/trunk' }}"

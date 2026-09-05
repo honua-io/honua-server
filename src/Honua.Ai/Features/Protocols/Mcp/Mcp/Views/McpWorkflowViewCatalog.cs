@@ -26,8 +26,56 @@ namespace Honua.Ai.Protocols.Mcp.Views;
 /// </remarks>
 internal static class McpWorkflowViewCatalog
 {
+    /// <summary>The bounded default discovery/workflow surface.</summary>
+    public const string DefaultViewName = "default";
+
     /// <summary>The bounded terminal-setup view name.</summary>
     public const string SetupViewName = "setup";
+
+    /// <summary>
+    /// The default meta/workflow surface. Long-tail operations are reached by
+    /// resolving/searching, describing, planning/proposing, then executing.
+    /// </summary>
+    public static McpWorkflowViewDefinition Default { get; } = new()
+    {
+        Name = DefaultViewName,
+        Title = "Bounded discovery workflow",
+        Description = "The default bounded search, describe, propose, execute, and inspect surface.",
+        Revision = "default.v1",
+        Stages =
+        [
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "discover",
+                Title = "Search and describe",
+                Description = "Find capabilities and entities, then inspect canonical layer metadata.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_list_capabilities"),
+                    McpWorkflowViewMemberRule.Exact("honua_resolve_entity"),
+                    McpWorkflowViewMemberRule.Exact("honua_supported_operation_kinds"),
+                    McpWorkflowViewMemberRule.Exact("honua_list_layers"),
+                    McpWorkflowViewMemberRule.Exact("honua_describe_layer"),
+                    McpWorkflowViewMemberRule.Exact("honua_query_features"),
+                ],
+            },
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "propose-execute",
+                Title = "Propose and execute",
+                Description = "Compile, validate, dry-run, execute, and inspect a bounded plan.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_plan_analysis"),
+                    McpWorkflowViewMemberRule.Exact("honua_validate_plan"),
+                    McpWorkflowViewMemberRule.Exact("honua_dry_run_plan"),
+                    McpWorkflowViewMemberRule.Exact("honua_execute_plan"),
+                    McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
+                    McpWorkflowViewMemberRule.Exact("honua_render_map"),
+                ],
+            },
+        ],
+    };
 
     /// <summary>
     /// The <c>setup</c> view: readiness → connect/import → publish → verify access
@@ -43,8 +91,7 @@ internal static class McpWorkflowViewCatalog
             + "submitted publication: confirm readiness, connect and import a source, publish it as a service and "
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
-            + "only the descriptors that path needs; the full paginated catalog stays available with no view "
-            + "selected.",
+            + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
         Revision = "setup.v1",
         Stages =
         [
@@ -59,8 +106,6 @@ internal static class McpWorkflowViewCatalog
                 [
                     McpWorkflowViewMemberRule.Exact("honua_list_capabilities"),
                     McpWorkflowViewMemberRule.Exact("honua_resolve_entity"),
-                    McpWorkflowViewMemberRule.Exact("honua_ops_health"),
-                    McpWorkflowViewMemberRule.Exact("honua_admin_server_status"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -71,8 +116,6 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_ingest_dataset"),
-                    McpWorkflowViewMemberRule.Prefix("honua_op_import_"),
-                    McpWorkflowViewMemberRule.Prefix("honua_op_connection_"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -84,7 +127,6 @@ internal static class McpWorkflowViewCatalog
                 [
                     McpWorkflowViewMemberRule.Exact("honua_publish_service"),
                     McpWorkflowViewMemberRule.Exact("honua_publish_result"),
-                    McpWorkflowViewMemberRule.Prefix("honua_op_service_"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -125,7 +167,6 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_dry_run_plan"),
                     McpWorkflowViewMemberRule.Exact("honua_execute_plan"),
                     McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
-                    McpWorkflowViewMemberRule.Exact("honua_cancel_job"),
                 ],
             },
             new McpWorkflowViewStageDefinition
@@ -135,7 +176,11 @@ internal static class McpWorkflowViewCatalog
                 Description =
                     "Create, edit, validate, preview, save and reopen a Studio map or dashboard draft: layers, "
                     + "styles, visibility, view, widgets, interactions and controls.",
-                Rules = [McpWorkflowViewMemberRule.Prefix("honua_studio_")],
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_studio_create_draft"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_validate_draft"),
+                ],
 
                 // Publication submit belongs to the publication stage below even
                 // though it shares the studio_ family prefix.
@@ -151,7 +196,6 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_studio_propose_publication"),
-                    McpWorkflowViewMemberRule.Exact("honua_propose_operation"),
                     McpWorkflowViewMemberRule.Exact("honua_supported_operation_kinds"),
                 ],
             },
@@ -162,6 +206,7 @@ internal static class McpWorkflowViewCatalog
     public static IReadOnlyDictionary<string, McpWorkflowViewDefinition> All { get; } =
         new Dictionary<string, McpWorkflowViewDefinition>(StringComparer.Ordinal)
         {
+            [Default.Name] = Default,
             [Setup.Name] = Setup,
         };
 

@@ -94,6 +94,9 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         service.TileInfo.SpatialReference.Should().NotBeNull();
         service.TileInfo.SpatialReference!.Wkid.Should().Be(3857);
         service.TileInfo.Lods.Should().NotBeNullOrEmpty();
+        service.TimeInfo.Should().NotBeNull();
+        service.TimeInfo!.StartTimeField.Should().Be("timestamp");
+        service.TimeInfo.TimeExtent.Should().HaveCount(2);
     }
 
     [IntegrationTest]
@@ -173,6 +176,13 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         layer.MinScale.Should().NotBeNull();
         layer.MaxScale.Should().NotBeNull();
         layer.Extent.Should().NotBeNull();
+        layer.AdvancedQueryCapabilities.Should().NotBeNull();
+        layer.AdvancedQueryCapabilities!.SupportsPagination.Should().BeTrue();
+        layer.AdvancedQueryCapabilities.SupportsStatistics.Should().BeTrue();
+        layer.AdvancedQueryCapabilities.SupportsOrderBy.Should().BeTrue();
+        layer.AdvancedQueryCapabilities.SupportsQueryWithDistance.Should().BeTrue();
+        layer.TimeInfo.Should().NotBeNull();
+        layer.TimeInfo!.StartTimeField.Should().Be("timestamp");
     }
 
     [IntegrationTest]
@@ -333,6 +343,26 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().StartWith("image/");
         (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithAllLayersHidden_ReturnsBlankImage(bool useDynamicLayer)
+    {
+        var dynamicLayers = useDynamicLayer
+            ? $"&dynamicLayers={Uri.EscapeDataString(BuildSimpleRendererDynamicLayersJson(dynamicLayerId: 7))}"
+            : string.Empty;
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export" +
+            "?bbox=-180,-90,180,90&size=64,64&f=image&layers=show:-1" + dynamicLayers);
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(content));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Should().NotBeEmpty();
     }
 
     [IntegrationTest]
@@ -1059,6 +1089,18 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithSizeExceedingAdvertisedMaximum_ReturnsBadRequest()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export" +
+            "?bbox=-180,-90,180,90&size=4097,2000&f=image");
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithMalformedBackgroundColor_ReturnsBadRequest()
     {
         var response = await _fixture.Client.GetAsync(
@@ -1178,6 +1220,36 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         identify.Should().NotBeNull();
         identify!.Results.Should().NotBeNull();
         identify.Results!.Length.Should().BeGreaterThan(0);
+    }
+
+    [IntegrationTheory]
+    [InlineData("esriGeometryEnvelope", "{\"xmin\":-122.51,\"ymin\":37.504,\"xmax\":-122.49,\"ymax\":37.506}")]
+    [InlineData("esriGeometryMultipoint", "{\"points\":[[-122.5,37.505]]}")]
+    [InlineData("esriGeometryPolyline", "{\"paths\":[[[-122.51,37.505],[-122.49,37.505]]]}")]
+    [InlineData("esriGeometryPolygon", "{\"rings\":[[[-122.51,37.504],[-122.49,37.504],[-122.49,37.506],[-122.51,37.506],[-122.51,37.504]]]}")]
+    [Operation(Operations.Identify)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    public async Task MapServer_Identify_NonPointGeometryWithinTolerance_ReturnsResults(
+        string geometryType,
+        string geometry)
+    {
+        // The seeded point is (-122.5, 37.5). With this one-degree map extent and 1000px
+        // display width, tolerance=10 is 0.01 map units. Each geometry is 0.004-0.005 units away:
+        // Shapely 2.1.2 reports distance 0.004-0.005, so it misses unbuffered and hits buffered.
+        var encodedGeometry = Uri.EscapeDataString(geometry);
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/identify" +
+            $"?geometry={encodedGeometry}&geometryType={geometryType}&sr=4326" +
+            "&mapExtent=-123,37,-122,38&imageDisplay=1000,1000,96" +
+            "&tolerance=10&layers=all&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var identify = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.IdentifyResponse);
+
+        identify.Should().NotBeNull();
+        identify!.Results.Should().NotBeNullOrEmpty(
+            $"{geometryType} identify tolerance applies around the geometry boundary");
     }
 
     // Regression (#1429): the ArcGIS JS SDK and arcpy send mapExtent as an Esri JSON
@@ -1440,6 +1512,49 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         dynamicEntry.ImageData.Should().NotBe(defaultEntry.ImageData);
     }
 
+    [Theory]
+    [InlineData("uniqueValue", "Residential", "Commercial")]
+    [InlineData("classBreaks", "Low", "High")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
+    public async Task MapServer_Legend_WithClassifiedRenderer_ReturnsPerClassEntries(
+        string rendererType,
+        string firstLabel,
+        string secondLabel)
+    {
+        var renderer = rendererType == "uniqueValue"
+            ? """
+              {"type":"uniqueValue","field1":"category","defaultLabel":"Other","defaultSymbol":{"type":"esriSMS","style":"esriSMSCircle","color":[0,255,0,255],"size":10},"uniqueValueInfos":[
+                {"value":"test","label":"Residential","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[255,0,0,255],"size":10}},
+                {"value":"sample","label":"Commercial","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[0,0,255,255],"size":10}}
+              ]}
+              """
+            : """
+              {"type":"classBreaks","field":"objectid","defaultLabel":"Other","defaultSymbol":{"type":"esriSMS","style":"esriSMSCircle","color":[0,255,0,255],"size":10},"classBreakInfos":[
+                {"classMaxValue":2,"label":"Low","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[255,0,0,255],"size":10}},
+                {"classMaxValue":5,"label":"High","symbol":{"type":"esriSMS","style":"esriSMSCircle","color":[0,0,255,255],"size":10}}
+              ]}
+              """;
+        var dynamicLayers = Uri.EscapeDataString(
+            $"[{{\"id\":501,\"source\":{{\"type\":\"mapLayer\",\"mapLayerId\":0}},\"drawingInfo\":{{\"renderer\":{renderer}}}}}]");
+
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/legend?f=json&dynamicLayers={dynamicLayers}");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var legend = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.LegendResponse);
+        var entries = legend!.Layers.Should().ContainSingle().Subject.Legend!;
+        entries.Select(entry => entry.Label).Should().Equal(firstLabel, secondLabel, "Other");
+        entries.Should().OnlyContain(entry => !string.IsNullOrWhiteSpace(entry.ImageData));
+        entries.Select(entry => entry.ImageData).Should().OnlyHaveUniqueItems();
+        if (rendererType == "uniqueValue")
+        {
+            entries[0].Values.Should().Equal("test");
+            entries[1].Values.Should().Equal("sample");
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
@@ -1480,6 +1595,35 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         legend.Should().NotBeNull();
         legend!.Layers.Should().NotBeNullOrEmpty();
         legend.Layers!.First().Legend.Should().NotBeNullOrEmpty();
+    }
+
+    [Theory]
+    [InlineData("legend")]
+    [InlineData("queryLegends")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/legend")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/queryLegends")]
+    public async Task MapServer_Legend_Post_UsesFormBodyValues(string operation)
+    {
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("size", "31,29"),
+            new KeyValuePair<string, string>("dynamicLayers", BuildSimpleRendererDynamicLayersJson(dynamicLayerId: 501))
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/{operation}",
+            payload);
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var legend = JsonSerializer.Deserialize(content, MapServerJsonContext.Default.LegendResponse);
+        var layer = legend!.Layers.Should().ContainSingle().Subject;
+        layer.LayerId.Should().Be(501);
+        var entry = layer.Legend.Should().ContainSingle().Subject;
+        entry.Width.Should().Be(31);
+        entry.Height.Should().Be(29);
     }
 
     [IntegrationTest]
@@ -2512,6 +2656,7 @@ public sealed class MapServerEndpointTests : IAsyncLifetime
         hit.FoundFieldName.Should().NotBeNullOrWhiteSpace();
         hit.Value.Should().NotBeNullOrWhiteSpace();
         hit.Attributes.Should().NotBeNullOrEmpty();
+        hit.Attributes.Should().ContainKeys("description", "category", "timestamp");
         hit.Geometry.Should().NotBeNull();
     }
 

@@ -29,6 +29,7 @@ internal sealed class McpExecutePlanArgument
 
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; set; }
+
 }
 
 /// <summary>
@@ -38,25 +39,6 @@ internal sealed class McpCancelJobArgument
 {
     [JsonPropertyName("jobId")]
     public string? JobId { get; set; }
-}
-
-/// <summary>
-/// Arguments for <c>honua_propose_operation</c>: submit an in-scope mutating
-/// control-plane operation through the approval gateway (#1696).
-/// </summary>
-internal sealed class McpProposeOperationArgument
-{
-    [JsonPropertyName("kind")]
-    public string? Kind { get; set; }
-
-    [JsonPropertyName("reason")]
-    public string? Reason { get; set; }
-
-    [JsonPropertyName("executionPayload")]
-    public string? ExecutionPayload { get; set; }
-
-    [JsonPropertyName("idempotencyKey")]
-    public string? IdempotencyKey { get; set; }
 }
 
 /// <summary>
@@ -173,10 +155,79 @@ internal sealed class McpProposeRollbackArgument
 
     [JsonPropertyName("idempotencyKey")]
     public string? IdempotencyKey { get; set; }
+
+    [JsonPropertyName("parameterOverrides")]
+    public Dictionary<string, string>? ParameterOverrides { get; set; }
+}
+
+internal sealed class McpProposeFindingArgument
+{
+    [JsonPropertyName("findingId")]
+    public string? FindingId { get; set; }
+
+    [JsonPropertyName("candidateId")]
+    public string? CandidateId { get; set; }
+}
+
+internal sealed class McpDeployMutationArgument
+{
+    [JsonPropertyName("targetId")]
+    public string? TargetId { get; set; }
+
+    [JsonPropertyName("desiredRevision")]
+    public string? DesiredRevision { get; set; }
+
+    [JsonPropertyName("currentRevision")]
+    public string? CurrentRevision { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; set; }
+}
+
+internal sealed class McpMetadataReleaseMutationArgument
+{
+    [JsonPropertyName("packageId")]
+    public string? PackageId { get; set; }
+
+    [JsonPropertyName("targetEnvironment")]
+    public string? TargetEnvironment { get; set; }
+
+    [JsonPropertyName("resourceSemanticId")]
+    public string? ResourceSemanticId { get; set; }
+
+    [JsonPropertyName("newFieldName")]
+    public string? NewFieldName { get; set; }
+
+    [JsonPropertyName("newFieldType")]
+    public string? NewFieldType { get; set; }
+
+    [JsonPropertyName("dataPopulateWorkloadId")]
+    public string? DataPopulateWorkloadId { get; set; }
+
+    [JsonPropertyName("scriptId")]
+    public string? ScriptId { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; set; }
+}
+
+internal sealed class McpPlatformReleaseConvergenceArgument
+{
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("idempotencyKey")]
+    public string? IdempotencyKey { get; set; }
 }
 
 /// <summary>
-/// Output for <c>honua_propose_operation</c>. On <c>requiresApproval</c> the
+/// Shared output for typed governed proposal tools. On <c>requiresApproval</c> the
 /// agent polls the <c>resourceUri</c> until the proposal resolves (#1696).
 /// </summary>
 internal sealed class McpProposeOperationOutput
@@ -205,6 +256,27 @@ internal sealed class McpProposeOperationOutput
     /// </summary>
     [JsonPropertyName("supportedKinds")]
     public string[]? SupportedKinds { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("result")]
+    public JsonElement? Result { get; set; }
+
+    [JsonPropertyName("targets")]
+    public McpConvergenceTargetOutput[]? Targets { get; set; }
+}
+
+internal sealed class McpConvergenceTargetOutput
+{
+    [JsonPropertyName("targetId")]
+    public string TargetId { get; set; } = string.Empty;
+
+    [JsonPropertyName("outcome")]
+    public string Outcome { get; set; } = string.Empty;
+
+    [JsonPropertyName("proposalId")]
+    public string? ProposalId { get; set; }
 
     [JsonPropertyName("message")]
     public string? Message { get; set; }

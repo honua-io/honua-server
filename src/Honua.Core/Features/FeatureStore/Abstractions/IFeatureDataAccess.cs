@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Data;
 using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.FeatureStore.Abstractions;
@@ -143,7 +144,7 @@ internal interface IFeatureDataAccess
     /// <summary>
     /// Generates MVT tile data
     /// </summary>
-    Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, CancellationToken cancellationToken);
+    Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken);
 
     /// <summary>
     /// Streams features for large result sets
@@ -159,4 +160,12 @@ internal interface IFeatureDataAccess
     /// Processes batch edits with transaction support
     /// </summary>
     Task<FeatureEditResult> ApplyEditsAsync(int layerId, FeatureEditBatch editBatch, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Opens a transaction that can apply edit batches across multiple layers atomically.
+    /// </summary>
+    Task<IFeatureWriterTransaction> BeginTransactionAsync(
+        IsolationLevel isolationLevel,
+        CancellationToken cancellationToken)
+        => throw new NotSupportedException("This data provider does not support cross-layer transactions.");
 }

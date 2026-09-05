@@ -191,12 +191,31 @@ jobs:
           exit-code: '1'
 
   container-security-scan:
-    name: Container Security Scan
+    name: Container Security Scan (${{ matrix.variant }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: jit-debian
+            timeout_minutes: 30
+            dockerfile: Dockerfile
+            image_tag: security-test-jit
+            cache_scope: honua-jit-amd64
+            trivyignore: .trivyignore
+          - variant: aot-alpine
+            # Cold native-AOT builds have exceeded 90 minutes; match the
+            # equivalent nightly AOT build's ceiling so cache export can
+            # complete and subsequent security scans receive an image.
+            timeout_minutes: 180
+            dockerfile: docker/Dockerfile.aot
+            image_tag: security-test-aot
+            cache_scope: honua-aot-amd64
+            trivyignore: .trivyignore-release
     permissions:
       contents: read
-      packages: read
+      packages: write
       security-events: write
     steps:
       - name: Checkout
@@ -205,34 +224,43 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
+      - name: Log in to GHCR for build cache
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run Hadolint
         id: hadolint
-        uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6 # v3.4.0
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
-          dockerfile: Dockerfile
+          dockerfile: ${{ matrix.dockerfile }}
           format: sarif
-          output-file: hadolint-results.sarif
+          output-file: hadolint-results-${{ matrix.variant }}.sarif
           no-color: true
           failure-threshold: error
 
       - name: Upload Hadolint SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('hadolint-results.sarif') != ''
+        if: always() && hashFiles(format('hadolint-results-{0}.sarif', matrix.variant)) != ''
         with:
-          sarif_file: hadolint-results.sarif
+          sarif_file: hadolint-results-${{ matrix.variant }}.sarif
+          category: hadolint-${{ matrix.variant }}
 
       - name: Build container image for security testing
         id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           load: true
-          tags: ${{ env.IMAGE_NAME }}:security-test
+          tags: ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
-          cache-from: type=gha,scope=honua-jit-amd64
-          cache-to: type=gha,mode=max,scope=honua-jit-amd64
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }}
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:${{ matrix.cache_scope }},mode=max
           # This image is loaded into the local Docker daemon for the
           # downstream Trivy, structure, and runtime checks. Buildx exports
           # provenance/SBOM attestations as an image index, which cannot be
@@ -246,10 +274,10 @@ jobs:
       - name: Generate SBOM (SPDX JSON) for security-test image
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
-          image: ${{ env.IMAGE_NAME }}:security-test
+          image: ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
           format: spdx-json
-          output-file: sbom-security-test.spdx.json
-          artifact-name: sbom-security-test.spdx.json
+          output-file: sbom-security-test-${{ matrix.variant }}.spdx.json
+          artifact-name: sbom-security-test-${{ matrix.variant }}.spdx.json
           upload-artifact: true
           upload-release-assets: false
 
@@ -261,27 +289,28 @@ jobs:
         id: trivy-sarif
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:security-test
+          image-ref: ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
           format: sarif
-          output: trivy-container-results.sarif
+          output: trivy-container-results-${{ matrix.variant }}.sarif
           severity: HIGH,CRITICAL
-          trivyignores: .trivyignore
+          trivyignores: ${{ matrix.trivyignore }}
 
       - name: Upload container Trivy SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && hashFiles('trivy-container-results.sarif') != ''
+        if: always() && hashFiles(format('trivy-container-results-{0}.sarif', matrix.variant)) != ''
         with:
-          sarif_file: trivy-container-results.sarif
+          sarif_file: trivy-container-results-${{ matrix.variant }}.sarif
+          category: trivy-container-${{ matrix.variant }}
 
       - name: Fail on high or critical container vulnerabilities
         id: trivy-vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:security-test
+          image-ref: ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
           format: table
           severity: HIGH,CRITICAL
           exit-code: '1'
-          trivyignores: .trivyignore
+          trivyignores: ${{ matrix.trivyignore }}
 
       - name: Install container-structure-test
         run: |
@@ -329,7 +358,7 @@ jobs:
         id: structure-tests
         run: |
           container-structure-test test \
-            --image ${{ env.IMAGE_NAME }}:security-test \
+            --image ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }} \
             --config container-structure-test.yaml
 
       - name: Start container for runtime security analysis
@@ -337,10 +366,9 @@ jobs:
           set -euo pipefail
 
           # The published image runs a Production cold start that performs the
-          # PostGIS preflight compatibility check before migrations, so a
-          # reachable PostGIS database is required even when migrations are
-          # skipped. Provision one on a dedicated network and point the
-          # hardened app container at it by service name.
+          # PostGIS preflight and migration/schema checks. Provision an empty
+          # database on a dedicated network and let the hardened app perform
+          # its normal migrations before testing the running container.
           docker network create honua-runtime-net
 
           docker run -d \
@@ -376,14 +404,28 @@ jobs:
             --tmpfs /tmp \
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
-            -e HONUA_SKIP_MIGRATIONS=true \
             -e HONUA_ADMIN_PASSWORD="Security-Nightly-Admin-Pass1!" \
             -e Security__ConnectionEncryption__MasterKey="security-nightly-master-key-at-least-32-chars" \
             -e ConnectionStrings__DefaultConnection="Host=honua-runtime-db;Port=5432;Database=honua;Username=honua;Password=honua_password" \
             -p 8080:8080 \
-            ${{ env.IMAGE_NAME }}:security-test
+            ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}
 
-          sleep 10
+          ready=false
+          for _ in $(seq 1 120); do
+            if curl --fail --silent --max-time 2 http://localhost:8080/healthz/live >/dev/null; then
+              ready=true
+              break
+            fi
+            if [ "$(docker inspect --format '{{.State.Running}}' honua-runtime-test)" != true ]; then
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != true ]; then
+            echo "::error::Container did not become live after database migrations."
+            docker logs honua-runtime-test || true
+            exit 1
+          fi
 
       - name: Test runtime security constraints
         id: runtime-security
@@ -444,7 +486,7 @@ jobs:
             echo
             echo "**Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "**Commit**: ${{ github.sha }}"
-            echo "**Image**: ${{ env.IMAGE_NAME }}:security-test"
+            echo "**Image**: ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}"
             echo
             echo "## Checks"
             status_line "Dockerfile security analysis (Hadolint)" "${{ steps.hadolint.outcome }}"
@@ -458,15 +500,15 @@ jobs:
             echo "- Minimal Linux capabilities"
             echo "- No privilege escalation"
             echo "- Liveness endpoint under constrained runtime"
-          } > container-security-report.md
+          } > container-security-report-${{ matrix.variant }}.md
 
       - name: Upload container security artifacts
         uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
-          name: container-security-results-${{ github.run_number }}
+          name: container-security-results-${{ matrix.variant }}-${{ github.run_number }}
           path: |
-            container-security-report.md
-            hadolint-results.sarif
-            trivy-container-results.sarif
+            container-security-report-${{ matrix.variant }}.md
+            hadolint-results-${{ matrix.variant }}.sarif
+            trivy-container-results-${{ matrix.variant }}.sarif
           retention-days: 30

@@ -33,7 +33,7 @@ on:
 
 permissions:
   contents: read
-  packages: read
+  packages: write
 
 concurrency:
   group: cite-classic-conformance-${{ github.ref }}

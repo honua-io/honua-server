@@ -16,7 +16,7 @@
 # Custom handlers are a host feature, not a worker feature, so the bundled
 # dotnet-isolated worker is simply unused once FUNCTIONS_WORKER_RUNTIME=custom
 # is set below.
-ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice@sha256:cc14ce08d684cf5a39d231484cc6c48b616f59e01d02476834bd629a259dde73
+ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4-dotnet-isolated9.0-appservice@sha256:bf907ae73209e1a72a9b92c7d0c9a2dbc34120916ee948b67c24cf7c456f937b
 
 FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS build
 WORKDIR /src

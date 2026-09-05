@@ -40,6 +40,7 @@ internal static class StudioAiProxyServiceCollectionExtensions
                     if (!string.IsNullOrWhiteSpace(envKey))
                     {
                         provider.ApiKey = envKey;
+                        provider.ApiKeyFromEnvironment = true;
                     }
                 }
             })

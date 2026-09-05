@@ -1035,6 +1035,13 @@ public sealed class StudioPackageLifecycleServiceTests
             CancellationToken cancellationToken = default)
             => Task.FromException<StudioPublicationRequest>(new NotSupportedException());
 
+        public Task<StudioPublicationRequest?> GetPublicationRequestAsync(
+            Guid itemId,
+            Guid versionId,
+            Guid requestId,
+            CancellationToken cancellationToken = default)
+            => Task.FromException<StudioPublicationRequest?>(new NotSupportedException());
+
         public Task<StudioRollbackRequest> RollbackAsync(
             Guid itemId,
             Guid targetVersionId,

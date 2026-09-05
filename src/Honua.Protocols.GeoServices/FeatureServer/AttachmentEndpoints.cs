@@ -4,8 +4,10 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Core.Features.AttributeRules;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -333,6 +335,11 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
+        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        {
+            return;
+        }
+
         if (form.Files.Count == 0)
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "At least one file must be uploaded");
@@ -347,6 +354,17 @@ internal static partial class AttachmentEndpoints
         if (feature == null)
         {
             await StandardErrorHelpers.CreateNotFound(context, $"Feature {featureId} not found").ExecuteAsync(context);
+            return;
+        }
+
+        if (!await AuthorizeAttachmentOwnerEditAsync(
+                context,
+                resource.Value.Resource,
+                layerId,
+                featureId,
+                AttributeRuleEditEvent.Update,
+                feature).ConfigureAwait(false))
+        {
             return;
         }
 
@@ -415,6 +433,16 @@ internal static partial class AttachmentEndpoints
         else if (!long.TryParse(objectIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
+            return;
+        }
+
+        if (!await AuthorizeAttachmentOwnerEditAsync(
+                context,
+                resource.Value.Resource,
+                layerId,
+                featureId,
+                AttributeRuleEditEvent.Update).ConfigureAwait(false))
+        {
             return;
         }
 
@@ -499,6 +527,16 @@ internal static partial class AttachmentEndpoints
         else if (!long.TryParse(objectIdValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out featureId))
         {
             await RouteValidationHelpers.WriteValidationErrorAsync(context, "objectId parameter is required");
+            return;
+        }
+
+        if (!await AuthorizeAttachmentOwnerEditAsync(
+                context,
+                resource.Value.Resource,
+                layerId,
+                featureId,
+                AttributeRuleEditEvent.Delete).ConfigureAwait(false))
+        {
             return;
         }
 
@@ -628,6 +666,11 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
+        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
 
@@ -641,6 +684,24 @@ internal static partial class AttachmentEndpoints
             context.RequestAborted);
 
         await result.ExecuteAsync(context);
+    }
+
+    private static async Task<bool> EnsureFeatureVisibleAsync(
+        HttpContext context,
+        int layerId,
+        long featureId)
+    {
+        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted).ConfigureAwait(false);
+        if (feature is not null)
+        {
+            return true;
+        }
+
+        await StandardErrorHelpers.CreateNotFound(
+            context,
+            $"Feature {featureId} not found").ExecuteAsync(context).ConfigureAwait(false);
+        return false;
     }
 
     private static async Task<IFormCollection?> TryReadAttachmentFormAsync(HttpContext context)
@@ -669,6 +730,57 @@ internal static partial class AttachmentEndpoints
         MetadataV2Service Service,
         MetadataV2Resource Resource,
         int StorageLayerId);
+
+    private static async Task<bool> AuthorizeAttachmentOwnerEditAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        int layerId,
+        long featureId,
+        AttributeRuleEditEvent editEvent,
+        Feature? existingFeature = null)
+    {
+        var feature = existingFeature ?? await context.RequestServices
+            .GetRequiredService<IFeatureReader>()
+            .GetAsync(layerId, featureId, context.RequestAborted)
+            .ConfigureAwait(false);
+
+        if (feature is not { } existing)
+        {
+            await StandardErrorHelpers.CreateNotFound(
+                    context,
+                    $"Feature {featureId} not found")
+                .ExecuteAsync(context)
+                .ConfigureAwait(false);
+            return false;
+        }
+
+        if (resource.OwnerEditPolicy is not { Enabled: true } ownerPolicy)
+        {
+            return true;
+        }
+
+        var principal = context.User?.Identity?.IsAuthenticated == true
+            ? new EditPrincipal(
+                context.User.Identity.Name,
+                IsAuthenticated: true,
+                IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(context))
+            : EditPrincipal.Anonymous;
+        var existingOwner = existing.Attributes.TryGetValue(ownerPolicy.OwnerField, out var ownerValue)
+            ? ownerValue
+            : null;
+        var decision = OwnerEditPolicyEvaluator.Evaluate(ownerPolicy, editEvent, existingOwner, principal);
+        if (decision.IsAllowed)
+        {
+            return true;
+        }
+
+        await StandardErrorHelpers.CreateForbidden(
+                context,
+                decision.Reason ?? "Edit not permitted.")
+            .ExecuteAsync(context)
+            .ConfigureAwait(false);
+        return false;
+    }
 
     private static async Task<AttachmentAccessContext?> TryValidateLayerAccessAsync(
         HttpContext context,

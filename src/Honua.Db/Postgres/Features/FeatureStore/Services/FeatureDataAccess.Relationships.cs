@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
@@ -14,7 +15,13 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 internal sealed partial class FeatureDataAccess
 {
     public Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken)
-        => QueryRelatedAsync(layerId, query, originEnforcedFilter: null, relatedEnforcedFilter: null, cancellationToken);
+        => QueryRelatedAsync(
+            layerId,
+            query,
+            originEnforcedFilter: null,
+            relatedEnforcedFilter: null,
+            relatedEnforcedMaskedFields: ImmutableArray<string>.Empty,
+            cancellationToken);
 
     /// <summary>
     /// Postgres-specific overload that enforces permanent (row-visibility) filters
@@ -27,6 +34,7 @@ internal sealed partial class FeatureDataAccess
         RelatedQuery query,
         SqlFragment? originEnforcedFilter,
         SqlFragment? relatedEnforcedFilter,
+        ImmutableArray<string> relatedEnforcedMaskedFields,
         CancellationToken cancellationToken)
     {
         if (query.ObjectIds.Length == 0)
@@ -47,6 +55,14 @@ internal sealed partial class FeatureDataAccess
         {
             throw new ArgumentException($"Invalid relationship field: {destinationForeignKeyField}");
         }
+
+        FeatureQuerySecurity.Validate(new FeatureQuery
+        {
+            Where = query.Where,
+            SqlFilter = query.SqlFilter,
+            OutFields = query.OutFields,
+            EnforcedMaskedFields = relatedEnforcedMaskedFields
+        });
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
 
@@ -172,6 +188,14 @@ internal sealed partial class FeatureDataAccess
                         RelatedQuery.OriginObjectIdsAttribute,
                         originObjectIds)
                 };
+            }
+
+            if (!relatedEnforcedMaskedFields.IsDefaultOrEmpty)
+            {
+                foreach (var maskedField in relatedEnforcedMaskedFields)
+                {
+                    feature = feature with { Attributes = feature.Attributes.Remove(maskedField) };
+                }
             }
 
             features.Add(feature);

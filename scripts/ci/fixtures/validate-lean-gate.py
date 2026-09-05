@@ -14,9 +14,13 @@ ROOT = Path(__file__).resolve().parents[3]
 ACTION = ROOT / ".github" / "actions" / "lean-gate" / "action.yml"
 SCOPE_SCRIPT = ROOT / "scripts" / "ci" / "compute-lean-gate-build-scope.sh"
 FORMAT_SCOPE_SCRIPT = ROOT / "scripts" / "ci" / "compute-lean-gate-format-scope.sh"
+FORMAT_ACTION = ROOT / ".github" / "actions" / "format-check" / "action.yml"
 PR_GATE = ROOT / ".github" / "workflows" / "pr-gate.yml"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
+PRE_PR = ROOT / "scripts" / "ci" / "pre-pr-check.sh"
 TEXT = ACTION.read_text(encoding="utf-8")
+PRE_PR_TEXT = PRE_PR.read_text(encoding="utf-8")
+FORMAT_TEXT = FORMAT_ACTION.read_text(encoding="utf-8")
 
 
 def require(pattern: str, description: str, text: str = TEXT) -> None:
@@ -31,6 +35,7 @@ require(
 require(
     r"dotnet format Honua\.sln --verify-no-changes --no-restore ",
     "format without repeating restore after the full build",
+    text=FORMAT_TEXT,
 )
 require(
     r"dotnet test tests/dotnet/Honua\.Server\.Tests/Honua\.Server\.Tests\.csproj \\\s+--no-build \\\s+--no-restore",
@@ -45,13 +50,13 @@ require(
     "run the focused MCP roster drift smoke without rebuilding or restoring",
 )
 require(
-    r"CapabilityRegistryConformanceTests\.LiveMcpTools_MatchRegistryToolDescriptors.*"
-    r"CapabilityRegistryConformanceTests\.RegistryToolDescriptors_MirrorLiveWorkflowFamilies.*"
-    r"McpTaxonomyAlignmentTests\.ToolNames_MatchTaxonomyRoster.*"
-    r"McpTaxonomyAlignmentTests\.TaxonomyRoster_MatchesCapabilityRegistryToolDescriptors.*"
-    r"McpTaxonomyAlignmentTests\.ToolRoster_MatchesFullMcpDependencyInjectionRegistrations.*"
-    r"McpTaxonomyAlignmentTests\.ErrorEnvelopeRoster_CoversEveryStaticallyRegisteredTool",
-    "gate registry names, workflow families, and the taxonomy roster together",
+    r'--filter "FullyQualifiedName~McpTaxonomyAlignmentTests\|FullyQualifiedName~CapabilityRegistryConformanceTests"',
+    "gate the complete taxonomy-alignment and capability-registry conformance classes",
+)
+require(
+    r'--filter "FullyQualifiedName~McpTaxonomyAlignmentTests\|FullyQualifiedName~CapabilityRegistryConformanceTests"',
+    "mirror the complete MCP drift class filter in the local pre-PR check",
+    text=PRE_PR_TEXT,
 )
 
 # ---------------------------------------------------------------------------
@@ -104,19 +109,26 @@ require(
     "the format check",
 )
 require(
+    r"uses: \./\.github/actions/format-check",
+    "delegate format execution to the shared format action",
+)
+require(
     r"run: scripts/ci/compute-lean-gate-format-scope\.sh",
     "compute the format scope with the shared script",
+    text=FORMAT_TEXT,
 )
 require(
     r"dotnet format Honua\.sln --verify-no-changes --no-restore --verbosity diagnostic \\\s+"
     r"--include \"\$\{include_paths\[@\]\}\"",
     "run the scoped format check over the same solution workspace with the "
     "same --verify-no-changes/--no-restore contract as the full run",
+    text=FORMAT_TEXT,
 )
 require(
     r"include list is missing or empty",
     "fail loudly when format scope says 'affected' without a non-empty "
     "include list",
+    text=FORMAT_TEXT,
 )
 
 if not SCOPE_SCRIPT.is_file():
@@ -158,8 +170,31 @@ require(
     text=PR_GATE_TEXT,
 )
 require(
-    r"uses: \./\.github/actions/lean-gate\n(?:.*\n)*?\s+format-scope: affected",
-    "have pr-gate.yml pass format-scope: affected",
+    r"format:\n[\s\S]*?uses: \./\.github/actions/format-check\n"
+    r"\s+with:\n\s+format-scope: affected",
+    "run affected-scope format in a parallel PR Gate job",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"uses: \./\.github/actions/lean-gate\n(?:.*\n)*?\s+run-format: 'false'",
+    "disable only the serialized PR format invocation",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"required:\n[\s\S]*?name: PR Gate\n[\s\S]*?needs: \[pr-gate, format\]",
+    "keep the required PR Gate context as a fail-closed aggregator",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"format:\n[\s\S]*?- name: Await exact-head review\n"
+    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?exit 1",
+    "fail the format job on enforced attempt 1 so rerun-failed-jobs releases it",
+    text=PR_GATE_TEXT,
+)
+require(
+    r"required:\n[\s\S]*?- name: Revalidate exact-head review before success\n"
+    r"\s+if: env\.REVIEW_FIRST_MODE == 'enforce'[\s\S]*?Review Gate",
+    "revalidate exact-head review after both parallel paths complete",
     text=PR_GATE_TEXT,
 )
 require(
@@ -195,23 +230,32 @@ if not PREPULL_SCRIPT.is_file():
     raise AssertionError(f"lean gate must ship {PREPULL_SCRIPT.relative_to(ROOT)}")
 PREPULL_TEXT = PREPULL_SCRIPT.read_text(encoding="utf-8")
 
-# The pre-pull only removes the cold-runner stall when it overlaps all of the
-# work ahead of Governance/Drift. Pin both ends of that concurrency contract:
-# start it as the composite's first step, then await it immediately before the
-# Testcontainers-backed test. The helper must pull the tag it resolved from the
-# shared fixture rather than introducing a second image pin in CI.
+# The required PR Gate must stay Testcontainers-free. The exact governance
+# assertions move to a trunk-only job, and that leaf job must feed test-all so
+# its failure reaches CI Gate and the trailing-verification brake.
+if re.search(r"- name: Run \.NET Tests \(Server Governance/Drift\)", TEXT) or (
+    "prepull-testcontainers-postgis.sh" in TEXT
+):
+    raise AssertionError("lean gate must not boot the governance Testcontainer")
+
 require(
-    r"steps:\n(?:\s*(?:#.*)?\n)*"
-    r"\s+- name: Pre-pull Testcontainers PostGIS image \(background\)\n"
-    r"\s+shell: bash\n\s+run: scripts/ci/prepull-testcontainers-postgis\.sh",
-    "start the Testcontainers PostGIS pre-pull as its first composite step",
+    r"server-governance-drift:\n"
+    r"\s+name: Server Governance/Drift\n"
+    r"\s+if: \$\{\{ github\.ref == 'refs/heads/trunk' \}\}",
+    "run Server Governance/Drift only on the trailing trunk matrix",
+    text=CI_TEXT,
 )
 require(
-    r"- name: Await Testcontainers PostGIS pre-pull\n"
-    r"\s+shell: bash\n"
-    r"\s+run: scripts/ci/prepull-testcontainers-postgis\.sh --await\n\n"
-    r"\s+- name: Run \.NET Tests \(Server Governance/Drift\)",
-    "await the PostGIS pre-pull immediately before Server Governance/Drift",
+    r"dotnet test tests/dotnet/Honua\.Server\.Tests/Honua\.Server\.Tests\.csproj \\\n"
+    r"\s+--no-build \\\n\s+--no-restore \\\n\s+--configuration Release \\\n"
+    r'\s+--filter "Category=Architecture"',
+    "preserve the complete Server governance/drift assertion filter",
+    text=CI_TEXT,
+)
+require(
+    r"test-all:[\s\S]*?needs:[\s\S]*?- server-governance-drift",
+    "feed Server Governance/Drift into Test Suite Summary and CI Gate",
+    text=CI_TEXT,
 )
 require(
     r'FIXTURE="tests/dotnet/Honua\.TestKit/PostgresFixture\.cs"[\s\S]*?'

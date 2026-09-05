@@ -37,8 +37,8 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
     {
         _orchestrator = new RecordingMigrationBatchOrchestrator(_catalog);
         _fixture = new WebAppFixture()
-            .ReplaceService<IMigrationBatchRunCatalog>(_catalog)
-            .ReplaceService<IMigrationBatchOrchestrator>(_orchestrator);
+            .ReplaceRequestService<IMigrationBatchRunCatalog>(_catalog)
+            .ReplaceRequestService<IMigrationBatchOrchestrator>(_orchestrator);
     }
 
     public async Task InitializeAsync()
@@ -87,6 +87,61 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    [Endpoint("POST /api/v1/admin/import/migrations")]
+    public async Task RequestOverrides_ConcurrentFixturesRemainIsolated()
+    {
+        var firstCatalog = new InMemoryMigrationBatchRunCatalog();
+        var secondCatalog = new InMemoryMigrationBatchRunCatalog();
+        var firstOrchestrator = new RecordingMigrationBatchOrchestrator(firstCatalog);
+        var secondOrchestrator = new RecordingMigrationBatchOrchestrator(secondCatalog);
+        var firstFixture = new WebAppFixture()
+            .ReplaceRequestService<IMigrationBatchRunCatalog>(firstCatalog)
+            .ReplaceRequestService<IMigrationBatchOrchestrator>(firstOrchestrator);
+        var secondFixture = new WebAppFixture()
+            .ReplaceRequestService<IMigrationBatchRunCatalog>(secondCatalog)
+            .ReplaceRequestService<IMigrationBatchOrchestrator>(secondOrchestrator);
+
+        try
+        {
+            await Task.WhenAll(firstFixture.InitializeAsync(), secondFixture.InitializeAsync());
+            var firstBody = CreateValidBatchRequest("first_table");
+            var secondBody = CreateValidBatchRequest("second_table");
+
+            var responses = await Task.WhenAll(
+                firstFixture.Client.PostAsJsonAsync("/api/v1/admin/import/migrations", firstBody),
+                secondFixture.Client.PostAsJsonAsync("/api/v1/admin/import/migrations", secondBody));
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+
+            firstOrchestrator.LastRequest!.Layers.Single().TableName.Should().Be("first_table");
+            secondOrchestrator.LastRequest!.Layers.Single().TableName.Should().Be("second_table");
+        }
+        finally
+        {
+            await Task.WhenAll(firstFixture.DisposeAsync(), secondFixture.DisposeAsync());
+        }
+    }
+
+    private static object CreateValidBatchRequest(string tableName) => new
+    {
+        sourceKind = "arcgis-geoservices-rest",
+        sourceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
+        layers = new[]
+        {
+            new
+            {
+                sourceResourceId = $"resource:{tableName}:layer:0",
+                serviceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
+                layerId = 0,
+                tableName,
+            },
+        },
+    };
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/migrations")]

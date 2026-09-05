@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: honua_dev
       POSTGRES_USER: honua_user
-      POSTGRES_PASSWORD: honua_password
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Run python3 scripts/docker/quickstart.py to initialize per-install credentials}"
       # Enable encryption at rest and security features
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C --data-checksums"
       POSTGRES_HOST_AUTH_METHOD: "scram-sha-256"
@@ -15,15 +15,19 @@ services:
       POSTGRESQL_CONF_log_connections: "on"
       POSTGRESQL_CONF_log_disconnections: "on"
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U honua_user -d honua_dev"]
+      # The entrypoint runs a temporary postmaster while initializing a fresh
+      # volume. It can answer pg_isready before stopping, which races Honua's
+      # migrations. PID 1 is postgres only after initialization is complete.
+      test: ["CMD-SHELL", "test \"$(head -n 1 /var/lib/postgresql/data/postmaster.pid 2>/dev/null)\" = \"1\" && pg_isready -U honua_user -d honua_dev"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 90s
     restart: unless-stopped
 
   # Redis for the durable local control plane. The quickstart keeps the memory
@@ -51,12 +55,27 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Named volumes are created as root. Initialize the storage volume for the
+  # non-root server UID before Honua starts so imports work on a clean install.
+  storage-init:
+    image: "${HONUA_SERVER_IMAGE:-honua-server:local}"
+    entrypoint: ["sh", "-c"]
+    command: ["chown -R ${HONUA_CONTAINER_UID:-1001}:${HONUA_CONTAINER_UID:-1001} /storage"]
+    user: "0:0"
+    volumes:
+      - honua_storage:/storage
+    restart: "no"
+
   # Honua Server application
   honua:
+    image: "${HONUA_SERVER_IMAGE:-honua-server:local}"
     build:
       context: .
       args:
         HONUA_INCLUDE_STAC_OPS_DEMO: "true"
+      secrets:
+        - github_actor
+        - github_token
     ports:
       # Bind to localhost by default so the zero-override quickstart stays
       # local-only: the dev admin password is a public placeholder, so the
@@ -67,8 +86,14 @@ services:
       - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_GRPC_PORT:-8081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=honua_password"
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=${POSTGRES_PASSWORD:?Initialize quickstart credentials first}"
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
+      # These values make the documented local reverse-proxy/Console hostnames valid
+      # inputs to the production host-validation middleware when this file is reused.
+      PUBLIC_BASE_URL: "${HONUA_PUBLIC_BASE_URL:-http://localhost:8080}"
+      HostValidation__AllowedHosts__0: "${HONUA_ALLOWED_HOST_0:-localhost}"
+      HostValidation__AllowedHosts__1: "${HONUA_ALLOWED_HOST_1:-127.0.0.1}"
+      HostValidation__AllowedHosts__2: "${HONUA_ALLOWED_HOST_2:-honua}"
       Database__MigrationSafety__ContractApplyPolicy: "${HONUA_CONTRACT_APPLY_POLICY:-Gate}"
       Licensing__DevGrantEdition: "${HONUA_DEV_GRANT_EDITION:-}"
       HONUA_ENABLE_OBSERVABILITY_TEST_SEED: "${HONUA_ENABLE_OBSERVABILITY_TEST_SEED:-false}"
@@ -97,6 +122,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/live"]
       interval: 30s
@@ -138,7 +165,7 @@ services:
       honua:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/operate"]
+      test: ["CMD-SHELL", "test -s /app/wwwroot/version.json"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -160,11 +187,11 @@ services:
     profiles:
       - minio
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${MINIO_PORT:-9000}:9000"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?Initialize quickstart credentials first}"
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
@@ -184,3 +211,9 @@ volumes:
   dotnet_diagnostics:
   redis_data:
   minio_data:
+
+secrets:
+  github_actor:
+    environment: GITHUB_ACTOR
+  github_token:
+    environment: GITHUB_TOKEN

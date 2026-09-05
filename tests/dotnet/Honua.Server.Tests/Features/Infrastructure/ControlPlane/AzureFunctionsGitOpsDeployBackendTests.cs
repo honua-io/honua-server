@@ -104,6 +104,31 @@ public sealed class AzureFunctionsGitOpsDeployBackendTests
         slotClient.LastSwapRequest!.SlotName.Should().Be("staging");
     }
 
+    [Fact]
+    public async Task ObserveAsync_WhenProductionReturnsToPreviousImageAfterRollback_ReturnsRolledBack()
+    {
+        var slotClient = new StubAzureFunctionsSlotClient
+        {
+            ProductionState = new AzureFunctionsSiteConfigState
+            {
+                LinuxFxVersion = "DOCKER|ghcr.io/honua-io/honua-server:old"
+            },
+            SlotState = new AzureFunctionsSiteConfigState
+            {
+                LinuxFxVersion = "DOCKER|ghcr.io/honua-io/honua-server:new"
+            }
+        };
+        var backend = new AzureFunctionsGitOpsDeployBackend(slotClient, NullLogger<AzureFunctionsGitOpsDeployBackend>.Instance);
+
+        var observation = await backend.ObserveAsync(CreateOperation(
+            "staging",
+            "production",
+            WorkflowOperationStatus.RollbackRequested));
+
+        observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        observation.ObservedRevision.Should().Be("ghcr.io/honua-io/honua-server:old");
+    }
+
     private static DeployOperationSpec CreateSpec(
         string desiredRevision,
         IReadOnlyDictionary<string, string>? parameters = null)

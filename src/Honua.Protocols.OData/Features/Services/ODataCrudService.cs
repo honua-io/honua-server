@@ -75,10 +75,19 @@ internal sealed partial class ODataCrudService
     /// <summary>
     /// Retrieves a single feature by its ID with proper validation and error handling.
     /// </summary>
+    public Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
+        int layerId,
+        long objectId,
+        string baseUrl,
+        CancellationToken cancellationToken = default)
+        => GetFeatureAsync(layerId, objectId, baseUrl, _featureReader, layerId, cancellationToken);
+
     public async Task<ODataCrudResult<Dictionary<string, object?>>> GetFeatureAsync(
         int layerId,
         long objectId,
         string baseUrl,
+        IFeatureReader reader,
+        int storageLayerId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -91,7 +100,7 @@ internal sealed partial class ODataCrudService
             }
 
             // Get the feature
-            var feature = await _featureReader.GetAsync(layerId, objectId, cancellationToken);
+            var feature = await reader.GetAsync(storageLayerId, objectId, cancellationToken);
             if (feature == null)
             {
                 return ODataCrudResult<Dictionary<string, object?>>.NotFound($"Feature {objectId} not found in layer {layerId}");

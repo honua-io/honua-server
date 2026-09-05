@@ -54,12 +54,14 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 GENERATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-GIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+CHECKED_OUT_GIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+GIT_SHA=${CITE_EVIDENCE_TESTED_GIT_SHA:-$CHECKED_OUT_GIT_SHA}
+PRODUCER_GIT_SHA=${CITE_EVIDENCE_PRODUCER_GIT_SHA:-$CHECKED_OUT_GIT_SHA}
 GIT_REF=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 REPOSITORY=${GITHUB_REPOSITORY:-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")}
 RUN_ID=${GITHUB_RUN_ID:-local}
 RUN_NUMBER=${GITHUB_RUN_NUMBER:-local}
-SERVER_VERSION=$(git describe --tags --always 2>/dev/null || echo "$GIT_SHA")
+SERVER_VERSION=${CITE_EVIDENCE_SERVER_VERSION:-$GIT_SHA}
 GITHUB_RUN_URL=""
 if [[ -n "${GITHUB_SERVER_URL:-}" && -n "${GITHUB_REPOSITORY:-}" && -n "${GITHUB_RUN_ID:-}" ]]; then
     GITHUB_RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
@@ -317,6 +319,7 @@ jq -s \
     --arg generatedAt "$GENERATED_AT" \
     --arg repository "$REPOSITORY" \
     --arg gitSha "$GIT_SHA" \
+    --arg producerGitSha "$PRODUCER_GIT_SHA" \
     --arg gitRef "$GIT_REF" \
     --arg serverVersion "$SERVER_VERSION" \
     --arg runId "$RUN_ID" \
@@ -330,7 +333,8 @@ jq -s \
       git: {
         sha: $gitSha,
         ref: $gitRef,
-        serverVersion: $serverVersion
+        serverVersion: $serverVersion,
+        producerSha: $producerGitSha
       },
       github: {
         runId: $runId,
@@ -374,7 +378,8 @@ cat > "$OUTPUT_DIR/conformance-summary.md" <<EOF_MD
 - Generated: $GENERATED_AT
 - Repository: $REPOSITORY
 - Git ref: $GIT_REF
-- Git SHA: $GIT_SHA
+- Tested server Git SHA: $GIT_SHA
+- Evidence producer Git SHA: $PRODUCER_GIT_SHA
 - Server version: $SERVER_VERSION
 - Status: $overall_status
 $(
@@ -416,7 +421,8 @@ Summary for this run:
 - Status: **$overall_status**
 - Generated: $GENERATED_AT
 - Server version: \`$SERVER_VERSION\`
-- Git SHA: \`$GIT_SHA\`
+- Tested server Git SHA: \`$GIT_SHA\`
+- Evidence producer Git SHA: \`$PRODUCER_GIT_SHA\`
 - Total tests: $total_tests
 - Passed: $total_passed
 - Failed: $total_failed

@@ -38,6 +38,7 @@ namespace Honua.Server.Tests.Features.StudioAi;
 [Operation(Operations.Configuration)]
 public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
 {
+    private const int MaximumRequestBytes = 1_048_576;
     private const string ProviderName = "test-openai";
     private const string Issuer = "https://studio-idp.example.com";
     private const string Audience = "honua-studio-client-id";
@@ -95,6 +96,56 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         provider.GetProperty("kind").GetString().Should().Be("openai");
         provider.GetProperty("isDefault").GetBoolean().Should().BeTrue();
         provider.GetProperty("configured").GetBoolean().Should().BeTrue();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_ContentLengthOneByteOverLimit_Returns413BeforeAuditOrProviderPhase()
+    {
+        var client = _fixture.CreateAdminClient();
+        using var content = new ByteArrayContent(new byte[MaximumRequestBytes + 1]);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+        using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        _audit.Recorded.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_ChunkedOneByteOverLimit_Returns413BeforeAuditOrProviderPhase()
+    {
+        var client = _fixture.CreateAdminClient();
+        using var stream = new MemoryStream(new byte[MaximumRequestBytes + 1]);
+        using var content = new StreamContent(stream);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
+        using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        _audit.Recorded.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("text/plain")]
+    [InlineData("application/octet-stream")]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_UnsupportedContentType_Returns415BeforeReadingOrAuditing(string? contentType)
+    {
+        var client = _fixture.CreateAdminClient();
+        using var content = new ByteArrayContent(Encoding.UTF8.GetBytes(
+            """{"messages":[{"role":"user","content":"hi"}]}"""));
+        if (contentType is not null)
+        {
+            content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        }
+
+        using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        _audit.Recorded.Should().BeEmpty();
     }
 
     [IntegrationTest]
@@ -191,6 +242,64 @@ public sealed class StudioAiProxyEndpointsTests : IAsyncLifetime
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_AmbiguousRawJson_Returns400BeforeProviderOrAudit()
+    {
+        using var client = _fixture.CreateAdminClient();
+        string[] fixtures =
+        [
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"one\"}],\"messages\":[{\"role\":\"user\",\"content\":\"two\"}]}",
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"one\",\"content\":\"two\"}]}",
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"tools\":[{\"name\":\"lookup\",\"inputSchema\":{\"type\":\"object\",\"type\":\"array\"}}]}",
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"certification\":{\"candidateId\":\"one\",\"candidateId\":\"two\"}}",
+            "{\"Messages\":[{\"role\":\"user\",\"content\":\"one\"}],\"messages\":[{\"role\":\"user\",\"content\":\"two\"}]}"
+        ];
+
+        foreach (var rawJson in fixtures)
+        {
+            using var content = new StringContent(rawJson, Encoding.UTF8, "application/json");
+            using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, rawJson);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Duplicate JSON property", rawJson);
+        }
+
+        _audit.Recorded.Should().BeEmpty("ambiguous input is rejected before a provider call exists to audit");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_NonJsonContentType_Returns415BeforeProviderOrAudit()
+    {
+        using var client = _fixture.CreateAdminClient();
+        using var content = new StringContent(
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
+            Encoding.UTF8,
+            "text/plain");
+
+        using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        _audit.Recorded.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public async Task Chat_OpaqueJsonAllowsCaseDistinctPropertyNames()
+    {
+        using var client = _fixture.CreateAdminClient();
+        using var content = new StringContent(
+            "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"tools\":[{\"name\":\"lookup\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"id\":{},\"ID\":{}}}}]}",
+            Encoding.UTF8,
+            "application/json");
+
+        using var response = await client.PostAsync("/api/v1/studio/ai/chat", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("event: error");
     }
 
     [IntegrationTest]

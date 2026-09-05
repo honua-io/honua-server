@@ -31,7 +31,20 @@ dotnet build src/Honua.Server/Honua.Server.csproj
 
 ## Plain Docker Compose alternative
 
-If you don't want the .NET SDK in the loop, the repo-root `docker-compose.yml` builds the server from source and starts PostGIS plus Redis (`docker compose up -d`), with optional `--profile minio` and a profiled Console service once a compatible Console image is available. The compose file includes development-only defaults for the admin password, connection-encryption key, Redis control-plane connection, Gate migration policy, and localhost browser origins used by the [quickstart](../../get-started/quickstart.md).
+If you don't want the .NET SDK in the loop, build the local image with a GitHub
+token that can read the repository's packages, then start PostGIS, Redis, and
+that image through the repo-root Compose file:
+
+```bash
+GH_TOKEN=$(gh auth token) bash scripts/docker/build-with-github-packages.sh -t honua-server:local .
+docker compose up -d --no-build
+```
+
+The Compose file also supports `--profile minio` and a profiled Console service
+once a compatible Console image is available. It includes development-only
+defaults for the admin password, connection-encryption key, Redis control-plane
+connection, Gate migration policy, and localhost browser origins used by the
+[quickstart](../../get-started/quickstart.md).
 
 ## Verify
 

@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text;
 
 namespace Honua.Ai.StudioAiProxy.Domain;
 
@@ -80,6 +81,45 @@ public sealed class StudioAiToolDefinition
 
     /// <summary>JSON Schema describing the tool's call arguments.</summary>
     public JsonElement InputSchema { get; init; }
+
+    /// <summary>Optional MCP behavior annotations forwarded opaquely for model clients.</summary>
+    public JsonElement? Annotations { get; init; }
+
+    /// <summary>Optional JSON Schema describing the tool's structured result.</summary>
+    public JsonElement? OutputSchema { get; init; }
+
+    /// <summary>
+    /// Builds the provider description, including contract metadata that provider tool APIs do not
+    /// expose as first-class fields. Keeping the JSON in the model-visible description preserves
+    /// the contract across Anthropic, OpenAI-compatible, and Bedrock requests.
+    /// </summary>
+    internal string? BuildProviderDescription()
+    {
+        if (Annotations is null && OutputSchema is null)
+        {
+            return Description;
+        }
+
+        var description = new StringBuilder(Description);
+        AppendContract(description, "Tool annotations", Annotations);
+        AppendContract(description, "Expected structured output schema", OutputSchema);
+        return description.ToString();
+    }
+
+    private static void AppendContract(StringBuilder description, string label, JsonElement? contract)
+    {
+        if (contract is null)
+        {
+            return;
+        }
+
+        if (description.Length > 0)
+        {
+            description.AppendLine().AppendLine();
+        }
+
+        description.Append(label).Append(" (JSON): ").Append(contract.Value.GetRawText());
+    }
 }
 
 /// <summary>How strongly the caller wants the model to invoke a tool.</summary>
@@ -116,6 +156,8 @@ public sealed class StudioAiToolChoice
 /// </summary>
 public sealed class StudioAiChatRequest
 {
+    internal byte[]? AcceptedRequestJson { get; init; }
+
     /// <summary>Release-certification bindings that require a signed transcript.</summary>
     public StudioAiTranscriptCertification? Certification { get; init; }
     /// <summary>
@@ -219,6 +261,12 @@ public sealed class StudioAiChatHttpTool
 
     [JsonPropertyName("inputSchema")]
     public JsonElement InputSchema { get; init; }
+
+    [JsonPropertyName("annotations")]
+    public JsonElement? Annotations { get; init; }
+
+    [JsonPropertyName("outputSchema")]
+    public JsonElement? OutputSchema { get; init; }
 }
 
 /// <summary>Wire shape of a <see cref="StudioAiToolChoice"/>. <see cref="Mode"/> is lower-case (<c>"auto"</c>, <c>"none"</c>, <c>"required"</c>, <c>"specific"</c>).</summary>

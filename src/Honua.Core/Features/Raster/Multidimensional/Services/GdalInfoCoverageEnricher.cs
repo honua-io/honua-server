@@ -60,6 +60,7 @@ public static class GdalInfoCoverageEnricher
             var resolution = ReadResolution(root) ?? baseMetadata.Resolution;
             var extent = ReadExtent(root, baseMetadata.Srid) ?? baseMetadata.Extent;
             var (temporal, vertical) = ReadAxes(root);
+            var yAxisAscending = ReadYAxisAscending(root) ?? baseMetadata.YAxisAscending;
 
             return baseMetadata with
             {
@@ -67,6 +68,7 @@ public static class GdalInfoCoverageEnricher
                 Resolution = resolution,
                 Temporal = temporal ?? baseMetadata.Temporal,
                 Vertical = vertical ?? baseMetadata.Vertical,
+                YAxisAscending = yAxisAscending,
             };
         }
     }
@@ -86,6 +88,23 @@ public static class GdalInfoCoverageEnricher
 
         // geoTransform = [originX, pixelWidth, rowRotation, originY, colRotation, pixelHeight]
         return values.Count == 6 ? (Math.Abs(values[1]), Math.Abs(values[5])) : null;
+    }
+
+    private static bool? ReadYAxisAscending(JsonElement root)
+    {
+        if (!root.TryGetProperty("geoTransform", out var gt) || gt.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var values = gt.EnumerateArray().ToArray();
+        if (values.Length != 6 || !values[5].TryGetDouble(out var pixelHeight) || Math.Abs(pixelHeight) < double.Epsilon)
+        {
+            return null;
+        }
+
+        // GDAL uses a positive row height for a south-up (ascending-Y) array.
+        return pixelHeight > 0;
     }
 
     private static RasterExtent? ReadExtent(JsonElement root, int srid)

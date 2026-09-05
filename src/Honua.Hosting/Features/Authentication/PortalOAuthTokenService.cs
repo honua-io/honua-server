@@ -485,7 +485,7 @@ internal sealed class PortalOAuthTokenService(
         // `expires` in milliseconds); we honor the per-endpoint convention.
         var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
 
-        return PortalOAuthTokenResult.Success(issuance.Token, expiresInSeconds, refreshToken);
+        return PortalOAuthTokenResult.Success(issuance.Token, expiresInSeconds, refreshToken, username: principal.PrincipalId);
     }
 
     private int ResolveExpirationMinutes(int? requested)
@@ -558,11 +558,12 @@ internal sealed record PortalOAuthTokenResult(
     string? ErrorDescription,
     // Space-delimited scopes actually granted (RFC 6749 §5.1), set for the
     // first-class client_credentials grant (#1888). Null when no scope applies.
-    string? Scope = null)
+    string? Scope = null,
+    string? Username = null)
 {
     /// <summary>Builds a successful token result.</summary>
-    public static PortalOAuthTokenResult Success(string accessToken, long expiresInSeconds, string? refreshToken, string? scope = null)
-        => new(true, accessToken, expiresInSeconds, refreshToken, null, null, scope);
+    public static PortalOAuthTokenResult Success(string accessToken, long expiresInSeconds, string? refreshToken, string? scope = null, string? username = null)
+        => new(true, accessToken, expiresInSeconds, refreshToken, null, null, scope, username);
 
     /// <summary>Builds an OAuth2 error result.</summary>
     public static PortalOAuthTokenResult Failure(string error, string description)

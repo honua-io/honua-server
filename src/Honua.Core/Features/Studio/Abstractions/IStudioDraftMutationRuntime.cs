@@ -36,6 +36,22 @@ public interface IStudioDraftMutationRuntime
         string? actorId,
         StudioDraftMutationContext context,
         CancellationToken cancellationToken = default);
+
+    Task<StudioDraftMutationReceipt<StudioContentVersion>> SaveVersionAsync(
+        Guid draftId, long expectedGeneration, string? changeNote, string? actorId, StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default);
+
+    Task<StudioDraftMutationReceipt<StudioPublicationRequest>> CreatePublicationRequestAsync(
+        Guid itemId, Guid versionId, StudioPublicationIntent? intent, string? warningAcknowledgement, string? actorId,
+        StudioDraftMutationContext context, CancellationToken cancellationToken = default);
+
+    Task<StudioDraftMutationReceipt<StudioPackageDraft>> ReopenVersionAsync(
+        Guid itemId, Guid versionId, string? actorId, StudioDraftMutationContext context,
+        CancellationToken cancellationToken = default);
+
+    Task<StudioDraftMutationReceipt<StudioRollbackRequest>> RollbackAsync(
+        Guid itemId, Guid targetVersionId, StudioRollbackPointer target, string? actorId, string? reason,
+        StudioDraftMutationContext context, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Trusted evidence supplied by an authorized protocol adapter.</summary>
@@ -48,6 +64,8 @@ public sealed record StudioDraftMutationContext
     public string? IdempotencyKey { get; init; }
     public string AuthorizationOutcome { get; init; } = "authorized";
     public IReadOnlyList<string> Roles { get; init; } = [];
+    public bool ScopeGoverned { get; init; }
+    public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
 }
 
 /// <summary>Durable envelope plus the typed projection produced by its actuator.</summary>

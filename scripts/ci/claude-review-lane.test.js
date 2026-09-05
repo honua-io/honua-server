@@ -93,6 +93,12 @@ test('the lane generates its attestation body instead of transcribing it', () =>
   assert.doesNotMatch(source, /No major issues found/);
 });
 
+test('completed exact-head reviews are visibly deduplicated before review', () => {
+  assert.match(source, /findCompletedClaudeReview/);
+  assert.match(source, /already reviewed at \$\{head\}/);
+  assert.match(source, /core\.summary\.write\(\)/);
+});
+
 test('candidate-controlled reviewer instructions are stripped before review', () => {
   assert.match(source, /-name CLAUDE\.md/);
   assert.match(source, /-name AGENTS\.md/);

@@ -7,6 +7,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Raster.Multidimensional.Domain;
+using Honua.Core.Features.Raster.Domain;
 using Honua.Server.Features.Protocols.Coverages.Multidimensional;
 using Honua.TestKit.Attributes;
 
@@ -134,6 +135,51 @@ public sealed class MultidimCoverageScanJobTests
             Convert.ToBase64String(Encoding.UTF8.GetBytes(envelope));
 
         MultidimCoverageScanJob.TryGetZarrRootPath(artifact, out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void EnrichDerivedZarrMetadata_CarriesSourceGridAndAxes()
+    {
+        var array = new ZarrArrayMetadata(
+            "sst", ZarrFormatVersion.V2, "sst", [3, 4, 4, 5], [1, 4, 4, 5], "<f4", "C", null, double.NaN,
+            ["time", "elevation", "latitude", "longitude"]);
+        var zarr = new ZarrStoreMetadata(
+            ZarrFormatVersion.V2, 0,
+            new RasterExtent { XMin = 0, YMin = 0, XMax = 5, YMax = 4, Srid = 0 },
+            [array], "sst", null, null, null);
+        var source = new MultidimensionalCoverageMetadata
+        {
+            Format = MultidimensionalCoverageFormat.NetCdf4,
+            Srid = 4326,
+            Extent = new RasterExtent { XMin = -122.5, YMin = 37.7, XMax = -122.35, YMax = 37.85, Srid = 4326 },
+            Resolution = (0.03, 0.0375),
+            Temporal = new TemporalExtent(
+                new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2024, 1, 2, 0, 0, 0, TimeSpan.Zero), 3),
+            Vertical = new VerticalExtent(100, 1000, 4, "hPa"),
+            YAxisAscending = true,
+            Variables =
+            [
+                new MultidimensionalCoverageVariable(
+                    "sst", "Float32",
+                    [new MultidimensionalCoverageDimension("time", 3),
+                     new MultidimensionalCoverageDimension("elevation", 4),
+                     new MultidimensionalCoverageDimension("latitude", 4),
+                     new MultidimensionalCoverageDimension("longitude", 5)],
+                    null, null, null, null, null),
+            ],
+        };
+
+        var enriched = MultidimCoverageScanJob.EnrichDerivedZarrMetadata(zarr, source);
+
+        enriched.Srid.Should().Be(4326);
+        enriched.Extent.Should().Be(source.Extent);
+        enriched.SpatialXDimension.Should().Be("longitude");
+        enriched.SpatialYDimension.Should().Be("latitude");
+        enriched.TemporalDimension.Should().Be("time");
+        enriched.Temporal.Should().Be(source.Temporal);
+        enriched.Axes.Should().ContainSingle().Which.Name.Should().Be("elevation");
+        enriched.YAxisAscending.Should().BeTrue();
     }
 
     [UnitTest]

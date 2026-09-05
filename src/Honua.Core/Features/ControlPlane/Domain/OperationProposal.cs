@@ -170,10 +170,19 @@ public sealed record OperationProposalAutonomyMetadata
 /// </summary>
 public sealed record OperationProposal
 {
+    /// <summary>Trusted tenant owner captured when the operation was accepted.</summary>
+    public string? TenantId { get; init; }
+
     /// <summary>
     /// Stable proposal identifier.
     /// </summary>
     public required string ProposalId { get; init; }
+
+    /// <summary>Whether the proposer's authority was governed by OAuth scopes.</summary>
+    public bool ScopeGoverned { get; init; }
+
+    /// <summary>Normalized recognized OAuth scopes sealed as the replay upper bound.</summary>
+    public IReadOnlyList<string> RecognizedScopes { get; init; } = [];
 
     /// <summary>Exact typed descriptor identity accepted into this proposal.</summary>
     public string? OperationId { get; init; }
@@ -182,6 +191,9 @@ public sealed record OperationProposal
     /// Operation class this proposal represents.
     /// </summary>
     public required OperationClass Kind { get; init; }
+
+    /// <summary>Registered action discriminator sealed independently of optional autonomy metadata.</summary>
+    public string? ActionDiscriminator { get; init; }
 
     /// <summary>
     /// Current proposal lifecycle status.

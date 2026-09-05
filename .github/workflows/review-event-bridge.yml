@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
-      group: review-event-bridge-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+      group: review-event-bridge-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
       - name: Shed superseded review event
@@ -30,7 +30,8 @@ jobs:
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
-            const eventHead = context.payload.pull_request.head.sha;
+            const eventHead = context.payload.review?.commit_id ||
+              context.payload.comment?.commit_id;
             const { data: pull } = await github.rest.pulls.get({
               ...context.repo, pull_number: prNumber,
             });
@@ -38,6 +39,9 @@ jobs:
               core.notice(
                 `superseded: event subject ${eventHead} is not current head ${pull.head.sha} for PR #${prNumber}`);
               core.setOutput('superseded', 'true');
+              // workflow_run consumers cannot read step outputs. Publish a
+              // non-success conclusion so the trusted gate can skip its job.
+              core.setFailed('Superseded review event; trusted notification suppressed.');
             }
 
       - name: Record review event

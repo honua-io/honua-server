@@ -36,6 +36,21 @@ on:
         description: 'Promote: publish SDKs (real) + retag the RC image. Requires a green validator verdict.'
         type: boolean
         default: false
+      realtime_sdk_revision:
+        description: 'Exact honua-sdk-js commit that produced the retained realtime Preview receipt'
+        required: true
+      realtime_sdk_package:
+        description: 'Exact SDK package identity used by the realtime Preview run'
+        required: true
+      realtime_sdk_run_id:
+        description: 'Successful honua-sdk-js realtime Preview workflow run id'
+        required: true
+      realtime_sdk_run_attempt:
+        description: 'Exact honua-sdk-js realtime Preview workflow attempt'
+        required: true
+      realtime_sdk_artifact_id:
+        description: 'Immutable Actions artifact id containing the realtime Preview receipt'
+        required: true
 
 permissions:
   contents: read
@@ -129,6 +144,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lint RC AOT Dockerfile
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: docker/Dockerfile.aot
+          failure-threshold: error
+
       - name: Build RC AOT candidate by digest
         id: build
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
@@ -157,6 +178,15 @@ jobs:
           set -euo pipefail
           docker pull "$CANDIDATE"
           python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+
+      - name: Fail on high or critical RC AOT vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          trivyignores: .trivyignore-release
 
       - name: Attest verified RC AOT candidate
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -267,12 +297,34 @@ jobs:
           path: sdk-evidence.ndjson
           if-no-files-found: warn
 
+  realtime-preview-qualification:
+    name: Realtime Preview exact-candidate gate
+    needs: rc-image
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/realtime-preview-qualification.yml
+    with:
+      candidate_revision: ${{ needs.rc-image.outputs.server_sha }}
+      # The candidate job is the only authority for this digest. The reusable gate
+      # consumes it when present and fails closed when the post-candidate receipt is
+      # unavailable; the release-side sequencing fix is tracked in honua-release#269.
+      candidate_image: ${{ needs.rc-image.outputs.image_digest }}
+      candidate_environment: ${{ github.event.inputs.release_id }}
+      sdk_revision: ${{ github.event.inputs.realtime_sdk_revision }}
+      sdk_package: ${{ github.event.inputs.realtime_sdk_package }}
+      sdk_run_id: ${{ github.event.inputs.realtime_sdk_run_id }}
+      sdk_run_attempt: ${{ github.event.inputs.realtime_sdk_run_attempt }}
+      sdk_artifact_id: ${{ github.event.inputs.realtime_sdk_artifact_id }}
+    secrets:
+      release_bundle_token: ${{ secrets.RELEASE_BUNDLE_TOKEN }}
+
   aggregate:
     name: Assemble manifest & validate train
-    needs: [release-context, rc-image, integration, sdk-cut]
+    needs: [release-context, rc-image, integration, sdk-cut, realtime-preview-qualification]
     # Off-trunk runs deliberately stop at the unambiguous test image/evidence channel.
     # No candidate manifest is produced for the downstream release validator to accept.
-    if: ${{ always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' }}
+    if: ${{ always() && needs.release-context.outputs.candidate == 'true' && needs.rc-image.result == 'success' && needs.realtime-preview-qualification.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:

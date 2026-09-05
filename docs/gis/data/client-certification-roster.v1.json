@@ -1034,7 +1034,7 @@
       "targetRelease": "2026.1",
       "activationState": "activated",
       "rosterOrigin": "artifact",
-      "sourceStatus": "1138 / 1138",
+      "sourceStatus": "1137 / 1138",
       "clientVersionPolicy": "TEAM Engine and per-suite ETS versions pinned by the container image tags in .github/workflows/cite-*.yml.",
       "protocolSurfaces": [
         "wfs",
@@ -1100,7 +1100,7 @@
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "The compliance receipt, currently 1138/1138. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture."
+      "notes": "The compliance receipt is currently 1137/1138; WFS 2.0 basic is 166/167 because multi-layer rollbackOnFailure=true transactions are rejected. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture."
     },
     {
       "id": "arcgis-stub",

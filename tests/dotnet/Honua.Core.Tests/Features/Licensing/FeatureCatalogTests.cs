@@ -80,6 +80,7 @@ public sealed class FeatureCatalogTests
     [InlineData("analytics.spatial-join")]
     [InlineData("analytics.buffer-aggregate")]
     [InlineData("analytics.density")]
+    [InlineData("analytics.h3")]
     public void All_SpatialAnalyticsFeaturesAreProTier(string key)
     {
         // ADR-0024 + ticket #342 acceptance: every spatial analytics endpoint

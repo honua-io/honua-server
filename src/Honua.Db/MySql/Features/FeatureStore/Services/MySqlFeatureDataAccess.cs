@@ -238,7 +238,7 @@ internal sealed class MySqlFeatureDataAccess : IFeatureDataAccess
         => throw NotSupported(nameof(ExecuteStatisticsQueryAsync));
 
     /// <inheritdoc />
-    public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, CancellationToken cancellationToken)
+    public Task<byte[]?> GetMvtTileAsync(int layerId, ParameterizedQuery query, long maxTileSize, CancellationToken cancellationToken)
         => throw NotSupported(nameof(GetMvtTileAsync));
 
 #pragma warning disable CS1998

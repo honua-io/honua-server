@@ -93,7 +93,8 @@ def main() -> None:
         "Await exact-head review",
         "Free disk space",
     ]
-    positions = [pr_gate.index(f"- name: {name}") for name in ordered_steps]
+    build_test_job = pr_gate[pr_gate.index("  pr-gate:\n") : pr_gate.index("  required:\n")]
+    positions = [build_test_job.index(f"- name: {name}") for name in ordered_steps]
     if positions != sorted(positions):
         raise AssertionError("admission receipt/wait must precede every expensive step")
 
@@ -106,18 +107,24 @@ def main() -> None:
         "if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != "
         "'pull_request' || github.run_attempt > 1"
     )
-    if pr_gate.count(full_condition) != 4:
+    # Four expensive steps remain in the build/test job and four now live in
+    # the parallel format job (checkout, setup, restore, format). All eight
+    # must stay attempt-2-only when review-first enforcement is enabled.
+    if pr_gate.count(full_condition) != 8:
         raise AssertionError("every expensive PR Gate step must be attempt-2-only in enforce mode")
 
     revalidation_condition = (
         "if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == "
         "'pull_request' && github.run_attempt > 1"
     )
-    if pr_gate.count(revalidation_condition) != 2:
-        raise AssertionError("attempt 2 must revalidate review evidence before and after verification")
+    if pr_gate.count(revalidation_condition) != 3:
+        raise AssertionError(
+            "attempt 2 must revalidate before build/tests, after build/tests, "
+            "and after both parallel jobs"
+        )
     require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
-    if pr_gate.count("github.rest.repos.listCommitStatusesForRef") != 2:
-        raise AssertionError("both attempt-2 review checks must read exact-head status")
+    if pr_gate.count("github.rest.repos.listCommitStatusesForRef") != 3:
+        raise AssertionError("all three attempt-2 review checks must read exact-head status")
     before = pr_gate.index("- name: Revalidate exact-head review before verification")
     expensive = pr_gate.index("- name: Free disk space")
     after = pr_gate.index("- name: Revalidate exact-head review before success")
@@ -127,8 +134,28 @@ def main() -> None:
     require(review_gate, "  actions: write", "trusted review transition needs actions: write")
     require(
         review_gate,
+        "group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}",
+        "resolver concurrency must cancel superseded heads for the same PR",
+    )
+    require(
+        review_bridge,
+        "group: review-event-bridge-pr-${{ github.event.pull_request.number }}",
+        "review bridge concurrency must cancel superseded heads for the same PR",
+    )
+    require(
+        review_gate,
         'workflows: ["PR Gate", "Review Event Bridge"]',
         "PR Gate and review-event completion must re-evaluate trusted review",
+    )
+    require(
+        review_gate,
+        "github.event.workflow_run.name != 'Review Event Bridge' ||",
+        "non-successful bridge runs must skip the trusted resolver job",
+    )
+    require(
+        review_gate,
+        "github.event.workflow_run.conclusion == 'success'",
+        "only successful bridge runs may start trusted resolution",
     )
     require(review_gate, "cancel-in-progress: false", "trusted dispatch must not be interrupted")
     require(
@@ -137,8 +164,41 @@ def main() -> None:
         "every trusted mutation must serialize on a resolved PR number",
     )
     require(review_gate, "needs: resolve", "attestation must wait for PR identity resolution")
+    stale_review = review_gate.index("- name: Shed superseded review event")
+    resolve_review = review_gate.index("- name: Resolve every event to one pull request")
+    if stale_review >= resolve_review:
+        raise AssertionError("stale review events must exit before trusted pull request resolution")
+    require(
+        review_gate,
+        "if: steps.stale.outputs.superseded != 'true'",
+        "superseded review events must skip trusted pull request resolution",
+    )
+    require(
+        review_gate,
+        "const { data: pull } = await github.rest.pulls.get({",
+        "review events must compare their subject SHA with the current API head",
+    )
     if "github.event.workflow_run.head_sha ||" in review_gate:
         raise AssertionError("fork workflow events must not use a different concurrency identity")
+    require(
+        review_bridge,
+        "const eventHead = context.payload.review?.commit_id ||",
+        "review bridge must use the review or comment subject commit",
+    )
+    stale_bridge = review_bridge.index("- name: Shed superseded review event")
+    notify_bridge = review_bridge.index("- name: Record review event")
+    if stale_bridge >= notify_bridge:
+        raise AssertionError("stale bridge events must exit before notifying the trusted gate")
+    require(
+        review_bridge,
+        "if: steps.stale.outputs.superseded != 'true'",
+        "superseded bridge events must skip trusted gate notification",
+    )
+    require(
+        review_bridge,
+        "core.setFailed('Superseded review event; trusted notification suppressed.');",
+        "superseded bridge events must expose a non-success workflow conclusion",
+    )
     require(
         review_gate,
         "ref: ${{ github.workflow_sha }}",

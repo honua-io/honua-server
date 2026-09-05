@@ -89,6 +89,19 @@ internal sealed class McpListCapabilitiesArgument
 
     [JsonPropertyName("includeGroundingResources")]
     public bool? IncludeGroundingResources { get; set; }
+
+    [JsonPropertyName("toolCursor")]
+    public string? ToolCursor { get; set; }
+
+    [JsonPropertyName("resourceCursor")]
+    public string? ResourceCursor { get; set; }
+
+    /// <summary>
+    /// Explicit administrative export operation. It returns the complete
+    /// inventory and is rejected for callers without an admin role.
+    /// </summary>
+    [JsonPropertyName("fullExport")]
+    public bool? FullExport { get; set; }
 }
 
 /// <summary>
@@ -112,11 +125,23 @@ internal sealed class McpListCapabilitiesOutput
     [JsonPropertyName("toolCount")]
     public int ToolCount { get; set; }
 
+    [JsonPropertyName("totalToolCount")]
+    public int TotalToolCount { get; set; }
+
+    [JsonPropertyName("nextToolCursor")]
+    public string? NextToolCursor { get; set; }
+
     [JsonPropertyName("tools")]
     public IReadOnlyList<McpCapabilityTool> Tools { get; set; } = [];
 
     [JsonPropertyName("resourceCount")]
     public int ResourceCount { get; set; }
+
+    [JsonPropertyName("totalResourceCount")]
+    public int TotalResourceCount { get; set; }
+
+    [JsonPropertyName("nextResourceCursor")]
+    public string? NextResourceCursor { get; set; }
 
     [JsonPropertyName("resources")]
     public IReadOnlyList<McpCapabilityResource> Resources { get; set; } = [];

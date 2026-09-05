@@ -69,6 +69,11 @@ public sealed class OpsHealthChecksView
 /// <summary>A single health-check entry.</summary>
 public sealed class OpsHealthCheckEntryView
 {
+    /// <summary>Gets credential-free GP store evidence when this is the output-store health check.</summary>
+    [JsonPropertyName("outputStoreAttestation")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, string>? OutputStoreAttestation { get; init; }
+
     /// <summary>Gets the registered health-check name.</summary>
     [JsonPropertyName("name")]
     public required string Name { get; init; }

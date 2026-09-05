@@ -294,7 +294,8 @@ public sealed class McpPackageDraftToolTests
     {
         JsonRpc = "2.0",
         Id = JsonString(id),
-        Method = "tools/list"
+        Method = "tools/list",
+        Params = Json("""{"view":"full"}""")
     };
 
     private static McpJsonRpcRequest ToolCall(string id, string toolName, string argumentsJson) => new()

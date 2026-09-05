@@ -135,6 +135,34 @@ public sealed class OperationGatewayStateMachineTests
     }
 
     [Fact]
+    public async Task ApprovalReplay_PreservesNormalizedOAuthScopeCeiling()
+    {
+        var ladder = Substitute.For<IGuardrailLadder>();
+        ladder.Resolve(OperationClass.Deploy).Returns(
+            new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"));
+        var store = new InMemoryProposalStore();
+        var sut = BuildGateway(store: store, executor: new DeployExecutor(), ladder: ladder);
+
+        var routed = await sut.RouteAsync(new OperationGatewayRequest
+        {
+            Kind = OperationClass.Deploy,
+            RequestedBy = "oauth-operator",
+            ScopeGoverned = true,
+            RecognizedScopes = ["honua.mcp.publish", "honua.mcp.publish", "honua.mcp.read"],
+        });
+
+        routed.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
+        var persisted = await store.GetAsync(routed.ProposalId!);
+        persisted!.ScopeGoverned.Should().BeTrue();
+        persisted.RecognizedScopes.Should().Equal("honua.mcp.publish", "honua.mcp.read");
+
+        var replayed = await sut.ApplyApprovedProposalAsync(routed.ProposalId!, "approver-with-broader-authority");
+        replayed!.Status.Should().Be(OperationProposalStatus.Submitted);
+        replayed.ScopeGoverned.Should().BeTrue();
+        replayed.RecognizedScopes.Should().Equal("honua.mcp.publish", "honua.mcp.read");
+    }
+
+    [Fact]
     public async Task ApplyApprovedProposal_WithRegisteredSynchronousKind_TransitionsToSucceeded()
     {
         var proposal = CreateProposal("p-seed", OperationClass.Seed, OperationProposalStatus.AwaitingApproval);

@@ -363,6 +363,9 @@ internal abstract class StudioDraftToolBase
                     CorrelationId = httpContext.TraceIdentifier,
                     AuthorizationOutcome = "authorized",
                     Roles = principal.FindAll(ClaimTypes.Role).Select(static claim => claim.Value).ToArray(),
+                    ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
+                    RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
+                        .OrderBy(scope => scope, StringComparer.Ordinal).ToArray(),
                 },
                 cancellationToken)
                 .ConfigureAwait(false);

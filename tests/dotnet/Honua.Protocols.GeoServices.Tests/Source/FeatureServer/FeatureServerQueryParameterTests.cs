@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -21,6 +22,29 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
     public FeatureServerQueryParameterTests(WebAppFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    [Fact]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public void EsriOperationAllowlists_AcceptPortalTokenParameter()
+    {
+        var tokenBearingOperations = new[]
+        {
+            FeatureServerEndpoints.AllowedQueryParameters.QueryRelatedRecords,
+            FeatureServerEndpoints.AllowedQueryParameters.GenerateRenderer,
+            FeatureServerEndpoints.AllowedQueryParameters.GetEstimates,
+            FeatureServerEndpoints.AllowedQueryParameters.ServiceGetEstimates,
+            FeatureServerEndpoints.AllowedQueryParameters.QueryDomains,
+            FeatureServerEndpoints.AllowedQueryParameters.Relationships,
+            FeatureServerEndpoints.AllowedQueryParameters.QueryBins,
+            FeatureServerEndpoints.AllowedQueryParameters.QueryDateBins,
+            FeatureServerEndpoints.AllowedQueryParameters.QueryH3,
+            FeatureServerEndpoints.AllowedQueryParameters.ApplyEdits,
+            FeatureServerEndpoints.AllowedQueryParameters.DeleteFeatures,
+        };
+
+        tokenBearingOperations.Should().AllSatisfy(parameters => parameters.Should().Contain("token"));
     }
 
     // ArcGIS Pro and the JS API send these parameters by default even when the
@@ -685,6 +709,37 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         }
     }
 
+    // Esri's large-page JSON path used the streaming formatter before this regression:
+    // returnDistinctValues was ignored there, so duplicate attributes and feature OIDs
+    // leaked into the response (#4091).
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
+    public async Task Query_WithReturnDistinctValues_OverStreamingThreshold_RemainsUnique()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            "?where=1%3D1&outFields=category&returnDistinctValues=true&returnGeometry=false" +
+            "&resultRecordCount=1001&f=json");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var queryResponse = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.QueryResponse);
+        queryResponse.Should().NotBeNull();
+        queryResponse!.Features.Should().NotBeNullOrEmpty();
+
+        var categories = queryResponse.Features!
+            .Select(feature => GetStringAttribute(feature.Attributes, "category"))
+            .Where(value => value is not null)
+            .ToArray();
+        categories.Distinct(StringComparer.OrdinalIgnoreCase).Should().HaveCount(categories.Length);
+        foreach (var feature in queryResponse.Features!)
+        {
+            feature.Attributes.Keys.Should().NotContain(
+                key => key.Equals("OBJECTID", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     // The test layer (layer 0) has five features whose `category` is either
     // "test" (objectids 1, 3, 5) or "sample" (objectids 2, 4). Grouping by
     // category and filtering COUNT(objectid) > 2 keeps only the "test" group.
@@ -1036,26 +1091,21 @@ public sealed class FeatureServerQueryParameterTests : IClassFixture<WebAppFixtu
         id.GetProperty("code").GetInt32().Should().Be(expectedEpsg);
     }
 
-    // BH2-001 regression: returnDistinctValues=true combined with a very large resultOffset
-    // (> MaxRecordCount * 10, default threshold 100000) must be rejected with 400. Before the
-    // fix, ComputeDistinctScanLimit would grow with the offset and potentially materialize
-    // up to ~1M rows in memory per request.
+    // returnDistinctValues remains pageable at a large offset because the provider computes
+    // the complete distinct set before the response window is applied.
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{id}/FeatureServer/{layerId}/query")]
-    public async Task Query_ReturnDistinctValues_WithVeryHighResultOffset_ReturnsBadRequest()
+    public async Task Query_ReturnDistinctValues_WithVeryHighResultOffset_ReturnsEmptyPage()
     {
-        // resultOffset=200000 exceeds the default threshold (MaxRecordCount[10000] * 10 = 100000).
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
             "?where=1%3D1&outFields=category&returnDistinctValues=true&returnGeometry=false" +
             "&resultOffset=200000&f=json");
 
-        await response.AssertGeoServicesErrorAsync(400);
-
         var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("returnDistinctValues",
-            "the error message should identify the problematic parameter");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("features");
     }
 
     // BH2-001: a moderate resultOffset below the threshold (< MaxRecordCount * 10) with

@@ -157,7 +157,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         // synchronous redrive replay is terminal when approval returns.
         approved.GetProperty("status").GetString().Should().Be("Succeeded", approved.GetRawText());
         approved.GetProperty("requestedByAgent").GetString().Should().Be("ops-findings");
-        approved.GetProperty("resolvedBy").GetString().Should().Be("admin");
+        approved.GetProperty("resolvedBy").GetString().Should().Be(WebAppFixture.DevelopmentBypassActorId);
 
         var changeId = approved.GetProperty("executionOperationId").GetString();
         changeId.Should().StartWith("opsaction-");
@@ -365,7 +365,7 @@ public sealed class AgenticOpsLoopDeadLetterE2eTests(RedisFixture redis) : IAsyn
         var pending = await store.ClaimPendingAsync(1_000, DateTimeOffset.UtcNow.AddMinutes(1));
         foreach (var item in pending)
         {
-            await store.MarkDeliveredAsync(item.DispatchId, DateTimeOffset.UtcNow);
+            await store.MarkDeliveredAsync(item.DispatchId, item.ClaimToken, DateTimeOffset.UtcNow);
         }
     }
 

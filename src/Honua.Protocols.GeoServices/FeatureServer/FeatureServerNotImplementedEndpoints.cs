@@ -11,8 +11,8 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 /// These are thin protocol adapters over the shared service/layer validation and
 /// access pipeline; they return Esri-spec-shaped responses (empty collections or
 /// honest spec-compliant errors) for surfaces whose backing data model Honua does
-/// not yet provide (contingent values, shared templates, HTML pop-ups, the image
-/// resource, layer assets, 3D geometry, and metadata updates).
+/// not yet provide (shared templates, HTML pop-ups, the image resource, layer
+/// assets, 3D geometry, and metadata updates). Contingent values are graph-backed.
 /// </summary>
 internal static partial class FeatureServerEndpoints
 {
@@ -28,7 +28,7 @@ internal static partial class FeatureServerEndpoints
             .WithDisplayName("Query Contingent Values")
             .WithName("QueryContingentValues")
             .WithSummary("Query contingent attribute value definitions for the service")
-            .WithDescription("Returns the contingent values definition document. The collection is empty until contingent value modeling is implemented.")
+            .WithDescription("Returns graph-backed contingent value definitions for published layers; services with none return an empty collection.")
             .WithTags("FeatureServer")
             .Produces<QueryContingentValuesResponse>(200, "application/json")
             .Produces(400)

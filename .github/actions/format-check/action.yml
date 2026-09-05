@@ -1,0 +1,41 @@
+name: Lean Gate Format Check
+description: Run the shared full or affected-scope solution format verification.
+
+inputs:
+  format-scope:
+    description: >
+      'full' checks every solution document. 'affected' restricts per-document
+      analysis to the pull-request diff and fails safely back to full.
+    required: false
+    default: 'full'
+
+runs:
+  using: composite
+  steps:
+    - name: Compute gate format scope
+      id: format-scope
+      shell: bash
+      env:
+        FORMAT_SCOPE: ${{ inputs.format-scope }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+      run: scripts/ci/compute-lean-gate-format-scope.sh
+
+    - name: Format Check
+      shell: bash
+      env:
+        GATE_FORMAT_MODE: ${{ steps.format-scope.outputs.mode }}
+        GATE_FORMAT_INCLUDE_FILE: ${{ steps.format-scope.outputs.include-file }}
+      run: |
+        if [[ "${GATE_FORMAT_MODE}" == "affected" ]]; then
+          if [[ ! -s "${GATE_FORMAT_INCLUDE_FILE}" ]]; then
+            echo "::error::format scope is 'affected' but the include list is missing or empty"
+            exit 1
+          fi
+          mapfile -t include_paths < "${GATE_FORMAT_INCLUDE_FILE}"
+          dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic \
+            --include "${include_paths[@]}"
+        elif [[ "${GATE_FORMAT_MODE}" == "skip" ]]; then
+          echo "::notice::Format check skipped: the diff has no surviving formattable files and no format-sensitive configuration. The merge train's full-solution format remains the backstop."
+        else
+          dotnet format Honua.sln --verify-no-changes --no-restore --verbosity diagnostic
+        fi

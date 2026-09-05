@@ -195,6 +195,12 @@ public sealed record MultidimensionalCoverageMetadata
     public VerticalExtent? Vertical { get; init; }
 
     /// <summary>
+    /// True when the source stores rows in ascending latitude/Y order (south to
+    /// north). GDAL's multidimensional conversion preserves this storage order.
+    /// </summary>
+    public bool YAxisAscending { get; init; }
+
+    /// <summary>
     /// Discovered data variables. Empty when the operator-declared variable
     /// names did not match any data variable in the source.
     /// </summary>

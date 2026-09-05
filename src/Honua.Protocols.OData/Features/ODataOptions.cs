@@ -27,4 +27,11 @@ public sealed class ODataOptions
     /// </summary>
     [Range(1, 10000)]
     public int MaxPageSize { get; set; } = 1000;
+
+    /// <summary>
+    /// Maximum input rows for in-process $apply transformations. Queries exceeding
+    /// this limit fail explicitly rather than returning an incomplete aggregate.
+    /// </summary>
+    [Range(1, 100000)]
+    public int MaxApplyInputRows { get; set; } = 10000;
 }

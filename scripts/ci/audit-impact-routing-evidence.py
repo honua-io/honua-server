@@ -17,7 +17,10 @@ from typing import Any
 
 POLICY_CONTRACT = "honua.impact-routing-promotion-policy/v3"
 INDEX_CONTRACT = "honua.impact-routing-evidence-index/v2"
-LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v3"
+# v4 resets retained trend samples after candidate-only, unexecuted routes
+# stopped being promotion-countable.  trend() accepts only the current contract,
+# so a v3 ledger cannot preserve the earlier countability semantics.
+LEDGER_CONTRACT = "honua.impact-routing-evidence-ledger/v4"
 TOMBSTONE_CONTRACT = "honua.impact-routing-evidence-tombstones/v1"
 TREND_CONTRACT = "honua.impact-routing-evidence-trend/v1"
 PR_GATE_CONTRACT = "honua.pr-gate-impact-observation/v3"
@@ -42,6 +45,13 @@ WORKER_WORKFLOW = ".github/workflows/worker-gdal-image.yml"
 # emitted and retained, the reader could not see them. Both modes are indexed;
 # only docs-only heads feed the docs-only promotion sample.
 PR_GATE_MODES = ("docs-only", "full")
+PR_GATE_UNDIGESTED_REASONS = frozenset({
+    "unbounded-file-count",
+    "truncated-file-list",
+    "invalid-file-record",
+    "unsafe-file-record",
+    "duplicate-file-record",
+})
 PR_GATE_ARTIFACT = re.compile(
     r"^pr-gate-impact-(?P<mode>docs-only|full)-v3-attempt-(?P<attempt>[1-9][0-9]*)$"
 )
@@ -176,11 +186,12 @@ def load_policy(value: object) -> dict[str, Any]:
     catalogs = positive_int(
         value.get("maximum_producer_run_catalogs"), "maximum producer run catalogs"
     )
-    # The download bound covers BOTH streams. It was sized when the PR Gate
-    # stream was (wrongly) contributing nothing, so restoring that stream's
-    # receipts to the index needs roughly double the budget or the collector
-    # fail-closes on its own cap.
-    if pages > 10 or downloads > 1000 or catalogs > 1600:
+    # The download bound covers BOTH streams. The fleet now produces roughly
+    # 1,800 receipts in the seven-day promotion window, so the former
+    # 1,000-download ceiling rejected the policy's required retention period.
+    # Keep finite ceilings above current throughput while still failing closed
+    # before an accidental policy edit can make the API work unbounded.
+    if pages > 10 or downloads > 2500 or catalogs > 3000:
         raise ValueError("GitHub query, catalog, or download bound is unsafe")
     if catalogs < downloads:
         raise ValueError("catalog bound must not be smaller than the download bound")
@@ -676,6 +687,64 @@ def receipt_emission(emissions: dict[str, dict[str, int]]) -> dict[str, Any]:
     return per_stream
 
 
+def expire_indexed_receipt(index_value: object, artifact_id: int) -> dict[str, Any]:
+    """Reclassify an indexed receipt that expired after catalog discovery.
+
+    GitHub's artifact catalog is a point-in-time view. An artifact can report
+    ``expired: false`` during discovery and return HTTP 410 later in the same
+    ledger run. Once a fresh artifact lookup reports ``expired: true``, the
+    receipt is no longer downloadable evidence. It remains owed and therefore
+    becomes receipt loss; it is not corrupt receipt content.
+    """
+    if not isinstance(index_value, dict) or index_value.get("contract") != INDEX_CONTRACT:
+        raise ValueError("impact-routing evidence index contract is invalid")
+    positive_int(artifact_id, "expired artifact id")
+    entries = index_value.get("artifacts")
+    exclusions = index_value.get("exclusions")
+    emissions = index_value.get("receipt_emission")
+    if not isinstance(entries, list) or not isinstance(exclusions, list):
+        raise ValueError("impact-routing evidence index collections are invalid")
+    matches = [
+        entry for entry in entries
+        if isinstance(entry, dict) and entry.get("artifact_id") == artifact_id
+    ]
+    if len(matches) != 1:
+        raise ValueError("expired artifact is not uniquely indexed")
+    entry = matches[0]
+    stream = entry.get("stream")
+    if stream not in (PR_GATE_STREAM, NATIVE_STREAM) or not isinstance(emissions, dict):
+        raise ValueError("expired artifact stream is invalid")
+    counters: dict[str, dict[str, int]] = {}
+    keys = (
+        "observer_runs_successful", "receipts_indexed", "receipts_skipped",
+        "receipts_pending_index", "receipts_missing",
+    )
+    for name in (PR_GATE_STREAM, NATIVE_STREAM):
+        value = emissions.get(name)
+        if not isinstance(value, dict):
+            raise ValueError("receipt emission counters are invalid")
+        counters[name] = {}
+        for key in keys:
+            count = value.get(key)
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                raise ValueError("receipt emission counters are invalid")
+            counters[name][key] = count
+    if counters[stream]["receipts_indexed"] < 1:
+        raise ValueError("expired artifact is not counted as indexed")
+    counters[stream]["receipts_indexed"] -= 1
+    counters[stream]["receipts_missing"] += 1
+    result = dict(index_value)
+    result["artifacts"] = [item for item in entries if item is not entry]
+    result["exclusions"] = [*exclusions, {
+        "stream": stream,
+        "producer_run_id": entry.get("producer_run_id"),
+        "artifact_id": artifact_id,
+        "reason": "observation-receipt-expired-before-download",
+    }]
+    result["receipt_emission"] = receipt_emission(counters)
+    return result
+
+
 def _archive_json(entry: dict[str, Any], root: Path) -> object:
     path = root / f"{entry['artifact_id']}.zip"
     if not path.is_file() or path.stat().st_size < 1 or path.stat().st_size > MAX_ARCHIVE_BYTES:
@@ -768,7 +837,6 @@ def _validate_pr_gate(
     pull_request = positive_int(value.get("pull_request"), "PR Gate pull request")
     head = exact_sha(value.get("head_sha"), "PR Gate head")
     exact_sha(value.get("base_sha"), "PR Gate base")
-    exact_digest(value.get("files_sha256"), "PR Gate files digest")
     positive_int(value.get("gate_run_id"), "PR Gate run id")
     positive_int(value.get("gate_run_attempt"), "PR Gate run attempt")
     if value.get("gate_run_head_sha") != head or value.get("gate_run_conclusion") not in TERMINAL_CONCLUSIONS:
@@ -784,6 +852,16 @@ def _validate_pr_gate(
         raise ValueError("PR Gate receipt reason is invalid")
     if mode == "docs-only" and reason != "internal-markdown-only":
         raise ValueError("PR Gate docs-only reason is invalid")
+    files_digest = value.get("files_sha256")
+    if files_digest == "":
+        # The classifier deliberately fails closed before it can normalize a
+        # file list for these full-gate reasons. Such a receipt contains no
+        # claim about file-list content, so an empty digest is the producer's
+        # current contract rather than a malformed integrity assertion.
+        if mode != "full" or reason not in PR_GATE_UNDIGESTED_REASONS:
+            raise ValueError("PR Gate files digest is missing without a fail-closed reason")
+    else:
+        exact_digest(files_digest, "PR Gate files digest")
     for field in (
         "policy_blob_sha",
         "gate_workflow_blob_sha",
@@ -1281,13 +1359,18 @@ def summarize(
     image_failures: list[dict[str, Any]] = []
     superseded_heads: list[dict[str, Any]] = []
     pending_heads: list[dict[str, Any]] = []
+    shadow_only_heads: list[dict[str, Any]] = []
     for item in native:
         if item["gate_conclusion"] != "success":
             continue
         serving = _image_outcome(serving_catalog, item, SERVING_WORKFLOW)
         worker = _image_outcome(worker_catalog, item, WORKER_WORKFLOW)
-        serving_required = item["legacy_serving"] or item["candidate_serving"]
-        worker_required = item["legacy_worker"] or item["candidate_worker"]
+        # These workflows are the AUTHORITATIVE legacy route while the
+        # candidate remains report-only. Candidate-only heads intentionally do
+        # not trigger them, so requiring an impossible exact-head run converts
+        # a shadow-routing difference into a fabricated native-outcome failure.
+        serving_required = item["legacy_serving"]
+        worker_required = item["legacy_worker"]
         missing: list[str] = []
         if serving_required and not serving["success"]:
             missing.append("serving")
@@ -1339,6 +1422,25 @@ def summarize(
                 quarantined.append({**record, "tombstone": tombstone})
             else:
                 image_failures.append(record)
+            continue
+        candidate_only_classes = [
+            f"serving_{name}"
+            for name in SERVING_VARIANTS
+            if item["candidate_serving_variants"][name]
+            and not item["legacy_serving_variants"][name]
+        ]
+        if item["candidate_worker"] and not item["legacy_worker"]:
+            candidate_only_classes.append("worker")
+        if candidate_only_classes:
+            # No workflow executes candidate-only routes in observe mode. They
+            # are valid shadow decisions, but cannot contribute to promotion
+            # readiness until candidate execution evidence exists.
+            shadow_only_heads.append({
+                "pull_request": item["pull_request"],
+                "head_sha": item["head_sha"],
+                "candidate_only_classes": candidate_only_classes,
+                "reason": "candidate-route-not-executed-in-observe-mode",
+            })
             continue
         native_countable.append({**item, "serving_outcome": serving, "worker_outcome": worker})
 
@@ -1449,6 +1551,7 @@ def summarize(
             "authoritative_image_outcome_failures": len(image_failures),
             "image_outcome_superseded_heads": len(superseded_heads),
             "image_outcome_pending_heads": len(pending_heads),
+            "candidate_only_shadow_heads": len(shadow_only_heads),
             "integrity_failures": len(failures),
             "quarantined_by_tombstone": len(quarantined),
             "stale_tombstones": len(stale_tombstones),
@@ -1467,6 +1570,7 @@ def summarize(
         "image_outcome_failures": image_failures,
         "image_outcome_superseded_heads": superseded_heads,
         "image_outcome_pending_heads": pending_heads,
+        "candidate_only_shadow_heads": shadow_only_heads,
         "policy_generation_superseded_receipts": drifted,
         "quarantined": quarantined,
         "stale_tombstones": stale_tombstones,
@@ -1518,6 +1622,8 @@ def markdown(ledger: dict[str, Any]) -> str:
         f"- Native authoritative outcome failures: `{counts['authoritative_image_outcome_failures']}`"
         f" (excluded: `{counts['image_outcome_superseded_heads']}` superseded, "
         f"`{counts['image_outcome_pending_heads']}` still building)",
+        "- Candidate-only heads awaiting execution evidence (not promotion-countable): "
+        f"`{counts['candidate_only_shadow_heads']}`",
         f"- Receipt integrity failures: `{counts['integrity_failures']}`",
         "- Receipt loss: "
         f"`{loss['receipts_missing']}` of `{loss['receipts_owed']}` owed = "
@@ -1731,6 +1837,10 @@ def main() -> int:
     discover_parser.add_argument("--receipt-cutoff", required=True)
     discover_parser.add_argument("--output", type=Path, required=True)
 
+    expire_parser = subparsers.add_parser("expire-indexed-receipt")
+    expire_parser.add_argument("--index", type=Path, required=True)
+    expire_parser.add_argument("--artifact-id", type=int, required=True)
+
     summary_parser = subparsers.add_parser("summarize")
     summary_parser.add_argument("--policy", type=Path, required=True)
     summary_parser.add_argument("--index", type=Path, required=True)
@@ -1750,6 +1860,10 @@ def main() -> int:
     trend_parser.add_argument("--markdown", type=Path, required=True)
     args = parser.parse_args()
 
+    if args.command == "expire-indexed-receipt":
+        result = expire_indexed_receipt(load_json(args.index), args.artifact_id)
+        write_json(args.index, result)
+        return 0
     policy = load_policy(load_json(args.policy))
     if args.command == "policy":
         cutoff_value = receipt_cutoff(policy)

@@ -329,6 +329,7 @@ jobs:
       - uses: ./policy/.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          nuget-cache-read-only: 'true'
       - name: Authenticate read-only package inputs
         working-directory: source
         run: |
@@ -397,6 +398,7 @@ jobs:
       - uses: ./policy/.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          nuget-cache-read-only: 'true'
       - id: runner
         run: echo "image=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "${GITHUB_OUTPUT}"
       - name: Authenticate read-only package inputs

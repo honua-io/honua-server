@@ -14,6 +14,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Tiles.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
@@ -22,7 +23,6 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Features;
 using Honua.Infrastructure.Rendering;
 using Honua.Protocols.Ogc.Api.Tiles.Models;
-using Honua.Protocols.Ogc.Api.Tiles.Services;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -645,7 +645,8 @@ internal static partial class TilesEndpoints
                     filterSrid,
                     tileLimits,
                     tileOptionsValue,
-                    activity);
+                    activity,
+                    tileMatrixSetEntry.Id);
 
                 return layers.Length == 1
                     ? await HandleRasterTileAsync(
@@ -704,6 +705,8 @@ internal static partial class TilesEndpoints
                 tileLimits,
                 cancellationToken,
                 activity,
+                serviceId: "OgcApiTiles",
+                layerId: layer.CollectionId,
                 tileMatrixSetId: tileMatrixSetEntry.Id,
                 gridGeometry: vectorGridGeometry);
         }
@@ -746,6 +749,8 @@ internal static partial class TilesEndpoints
         var tileLimits = renderContext.TileLimits;
         var tileOptionsValue = renderContext.TileOptions;
         var activity = renderContext.Activity;
+        var cacheMaxAge = TilesetTtlResolver.Resolve(
+            tileOptionsValue, "OgcApiTiles", layer.CollectionId, renderContext.TileMatrixSetId);
 
         // Record-but-don't-render the vertical selection (see the documented divergence at
         // the raster/vector dispatch). The feature query below is unchanged — there is no
@@ -794,7 +799,7 @@ internal static partial class TilesEndpoints
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptionsValue.CacheMaxAge}";
+            SetTileCacheHeaders(context, cacheMaxAge);
             return Results.NoContent();
         }
 
@@ -810,7 +815,7 @@ internal static partial class TilesEndpoints
         activity?.SetTag("honua.tile.bytes", imageBytes.Length);
         activity?.SetTag("honua.tile.format", "png");
 
-        return CreatePngTileResult(imageBytes, tileOptionsValue.CacheMaxAge);
+        return CreatePngTileResult(imageBytes, cacheMaxAge);
     }
 
     private static async Task<IResult> HandleDatasetRasterTileAsync(
@@ -826,6 +831,10 @@ internal static partial class TilesEndpoints
         var tileLimits = renderContext.TileLimits;
         var tileOptionsValue = renderContext.TileOptions;
         var activity = renderContext.Activity;
+        var cacheMaxAge = layers.Length == 0
+            ? tileOptionsValue.CacheMaxAge
+            : TilesetTtlResolver.Resolve(
+                tileOptionsValue, "OgcApiTiles", layers[0].CollectionId, renderContext.TileMatrixSetId);
 
         var fallbackFeatureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var renderedLayers = new List<TileRenderer.TileRenderLayer>(layers.Length);
@@ -893,7 +902,7 @@ internal static partial class TilesEndpoints
         {
             activity?.SetStatus(ActivityStatusCode.Ok);
             activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, 0);
-            context.Response.Headers["Cache-Control"] = $"public, max-age={tileOptionsValue.CacheMaxAge}";
+            SetTileCacheHeaders(context, cacheMaxAge);
             return Results.NoContent();
         }
 
@@ -904,7 +913,7 @@ internal static partial class TilesEndpoints
         activity?.SetTag("honua.tile.bytes", imageBytes.Length);
         activity?.SetTag("honua.tile.format", "png");
 
-        return CreatePngTileResult(imageBytes, tileOptionsValue.CacheMaxAge);
+        return CreatePngTileResult(imageBytes, cacheMaxAge);
     }
 
     private static FeatureQuery CreateVectorTileQuery(
@@ -1941,6 +1950,18 @@ internal static partial class TilesEndpoints
         return StandardErrorHelpers.CreateBadRequest(context, detail);
     }
 
+    private static void SetTileCacheHeaders(HttpContext context, int cacheMaxAge)
+    {
+        var credentialed = context.User.Identity?.IsAuthenticated == true
+            || context.Request.Headers.ContainsKey("Authorization")
+            || context.Request.Headers.ContainsKey("X-API-Key");
+        context.Response.Headers["Cache-Control"] = $"{(credentialed ? "private" : "public")}, max-age={cacheMaxAge}";
+        if (credentialed)
+        {
+            context.Response.Headers["Vary"] = "Authorization, X-API-Key";
+        }
+    }
+
     private static TileResult CreateTileResult(byte[] tileData, int cacheMaxAge)
         => new TileResult(tileData, cacheMaxAge);
 
@@ -1960,7 +1981,7 @@ internal static partial class TilesEndpoints
 
         public async Task ExecuteAsync(HttpContext httpContext)
         {
-            httpContext.Response.Headers["Cache-Control"] = $"public, max-age={_cacheMaxAge}";
+            SetTileCacheHeaders(httpContext, _cacheMaxAge);
             await _inner.ExecuteAsync(httpContext);
         }
     }
@@ -1978,7 +1999,7 @@ internal static partial class TilesEndpoints
 
         public async Task ExecuteAsync(HttpContext httpContext)
         {
-            httpContext.Response.Headers["Cache-Control"] = $"public, max-age={_cacheMaxAge}";
+            SetTileCacheHeaders(httpContext, _cacheMaxAge);
             await _inner.ExecuteAsync(httpContext);
         }
     }

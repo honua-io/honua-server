@@ -119,7 +119,7 @@ internal static class McpPromptCatalog
                 + "1. Call honua_query_features to retrieve the parcel geometry and attributes.\n"
                 + "2. Call honua_geocode_address if only an address is known to resolve the parcel.\n"
                 + "3. Call honua_plan_analysis to compile the constraint-overlay plan (if it returns engine=\"fixture\", the plan is a demo — follow its nextSteps to hand-author a plan from honua://catalog/processes), then honua_validate_plan and honua_execute_plan.\n"
-                + "4. If publishing a decision layer, call honua_propose_operation and respect any approval-required outcome before honua_publish_service.\n"
+                + "4. If publishing a decision layer, call honua_publish_service and respect its governed-operation outcome.\n"
                 + "Summarize each constraint as pass/fail with the supporting honua://jobs/{jobId}/results evidence."),
 
         new McpPromptDefinition(
@@ -150,7 +150,7 @@ internal static class McpPromptCatalog
                 + "1. Call honua_list_layers to discover candidate layers and honua_query_features to validate their contents.\n"
                 + "2. Call honua_render_map to preview the basemap and operational layers together.\n"
                 + "3. Call honua_plan_analysis to compile the app/dashboard scaffold (if it returns engine=\"fixture\", the plan is a demo — follow its nextSteps to hand-author a plan from honua://catalog/processes), then honua_validate_plan.\n"
-                + "4. Call honua_propose_operation to stage the publishable package and respect any approval-required outcome.\n"
+                + "4. Create a Studio draft, then call honua_studio_propose_publication and respect its approval-required outcome.\n"
                 + "Hand back the dashboard layout, the included layers, and the staged package resource URI."),
     ];
 

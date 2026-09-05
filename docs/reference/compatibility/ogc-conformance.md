@@ -1,7 +1,10 @@
 # OGC conformance
 
-Honua Server passes every OGC CITE suite it runs on `trunk` at 100%. The
-canonical per-suite pass rates, evidence-run links, and re-grading guidance
+Honua Server currently passes 1137/1138 OGC CITE assertions across 14 suites on
+`trunk`. WFS 2.0 `basic` is 166/167 because multi-layer
+`rollbackOnFailure=true` transactions are rejected; the other published suite
+profiles pass in full. The canonical per-suite pass rates, evidence-run links,
+and re-grading guidance
 live in [`docs/cite-status.md`](../../cite-status.md) — see that page for the
 current numbers; they are not restated here so there is nothing for this page
 to fall out of sync with.
@@ -20,6 +23,9 @@ the canonical passed/total counts and pass rate per suite, including the WFS
   can discover collections, page items, filter with CQL2, and request alternate CRSs.
 - **OGC API Tiles** — vector and raster tile delivery against the seeded tile matrix
   sets; 7 conformance classes.
+- **OGC API - EDR** — Preview surface in release 2026.1. Its remaining CRS,
+  temporal-selection, output-format, and MULTIPOINT coordinate behavior is deferred
+  to release 2026.2 and is not a GA conformance claim.
 - **WFS 1.0 / 1.1 / 2.0** — the `basic` profile: capabilities, DescribeFeatureType,
   GetFeature, spatial/temporal filters, paging, and managed stored queries. The
   separate WFS 2.0 Transactional leg covers Transaction and LockFeature. Feature
@@ -36,7 +42,7 @@ the canonical passed/total counts and pass rate per suite, including the WFS
 Some OGC API surfaces have no official CITE executable test suite yet — Styles,
 Maps, Processes, Coverages, and Records. They are shipped as conformant adapters
 proven by targeted integration tests plus accurate `/conformance` declarations,
-and are not part of the 1138/1138 count. See the
+and are not part of the 1137/1138 count. See the
 [OGC API surfaces without an official CITE ETS](../../cite-status.md#ogc-api-surfaces-without-an-official-cite-ets)
 section of the CITE status page.
 

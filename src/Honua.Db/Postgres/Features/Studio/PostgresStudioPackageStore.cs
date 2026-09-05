@@ -904,6 +904,48 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         }
     }
 
+    public async Task<StudioPublicationRequest?> GetPublicationRequestAsync(
+        Guid itemId,
+        Guid versionId,
+        Guid requestId,
+        CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            SELECT request_id, item_id, version_id, intent, status, validation,
+                   warning_acknowledgement, requested_by, created_at
+            FROM {_publicationRequestsTable}
+            WHERE request_id = @request_id
+              AND item_id = @item_id
+              AND version_id = @version_id
+            """;
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        command.Parameters.AddWithValue("@request_id", requestId);
+        command.Parameters.AddWithValue("@item_id", itemId);
+        command.Parameters.AddWithValue("@version_id", versionId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new StudioPublicationRequest
+        {
+            RequestId = reader.GetGuid(0),
+            ItemId = reader.GetGuid(1),
+            VersionId = reader.GetGuid(2),
+            Intent = reader.IsDBNull(3)
+                ? null
+                : JsonSerializer.Deserialize(reader.GetString(3), StudioJsonContext.Default.StudioPublicationIntent),
+            Status = FromDbPublicationStatus(reader.GetString(4)),
+            Validation = JsonSerializer.Deserialize(reader.GetString(5), StudioJsonContext.Default.StudioValidationSummary)
+                ?? StudioValidationSummary.NotValidated,
+            WarningAcknowledgement = reader.IsDBNull(6) ? null : reader.GetString(6),
+            RequestedBy = reader.IsDBNull(7) ? null : reader.GetString(7),
+            CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
+        };
+    }
+
     public async Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -1377,6 +1419,14 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         StudioPublicationRequestStatus.Pending => "pending",
         StudioPublicationRequestStatus.Rejected => "rejected",
         _ => throw new ArgumentException("Unsupported Studio publication status.", nameof(status)),
+    };
+
+    private static StudioPublicationRequestStatus FromDbPublicationStatus(string status) => status switch
+    {
+        "accepted" => StudioPublicationRequestStatus.Accepted,
+        "pending" => StudioPublicationRequestStatus.Pending,
+        "rejected" => StudioPublicationRequestStatus.Rejected,
+        _ => throw new InvalidDataException("Unsupported Studio publication status in storage."),
     };
 
     private static string ToDbRollbackPointer(StudioRollbackPointer target) => target switch

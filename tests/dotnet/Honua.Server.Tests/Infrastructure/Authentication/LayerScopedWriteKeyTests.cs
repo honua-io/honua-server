@@ -33,7 +33,8 @@ public sealed class LayerScopedWriteKeyTests
     [InlineData("admin")]
     [InlineData("*")]
     [InlineData("admin:*")]
-    [InlineData("admin:read")]
+    [InlineData("admin:write")]
+    [InlineData("admin:manage")]
     [InlineData("ADMIN")]
     public void ConfersFullAdmin_AdminGrants_ReturnsTrue(string grant)
     {
@@ -47,10 +48,20 @@ public sealed class LayerScopedWriteKeyTests
     }
 
     [Theory]
+    [InlineData("admin:read")]
+    [InlineData("admin:approve")]
+    [InlineData("admin:operation:POST:/api/v1/admin/services")]
+    public void ConfersFullAdmin_ScopedReadOrApprovalGrant_ReturnsFalse(string grant)
+    {
+        LayerScopedWriteKey.ConfersFullAdmin([grant]).Should().BeFalse();
+    }
+
+    [Theory]
     [InlineData("read:layers")]
     [InlineData("metadata:read")]
     [InlineData("write:demo/parcels")]
     [InlineData("deploy:approve")]
+    [InlineData("admin:operation:POST:/api/v1/admin/connections")]
     public void ConfersFullAdmin_GenuinelyScopedGrants_ReturnsFalse(string grant)
     {
         // A grant set that carries no full-admin grant confers no admin authority,

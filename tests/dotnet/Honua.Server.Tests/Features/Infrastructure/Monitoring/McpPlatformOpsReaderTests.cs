@@ -2,18 +2,27 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.StudioAiProxy;
+using Honua.Ai.StudioAiProxy.Domain;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Authorization;
@@ -22,8 +31,114 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Crypto.Signers;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
+
+/// <summary>
+/// Redis-backed integration coverage for signed MCP platform-ops proposals (#3888).
+/// </summary>
+[Protocol(TestProtocols.TestQuality)]
+[Collection("Redis")]
+public sealed class McpPlatformOpsReaderIntegrationTests(RedisFixture redis)
+{
+    [IntegrationTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [InlineData(ProposeDeployOperationTool.ToolName, OperationClass.Deploy)]
+    [InlineData(ProposeMetadataReleaseTool.ToolName, OperationClass.MetadataRelease)]
+    public async Task VerifiedModelToolCall_SealsAwaitingApproval_WithoutActuation(
+        string toolName,
+        OperationClass operationClass)
+    {
+        var idempotencyKey = $"signed-transcript-{Guid.NewGuid():N}";
+        var argumentJson = toolName == ProposeDeployOperationTool.ToolName
+            ? $$"""{"targetId":"candidate-a","desiredRevision":"sha256:release-a","idempotencyKey":"{{idempotencyKey}}"}"""
+            : $$"""{"packageId":"package-a","targetEnvironment":"candidate-a","resourceSemanticId":"roads","newFieldName":"speed_limit","idempotencyKey":"{{idempotencyKey}}"}""";
+        using var argumentDocument = JsonDocument.Parse(argumentJson);
+        var signedArguments = argumentDocument.RootElement.Clone();
+        var request = new StudioAiChatRequest
+        {
+            Provider = "anthropic",
+            Model = "claude-sonnet-4-5",
+            Certification = new StudioAiTranscriptCertification
+            {
+                CandidateId = "candidate-a",
+                ReleaseId = "2026.1-rc.1",
+                EndpointIdentity = "candidate-proxy",
+                ActionId = "governed-mutation",
+                RunNonce = "nonce-1"
+            },
+            Messages = [new StudioAiMessage { Role = StudioAiRole.User, Content = "propose the release mutation" }]
+        };
+        var events = new[]
+        {
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = "claude-sonnet-4-5" },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStart, ToolCallId = "call-1", ToolName = toolName },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.ToolCallStop, ToolCallId = "call-1", ToolArguments = signedArguments },
+            new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStop, StopReason = StudioAiStopReason.ToolCall }
+        };
+        var privateKey = new Ed25519PrivateKeyParameters(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray(), 0);
+        var signer = new StudioAiTranscriptSigner(Options.Create(new StudioAiProxyConfiguration()), TimeProvider.System);
+        var provenance = signer.Sign(
+            new StudioAiTranscriptSigner.SigningKey("candidate-key", privateKey, privateKey.GeneratePublicKey().GetEncoded()),
+            request, "anthropic", "claude-sonnet-4-5", events);
+
+        var signedBytes = Convert.FromBase64String(provenance.CanonicalTranscript);
+        var verifier = new Ed25519Signer();
+        verifier.Init(false, privateKey.GeneratePublicKey());
+        verifier.BlockUpdate(signedBytes, 0, signedBytes.Length);
+        verifier.VerifySignature(Convert.FromBase64String(provenance.Signature)).Should().BeTrue();
+        using var transcript = JsonDocument.Parse(signedBytes);
+        transcript.RootElement.GetProperty("candidateId").GetString().Should().Be("candidate-a");
+        var verifiedEvents = JsonSerializer.Deserialize(
+            Convert.FromBase64String(transcript.RootElement.GetProperty("providerEvents").GetString()!),
+            StudioAiProxyJsonContext.Default.ListStudioAiChatEvent)!;
+        var verifiedCall = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStop);
+        var verifiedToolName = verifiedEvents.Single(item => item.Type == StudioAiChatEventType.ToolCallStart).ToolName;
+
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var proposalStore = new RedisOperationProposalStore(
+            multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
+        var ladder = Substitute.For<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>();
+        var decision = new GuardrailDecision(GuardrailTier.RequiresApproval, operationClass, HonuaEdition.Enterprise, "model-proposal");
+        ladder.Resolve(operationClass).Returns(decision);
+        ladder.Resolve(operationClass, Arg.Any<string?>()).Returns(decision);
+        var actuator = Substitute.For<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor>();
+        actuator.OperationClass.Returns(operationClass);
+        actuator.PlanAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new OperationProposalPlan());
+        var gateway = CanonicalOperationGatewayTestComposition.Build(proposalStore, ladder, [actuator]);
+        using var readerServices = McpPlatformOpsReaderTests.CreateServices(gateway);
+        var reader = McpPlatformOpsReaderTests.CreateReader(services: readerServices);
+        using var toolServices = new ServiceCollection().AddSingleton<IMcpPlatformOpsReader>(reader).BuildServiceProvider();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = toolServices,
+            User = McpPlatformOpsReaderTests.CreatePrincipal()
+        };
+        IMcpTool tool = verifiedToolName switch
+        {
+            ProposeDeployOperationTool.ToolName => new ProposeDeployOperationTool(NullLogger<ProposeDeployOperationTool>.Instance),
+            ProposeMetadataReleaseTool.ToolName => new ProposeMetadataReleaseTool(NullLogger<ProposeMetadataReleaseTool>.Instance),
+            _ => throw new InvalidOperationException($"Verified tool '{verifiedToolName}' is not a governed proposal tool.")
+        };
+
+        var result = await tool.InvokeAsync(context, verifiedCall.ToolArguments, CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        result.StructuredContent!.Value.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
+        var proposalId = result.StructuredContent.Value.GetProperty("proposalId").GetString();
+        var persisted = await proposalStore.GetAsync(proposalId!);
+        persisted.Should().NotBeNull("the real Redis store must round-trip the sealed proposal");
+        persisted!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        persisted.Kind.Should().Be(operationClass);
+        persisted.Plan.ExecutionPayload.Should().Contain("candidate-a");
+        await actuator.DidNotReceive().ExecuteAsync(
+            Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+}
 
 /// <summary>
 /// Unit coverage for the server-side MCP platform-ops adapter (#2566).
@@ -31,6 +146,25 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class McpPlatformOpsReaderTests
 {
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_DeployTargetMismatch_IsRejected()
+    {
+        var payload = new DeployExecutionPayload
+        {
+            TargetId = "candidate-b",
+            DesiredRevision = "sha256:release-b"
+        }.Serialize();
+
+        var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(
+            OperationClass.Deploy,
+            payload,
+            "candidate-a");
+
+        act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>()
+            .WithMessage("*does not match the certified candidate*");
+    }
+
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
     public async Task GetPlatformReleaseStatus_Authorized_UsesOpsReadPolicyAndReturnsProjection()
@@ -243,6 +377,7 @@ public sealed class McpPlatformOpsReaderTests
                 ToRevision = " rev-9 ",
                 Reason = "rollback bad release",
                 IdempotencyKey = "rollback-key",
+                ParameterOverrides = new Dictionary<string, string> { ["activePort"] = "5102" },
             },
             CancellationToken.None);
 
@@ -252,15 +387,25 @@ public sealed class McpPlatformOpsReaderTests
         output.ResourceUri.Should().NotBeNullOrWhiteSpace();
         output.SupportedKinds.Should().Equal("Deploy", "MetadataRelease");
         gateway.LastRequest.Should().NotBeNull();
+        gateway.RouteCalls.Should().Be(0, "rollback proposals must never use the direct-execution route");
+        gateway.ProposalCalls.Should().Be(1);
         gateway.LastRequest!.Kind.Should().Be(OperationClass.Deploy);
-        gateway.LastRequest.RequestedBy.Should().Be("ops-agent");
-        gateway.LastRequest.RequestedByAgent.Should().Be("agent:ops-agent");
+        gateway.LastRequest.RequestedBy.Should().Be("test:subject:-:ops-agent");
+        gateway.LastRequest.RequestedByAgent.Should().Be("agent:test:subject:-:ops-agent");
         gateway.LastRequest.Reason.Should().Be("rollback bad release");
         gateway.LastRequest.IdempotencyKey.Should().Be("rollback-key");
+        await services.GetRequiredService<IOperationEnvelopeFactory>().Received(1).CreateAcceptedAsync(
+            "control-plane.deploy",
+            Arg.Is<OperationPolicyContext>(context =>
+                context.AuthorizationOutcome == "admin-policy-authorized" &&
+                !context.ScopeGoverned &&
+                context.PrincipalId == "test:subject:-:ops-agent"),
+            Arg.Any<CancellationToken>());
 
         var payload = DeployExecutionPayload.Parse(gateway.LastRequest.ExecutionPayload);
         payload.Should().NotBeNull();
         payload!.TargetId.Should().Be("serving-us-west");
+        payload.ParameterOverrides.Should().Contain("activePort", "5102");
         payload.DesiredRevision.Should().Be("rev-9");
         payload.CurrentRevision.Should().Be("rev-10");
     }
@@ -286,14 +431,14 @@ public sealed class McpPlatformOpsReaderTests
                 createdAt: DateTimeOffset.UtcNow.AddMinutes(-10)));
         var gateway = new RecordingGateway(new OperationGatewayResult
         {
-            Outcome = OperationGatewayOutcome.Executed,
+            Outcome = OperationGatewayOutcome.ProposalCreated,
             Decision = new GuardrailDecision(
-                GuardrailTier.DirectExecute,
+                GuardrailTier.RequiresApproval,
                 OperationClass.Deploy,
                 HonuaEdition.Pro,
-                "test"),
-            ExecutionOperationId = "op-rollback",
-            Message = "submitted",
+                "model-facing-proposal-requires-approval"),
+            ProposalId = "proposal-rollback",
+            Message = "queued for approval",
         });
 
         using var services = CreateServices(gateway);
@@ -304,8 +449,10 @@ public sealed class McpPlatformOpsReaderTests
             new McpProposeRollbackArgument { TargetId = "serving-us-west" },
             CancellationToken.None);
 
-        output.Outcome.Should().Be(nameof(OperationGatewayOutcome.Executed));
-        output.ExecutionOperationId.Should().Be("op-rollback");
+        output.Outcome.Should().Be(nameof(OperationGatewayOutcome.ProposalCreated));
+        output.RequiresApproval.Should().BeTrue();
+        gateway.RouteCalls.Should().Be(0, "a direct-execute edition default cannot bypass approval");
+        gateway.ProposalCalls.Should().Be(1);
         gateway.LastRequest.Should().NotBeNull();
         gateway.LastRequest!.IdempotencyKey.Should().Be("rollback:serving-us-west:rev-9");
 
@@ -315,15 +462,44 @@ public sealed class McpPlatformOpsReaderTests
         payload.CurrentRevision.Should().Be("rev-10");
     }
 
-    private static McpPlatformOpsReader CreateReader(
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposeRollback_ReadOnlyOAuthScope_IsDeniedBeforeProposalPersistence()
+    {
+        var gateway = new RecordingGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "test"),
+        });
+        using var services = CreateServices(gateway);
+        var reader = CreateReader(scopeAuthorizer: new OperatorScopeAuthorizer(), services: services);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "ops-agent"),
+            new Claim(OperatorScopeCatalog.ScopeGovernedClaimType, OperatorScopeCatalog.ScopeGovernedClaimValue),
+            new Claim(OperatorScopeCatalog.ScopeClaimType, OperatorScopeCatalog.Read),
+        ], "test"));
+
+        var act = () => reader.ProposeRollbackAsync(principal,
+            new McpProposeRollbackArgument { TargetId = "serving-us-west", ToRevision = "rev-9" },
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<Honua.Geoprocessing.GeoprocessingAuthorizationException>();
+        gateway.ProposalCalls.Should().Be(0);
+        gateway.RouteCalls.Should().Be(0);
+    }
+
+    internal static McpPlatformOpsReader CreateReader(
         ControlPlaneOptions? options = null,
         IWorkflowOperationStore? store = null,
         IAuthorizationService? authorization = null,
+        IOperatorScopeAuthorizer? scopeAuthorizer = null,
         IServiceProvider? services = null)
         => new(
             new StaticOptionsMonitor<ControlPlaneOptions>(options ?? CreateOptions()),
             CreateDeployService(store ?? new RecordingWorkflowOperationStore()),
             authorization ?? CreateAuthorization(AuthorizationResult.Success()),
+            scopeAuthorizer ?? NullOperatorScopeAuthorizer.Instance,
             services ?? CreateServices());
 
     private static DeployWorkflowService CreateDeployService(IWorkflowOperationStore store)
@@ -342,14 +518,36 @@ public sealed class McpPlatformOpsReaderTests
                 Arg.Any<object>(),
                 AuthenticationExtensions.OpsReadPolicy)
             .Returns(result);
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(),
+                Arg.Any<object>(),
+                AuthenticationExtensions.AdminPolicy)
+            .Returns(result);
         return authorization;
     }
 
-    private static ServiceProvider CreateServices(
+    internal static ServiceProvider CreateServices(
         IOperationGateway? gateway = null,
         IOperationExecutorCatalog? catalog = null)
     {
         var services = new ServiceCollection();
+        var envelopeFactory = Substitute.For<IOperationEnvelopeFactory>();
+        var now = DateTimeOffset.UtcNow;
+        envelopeFactory.CreateAcceptedAsync(
+                Arg.Any<string>(),
+                Arg.Any<OperationPolicyContext>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationHandle
+            {
+                OperationInstanceId = "opinst-rollback",
+                OperationId = "control-plane.deploy",
+                Status = OperationHandleStatus.Accepted,
+                CorrelationId = "corr-rollback",
+                AuditId = "audit-rollback",
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        services.AddSingleton(envelopeFactory);
         if (gateway is not null)
         {
             services.AddSingleton(gateway);
@@ -363,7 +561,7 @@ public sealed class McpPlatformOpsReaderTests
         return services.BuildServiceProvider();
     }
 
-    private static ClaimsPrincipal CreatePrincipal()
+    internal static ClaimsPrincipal CreatePrincipal()
         => new(new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, "ops-agent"),
@@ -569,10 +767,15 @@ public sealed class McpPlatformOpsReaderTests
     {
         public OperationGatewayRequest? LastRequest { get; private set; }
 
+        public int RouteCalls { get; private set; }
+
+        public int ProposalCalls { get; private set; }
+
         public Task<OperationGatewayResult> RouteAsync(
             OperationGatewayRequest request,
             CancellationToken cancellationToken = default)
         {
+            RouteCalls++;
             LastRequest = request;
             return Task.FromResult(result);
         }
@@ -582,6 +785,7 @@ public sealed class McpPlatformOpsReaderTests
             OperationGatewayRequest request,
             CancellationToken cancellationToken = default)
         {
+            ProposalCalls++;
             LastRequest = request;
             return Task.FromResult(result);
         }

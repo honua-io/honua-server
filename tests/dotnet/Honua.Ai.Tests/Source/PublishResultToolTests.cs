@@ -3,14 +3,18 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -39,6 +43,17 @@ public sealed class PublishResultToolTests
     private static DefaultHttpContext AuthenticatedContext(IOperationInvoker? invoker)
     {
         var services = new ServiceCollection();
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(
+                Arg.Any<ClaimsPrincipal>(), Arg.Any<object?>(), Arg.Any<string>())
+            .Returns(AuthorizationResult.Success());
+        var approval = Substitute.For<IOperatorApprovalEvaluator>();
+        approval.Evaluate(
+                Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(ApprovalRequirement.NotRequired());
+        services.AddSingleton(authorization);
+        services.AddSingleton(new OperatorApprovalGate(
+            Substitute.For<IOperatorAuthorizationEvaluator>(), approval, NullLogger<OperatorApprovalGate>.Instance));
         if (invoker is not null)
         {
             services.AddSingleton(invoker);

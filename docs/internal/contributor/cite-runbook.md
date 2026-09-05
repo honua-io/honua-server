@@ -15,8 +15,9 @@ For WMS 1.1.1 / WFS 1.0.0 / WFS 1.1.0 (manual-only legacy suites), see [Legacy O
 |---|---|---|---|
 | OGC API Features 1.0 | service | `run-cite-tests.sh` | `cite-conformance.yml` |
 | OGC API Tiles | service | `run-cite-tiles-tests.sh` | `cite-tiles-conformance.yml` |
-| OGC API Processes 1.0 | service diagnostic | `run-cite-ogcapi-processes-tests.sh` | `cite-ogcapi-processes-conformance.yml` |
+| OGC API Processes 1.0 | service release gate | `run-cite-ogcapi-processes-tests.sh` | `cite-ogcapi-processes-conformance.yml` |
 | OGC API Maps | service | `run-ogc-maps-conformance-tests.sh` (integration suite — not TeamEngine) | `ogc-maps-conformance.yml` |
+| OGC API building blocks | exact-candidate service | `run-building-block-conformance.sh` | `ogc-api-building-block-conformance.yml` |
 | WMS 1.3 | service | `run-cite-wms-tests.sh` | `cite-wms-conformance.yml` |
 | WMTS 1.0 | service | `run-cite-wmts-tests.sh` | `cite-wmts-conformance.yml` |
 | WFS 2.0 | service | `run-cite-wfs20-tests.sh` | `cite-wfs20-conformance.yml` |
@@ -62,11 +63,11 @@ CI baseline for required suites:
 - `total_tests` must be greater than `0`.
 - For format-level suites: `skipped_tests` and `canttell_tests` must also be `0` (these run a strict no-skip `applicable` profile by default).
 
-The OGC API Processes lane is diagnostic until #3405 is satisfied. It retains
-failed and skipped verdicts as provisional observations, but still fails on a
-missing summary, nonzero ETS exit, timeout, zero tests, an all-skip/CantTell
-run, unknown test classes, or result-accounting drift. A diagnostic-red run is
-not a public conformance claim and is not added to the passing CITE aggregate.
+The OGC API Processes lane is a required, dispatch-only release gate. It runs
+against the immutable candidate image and fails closed on provenance mismatch,
+incomplete output, infrastructure errors, skipped/CantTell tests, or any pass
+regression or denominator drift from the recorded baseline. It is not a PR job
+or a scheduled source of nightly evidence.
 
 Artifacts (markdown summary + raw TeamEngine outputs or TRX) are uploaded with 30-day retention. Preserve anything you need for release or certification evidence outside the normal workflow artifact store.
 
@@ -104,14 +105,15 @@ For format-level suites, the upstream OGC ETS images are pinned to `:latest` (KM
 ### OGC API Processes 1.0
 
 - **Scope:** official `ets-ogcapi-processes10` Core/JSON diagnostic, including landing, conformance, process discovery, process descriptions, execution, and job-list observations.
-- **Profile:** `diagnostic` only. The workflow runs outside PR CI daily at 08:00 UTC and on demand.
+- **Profile:** the pinned `diagnostic` ETS selection is the recorded required release denominator. The release-gate workflow is dispatch-only and never runs for pull requests.
 - **Test params:** `docker/cite/ogc-api-processes/config/test-run-props.xml`. This is a suite-owned CITE configuration/seed exception; it does not claim to consume the shared canonical-client fixture. Its `echoprocessid` is the deterministic `honua-cite-echo` process.
 - **Fixture isolation:** `honua-cite-echo` is registered only when the exact `OgcProcesses:CertificationProfile=ogcapi-processes10` opt-in, `ASPNETCORE_ENVIRONMENT=Test`, and `HONUA_REGISTER_TEST_INFRASTRUCTURE=true` are all present. It is absent from normal and production process catalogs. The adapter still submits through the canonical authorization, durable job store, Redis queue, worker dispatcher, status, and result-package path; the profile contributes only its catalog definition, bounded executor, and by-value result projection.
 - **Admission profile:** canonical execution admission remains enabled. The isolated Compose harness raises its concurrency, submission-window, and cost ceilings to 100 because the pinned ETS bursts 33 independent job cases concurrently; the bounded test-only ceilings prevent load shedding from replacing protocol observations without changing production defaults.
 - **Fixture behavior:** the echo process exposes ordered literal, object, binary, mixed, array, bounding-box, and bounded `pause` inputs matching the pinned ETS discovery rules. It never fetches an input reference, limits pause to ten seconds, respects requested value outputs, and fails closed on invalid bindings or result artifacts.
 - **Upstream pin:** commit `75abd1f37fc3aad95163fdce2e33e393b1ba5a88`, built as the official all-in-one Java 17 JAR. The pinned POM excludes its own `testgeotiff.tiff` testdata even though `Jobs.java` loads that exact upstream resource from the classpath; the harness adds only the byte-identical pinned resource to the JAR and records its digest in ETS provenance. No executable class or assertion is changed.
 - **Artifacts:** raw TestNG/EARL output, normalized per-test observations and exact class mappings, configuration and result digests, ETS provenance, server image inspection, source/image provenance, and server logs.
-- **Evidence status:** diagnostic only. Promotion requires seven complete green runs and an exact-candidate rerun under #3405.
+- **Release gate:** after publishing a candidate, the cut process invokes `gh workflow run cite-ogcapi-processes-conformance.yml -f server_image=ghcr.io/honua-io/honua-server@sha256:<64-lowercase-hex> -f source_sha=<40-character-source-sha>`. Mutable tags, missing inputs, provenance mismatches, incomplete output, infrastructure errors, skipped/CantTell tests, and any pass regression or denominator drift from `scripts/conformance/cite/ogcapi-processes-release-baseline.json` fail closed.
+- **Verdict and artifacts:** the Actions run is the release verdict. Its `cite-ogcapi-processes10-conformance-results-*` artifact contains the raw ETS results, normalized evidence, `release-gate-verdict.json`, and the human-readable `release-gate-verdict.md`. The cut must not proceed unless the workflow concludes successfully; a red verdict is a release finding, not an override signal.
 - **Sanity check:** open `http://localhost:8101/ogc/processes/processes` after the runner starts its Compose stack.
 
 ```bash
@@ -128,6 +130,20 @@ This suite does **not** use TeamEngine — upstream `ets-ogcapi-maps10` images w
 - Production-audit integration: included in `scripts/conformance/run-production-audit.sh --phase 2 --agents protocol`.
 
 Conformance classes advertised: `core`, `collection-map`, `dataset-map`, `collections-selection`, `datetime` (temporal raster mosaic — gated by the `raster.temporal-mosaic` entitlement; returns 402 without it), `crs`, `png`, `jpeg`, `tiff`, `scaling`.
+
+### OGC API building blocks
+
+The exact-candidate building-block lane runs the existing vendored CQL2,
+MVT/TMS 2.0, Maps, and Schemathesis validators against the image built from
+one full source SHA. It records the candidate identity, declaration, validator
+logs, and exit codes as an artifact. A validator failure is blocking; the lane
+does not delete or skip a validator to make the declaration pass.
+
+```bash
+HONUA_CONFORMANCE_SOURCE_SHA="$(git rev-parse HEAD)" \
+HONUA_CONFORMANCE_SERVER_IMAGE=honua-server:ogcapi-local \
+./scripts/conformance/ogcapi/run-building-block-conformance.sh
+```
 
 ### WMS 1.3
 

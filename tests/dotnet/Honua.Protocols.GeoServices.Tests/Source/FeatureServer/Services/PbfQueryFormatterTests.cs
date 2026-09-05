@@ -208,6 +208,56 @@ public sealed class PbfQueryFormatterTests
     }
 
     [Fact]
+    public void FormatAsPbf_WithUpperLeftQuantization_EncodesPositiveDownwardY()
+    {
+        var layer = CreatePointLayer();
+        var feature = Feature.Create(1, CreatePointWkb(2, 8),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+        var result = QueryResult<Feature>.Create(1, [feature]);
+        var transform = new QuantizationTransform(
+            QuantizationTransform.UpperLeft,
+            ScaleX: 1,
+            ScaleY: 1,
+            TranslateX: 0,
+            TranslateY: 10);
+
+        var (response, _) = _sut.FormatAsPbf(
+            result, layer, returnGeometry: true, outputSrid: null,
+            returnZ: false, returnM: false, geometryPrecision: null,
+            maxAllowableOffset: null, outFields: null, quantizationTransform: transform);
+
+        ExtractGeometryCoords(response).Should().ContainInOrder(2L, 2L);
+    }
+
+    [Fact]
+    public void FormatAsPbf_WithClientQuantization_PreservesIndependentZmScale()
+    {
+        var layer = CreatePointLayer();
+        var feature = Feature.Create(
+            1,
+            CreatePointWkbWithZm(2.0, 2.5, 3.0, 4.75),
+            new Dictionary<string, object?> { ["objectid"] = 1L }.ToImmutableDictionary());
+        var result = QueryResult<Feature>.Create(1, [feature]);
+        var transform = new QuantizationTransform(
+            QuantizationTransform.UpperLeft,
+            ScaleX: 0.5,
+            ScaleY: 0.5,
+            TranslateX: 0,
+            TranslateY: 10);
+
+        var (response, _) = _sut.FormatAsPbf(
+            result, layer, returnGeometry: true, outputSrid: null,
+            returnZ: true, returnM: true, geometryPrecision: null,
+            maxAllowableOffset: null, outFields: null, quantizationTransform: transform);
+
+        ExtractGeometryCoords(response).Should().ContainInOrder(
+            4L,
+            15L,
+            3_000_000L,
+            4_750_000L);
+    }
+
+    [Fact]
     public void FormatAsPbf_WithPolygonGeometry_DoesNotThrow()
     {
         var layer = CreateLayer(

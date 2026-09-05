@@ -66,6 +66,42 @@ public class ArcGisRestQueryParametersTests
     }
 
     [Fact]
+    public void BuildFeatureQueryUrl_DistinctValues_DisablesGeometry()
+    {
+        var query = new FeatureQuery
+        {
+            Distinct = true,
+            OutFields = ["category"]
+        };
+
+        var url = ArcGisRestQueryParameters.BuildFeatureQueryUrl(ServiceUrl, 0, query, token: null);
+
+        Assert.Contains("returnDistinctValues=true", url, StringComparison.Ordinal);
+        Assert.Contains("returnGeometry=false", url, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AllArcGisUrls_DoesNotPlaceTokenInUrl()
+    {
+        const string token = "abc-123";
+        var query = new FeatureQuery { Where = "1=1" };
+        var urls = new[]
+        {
+            ArcGisRestQueryParameters.BuildFeatureQueryUrl(ServiceUrl, 0, query, token),
+            ArcGisRestQueryParameters.BuildCountUrl(ServiceUrl, 0, query, token),
+            ArcGisRestQueryParameters.BuildExtentUrl(ServiceUrl, 0, query, token),
+            ArcGisRestQueryParameters.BuildObjectIdsUrl(ServiceUrl, 0, query, token),
+            ArcGisRestQueryParameters.BuildLayerMetadataUrl(ServiceUrl, 0, token)
+        };
+
+        foreach (var url in urls)
+        {
+            Assert.DoesNotContain(token, url, StringComparison.Ordinal);
+            Assert.DoesNotContain("token=", url, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
     public void BuildAuthorizationHeader_CarriesTokenAsBearer()
     {
         Assert.Equal("Bearer abc-123", ArcGisRestQueryParameters.BuildAuthorizationHeader("abc-123"));

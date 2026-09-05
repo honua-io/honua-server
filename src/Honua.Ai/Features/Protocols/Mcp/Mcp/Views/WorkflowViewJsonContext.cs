@@ -15,5 +15,7 @@ namespace Honua.Ai.Protocols.Mcp.Views;
 [JsonSerializable(typeof(McpWorkflowViewMeta))]
 [JsonSerializable(typeof(McpWorkflowViewStageMeta))]
 [JsonSerializable(typeof(McpWorkflowViewSummary))]
+[JsonSerializable(typeof(McpToolMetadataEnvelope))]
+[JsonSerializable(typeof(McpStudioToolClassification))]
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 internal sealed partial class WorkflowViewJsonContext : JsonSerializerContext;

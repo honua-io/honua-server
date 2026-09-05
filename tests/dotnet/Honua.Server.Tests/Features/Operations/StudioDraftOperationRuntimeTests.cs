@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
@@ -17,9 +18,19 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 
 public sealed class StudioDraftOperationRuntimeTests
 {
+    [Fact]
+    public void PublicationRequest_UsesStudioApprovalLane()
+    {
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == StudioDraftOperations.CreatePublicationRequest);
+
+        descriptor.ApprovalModel.Should().Be(OperationApprovalModel.StudioPublishRequest);
+    }
+
     [Theory]
     [InlineData(StudioDraftOperations.Validate)]
     [InlineData(StudioDraftOperations.PreviewPlan)]
+    [InlineData(StudioDraftOperations.SaveVersion)]
     public void LiveDraftOperations_AreRuntimeDynamic(string operationId)
     {
         var descriptor = StudioDraftOperations.BuildDescriptors()
@@ -77,6 +88,43 @@ public sealed class StudioDraftOperationRuntimeTests
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         await lifecycle.Received(1).PreviewPlanAsync(draftId, "studio-author", Arg.Any<CancellationToken>());
         await lifecycle.DidNotReceiveWithAnyArgs().ValidateDraftAsync(default, default, default);
+    }
+
+    [UnitTest]
+    public async Task SaveVersionExecutor_FencesActuationToPayloadGeneration()
+    {
+        var draftId = Guid.NewGuid();
+        const long expectedGeneration = 17;
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.SaveDraftAsVersionAsync(
+                draftId,
+                "approved change",
+                "studio-author",
+                expectedGeneration,
+                Arg.Any<CancellationToken>())
+            .Returns((StudioContentVersion?)null);
+        var executor = new StudioSaveVersionExecutor(lifecycle, TimeProvider.System);
+        var payload = JsonSerializer.Serialize(
+            new StudioSaveVersionPayload
+            {
+                DraftId = draftId,
+                ExpectedGeneration = expectedGeneration,
+                ChangeNote = "approved change",
+                ActorId = "studio-author",
+            },
+            StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload);
+
+        var handle = await executor.SubmitAsync(
+            Request(StudioDraftOperations.SaveVersion, payload),
+            Context("save-version"));
+
+        handle.Status.Should().Be(OperationHandleStatus.Failed);
+        await lifecycle.Received(1).SaveDraftAsVersionAsync(
+            draftId,
+            "approved change",
+            "studio-author",
+            expectedGeneration,
+            Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -148,13 +196,20 @@ public sealed class StudioDraftOperationRuntimeTests
                     [StudioDraftOperations.PayloadParameter] = payload,
                 },
             },
-            new OperationPolicyContext { PrincipalId = "studio-operator" });
+            new OperationPolicyContext
+            {
+                PrincipalId = "studio-operator",
+                ScopeGoverned = true,
+                RecognizedScopes = ["honua.mcp.delete"],
+            });
 
         handle.Status.Should().Be(OperationHandleStatus.RequiresApproval);
         handle.ProposalId.Should().Be("proposal-studio");
         handle.AuditId.Should().NotBeNull();
         bridge.Request.Should().NotBeNull();
         bridge.Request!.OperationId.Should().Be(StudioDraftOperations.Delete);
+        bridge.Context!.ScopeGoverned.Should().BeTrue();
+        bridge.Context.RecognizedScopes.Should().Equal("honua.mcp.delete");
         await lifecycle.DidNotReceiveWithAnyArgs().DeleteDraftAsync(default, default);
     }
 
@@ -192,6 +247,58 @@ public sealed class StudioDraftOperationRuntimeTests
         mapped.Kind.Should().Be(OperationClass.StudioDraftMutation);
         var replay = mapper.MapReplay(mapped);
         replay.Request.Parameters[StudioDraftOperations.PayloadParameter].Should().NotBeNull();
+        replay.TenantId.Should().Be("tenant-a");
+        replay.SchemaName.Should().Be("tenant_schema");
+    }
+
+    [Fact]
+    public async Task RollbackProposalPlans_AreHighRisk()
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        var executor = new StudioRollbackExecutor(lifecycle, TimeProvider.System);
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == StudioDraftOperations.Rollback);
+        var payload = JsonSerializer.Serialize(new StudioRollbackPayload
+        {
+            ItemId = Guid.NewGuid(),
+            TargetVersionId = Guid.NewGuid(),
+            Target = StudioRollbackPointer.Current,
+        }, StudioDraftOperationJsonContext.Default.StudioRollbackPayload);
+        var request = Request(StudioDraftOperations.Rollback, payload);
+
+        var validation = await executor.ValidateAsync(request);
+        var mapped = new StudioDraftApprovalRequestMapper(StudioDraftOperations.Rollback).Map(
+            descriptor,
+            request,
+            new OperationPolicyContext(),
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+
+        validation.ApprovalPlan!.RiskLevel.Should().Be(ProposalRiskLevel.High);
+        mapped.Plan!.RiskLevel.Should().Be(ProposalRiskLevel.High);
+    }
+
+    [UnitTest]
+    public void SaveVersionApprovalMapper_PreservesExpectedGenerationForReplay()
+    {
+        var mapper = new StudioDraftApprovalRequestMapper(StudioDraftOperations.SaveVersion);
+        var descriptor = StudioDraftOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == StudioDraftOperations.SaveVersion);
+        var payload = JsonSerializer.Serialize(
+            new StudioSaveVersionPayload { DraftId = Guid.NewGuid(), ExpectedGeneration = 23 },
+            StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload);
+        var request = Request(StudioDraftOperations.SaveVersion, payload);
+
+        var mapped = mapper.Map(
+            descriptor,
+            request,
+            new OperationPolicyContext { TenantId = "tenant-a", SchemaName = "tenant_schema" },
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        var replay = mapper.MapReplay(mapped);
+        var replayPayload = JsonSerializer.Deserialize(
+            replay.Request.Parameters[StudioDraftOperations.PayloadParameter]!,
+            StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload);
+
+        replayPayload!.ExpectedGeneration.Should().Be(23);
         replay.TenantId.Should().Be("tenant-a");
         replay.SchemaName.Should().Be("tenant_schema");
     }
@@ -299,6 +406,7 @@ public sealed class StudioDraftOperationRuntimeTests
     private sealed class DurableApprovalBridge : IOperationApprovalBridge
     {
         public OperationRequest? Request { get; private set; }
+        public OperationPolicyContext? Context { get; private set; }
 
         public Task<OperationApprovalBridgeResult> CreateProposalAsync(
             IOperationDescriptor descriptor,
@@ -308,6 +416,7 @@ public sealed class StudioDraftOperationRuntimeTests
             CancellationToken cancellationToken = default)
         {
             Request = request;
+            Context = context;
             return Task.FromResult(new OperationApprovalBridgeResult
             {
                 IsDurable = true,

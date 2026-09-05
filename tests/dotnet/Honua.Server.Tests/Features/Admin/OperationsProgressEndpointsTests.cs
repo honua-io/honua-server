@@ -36,8 +36,8 @@ public sealed class OperationsProgressEndpointsTests : IAsyncLifetime
     // (GeoprocessingServiceCollectionExtensions); the fixture runs without Redis, so register
     // functional in-memory doubles here to exercise the durable operation cancel/retry endpoints.
     private readonly WebAppFixture _fixture = new WebAppFixture()
-        .ReplaceService<IExecutionJobStore>(new InMemoryExecutionJobStore())
-        .ReplaceService<IJobQueue>(new InMemoryJobQueue());
+        .ReplaceRequestService<IExecutionJobStore>(new InMemoryExecutionJobStore())
+        .ReplaceRequestService<IJobQueue>(new InMemoryJobQueue());
     private readonly List<string> _operationIds = [];
     private HttpClient _client = null!;
     private IUniversalProgressStore _progressStore = null!;

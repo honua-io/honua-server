@@ -31,6 +31,9 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Processes;
 public sealed class OgcProcessesDurableRuntimeTests(RedisFixture redis)
 {
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
+    private const string OutputGeoJson = """{"type":"FeatureCollection","features":[]}""";
+    private static readonly string OutputArtifactUri = "data:application/geo+json;base64," +
+        Convert.ToBase64String(Encoding.UTF8.GetBytes(OutputGeoJson));
 
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
@@ -134,10 +137,9 @@ public sealed class OgcProcessesDurableRuntimeTests(RedisFixture redis)
             result.StatusCode.Should().Be(HttpStatusCode.OK);
             using var resultDoc = JsonDocument.Parse(await result.Content.ReadAsStringAsync());
             var output = resultDoc.RootElement.GetProperty("outputFeatureLayer");
-            output.GetProperty("id").GetString().Should().Be($"{jobId}:artifact:1");
-            output.GetProperty("kind").GetString().Should().Be("FeatureLayer");
-            output.GetProperty("href").GetString().Should().Be("https://example.test/ogc-buffer-output.geojson");
-            output.GetProperty("type").GetString().Should().Be("application/geo+json");
+            output.TryGetProperty("href", out _).Should().BeFalse();
+            output.GetProperty("value").GetRawText().Should().Be(OutputGeoJson);
+            output.GetProperty("mediaType").GetString().Should().Be("application/geo+json");
 
             var jobStore = fixture.GetService<IExecutionJobStore>();
             var durableJob = await jobStore.GetAsync(jobId!);
@@ -154,9 +156,10 @@ public sealed class OgcProcessesDurableRuntimeTests(RedisFixture redis)
             var package = await resultStore.GetAsync(jobId!);
             package.Should().NotBeNull();
             package!.Artifacts.Should().ContainSingle(artifact =>
+                artifact.ArtifactId == $"{jobId}:artifact:1" &&
                 artifact.Kind == ArtifactKind.FeatureLayer &&
                 artifact.Label == "outputFeatureLayer" &&
-                artifact.Uri == "https://example.test/ogc-buffer-output.geojson");
+                artifact.Uri == OutputArtifactUri);
         }
         finally
         {
@@ -221,7 +224,7 @@ public sealed class OgcProcessesDurableRuntimeTests(RedisFixture redis)
             CancellationToken cancellationToken)
         {
             await context.ReportProgressAsync(75, "Producing OGC vector process test output", cancellationToken);
-            await context.PublishArtifactAsync("https://example.test/ogc-buffer-output.geojson", cancellationToken);
+            await context.PublishArtifactAsync(OutputArtifactUri, cancellationToken);
             return JobExecutionResult.Succeeded();
         }
     }

@@ -35,6 +35,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
     private const string RasterServiceName = "typing-raster";
     private const string MultiTypeServiceName = "typing-multi";
     private const string GpServiceName = "typing-gp";
+    private const string DuplicateServiceName = "typing-duplicate";
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
@@ -130,6 +131,34 @@ public sealed class GeoservicesCatalogServiceTypingTests
 
             services.Should().BeEmpty($"{lifecycle} services must not be advertised");
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    public async Task GetServicesDirectory_DuplicatePublicationNameAndType_ReturnsOneEntry()
+    {
+        var builder = new TestMetadataV2GraphBuilder();
+        var anonymous = new AccessPolicy { AllowAnonymous = true };
+        foreach (var suffix in new[] { "a", "b" })
+        {
+            builder
+                .AddResource($"res-typing-duplicate-{suffix}", "Duplicate Layer", MetadataV2ResourceType.FeatureDataset,
+                    spatial: PointSpatial(), accessPolicy: anonymous)
+                .AddService($"svc-typing-duplicate-{suffix}", DuplicateServiceName,
+                    protocols: [ServiceProtocols.FeatureServer], accessPolicy: anonymous)
+                .AddPublication($"pub-typing-duplicate-{suffix}", $"svc-typing-duplicate-{suffix}",
+                    $"res-typing-duplicate-{suffix}", layerIndex: 710, serviceLocalId: "710",
+                    publicationType: MetadataV2PublicationType.EsriFeatureLayer);
+        }
+
+        await using var fixture = await CreateFixtureAsync(
+            BuildRasterStoreWithRasters(),
+            builder.Build());
+
+        var services = await GetServicesByNameAsync(fixture, DuplicateServiceName);
+
+        services.Should().ContainSingle().Which.Should().Be("FeatureServer");
     }
 
     private static async Task<string[]> GetServicesByNameAsync(WebAppFixture fixture, string serviceName)

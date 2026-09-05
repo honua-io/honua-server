@@ -61,7 +61,22 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
         ArgumentNullException.ThrowIfNull(request);
 
         var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
-        var apiKey = await _apiKeyResolver.ResolveAsync(ProviderLabel, options, cancellationToken).ConfigureAwait(false);
+        string? apiKey = null;
+        var credentialUnavailable = false;
+        try
+        {
+            apiKey = await _apiKeyResolver.ResolveAsync(ProviderLabel, options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (StudioAiProxyCredentialUnavailableException)
+        {
+            credentialUnavailable = true;
+        }
+
+        if (credentialUnavailable)
+        {
+            yield return Error(model, "Provider credentials are unavailable.", errorCode: StudioAiProxyApiKeyResolver.CredentialUnavailableCode);
+            yield break;
+        }
 
         using var client = _chatClientFactory.Create(model, options.Region, string.IsNullOrWhiteSpace(apiKey) ? null : apiKey);
 
@@ -402,10 +417,11 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
         }
     }
 
-    private static StudioAiChatEvent Error(string model, string message, long? latencyMs = null) => new()
+    private static StudioAiChatEvent Error(string model, string message, long? latencyMs = null, string? errorCode = null) => new()
     {
         Type = StudioAiChatEventType.Error,
         Model = model,
+        ErrorCode = errorCode,
         ErrorMessage = message,
         LatencyMs = latencyMs
     };
@@ -423,7 +439,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         public override string Name => _definition.Name;
 
-        public override string Description => _definition.Description ?? _definition.Name;
+        public override string Description => _definition.BuildProviderDescription() ?? _definition.Name;
 
         public override JsonElement JsonSchema => _definition.InputSchema;
 

@@ -90,9 +90,15 @@ internal static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services">Service collection</param>
     /// <param name="configuration">Configuration to get connection string from</param>
+    /// <param name="coreSchemaMigrations">Application-owned migration identities to verify</param>
     /// <returns>Updated service collection</returns>
-    public static IServiceCollection AddPostgreSqlServices(this IServiceCollection services, IConfiguration configuration)
+    internal static IServiceCollection AddPostgreSqlServices(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        PostgresCoreSchemaMigrationManifest coreSchemaMigrations)
     {
+        ArgumentNullException.ThrowIfNull(coreSchemaMigrations);
+
         // Request-scoped schema mode is required by per-test schema headers AND by
         // schema-per-tenant routing (#346); both share the same SET search_path mechanism.
         var schemaHeadersEnabled = Honua.Core.Configuration.RequestScopedSchemaConfiguration.IsEnabled(configuration);
@@ -190,7 +196,10 @@ internal static class ServiceCollectionExtensions
         // OGC SensorThings API observations store (#1747)
         services.AddScoped<Honua.Core.Features.SensorThings.Abstractions.IObservationStore>(
             serviceProvider => new Honua.Db.Postgres.Features.SensorThings.PostgresObservationStore(
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
+                configuration["Database:Schema"],
+                serviceProvider.GetService<ISchemaContext>()));
 
         // Console Operate read APIs (#1168)
         services.AddScoped<IAuditLogReader, PostgresAuditLogReader>();
@@ -265,6 +274,7 @@ internal static class ServiceCollectionExtensions
             new Features.Metadata.PostgresMetadataV2GraphStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 metadataEnvironment,
+                serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetRequiredService<IMetadataV2GraphCacheInvalidator>()));
 
@@ -290,6 +300,7 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IMetadataReleasePackageStore>(serviceProvider =>
             new Features.Metadata.PostgresMetadataReleasePackageStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IDatabaseSchemaGuard>(),
                 configuration["Database:Schema"]));
         services.AddScoped<IStudioPackageStore>(serviceProvider =>
             new PostgresStudioPackageStore(
@@ -411,6 +422,17 @@ internal static class ServiceCollectionExtensions
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
+
+        // Register the read-only journal/physical-schema guard and migration runner. Both
+        // canonical numbered roots flow through this runner and its public.schema_versions
+        // journal; the guard rejects divergence instead of repairing it from a store path.
+        services.AddSingleton(coreSchemaMigrations);
+        services.AddSingleton(serviceProvider =>
+            new Features.Infrastructure.Migrations.PostgresCoreSchemaGuard(
+                serviceProvider.GetRequiredService<PostgresCoreSchemaMigrationManifest>(),
+                configuration));
+        services.AddSingleton<IDatabaseSchemaGuard>(serviceProvider =>
+            serviceProvider.GetRequiredService<Features.Infrastructure.Migrations.PostgresCoreSchemaGuard>());
 
         // Register migration runner for schema upgrades
         services.AddSingleton<IDatabaseMigrationRunner, PostgresDatabaseMigrationRunner>();

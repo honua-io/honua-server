@@ -412,6 +412,15 @@ public sealed class GPServerParameterTranslationTests
             .Should().Be("GPString");
     }
 
+    [Theory]
+    [InlineData(ProcessParameterValueType.Wkb, "GPString")]
+    [InlineData(ProcessParameterValueType.WkbArray, "GPMultiValue:GPString")]
+    [Operation(Operations.Query)]
+    public void ToEsriDataType_AdvertisesInlineWkbAsString(ProcessParameterValueType type, string expected)
+    {
+        GPServerParameterTranslation.ToEsriDataType(type).Should().Be(expected);
+    }
+
     // -----------------------------------------------------------------------
     // Output parameter resolution
     // -----------------------------------------------------------------------

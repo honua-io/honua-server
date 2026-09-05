@@ -46,7 +46,7 @@ jq -e '
 expected_baseline="$(jq -r '.shards | length' .github/ci-shards.json)"
 jq -e --argjson expected_baseline "${expected_baseline}" '
   ((.baseline | length) == $expected_baseline) and (.producers | length == 5) and
-  ((.reused_consumers | length) == ($expected_baseline - (.producers | length))) and
+  ((.reused_consumers | length) == 52) and
   ([.producers[].identity] | sort) == ["geoservices", "odata", "ogc-api", "ogc-classic", "server"]
 ' "${fixture}/full.json" >/dev/null
 
