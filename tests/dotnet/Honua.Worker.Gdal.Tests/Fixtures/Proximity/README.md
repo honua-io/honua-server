@@ -42,6 +42,15 @@ The required **Worker GDAL Tests** CI job installs GDAL's Python bindings,
 NumPy and SciPy and sets `HONUA_REQUIRE_GDAL_CLI=true`. Missing executables or
 imports fail; the real-GDAL TRX guard rejects skipped cases.
 
+Local validation on Windows .NET SDK 10.0.100 with real GDAL 3.13.1 and SciPy
+1.16.3 in Docker Desktop: 294 worker unit/proximity tests passed, zero skipped.
+As a negative control, both real command outputs were reopened with GDAL in
+update mode and their bands filled with zero, preserving CRS, transform,
+dimensions, band type and nodata metadata. Both correctness tests failed on
+cell `(0,0)`: expected allocation 7 and distance `14.142135623730951`, observed
+zero. Removing this local-only mutation restored the green run. No mutation
+hook is shipped in the worker or the test suite.
+
 ## Candidate qualification handoff
 
 This satisfies the pre-cut numerical proof for the 2026.1 whole-catalog GP GA
