@@ -17,8 +17,20 @@ internal sealed class StreamSubscriberSecurity(
     public bool Allows(FeatureStreamEnvelope envelope)
     {
         var policy = Resolve(envelope);
-        return policy is not null && policy.Predicates.All(predicate =>
-            envelope.Attributes is not null && InMemoryFilterEvaluator.Evaluate(predicate, envelope.Attributes));
+        if (policy is null)
+        {
+            return false;
+        }
+
+        foreach (var predicate in policy.Predicates)
+        {
+            if (envelope.Attributes is null || !InMemoryFilterEvaluator.Evaluate(predicate, envelope.Attributes))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public FeatureStreamEnvelope Project(FeatureStreamEnvelope envelope)
@@ -41,8 +53,9 @@ internal sealed class StreamSubscriberSecurity(
 
     private StreamLayerReadPolicy? Resolve(FeatureStreamEnvelope envelope)
     {
-        var routes = exactServiceIds.Contains(envelope.ServiceId) ? exactRoutes : namedRoutes;
-        var service = exactServiceIds.Contains(envelope.ServiceId) ? envelope.ServiceId : envelope.ServiceId.ToUpperInvariant();
+        var isExact = exactServiceIds.Contains(envelope.ServiceId);
+        var routes = isExact ? exactRoutes : namedRoutes;
+        var service = isExact ? envelope.ServiceId : envelope.ServiceId.ToUpperInvariant();
         return routes.GetValueOrDefault((service, envelope.LayerId));
     }
 }
