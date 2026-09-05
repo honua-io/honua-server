@@ -30,14 +30,14 @@ Paths are relative to the repository root.
 
 | Requirement | Source evidence |
 |---|---|
-| Stale, partial, unavailable and unverified sources make zero gateway calls | `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/OpsFindingsServiceTests.cs`: `Propose_IncompleteRequiredSourceEvidence_BlocksWithZeroGatewayCalls`; `Propose_NotConfiguredRequiredSource_IsDistinctFromUnavailableAndBlocks`. |
+| Backend outage, never-succeeded, stale and future observations make zero gateway calls for the alert-dispatch finding | `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/OpsFindingsServiceTests.cs`: `Propose_IncompleteRequiredSourceEvidence_BlocksWithZeroGatewayCalls` invokes `ProposeAsync` for exactly those four fixtures and asserts no `RouteAsync` call. This is not a deployment-target replay. |
+| Partial, unverified and not-configured proposal-path coverage | Evidence gap: the posture unit tests cover classification, but the cited `Propose_NotConfiguredRequiredSource_IsDistinctFromUnavailableAndBlocks` only evaluates posture; it does not call `ProposeAsync` or assert zero gateway calls. None of those tests supplies the required deployment finding proposal/actuator counts. Keep this criterion unmet until that path is exercised. |
 | Validity and coverage are source-derived | `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/EvidencePostureTests.cs`: fixed-time stale/future/malformed/replica/component fixtures; complete aggregate uses its oldest observation. |
 | Real backend outage and recovery | `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/EvidencePostureLiveTests.cs`; opt-in deployed harness, not an automatically passing local test. |
 | No opaque executable model payload | `tests/dotnet/Honua.Ai.Tests/Source/McpTaxonomyAlignmentTests.cs`: `McpComposition_DoesNotExposeOpaqueOperationProposalPath`; schema-closed tools in `src/Honua.Ai/Features/Protocols/Mcp/Mcp/Tools/PlatformOpsTools.cs`. |
 | Self-approval denied; narrow approval grant | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalEndpointsTests.cs`: `ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties`, `ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces`, `ReadOnlyScopedKey_ApproveNamesMissingGrant`. |
 | Same actor cannot bypass tenant ownership | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalTenantOwnershipTests.cs`: `ProposalResource_ProposerIdentityDoesNotBypassTenantOwnership`. |
-| Narrow OAuth scope denies rollback before persistence | `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/McpPlatformOpsReaderTests.cs`: `ProposeRollback_ReadOnlyOAuthScope_IsDeniedBeforeProposalPersistence`. |
-| Wrong Studio owner and unauthenticated draft callers | `tests/dotnet/Honua.Ai.Tests/Source/Studio/StudioMcpOwnershipAuthorizationTests.cs`; retain the specific denial cases used by the replay. |
+| Finding-proposal scope and deployment target ownership | Evidence gap: the selected `honua_propose_finding` path authorizes `OperatorOperation.Publish` and checks `candidateId` against the hidden action target. A rollback-tool test using `OperatorOperation.Rollback` or a Studio draft-ownership test cannot prove this path. Replay must call the finding proposal itself with narrowed scope, unauthorized actor and wrong target, and assert denial plus zero proposal/actuator calls. |
 
 Route and operation IDs were checked against
 `docs/developer/api-specs/admin-api.json`; MCP names against

@@ -30,18 +30,17 @@ its target operation. The human approver needs the appropriate approval grant
 credential to the model. Profile names alone do not establish separation of
 duties: retain the server-resolved principal IDs.
 
-These PowerShell reads assume the verified endpoint in `HONUA_URL` and a
-read credential supplied by a secret store in `HONUA_API_KEY`. Do not log the
-header or put a literal credential in command history.
+Use the MCP product workflow below with the verified endpoint and a
+secret-backed read profile. For REST/Admin API inspection, the same server
+records map to these routes; this table identifies the contract, not a raw
+HTTP shell workflow:
 
-```powershell
-$base = $env:HONUA_URL.TrimEnd('/')
-$headers = @{ 'X-API-Key' = $env:HONUA_API_KEY }
-$status = Invoke-RestMethod "$base/api/v1/operate/status" -Headers $headers
-$health = Invoke-RestMethod "$base/api/v1/admin/observability/ops-health" -Headers $headers
-$findings = Invoke-RestMethod "$base/api/v1/admin/observability/findings" -Headers $headers
-$events = Invoke-RestMethod "$base/api/v1/admin/observability/events?pageSize=5" -Headers $headers
-```
+| Record | REST route |
+|---|---|
+| Aggregate status | `GET /api/v1/operate/status` |
+| Source health | `GET /api/v1/admin/observability/ops-health` |
+| Findings | `GET /api/v1/admin/observability/findings` |
+| Timeline | `GET /api/v1/admin/observability/events?pageSize=5` |
 
 An HTTP 200 or aggregate `healthy` verdict is not sufficient authorization
 evidence. Inspect the [metric inventory](metrics.md) and
@@ -50,9 +49,18 @@ evidence. Inspect the [metric inventory](metrics.md) and
 ## 2. Read the same evidence through MCP and DevOps
 
 Connect the installed MCP client to `/mcp` using its secret-backed profile.
-After the normal MCP initialize handshake, discover `tools/list`; retain the
-catalog/view revision and descriptor digests. In the terminal's MCP inspector
-send these calls, one at a time:
+After the normal MCP initialize handshake, explicitly discover the authenticated
+`full` view. The bounded `default` view omits the Operate observation and
+finding-proposal tools. Follow each returned `nextCursor` with the same view
+until the required descriptors are found, and retain catalog/view revision
+and descriptor digests. Exposing a full catalog does not authorize its writes
+or widen this bounded scenario. In the terminal's MCP inspector send:
+
+```json
+{"jsonrpc":"2.0","id":9,"method":"tools/list","params":{"view":"full"}}
+```
+
+Then send these calls one at a time:
 
 ```json
 {"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"honua_ops_health","arguments":{}}}
@@ -101,8 +109,12 @@ defines the controls; they are test-harness endpoints, not product routes.
 
 ## 4. Propose, poll, and approve separately
 
-Only after that gate passes, call discovered `honua_propose_finding` with the
-finding identifier using its returned input schema. The deterministic REST
+Only after that gate passes, call discovered `honua_propose_finding` with
+`findingId` from the finding's `id` and `candidateId` from its `subject.targetId`.
+Both are required by the returned input schema. Here `candidateId` is the
+deployment target identifier, not the platform release ID or image digest;
+the server checks it matches the hidden Deploy action. A missing target is a
+stop condition. The deterministic REST
 equivalent is `POST /api/v1/admin/observability/findings/{findingId}/propose`.
 Generic model-facing control tools seal proposals; they do not execute even
 when a separate server-owned policy allows direct execution. Do not use the
@@ -129,12 +141,14 @@ The proposer then polls the same proposal. Approval alone is not actuator
 success. A conflict or changed authority requires inspection and a newly
 reviewed proposal, not blind replay with broader credentials.
 
-On the isolated candidate fixture, also attempt self-approval, an unrelated
-actor's proposal read, wrong-tenant/wrong-owner targets, and narrowed OAuth
+On the isolated candidate fixture, also attempt self-approval, an unauthorized
+or cross-tenant actor's proposal read, wrong-tenant/wrong-owner targets, and narrowed OAuth
 scope replay. Assert denial and zero unauthorized actuation. The
 [source proof map](../../internal/contributor/operate-docs-precut-evidence.md#authorization-and-freshness-proof-map)
 names existing #3474 and related negative coverage; it does not claim those
-tests were rerun against the candidate.
+tests were rerun against the candidate. A same-tenant reviewer with the
+required read authority must be able to inspect the proposal; a different
+actor is not automatically an unauthorized actor.
 
 ## 5. Verify fix-forward convergence
 
