@@ -5,6 +5,9 @@ using System.Reflection;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.Configuration;
 using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.Options;
@@ -107,7 +110,10 @@ public sealed class OgcMapsTimeoutRegressionTests
                 observed = call.Arg<CancellationToken>();
                 return pending.Task.WaitAsync(observed.Value);
             });
-        using var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        using var services = new ServiceCollection().AddLogging()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
+            .AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>()
+            .BuildServiceProvider();
         var context = new DefaultHttpContext { RequestServices = services };
         context.Request.Path = "/ogc/maps/map";
         context.Response.Body = new MemoryStream();
