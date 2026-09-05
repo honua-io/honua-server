@@ -277,24 +277,38 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     public async Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
 
         foreach (var record in await ListAsync(cancellationToken).ConfigureAwait(false))
         {
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
-            var now = _timeProvider.GetUtcNow();
-            if (record.RevokedAt is null && (!record.ExpiresAt.HasValue || record.ExpiresAt > now) && CryptographicOperations.FixedTimeEquals(hash, record.KeyHash))
+            AdminApiKeyRecord? current = record;
+            for (var attempt = 0; attempt < 3 && current is not null; attempt++)
             {
-                var updated = record with { LastUsedAt = now, UpdatedAt = now };
-                var key = BuildKey(record.Id);
+                cancellationToken.ThrowIfCancellationRequested();
+                var now = _timeProvider.GetUtcNow();
+                if (current.RevokedAt is not null || (current.ExpiresAt.HasValue && current.ExpiresAt <= now)
+                    || !CryptographicOperations.FixedTimeEquals(hash, current.KeyHash))
+                {
+                    break;
+                }
+
+                var updated = current with { LastUsedAt = now, UpdatedAt = now };
+                var key = BuildKey(current.Id);
                 var transaction = _database.CreateTransaction();
                 // Do not unconditionally rewrite the snapshot read by ListAsync: a concurrent
                 // revoke or rotate must win, rather than being resurrected by validation.
-                transaction.AddCondition(Condition.StringEqual(key, JsonSerializer.Serialize(record)));
+                transaction.AddCondition(Condition.StringEqual(key, JsonSerializer.Serialize(current)));
                 _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated), ResolveTtl(updated.ExpiresAt));
                 if (await transaction.ExecuteAsync().ConfigureAwait(false))
                 {
                     return new(updated);
                 }
+
+                // Another valid request may only have updated LastUsedAt. Re-read and
+                // revalidate authority before retrying so benign usage does not cause a 401.
+                current = attempt < 2
+                    ? await ReadAsync(record.Id, cancellationToken).ConfigureAwait(false)
+                    : null;
             }
         }
         return null;
