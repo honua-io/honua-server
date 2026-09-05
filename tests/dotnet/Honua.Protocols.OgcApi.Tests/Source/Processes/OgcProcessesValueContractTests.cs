@@ -159,7 +159,8 @@ public sealed class OgcProcessesValueContractTests
         var package = AnalysisResultPackage.CreateCompleted("stream-result:v1", new ResultSummary { Title = "stream output" },
             Enumerable.Range(0, secondReference != null ? 2 : artifactCount).Select(index => new ArtifactRef
             {
-                ArtifactId = $"stream-artifact-{index}", Kind = ArtifactKind.FeatureLayer,
+                ArtifactId = $"stream-artifact-{index}",
+                Kind = ArtifactKind.FeatureLayer,
                 Label = index == 0 ? "outputFeatureLayer" : secondReference != null ? "second" : $"outputFeatureLayer{index}",
                 Uri = index == 1 && secondReference != null ? secondReference : reference
             }).ToArray(),
