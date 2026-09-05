@@ -19,6 +19,8 @@ namespace Honua.Server.Tests.Features.Operations;
 public sealed class WorkflowRollbackApprovalTests
 {
     [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [InlineData(WorkflowRollbackOperations.Deploy)]
     [InlineData(WorkflowRollbackOperations.CoordinatedRelease)]
     public void ProductionComposition_RollbackHasOneSafeMapper_AndSealsReplay(string operationId)
@@ -70,5 +72,24 @@ public sealed class WorkflowRollbackApprovalTests
             .Single(candidate => candidate.OperationId == otherOperationId);
         var wrongReplay = () => otherMapper.MapReplay(mapped);
         wrongReplay.Should().Throw<InvalidOperationException>();
+    }
+
+    [UnitTest]
+    public void DeployApprovalMapper_RejectsMissingSafetyClassification()
+    {
+        var mapper = new WorkflowRollbackApprovalRequestMapper(WorkflowRollbackOperations.Deploy);
+        var descriptor = WorkflowRollbackOperations.BuildDescriptors()
+            .Single(candidate => candidate.OperationId == WorkflowRollbackOperations.Deploy);
+        var request = new OperationRequest
+        {
+            OperationId = WorkflowRollbackOperations.Deploy,
+            Parameters = new Dictionary<string, string?>
+            {
+                [WorkflowRollbackOperations.TargetOperationId] = "workflow",
+            },
+        };
+        var map = () => mapper.Map(descriptor, request, new OperationPolicyContext(),
+            new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval });
+        map.Should().Throw<ArgumentException>();
     }
 }
