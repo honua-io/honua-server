@@ -111,8 +111,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateReadCommand(connection, sql);
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        return result is null or DBNull ? null : (byte[])result;
+        return await PostgresMvtReader.ReadAsync(command, tileLimits.MaxTileSize, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

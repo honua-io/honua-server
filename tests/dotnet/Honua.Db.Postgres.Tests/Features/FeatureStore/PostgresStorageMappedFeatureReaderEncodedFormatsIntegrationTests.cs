@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data;
+using Honua.Core.Exceptions;
 using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Configuration;
@@ -141,6 +142,23 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
 
         payload.Should().NotBeNull();
         payload!.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task GetMvtTileAsync_SourceBackedLayer_EnforcesEncodedByteBudget()
+    {
+        var provider = CreateReader();
+        var query = new FeatureQuery { SpatialReferenceSrid = 4326, OutputSrid = 4326 };
+        var options = new TileOptions { TileBuffer = 0, TileExtent = 4096 };
+        var payload = await provider.GetMvtTileAsync(1, 0, 0, 0, query, options, new TileLimits());
+        payload.Should().NotBeNullOrEmpty();
+
+        var exact = await provider.GetMvtTileAsync(1, 0, 0, 0, query, options,
+            new TileLimits { MaxTileSize = payload!.Length });
+        exact.Should().Equal(payload);
+        await Assert.ThrowsAsync<TileSizeLimitExceededException>(() =>
+            provider.GetMvtTileAsync(1, 0, 0, 0, query, options,
+                new TileLimits { MaxTileSize = payload.Length - 1 }));
     }
 
     private PostgresStorageMappedFeatureReader CreateReader(
