@@ -115,7 +115,8 @@ public sealed class StudioMcpToolContractTests
     public async Task UpdateDraft_WhenGenerationIsStale_SurfacesTypedFailedPrecondition()
     {
         var draft = BuildDraft(StudioPackageFamily.Map, generation: 1);
-        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(draft);
+        _lifecycleService.GetDraftAsync(DraftId, Arg.Any<CancellationToken>())
+            .Returns(draft, draft with { Generation = 2 });
         _lifecycleService
             .UpdateDraftAsync(DraftId, Arg.Any<UpdateStudioPackageDraftCommand>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<StudioPackageDraft?>(
@@ -134,7 +135,8 @@ public sealed class StudioMcpToolContractTests
 
         var act = () => tool.InvokeAsync(HttpContextWithLifecycleService(), arguments, CancellationToken.None);
 
-        await act.Should().ThrowAsync<GeoprocessingPreconditionFailedException>();
+        var conflict = await act.Should().ThrowAsync<StudioDraftGenerationConflictException>();
+        conflict.Which.CurrentGeneration.Should().Be(2);
     }
 
     [UnitTest]
