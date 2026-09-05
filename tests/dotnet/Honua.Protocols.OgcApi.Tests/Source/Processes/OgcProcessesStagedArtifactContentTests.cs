@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -53,6 +55,33 @@ public sealed class OgcProcessesStagedArtifactContentTests
         var payload = await response.Content.ReadAsByteArrayAsync();
         payload.Should().Equal(_fixture.StagedPayload);
         response.Headers.ETag.Should().NotBeNull();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
+    public async Task ArtifactContent_RestoredAttestedVolume_PreservesDescriptorAndOracleChecksum()
+    {
+        // The fixture backs up the producer volume, restores to a different mount,
+        // removes the source volume, and constructs a replacement consumer store.
+        var descriptor = RasterOutputJson.Deserialize(_fixture.RestoredReference)
+            .Should().BeOfType<StagedObjectRasterOutputDescriptor>().Subject;
+        descriptor.StoreReference.Should().Be("gp-outputs");
+        descriptor.Provider.Should().Be(CloudStorageProvider.Local);
+        descriptor.JobId.Should().Be(OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId);
+        descriptor.AttemptNumber.Should().Be(1);
+        descriptor.OutputName.Should().Be("outputRaster");
+        descriptor.Content!.SizeBytes.Should().Be(32768);
+        descriptor.Content.MediaType.Should().Be("image/tiff");
+        const string expectedChecksum = "611253a4531dea3d840789b4f11a1ad9c4329fbbf85ee1634f2ae601e6da6db0";
+        descriptor.Content.Checksum!.Value.Should().Be(expectedChecksum);
+        using var response = await _fixture.App.Client.GetAsync(
+            $"/api/geoprocessing/jobs/{descriptor.JobId}/artifacts/0/content");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().Equal(Enumerable.Range(0, 32768).Select(index => (byte)((index * 31 + 7) % 256)));
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant().Should().Be(expectedChecksum);
+        response.Content.Headers.ContentType!.MediaType.Should().Be(descriptor.Content.MediaType);
     }
 
     /// <summary>
@@ -316,12 +345,15 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
 
     public byte[] StagedPayload { get; } = CreatePayload();
 
+    public string RestoredReference { get; }
+
     public OgcProcessesStagedArtifactContentTestsFixture()
     {
         var stagingOptions = new GeoprocessingOutputStagingOptions
         {
             Enabled = true,
-            LocalRootPath = _storeRoot,
+            LocalRootPath = Directory.CreateDirectory(Path.Join(_storeRoot, "producer")).FullName,
+            MaxInlineArtifactBytes = 1024,
         };
         var store = new FileSystemGeoprocessingOutputObjectStore(Options.Create(GeoprocessingOutputStoreTestHelper.Attest(stagingOptions)));
 
@@ -359,6 +391,19 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
             Content = valueContent,
             ObjectKey = valueObjectKey,
         });
+
+        // Back up descriptor and bytes together, including the deployment marker.
+        // The deterministic 32 KiB fixture is above the 1 KiB staging threshold.
+        File.WriteAllText(Path.Join(stagingOptions.LocalRootPath, "descriptor.json"), reference);
+        var archive = Path.Join(_storeRoot, "backup.zip");
+        ZipFile.CreateFromDirectory(stagingOptions.LocalRootPath, archive);
+        var restoredRoot = Path.Join(_storeRoot, "restored");
+        ZipFile.ExtractToDirectory(archive, restoredRoot);
+        Directory.Delete(stagingOptions.LocalRootPath, recursive: true);
+        stagingOptions.LocalRootPath = restoredRoot;
+        store = new FileSystemGeoprocessingOutputObjectStore(Options.Create(stagingOptions));
+        RestoredReference = File.ReadAllText(Path.Join(restoredRoot, "descriptor.json"));
+        RestoredReference.Should().Be(reference);
         var invalidDescriptorReference = RasterOutputJson.Serialize(descriptor with
         {
             JobId = InvalidDescriptorJobId,
@@ -430,9 +475,7 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
 
     private static byte[] CreatePayload()
     {
-        var payload = new byte[32 * 1024];
-        Random.Shared.NextBytes(payload);
-        return payload;
+        return Enumerable.Range(0, 32768).Select(index => (byte)((index * 31 + 7) % 256)).ToArray();
     }
 
     private static ExecutionJobRecord CreateJob(

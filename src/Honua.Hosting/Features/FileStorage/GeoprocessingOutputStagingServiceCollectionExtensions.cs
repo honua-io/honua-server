@@ -65,6 +65,7 @@ public static class GeoprocessingOutputStagingServiceCollectionExtensions
         if (section.GetValue<bool>(nameof(GeoprocessingOutputStagingOptions.Enabled)))
         {
             services.TryAddSingleton<IGeoprocessingOutputObjectStore, FileSystemGeoprocessingOutputObjectStore>();
+            services.TryAddSingleton<GeoprocessingOutputStoreHealthCheck>();
             services.AddHealthChecks().AddCheck<GeoprocessingOutputStoreHealthCheck>("gp-output-store", tags: ["ready"]);
         }
 

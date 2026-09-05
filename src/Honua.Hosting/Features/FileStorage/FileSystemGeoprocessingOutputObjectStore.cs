@@ -27,6 +27,7 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
     internal const string PendingSuffix = ".pending";
 
     private readonly string _root;
+    private readonly GeoprocessingOutputStagingOptions _options;
     private readonly TimeSpan _pendingRetention;
     // FileStream.Lock coordinates distinct processes, but POSIX record locks are
     // process-scoped. Keep the in-process roster shared across store instances so
@@ -38,6 +39,7 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
     {
         ArgumentNullException.ThrowIfNull(options);
         var value = options.Value;
+        _options = value;
         GeoprocessingOutputStoreAttestationValidator.Validate(value);
         StoreReference = value.StoreReference;
         if (string.IsNullOrWhiteSpace(value.LocalRootPath))
@@ -357,11 +359,13 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
     /// </summary>
     private string ResolveContainedPath(string objectKey)
     {
+        GeoprocessingOutputStoreAttestationValidator.Validate(_options);
         ArgumentException.ThrowIfNullOrWhiteSpace(objectKey);
         if (objectKey[0] is '/' or '\\'
             || objectKey.Contains('\\')
             || objectKey.Contains("..", StringComparison.Ordinal)
             || objectKey.Contains("://", StringComparison.Ordinal)
+            || objectKey.StartsWith(GeoprocessingOutputStoreAttestation.FileName, StringComparison.Ordinal)
             || Path.IsPathRooted(objectKey))
         {
             throw new ArgumentException($"Object key '{objectKey}' is not a contained relative key.", nameof(objectKey));
