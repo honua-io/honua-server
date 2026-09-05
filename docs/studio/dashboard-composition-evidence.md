@@ -20,6 +20,10 @@ The canonical exporter regenerated its committed manifest to include
 The MCP registry/taxonomy governance suite also passed natively: 68 passed,
 0 failed, 0 skipped. The canonical feature-catalog emitter added the new
 dashboard integration test to the `/mcp` proving-test list.
+The full architecture suite passed natively as well: 287 passed, 0 failed,
+0 skipped. Generated intermediate directories were moved outside the source
+tree before this run so the source-isolation guard inspected application source.
+No guard, assertion, or allow-list was changed.
 
 The [dashboard integration fixture](../../tests/dotnet/Honua.Server.Tests/Features/Studio/StudioDashboardMcpIntegrationTests.cs)
 creates a dashboard through MCP and exercises all eleven composition verbs.
