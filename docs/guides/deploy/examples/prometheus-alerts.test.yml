@@ -1,0 +1,157 @@
+# Run from this directory: promtool test rules prometheus-alerts.test.yml
+# Uses the actual distinct error-envelope and serving-histogram label sets.
+rule_files:
+- prometheus-alerts.yml
+evaluation_interval: 1m
+tests:
+- name: Documented metric labels fire both outage alerts after their hold periods
+  interval: 1m
+  input_series:
+  - series: honua_request_error_total{service_type="FeatureServer",operation="query",error_code="500",in_band="true"}
+    values: 0+100x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="FeatureServer",honua_operation="query",status_class="2xx"}
+    values: 0+100x15
+  alert_rule_test:
+  - eval_time: 1m
+    alertname: HonuaErrorRateCritical
+    exp_alerts: []
+  - eval_time: 3m
+    alertname: HonuaErrorRateHigh
+    exp_alerts: []
+  - eval_time: 3m
+    alertname: HonuaErrorRateCritical
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        component: reliability
+      exp_annotations:
+        summary: Honua error rate is critical
+        description: Error rate is 100% - immediate investigation required
+        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+  - eval_time: 6m
+    alertname: HonuaErrorRateHigh
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        component: reliability
+      exp_annotations:
+        summary: Honua error rate is elevated
+        description: Error rate is 100% for more than 5 minutes
+        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+- name: Aggregate operations and status classes within each scrape target
+  interval: 1m
+  input_series:
+  - series: honua_request_error_total{service_type="FeatureServer",operation="query",error_code="500",in_band="true",job="honua",instance="down"}
+    values: 0+60x15
+  - series: honua_request_error_total{service_type="FeatureServer",operation="edit",error_code="400",in_band="true",job="honua",instance="down"}
+    values: 0+40x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="FeatureServer",honua_operation="query",status_class="2xx",job="honua",instance="down"}
+    values: 0+60x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="FeatureServer",honua_operation="edit",status_class="4xx",job="honua",instance="down"}
+    values: 0+40x15
+  - series: honua_request_error_total{service_type="FeatureServer",operation="query",error_code="500",in_band="true",job="honua",instance="healthy"}
+    values: 0+0x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="FeatureServer",honua_operation="query",status_class="2xx",job="honua",instance="healthy"}
+    values: 0+10000x15
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: HonuaErrorRateCritical
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        component: reliability
+        job: honua
+        instance: down
+      exp_annotations:
+        summary: Honua error rate is critical
+        description: Error rate is 100% - immediate investigation required
+        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+  - eval_time: 10m
+    alertname: HonuaErrorRateHigh
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        component: reliability
+        job: honua
+        instance: down
+      exp_annotations:
+        summary: Honua error rate is elevated
+        description: Error rate is 100% for more than 5 minutes
+        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+- name: Elevated errors fire warning only
+  interval: 1m
+  input_series:
+  - series: honua_request_error_total{service_type="FeatureServer",operation="query",error_code="500",in_band="true"}
+    values: 0+3x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="FeatureServer",honua_operation="query",status_class="2xx"}
+    values: 0+100x15
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: HonuaErrorRateHigh
+    exp_alerts:
+    - exp_labels:
+        severity: warning
+        component: reliability
+      exp_annotations:
+        summary: Honua error rate is elevated
+        description: Error rate is 3% for more than 5 minutes
+        runbook_url: https://docs.honua.io/guides/deploy/troubleshooting#quick-triage
+  - eval_time: 10m
+    alertname: HonuaErrorRateCritical
+    exp_alerts: []
+- name: Healthy traffic stays below both thresholds
+  interval: 1m
+  input_series:
+  - series: honua_request_error_total{service_type="FeatureServer",operation="query",error_code="500",in_band="true"}
+    values: 0+1x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="FeatureServer",honua_operation="query",status_class="2xx"}
+    values: 0+100x15
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: HonuaErrorRateHigh
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: HonuaErrorRateCritical
+    exp_alerts: []
+- name: Zero and absent traffic do not fire
+  interval: 1m
+  input_series:
+  - series: honua_request_error_total{service_type="FeatureServer",operation="query",error_code="500",in_band="true"}
+    values: 0+0x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="FeatureServer",honua_operation="query",status_class="2xx"}
+    values: 0+0x15
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: HonuaErrorRateHigh
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: HonuaErrorRateCritical
+    exp_alerts: []
+- name: Absent denominator does not manufacture an error rate
+  interval: 1m
+  input_series:
+  - series: honua_request_error_total{service_type="FeatureServer",operation="query",error_code="500",in_band="true"}
+    values: 0+100x15
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: HonuaErrorRateHigh
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: HonuaErrorRateCritical
+    exp_alerts: []
+- name: Request-weighted denominator includes successful WPS traffic
+  interval: 1m
+  input_series:
+  - series: honua_request_error_total{service_type="FeatureServer",operation="query",error_code="500",in_band="true"}
+    values: 0+3x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="FeatureServer",honua_operation="query",status_class="2xx"}
+    values: 0+100x15
+  - series: honua_serving_request_duration_ms_count{honua_protocol="WPS-2.0.2",honua_operation="wps.getcapabilities",status_class="2xx"}
+    values: 0+100x15
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: HonuaErrorRateHigh
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: HonuaErrorRateCritical
+    exp_alerts: []
