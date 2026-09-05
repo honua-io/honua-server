@@ -82,7 +82,7 @@ Retain its revision, membership and descriptor digests, descriptor count,
 byte size and paging state. The source view is `setup.v1`; a discovered
 descriptor does not prove its downstream operation works. Record the
 candidate's actual profile/catalog counts instead of copying historical
-counts. Discover the explicit `analysis` and `esri` profile surfaces when
+counts. Discover the explicit analysis and Esri GP profile surfaces when
 testing GP; profile filtering and the GA process catalog are different
 denominators. Missing tools are a stop condition, not permission to synthesize
 a client-owned replacement catalog.
@@ -118,7 +118,7 @@ templates, not fabricated successful tool output.
 | `honua_apply_style_preset` | `{serviceId, layerId, styleId}` selects an existing catalog preset as the layer's primary/default style. |
 | `honua_get_style` | Resolve the same layer again; assert its style ID and stylesheet match the selected preset. |
 | `honua_render_map` | `{layers: [{serviceId, layerId}], bbox: [minX,minY,maxX,maxY], bboxSrid: 4326, width: 512, height: 512}`, using the fixture's actual CRS/extent. |
-| MCP `resources/read` | Read the returned render resource URI; retain its artifact identity, media type, dimensions and style references. |
+| Resource read | Read the returned resource URI with MCP `resources/read` when supported; fetch an HTTP artifact link through the authenticated client as directed by the returned descriptor. Retain artifact identity, media type, dimensions and style references. |
 
 Render evidence must show the expected fixture features and selected style,
 not merely a non-empty PNG. A draft-only style reference does not establish
