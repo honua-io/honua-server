@@ -121,6 +121,8 @@ StartupConfigurationHelpers.ResolveEnvironmentSecretReferences(builder.Configura
 // Validate the declared paid deployment before registering or starting any data workers,
 // including deployments without Redis (whose cache probe otherwise skips license bootstrap).
 await StartupConfigurationHelpers.LoadBootstrapLicenseSnapshotAsync(builder.Configuration, builder.Environment);
+// Start the license hosted service before any workload execution or reconciliation service.
+builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
 // Resolve aws:secretsmanager: Redis connection-string references before anything below reads
 // ConnectionStrings:redis — the multiplexer wiring a few lines down runs ahead of
 // WebApplicationBuilder.Build(), so it cannot use the DI-registered IConnectionSecretResolver
@@ -662,10 +664,6 @@ builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe
 builder.Services.AddScoped<IReadinessCheckService,
     Honua.Server.Features.HealthCheck.ReadinessCheckService>();
 builder.Services.AddProductionHealthChecks(builder.Configuration);
-
-// ---- Extracted: licensing + identity-provider HTTP clients (Startup/LicensingRegistration.cs)
-builder.Services.AddHonuaLicensing(builder.Configuration, builder.Environment);
-// ---- End extracted block
 
 // Edition guardrail ladder (#1691): resolves DirectExecute/RequiresApproval/Blocked
 // per (operation class x edition). Fails closed for unknown classes outside dev.

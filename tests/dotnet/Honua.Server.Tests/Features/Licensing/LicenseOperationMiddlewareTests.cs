@@ -21,6 +21,40 @@ namespace Honua.Server.Tests.Features.Licensing;
 
 public sealed class LicenseOperationMiddlewareTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task ExpiryDuringRead_WritesDenialAfterCancellingOperation(bool honorCancellation)
+    {
+        using var expiry = new CancellationTokenSource();
+        var policy = Substitute.For<ILicenseOperationPolicy>();
+        policy.OperationCancellation.Returns(expiry.Token);
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton(policy);
+        await using var app = builder.Build();
+        app.UseMiddleware<LicenseOperationMiddleware>();
+        app.MapGet("/existing", (HttpContext context) =>
+        {
+            expiry.Cancel();
+            if (honorCancellation)
+            {
+                context.RequestAborted.ThrowIfCancellationRequested();
+            }
+            return Results.Text("must-not-complete");
+        });
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.GetAsync("/existing");
+
+        Assert.Equal(HttpStatusCode.PaymentRequired, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Renew", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("must-not-complete", body, StringComparison.Ordinal);
+    }
+
     [UnitTest]
     public async Task ExpiredGrpcRead_ReturnsFailedPreconditionWithoutExecutingHandler()
     {

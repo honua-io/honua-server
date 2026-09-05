@@ -59,12 +59,14 @@ internal sealed class LicenseOperationMiddleware(RequestDelegate next)
             if (licenseCancellation.IsCancellationRequested)
             {
                 writingDenial = true;
+                context.RequestAborted = original;
                 await DenyAsync(context).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (licenseCancellation.IsCancellationRequested && !original.IsCancellationRequested)
         {
             writingDenial = true;
+            context.RequestAborted = original;
             await DenyAsync(context).ConfigureAwait(false);
         }
         finally
