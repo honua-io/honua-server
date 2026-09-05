@@ -48,10 +48,12 @@ public sealed class LicenseMintRoundTripTests
         snapshot.Edition.Should().Be(HonuaEdition.Pro);
         snapshot.LicenseId.Should().Be("lic-mint-pro");
         snapshot.LicensedTo.Should().Be("Mint RoundTrip Operator");
-        // Pro defaults grant every catalog feature at or below Pro and gate Enterprise features.
+        // Pro defaults grant core branch versioning and every other catalog feature at or below Pro,
+        // while Enterprise-only features such as the plugin SDK remain gated.
         snapshot.HasEntitlement(FeatureCatalog.FeatureServerEditsKey).Should().BeTrue();
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
-        snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeTrue();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeFalse();
         snapshot.HasEntitlement(FeatureCatalog.PluginSdkKey).Should().BeFalse();
     }
 
@@ -74,6 +76,7 @@ public sealed class LicenseMintRoundTripTests
         snapshot.ValidationState.Should().Be(LicenseValidationState.Valid);
         snapshot.Edition.Should().Be(HonuaEdition.Enterprise);
         snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeTrue();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeTrue();
         snapshot.HasEntitlement(FeatureCatalog.PluginSdkKey).Should().BeTrue();
         snapshot.ExpiresAt.Should().BeNull("a perpetual license omits expiresAt");
     }
@@ -99,6 +102,8 @@ public sealed class LicenseMintRoundTripTests
         snapshot.HasEntitlement("analytics.clustering").Should().BeTrue();
         snapshot.HasEntitlement("staticmap.high-dpi").Should().BeTrue();
         snapshot.HasEntitlement("analytics.spatial-join").Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.BranchVersioningKey).Should().BeFalse();
+        snapshot.HasEntitlement(FeatureCatalog.AiApprovalWorkflowsKey).Should().BeFalse();
     }
 
     [UnitTest]

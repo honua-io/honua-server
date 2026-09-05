@@ -174,7 +174,7 @@ internal sealed class FeatureServerEditsHandler(
 
             // Resolve the target branch version (#1272, ADR-0051). Absent / SDE.DEFAULT resolves to
             // VersionContext.Default — the byte-identical non-versioned write path. A named version
-            // is Enterprise-gated and Postgres-only.
+            // is Pro-gated and Postgres-only.
             var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
                 httpContext, request.GdbVersion, cancellationToken).ConfigureAwait(false);
             if (versionError != null)

@@ -4,6 +4,8 @@ You'll know exactly what state lives where, run a restorable PostGIS backup, and
 
 **Prerequisites:** `pg_dump`/`pg_restore` matching your server's PostgreSQL major version, and credentials for the Honua database.
 
+**Edition boundary:** Essential backup, restore and recoverability are baseline product obligations in every edition. Enterprise adds advanced scheduling, failover automation, governance and reporting; it does not make basic recovery paid-only. See [commercial boundaries](../../concepts/editions-and-licensing.md#commercial-boundaries-for-20261).
+
 ## Where state lives
 
 | Store | Contents | Backup need |
