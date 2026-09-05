@@ -5,6 +5,8 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Xml;
+using System.Xml.Schema;
+using Honua.Protocols.GeoServices.Soap;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -1101,15 +1103,7 @@ internal static class ImageServerSoapEndpoints
 
         try
         {
-            var settings = new XmlReaderSettings
-            {
-                Async = true,
-                DtdProcessing = DtdProcessing.Prohibit,
-                XmlResolver = null,
-                MaxCharactersFromEntities = 1_024,
-                MaxCharactersInDocument = MaxRequestCharacters
-            };
-            using var reader = XmlReader.Create(context.Request.Body, settings);
+            using var reader = SoapRequestXml.CreateReader(context.Request.Body, MaxRequestCharacters);
             var request = await XDocument.LoadAsync(reader, LoadOptions.None, context.RequestAborted).ConfigureAwait(false);
             var envelopeNamespace = request.Root?.Name.Namespace;
             if (request.Root?.Name.LocalName != "Envelope" ||
@@ -1160,7 +1154,7 @@ internal static class ImageServerSoapEndpoints
 
             return (operations[0], soap, null);
         }
-        catch (Exception exception) when (exception is XmlException or InvalidOperationException)
+        catch (Exception exception) when (exception is XmlException or XmlSchemaValidationException or InvalidOperationException)
         {
             var requestedSoap = RequestedSoapNamespace(context.Request);
             return (null, requestedSoap, CreateSoapFault(

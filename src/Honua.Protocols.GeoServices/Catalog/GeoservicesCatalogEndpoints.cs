@@ -3,6 +3,8 @@
 
 using System.Text;
 using System.Xml;
+using System.Xml.Schema;
+using Honua.Protocols.GeoServices.Soap;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
@@ -304,21 +306,13 @@ internal static class GeoservicesCatalogEndpoints
         XDocument request;
         try
         {
-            var settings = new XmlReaderSettings
-            {
-                Async = true,
-                DtdProcessing = DtdProcessing.Prohibit,
-                XmlResolver = null,
-                MaxCharactersFromEntities = 1_024,
-                MaxCharactersInDocument = MaxSoapRequestCharacters
-            };
-            using var reader = XmlReader.Create(context.Request.Body, settings);
+            using var reader = SoapRequestXml.CreateReader(context.Request.Body, MaxSoapRequestCharacters);
             request = await XDocument.LoadAsync(
                 reader,
                 LoadOptions.None,
                 context.RequestAborted).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or System.Xml.XmlException)
+        catch (Exception exception) when (exception is InvalidOperationException or XmlException or XmlSchemaValidationException)
         {
             return CreateSoapFault(
                 "Malformed SOAP request.",
