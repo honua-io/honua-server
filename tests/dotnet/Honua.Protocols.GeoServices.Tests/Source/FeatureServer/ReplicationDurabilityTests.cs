@@ -26,7 +26,8 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete"]);
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete", "Sync"]);
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Create", "Update", "Delete", "Sync"]);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -337,6 +338,7 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
         });
 
         await limitedFixture.InitializeAsync();
+        limitedFixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
         try
         {
             await limitedFixture.EnsureLargeTestDatasetAsync();

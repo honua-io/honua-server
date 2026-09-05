@@ -1106,7 +1106,12 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("fid=\"test_layer.1\"");
+        var document = XDocument.Parse(content);
+        XNamespace wfs = "http://www.opengis.net/wfs/2.0";
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        var member = document.Root!.Elements(wfs + "member").Should().ContainSingle().Subject;
+        member.Elements().Should().ContainSingle().Subject.Attribute(gml + "id")!
+            .Value.Should().Be("test_layer.1");
     }
 
     [IntegrationTest]

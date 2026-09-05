@@ -294,7 +294,7 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         var issued = await store.CreateAsync(
             "approved-operation:test-proposal",
-            [AdminApiKeyPermission.CreateApprovedOperationGrant("GET", "/api/v1/admin/api-keys")],
+            AdminApiKeyPermission.CreateApprovedOperationGrants("GET", "/api/v1/admin/api-keys", "public"),
             DateTimeOffset.UtcNow.AddMinutes(5),
             "test-requester",
             CancellationToken.None);
@@ -305,6 +305,26 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.OK, exactOperation.StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, unrelatedRoleOnlySurface.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("GET /api/v1/admin/api-keys/{id}/effective-permissions")]
+    public async Task InternalReplayCredential_CannotBeDiscoveredOrReissuedThroughKeyManagement()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var issued = await store.CreateAsync("approved-operation:other-tenant-proposal",
+            AdminApiKeyPermission.CreateApprovedOperationGrants("PUT", "/api/v1/admin/metadata/layers/1/filter", "tenant-a"),
+            DateTimeOffset.UtcNow.AddMinutes(5), "requester", CancellationToken.None);
+
+        var list = await _client.GetStringAsync("/api/v1/admin/api-keys");
+        Assert.DoesNotContain(issued.Record.Id.ToString(), list, StringComparison.Ordinal);
+        var rotate = await _client.PostAsync($"/api/v1/admin/api-keys/{issued.Record.Id}/rotate", null);
+        Assert.Equal(HttpStatusCode.NotFound, rotate.StatusCode);
+        var permissions = await _client.GetAsync($"/api/v1/admin/api-keys/{issued.Record.Id}/effective-permissions");
+        Assert.Equal(HttpStatusCode.NotFound, permissions.StatusCode);
+        Assert.NotNull(await store.ValidateAsync(issued.Key, CancellationToken.None));
     }
 
     [IntegrationTest]

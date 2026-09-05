@@ -134,7 +134,7 @@ Then insert a feature in another terminal ([Edit features](edit-features.md)) an
 |---|---|
 | `403` before the stream connects | Community edition fails closed; streaming needs Pro or Enterprise. Capabilities reports `enabled=false`. |
 | `401` on an unfiltered stream | All-layer streams require admin. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
-| `503` on connect | `FeatureStreaming__MaxConcurrentSessions` is exhausted; raise it or free sessions via the admin sessions endpoint. |
+| `503` on connect | The tenant or principal has exhausted `FeatureStreaming__MaxConcurrentSessions`; free sessions in that partition or raise the configured cap applied to every partition. Other tenants and principals retain their own admission capacity. |
 | Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup logs and your receiver's signature validation. |
 | Duplicate events | Expected: delivery is at-least-once (and once per matching subscription). Dedupe on `eventId` (or `(subscriptionId, eventId)` for multi-subscription sockets). |
 | `400` on `mode=snapshot` | Snapshot subscriptions need an explicit layer scope so the baseline read stays bounded. Add `layers=` (or `layerId` on the control frame). |
@@ -149,3 +149,20 @@ More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 
 - [Edit features](edit-features.md)
 - [Monitoring](../deploy/monitoring.md)
+
+### Connection admission
+
+`FeatureStreaming__MaxConcurrentSessions` limits simultaneous SSE and WebSocket
+connections per effective tenant on each server process. All principals in a tenant
+share that tenant's limit. When tenancy is disabled or there is no effective tenant,
+the limit applies per authenticated principal, using the same scheme- and
+issuer-qualified identity as other security boundaries. Anonymous connections share
+one partition. Changing `clientLabel`, transport, or subscription count does not
+create additional capacity.
+
+A full partition receives HTTP `503` and a problem document describing the session
+limit before the SSE stream or WebSocket handshake opens. Disconnecting a session
+returns capacity only to its own partition. The cap does not impose a second global
+limit, and it is not a distributed cluster quota. The streaming health check retains
+the total active-session count and reports saturation using the largest partition,
+without exposing tenant or principal identifiers.

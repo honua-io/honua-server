@@ -347,6 +347,23 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessDiscovery)]
     [Endpoint("GET /ogc/processes/processes/{processId}")]
+    public async Task ProcessDescription_DeclaresRequiredAndOptionalInputOccurrences()
+    {
+        using var response = await _fixture.Client.GetAsync("/ogc/processes/processes/geometry.buffer");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var inputs = json.RootElement.GetProperty("inputs");
+        inputs.GetProperty("wkb").GetProperty("minOccurs").GetInt32().Should().Be(1);
+        inputs.GetProperty("srid").GetProperty("minOccurs").GetInt32().Should().Be(1);
+        inputs.GetProperty("distance").GetProperty("minOccurs").GetInt32().Should().Be(1);
+        inputs.GetProperty("geodesic").GetProperty("minOccurs").GetInt32().Should().Be(0,
+            "OGC clients use minOccurs to distinguish optional process inputs (#4148)");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessDiscovery)]
+    [Endpoint("GET /ogc/processes/processes/{processId}")]
     public async Task ProcessDescription_CatalogJobExamples_AreProjectedDirectly()
     {
         string[] processIds =
@@ -1001,20 +1018,19 @@ public sealed class OgcProcessesEndpointsTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_ResponseModeRawWithRespondAsync_Returns400()
+    public async Task Execute_ResponseModeRawWithRespondAsync_IsAccepted()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post,
-            "/ogc/processes/processes/honua-geoprocessing/execution");
+            "/ogc/processes/processes/geometry.buffer/execution");
         request.Headers.Add("Prefer", "respond-async");
         request.Content = new StringContent(
-            """{"inputs":{"plan":{"planId":"p1","steps":[{"stepId":"s1","kind":"geoprocess","inputs":{"distance":"100"}}]}},"response":"raw"}""",
+            $"{{\"inputs\":{{\"wkb\":\"{PointWkbBase64}\",\"srid\":4326,\"distance\":25.5}},\"response\":\"raw\"}}",
             Encoding.UTF8, "application/json");
 
         var response = await _fixture.Client.SendAsync(request);
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        json.RootElement.GetProperty("detail").GetString().Should().Contain("synchronous");
+        response.StatusCode.Should().Match(
+            status => status == HttpStatusCode.Created || status == HttpStatusCode.ServiceUnavailable,
+            "raw response negotiation is valid for asynchronous jobs and is applied at the results endpoint (#4145)");
     }
 
     [IntegrationTest]

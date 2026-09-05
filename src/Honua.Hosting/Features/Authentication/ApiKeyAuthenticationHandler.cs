@@ -368,10 +368,22 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
         else if (isApprovedOperationKey)
         {
+            // Only persisted server-minted grants can supply this binding. Never
+            // promote the caller-controlled tenant header into authenticated claims.
+            var tenantBindings = permissions!
+                .Where(permission => permission.StartsWith(AdminApiKeyPermission.ApprovedOperationTenantGrantPrefix, StringComparison.Ordinal))
+                .Select(permission => permission[AdminApiKeyPermission.ApprovedOperationTenantGrantPrefix.Length..])
+                .ToArray();
+            if (tenantBindings.Length != 1)
+            {
+                return AuthenticateResult.Fail("Approved operation credential has no unambiguous tenant binding.");
+            }
+
             claims =
             [
                 new Claim(ClaimTypes.Name, apiKeyName ?? "approved-operation"),
                 new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole),
+                new Claim(AdminApiKeyPermission.ApprovedOperationTenantClaim, tenantBindings[0]),
                 new Claim("auth_type", authenticationType),
             ];
         }

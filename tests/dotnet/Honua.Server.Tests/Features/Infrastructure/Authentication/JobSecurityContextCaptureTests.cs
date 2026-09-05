@@ -616,6 +616,32 @@ public sealed class JobSecurityContextCaptureTests
         restored.FindFirst("tenant_id")?.Value.Should().Be("tenant-a");
     }
 
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("selected-tenant")]
+    [InlineData(null)]
+    public void Capture_DetachedRequest_PreservesTrustedEffectiveTenant(string? effectiveTenant)
+    {
+        var principal = BuildPrincipal(("sub", "subject"), ("tenant_id", "token-tenant"));
+        CanonicalSecurityActor.StampRequestBinding(principal, effectiveTenant);
+
+        var captured = JobSecurityContextCapture.Capture(principal, new RbacOptions());
+
+        captured.TenantId.Should().Be(effectiveTenant);
+    }
+
+    [UnitTest]
+    public void Capture_ForgedEffectiveTenantBinding_DoesNotOverrideTokenTenant()
+    {
+        var principal = BuildPrincipal(
+            ("tenant_id", "token-tenant"),
+            (CanonicalSecurityActor.CanonicalActorClaim, "forged-actor"),
+            (CanonicalSecurityActor.EffectiveTenantClaim, "foreign-tenant"));
+
+        JobSecurityContextCapture.Capture(principal, new RbacOptions()).TenantId.Should().Be("token-tenant");
+    }
+
     [UnitTest]
     public void Capture_EffectiveTenantContext_OverridesTokenTenantClaims()
     {

@@ -3,6 +3,7 @@
 
 using System.Text.Json.Nodes;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -175,6 +176,7 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
         {
             ["status"] = status,
             ["method"] = context.Request.Method,
+            ["tenantId"] = context.RequestServices.GetService<ITenantContext>()?.TenantId,
         };
         AddHeader(details, context, "operationInstanceId", "X-Honua-Operation-Instance-Id");
         AddHeader(details, context, "acceptedAuditId", "X-Honua-Audit-Id");

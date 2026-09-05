@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
@@ -295,6 +296,9 @@ internal static partial class FeatureStreamEndpoints
             return SubscriptionParseResult.Failed(StandardErrorHelpers.CreateBadRequest(context, modeError!));
         }
 
+        var subscriberSecurity = await ResolveSubscriberSecurityAsync(
+            context, snapshot, service, layerIds, context.RequestAborted).ConfigureAwait(false);
+
         if (!hasAnyFilter)
         {
             var unscopedSnapshotError = ValidateSnapshotScope(mode, null);
@@ -307,7 +311,7 @@ internal static partial class FeatureStreamEndpoints
             // An unfiltered subscription still needs the live metadata guard. A null filter is
             // treated as an unconditional match by both replay and live fan-out, which would
             // otherwise allow events from retired/draft routes to remain deliverable.
-            var unscopedFilter = new StreamSubscriptionFilter(routabilityGuard: deps.RoutabilityGuard);
+            var unscopedFilter = new StreamSubscriptionFilter(routabilityGuard: deps.RoutabilityGuard, subscriberSecurity: subscriberSecurity);
             return new SubscriptionParseResult(unscopedFilter, false, mode, null);
         }
 
@@ -320,7 +324,8 @@ internal static partial class FeatureStreamEndpoints
             bbox: bbox,
             attributeFilter: attributeFilter,
             temporalFilter: temporalFilter,
-            routabilityGuard: deps.RoutabilityGuard);
+            routabilityGuard: deps.RoutabilityGuard,
+            subscriberSecurity: subscriberSecurity);
 
         var snapshotScopeError = ValidateSnapshotScope(mode, filter);
         if (snapshotScopeError is not null)
@@ -330,6 +335,71 @@ internal static partial class FeatureStreamEndpoints
         }
 
         return new SubscriptionParseResult(filter, true, mode, null);
+    }
+
+    private static async Task<StreamSubscriberSecurity> ResolveSubscriberSecurityAsync(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Service? scopedService,
+        int[]? layerIds,
+        CancellationToken cancellationToken)
+    {
+        var rowSource = context.RequestServices.GetRequiredService<IRowLevelSecurityFilterSource>();
+        var fieldSource = context.RequestServices.GetRequiredService<IFieldMaskSource>();
+        var exact = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
+        var named = new Dictionary<(string Service, int Layer), StreamLayerReadPolicy>();
+        var deniedNames = new HashSet<(string Service, int Layer)>();
+        var policies = new Dictionary<string, StreamLayerReadPolicy>(StringComparer.Ordinal);
+        foreach (var service in snapshot.Graph.Services)
+        {
+            foreach (var layer in ResolveServiceStreamLayers(snapshot, service))
+            {
+                // Raster and other non-feature publications may reuse a numeric layer ID.
+                // They cannot supply feature events and must not contribute read policies.
+                if (layer.Resource.Type is not (MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table))
+                {
+                    continue;
+                }
+
+                if (layerIds is not null && !layerIds.Contains(layer.LayerId))
+                {
+                    continue;
+                }
+
+                var nameKey = (service.Metadata.Name.ToUpperInvariant(), layer.LayerId);
+                if (RequireStreamLayerAccess(context, layer.Resource, service) is not null ||
+                    !TenantScopeHelpers.IsTenantVisible(context, layer.Publication!, layer.Resource, service))
+                {
+                    // Ambiguous display-name routes must not alias an inaccessible tenant.
+                    deniedNames.Add(nameKey);
+                    continue;
+                }
+
+                if (scopedService is not null && service.Metadata.Id != scopedService.Metadata.Id)
+                {
+                    continue;
+                }
+
+                if (!policies.TryGetValue(layer.Resource.Metadata.Id, out var policy))
+                {
+                    var predicates = await rowSource.ResolveExpressionsAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
+                    var masked = await fieldSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false);
+                    policy = new StreamLayerReadPolicy(predicates, new HashSet<string>(masked, StringComparer.OrdinalIgnoreCase));
+                    policies.Add(layer.Resource.Metadata.Id, policy);
+                }
+
+                exact[(service.Metadata.Id, layer.LayerId)] = policy;
+                named[nameKey] = policy;
+            }
+        }
+
+        foreach (var key in deniedNames)
+        {
+            named.Remove(key);
+        }
+
+        return new StreamSubscriberSecurity(
+            snapshot.Graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal), exact, named);
     }
 
     private static bool TryResolveFilterLanguage(string? filterLang, out FilterLanguage language, out string error)

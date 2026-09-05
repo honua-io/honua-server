@@ -62,6 +62,7 @@ internal sealed partial class AdminOperationApprovalBridge(
                 ?? request.GatewayRequest!) with
             {
                 OperationId = descriptor.OperationId,
+                TenantId = context.TenantId,
                 OperationInstanceId = context.OperationInstanceId,
                 CorrelationId = context.CorrelationId,
                 ScopeGoverned = context.ScopeGoverned,
