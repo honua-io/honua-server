@@ -389,7 +389,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             Category = "enrichment",
             Parameters =
             [
-                Param("datasetId", "Enrichment Dataset", "Identifier of the managed enrichment dataset (slug) or configuration key, resolved through the same merged catalog as POST /api/enrich.", ProcessParameterValueType.Text, required: true),
+                Param("datasetId", "Enrichment Dataset", "Identifier of the managed enrichment dataset (slug) or configuration key, resolved through the same merged catalog as POST /api/enrich.", ProcessParameterValueType.Text, required: true, isAuthorizationSelector: true),
                 Param("layerId", "Source Layer", "Identifier of the registered source layer whose features are enriched. Supply EXACTLY ONE of 'layerId' or 'input'.", ProcessParameterValueType.LayerId),
                 Param("input", "Staged Source Features", "Staged source FeatureCollection as a data:application/geo+json;base64 data URI. Supply EXACTLY ONE of 'layerId' or 'input'.", ProcessParameterValueType.Text, acceptsGeoJsonDataUri: true),
                 Param("method", "Method", "Enrichment method vocabulary mirroring POST /api/enrich: intersects (default), point-in-polygon (dataset feature contains the target), within (target contains the dataset feature), within-distance (requires 'distance'), nearest-neighbor (annotates the closest dataset feature with NEAR_DIST). Takes precedence over 'predicate'.", ProcessParameterValueType.Text,
@@ -1840,7 +1840,7 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
     [
         Param("source", "Source Raster", "Source raster as base64-encoded GeoTIFF bytes. Supply this OR a layerId/rasterId that resolves to a registered catalog raster.", ProcessParameterValueType.Text, acceptsRasterSource: true),
         Param("layerId", "Layer", "Catalog raster layer identifier. Resolved at submit time to the layer's registered raster (newest registration when several exist). Supply this OR an inline source / rasterId.", ProcessParameterValueType.LayerId),
-        Param("rasterId", "Raster", "Registered raster identifier. Resolved at submit time to the registered raster bytes. Supply this OR an inline source / layerId. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text),
+        Param("rasterId", "Raster", "Registered raster identifier. Resolved at submit time to the registered raster bytes. Supply this OR an inline source / layerId. When supplied, it must be a positive 64-bit integer.", ProcessParameterValueType.Text, isAuthorizationSelector: true),
     ];
 
     private static ProcessParameterSpec Param(
@@ -1853,7 +1853,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
         IReadOnlyList<string>? allowedValues = null,
         ProcessLayerAccess layerAccess = ProcessLayerAccess.Read,
         bool acceptsRasterSource = false,
-        bool acceptsGeoJsonDataUri = false) => new()
+        bool acceptsGeoJsonDataUri = false,
+        bool isAuthorizationSelector = false) => new()
         {
             Name = name,
             DisplayName = displayName,
@@ -1864,6 +1865,8 @@ internal sealed class BuiltInProcessCatalog : IProcessCatalog
             AllowedValues = allowedValues,
             LayerAccess = layerAccess,
             AcceptsRasterSource = acceptsRasterSource,
-            AcceptsGeoJsonDataUri = acceptsGeoJsonDataUri
+            AcceptsGeoJsonDataUri = acceptsGeoJsonDataUri,
+            IsAuthorizationSelector = isAuthorizationSelector
+                || (valueType == ProcessParameterValueType.LayerId && layerAccess != ProcessLayerAccess.None)
         };
 }

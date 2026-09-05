@@ -467,8 +467,8 @@ internal static class JobEndpoints
         AnalysisResultPackage resultPackage)
     {
         var outputs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        var remainingBytes = GetMaxResponseBytes(context) - 2; // JSON object delimiters.
         var selectedOutputNames = GetSelectedOutputNames(job);
-        var remainingBytes = GetMaxArtifactBytes(context);
         for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
             var artifact = resultPackage.Artifacts[index];
@@ -487,7 +487,6 @@ internal static class JobEndpoints
                     materialized.Error ?? "The process output could not be materialized as an inline value.");
             }
 
-            remainingBytes -= materialized.Payload.LongLength;
             if (!MediaTypeHeaderValue.TryParse(materialized.MediaType, out _))
             {
                 return OgcProcessesResults.Error(
@@ -505,7 +504,17 @@ internal static class JobEndpoints
                     error ?? "The process output is not valid for its declared media type.");
             }
 
-            outputs[ResolveUniqueOutputName(resolvedOutputName, outputs)] = value;
+            var outputName = ResolveUniqueOutputName(resolvedOutputName, outputs);
+            var encodedName = JsonSerializer.Serialize(outputName, OgcProcessesJsonContext.Default.String);
+            var outputBytes = (long)Encoding.UTF8.GetByteCount(encodedName)
+                + Encoding.UTF8.GetByteCount(value.GetRawText()) + 1 + (outputs.Count > 0 ? 1 : 0);
+            if (outputBytes > remainingBytes)
+            {
+                return ResultResponseTooLarge();
+            }
+
+            remainingBytes -= outputBytes;
+            outputs[outputName] = value;
         }
 
         return Results.Json(
@@ -521,8 +530,9 @@ internal static class JobEndpoints
         AnalysisResultPackage resultPackage)
     {
         var values = new List<(string Name, byte[] Payload, string MediaType)>();
+        var maxResponseBytes = GetMaxResponseBytes(context);
+        var remainingBytes = maxResponseBytes;
         var selectedOutputNames = GetSelectedOutputNames(job);
-        var remainingBytes = GetMaxArtifactBytes(context);
         for (var index = 0; index < resultPackage.Artifacts.Count; index++)
         {
             var artifact = resultPackage.Artifacts[index];
@@ -541,7 +551,6 @@ internal static class JobEndpoints
                     materialized.Error ?? "A raw process output could not be materialized.");
             }
 
-            remainingBytes -= materialized.Payload.LongLength;
             if (!MediaTypeHeaderValue.TryParse(materialized.MediaType, out _))
             {
                 return OgcProcessesResults.Error(
@@ -550,6 +559,7 @@ internal static class JobEndpoints
                     "The process output declares an invalid media type.");
             }
 
+            remainingBytes -= materialized.Payload.LongLength;
             values.Add((
                 outputName,
                 materialized.Payload,
@@ -570,21 +580,38 @@ internal static class JobEndpoints
         }
 
         var boundary = $"honua-{Guid.NewGuid():N}";
-        return Results.Stream(async body =>
+        var headers = values.Select(value => Encoding.UTF8.GetBytes(
+            $"--{boundary}\r\nContent-Type: {value.MediaType}\r\nContent-ID: <{value.Name}>\r\n\r\n")).ToArray();
+        var separator = "\r\n"u8.ToArray();
+        var footer = Encoding.UTF8.GetBytes($"--{boundary}--\r\n");
+        var framingBytes = headers.Sum(header => (long)header.Length) + values.Count * 2L + footer.Length;
+        if (framingBytes > remainingBytes)
         {
-            foreach (var value in values)
+            return ResultResponseTooLarge();
+        }
+
+        // Payloads share one response budget. Stream the framing and bounded parts
+        // directly to avoid a second full multipart buffer and a ToArray copy.
+        return Results.Stream(async stream =>
+        {
+            for (var index = 0; index < values.Count; index++)
             {
-                await body.WriteAsync(Encoding.UTF8.GetBytes(
-                    $"--{boundary}\r\nContent-Type: {value.MediaType}\r\nContent-ID: <{value.Name}>\r\n\r\n"),
-                    context.RequestAborted).ConfigureAwait(false);
-                await body.WriteAsync(value.Payload, context.RequestAborted).ConfigureAwait(false);
-                await body.WriteAsync("\r\n"u8.ToArray(), context.RequestAborted).ConfigureAwait(false);
+                await stream.WriteAsync(headers[index], context.RequestAborted).ConfigureAwait(false);
+                await stream.WriteAsync(values[index].Payload, context.RequestAborted).ConfigureAwait(false);
+                await stream.WriteAsync(separator, context.RequestAborted).ConfigureAwait(false);
             }
 
-            await body.WriteAsync(Encoding.UTF8.GetBytes($"--{boundary}--\r\n"), context.RequestAborted)
-                .ConfigureAwait(false);
+            await stream.WriteAsync(footer, context.RequestAborted).ConfigureAwait(false);
         }, $"multipart/related; boundary=\"{boundary}\"");
     }
+
+    private static long GetMaxResponseBytes(HttpContext context)
+        => context.RequestServices.GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
+            ?? 50L * 1024L * 1024L;
+
+    private static IResult ResultResponseTooLarge()
+        => OgcProcessesResults.Error(StatusCodes.Status413PayloadTooLarge,
+            "Process result too large", "The selected outputs exceed the configured artifact response limit.");
 
     private static async Task<IResult> DismissJob(
         string jobId,
@@ -771,10 +798,6 @@ internal static class JobEndpoints
             .Select(entry => entry.Value)
             .Where(outputName => !string.IsNullOrWhiteSpace(outputName))
             .ToHashSet(StringComparer.Ordinal);
-
-    private static long GetMaxArtifactBytes(HttpContext context)
-        => context.RequestServices.GetService<IOptions<GeoprocessingExecutorOptions>>()?.Value.MaxArtifactBytes
-            ?? 50L * 1024L * 1024L;
 
     private static async Task<MaterializedArtifact> MaterializeArtifactAsync(
         HttpContext context,

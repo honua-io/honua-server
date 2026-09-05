@@ -79,6 +79,24 @@ public sealed class OgcProcessesValueContractTests
         }
     }
 
+    [Theory]
+    [InlineData(false, 50, 200)]
+    [InlineData(true, 50, 200)]
+    [InlineData(false, 600, 413)]
+    [InlineData(true, 600, 413)]
+    [InlineData(true, 400, 413)]
+    public async Task Results_MultipleOutputs_EnforcesAggregateResponseBudget(bool raw, int valueLength, int expectedStatus)
+    {
+        var payload = Encoding.UTF8.GetBytes("\"" + new string('x', valueLength) + "\"");
+        var reference = "data:application/json;base64," + Convert.ToBase64String(payload);
+        var response = await RenderResultAsync(reference, AppContext.BaseDirectory, 1024, raw, artifactCount: 2);
+        response.Status.Should().Be(expectedStatus);
+        if (expectedStatus == 200)
+        {
+            Encoding.UTF8.GetByteCount(response.Body).Should().BeLessThanOrEqualTo(1024);
+        }
+    }
+
     [Fact]
     public async Task OpenApi_RawResults_DeclareNativeFormatsAndSizeLimit()
     {
@@ -111,14 +129,15 @@ public sealed class OgcProcessesValueContractTests
     [Fact]
     public async Task Results_RawMultipart_StreamsEveryPartWithinBudget()
     {
-        var response = await RenderResultAsync("data:text/plain,123456", "", 12, raw: true,
+        var response = await RenderResultAsync("data:text/plain,123456", "", 1024, raw: true,
             "data:text/plain,abcdef");
         response.Status.Should().Be(200);
+        Encoding.UTF8.GetByteCount(response.Body).Should().BeLessThanOrEqualTo(1024);
         response.Body.Should().Contain("Content-ID: <outputFeatureLayer>\r\n\r\n123456\r\n")
             .And.Contain("Content-ID: <second>\r\n\r\nabcdef\r\n");
     }
 
-    private static async Task<(int Status, string Body)> RenderResultAsync(string reference, string root, long maxBytes, bool raw, string? secondReference = null)
+    private static async Task<(int Status, string Body)> RenderResultAsync(string reference, string root, long maxBytes, bool raw, string? secondReference = null, int artifactCount = 1)
     {
         await using var services = new ServiceCollection().AddLogging()
             .Configure<GeoprocessingExecutorOptions>(options =>
@@ -137,17 +156,13 @@ public sealed class OgcProcessesValueContractTests
             UpdatedAt = DateTimeOffset.UtcNow,
             Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob, Backend = "local", WorkloadName = "transform.attribute-rename" }
         };
-        var artifacts = new List<ArtifactRef>
-        {
-            new() { ArtifactId = "stream-artifact", Kind = ArtifactKind.FeatureLayer, Label = "outputFeatureLayer", Uri = reference }
-        };
-        if (secondReference != null)
-        {
-            artifacts.Add(new ArtifactRef { ArtifactId = "second", Kind = ArtifactKind.Scalar, Label = "second", Uri = secondReference });
-        }
-
         var package = AnalysisResultPackage.CreateCompleted("stream-result:v1", new ResultSummary { Title = "stream output" },
-            artifacts,
+            Enumerable.Range(0, secondReference != null ? 2 : artifactCount).Select(index => new ArtifactRef
+            {
+                ArtifactId = $"stream-artifact-{index}", Kind = ArtifactKind.FeatureLayer,
+                Label = index == 0 ? "outputFeatureLayer" : secondReference != null ? "second" : $"outputFeatureLayer{index}",
+                Uri = index == 1 && secondReference != null ? secondReference : reference
+            }).ToArray(),
             [], new ProvenanceRecord { Sources = [], ProcessDefinitions = ["transform.attribute-rename"], ExecutedAt = DateTimeOffset.UtcNow });
         var result = raw
             ? await JobEndpoints.BuildRawResultsResponseAsync(job, context, package)
