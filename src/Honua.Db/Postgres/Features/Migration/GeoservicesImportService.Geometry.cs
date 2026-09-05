@@ -164,7 +164,11 @@ internal sealed partial class GeoservicesImportService
             return builder.Append(" EMPTY").ToString();
 
         builder.Append(' ');
+        if (type == "Point")
+            builder.Append('(');
         AppendWktCoordinates(builder, coordinates);
+        if (type == "Point")
+            builder.Append(')');
         return builder.ToString();
     }
 
@@ -183,14 +187,12 @@ internal sealed partial class GeoservicesImportService
         if (value.ValueKind == JsonValueKind.Array && value.GetArrayLength() > 0 &&
             value[0].ValueKind == JsonValueKind.Number)
         {
-            builder.Append('(');
             for (var i = 0; i < value.GetArrayLength(); i++)
             {
                 if (i > 0)
                     builder.Append(' ');
                 builder.Append(value[i].GetDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
             }
-            builder.Append(')');
             return;
         }
 
