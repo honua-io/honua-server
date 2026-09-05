@@ -205,11 +205,10 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
             """{"adds":[{"attributes":{"name":"before","score":0},"geometry":{"x":-122.25,"y":37.75,"spatialReference":{"wkid":4326}}}]}""");
         var added = await DeserializeEditsAsync(add);
         var objectId = added.AddResults.Should().ContainSingle(result => result.Success).Subject.ObjectId!.Value;
-        await using var connection = new Npgsql.NpgsqlConnection(_fixture.ConnectionString);
-        await connection.OpenAsync();
+        await using var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         using var builder = new Npgsql.NpgsqlCommandBuilder();
-        var schema = builder.QuoteIdentifier(_fixture.CurrentSchema);
+        var schema = builder.QuoteIdentifier(_fixture.CurrentSchema!);
         await using (var rowLock = new Npgsql.NpgsqlCommand($"SELECT objectid FROM {schema}.features WHERE layer_id=0 AND objectid=@id FOR UPDATE", connection, transaction))
         {
             rowLock.Parameters.AddWithValue("id", objectId);
@@ -222,7 +221,7 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         {
             $$$"""{"updates":[{"attributes":{"objectid":{{{objectId}}},"name":"after"}}]}""",
             $$$"""{"updates":[{"attributes":{"objectid":{{{objectId}}},"score":29}}]}""",
-            $$$"""{"updates":[{"attributes":{"objectid":{{{objectId}}}},"geometry":{"x":-120.5,"y":36.5,"spatialReference":{"wkid":4326}}}]}"""
+            $$$$"""{"updates":[{"attributes":{"objectid":{{{{objectId}}}}},"geometry":{"x":-120.5,"y":36.5,"spatialReference":{"wkid":4326}}}]}"""
         };
         var pending = requests.Select(payload => PostJsonAsync(path, payload)).ToArray();
         var waiting = 0L;
@@ -231,9 +230,20 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
             var deadline = DateTime.UtcNow.AddSeconds(15);
             while (waiting < 3 && DateTime.UtcNow < deadline)
             {
+                await using (var refresh = new Npgsql.NpgsqlCommand("SELECT pg_stat_clear_snapshot()", connection, transaction))
+                {
+                    await refresh.ExecuteNonQueryAsync();
+                }
                 await using var command = new Npgsql.NpgsqlCommand(
-                    "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE @schema AND pid <> pg_backend_pid()", connection, transaction);
-                command.Parameters.AddWithValue("schema", "%" + _fixture.CurrentSchema + "%");
+                    """
+                    WITH RECURSIVE blocked(pid) AS (
+                        SELECT pid FROM pg_stat_activity WHERE @lockPid = ANY(pg_blocking_pids(pid))
+                        UNION
+                        SELECT activity.pid FROM pg_stat_activity activity
+                        JOIN blocked ON blocked.pid = ANY(pg_blocking_pids(activity.pid))
+                    ) SELECT count(*) FROM blocked
+                    """, connection, transaction);
+                command.Parameters.AddWithValue("lockPid", connection.ProcessID);
                 waiting = (long)(await command.ExecuteScalarAsync())!;
                 if (waiting < 3)
                 {
