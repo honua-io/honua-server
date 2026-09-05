@@ -244,7 +244,7 @@ public sealed class MetadataPostTests : IClassFixture<WebAppFixture>
                 .AddStorageBinding("evidence-binding", "evidence-raster", "raster_data", storageLayerId: 0)
                 .AddService("evidence-service", "test", protocols: [ServiceProtocols.ImageServer], accessPolicy: policy)
                 .AddPublication("evidence-publication", "evidence-service", "evidence-raster", layerIndex: 0,
-                    storageBindingId: "evidence-binding", publicationType: MetadataV2PublicationType.EsriImageLayer)
+                    storageBindingId: "evidence-binding", serviceLocalId: "Evidence raster", publicationType: MetadataV2PublicationType.EsriImageLayer)
                 .BuildProvider();
         }
     }
