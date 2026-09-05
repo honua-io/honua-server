@@ -17456,6 +17456,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpScopeAuthorizationTests.ToolsCall_AdminTokenWithNoScope_IsFailClosed",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackDisabledTests.Request_WithIssuedSessionId_WhenFallbackDisabled_IsAccepted",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackDisabledTests.Request_WithUnknownSessionId_WhenFallbackDisabled_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Mcp.StudioDashboardMcpIntegrationTests.Dashboard_AllElevenCompositionVerbs_PersistExpectedValuesAndRejectStaleWrites",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_AfterToolCall_SurvivesADraftSyncReadBack",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_PreservesTheLayersStyleBindingAndSourceThroughSync",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_WhenGenerationIsStale_SurfacesFailedPreconditionLikeSiblingCompositionTools",

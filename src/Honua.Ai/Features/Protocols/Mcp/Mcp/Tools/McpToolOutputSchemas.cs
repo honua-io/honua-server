@@ -47,6 +47,7 @@ internal static class McpToolOutputSchemas
             "code": { "type": "string" },
             "message": { "type": "string" },
             "studioAuthorizationCode": { "type": ["string", "null"] },
+            "currentGeneration": { "type": ["integer", "null"], "minimum": 1 },
             "error": { "type": "object" }
         """;
 
@@ -69,6 +70,7 @@ internal static class McpToolOutputSchemas
             "policyRef": { "type": ["string", "null"] },
             "studioAuthorizationCode": { "type": ["string", "null"] },
             "conflictingJobId": { "type": ["string", "null"] },
+            "currentGeneration": { "type": ["integer", "null"], "minimum": 1 },
             "retryable": { "type": ["boolean", "null"] },
             "violations": {
               "type": ["array", "null"],
