@@ -532,6 +532,9 @@
               "image/tiff": { "schema": { "type": "string", "format": "binary" } },
               "image/png": { "schema": { "type": "string", "format": "binary" } },
               "image/jpeg": { "schema": { "type": "string", "format": "binary" } },
+              "application/geopackage+sqlite3": { "schema": { "type": "string", "format": "binary" } },
+              "application/vnd.las": { "schema": { "type": "string", "format": "binary" } },
+              "text/csv": { "schema": { "type": "string", "format": "binary" } },
               "application/octet-stream": {
                 "schema": { "type": "string", "format": "binary" }
               },
@@ -566,6 +569,14 @@
           },
           "410": {
             "description": "Job has been dismissed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Exception" }
+              }
+            }
+          },
+          "413": {
+            "description": "The requested result exceeds the configured artifact response limit",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Exception" }
@@ -822,7 +833,7 @@
             "type": "string",
             "enum": ["document", "raw"],
             "default": "document",
-            "description": "Response mode. 'raw' returns the native representation for synchronous executions and from the results endpoint for asynchronous jobs. Multiple raw outputs use multipart/related."
+            "description": "Response mode for catalog processes. 'raw' returns the native representation for synchronous executions and from the results endpoint for asynchronous jobs. Multiple raw outputs use multipart/related. The canonical honua-geoprocessing plan process requires document mode."
           }
         }
       },

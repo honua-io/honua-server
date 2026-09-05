@@ -80,17 +80,21 @@ public sealed class OgcProcessesValueContractTests
     }
 
     [Fact]
-    public async Task OpenApi_RawResults_DeclareNativeRasterFormats()
+    public async Task OpenApi_RawResults_DeclareNativeFormatsAndSizeLimit()
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../.."));
         using var json = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, "src", "Honua.Server", "ogc-processes-openapi.json")));
         var resultsPath = json.RootElement.GetProperty("paths").EnumerateObject()
             .Single(path => path.Name.EndsWith("/results", StringComparison.Ordinal)).Value;
-        var content = resultsPath.GetProperty("get").GetProperty("responses").GetProperty("200").GetProperty("content");
-        foreach (var mediaType in new[] { "image/tiff", "image/png", "image/jpeg" })
+        var responses = resultsPath.GetProperty("get").GetProperty("responses");
+        var content = responses.GetProperty("200").GetProperty("content");
+        foreach (var mediaType in new[] { "image/tiff", "image/png", "image/jpeg", "application/geopackage+sqlite3", "application/vnd.las", "text/csv" })
         {
             content.GetProperty(mediaType).GetProperty("schema").GetProperty("format").GetString().Should().Be("binary");
         }
+
+        responses.GetProperty("413").GetProperty("content").GetProperty("application/json")
+            .GetProperty("schema").GetProperty("$ref").GetString().Should().Be("#/components/schemas/Exception");
     }
 
     private static async Task<(int Status, string Body)> RenderResultAsync(string reference, string root, long maxBytes, bool raw)

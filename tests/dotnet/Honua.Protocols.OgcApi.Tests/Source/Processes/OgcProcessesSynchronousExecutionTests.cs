@@ -132,6 +132,22 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
+    public async Task Execute_CanonicalPlanRaw_RejectsBeforeSubmission()
+    {
+        var submissions = _fixture.SubmissionCount;
+        using var content = new StringContent(
+            """{"inputs":{"plan":{"planId":"raw-plan","steps":[{"stepId":"s1","kind":"geoprocess","processId":"surface.slope","inputs":{"source":"AAAA"}}]}},"response":"raw"}""",
+            Encoding.UTF8, "application/json");
+        using var response = await _fixture.App.Client.PostAsync(
+            "/ogc/processes/processes/honua-geoprocessing/execution", content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("requires document mode");
+        _fixture.SubmissionCount.Should().Be(submissions);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
     public async Task Execute_AsyncRawCatalogProcess_IsAdmittedAndPersistsResponseMode()
     {
         using var request = new HttpRequestMessage(

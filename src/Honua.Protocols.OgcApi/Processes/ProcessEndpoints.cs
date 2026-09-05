@@ -409,6 +409,14 @@ internal static class ProcessEndpoints
                     $"Process '{processId}' does not support explicit output selection.");
             }
 
+            if (definition == null && rawResponse)
+            {
+                return OgcProcessesResults.Error(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid response mode",
+                    "The canonical plan process has no declared value outputs and requires document mode. Use a catalog process for raw results.");
+            }
+
             if (definition != null && !OgcProcessesCiteEchoFixture.IsDefinition(definition))
             {
                 var normalized = await NormalizeInputReferencesAsync(
@@ -452,7 +460,7 @@ internal static class ProcessEndpoints
                 ["submittedVia"] = "OGC-API-Processes",
                 ["protocolProcessId"] = processId
             };
-            if (definition != null || rawResponse)
+            if (definition != null)
             {
                 metadata[OgcProcessesExecutionMetadata.ResponseMode] = rawResponse ? "raw" : "document";
             }
