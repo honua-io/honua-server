@@ -156,6 +156,7 @@ public sealed class OgcProcessesReferenceAuthorizationTests
 
     private sealed class AuthorizationFixture : IDisposable
     {
+        private static readonly int[] LayerIds = [7, 8, 9];
         private readonly ServiceProvider _services;
         private readonly HttpContextAccessor _accessor = new();
         private readonly BuiltInProcessCatalog _catalog = new();
@@ -181,13 +182,21 @@ public sealed class OgcProcessesReferenceAuthorizationTests
                     Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "test" },
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
                 }],
-                Resources = new[] { 7, 8, 9 }.Select(id => new MetadataV2Resource
+                Resources = LayerIds.Select(id => new MetadataV2Resource
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = $"resource-{id}", Name = $"layer-{id}" },
+                    StorageBindingIds = [$"binding-{id}"],
+                    PrimaryStorageBindingId = $"binding-{id}",
                     AccessPolicy = new AccessPolicy { AllowedRoles = [allowLayers ? "reader" : "denied"] },
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
                 }).ToArray(),
-                Publications = new[] { 7, 8, 9 }.Select(id => new MetadataV2Publication
+                StorageBindings = LayerIds.Select(id => new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = $"binding-{id}", Name = $"binding-{id}" },
+                    ResourceId = $"resource-{id}", StorageLayerId = id,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
+                }).ToArray(),
+                Publications = LayerIds.Select(id => new MetadataV2Publication
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = $"publication-{id}", Name = $"layer-{id}" },
                     ServiceId = "service",
