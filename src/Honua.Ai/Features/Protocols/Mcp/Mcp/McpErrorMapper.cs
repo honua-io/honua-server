@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Grounding.Domain;
+using Honua.Core.Exceptions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Rendering;
 using Honua.Ai.Grounding;
@@ -156,6 +157,20 @@ internal static class McpErrorMapper
         // honua-release#202: when the refusal names a dependency the install never composed
         // (Redis is optional; PostGIS is not), carry the machine-readable receipt and mark it
         // NOT retryable — retrying cannot help until an operator changes the deployment.
+        CapabilityUnavailableException capabilityEx => new McpJsonRpcError
+        {
+            Code = JsonRpcServerError,
+            Message = capabilityEx.Message,
+            Data = new McpErrorData
+            {
+                Code = Codes.Unavailable,
+                Retryable = false,
+                MissingDependency = capabilityEx.MissingDependency,
+                Remediation = capabilityEx.Remediation,
+                RemediationRef = capabilityEx.RemediationRef,
+            }
+        },
+
         GeoprocessingStoreUnavailableException storeEx => new McpJsonRpcError
         {
             Code = JsonRpcServerError,
