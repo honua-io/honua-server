@@ -39,11 +39,10 @@ public sealed class CurveGeometryConverterTests
         // Independent Shapely 2.1.2 reference: a LineString sampled on the circumcircle has
         // distance 0 from the declared interior Point(0,0), center (0.5,0.5), radius sqrt(0.5).
         var expectedRadius = Math.Sqrt(0.5);
-        foreach (var vertex in path)
-        {
-            var radius = Math.Sqrt(
+        foreach (var radius in path.Select(vertex => Math.Sqrt(
                 ((vertex[0] - 0.5) * (vertex[0] - 0.5)) +
-                ((vertex[1] - 0.5) * (vertex[1] - 0.5)));
+                ((vertex[1] - 0.5) * (vertex[1] - 0.5)))))
+        {
             radius.Should().BeApproximately(expectedRadius, 1e-6);
         }
 
@@ -128,11 +127,10 @@ public sealed class CurveGeometryConverterTests
         path.Length.Should().BeGreaterThan(100);
         path[0].Should().Equal(path[^1]);
         var expectedRadius = Math.Sqrt(1.25);
-        foreach (var vertex in path)
-        {
-            var radius = Math.Sqrt(
+        foreach (var radius in path.Select(vertex => Math.Sqrt(
                 ((vertex[0] - 3.0) * (vertex[0] - 3.0)) +
-                ((vertex[1] - 2.0) * (vertex[1] - 2.0)));
+                ((vertex[1] - 2.0) * (vertex[1] - 2.0)))))
+        {
             radius.Should().BeApproximately(expectedRadius, 1e-6);
         }
     }
