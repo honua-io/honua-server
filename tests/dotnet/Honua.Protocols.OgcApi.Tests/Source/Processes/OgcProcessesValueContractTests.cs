@@ -107,6 +107,9 @@ public sealed class OgcProcessesValueContractTests
         var job = new ExecutionJobRecord
         {
             OperationId = "stream-result",
+            Status = ExecutionJobStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Spec = new ExecutionJobSpec { Kind = ExecutionJobKind.Geoprocessing, TargetKind = BatchComputeTargetKind.KubernetesJob, Backend = "local", WorkloadName = "transform.attribute-rename" }
         };
         var package = AnalysisResultPackage.CreateCompleted("stream-result:v1", new ResultSummary { Title = "stream output" },
