@@ -367,16 +367,20 @@ internal sealed class PostgresStyleCatalog : IStyleCatalog
         if (affected > 0 && ordinal == 0)
         {
             var reorderSql = $"""
-                WITH ordered AS (
-                    SELECT style_id, ROW_NUMBER() OVER (ORDER BY ordinal, style_id)::integer AS new_ordinal
+                WITH last_alternate AS (
+                    SELECT COALESCE(MAX(ordinal), 0) AS ordinal
                     FROM {_refsTable}
-                    WHERE layer_id = @layerId AND style_id <> @styleId
+                    WHERE layer_id = @layerId
+                ), demoted AS (
+                    SELECT style_id,
+                        (SELECT ordinal FROM last_alternate) + ROW_NUMBER() OVER (ORDER BY style_id)::integer AS new_ordinal
+                    FROM {_refsTable}
+                    WHERE layer_id = @layerId AND style_id <> @styleId AND ordinal = 0
                 )
                 UPDATE {_refsTable} AS refs
-                SET ordinal = ordered.new_ordinal
-                FROM ordered
-                WHERE refs.layer_id = @layerId AND refs.style_id = ordered.style_id
-                  AND refs.ordinal <> ordered.new_ordinal
+                SET ordinal = demoted.new_ordinal
+                FROM demoted
+                WHERE refs.layer_id = @layerId AND refs.style_id = demoted.style_id
                 """;
             await using var reorder = new NpgsqlCommand(reorderSql, connection, transaction);
             _ = reorder.Parameters.AddWithValue("@layerId", layerId);

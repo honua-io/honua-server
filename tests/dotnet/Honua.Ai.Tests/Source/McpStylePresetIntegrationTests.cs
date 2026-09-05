@@ -52,11 +52,12 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
         var newStyle = $"z-new-{suffix}";
         (await catalog.CreateStyleAsync(oldStyle, BuildDefaultStyleJson(), title: "Old preset")).Should().NotBeNull();
         (await catalog.CreateStyleAsync(newStyle, BuildDefaultStyleJson(), title: "New preset")).Should().NotBeNull();
-        using var initialize = await client.PostAsync("/mcp", new StringContent("""
+        using var initializeContent = new StringContent("""
             {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
               "protocolVersion":"2025-03-26","capabilities":{},
               "clientInfo":{"name":"style-primary-test","version":"1.0"}}}
-            """, Encoding.UTF8, "application/json"));
+            """, Encoding.UTF8, "application/json");
+        using var initialize = await client.PostAsync("/mcp", initializeContent);
         initialize.EnsureSuccessStatusCode();
         var session = initialize.Headers.GetValues("Mcp-Session-Id").Single();
 
@@ -117,6 +118,33 @@ public sealed class McpStylePresetIntegrationTests : IAsyncLifetime
             .Where(association => association.LayerId == WebAppFixture.TestLayerId)
             .OrderBy(association => association.Ordinal).ToArray();
         after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /mcp tools/call honua_apply_style_preset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task PrimaryPromotion_PreservesExplicitAlternateOrdinalsForMigrationReplay()
+    {
+        using var client = _fixture.CreateAdminClient();
+        await SeedTestLayerStyleAsync(client);
+        using var scope = _fixture.Services.CreateScope();
+        var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
+        var alternate = $"alternate-{Guid.NewGuid():N}";
+        var promoted = $"promoted-{Guid.NewGuid():N}";
+        (await catalog.CreateStyleAsync(alternate, BuildDefaultStyleJson())).Should().NotBeNull();
+        (await catalog.CreateStyleAsync(promoted, BuildDefaultStyleJson())).Should().NotBeNull();
+        (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, alternate, ordinal: 3)).Should().BeTrue();
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, promoted)).Should().BeTrue();
+            var associations = (await catalog.ListAssociationsAsync())
+                .Where(association => association.LayerId == WebAppFixture.TestLayerId).ToArray();
+            associations.Single(association => association.StyleId == alternate).Ordinal.Should().Be(3,
+                "migration replay compares the explicit source ordinal, including gaps");
+            associations.Single(association => association.Ordinal == 0).StyleId.Should().Be(promoted);
+        }
     }
 
     private static async Task<JsonElement> CallMcpStyleAsync(HttpClient client, string session,
