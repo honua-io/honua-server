@@ -15,7 +15,9 @@ internal static class GeoServicesObjectIdFieldResolver
     /// Resolves the object-id field name from a Metadata v2 canonical resource. Prefers
     /// fields tagged with the <c>id.primary</c> semantic role, then falls back to the
     /// first integer/big-integer field named <c>objectid</c>, <c>id</c>, or <c>fid</c>
-    /// (case-insensitive), and finally to any integer field. When none match, the default
+    /// (case-insensitive) when no primary key is declared. A nonnumeric primary key may
+    /// use a dedicated numeric objectid surrogate, but never an unrelated id/fid attribute.
+    /// When none match, the default
     /// <see cref="FieldNames.ObjectId"/> constant is returned.
     /// </summary>
     public static string ResolveObjectIdFieldName(MetadataV2Resource resource)
@@ -25,21 +27,19 @@ internal static class GeoServicesObjectIdFieldResolver
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        var candidate = FindNumericV2Field(resource, FieldNames.ObjectId)
-                        ?? FindNumericV2Field(resource, "id")
-                        ?? FindNumericV2Field(resource, "fid");
-        if (candidate is not null)
-        {
-            return candidate;
-        }
-
         var primary = resource.FindPrimaryIdField();
         if (primary is not null && IsObjectIdCompatible(primary))
         {
             return primary;
         }
 
-        return resource.SchemaFields.FirstOrDefault(IsObjectIdCompatible);
+        var surrogate = FindNumericV2Field(resource, FieldNames.ObjectId);
+        if (primary is not null)
+        {
+            return surrogate;
+        }
+
+        return surrogate ?? FindNumericV2Field(resource, "id") ?? FindNumericV2Field(resource, "fid");
     }
 
     private static MetadataV2Field? FindNumericV2Field(MetadataV2Resource resource, string fieldName)

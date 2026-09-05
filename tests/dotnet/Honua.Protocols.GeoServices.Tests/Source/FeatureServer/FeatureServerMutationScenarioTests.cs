@@ -174,11 +174,12 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
             using var form = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["f"] = "json",
-                ["updates"] = $$"""[{"attributes":{"objectid":{{objectId}},"name":"after"}}]"""
+                ["updates"] = $$$"""[{"attributes":{"objectid":{{{objectId}}},"name":"after"}}]"""
             });
             using var response = await _fixture.Client.PostAsync(path, form);
             var result = await DeserializeEditsAsync(response);
-            result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId);
+            result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId,
+                await response.Content.ReadAsStringAsync());
             result.UpdateResults![0].Error.Should().BeNull();
         }));
 
