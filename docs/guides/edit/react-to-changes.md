@@ -134,7 +134,7 @@ Then insert a feature in another terminal ([Edit features](edit-features.md)) an
 |---|---|
 | `403` before the stream connects | Community edition fails closed; streaming needs Pro or Enterprise. Capabilities reports `enabled=false`. |
 | `401` on an unfiltered stream | All-layer streams require admin. Subscribe with explicit `layers=` / `serviceId=` scopes instead. |
-| `503` on connect | The tenant or principal has exhausted `FeatureStreaming__MaxConcurrentSessions`; free sessions in that partition or raise its configured cap. Other tenants and principals retain their own admission capacity. |
+| `503` on connect | The tenant or principal has exhausted `FeatureStreaming__MaxConcurrentSessions`; free sessions in that partition or raise the configured cap applied to every partition. Other tenants and principals retain their own admission capacity. |
 | Webhook never fires | The URL must be HTTPS and publicly resolvable — private, loopback, or unresolvable addresses are rejected. Check startup logs and your receiver's signature validation. |
 | Duplicate events | Expected: delivery is at-least-once (and once per matching subscription). Dedupe on `eventId` (or `(subscriptionId, eventId)` for multi-subscription sockets). |
 | `400` on `mode=snapshot` | Snapshot subscriptions need an explicit layer scope so the baseline read stays bounded. Add `layers=` (or `layerId` on the control frame). |
