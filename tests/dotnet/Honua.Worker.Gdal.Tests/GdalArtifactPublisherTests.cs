@@ -15,6 +15,7 @@ using Honua.Core.Features.Infrastructure.Domain;
 using Honua.FileStorage;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Honua.Worker.Gdal.Execution;
 using Microsoft.Extensions.Configuration;
@@ -37,6 +38,9 @@ public sealed class GdalArtifactPublisherTests : IDisposable
     private readonly string _scratch = Directory.CreateTempSubdirectory("honua-gdal-publish-tests-").FullName;
 
     [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiProcesses)]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
     public async Task PublishFileAsync_ForcedStagingOnAttestedVolume_ReplacementReadsOracleBytes()
     {
         var root = Directory.CreateDirectory(Path.Join(_scratch, "volume")).FullName;
