@@ -2,6 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
+using NSubstitute;
 using System.Net.WebSockets;
 using System.Globalization;
 using System.Text;
@@ -47,6 +51,121 @@ public sealed class FeatureStreamEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_Live_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(false, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task Sse_SubscriberPolicies_Replay_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(false, true);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_Live_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(true, false);
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features")]
+    public Task WebSocket_SubscriberPolicies_Replay_HidesRowsAndFields() => VerifySubscriberPoliciesAsync(true, true);
+
+    private static async Task VerifySubscriberPoliciesAsync(bool webSocket, bool replay)
+    {
+        var rows = Substitute.For<IRlsPolicyStore>();
+        rows.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new RlsPolicy[]
+            {
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "name", ClaimType = ClaimTypes.Role }
+            });
+        var fields = Substitute.For<IFieldMaskPolicyStore>();
+        fields.GetEffectivePoliciesAsync(Arg.Any<IReadOnlyList<string>>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new FieldMaskPolicy[]
+            {
+                new() { Role = "*", Service = "*", Layer = "*", Attribute = "secret" }
+            });
+        var fixture = new WebAppFixture()
+            .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
+            .ReplaceService<IRlsPolicyStore>(rows)
+            .ReplaceService<IFieldMaskPolicyStore>(fields);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var store = fixture.GetService<IFeatureChangeEventStore>();
+            var publisher = fixture.GetService<IFeatureChangeEventPublisher>();
+            var anchor = await store.AppendAsync(new FeatureChangeEventRequest
+            {
+                ServiceId = "test", LayerId = 0, ObjectId = 999, Operation = "update", Protocol = "rest"
+            });
+            async Task PublishAsync()
+            {
+                foreach (var id in new long[] { 100, 101, 102 })
+                {
+                    await publisher.PublishAsync(new FeatureChangeEventRequest
+                    {
+                        ServiceId = "test", LayerId = 0, ObjectId = id, Operation = id == 101 ? "delete" : "update", Protocol = "rest",
+                        PropertiesJson = id == 102
+                            ? """{"name":"admin","secret":"private-value","SECRET":"private-uppercase"}"""
+                            : """{"name":"forbidden","secret":"private-row"}""",
+                        ChangedAttributes = ["name", "secret", "SECRET"]
+                    }, cts.Token);
+                }
+            }
+
+            if (replay)
+            {
+                await PublishAsync();
+            }
+
+            var path = $"/api/v1/streaming/features?layers=0&cursor={anchor.Cursor}&clientLabel=policy-test";
+            JsonElement delivered;
+            if (webSocket)
+            {
+                using var socket = await fixture.CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost" + path), cts.Token);
+                _ = await ReceiveWebSocketJsonAsync(socket, cts.Token);
+                if (!replay)
+                {
+                    await PublishAsync();
+                }
+
+                do
+                {
+                    delivered = await ReceiveWebSocketJsonAsync(socket, cts.Token);
+                } while (delivered.GetProperty("type").GetString() != "feature-change");
+            }
+            else
+            {
+                using var client = fixture.CreateAdminClient();
+                using var request = new HttpRequestMessage(HttpMethod.Get, path);
+                request.Headers.Accept.ParseAdd("text/event-stream");
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+                using var reader = new StreamReader(stream);
+                _ = await ReadNextSseEventAsync(reader, cts.Token);
+                if (!replay)
+                {
+                    await PublishAsync();
+                }
+
+                SseEvent frame;
+                do
+                {
+                    frame = await ReadNextSseEventAsync(reader, cts.Token);
+                } while (frame.EventName != "feature-change");
+                delivered = frame.Data;
+            }
+
+            delivered.GetProperty("objectId").GetInt64().Should().Be(102, "hidden updates and deletes must not be delivered");
+            delivered.GetProperty("attributes").GetProperty("name").GetString().Should().Be("admin");
+            delivered.GetProperty("attributes").EnumerateObject().Select(p => p.Name).Should().Equal("name");
+            delivered.GetProperty("changedAttributes").EnumerateArray().Select(p => p.GetString()).Should().Equal("name");
+            delivered.GetRawText().Should().NotContain("private-");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 
     // ─── AC: Client can open a WebSocket connection ─────────────────────
 
