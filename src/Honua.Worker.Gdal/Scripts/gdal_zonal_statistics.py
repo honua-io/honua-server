@@ -15,6 +15,8 @@ def statistics(path):
     dataset = gdal.Open(path)
     band = dataset.GetRasterBand(1)
     mask = band.GetMaskBand()
+    last = dataset.GetRasterBand(dataset.RasterCount)
+    alpha = last if last.GetColorInterpretation() == gdal.GCI_AlphaBand else None
     count = 0
     total = 0.0
     mean = 0.0
@@ -28,6 +30,9 @@ def statistics(path):
             height = min(256, dataset.RasterYSize - y)
             data = band.ReadAsArray(x, y, width, height).astype(np.float64)
             valid = (mask.ReadAsArray(x, y, width, height) != 0) & np.isfinite(data)
+            if alpha is not None:
+                # GDAL's automatic byte mask does not expose Float32 alpha.
+                valid &= alpha.ReadAsArray(x, y, width, height) > 0
             values = data[valid]
             n = values.size
             if n == 0:

@@ -225,6 +225,7 @@ internal sealed partial class GdalRasterZonalStatisticsJobExecutor(
                     "-of", "GTiff",
                     "-cutline", cutlinePath,
                     "-crop_to_cutline",
+                    "-dstalpha",
                     "-b", band.ToString(CultureInfo.InvariantCulture),
                 };
                 sourceInput.AddReadPin(clipArgs);

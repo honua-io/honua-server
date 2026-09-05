@@ -17,12 +17,15 @@ def raster(name, bands, transform=(0, 1, 0, 4, 0, -1), dtype=gdal.GDT_Float32, n
     ds.SetGeoTransform(transform)
     for i, values in enumerate(data, 1):
         ds.GetRasterBand(i).WriteArray(values)
-        ds.GetRasterBand(i).SetNoDataValue(nodata)
+        if nodata is not None:
+            ds.GetRasterBand(i).SetNoDataValue(nodata)
     ds.Close()
 
 
 raster("grid.tif", [[[1, 2, 3, 4], [5, -9999, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]],
                     [[10, 20, 30, 40], [50, -9999, 70, 80], [90, 100, 110, 120], [130, 140, 150, 160]]])
+raster("grid-unmasked.tif", [[[1, 0, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]],
+                             [[10, 0, 30, 40], [50, 60, 70, 80], [90, 100, 110, 120], [130, 140, 150, 160]]], nodata=None)
 raster("reflectance.tif", [[[0.2, 0.1, 0, -9999], [0.3, 0.2, 0.4, 0.1]],
                             [[0.6, 0.5, 0, 0.8], [0.3, 0.8, 0.2, -9999]],
                             [[0.1, 0.05, 2 / 15, 0.1], [0.2, 0.1, 0.1, 0.1]]])

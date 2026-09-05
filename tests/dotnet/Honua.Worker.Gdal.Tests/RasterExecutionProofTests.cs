@@ -44,6 +44,29 @@ public sealed class RasterExecutionProofTests : IDisposable
     }
 
     [Fact]
+    public async Task Clip_SourceWithoutNoData_UsesAlphaMaskAndPreservesValidZero()
+    {
+        using var cutline = JsonDocument.Parse(await File.ReadAllTextAsync(Fixture("cutline.geojson")));
+        var geometry = new GeoJsonReader().Read<NetTopologySuite.Geometries.Geometry>(
+            cutline.RootElement.GetProperty("features")[0].GetProperty("geometry").GetRawText());
+        var output = await ExecuteRaster("raster.clip", ("source", Input("grid-unmasked.tif")),
+            ("boundary", Convert.ToBase64String(geometry.AsBinary())), ("boundarySrid", "4326"));
+        AssertGrid(output, 3, 3, 4326, [1, 1, 0, 4, 0, -1], 2);
+        int[] mask = [255, 0, 0, 255, 0, 0, 255, 255, 255];
+        AssertBand(output, 0, [0, 0, 0, 6, 0, 0, 10, 11, 12], nodata: null, mask: mask);
+        AssertBand(output, 1, [0, 0, 0, 60, 0, 0, 100, 110, 120], nodata: null, mask: mask);
+    }
+
+    [Fact]
+    public async Task ZonalStatistics_SourceWithoutNoData_ExcludesCutlineExteriorButCountsValidZero()
+    {
+        using var json = JsonDocument.Parse(await Execute("raster.zonal-statistics", ("source", Input("grid-unmasked.tif")),
+            ("zones", Input("cutline.geojson"))));
+        var zone = json.RootElement.GetProperty("zones").EnumerateArray().Should().ContainSingle().Which;
+        AssertZone(zone, "L", 5, 0, 12, 39);
+    }
+
+    [Fact]
     public async Task ZonalStatistics_DisjointOverlappingAndEmptyZones_MatchHandDerivedAggregates()
     {
         using var json = JsonDocument.Parse(await Execute("raster.zonal-statistics", ("source", Input("grid.tif")),
@@ -104,7 +127,7 @@ public sealed class RasterExecutionProofTests : IDisposable
         var expected = Enumerable.Range(0, 8).Select(i => red[i] == NoData || nir[i] == NoData ? NoData
             : index == "ndvi" ? (nir[i] - red[i]) / (nir[i] + red[i])
             : 2.5 * (nir[i] - red[i]) / (nir[i] + 6 * red[i] - 7.5 * blue[i] + 1)).ToArray();
-        AssertBand(output, 0, expected, tolerance: 1e-6);
+        AssertBand(output, 0, expected.Select(v => double.IsFinite(v) ? v : NoData).ToArray(), tolerance: 1e-6);
     }
 
     [Theory]
@@ -270,19 +293,26 @@ public sealed class RasterExecutionProofTests : IDisposable
         }
     }
 
-    private static void AssertBand(JsonElement raster, int bandIndex, double[] expected, string type = "Float32", double nodata = NoData, double tolerance = 1e-9)
+    private static void AssertBand(JsonElement raster, int bandIndex, double[] expected, string type = "Float32", double? nodata = NoData, double tolerance = 1e-9, int[]? mask = null)
     {
         var band = raster.GetProperty("bands")[bandIndex];
         band.GetProperty("type").GetString().Should().Be(type);
-        if (double.IsNaN(nodata))
+        if (nodata is null)
+        {
+            band.GetProperty("nodata").ValueKind.Should().Be(JsonValueKind.Null);
+        }
+        else if (double.IsNaN(nodata.Value))
         {
             band.GetProperty("nodata").GetString().Should().Be("nan");
         }
         else
         {
-            band.GetProperty("nodata").GetDouble().Should().Be(nodata);
+            band.GetProperty("nodata").GetDouble().Should().Be(nodata.Value);
         }
         var values = band.GetProperty("values").EnumerateArray().ToArray();
+        var actualMask = band.GetProperty("mask").EnumerateArray().Select(v => v.GetInt32()).ToArray();
+        var expectedMask = mask ?? expected.Select(v => double.IsNaN(v) || v == nodata ? 0 : 255).ToArray();
+        actualMask.Should().Equal(expectedMask, $"band {bandIndex + 1} validity must match the analytical nodata mask");
         values.Should().HaveCount(expected.Length);
         for (var i = 0; i < expected.Length; i++)
         {
