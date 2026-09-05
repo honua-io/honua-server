@@ -16,7 +16,7 @@ the pinned GDAL image with this directory mounted at `/proof` and entrypoint
 | Issue / operation | Independent oracle |
 | --- | --- |
 | #3923 clip | L polygon selects source column 1 and row 2; explicit inside, boundary-adjacent, outside, and source-nodata cells in both bands. |
-| #3924 zonal statistics | Disjoint sets {10,20,50}, {30,40,70,80}, overlapping set {20,30,70}, and an all-nodata zone; count/min/max/sum/mean and original band 2. |
+| #3924 zonal statistics | Disjoint sets {10,20,50}, {30,40,70,80}, overlapping set {20,30,70}, and an all-nodata zone; count/min/max/sum/mean and original band 2. A 513-column fixture separately verifies merging counts, sums, and population variance across read windows. |
 | #3925 spectral index | Red/NIR/blue inputs from the committed multiband reflectance TIFF; NDVI and EVI equations, Float32 tolerance, undefined denominator and source nodata. |
 | #3926 reproject | Spherical Mercator forward bounds with R=6378137, transformed diagonal cell size, inverse-mapped output cell centers, nearest/bilinear weights and nodata in both bands. |
 | #3927 mosaic | Two 3x2 two-band tiles overlap one column; explicit arrays for first/last source precedence, nodata fallback and a remaining hole. |
@@ -34,7 +34,7 @@ IDW's unbounded default uses GDAL's documented reduced-precision SSE/AVX path,
 even with Float64 output. The interior tolerance is eight Float32 rounding units
 at the fixture maximum magnitude (100), about 0.0000954; bounded searches retain
 1e-9 and coincident source values require exact equality. See
-[GDALGridCreate](https://gdal.org/en/stable/api/gdal_alg.html#_CPPv414GDALGridCreate17GDALGridAlgorithmPKv8GUInt32PKdPKdPKdddddd8GUInt328GUInt3212GDALDataTypePv16GDALProgressFuncPv).
+[GDALGridCreate](https://gdal.org/en/stable/api/gdal_alg.html).
 
 ## Qualification boundary
 
