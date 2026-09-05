@@ -59,7 +59,7 @@ internal static class AdminOperationReview
         {
             using var document = JsonDocument.Parse(value);
             var buffer = new ArrayBufferWriter<byte>();
-            using (var writer = new Utf8JsonWriter(buffer))
+            using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
                 WriteValue(writer, document.RootElement, schema);
             return Encoding.UTF8.GetString(buffer.WrittenSpan);
         }
@@ -93,6 +93,10 @@ internal static class AdminOperationReview
                 else writer.WriteStringValue("[redacted]");
             }
             writer.WriteEndArray();
+        }
+        else if (value.ValueKind == JsonValueKind.String && schema.Format == "uri")
+        {
+            writer.WriteStringValue("[redacted: URL]");
         }
         else
         {

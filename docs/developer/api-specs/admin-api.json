@@ -35584,6 +35584,11 @@
           "updatedAt"
         ],
         "properties": {
+          "sealedPlanHash": {
+            "type": "string",
+            "nullable": true,
+            "description": "SHA-256 seal binding the displayed plan to the accepted replay payload."
+          },
           "proposalId": {
             "type": "string",
             "description": "Stable proposal identifier."

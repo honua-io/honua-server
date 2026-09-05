@@ -100,6 +100,7 @@ internal sealed class ProposalStatusResource : IMcpResource
 
         var resource = new McpProposalResource
         {
+            SealedPlanHash = proposal.SealedPlanHash,
             ProposalId = proposal.ProposalId,
             Kind = proposal.Kind.ToString(),
             Status = proposal.Status.ToString(),

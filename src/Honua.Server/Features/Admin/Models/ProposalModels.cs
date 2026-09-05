@@ -52,6 +52,9 @@ public sealed record ProposalSummaryResponse
 /// </summary>
 public sealed record ProposalDetailResponse
 {
+    /// <summary>SHA-256 seal binding the displayed plan to the accepted replay payload.</summary>
+    public string? SealedPlanHash { get; init; }
+
     /// <summary>Stable proposal identifier.</summary>
     public required string ProposalId { get; init; }
 

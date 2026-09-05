@@ -17,14 +17,14 @@ public sealed class AdminApprovalReviewTests
     {
         var plan = Map("admin.layer.filter.set", new Dictionary<string, string?>
         {
-            ["layerId"] = "123", ["filter"] = "status = 'open'"
+            ["layerId"] = "123", ["permanentFilter"] = """{"expression":"status = 'open'","language":"arcgis-sql","token":"nested-secret"}"""
         });
         var review = Review(plan);
         review.Should().Contain("tenant-a").And.Contain("123").And.Contain("status = 'open'");
-        review.Should().Contain("connection-a").And.Contain("service-a");
+        review.Should().Contain("connection-a").And.Contain("service-a").And.NotContain("nested-secret");
         var different = Map("admin.layer.filter.set", new Dictionary<string, string?>
         {
-            ["layerId"] = "456", ["filter"] = "status = 'closed'"
+            ["layerId"] = "456", ["permanentFilter"] = """{"expression":"status = 'closed'","language":"arcgis-sql"}"""
         });
         Review(different).Should().NotBe(review);
     }
