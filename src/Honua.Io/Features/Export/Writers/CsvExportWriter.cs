@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Services;
 using Honua.Infrastructure.Services;
 using NetTopologySuite.IO;
 
@@ -95,14 +96,5 @@ internal static class CsvExportWriter
         };
     }
 
-    private static string EscapeCsvField(string value)
-    {
-        if (value.Length == 0)
-            return value;
-
-        if (value.AsSpan().IndexOfAny(',', '"', '\n') >= 0 || value.Contains('\r'))
-            return string.Concat("\"", value.Replace("\"", "\"\""), "\"");
-
-        return value;
-    }
+    private static string EscapeCsvField(string value) => CsvFieldFormatter.Escape(value);
 }

@@ -433,7 +433,7 @@ internal sealed partial class Wfs20Handler
 
     private static string ConvertValueReferenceToInvariantString(object? value, ValueReferenceResolution valueReference)
         => valueReference.Field is { } field
-            ? ConvertFieldValueToInvariantString(value, field)
+            ? ConvertFieldValueToInvariantString(value, field) ?? string.Empty
             : ConvertToInvariantString(value);
 
     private static bool IsSupportedValueOutputFormat(string format)

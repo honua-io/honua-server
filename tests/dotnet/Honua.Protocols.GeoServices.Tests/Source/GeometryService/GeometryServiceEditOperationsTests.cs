@@ -441,6 +441,43 @@ public sealed class GeometryServiceEditOperationsTests : IClassFixture<WebAppFix
         result!.Transformations.Should().NotBeNull();
     }
 
+    [IntegrationTheory]
+    [InlineData(4269, 4326, 108001, "NAD_1983_To_WGS_1984_1")]
+    [InlineData(4267, 4269, 1241, "NAD_1927_To_NAD_1983_NADCON")]
+    [Operation(Operations.FindTransformations)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/findTransformations")]
+    public async Task FindTransformations_KnownDatumPair_ReturnsCatalogCandidate(
+        int inSr,
+        int outSr,
+        int expectedWkid,
+        string expectedName)
+    {
+        var body = $$"""
+        {
+            "inSR": {{inSr}},
+            "outSR": {{outSr}},
+            "numOfResults": 1
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/findTransformations",
+            requestContent);
+
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(
+            content,
+            GeometryServiceJsonContext.Default.GeometryServiceFindTransformationsResponse);
+
+        result.Should().NotBeNull();
+        result!.Transformations.Should().ContainSingle();
+        result.Transformations![0].Wkid.Should().Be(expectedWkid);
+        result.Transformations[0].LatestWkid.Should().Be(expectedWkid);
+        result.Transformations[0].Name.Should().Be(expectedName);
+    }
+
     [IntegrationTest]
     [Operation(Operations.FindTransformations)]
     [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/findTransformations")]

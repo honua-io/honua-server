@@ -355,30 +355,66 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, outSrError);
             }
 
-            // Honor a client-supplied datumTransformation (or the catalog's Esri default)
-            // via the shared WKID -> PROJ pipeline resolver, matching the FeatureServer and
-            // ImageServer project paths.
+            var inputSrid = inSr.GetValueOrDefault();
+            var outputSrid = outSr.GetValueOrDefault();
+
+            // GeometryServer names these parameters `transformation` and `transformForward`.
+            // Continue accepting Honua's earlier `datumTransformation` alias for compatibility.
+            var transformationValue = GeometryServiceRequestParser.GetValue(values, "transformation");
+            if (string.IsNullOrWhiteSpace(transformationValue))
+            {
+                transformationValue = GeometryServiceRequestParser.GetValue(values, "datumTransformation");
+            }
+
+            bool? transformForward = null;
+            var transformForwardValue = GeometryServiceRequestParser.GetValue(values, "transformForward");
+            if (!string.IsNullOrWhiteSpace(transformForwardValue))
+            {
+                if (!bool.TryParse(transformForwardValue, out var parsedTransformForward))
+                {
+                    return CreateError(context, 400, "Parameter 'transformForward' must be a boolean.");
+                }
+
+                transformForward = parsedTransformForward;
+            }
+
             var datumCatalog = context.RequestServices
                 .GetRequiredService<Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>();
-            if (!GeoServicesDatumTransformationResolver.TryResolve(
+            var transformationInSr = await _spatialReferenceResolver
+                .ResolveGeodeticBaseSridAsync(inputSrid, ct)
+                .ConfigureAwait(false);
+            var transformationOutSr = await _spatialReferenceResolver
+                .ResolveGeodeticBaseSridAsync(outputSrid, ct)
+                .ConfigureAwait(false);
+            if (!GeoServicesDatumTransformationResolver.TryResolveWithDirection(
                     datumCatalog,
-                    GeometryServiceRequestParser.GetValue(values, "datumTransformation"),
-                    inSr!.Value,
-                    outSr!.Value,
+                    transformationValue,
+                    transformForward,
+                    transformationInSr,
+                    transformationOutSr,
                     out var datumSelection,
                     out var datumError))
             {
-                GeometryServiceLog.InvalidGeometryInput(_logger, "project", datumError ?? "Invalid datumTransformation");
-                return CreateError(context, 400, datumError ?? "Invalid datumTransformation.");
+                GeometryServiceLog.InvalidGeometryInput(_logger, "project", datumError ?? "Invalid transformation");
+                return CreateError(context, 400, datumError ?? "Invalid transformation.");
             }
 
             var parameters = new ProjectParameters
             {
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
-                InSR = inSr!.Value,
-                OutSR = outSr!.Value,
-                DatumTransformation = datumSelection
+                InSR = inputSrid,
+                OutSR = outputSrid,
+                // PostGIS' text overload treats this string as a target CRS, not as a
+                // stand-alone coordinate-operation pipeline. Preserve the catalog selection
+                // for pair/direction validation, but use ordinary SRID projection whenever
+                // the operation is non-identity or an endpoint is projected; PROJ then picks
+                // the best available operation instead of failing to parse a pipeline as a CRS.
+                DatumTransformation = transformationInSr == inputSrid &&
+                                      transformationOutSr == outputSrid &&
+                                      datumSelection is { ProjPipeline: "+proj=noop" }
+                    ? datumSelection
+                    : null
             };
 
             GeometryServiceLog.RequestParsed(_logger, "project", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
@@ -1770,13 +1806,33 @@ internal sealed class GeometryServiceHandler(
                 return CreateError(context, 400, outSrError);
             }
 
+            var numOfResults = 1;
+            var numOfResultsValue = GeometryServiceRequestParser.GetValue(values, "numOfResults");
+            if (!string.IsNullOrWhiteSpace(numOfResultsValue) &&
+                (!int.TryParse(
+                    numOfResultsValue,
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out numOfResults) ||
+                 numOfResults is 0 or < -1))
+            {
+                return CreateError(context, 400, "Parameter 'numOfResults' must be -1 or a positive integer.");
+            }
+
             var parameters = new FindTransformationsParameters
             {
-                InSR = inSr!.Value,
-                OutSR = outSr!.Value
+                InSR = await _spatialReferenceResolver
+                    .ResolveGeodeticBaseSridAsync(inSr!.Value, ct)
+                    .ConfigureAwait(false),
+                OutSR = await _spatialReferenceResolver
+                    .ResolveGeodeticBaseSridAsync(outSr!.Value, ct)
+                    .ConfigureAwait(false),
+                NumOfResults = numOfResults
             };
 
-            return ExecuteFindTransformations(parameters, scope);
+            var datumCatalog = context.RequestServices
+                .GetRequiredService<Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>();
+            return ExecuteFindTransformations(parameters, datumCatalog, scope);
         }
         catch (OperationCanceledException)
         {
@@ -2587,15 +2643,26 @@ internal sealed class GeometryServiceHandler(
         return target;
     }
 
-    private IResult ExecuteFindTransformations(FindTransformationsParameters parameters, HonuaTelemetryScope scope)
+    private IResult ExecuteFindTransformations(
+        FindTransformationsParameters parameters,
+        Core.Features.Infrastructure.Crs.IDatumTransformationCatalog datumCatalog,
+        HonuaTelemetryScope scope)
     {
-        // Honua performs CRS transformation via the shared projection pipeline (PROJ-backed)
-        // and does not expose a discrete Esri datum-transformation catalog. The PROJ pipeline
-        // selects and applies the appropriate transformation internally during `project`, so
-        // there is no explicit transformation for clients to choose between; an empty list is
-        // the spec-correct answer for every inSR/outSR pair. This is documented as a known
-        // limitation in docs/gis/geometry-service-matrix.md.
-        var transformations = Array.Empty<GeometryServiceTransformation>();
+        GeometryServiceTransformation[] transformations = [];
+        if (parameters.NumOfResults != 0 &&
+            datumCatalog.TryGetDefault(parameters.InSR, parameters.OutSR, out var selection) &&
+            selection.Wkid is { } wkid)
+        {
+            transformations =
+            [
+                new GeometryServiceTransformation
+                {
+                    Wkid = wkid,
+                    LatestWkid = wkid,
+                    Name = selection.Name
+                }
+            ];
+        }
 
         var response = new GeometryServiceFindTransformationsResponse
         {

@@ -81,8 +81,10 @@ public static class ZarrTileRenderer
         var pixels = new byte[checked(outputWidth * outputHeight * 4)];
         for (var py = 0; py < outputHeight; py++)
         {
-            // Nearest sample row from the grid (north-up: grid row 0 is the top).
-            var gy = height == 1 ? 0 : (int)((long)py * height / outputHeight);
+            // Output images are north-up. Reverse the row lookup when the
+            // source stores rows south-to-north.
+            var displayRow = height == 1 ? 0 : (int)((long)py * height / outputHeight);
+            var gy = slice.YAxisAscending ? height - 1 - displayRow : displayRow;
             if (gy >= height)
             {
                 gy = height - 1;
@@ -202,7 +204,9 @@ public static class ZarrTileRenderer
     {
         // Fractional cell-centre position of the native coordinate within the subset grid.
         var fx = ((x - slice.GridXMin) / slice.CellWidth) - 0.5;
-        var fy = ((slice.GridYMax - y) / slice.CellHeight) - 0.5;
+        var fy = slice.YAxisAscending
+            ? ((y - (slice.GridYMax - (height * slice.CellHeight))) / slice.CellHeight) - 0.5
+            : ((slice.GridYMax - y) / slice.CellHeight) - 0.5;
 
         double ValueAt(int gx, int gy)
         {

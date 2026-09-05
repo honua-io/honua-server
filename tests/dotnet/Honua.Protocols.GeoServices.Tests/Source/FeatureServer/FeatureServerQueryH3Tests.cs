@@ -10,9 +10,11 @@ using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -217,6 +219,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
     public async Task QueryH3Post_WithSpatialAggregationSummaries_ReturnsSdkSummaryResponse()
     {
         var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IH3CapabilityChecker>(new AlwaysAvailableH3Checker())
             .ReplaceService<IFeatureReader>(new SpatialAggregationSummaryFeatureReader());
         await fixture.InitializeAsync();
@@ -286,6 +289,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
     public async Task QueryH3Post_WithHistogramSummariesAndNoTotals_ResolvesCellBounds()
     {
         var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IH3CapabilityChecker>(new AlwaysAvailableH3Checker())
             .ReplaceService<IFeatureReader>(new SpatialAggregationSummaryFeatureReader());
         await fixture.InitializeAsync();
@@ -327,6 +331,7 @@ public sealed class FeatureServerQueryH3Tests : IClassFixture<WebAppFixture>
     {
         const long preciseCount = 9_007_199_254_740_993L;
         var fixture = new WebAppFixture()
+            .WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IH3CapabilityChecker>(new AlwaysAvailableH3Checker())
             .ReplaceService<IFeatureReader>(new SpatialAggregationSummaryFeatureReader(preciseCount, preciseCount));
         await fixture.InitializeAsync();

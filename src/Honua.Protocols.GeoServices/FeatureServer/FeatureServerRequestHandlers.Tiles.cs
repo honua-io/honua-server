@@ -4,9 +4,11 @@
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Features.Tiles.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Core.Queries.Filters;
@@ -70,6 +72,7 @@ internal static partial class FeatureServerEndpoints
         }
         var publication = layerValidation.Publication!;
         var resource = layerValidation.Resource!;
+        var service = layerValidation.Service!;
 
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -77,7 +80,9 @@ internal static partial class FeatureServerEndpoints
         // (FeatureServerUtilities.V2.MapLayerInfoV2): integer storage handle is
         // publication.LayerIndex when the graph doesn't carry an explicit
         // storage binding for this publication.
-        var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
+            ?? snapshot.ResolveStorageLayerId(resource)
+            ?? publication.LayerIndex;
         if (storageLayerId is null)
         {
             // /tiles is not an Esri protocol surface (honua-server#2945): a real 404, not
@@ -148,12 +153,32 @@ internal static partial class FeatureServerEndpoints
             sqlFilter,
             temporalFilter);
 
-        var tileProvider = context.RequestServices.GetRequiredService<ITileProvider>();
+        var fallbackProvider = context.RequestServices.GetRequiredService<ITileProvider>();
+        var providerResolution = await new TileFeatureProviderResolver(
+            context.RequestServices.GetService<FeatureProviderQueryRouter>()).ResolveTileProviderAsync(
+                snapshot,
+                service,
+                resource,
+                publication,
+                storageLayerId.Value,
+                fallbackProvider,
+                cancellationToken).ConfigureAwait(false);
+        if (providerResolution.Provider is null)
+        {
+            return ProblemDetailsHelpers.CreateProblem(
+                context,
+                "about:blank",
+                StatusCodes.Status501NotImplemented,
+                "Not Implemented",
+                $"Layer '{resource.Metadata.Name}' is backed by data provider '{providerResolution.UnsupportedProviderName}', " +
+                "which does not support vector tile generation.");
+        }
+
         try
         {
             return await VectorTileExecution.ExecuteAsync(
                 context,
-                tileProvider,
+                providerResolution.Provider,
                 storageLayerId.Value,
                 x,
                 y,

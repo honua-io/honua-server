@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -113,6 +114,81 @@ public sealed class AdminAuthSessionStoreTests
 
         session.Should().BeNull(
             "a null distributed cache result means key-not-found; the store must return null");
+    }
+
+    [UnitTest]
+    public async Task RemoveAuthenticatedSessionAsync_DistributedCacheFails_RejectsRevocationAndEvictsLocalSession()
+    {
+        var cache = Substitute.For<IDistributedCache>();
+        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("Redis unavailable")));
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<byte[]?>(new IOException("Redis unavailable")));
+        using var memory = new MemoryCache(new MemoryCacheOptions());
+        var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
+        var sessionId = await store.CreateAuthenticatedSessionAsync("oidc", "token", null,
+            [new AdminAuthSessionClaim { Type = "sub", Value = "admin" }],
+            DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
+
+        await Assert.ThrowsAsync<ServiceUnavailableException>(() =>
+            store.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+        Assert.Null(await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+    }
+
+    [UnitTest]
+    public async Task RemovePendingSessionAsync_DistributedCacheFails_PreservesBestEffortCleanup()
+    {
+        var cache = Substitute.For<IDistributedCache>();
+        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("Redis unavailable")));
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<byte[]?>(new IOException("Redis unavailable")));
+        using var memory = new MemoryCache(new MemoryCacheOptions());
+        var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
+        var sessionId = await store.CreatePendingSessionAsync("oidc", "state", "verifier",
+            DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
+
+        await store.RemovePendingSessionAsync(sessionId, CancellationToken.None);
+        Assert.Null(await store.GetPendingSessionAsync(sessionId, CancellationToken.None));
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoveAuthenticatedSessionAsync_DeleteDenied_RequiresConfirmedAbsence(bool recordExists)
+    {
+        var cache = Substitute.For<IDistributedCache>();
+        byte[]? payload = null;
+        cache.SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<DistributedCacheEntryOptions>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                payload = call.ArgAt<byte[]>(1);
+                return Task.CompletedTask;
+            });
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult(recordExists ? payload : null));
+        cache.RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("Delete denied")));
+        using var memory = new MemoryCache(new MemoryCacheOptions());
+        var store = new AdminAuthSessionStore(memory, NullLogger<AdminAuthSessionStore>.Instance, cache);
+        var sessionId = await store.CreateAuthenticatedSessionAsync("oidc", "token", null,
+            [new AdminAuthSessionClaim { Type = "sub", Value = "admin" }],
+            DateTimeOffset.UtcNow.AddMinutes(5), CancellationToken.None);
+
+        if (recordExists)
+        {
+            await Assert.ThrowsAsync<ServiceUnavailableException>(() =>
+                store.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None));
+        }
+        else
+        {
+            await store.RemoveAuthenticatedSessionAsync(sessionId, CancellationToken.None);
+        }
+
+        cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<byte[]?>(new IOException("Read unavailable")));
+        Assert.Null(await store.GetAuthenticatedSessionAsync(sessionId, CancellationToken.None));
     }
 
     // ─── Basic session lifecycle ────────────────────────────────────────────────

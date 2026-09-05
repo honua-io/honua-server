@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
@@ -23,6 +24,9 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    private static readonly string[] GeoPackageTimestampFormats =
+        ["yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK", "yyyy-MM-dd'T'HH:mm:ssK"];
+
     /// <summary>
     /// Stream Shapefile features from extracted components on disk.
     /// </summary>
@@ -177,12 +181,41 @@ internal sealed partial class StreamingFileImportService
                 }
 
                 var name = reader.GetName(i);
-                var value = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                var value = ReadGeoPackageAttribute(reader, i);
                 attributes.Add(name, value);
             }
 
             yield return new Feature(geometry, attributes);
         }
+    }
+
+    private static object? ReadGeoPackageAttribute(SqliteDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        // SQLite storage classes erase logical BOOLEAN/DATE/DATETIME distinctions.
+        // Restore those values from the declared GeoPackage column type.
+        return reader.GetDataTypeName(ordinal).ToUpperInvariant() switch
+        {
+            "BOOLEAN" => reader.GetValue(ordinal) switch
+            {
+                0L => false,
+                1L => true,
+                _ => throw new InvalidDataException($"GeoPackage BOOLEAN field '{reader.GetName(ordinal)}' must contain 0 or 1.")
+            },
+            "DATE" => DateOnly.TryParseExact(reader.GetString(ordinal), "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var date)
+                ? date
+                : throw new InvalidDataException($"GeoPackage DATE field '{reader.GetName(ordinal)}' must contain a valid ISO date."),
+            "DATETIME" => DateTimeOffset.TryParseExact(reader.GetString(ordinal), GeoPackageTimestampFormats, CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal, out var timestamp)
+                ? timestamp
+                : throw new InvalidDataException($"GeoPackage DATETIME field '{reader.GetName(ordinal)}' must contain a valid timestamp."),
+            _ => reader.GetValue(ordinal)
+        };
     }
 
     private static async Task<IReadOnlyList<GeoPackageLayerInfo>> GetGeoPackageLayersAsync(

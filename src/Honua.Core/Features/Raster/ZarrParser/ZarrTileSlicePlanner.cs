@@ -28,6 +28,7 @@ public readonly record struct ZarrTileBounds(double MinX, double MinY, double Ma
 /// <param name="GridYMax">Storage-CRS Y coordinate of the northern edge of the selected window.</param>
 /// <param name="CellWidth">Storage-CRS width of one grid cell along X.</param>
 /// <param name="CellHeight">Storage-CRS height of one grid cell along Y (positive magnitude).</param>
+/// <param name="YAxisAscending">True when row indices increase from south to north.</param>
 public sealed record ZarrTileSlicePlan(
     ZarrCoverageSubsetPlan Plan,
     int YDimensionIndex,
@@ -35,7 +36,8 @@ public sealed record ZarrTileSlicePlan(
     double GridXMin,
     double GridYMax,
     double CellWidth,
-    double CellHeight);
+    double CellHeight,
+    bool YAxisAscending = false);
 
 /// <summary>
 /// Resolves a tile request (bbox in storage CRS plus optional time / vertical /
@@ -107,11 +109,14 @@ public static class ZarrTileSlicePlanner
         var cellHeight = (extent.YMax - extent.YMin) / height;
 
         // Map the tile bbox to a half-open grid-index window on each spatial axis.
-        // Row 0 is the northernmost row (north-up convention).
         var xStart = (int)Math.Floor((bounds.MinX - extent.XMin) / cellWidth);
         var xStop = (int)Math.Ceiling((bounds.MaxX - extent.XMin) / cellWidth);
-        var yStart = (int)Math.Floor((extent.YMax - bounds.MaxY) / cellHeight);
-        var yStop = (int)Math.Ceiling((extent.YMax - bounds.MinY) / cellHeight);
+        var yStart = metadata.YAxisAscending
+            ? (int)Math.Floor((bounds.MinY - extent.YMin) / cellHeight)
+            : (int)Math.Floor((extent.YMax - bounds.MaxY) / cellHeight);
+        var yStop = metadata.YAxisAscending
+            ? (int)Math.Ceiling((bounds.MaxY - extent.YMin) / cellHeight)
+            : (int)Math.Ceiling((extent.YMax - bounds.MinY) / cellHeight);
 
         xStart = Math.Clamp(xStart, 0, width);
         xStop = Math.Clamp(xStop, 0, width);
@@ -172,7 +177,9 @@ public static class ZarrTileSlicePlanner
 
         var request = subsetPlan!.Request;
         var gridXMin = extent.XMin + (request.Start[xDim] * cellWidth);
-        var gridYMax = extent.YMax - (request.Start[yDim] * cellHeight);
+        var gridYMax = metadata.YAxisAscending
+            ? extent.YMin + (request.Stop[yDim] * cellHeight)
+            : extent.YMax - (request.Start[yDim] * cellHeight);
 
         plan = new ZarrTileSlicePlan(
             subsetPlan,
@@ -181,7 +188,8 @@ public static class ZarrTileSlicePlanner
             GridXMin: gridXMin,
             GridYMax: gridYMax,
             CellWidth: cellWidth,
-            CellHeight: cellHeight);
+            CellHeight: cellHeight,
+            YAxisAscending: metadata.YAxisAscending);
         return true;
     }
 
