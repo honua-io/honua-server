@@ -296,17 +296,18 @@ public sealed class OgcProcessesSynchronousExecutionTests : IClassFixture<OgcPro
     [IntegrationTest]
     [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /ogc/processes/processes/{processId}/execution")]
-    public async Task Execute_ExternalAuthorizationSelector_IsRejectedBeforeAnyFetch()
+    public async Task Execute_ExternalAuthorizationSelector_IsResolvedBeforePayload()
     {
         var fetches = _fixture.ReferenceRequestCount;
         using var content = new StringContent(
-            """{"inputs":{"layerId":{"href":"https://93.184.216.34/number.txt"},"tolerance":{"href":"https://93.184.216.34/number.txt"}}}""",
+            """{"inputs":{"layerId":{"href":"https://93.184.216.34/layer.txt"},"tolerance":{"href":"https://93.184.216.34/number.txt"}}}""",
             Encoding.UTF8, "application/json");
         using var response = await _fixture.App.Client.PostAsync(
             "/ogc/processes/processes/generalization.simplify-layer/execution", content);
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.Content.ReadAsStringAsync()).Should().Contain("authorization selector");
-        _fixture.ReferenceRequestCount.Should().Be(fetches);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        _fixture.ReferenceRequestCount.Should().Be(fetches + 2);
+        _fixture.SubmittedPlan!.Steps.Single().Inputs["layerId"].Should().Be("7");
+        _fixture.SubmittedPlan.Steps.Single().Inputs["tolerance"].Should().Be("25.5");
     }
 
     [IntegrationTest]
@@ -705,6 +706,14 @@ public sealed class OgcProcessesSynchronousExecutionFixture : IAsyncLifetime
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new ByteArrayContent(Convert.FromBase64String("AQEAAAAAAAAAAAAAAAAAAAAAAAAA"))
+                });
+            }
+
+            if (request.RequestUri!.AbsolutePath == "/layer.txt")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("7", Encoding.UTF8, "text/plain")
                 });
             }
 

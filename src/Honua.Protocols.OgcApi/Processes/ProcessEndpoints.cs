@@ -417,6 +417,7 @@ internal static class ProcessEndpoints
                     "The canonical plan process has no declared value outputs and requires document mode. Use a catalog process for raw results.");
             }
 
+            AnalysisPlan? referenceAuthorizationPlan = null;
             if (definition != null && !OgcProcessesCiteEchoFixture.IsDefinition(definition))
             {
                 var normalized = await NormalizeInputReferencesAsync(
@@ -432,7 +433,7 @@ internal static class ProcessEndpoints
                             processCatalog,
                             context.RequestServices.GetService<IGeoprocessingRasterSourceResolver>(),
                             cancellationToken).ConfigureAwait(false);
-                        await jobService.EnsurePlanExecutionTierAuthorizedAsync(
+                        return await jobService.EnsurePlanExecutionTierAuthorizedAsync(
                             boundPlan, context.User, cancellationToken).ConfigureAwait(false);
                     },
                     cancellationToken).ConfigureAwait(false);
@@ -445,6 +446,7 @@ internal static class ProcessEndpoints
                 }
 
                 request = normalized.Request;
+                referenceAuthorizationPlan = normalized.AuthorizedPlan;
             }
 
             var geometryService = context.RequestServices.GetRequiredService<IGeometryService>();
@@ -461,6 +463,11 @@ internal static class ProcessEndpoints
                     StatusCodes.Status400BadRequest,
                     "Invalid analysis plan",
                     parseError ?? "The analysis plan payload is invalid.");
+            }
+
+            if (referenceAuthorizationPlan != null)
+            {
+                analysisPlan = PreserveReferenceAuthorization(analysisPlan!, referenceAuthorizationPlan);
             }
 
             OgcProcessesLog.ExecutionRequested(logger, processId, !executeSynchronously);
@@ -957,12 +964,12 @@ internal static class ProcessEndpoints
             _ => element.GetRawText()
         };
 
-    private static async Task<InputNormalizationResult> NormalizeInputReferencesAsync(
+    internal static async Task<InputNormalizationResult> NormalizeInputReferencesAsync(
         OgcExecuteRequest request,
         ProcessDefinition definition,
         IHttpClientFactory httpClientFactory,
         long maxArtifactBytes,
-        Func<AnalysisPlan, Task> authorizeReferencesAsync,
+        Func<AnalysisPlan, Task<AnalysisPlan>> authorizeReferencesAsync,
         CancellationToken cancellationToken)
     {
         if (request.Inputs == null)
@@ -994,27 +1001,20 @@ internal static class ProcessEndpoints
                     $"Input '{input.Key}' reference declares an unsupported mediaType; a JSON or GeoJSON media type is required.");
             }
 
-            if ((parameters[input.Key].IsAuthorizationSelector
-                    || (parameters[input.Key].ValueType == ProcessParameterValueType.LayerId
-                        && parameters[input.Key].LayerAccess != ProcessLayerAccess.None))
-                && TryGetReferenceHref(input.Value, out var selectorHref)
-                && !selectorHref.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-            {
-                return new InputNormalizationResult(null,
-                    $"Input '{input.Key}' is an authorization selector and must be supplied inline or as a data URI.");
-            }
+
         }
 
         // The catalog bounds the number of references; the shared byte budget bounds
         // their aggregate payload before any resolved values are retained together.
         var remainingBytes = maxArtifactBytes;
         var inputs = request.Inputs.ToBuilder();
-        var authorized = false;
-        // Decode local references first so layer/dataset selectors are known before
-        // the shared authorization gates run and before any outbound HTTP request.
+        AnalysisPlan? authorizedPlan = null;
+        // Local values precede bounded remote identifier lookups. Payload downloads
+        // follow resource authorization; each lookup also rechecks all known selectors.
         foreach (var input in request.Inputs.OrderBy(input =>
             TryGetReferenceHref(input.Value, out var href)
-                && href.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ? 0 : 1))
+                && href.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ? 0
+                : IsAuthorizationSelector(parameters[input.Key]) ? 1 : 2))
         {
             if (input.Value.ValueKind != JsonValueKind.Object
                 || !input.Value.TryGetProperty("href", out var hrefElement))
@@ -1029,31 +1029,9 @@ internal static class ProcessEndpoints
             }
 
             var href = hrefElement.GetString()!;
-            if (!href.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && !authorized)
+            if (!href.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
             {
-                var authorizationInputs = parameters.Values
-                    .Where(parameter => parameter.DefaultValue != null)
-                    .ToDictionary(parameter => parameter.Name, parameter => parameter.DefaultValue!, StringComparer.Ordinal);
-                foreach (var candidate in inputs)
-                {
-                    authorizationInputs[candidate.Key] = TryGetReferenceHref(candidate.Value, out _)
-                        ? "ogc-unmaterialized-reference"
-                        : JsonElementToCanonicalInput(GetInlineInputValue(candidate.Value, out _));
-                }
-
-                await authorizeReferencesAsync(new AnalysisPlan
-                {
-                    PlanId = "ogc-reference-authorization",
-                    IntentId = "ogc-reference-authorization",
-                    Steps = [new AnalysisPlanStep
-                    {
-                        StepId = "ogc-reference-inputs",
-                        Kind = AnalysisPlanStepKind.Geoprocess,
-                        ProcessId = definition.ProcessId,
-                        Inputs = authorizationInputs
-                    }]
-                }).ConfigureAwait(false);
-                authorized = true;
+                authorizedPlan = await AuthorizeResolvedInputsAsync().ConfigureAwait(false);
             }
 
             var parameter = parameters[input.Key];
@@ -1071,7 +1049,7 @@ internal static class ProcessEndpoints
                 mediaTypeHint,
                 fallbackMediaType,
                 httpClientFactory,
-                remainingBytes,
+                IsAuthorizationSelector(parameter) ? Math.Min(remainingBytes, 4096) : remainingBytes,
                 cancellationToken).ConfigureAwait(false);
             if (resolved.Value.ValueKind == JsonValueKind.Undefined)
             {
@@ -1084,9 +1062,80 @@ internal static class ProcessEndpoints
             remainingBytes -= resolved.SizeBytes;
         }
 
+        if (authorizedPlan != null)
+        {
+            authorizedPlan = await AuthorizeResolvedInputsAsync().ConfigureAwait(false);
+        }
+
         return new InputNormalizationResult(
             request with { Inputs = inputs.ToImmutable() },
-            null);
+            null,
+            authorizedPlan);
+
+        async Task<AnalysisPlan> AuthorizeResolvedInputsAsync()
+        {
+            var authorizationInputs = parameters.Values
+                .Where(parameter => parameter.DefaultValue != null)
+                .ToDictionary(parameter => parameter.Name, parameter => parameter.DefaultValue!, StringComparer.Ordinal);
+            if (authorizedPlan != null)
+            {
+                foreach (var binding in authorizedPlan.Steps.Single().Inputs)
+                {
+                    authorizationInputs[binding.Key] = binding.Value;
+                }
+            }
+
+            foreach (var candidate in inputs)
+            {
+                if (TryGetReferenceHref(candidate.Value, out _))
+                {
+                    if (IsAuthorizationSelector(parameters[candidate.Key]))
+                    {
+                        authorizationInputs.Remove(candidate.Key);
+                    }
+                    else
+                    {
+                        // Preserve inline-source precedence without fetching its bytes.
+                        authorizationInputs[candidate.Key] = "ogc-unmaterialized-reference";
+                    }
+                }
+                else
+                {
+                    authorizationInputs[candidate.Key] = JsonElementToCanonicalInput(
+                        GetInlineInputValue(candidate.Value, out _));
+                }
+            }
+
+            return await authorizeReferencesAsync(new AnalysisPlan
+            {
+                PlanId = "ogc-reference-authorization",
+                IntentId = "ogc-reference-authorization",
+                Steps = [new AnalysisPlanStep
+                {
+                    StepId = "ogc-reference-inputs",
+                    Kind = AnalysisPlanStepKind.Geoprocess,
+                    ProcessId = definition.ProcessId,
+                    Inputs = authorizationInputs
+                }]
+            }).ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsAuthorizationSelector(ProcessParameterSpec parameter)
+        => parameter.IsAuthorizationSelector
+            || (parameter.ValueType == ProcessParameterValueType.LayerId
+                && parameter.LayerAccess != ProcessLayerAccess.None);
+
+    internal static AnalysisPlan PreserveReferenceAuthorization(AnalysisPlan plan, AnalysisPlan authorizedPlan)
+    {
+        var step = plan.Steps.Single();
+        var inputs = new Dictionary<string, string>(authorizedPlan.Steps.Single().Inputs, StringComparer.Ordinal);
+        foreach (var input in step.Inputs)
+        {
+            inputs[input.Key] = input.Value;
+        }
+
+        return plan with { Steps = [step with { Inputs = inputs }] };
     }
 
     private static bool TryGetReferenceHref(JsonElement input, out string href)
@@ -1309,7 +1358,8 @@ internal static class ProcessEndpoints
     private static string? GetMediaTypeEssence(string? mediaType)
         => mediaType?.Split(';', 2, StringSplitOptions.TrimEntries)[0];
 
-    private readonly record struct InputNormalizationResult(OgcExecuteRequest? Request, string? Error);
+    internal readonly record struct InputNormalizationResult(
+        OgcExecuteRequest? Request, string? Error, AnalysisPlan? AuthorizedPlan = null);
 
     private readonly record struct ResolvedInputReference(JsonElement Value, string? MediaType, string? Error, long SizeBytes = 0);
 
