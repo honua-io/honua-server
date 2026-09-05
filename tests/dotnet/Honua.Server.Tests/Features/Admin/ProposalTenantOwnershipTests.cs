@@ -24,7 +24,12 @@ public sealed class ProposalTenantOwnershipTests
     [InlineData("tenant-a", "admin", true)]
     [InlineData("tenant-b", "admin", false)]
     [InlineData("tenant-b", "platform_admin", true)]
-    public async Task ProposalResource_ProposerIdentityDoesNotBypassTenantOwnership(string tenantId, string role, bool allowed)
+    [InlineData("tenant-a", "admin", true, "tenant-a")]
+    [InlineData("tenant-a", "admin", false, "tenant-b")]
+    [InlineData("tenant-b", "admin", false, "tenant-b")]
+    [InlineData("tenant-b", "platform_admin", false, "tenant-a")]
+    public async Task ProposalResource_ProposerIdentityDoesNotBypassTenantOwnership(
+        string tenantId, string role, bool allowed, string? evidenceTenant = null)
     {
         var principal = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
@@ -36,6 +41,7 @@ public sealed class ProposalTenantOwnershipTests
         {
             ProposalId = "proposal-a",
             TenantId = "tenant-a",
+            Evidence = evidenceTenant is null ? null : Evidence(evidenceTenant),
             RequestedBy = CanonicalSecurityActor.Resolve(principal)!.ActorId,
             Kind = OperationClass.AdminConfigChange,
             Status = OperationProposalStatus.AwaitingApproval,
@@ -61,4 +67,31 @@ public sealed class ProposalTenantOwnershipTests
                 context, "honua://proposals/proposal-a", CancellationToken.None));
         }
     }
+
+    internal static OperationProposalEvidence Evidence(string tenantId) => new()
+    {
+        TenantId = tenantId,
+        ToolName = "test",
+        OperationId = "test",
+        CandidateId = "test",
+        TargetId = "test",
+        DescriptorRevision = "test",
+        PolicyRevision = "test",
+        AuthorizationDecision = "test",
+        RequestDigest = "test",
+        CanonicalRequest = "test",
+        PayloadDigest = "test",
+        CanonicalPayload = "test",
+        TranscriptDigest = "test",
+        TranscriptKeyId = "test",
+        CanonicalTranscript = "test",
+        TranscriptSignature = "test",
+        ReleaseId = "test",
+        ActionId = "test",
+        RunNonce = "test",
+        McpSessionId = "test",
+        McpCallId = "test",
+        IssuedAt = DateTimeOffset.UtcNow,
+        ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+    };
 }

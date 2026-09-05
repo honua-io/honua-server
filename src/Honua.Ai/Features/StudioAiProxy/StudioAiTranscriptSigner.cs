@@ -118,11 +118,18 @@ internal sealed class StudioAiTranscriptSigner(
             writer.WriteString("runNonce", binding.RunNonce);
             writer.WriteString("schemaVersion", "honua.studio-ai.transcript.v1");
             writer.WriteString("selectedResponse", selectedResponse);
+            writer.WriteString("tenantId", binding.TenantId);
             writer.WriteBase64String("terminalResultDigest", terminalDigest);
             writer.WriteEndObject();
+            writer.Flush();
         }
 
-        var canonicalTranscript = buffer.WrittenSpan.ToArray();
+        // Normalize through the same canonicalizer used by every independent
+        // verifier. In particular, DateTimeOffset.WriteStringValue and
+        // JsonElement.WriteTo encode the UTC offset differently; signing the
+        // hand-written buffer directly would make an otherwise valid envelope
+        // fail its own canonical-byte check after transport.
+        var canonicalTranscript = Canonicalize(buffer.WrittenSpan);
         var signer = new Ed25519Signer();
         signer.Init(true, key.PrivateKey);
         signer.BlockUpdate(canonicalTranscript, 0, canonicalTranscript.Length);
