@@ -15,6 +15,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Stac;
@@ -23,6 +24,7 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 [Protocol(TestProtocols.Stac)]
 public sealed class StacPagingRegressionTests : IAsyncLifetime
 {
+    private static readonly string[] SearchCollections = ["0", "1"];
     private readonly IFeatureReader _reader = Substitute.For<IFeatureReader, IPagedFeatureReader>();
     private readonly WebAppFixture _fixture;
 
@@ -59,6 +61,24 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTest]
+    [Endpoint("GET /stac/search")]
+    [Operation(Operations.StacSearch)]
+    public async Task ExactCounts_CrossCollectionOffset_DoesNotCountThePageCollectionTwice()
+    {
+        _fixture.GetService<IOptions<StacOptions>>().Value.NumberMatchedPolicy = StacNumberMatchedPolicy.Exact;
+        var response = await _fixture.Client.GetAsync("/stac/search?collections=0,1&limit=1&offset=4");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("numberMatched").GetInt64().Should().Be(6);
+        json.RootElement.GetProperty("features")[0].GetProperty("id").GetString().Should().Be("1-1");
+        await _reader.Received(1).CountAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await _reader.Received(1).CountAsync(1, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await _reader.DidNotReceiveWithAnyArgs().QueryAsync(default, default!, default);
+        await ((IPagedFeatureReader)_reader).Received(1).QueryPageAsync(
+            1, Arg.Is<FeatureQuery>(query => query.Offset == 1 && query.Limit == 1), Arg.Any<CancellationToken>());
+    }
+
     [IntegrationTheory]
     [InlineData("get", 0, 4, true)]
     [InlineData("get", 2, 2, true)]
@@ -80,7 +100,7 @@ public sealed class StacPagingRegressionTests : IAsyncLifetime
         {
             "items" => await _fixture.Client.GetAsync($"/stac/collections/0/items?limit={limit}&offset={offset}"),
             "get" => await _fixture.Client.GetAsync($"/stac/search?collections=0,1&limit={limit}&offset={offset}"),
-            _ => await _fixture.Client.PostAsJsonAsync("/stac/search", new { collections = new[] { "0", "1" }, limit, token = $"offset:{offset}" })
+            _ => await _fixture.Client.PostAsJsonAsync("/stac/search", new { collections = SearchCollections, limit, token = $"offset:{offset}" })
         };
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);

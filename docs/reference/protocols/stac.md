@@ -33,6 +33,33 @@ Accepted on `GET /stac/search` as query parameters and on `POST /stac/search` as
 | `sortby` | Sort expressions (sort extension). |
 | `filter`, `filter-lang`, `filter-crs` | CQL2 filtering (filter extension). |
 
+### Temporal searches
+
+`datetime` searches return matches only from collections with a resolvable temporal field.
+A collection without one contributes zero items and zero matches, including when selected
+explicitly or queried through its `/items` endpoint. Invalid datetime syntax still returns 400.
+Configure the resource's start/end time fields for columns such as `observed_at`; schema-typed
+fallback names such as `timestamp` and `datetime` are also recognized.
+
+For compatibility, undated items remain readable without a temporal filter. Their required
+STAC datetime uses the declared collection extent, or the Unix epoch as a last resort.
+`honua:datetime_source` identifies these display fallbacks as `collection_extent` or
+`unknown`; they are not acquisition timestamps and do not make an undated collection match
+a temporal search. Collection temporal extents use the same resolved fields as item mapping
+and datetime filtering; unknown coverage remains open.
+
+### Optional matched counts
+
+`Stac:NumberMatchedPolicy` defaults to `Exact`. Set it to `OmitWhenExpensive`
+(`Stac__NumberMatchedPolicy=OmitWhenExpensive` in environment configuration) to omit
+`numberMatched` and `context.matched` from collection-items and GET/POST search responses.
+Clients should follow `next` links until absent; pagination does not require a matched count.
+
+Providers implementing the shared count-free paging capability avoid exact counts. Other
+providers retain their normal query fallback. Cross-collection offsets consume skipped rows
+in bounded pages, so memory remains bounded, but large offsets still require proportionate
+read work. Prefer following the returned continuation links to reconstructing offsets.
+
 ## Conformance classes
 
 `GET /stac/conformance` advertises:
