@@ -54,3 +54,12 @@ merged fixes and successful scans of the same analysis categories.
 
 Full AOT and other platform-image validation is pending; the PR must record
 its actual results before claiming those images are verified.
+
+## Native-AOT startup prerequisite
+
+The canonical image compiled in serving-image verification run 33942385536,
+but its startup check rejected singleton `ZarrTileService` capturing scoped
+`IMetadataV2GraphProvider`. PR #4332 changes the tile service to request scope.
+Its actual registration regression fails before the change and passes after;
+the startup smoke test remains enabled. Full local native image builds are
+still in progress, so their final scan/startup results are not yet claimed.
