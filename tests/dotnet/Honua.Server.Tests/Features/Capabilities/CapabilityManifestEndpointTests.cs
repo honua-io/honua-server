@@ -135,9 +135,9 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             using var response = await client.GetAsync("/api/v1/capabilities/manifest");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = await ReadDocumentAsync(response);
-            foreach (var id in new[] { "serve.geoservices-imageserver", "serve.wmts" })
+            foreach (var capability in new[] { "serve.geoservices-imageserver", "serve.wmts" }
+                .Select(id => GetCapability(document.RootElement, id)))
             {
-                var capability = GetCapability(document.RootElement, id);
                 capability.GetProperty("lifecycle").GetString().Should().Be("preview");
                 capability.GetProperty("available").GetBoolean().Should().BeTrue();
                 capability.GetProperty("optInRequired").GetBoolean().Should().BeFalse();
