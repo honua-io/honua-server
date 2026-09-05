@@ -10,9 +10,17 @@ param(
     [ValidateRange(1024, 8388608)][int]$MaxInlineArtifactBytes = 4194304
 )
 $ErrorActionPreference = 'Stop'
-if (-not [IO.Path]::IsPathRooted($RootPath) -or -not (Test-Path -LiteralPath $RootPath -PathType Container)) {
+if (-not [IO.Path]::IsPathRooted($RootPath)) {
     throw 'Mount the persistent volume at an absolute existing root before provisioning.'
 }
+# Windows PowerShell 5.1 lacks IsPathFullyQualified. Resolve rooted drive-relative
+# and root-relative inputs before emitting a runtime configuration.
+$RootPath = [IO.Path]::GetFullPath($RootPath)
+if (-not (Test-Path -LiteralPath $RootPath -PathType Container)) {
+    throw 'Mount the persistent volume at an absolute existing root before provisioning.'
+}
+# ValidateSet accepts casing variants; the versioned runtime contract is lowercase.
+$PersistenceClass = 'shared-persistent'
 foreach ($reference in $BackupStoreReferences) {
     if ($reference -cnotmatch '\A[A-Za-z0-9][A-Za-z0-9._-]{0,159}\z') { throw 'Backup store references must be opaque identifiers.' }
 }

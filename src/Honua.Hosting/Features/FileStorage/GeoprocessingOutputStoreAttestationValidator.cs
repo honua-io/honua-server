@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -38,7 +39,7 @@ internal static class GeoprocessingOutputStoreAttestationValidator
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or ArgumentException or InvalidOperationException)
         {
             // Never include mount paths, marker content or provider exception details.
-            throw new InvalidOperationException(FailureMessage);
+            throw new GeoprocessingOutputStoreUnavailableException();
         }
     }
 

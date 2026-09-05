@@ -65,6 +65,7 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         var reference = inner.Artifacts.Should().ContainSingle().Subject;
         var descriptor = RasterOutputJson.Deserialize(reference)
             .Should().BeOfType<StagedObjectRasterOutputDescriptor>().Subject;
+        RasterOutputDescriptorValidator.Validate(descriptor).IsValid.Should().BeTrue();
         descriptor.Content.SizeBytes.Should().Be(32768);
         descriptor.Content.MediaType.Should().Be("application/octet-stream");
         descriptor.Content.Checksum!.Value.Should().Be("611253a4531dea3d840789b4f11a1ad9c4329fbbf85ee1634f2ae601e6da6db0");
@@ -104,8 +105,9 @@ public sealed class GdalArtifactPublisherTests : IDisposable
         try
         {
             await app.InitializeAsync();
-            using var response = await app.Client.GetAsync($"/api/geoprocessing/jobs/{job.OperationId}/artifacts/0/content");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var client = app.CreateAdminClient();
+            using var response = await client.GetAsync($"/api/geoprocessing/jobs/{job.OperationId}/artifacts/0/content");
+            response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
             var restoredBytes = await response.Content.ReadAsByteArrayAsync();
             restoredBytes.Should().Equal(payload);
             Convert.ToHexString(SHA256.HashData(restoredBytes)).ToLowerInvariant().Should()

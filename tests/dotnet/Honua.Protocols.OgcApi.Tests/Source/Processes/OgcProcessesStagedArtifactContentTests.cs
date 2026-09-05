@@ -91,7 +91,8 @@ public sealed class OgcProcessesStagedArtifactContentTests
     [Endpoint("GET /api/v1/admin/observability/ops-health")]
     public async Task OpsHealth_RestoredVolume_ExposesCredentialFreeAttestation()
     {
-        using var response = await _fixture.App.Client.GetAsync("/api/v1/admin/observability/ops-health");
+        using var client = _fixture.App.CreateAdminClient();
+        using var response = await client.GetAsync("/api/v1/admin/observability/ops-health");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var entry = document.RootElement.GetProperty("health").GetProperty("entries").EnumerateArray()
@@ -105,6 +106,32 @@ public sealed class OgcProcessesStagedArtifactContentTests
             .Be("6eb07467421c0a70d34ef40a20aeb7f0767def7ba74cddb8b0c01d62db5b6103");
         evidence.GetProperty("persistenceClass").GetString().Should().Be("shared-persistent");
         evidence.GetProperty("backupIdentity").GetString().Should().Be("qualification-backup");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.JobResults)]
+    [Endpoint("GET /api/geoprocessing/jobs/{jobId}/artifacts/{artifactIndex}/content")]
+    public async Task ArtifactContent_AttestationLost_ReturnsRetryable503WithoutLeakingStoreDetails()
+    {
+        var marker = await File.ReadAllBytesAsync(_fixture.AttestationPath);
+        using var client = _fixture.App.CreateAdminClient();
+        var url = $"/api/geoprocessing/jobs/{OgcProcessesStagedArtifactContentTestsFixture.SucceededJobId}/artifacts/0/content";
+        try
+        {
+            File.Delete(_fixture.AttestationPath);
+            using var response = await client.GetAsync(url);
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var error = await response.Content.ReadAsStringAsync();
+            error.Should().NotContain(_fixture.AttestationPath);
+            error.Should().NotContain("qualification-backup");
+        }
+        finally
+        {
+            await File.WriteAllBytesAsync(_fixture.AttestationPath, marker);
+        }
+        using var recovered = await client.GetAsync(url);
+        recovered.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await recovered.Content.ReadAsByteArrayAsync()).Should().Equal(_fixture.StagedPayload);
     }
 
     /// <summary>
@@ -369,6 +396,8 @@ public sealed class OgcProcessesStagedArtifactContentTestsFixture : IAsyncLifeti
     public byte[] StagedPayload { get; } = CreatePayload();
 
     public string RestoredReference { get; }
+
+    public string AttestationPath => Path.Join(_storeRoot, "restored", GeoprocessingOutputStoreAttestation.FileName);
 
     public OgcProcessesStagedArtifactContentTestsFixture()
     {
