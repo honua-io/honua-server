@@ -10,7 +10,7 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | --- | --- | --- |
 | GeoJSON | `.geojson`, `.json` | FeatureCollection, Feature, or bare geometry. |
 | Shapefile | `.zip` | Must be a zip containing `.shp`/`.dbf` (plus `.shx`/`.prj`); bare `.shp` uploads are rejected. |
-| GeoPackage | `.gpkg` | OGC SQLite-based format. |
+| GeoPackage | `.gpkg` | OGC SQLite-based format. BOOLEAN, DATE and DATETIME column types are preserved on import/export. DATETIME output uses UTC timestamps ending in `Z` and retains fractional precision; timestamps without an offset are treated as UTC. GeoServices epoch-millisecond date values are converted to UTC without rounding fractional milliseconds. DATE values use `yyyy-MM-dd`; DATETIME input must include the ISO date and time components. Invalid logical or temporal values produce validation errors. Source attributes named `fid` or `geom` retain their names; generated structural columns use unused names. |
 | GPX | `.gpx` | GPS exchange format. Track segment boundaries are preserved as separate lines; singleton segments remain points, with a geometry collection for mixed tracks. Track and route elevations are preserved as Z ordinates; absent elevation remains absent, and invalid elevation rejects the import. |
 | KML / KMZ | `.kml`, `.kmz` | Keyhole Markup Language, plain or zipped. |
 | WKT | `.wkt` | Well-known text geometries. |
