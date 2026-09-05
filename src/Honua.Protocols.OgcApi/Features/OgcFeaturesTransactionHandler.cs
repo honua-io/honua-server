@@ -471,7 +471,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         detail: "The resource has been modified since the provided ETag.");
                 }
 
-                expectedStateToken = FeatureStateToken.Compute(existing);
+                expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
             }
 
             var buildResult = await OgcFeatureMutationHelpers.TryBuildFeatureAsync(
@@ -697,11 +697,10 @@ internal sealed partial class OgcFeaturesTransactionHandler(
             var existing = resolvedFeature.Value.Feature;
             var expectedFeatureId = OgcFeatureIdentifierResolver.FormatPublicId(existing, resource);
 
-            // Fast-path 412 against the read snapshot; the canonical state token from the
-            // same snapshot is re-validated by the feature writer inside the write
-            // transaction so a concurrent commit between this check and the write cannot
-            // be silently overwritten (TOCTOU).
-            string? expectedStateToken = null;
+            // PATCH merges a read snapshot. Always revalidate it inside the write
+            // transaction so omitted properties and geometry cannot overwrite concurrent
+            // changes, including requests without an explicit If-Match precondition.
+            var expectedStateToken = FeatureStateToken.FromReadSnapshot(existing);
             if (!string.IsNullOrWhiteSpace(ifMatch))
             {
                 var etag = OgcFeatureEntityTag.Compute(existing, _etagService);
@@ -712,8 +711,6 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                         title: "Precondition Failed",
                         detail: "The resource has been modified since the provided ETag.");
                 }
-
-                expectedStateToken = FeatureStateToken.Compute(existing);
             }
 
             var contentTypeError = OgcFeaturePayloadReader.ValidatePatchContentType(context);
@@ -864,10 +861,15 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     if (updateResult.IsPreconditionFailure)
                     {
-                        return Results.Problem(
-                            statusCode: 412,
-                            title: "Precondition Failed",
-                            detail: "The resource has been modified since the provided ETag.");
+                        return string.IsNullOrWhiteSpace(ifMatch)
+                            ? Results.Problem(
+                                statusCode: StatusCodes.Status409Conflict,
+                                title: "Conflict",
+                                detail: "The feature changed during the update. Retry the PATCH against the current resource.")
+                            : Results.Problem(
+                                statusCode: StatusCodes.Status412PreconditionFailed,
+                                title: "Precondition Failed",
+                                detail: "The resource has been modified since the provided ETag.");
                     }
 
                     if (IsNotFound(updateResult))

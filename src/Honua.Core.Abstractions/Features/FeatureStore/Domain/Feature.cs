@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
@@ -33,6 +34,13 @@ public readonly record struct Feature
     /// Feature attributes as key-value pairs
     /// </summary>
     public required ImmutableDictionary<string, object?> Attributes { get; init; }
+
+    /// <summary>
+    /// Provider-captured concurrency token for the original, unmasked read snapshot.
+    /// This internal edit metadata is never part of a serialized feature response.
+    /// </summary>
+    [JsonIgnore]
+    public string? ReadStateToken { get; init; }
 
     /// <summary>
     /// Creates a new feature with the specified properties

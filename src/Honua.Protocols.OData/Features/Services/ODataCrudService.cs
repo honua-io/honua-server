@@ -299,13 +299,12 @@ internal sealed partial class ODataCrudService
                     "Resource has not changed.");
             }
 
-            // The If-Match pre-check above ran against a read snapshot; carry the
-            // snapshot's canonical state token to the writer so the precondition is
-            // re-validated inside the write transaction (closes the read-merge-write
-            // lost-update window).
-            var expectedStateToken = string.IsNullOrWhiteSpace(ifMatch)
-                ? null
-                : FeatureStateToken.Compute(existingFeatureValue);
+            // PATCH merges a read snapshot, so protect that snapshot inside the write
+            // transaction even without If-Match. Otherwise an omitted property or
+            // geometry could overwrite a concurrent edit. Unconditional PUT is a replacement.
+            var expectedStateToken = !replace || !string.IsNullOrWhiteSpace(ifMatch)
+                ? FeatureStateToken.FromReadSnapshot(existingFeatureValue)
+                : null;
 
             // PATCH preserves omitted geometry; PUT replaces it with null unless supplied.
             byte[]? geometryBytes = replace ? null : existingFeatureValue.Geometry;
@@ -372,8 +371,29 @@ internal sealed partial class ODataCrudService
             if (editResult.Result is { } updateEditResult &&
                 updateEditResult.UpdateResults.Any(static result => result.IsPreconditionFailure))
             {
-                return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
-                    "ETag does not match the current resource.");
+                if (!string.IsNullOrWhiteSpace(ifMatch))
+                {
+                    return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed(
+                        "ETag does not match the current resource.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(ifNoneMatch))
+                {
+                    var current = await _featureReader.GetAsync(layerId, objectId, cancellationToken).ConfigureAwait(false);
+                    if (current.HasValue)
+                    {
+                        var geometry = ODataGeometryConverter.ConvertWkbToGeometry(_geometryService, current.Value.Geometry, srid, axisOrder);
+                        var attributes = ODataAttributeSerializer.Serialize(current.Value.Attributes);
+                        var latestEtag = ComputeFeatureEtag(layerId, current.Value, geometry, attributes);
+                        if (!_etagService.IsModified(ifNoneMatch, latestEtag))
+                        {
+                            return ODataCrudResult<Dictionary<string, object?>>.PreconditionFailed("Resource has not changed.");
+                        }
+                    }
+                }
+
+                return ODataCrudResult<Dictionary<string, object?>>.Conflict(
+                    "The feature changed during the update. Retry the PATCH against the current resource.");
             }
 
             var result = await _featureReader.GetAsync(layerId, objectId, cancellationToken);

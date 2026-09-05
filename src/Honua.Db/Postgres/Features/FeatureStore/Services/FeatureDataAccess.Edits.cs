@@ -498,8 +498,8 @@ internal sealed partial class FeatureDataAccess
     /// </summary>
     /// <exception cref="ResourceNotFoundException">The row no longer exists.</exception>
     /// <exception cref="FeatureEditPreconditionFailedException">The stored row state changed since the caller's snapshot.</exception>
-    /// <returns>True when the row exists; false when an expected-absence precondition holds.</returns>
-    private async Task<bool> EnsurePreconditionSatisfiedAsync(
+    /// <returns>The locked row, or null when an expected-absence precondition holds.</returns>
+    private async Task<Feature?> EnsurePreconditionSatisfiedAsync(
         int layerId,
         long objectId,
         FeatureEditPrecondition precondition,
@@ -545,7 +545,7 @@ internal sealed partial class FeatureDataAccess
             {
                 if (precondition.ExpectedRowAbsent)
                 {
-                    return false;
+                    return null;
                 }
 
                 throw new ResourceNotFoundException($"Feature with ID {objectId} not found in layer {layerId}");
@@ -563,7 +563,28 @@ internal sealed partial class FeatureDataAccess
             throw new FeatureEditPreconditionFailedException(objectId);
         }
 
-        return true;
+        return current;
+    }
+
+    private static Feature PreserveMaskedAttributes(Feature update, Feature current, ImmutableArray<string> maskedFields)
+    {
+        if (maskedFields.IsDefaultOrEmpty)
+        {
+            return update;
+        }
+
+        var masked = maskedFields.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var supplied = update.Attributes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var attributes = update.Attributes.ToBuilder();
+        foreach (var (name, value) in current.Attributes)
+        {
+            if (masked.Contains(name) && !supplied.Contains(name))
+            {
+                attributes[name] = value;
+            }
+        }
+
+        return update with { Attributes = attributes.ToImmutable() };
     }
 
     private async Task<FeatureEditResult> ApplyOrderedEditsAsync(
@@ -816,13 +837,18 @@ internal sealed partial class FeatureDataAccess
                             transaction,
                             async (conn, tx, ct) =>
                             {
+                                var update = feature;
                                 if (hasPrecondition)
                                 {
                                     // requireTransaction guarantees tx is non-null here.
-                                    await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
+                                    var current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
+                                    if (current.HasValue)
+                                    {
+                                        update = PreserveMaskedAttributes(feature, current.Value, precondition.MaskedFields);
+                                    }
                                 }
 
-                                var u = await UpdateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                                var u = await UpdateWithConnectionAsync(layerId, update, conn, tx, ct).ConfigureAwait(false);
                                 await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                                 return u;
                             },
@@ -869,7 +895,7 @@ internal sealed partial class FeatureDataAccess
                                     var rowExists = await EnsurePreconditionSatisfiedAsync(
                                             layerId, objectId, precondition, conn, tx!, ct)
                                         .ConfigureAwait(false);
-                                    if (!rowExists)
+                                    if (!rowExists.HasValue)
                                     {
                                         return new DeleteOutcome(Deleted: true, Snapshot: null);
                                     }
@@ -1512,13 +1538,18 @@ internal sealed partial class FeatureDataAccess
                     transaction,
                     async (conn, tx, ct) =>
                     {
+                        var update = feature;
                         if (hasPrecondition)
                         {
                             // requireTransaction guarantees tx is non-null here.
-                            await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
+                            var current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
+                            if (current.HasValue)
+                            {
+                                update = PreserveMaskedAttributes(feature, current.Value, precondition.MaskedFields);
+                            }
                         }
 
-                        var u = await UpdateWithConnectionAsync(layerId, feature, conn, tx, ct).ConfigureAwait(false);
+                        var u = await UpdateWithConnectionAsync(layerId, update, conn, tx, ct).ConfigureAwait(false);
                         await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
                         return u;
                     },
@@ -1587,7 +1618,7 @@ internal sealed partial class FeatureDataAccess
                             var rowExists = await EnsurePreconditionSatisfiedAsync(
                                     layerId, featureId, precondition, conn, tx!, ct)
                                 .ConfigureAwait(false);
-                            if (!rowExists)
+                            if (!rowExists.HasValue)
                             {
                                 return new DeleteOutcome(Deleted: true, Snapshot: null);
                             }
