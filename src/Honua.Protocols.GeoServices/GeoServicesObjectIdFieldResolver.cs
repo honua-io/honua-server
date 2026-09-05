@@ -27,7 +27,8 @@ internal static class GeoServicesObjectIdFieldResolver
     {
         ArgumentNullException.ThrowIfNull(resource);
 
-        var primary = resource.FindPrimaryIdField();
+        var primary = resource.SchemaFields.FirstOrDefault(field =>
+            field.SemanticRoles.Any(role => role.Equals("id.primary", StringComparison.OrdinalIgnoreCase)));
         if (primary is not null && IsObjectIdCompatible(primary))
         {
             return primary;

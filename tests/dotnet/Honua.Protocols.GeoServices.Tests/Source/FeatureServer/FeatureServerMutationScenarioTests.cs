@@ -194,6 +194,80 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.ApplyEdits, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task ApplyEdits_ConcurrentDistinctPartialUpdates_RereadAfterLockedSnapshotChanges()
+    {
+        _fixture.UpdateV2ResourceSchemaField(0, new MetadataV2Field { Name = "score", Type = MetadataV2FieldType.Integer });
+        const string path = "/rest/services/test/FeatureServer/0/applyEdits";
+        using var add = await PostJsonAsync(path,
+            """{"adds":[{"attributes":{"name":"before","score":0},"geometry":{"x":-122.25,"y":37.75,"spatialReference":{"wkid":4326}}}]}""");
+        var added = await DeserializeEditsAsync(add);
+        var objectId = added.AddResults.Should().ContainSingle(result => result.Success).Subject.ObjectId!.Value;
+        await using var connection = new Npgsql.NpgsqlConnection(_fixture.ConnectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        using var builder = new Npgsql.NpgsqlCommandBuilder();
+        var schema = builder.QuoteIdentifier(_fixture.CurrentSchema);
+        await using (var rowLock = new Npgsql.NpgsqlCommand($"SELECT objectid FROM {schema}.features WHERE layer_id=0 AND objectid=@id FOR UPDATE", connection, transaction))
+        {
+            rowLock.Parameters.AddWithValue("id", objectId);
+            await rowLock.ExecuteScalarAsync();
+        }
+
+        // Hold the stored row while all three HTTP requests read and assemble their
+        // partial updates. Their write transactions must then wait on this lock.
+        var requests = new[]
+        {
+            $$$"""{"updates":[{"attributes":{"objectid":{{{objectId}}},"name":"after"}}]}""",
+            $$$"""{"updates":[{"attributes":{"objectid":{{{objectId}}},"score":29}}]}""",
+            $$$"""{"updates":[{"attributes":{"objectid":{{{objectId}}}},"geometry":{"x":-120.5,"y":36.5,"spatialReference":{"wkid":4326}}}]}"""
+        };
+        var pending = requests.Select(payload => PostJsonAsync(path, payload)).ToArray();
+        var waiting = 0L;
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(15);
+            while (waiting < 3 && DateTime.UtcNow < deadline)
+            {
+                await using var command = new Npgsql.NpgsqlCommand(
+                    "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE @schema AND pid <> pg_backend_pid()", connection, transaction);
+                command.Parameters.AddWithValue("schema", "%" + _fixture.CurrentSchema + "%");
+                waiting = (long)(await command.ExecuteScalarAsync())!;
+                if (waiting < 3)
+                {
+                    await Task.Delay(25);
+                }
+            }
+        }
+        finally
+        {
+            await transaction.RollbackAsync();
+        }
+
+        foreach (var response in await Task.WhenAll(pending))
+        {
+            using (response)
+            {
+                var result = await DeserializeEditsAsync(response);
+                result.UpdateResults.Should().ContainSingle(edit => edit.Success && edit.ObjectId == objectId,
+                    await response.Content.ReadAsStringAsync());
+            }
+        }
+        waiting.Should().BeGreaterThanOrEqualTo(3, "all partial requests must assemble against the same blocked row");
+        using var query = await _fixture.Client.GetAsync(
+            $"/rest/services/test/FeatureServer/0/query?f=json&objectIds={objectId}&outFields=*&returnGeometry=true&outSR=4326");
+        query.Be200Ok();
+        using var document = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
+        var feature = document.RootElement.GetProperty("features").EnumerateArray().Single();
+        feature.GetProperty("attributes").GetProperty("name").GetString().Should().Be("after");
+        feature.GetProperty("attributes").GetProperty("score").GetInt32().Should().Be(29);
+        feature.GetProperty("geometry").GetProperty("x").GetDouble().Should().Be(-120.5);
+        feature.GetProperty("geometry").GetProperty("y").GetDouble().Should().Be(36.5);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ApplyEdits, Operations.Query, Operations.Metadata)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]

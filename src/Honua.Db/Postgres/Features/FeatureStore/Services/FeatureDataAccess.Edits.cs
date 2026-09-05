@@ -278,13 +278,14 @@ internal sealed partial class FeatureDataAccess
             // Committed is intentional for that case: if the reservation waits for an inserting
             // transaction, the following SELECT must observe the inserter's commit. Ordinary feature
             // batches retain RepeatableRead to prevent phantom reads during batch operations.
-            // One unconditional UPDATE already locks its target row atomically and has no
-            // cross-operation snapshot to preserve. ReadCommitted lets concurrent ordinary
-            // applyEdits calls wait for that row instead of failing with SQLSTATE 40001 (#4113).
-            var singleUnconditionalUpdate = editBatch.Updates.Length == 1 &&
+            // A single UPDATE has no cross-operation snapshot to preserve. ReadCommitted
+            // lets its locked precondition read observe the latest committed row and report
+            // a stale token instead of SQLSTATE 40001. GeoServices can then re-read and merge
+            // a partial request without overwriting unrelated concurrent changes (#4113).
+            var singleUpdate = editBatch.Updates.Length == 1 &&
                 editBatch.Creates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty &&
-                editBatch.Operations.IsDefaultOrEmpty && editBatch.Preconditions.IsDefaultOrEmpty;
-            var isolationLevel = singleUnconditionalUpdate || editBatch.Preconditions.Any(p => p.ExpectedRowAbsent)
+                editBatch.Operations.IsDefaultOrEmpty;
+            var isolationLevel = singleUpdate || editBatch.Preconditions.Any(p => p.ExpectedRowAbsent)
                 ? IsolationLevel.ReadCommitted
                 : IsolationLevel.RepeatableRead;
             var (txConnection, dbTransaction) = await _connectionProvider

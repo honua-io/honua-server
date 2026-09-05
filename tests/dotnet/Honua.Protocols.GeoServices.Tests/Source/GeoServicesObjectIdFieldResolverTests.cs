@@ -12,6 +12,20 @@ public sealed class GeoServicesObjectIdFieldResolverTests
     [Theory]
     [InlineData("id")]
     [InlineData("fid")]
+    public void ResolveObjectIdField_NoSemanticKey_PrefersObjectIdRegardlessOfFieldOrder(string attribute)
+    {
+        var surrogate = new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger };
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields = [new() { Name = attribute, Type = MetadataV2FieldType.Integer }, surrogate]
+        };
+
+        GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource).Should().BeSameAs(surrogate);
+    }
+
+    [Theory]
+    [InlineData("id")]
+    [InlineData("fid")]
     [InlineData("objectid")]
     public void ResolveObjectIdField_NumericPrimaryKey_PrecedesConventionalAttribute(string attribute)
     {
