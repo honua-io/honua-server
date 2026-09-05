@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -600,6 +601,8 @@ internal static partial class FeatureServerEndpoints
         var changes = await changeTracker.GetChangesSinceAsync(
             sinceGeneration,
             replicaLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
+            objectIds: null,
+            excludeOriginReplicaId: replicaId,
             cancellationToken);
 
         // Optional upper bound on the delta. Currently always null (callers pass null) — the full
@@ -671,7 +674,8 @@ internal static partial class FeatureServerEndpoints
                     DeleteIds = deleteIds.Length > 0 ? deleteIds : null
                 });
             }
-            else if (sinceGeneration == 0)
+            else if (sinceGeneration == 0 &&
+                (await changeTracker.GetChangesSinceAsync(0, [layer.StorageLayerId], cancellationToken)).Count == 0)
             {
                 // First sync (gen 0) for a layer the change log does not cover: fall back to a full
                 // snapshot delivered as adds. After migration 059 a Postgres layer with rows always
@@ -1371,7 +1375,7 @@ internal static partial class FeatureServerEndpoints
         var updated = replica with
         {
             LastSyncTime = DateTimeOffset.UtcNow,
-            LastSyncGeneration = currentGen,
+            LastSyncGeneration = isDownloadDirection ? currentGen : replica.LastSyncGeneration,
             UploadBaseGeneration = didUpload ? currentGen : replica.UploadBaseGeneration
         };
 
@@ -1689,6 +1693,30 @@ internal static partial class FeatureServerEndpoints
 
             foreach (var entry in perLayer)
             {
+                if (entry.Features is not null &&
+                    (entry.Adds is not null || entry.Updates is not null || entry.Deletes is not null || entry.DeleteIds is not null)
+                    || entry.Deletes is not null && entry.DeleteIds is not null)
+                {
+                    error = "Use one feature edit envelope per layer; do not mix nested and top-level operations or delete aliases.";
+                    return false;
+                }
+                if (entry.Attachments.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null) &&
+                    (entry.Attachments.ValueKind != JsonValueKind.Object || entry.Attachments.EnumerateObject().Any(property =>
+                        property.Value.ValueKind != JsonValueKind.Array || property.Value.GetArrayLength() != 0)))
+                {
+                    error = "Attachment uploads are not supported by synchronizeReplica; submit feature edits separately.";
+                    return false;
+                }
+                if (entry.Features is { } nested)
+                {
+                    entry.Adds = nested.Adds;
+                    entry.Updates = nested.Updates;
+                    entry.Deletes = nested.DeleteIds;
+                }
+                else
+                {
+                    entry.Deletes ??= entry.DeleteIds;
+                }
                 if (!storageByPublicId.TryGetValue(entry.Id, out var storageLayerId))
                 {
                     error = $"edits reference layer {entry.Id} which is not part of this replica.";
@@ -1852,6 +1880,8 @@ internal static partial class FeatureServerEndpoints
     private static bool IsSynchronizeReplicaLayerEditObject(System.Text.Json.JsonElement entry)
         => HasProperty(entry, "id")
            && (HasProperty(entry, "adds")
+               || HasProperty(entry, "features")
+               || HasProperty(entry, "deleteIds")
                || HasProperty(entry, "updates")
                || HasProperty(entry, "deletes"));
 

@@ -154,6 +154,10 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                     .ConfigureAwait(false);
                 foreach (var change in serverChanges)
                 {
+                    if (string.Equals(change.OriginReplicaId, request.ReplicaId, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
                     var matchedPublicObjectIds = new HashSet<long>();
                     if (publicObjectIdsByStorageObjectId.TryGetValue(change.ObjectId, out var mappedPublicObjectIds))
                     {
@@ -435,6 +439,7 @@ public sealed partial class ReplicaSyncService : IReplicaSyncService
                 }
             }
 
+            using var uploadOrigin = ReplicaUploadOriginScope.Begin(request.ReplicaId);
             var applyResult = editsToApply.Count == 0
                 ? new ReplicaLayerApplyResult(layer.PublicLayerId, 0, 0, 0, Failed: false, FailureMessage: null)
                 : await editApplier

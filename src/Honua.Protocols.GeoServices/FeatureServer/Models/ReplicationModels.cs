@@ -594,6 +594,18 @@ public sealed class SynchronizeReplicaConflict
 /// </summary>
 public sealed class SynchronizeReplicaLayerEdits
 {
+    /// <summary>Stock Esri feature edit envelope.</summary>
+    [JsonPropertyName("features")]
+    public SynchronizeReplicaFeatureEdits? Features { get; set; }
+
+    /// <summary>Stock Esri delete-id alias for the legacy flat layer shape.</summary>
+    [JsonPropertyName("deleteIds")]
+    public long[]? DeleteIds { get; set; }
+
+    /// <summary>Attachment edits, checked for unsupported nonempty uploads.</summary>
+    [JsonPropertyName("attachments")]
+    public System.Text.Json.JsonElement Attachments { get; set; }
+
     /// <summary>Service-local layer id the edits target.</summary>
     [JsonPropertyName("id")]
     public int Id { get; set; }
@@ -609,6 +621,24 @@ public sealed class SynchronizeReplicaLayerEdits
     /// <summary>Object ids to delete.</summary>
     [JsonPropertyName("deletes")]
     public long[]? Deletes { get; set; }
+}
+
+/// <summary>
+/// Feature operations carried by a stock Esri per-layer sync envelope.
+/// </summary>
+public sealed class SynchronizeReplicaFeatureEdits
+{
+    /// <summary>Features to create.</summary>
+    [JsonPropertyName("adds")]
+    public GeoServicesFeature[]? Adds { get; set; }
+
+    /// <summary>Features to update.</summary>
+    [JsonPropertyName("updates")]
+    public GeoServicesFeature[]? Updates { get; set; }
+
+    /// <summary>Object IDs to delete.</summary>
+    [JsonPropertyName("deleteIds")]
+    public long[]? DeleteIds { get; set; }
 }
 
 /// <summary>
