@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -56,6 +57,7 @@ public sealed class PatchConcurrencyTests
         try
         {
             var objectId = await fixture.InsertFeatureAsync(0, "original name");
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, objectId))!.Value;
             using var firstRequest = CreatePatch(firstIsOData, objectId, changeName: true);
             var firstTask = fixture.Client.SendAsync(firstRequest);
             Feature committed;
@@ -66,6 +68,8 @@ public sealed class PatchConcurrencyTests
                 using var secondResponse = await fixture.Client.SendAsync(secondRequest);
                 Assert.True(secondResponse.IsSuccessStatusCode, await secondResponse.Content.ReadAsStringAsync());
                 committed = (await fixture.GetService<IFeatureReader>().GetAsync(0, objectId))!.Value;
+                Assert.Equal(12345L, Convert.ToInt64(committed.Attributes["population"], CultureInfo.InvariantCulture));
+                Assert.NotEqual(original.Geometry, committed.Geometry);
             }
             finally
             {
