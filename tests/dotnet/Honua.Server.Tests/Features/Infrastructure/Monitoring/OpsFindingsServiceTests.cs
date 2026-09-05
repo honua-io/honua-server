@@ -788,6 +788,7 @@ public sealed class OpsFindingsServiceTests
     [InlineData("backendOutage")]
     [InlineData("neverSucceeded")]
     [InlineData("stale")]
+    [InlineData("freshAttemptStaleObservation")]
     [InlineData("futureObservation")]
     [Operation(Operations.TestInfrastructure)]
     public async Task Propose_IncompleteRequiredSourceEvidence_BlocksWithZeroGatewayCalls(string scenario)
@@ -801,9 +802,11 @@ public sealed class OpsFindingsServiceTests
             IsDispatcherRunning = true,
             LastBacklog = new AlertDispatchBacklog { PendingCount = 3, DeadLetteredCount = 2 },
             IsStoragePollFailing = scenario == "backendOutage",
+            SuccessfulBacklogAt = scenario == "freshAttemptStaleObservation" ? now.AddHours(-1) : null,
             LastPollAt = scenario switch
             {
                 "backendOutage" => now,
+                "freshAttemptStaleObservation" => now,
                 "neverSucceeded" => null,
                 "stale" => now.AddHours(-1),
                 "futureObservation" => now.AddHours(1),
@@ -820,6 +823,12 @@ public sealed class OpsFindingsServiceTests
             item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsAlertDispatch);
         Assert.NotEqual(EvidencePostureVocabulary.Completeness.Complete, source.Completeness);
         Assert.NotEmpty(source.ReasonCodes);
+        if (scenario == "freshAttemptStaleObservation")
+        {
+            Assert.Equal(now.AddHours(-1), source.ObservedAt);
+            Assert.Equal(now.AddHours(-1), source.LastSuccessfulAt);
+            Assert.Contains(EvidencePostureVocabulary.ReasonCodes.Stale, source.ReasonCodes);
+        }
 
         var result = await service.ProposeAsync(finding.Id);
 
@@ -1323,7 +1332,9 @@ public sealed class OpsFindingsServiceTests
 
         public DateTimeOffset? LastPollAt { get; set; }
 
-        public DateTimeOffset? BacklogObservedAt => LastPollAt;
+        public DateTimeOffset? SuccessfulBacklogAt { get; set; }
+
+        public DateTimeOffset? BacklogObservedAt => SuccessfulBacklogAt ?? LastPollAt;
 
         public AlertDispatchBacklog? LastBacklog { get; set; }
 

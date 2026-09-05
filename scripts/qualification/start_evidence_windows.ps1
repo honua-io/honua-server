@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$NoBuild)
+param([switch]$NoBuild, [switch]$ReuseContainers)
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -13,10 +13,21 @@ $assembly = Join-Path $repo 'src/Honua.Server/bin/Release/net10.0/Honua.Server.d
 if (-not (Test-Path -LiteralPath $assembly)) { throw 'Build the native server first.' }
 
 # These names and loopback ports belong exclusively to this disposable harness.
-docker run -d --name honua-3475-postgres --label honua.evidence.issue=3475 -p 127.0.0.1:55475:5432 -e POSTGRES_DB=honua_evidence -e POSTGRES_USER=honua -e POSTGRES_PASSWORD=local-evidence-only postgis/postgis:17-3.5
-if ($LASTEXITCODE -ne 0) { throw 'Could not create the isolated Postgres container; existing containers are never replaced.' }
-docker run -d --name honua-3475-redis --label honua.evidence.issue=3475 -p 127.0.0.1:56375:6379 redis:7.4-alpine
-if ($LASTEXITCODE -ne 0) { throw 'Could not create the isolated Redis container.' }
+if ($ReuseContainers) {
+    foreach ($containerName in @('honua-3475-postgres', 'honua-3475-redis')) {
+        $containerJson = docker inspect $containerName
+        if ($LASTEXITCODE -ne 0) { throw "Could not inspect $containerName." }
+        $container = ($containerJson | ConvertFrom-Json)[0]
+        if ($container.Config.Labels.'honua.evidence.issue' -ne '3475' -or -not $container.State.Running) {
+            throw "$containerName must be a running container owned by this evidence harness."
+        }
+    }
+} else {
+    docker run -d --name honua-3475-postgres --label honua.evidence.issue=3475 -p 127.0.0.1:55475:5432 -e POSTGRES_DB=honua_evidence -e POSTGRES_USER=honua -e POSTGRES_PASSWORD=local-evidence-only postgis/postgis:17-3.5
+    if ($LASTEXITCODE -ne 0) { throw 'Could not create the isolated Postgres container; existing containers are never replaced.' }
+    docker run -d --name honua-3475-redis --label honua.evidence.issue=3475 -p 127.0.0.1:56375:6379 redis:7.4-alpine
+    if ($LASTEXITCODE -ne 0) { throw 'Could not create the isolated Redis container.' }
+}
 
 $settings = @{
     ASPNETCORE_ENVIRONMENT = 'Development'
