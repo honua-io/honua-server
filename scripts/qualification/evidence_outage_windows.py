@@ -108,6 +108,10 @@ def main():
         assert sql("SELECT count(*) FROM honua.alert_dispatch WHERE status=4 AND attempts=5") == "1"
         assert sql("SELECT count(*) FROM honua.alert_dispatch") == "1"
         receipt["expectedBacklog"] = {"pending": 0, "deadLettered": 1, "attempts": 5}
+        initial_health = request("/api/v1/admin/observability/ops-health", method="GET")
+        assert initial_health["alertDispatch"]["pendingCount"] == 0
+        assert initial_health["alertDispatch"]["deadLetteredCount"] == 1
+        receipt["observedBacklog"] = initial_health["alertDispatch"]
         finding = next(f for f in initial["findings"] if f["rule"] == "alert-dispatch-backlog")
         assert SOURCE in finding["requiredSourceIds"]
         receipt["initial"] = initial
