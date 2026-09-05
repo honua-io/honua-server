@@ -37,7 +37,7 @@ internal static class MapToolLayerResolver
         // Match the REST adapter's provider selection for bound publications.
         // Storeless compositions retain the default reader when no router exists.
         var router = httpContext.RequestServices.GetService<FeatureProviderQueryRouter>();
-        if (!string.IsNullOrWhiteSpace(layer.Publication.StorageBindingId) && router is not null)
+        if (snapshot.ResolveStorageBinding(layer.Publication) is not null && router is not null)
         {
             return router.ResolveReaderAsync(snapshot, layer.Service, layer.Resource,
                 layer.Publication, layer.StorageLayerId, operation, cancellationToken);
