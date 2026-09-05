@@ -5,7 +5,6 @@ using System.Collections.Concurrent;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Infrastructure.Caching;
-using Xunit;
 
 namespace Honua.Server.Tests.Features.Caching;
 
